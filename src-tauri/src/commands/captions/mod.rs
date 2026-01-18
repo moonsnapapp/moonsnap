@@ -1,5 +1,6 @@
 //! Caption transcription and management commands.
 
+pub mod audio;
 pub mod types;
 
 pub use types::*;
