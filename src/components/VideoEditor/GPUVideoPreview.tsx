@@ -12,6 +12,7 @@ import { ClickHighlightOverlay } from './ClickHighlightOverlay';
 import { MaskOverlay } from './MaskOverlay';
 import { TextOverlay } from './TextOverlay';
 import { UnifiedTextOverlay } from './UnifiedTextOverlay';
+import { CaptionOverlay } from './CaptionOverlay';
 import {
   WebCodecsCanvasNoZoom,
   VideoNoZoom,
@@ -277,6 +278,16 @@ const SceneModeRenderer = memo(function SceneModeRenderer({
             previewWidth={containerWidth}
             previewHeight={containerHeight}
             videoAspectRatio={videoAspectRatio}
+          />
+        )}
+
+        {/* Caption overlay - transcribed speech */}
+        {showScreen && containerWidth > 0 && containerHeight > 0 && (
+          <CaptionOverlay
+            containerWidth={containerWidth}
+            containerHeight={containerHeight}
+            videoWidth={videoWidth}
+            videoHeight={videoHeight}
           />
         )}
         </div>
