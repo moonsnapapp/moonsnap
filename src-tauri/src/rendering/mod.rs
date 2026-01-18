@@ -13,6 +13,7 @@
 //! - `editor_instance`: Playback state management
 
 pub mod background;
+pub mod caption_layer;
 pub mod compositor;
 pub mod coord;
 pub mod cursor;
@@ -30,6 +31,7 @@ pub mod types;
 pub mod zoom;
 
 pub use background::{hex_to_linear_rgba, srgb_to_linear, Background, BackgroundLayer};
+pub use caption_layer::{find_active_segment, prepare_captions};
 pub use compositor::Compositor;
 pub use coord::{
     CaptureSpace, Coord, FrameSpace, Rect, ScreenSpace, ScreenUVSpace, Size, TransformParams,
