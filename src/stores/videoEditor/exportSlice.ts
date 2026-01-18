@@ -50,7 +50,7 @@ export const createExportSlice: SliceCreator<ExportSlice> = (set, get) => ({
 
   // Export actions
   exportVideo: async (outputPath: string): Promise<ExportResult> => {
-    const { project } = get();
+    const { project, captionSegments, captionSettings } = get();
     if (!project) {
       throw new Error('No project loaded');
     }
@@ -64,20 +64,19 @@ export const createExportSlice: SliceCreator<ExportSlice> = (set, get) => ({
     };
     const selectedFormat = formatMap[ext ?? 'mp4'] ?? 'mp4';
 
-    // Create project with correct format for the chosen file extension
-    const projectWithFormat =
-      selectedFormat !== project.export.format
-        ? {
-            ...project,
-            export: {
-              ...project.export,
-              format: selectedFormat,
-            },
-          }
-        : project;
+    // Create project with correct format and caption data for export
+    const projectWithCaptions = {
+      ...project,
+      export: {
+        ...project.export,
+        format: selectedFormat,
+      },
+      captions: captionSettings,
+      captionSegments: captionSegments,
+    };
 
     // Sanitize project to ensure all ms values are integers (Rust expects u64)
-    const sanitizedProject = sanitizeProjectForSave(projectWithFormat);
+    const sanitizedProject = sanitizeProjectForSave(projectWithCaptions);
 
     videoEditorLogger.info(`Exporting to: ${outputPath}`);
     videoEditorLogger.debug(

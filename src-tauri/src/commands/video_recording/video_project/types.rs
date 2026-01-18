@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use ts_rs::TS;
 
-use crate::commands::captions::CaptionSettings;
+use crate::commands::captions::{CaptionSegment, CaptionSettings};
 
 // ============================================================================
 // Video Project
@@ -55,6 +55,9 @@ pub struct VideoProject {
     /// Caption/transcription configuration.
     #[serde(default)]
     pub captions: CaptionSettings,
+    /// Transcribed caption segments.
+    #[serde(default)]
+    pub caption_segments: Vec<CaptionSegment>,
 }
 
 /// Source files for a video project.
@@ -1357,6 +1360,7 @@ impl VideoProject {
             text: TextConfig::default(),
             mask: MaskConfig::default(),
             captions: CaptionSettings::default(),
+            caption_segments: Vec::new(),
         }
     }
 

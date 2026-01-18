@@ -4,7 +4,7 @@
 //! Handles timing, word highlighting, and positioning.
 
 use crate::commands::captions::{CaptionSegment, CaptionSettings, CaptionWord};
-use crate::rendering::text::PreparedText;
+use crate::rendering::text::{PreparedText, WordColor};
 
 /// Find the active caption segment at a given time.
 pub fn find_active_segment(segments: &[CaptionSegment], time_secs: f32) -> Option<&CaptionSegment> {
@@ -38,9 +38,63 @@ fn hex_to_rgba(hex: &str) -> [f32; 4] {
     }
 }
 
+/// Calculate background color with opacity from settings.
+fn get_background_color(settings: &CaptionSettings) -> Option<[f32; 4]> {
+    if settings.background_opacity > 0 {
+        let mut bg = hex_to_rgba(&settings.background_color);
+        bg[3] = (settings.background_opacity as f32) / 100.0;
+        Some(bg)
+    } else {
+        None
+    }
+}
+
+/// Build word colors for per-word highlighting.
+fn build_word_colors(
+    segment: &CaptionSegment,
+    settings: &CaptionSettings,
+    active_word_idx: Option<usize>,
+) -> Option<Vec<WordColor>> {
+    // Only build word colors if we have words and colors differ
+    if segment.words.is_empty() || settings.color == settings.highlight_color {
+        return None;
+    }
+
+    let base_color = hex_to_rgba(&settings.color);
+    let highlight_color = hex_to_rgba(&settings.highlight_color);
+
+    // Build the full text by joining words with spaces to get accurate byte positions
+    let mut word_colors = Vec::with_capacity(segment.words.len());
+    let mut byte_offset = 0;
+
+    for (idx, word) in segment.words.iter().enumerate() {
+        let word_bytes = word.text.len();
+        let color = if Some(idx) == active_word_idx {
+            highlight_color
+        } else {
+            base_color
+        };
+
+        word_colors.push(WordColor {
+            start: byte_offset,
+            end: byte_offset + word_bytes,
+            color,
+        });
+
+        // Account for space after word (except last word)
+        byte_offset += word_bytes;
+        if idx < segment.words.len() - 1 {
+            byte_offset += 1; // space
+        }
+    }
+
+    Some(word_colors)
+}
+
 /// Prepare caption text for rendering.
 ///
-/// Returns a PreparedText that can be passed to the TextLayer for GPU rendering.
+/// Returns a PreparedText with background and shadow settings.
+/// Word highlighting uses the highlight color when a word is active.
 pub fn prepare_caption_text(
     segment: &CaptionSegment,
     settings: &CaptionSettings,
@@ -49,18 +103,8 @@ pub fn prepare_caption_text(
     output_height: f32,
 ) -> PreparedText {
     let active_word_idx = find_active_word_index(&segment.words, time_secs);
-
-    // Build text content with proper formatting
-    // For simple rendering, we use the full segment text
-    // Advanced word-level highlighting would require multiple text renders
-    let content = segment.text.clone();
-
-    // Determine color based on active word (simplified - full highlighting needs multiple passes)
-    let color = if active_word_idx.is_some() {
-        hex_to_rgba(&settings.highlight_color)
-    } else {
-        hex_to_rgba(&settings.color)
-    };
+    let background_color = get_background_color(settings);
+    let text_shadow = settings.background_opacity == 0;
 
     // Calculate position
     let padding = 40.0;
@@ -73,20 +117,43 @@ pub fn prepare_caption_text(
         output_height - text_height - padding
     };
 
+    let bounds = [
+        padding,
+        y_position,
+        padding + text_width,
+        y_position + text_height,
+    ];
+
+    // Base color (used for text without word highlighting)
+    let base_color = hex_to_rgba(&settings.color);
+
+    // Build word colors for per-word highlighting
+    let word_colors = build_word_colors(segment, settings, active_word_idx);
+
+    // Reconstruct text from words to ensure byte positions match
+    let content = if !segment.words.is_empty() {
+        segment
+            .words
+            .iter()
+            .map(|w| w.text.as_str())
+            .collect::<Vec<_>>()
+            .join(" ")
+    } else {
+        segment.text.clone()
+    };
+
     PreparedText {
         content,
         font_family: settings.font.clone(),
         font_size: settings.size as f32,
         font_weight: settings.font_weight as f32,
         italic: settings.italic,
-        color,
-        bounds: [
-            padding,
-            y_position,
-            padding + text_width,
-            y_position + text_height,
-        ],
+        color: base_color,
+        bounds,
         opacity: 1.0,
+        background_color,
+        text_shadow,
+        word_colors,
     }
 }
 
@@ -108,10 +175,6 @@ pub fn prepare_captions(
 
     // Find and prepare the active segment
     if let Some(segment) = find_active_segment(segments, time_secs) {
-        // Add background if opacity > 0
-        // Note: Background rendering would need a separate shader/quad render
-        // For now, we just prepare the text
-
         let text = prepare_caption_text(segment, settings, time_secs, output_width, output_height);
         texts.push(text);
     }

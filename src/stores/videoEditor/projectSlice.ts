@@ -92,6 +92,9 @@ export const createProjectSlice: SliceCreator<ProjectSlice> = (set, get) => ({
       isPlaying: false,
       selectedZoomRegionId: null,
       selectedWebcamSegmentIndex: null,
+      // Load caption data from project if available
+      captionSegments: project?.captionSegments ?? [],
+      captionSettings: project?.captions ?? get().captionSettings,
     });
 
     // Save video project path to session storage for F5 persistence
@@ -139,7 +142,7 @@ export const createProjectSlice: SliceCreator<ProjectSlice> = (set, get) => ({
   },
 
   saveProject: async () => {
-    const { project } = get();
+    const { project, captionSegments, captionSettings } = get();
     if (!project) {
       videoEditorLogger.warn('No project to save');
       return;
@@ -148,8 +151,14 @@ export const createProjectSlice: SliceCreator<ProjectSlice> = (set, get) => ({
     set({ isSaving: true });
 
     try {
+      // Include caption data in the project before saving
+      const projectWithCaptions = {
+        ...project,
+        captions: captionSettings,
+        captionSegments: captionSegments,
+      };
       // Sanitize project to ensure all ms values are integers (Rust expects u64)
-      const sanitizedProject = sanitizeProjectForSave(project);
+      const sanitizedProject = sanitizeProjectForSave(projectWithCaptions);
       await invoke('save_video_project', { project: sanitizedProject });
       const savedAt = new Date().toISOString();
       set({ isSaving: false, lastSavedAt: savedAt });

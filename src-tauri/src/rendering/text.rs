@@ -13,6 +13,17 @@ const BASE_TEXT_HEIGHT: f64 = 0.2;
 /// Maximum font size in pixels to prevent performance issues.
 const MAX_FONT_SIZE_PX: f32 = 256.0;
 
+/// Word-level color information for highlighting.
+#[derive(Debug, Clone)]
+pub struct WordColor {
+    /// Start byte offset in the text.
+    pub start: usize,
+    /// End byte offset in the text.
+    pub end: usize,
+    /// Color for this word as RGBA (0.0-1.0).
+    pub color: [f32; 4],
+}
+
 /// Prepared text segment ready for GPU rendering.
 #[derive(Debug, Clone)]
 pub struct PreparedText {
@@ -32,6 +43,12 @@ pub struct PreparedText {
     pub italic: bool,
     /// Opacity (0.0-1.0), used for fade animations.
     pub opacity: f32,
+    /// Optional background color as RGBA (0.0-1.0). None = transparent.
+    pub background_color: Option<[f32; 4]>,
+    /// Optional text outline/shadow for readability (when no background).
+    pub text_shadow: bool,
+    /// Optional per-word colors for highlighting effects.
+    pub word_colors: Option<Vec<WordColor>>,
 }
 
 /// Parse a hex color string to RGBA values.
@@ -126,6 +143,9 @@ pub fn prepare_texts(
             font_weight: segment.font_weight,
             italic: segment.italic,
             opacity,
+            background_color: None, // Text segments don't have backgrounds
+            text_shadow: false,
+            word_colors: None, // Text segments don't use word highlighting
         });
     }
 

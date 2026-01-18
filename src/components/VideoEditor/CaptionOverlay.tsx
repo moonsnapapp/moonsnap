@@ -15,7 +15,6 @@ interface CaptionOverlayProps {
 }
 
 export const CaptionOverlay = memo(function CaptionOverlay({
-  containerWidth,
   containerHeight,
 }: CaptionOverlayProps) {
   const captionSegments = useVideoEditorStore((s) => s.captionSegments);

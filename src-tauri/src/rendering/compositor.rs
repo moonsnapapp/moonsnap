@@ -859,7 +859,37 @@ impl Compositor {
                 texts,
             );
 
-            // Render text in a third pass
+            // Render backgrounds first (if any)
+            if self.text_layer.has_backgrounds() {
+                let mut encoder =
+                    self.device
+                        .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                            label: Some("Background Encoder"),
+                        });
+
+                {
+                    let mut bg_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                        label: Some("Background Pass"),
+                        color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                            view: &output_view,
+                            resolve_target: None,
+                            ops: wgpu::Operations {
+                                load: wgpu::LoadOp::Load,
+                                store: wgpu::StoreOp::Store,
+                            },
+                        })],
+                        depth_stencil_attachment: None,
+                        timestamp_writes: None,
+                        occlusion_query_set: None,
+                    });
+
+                    self.text_layer.render_backgrounds(&mut bg_pass);
+                }
+
+                self.queue.submit(Some(encoder.finish()));
+            }
+
+            // Render text on top
             if self.text_layer.has_texts() {
                 let mut encoder =
                     self.device
@@ -961,7 +991,37 @@ impl Compositor {
             texts,
         );
 
-        // Render text on transparent background
+        // Render backgrounds first (if any)
+        if self.text_layer.has_backgrounds() {
+            let mut encoder = self
+                .device
+                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                    label: Some("Text Background Encoder"),
+                });
+
+            {
+                let mut bg_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: Some("Text Background Pass"),
+                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                        view: &output_view,
+                        resolve_target: None,
+                        ops: wgpu::Operations {
+                            load: wgpu::LoadOp::Load,
+                            store: wgpu::StoreOp::Store,
+                        },
+                    })],
+                    depth_stencil_attachment: None,
+                    timestamp_writes: None,
+                    occlusion_query_set: None,
+                });
+
+                self.text_layer.render_backgrounds(&mut bg_pass);
+            }
+
+            self.queue.submit(Some(encoder.finish()));
+        }
+
+        // Render text on top
         if self.text_layer.has_texts() {
             let mut encoder = self
                 .device
@@ -976,8 +1036,7 @@ impl Compositor {
                         view: &output_view,
                         resolve_target: None,
                         ops: wgpu::Operations {
-                            // Clear to transparent (0, 0, 0, 0)
-                            load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
+                            load: wgpu::LoadOp::Load,
                             store: wgpu::StoreOp::Store,
                         },
                     })],

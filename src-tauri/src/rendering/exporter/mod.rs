@@ -21,6 +21,7 @@ use std::path::{Path, PathBuf};
 
 use tauri::{AppHandle, Manager};
 
+use super::caption_layer::prepare_captions;
 use super::compositor::Compositor;
 use super::cursor::{composite_cursor, CursorInterpolator};
 use super::renderer::Renderer;
@@ -463,13 +464,25 @@ pub async fn export_video_gpu(
         // Prepare text overlays for this frame
         // Time is in seconds, output_size uses XY struct
         let frame_time_secs = relative_time_ms as f64 / 1000.0;
-        let prepared_texts = prepare_texts(
+        let mut prepared_texts = prepare_texts(
             XY::new(composition_w, composition_h),
             frame_time_secs,
             &project.text.segments,
         );
 
-        // Render frame on GPU (with text overlays)
+        // Prepare caption overlays for this frame (if enabled)
+        if project.captions.enabled {
+            let caption_texts = prepare_captions(
+                &project.caption_segments,
+                &project.captions,
+                frame_time_secs as f32,
+                composition_w as f32,
+                composition_h as f32,
+            );
+            prepared_texts.extend(caption_texts);
+        }
+
+        // Render frame on GPU (with text and caption overlays)
         let output_texture = compositor
             .composite_with_text(
                 &renderer,
