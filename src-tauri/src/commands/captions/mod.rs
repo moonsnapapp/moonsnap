@@ -176,3 +176,240 @@ pub async fn delete_whisper_model(app: AppHandle, model_name: String) -> Result<
 
     Ok(())
 }
+
+// ============================================================================
+// Transcription
+// ============================================================================
+
+use whisper_rs::{FullParams, SamplingStrategy, WhisperContext, WhisperContextParameters};
+
+/// Load or get cached Whisper context.
+async fn get_whisper_context(model_path: &str) -> Result<Arc<WhisperContext>, String> {
+    let mut ctx_guard = WHISPER_CONTEXT.lock().await;
+
+    if let Some(ref ctx) = *ctx_guard {
+        return Ok(ctx.clone());
+    }
+
+    log::info!("Loading Whisper model: {}", model_path);
+
+    let ctx = WhisperContext::new_with_params(model_path, WhisperContextParameters::default())
+        .map_err(|e| format!("Failed to load model: {}", e))?;
+
+    let ctx_arc = Arc::new(ctx);
+    *ctx_guard = Some(ctx_arc.clone());
+
+    Ok(ctx_arc)
+}
+
+/// Check if a token is a special Whisper token that should be filtered.
+fn is_special_token(text: &str) -> bool {
+    let trimmed = text.trim();
+    trimmed.is_empty()
+        || trimmed.contains('[')
+        || trimmed.contains(']')
+        || trimmed.contains("_TT_")
+        || trimmed.contains("_BEG_")
+        || trimmed.contains("<|")
+}
+
+/// Process audio with Whisper and return caption segments.
+fn process_with_whisper(
+    samples: &[f32],
+    context: Arc<WhisperContext>,
+    language: &str,
+) -> Result<Vec<CaptionSegment>, String> {
+    log::info!(
+        "Processing {} samples ({:.1}s)",
+        samples.len(),
+        samples.len() as f32 / WHISPER_SAMPLE_RATE as f32
+    );
+
+    let mut params = FullParams::new(SamplingStrategy::Greedy { best_of: 1 });
+    params.set_translate(false);
+    params.set_print_special(false);
+    params.set_print_progress(false);
+    params.set_print_realtime(false);
+    params.set_token_timestamps(true);
+    params.set_language(Some(if language == "auto" { "auto" } else { language }));
+    params.set_max_len(i32::MAX);
+
+    let mut state = context
+        .create_state()
+        .map_err(|e| format!("Failed to create state: {}", e))?;
+
+    state
+        .full(params, samples)
+        .map_err(|e| format!("Transcription failed: {}", e))?;
+
+    let num_segments = state
+        .full_n_segments()
+        .map_err(|e| format!("Failed to get segments: {}", e))?;
+
+    log::info!("Found {} raw segments", num_segments);
+
+    let mut segments = Vec::new();
+
+    for i in 0..num_segments {
+        let segment_text = state
+            .full_get_segment_text(i)
+            .map_err(|e| format!("Failed to get text: {}", e))?;
+
+        let start_t = state.full_get_segment_t0(i).unwrap_or(0) as f32 / 100.0;
+        let end_t = state.full_get_segment_t1(i).unwrap_or(0) as f32 / 100.0;
+
+        // Extract words with timing
+        let num_tokens = state.full_n_tokens(i).unwrap_or(0);
+        let mut words = Vec::new();
+        let mut current_word = String::new();
+        let mut word_start: Option<f32> = None;
+        let mut word_end = start_t;
+
+        for t in 0..num_tokens {
+            let token_text = state.full_get_token_text(i, t).unwrap_or_default();
+
+            if is_special_token(&token_text) {
+                continue;
+            }
+
+            if let Ok(data) = state.full_get_token_data(i, t) {
+                let t0 = data.t0 as f32 / 100.0;
+                let t1 = data.t1 as f32 / 100.0;
+
+                if token_text.starts_with(' ') || token_text.starts_with('\n') {
+                    // Save previous word
+                    if !current_word.trim().is_empty() {
+                        if let Some(ws) = word_start {
+                            words.push(CaptionWord {
+                                text: current_word.trim().to_string(),
+                                start: ws,
+                                end: word_end,
+                            });
+                        }
+                    }
+                    current_word = token_text.trim().to_string();
+                    word_start = Some(t0);
+                } else {
+                    if word_start.is_none() {
+                        word_start = Some(t0);
+                    }
+                    current_word.push_str(&token_text);
+                }
+                word_end = t1;
+            }
+        }
+
+        // Save final word
+        if !current_word.trim().is_empty() {
+            if let Some(ws) = word_start {
+                words.push(CaptionWord {
+                    text: current_word.trim().to_string(),
+                    start: ws,
+                    end: word_end,
+                });
+            }
+        }
+
+        if words.is_empty() {
+            continue;
+        }
+
+        // Split into chunks of max 6 words per segment
+        const MAX_WORDS: usize = 6;
+        for (chunk_idx, chunk) in words.chunks(MAX_WORDS).enumerate() {
+            let chunk_text = chunk
+                .iter()
+                .map(|w| w.text.clone())
+                .collect::<Vec<_>>()
+                .join(" ");
+            let chunk_start = chunk.first().map(|w| w.start).unwrap_or(start_t);
+            let chunk_end = chunk.last().map(|w| w.end).unwrap_or(end_t);
+
+            segments.push(CaptionSegment {
+                id: format!("segment-{}-{}", i, chunk_idx),
+                start: chunk_start,
+                end: chunk_end,
+                text: chunk_text,
+                words: chunk.to_vec(),
+            });
+        }
+    }
+
+    log::info!("Transcription complete: {} segments", segments.len());
+    Ok(segments)
+}
+
+/// Transcribe audio from a video file.
+#[tauri::command]
+pub async fn transcribe_video(
+    app: AppHandle,
+    video_path: String,
+    model_name: String,
+    language: String,
+) -> Result<CaptionData, String> {
+    log::info!("Transcribing: {} with model: {}", video_path, model_name);
+
+    // Check model exists
+    let model_info = check_whisper_model(app.clone(), model_name.clone()).await?;
+    let model_path = model_info.path.ok_or("Model not downloaded")?;
+
+    // Emit progress: extracting audio
+    let _ = app.emit(
+        "transcription-progress",
+        TranscriptionProgress {
+            stage: "extracting_audio".to_string(),
+            progress: 0.0,
+            message: "Extracting audio...".to_string(),
+        },
+    );
+
+    // Extract audio to temp file
+    let temp_dir = tempfile::tempdir().map_err(|e| format!("Failed to create temp dir: {}", e))?;
+    let audio_path = temp_dir.path().join("audio.wav");
+
+    let video_path_clone = video_path.clone();
+    let audio_path_clone = audio_path.clone();
+
+    tokio::task::spawn_blocking(move || {
+        audio::extract_audio_for_whisper(std::path::Path::new(&video_path_clone), &audio_path_clone)
+    })
+    .await
+    .map_err(|e| format!("Task error: {}", e))??;
+
+    // Emit progress: transcribing
+    let _ = app.emit(
+        "transcription-progress",
+        TranscriptionProgress {
+            stage: "transcribing".to_string(),
+            progress: 50.0,
+            message: "Transcribing audio...".to_string(),
+        },
+    );
+
+    // Load audio samples
+    let samples =
+        audio::load_wav_as_f32(&audio_path).map_err(|e| format!("Failed to load audio: {}", e))?;
+
+    // Load Whisper and transcribe
+    let context = get_whisper_context(&model_path).await?;
+
+    let segments =
+        tokio::task::spawn_blocking(move || process_with_whisper(&samples, context, &language))
+            .await
+            .map_err(|e| format!("Task error: {}", e))??;
+
+    // Emit progress: complete
+    let _ = app.emit(
+        "transcription-progress",
+        TranscriptionProgress {
+            stage: "complete".to_string(),
+            progress: 100.0,
+            message: "Transcription complete".to_string(),
+        },
+    );
+
+    Ok(CaptionData {
+        segments,
+        settings: CaptionSettings::default(),
+    })
+}
