@@ -413,3 +413,53 @@ pub async fn transcribe_video(
         settings: CaptionSettings::default(),
     })
 }
+
+// ============================================================================
+// Caption Persistence
+// ============================================================================
+
+/// Get the captions file path for a video project.
+fn get_captions_path(video_path: &str) -> PathBuf {
+    let video_path = PathBuf::from(video_path);
+    let parent = video_path.parent().unwrap_or(&video_path);
+    let stem = video_path.file_stem().unwrap_or_default();
+    parent.join(format!("{}-captions.json", stem.to_string_lossy()))
+}
+
+/// Save caption data to a JSON file.
+#[tauri::command]
+pub async fn save_caption_data(video_path: String, data: CaptionData) -> Result<(), String> {
+    let captions_path = get_captions_path(&video_path);
+
+    log::info!("Saving captions to: {:?}", captions_path);
+
+    let json = serde_json::to_string_pretty(&data)
+        .map_err(|e| format!("Failed to serialize captions: {}", e))?;
+
+    tokio::fs::write(&captions_path, json)
+        .await
+        .map_err(|e| format!("Failed to write captions file: {}", e))?;
+
+    Ok(())
+}
+
+/// Load caption data from a JSON file.
+#[tauri::command]
+pub async fn load_caption_data(video_path: String) -> Result<Option<CaptionData>, String> {
+    let captions_path = get_captions_path(&video_path);
+
+    if !captions_path.exists() {
+        return Ok(None);
+    }
+
+    log::info!("Loading captions from: {:?}", captions_path);
+
+    let json = tokio::fs::read_to_string(&captions_path)
+        .await
+        .map_err(|e| format!("Failed to read captions file: {}", e))?;
+
+    let data: CaptionData =
+        serde_json::from_str(&json).map_err(|e| format!("Failed to parse captions: {}", e))?;
+
+    Ok(Some(data))
+}
