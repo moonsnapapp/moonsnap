@@ -12,6 +12,8 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use ts_rs::TS;
 
+use crate::commands::captions::CaptionSettings;
+
 // ============================================================================
 // Video Project
 // ============================================================================
@@ -50,6 +52,9 @@ pub struct VideoProject {
     /// Mask/blur region configuration.
     #[serde(default)]
     pub mask: MaskConfig,
+    /// Caption/transcription configuration.
+    #[serde(default)]
+    pub captions: CaptionSettings,
 }
 
 /// Source files for a video project.
@@ -1351,6 +1356,7 @@ impl VideoProject {
             scene: SceneConfig::default(),
             text: TextConfig::default(),
             mask: MaskConfig::default(),
+            captions: CaptionSettings::default(),
         }
     }
 
