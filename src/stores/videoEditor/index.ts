@@ -8,6 +8,7 @@ import { createSegmentsSlice } from './segmentsSlice';
 import { createExportSlice } from './exportSlice';
 import { createProjectSlice } from './projectSlice';
 import { createGPUEditorSlice } from './gpuEditorSlice';
+import { createCaptionSlice } from './captionSlice';
 
 // Import and re-export types
 import type { VideoEditorState } from './types';
@@ -20,6 +21,7 @@ export type { SegmentsSlice } from './segmentsSlice';
 export type { ExportSlice } from './exportSlice';
 export type { ProjectSlice } from './projectSlice';
 export type { GPUEditorSlice } from './gpuEditorSlice';
+export type { CaptionSlice } from './captionSlice';
 
 // Type alias for the store
 export type VideoEditorStore = StoreApi<VideoEditorState>;
@@ -36,6 +38,7 @@ export const useVideoEditorStore = create<VideoEditorState>()(
       ...createExportSlice(...a),
       ...createProjectSlice(...a),
       ...createGPUEditorSlice(...a),
+      ...createCaptionSlice(...a),
     }),
     { name: 'VideoEditorStore', enabled: process.env.NODE_ENV === 'development' }
   )
@@ -45,6 +48,7 @@ export const useVideoEditorStore = create<VideoEditorState>()(
 export { generateZoomRegionId } from './segmentsSlice';
 export { sanitizeProjectForSave } from './projectSlice';
 export { DEFAULT_TIMELINE_ZOOM } from './timelineSlice';
+export { DEFAULT_CAPTION_SETTINGS } from './captionSlice';
 
 /**
  * Format milliseconds as timecode (MM:SS:FF at 30fps)

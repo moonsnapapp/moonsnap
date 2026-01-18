@@ -47,6 +47,7 @@ import type { SegmentsSlice } from './segmentsSlice';
 import type { ExportSlice } from './exportSlice';
 import type { ProjectSlice } from './projectSlice';
 import type { GPUEditorSlice } from './gpuEditorSlice';
+import type { CaptionSlice } from './captionSlice';
 
 /**
  * Combined VideoEditorState type from all slices
@@ -56,7 +57,8 @@ export type VideoEditorState = PlaybackSlice &
   SegmentsSlice &
   ExportSlice &
   ProjectSlice &
-  GPUEditorSlice;
+  GPUEditorSlice &
+  CaptionSlice;
 
 /**
  * Slice creator type for creating slice with access to full state
