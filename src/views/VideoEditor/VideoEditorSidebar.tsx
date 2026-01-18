@@ -13,6 +13,7 @@ import { PositionGrid } from './PositionGrid';
 import { ZoomRegionConfig } from './ZoomRegionConfig';
 import { MaskSegmentConfig } from './MaskSegmentConfig';
 import { TextSegmentConfig } from './TextSegmentConfig';
+import { CaptionPanel } from './CaptionPanel';
 import type { WebcamOverlayShape, AspectRatio, ExportPreset, SceneMode, VideoProject } from '../../types';
 
 export interface VideoEditorSidebarProps {
@@ -20,7 +21,7 @@ export interface VideoEditorSidebarProps {
   onOpenCropDialog: () => void;
 }
 
-type PropertiesTab = 'project' | 'cursor' | 'webcam' | 'background' | 'export';
+type PropertiesTab = 'project' | 'cursor' | 'webcam' | 'captions' | 'background' | 'export';
 
 export function VideoEditorSidebar({ project, onOpenCropDialog }: VideoEditorSidebarProps) {
   const {
@@ -91,6 +92,16 @@ export function VideoEditorSidebar({ project, onOpenCropDialog }: VideoEditorSid
             Webcam
           </button>
         )}
+        <button
+          onClick={() => setActiveTab('captions')}
+          className={`flex-shrink-0 px-2.5 py-2 text-[11px] font-medium transition-colors whitespace-nowrap ${
+            activeTab === 'captions'
+              ? 'text-[var(--ink-black)] border-b-2 border-[var(--coral-400)] bg-[var(--coral-50)]'
+              : 'text-[var(--ink-muted)] hover:text-[var(--ink-dark)] hover:bg-[var(--glass-highlight)]'
+          }`}
+        >
+          Captions
+        </button>
         <button
           onClick={() => setActiveTab('background')}
           className={`flex-shrink-0 px-2.5 py-2 text-[11px] font-medium transition-colors whitespace-nowrap ${
@@ -780,6 +791,13 @@ export function VideoEditorSidebar({ project, onOpenCropDialog }: VideoEditorSid
                 {project.webcam.visibilitySegments.length} segment{project.webcam.visibilitySegments.length !== 1 ? 's' : ''}
               </p>
             </div>
+          </div>
+        )}
+
+        {/* Captions Tab */}
+        {activeTab === 'captions' && (
+          <div className="p-4">
+            <CaptionPanel videoPath={project?.sources.screenVideo || null} />
           </div>
         )}
 
