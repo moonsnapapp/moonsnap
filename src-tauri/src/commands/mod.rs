@@ -24,6 +24,7 @@
 //! 2. Register it in `lib.rs` invoke_handler (commands can't be re-exported)
 //! 3. Run `cargo test --lib` to generate TypeScript types if using `ts-rs`
 
+pub mod captions;
 pub mod capture;
 pub mod capture_overlay;
 pub mod capture_settings;

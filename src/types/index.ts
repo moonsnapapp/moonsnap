@@ -449,6 +449,17 @@ export type {
   RenderedFrame,
 } from './generated';
 
+// Caption/transcription types
+export type {
+  CaptionWord,
+  CaptionSegment,
+  CaptionSettings,
+  CaptionData,
+  WhisperModelInfo,
+  DownloadProgress,
+  TranscriptionProgress,
+} from './generated';
+
 // Import Rust type for extension
 import type { RecordingState as RustRecordingState } from './generated';
 

@@ -115,3 +115,12 @@ export type { EditorInstanceInfo } from './EditorInstanceInfo';
 export type { PlaybackEvent } from './PlaybackEvent';
 export type { PlaybackState } from './PlaybackState';
 export type { RenderedFrame } from './RenderedFrame';
+
+// Caption/transcription types
+export type { CaptionWord } from './CaptionWord';
+export type { CaptionSegment } from './CaptionSegment';
+export type { CaptionSettings } from './CaptionSettings';
+export type { CaptionData } from './CaptionData';
+export type { WhisperModelInfo } from './WhisperModelInfo';
+export type { DownloadProgress } from './DownloadProgress';
+export type { TranscriptionProgress } from './TranscriptionProgress';
