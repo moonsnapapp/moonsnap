@@ -417,8 +417,12 @@ pub async fn transcribe_video(
 
     let video_path_pb = PathBuf::from(&video_path);
 
+    // Create temp directory here so it stays alive until we're done with the audio file
+    let temp_dir = tempfile::tempdir().map_err(|e| format!("Failed to create temp dir: {}", e))?;
+    let temp_audio = temp_dir.path().join("audio.wav");
+
     // First, look for separate audio files (SnapIt stores audio separately)
-    let audio_path = if let Some(project_audio) = find_project_audio(&video_path_pb) {
+    if let Some(project_audio) = find_project_audio(&video_path_pb) {
         // Emit progress: using project audio
         let _ = app.emit(
             "transcription-progress",
@@ -440,9 +444,6 @@ pub async fn transcribe_video(
             },
         );
 
-        let temp_dir =
-            tempfile::tempdir().map_err(|e| format!("Failed to create temp dir: {}", e))?;
-        let temp_audio = temp_dir.path().join("audio.wav");
         let project_audio_clone = project_audio.clone();
         let temp_audio_clone = temp_audio.clone();
 
@@ -451,8 +452,6 @@ pub async fn transcribe_video(
         })
         .await
         .map_err(|e| format!("Task error: {}", e))??;
-
-        temp_audio
     } else {
         // No separate audio - try extracting from video
         let _ = app.emit(
@@ -464,9 +463,6 @@ pub async fn transcribe_video(
             },
         );
 
-        let temp_dir =
-            tempfile::tempdir().map_err(|e| format!("Failed to create temp dir: {}", e))?;
-        let temp_audio = temp_dir.path().join("audio.wav");
         let video_path_clone = video_path.clone();
         let temp_audio_clone = temp_audio.clone();
 
@@ -478,9 +474,10 @@ pub async fn transcribe_video(
         })
         .await
         .map_err(|e| format!("Task error: {}", e))??;
+    }
 
-        temp_audio
-    };
+    // temp_dir is still in scope here, so the audio file still exists
+    let audio_path = temp_audio;
 
     // Emit progress: transcribing
     let _ = app.emit(
