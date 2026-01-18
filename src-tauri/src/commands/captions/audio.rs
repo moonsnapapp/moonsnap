@@ -5,7 +5,54 @@
 use std::path::Path;
 use std::process::Stdio;
 
-use crate::commands::storage::ffmpeg::{create_hidden_command, find_ffmpeg};
+use crate::commands::storage::ffmpeg::{create_hidden_command, find_ffmpeg, find_ffprobe};
+
+/// Check if a video file contains an audio stream.
+///
+/// # Arguments
+/// * `video_path` - Path to the video file
+///
+/// # Returns
+/// * `Ok(true)` if the video has at least one audio stream
+/// * `Ok(false)` if no audio stream is found
+/// * `Err(String)` if probing failed
+pub fn video_has_audio(video_path: &Path) -> Result<bool, String> {
+    // Try ffprobe first, fall back to ffmpeg if not available
+    if let Some(ffprobe_path) = find_ffprobe() {
+        let output = create_hidden_command(&ffprobe_path)
+            .args([
+                "-v",
+                "error",
+                "-select_streams",
+                "a:0",
+                "-show_entries",
+                "stream=codec_type",
+                "-of",
+                "csv=p=0",
+                &video_path.to_string_lossy(),
+            ])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .output()
+            .map_err(|e| format!("Failed to run ffprobe: {}", e))?;
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        return Ok(stdout.trim().contains("audio"));
+    }
+
+    // Fallback: use ffmpeg -i and check for audio stream in output
+    let ffmpeg_path = find_ffmpeg().ok_or_else(|| "ffmpeg not found".to_string())?;
+    let output = create_hidden_command(&ffmpeg_path)
+        .args(["-i", &video_path.to_string_lossy()])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .map_err(|e| format!("Failed to run ffmpeg: {}", e))?;
+
+    // ffmpeg writes stream info to stderr
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    Ok(stderr.contains("Audio:") || stderr.contains("Stream #") && stderr.contains("audio"))
+}
 
 /// Extract audio from a video file and convert to 16kHz mono WAV for Whisper.
 ///
@@ -18,6 +65,14 @@ use crate::commands::storage::ffmpeg::{create_hidden_command, find_ffmpeg};
 /// * `Err(String)` with error message if failed
 pub fn extract_audio_for_whisper(video_path: &Path, output_path: &Path) -> Result<(), String> {
     log::info!("Extracting audio from: {:?}", video_path);
+
+    // Check if video has audio stream first
+    let has_audio = video_has_audio(video_path)?;
+    if !has_audio {
+        return Err(
+            "This video does not contain an audio track. Transcription requires audio.".to_string(),
+        );
+    }
 
     let ffmpeg_path = find_ffmpeg().ok_or_else(|| "ffmpeg not found".to_string())?;
 
@@ -53,6 +108,56 @@ pub fn extract_audio_for_whisper(video_path: &Path, output_path: &Path) -> Resul
     }
 
     log::info!("Audio extracted to: {:?}", output_path);
+    Ok(())
+}
+
+/// Convert any audio file to 16kHz mono WAV for Whisper.
+///
+/// Unlike `extract_audio_for_whisper`, this function doesn't check for audio streams
+/// in video files - it directly converts the input audio file.
+///
+/// # Arguments
+/// * `input_path` - Path to the input audio file (WAV, MP3, AAC, etc.)
+/// * `output_path` - Path for the output WAV file
+///
+/// # Returns
+/// * `Ok(())` if successful
+/// * `Err(String)` with error message if failed
+pub fn convert_to_whisper_format(input_path: &Path, output_path: &Path) -> Result<(), String> {
+    log::info!("Converting audio to Whisper format: {:?}", input_path);
+
+    let ffmpeg_path = find_ffmpeg().ok_or_else(|| "ffmpeg not found".to_string())?;
+
+    // Use ffmpeg to convert audio to 16kHz mono PCM s16le WAV
+    // -y: overwrite output
+    // -i: input file
+    // -acodec pcm_s16le: 16-bit signed little-endian PCM
+    // -ar 16000: 16kHz sample rate (Whisper requirement)
+    // -ac 1: mono (single channel)
+    let output = create_hidden_command(&ffmpeg_path)
+        .args([
+            "-y",
+            "-i",
+            &input_path.to_string_lossy(),
+            "-acodec",
+            "pcm_s16le",
+            "-ar",
+            "16000",
+            "-ac",
+            "1",
+            &output_path.to_string_lossy(),
+        ])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .map_err(|e| format!("Failed to run ffmpeg: {}", e))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("Audio conversion failed: {}", stderr));
+    }
+
+    log::info!("Audio converted to: {:?}", output_path);
     Ok(())
 }
 

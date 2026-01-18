@@ -339,6 +339,68 @@ fn process_with_whisper(
     Ok(segments)
 }
 
+/// Find the audio file for transcription.
+///
+/// SnapIt stores audio separately from video:
+/// - system.wav: System audio (loopback)
+/// - microphone.wav: Microphone audio
+///
+/// This function looks for these files in the project folder and
+/// falls back to extracting audio from the video if none are found.
+fn find_project_audio(video_path: &std::path::Path) -> Option<PathBuf> {
+    let parent = video_path.parent()?;
+
+    // Check for system audio (most common for screen recordings)
+    let system_audio = parent.join("system.wav");
+    if system_audio.exists() {
+        log::info!("Found system audio: {:?}", system_audio);
+        return Some(system_audio);
+    }
+
+    // Check for microphone audio
+    let mic_audio = parent.join("microphone.wav");
+    if mic_audio.exists() {
+        log::info!("Found microphone audio: {:?}", mic_audio);
+        return Some(mic_audio);
+    }
+
+    // Try to load project.json for audio paths
+    let project_json = parent.join("project.json");
+    if project_json.exists() {
+        if let Ok(content) = std::fs::read_to_string(&project_json) {
+            if let Ok(project) = serde_json::from_str::<serde_json::Value>(&content) {
+                // Check sources.system_audio
+                if let Some(system) = project
+                    .get("sources")
+                    .and_then(|s| s.get("system_audio"))
+                    .and_then(|v| v.as_str())
+                {
+                    let path = parent.join(system);
+                    if path.exists() {
+                        log::info!("Found system audio from project.json: {:?}", path);
+                        return Some(path);
+                    }
+                }
+
+                // Check sources.microphone_audio
+                if let Some(mic) = project
+                    .get("sources")
+                    .and_then(|s| s.get("microphone_audio"))
+                    .and_then(|v| v.as_str())
+                {
+                    let path = parent.join(mic);
+                    if path.exists() {
+                        log::info!("Found microphone audio from project.json: {:?}", path);
+                        return Some(path);
+                    }
+                }
+            }
+        }
+    }
+
+    None
+}
+
 /// Transcribe audio from a video file.
 #[tauri::command]
 pub async fn transcribe_video(
@@ -353,28 +415,72 @@ pub async fn transcribe_video(
     let model_info = check_whisper_model(app.clone(), model_name.clone()).await?;
     let model_path = model_info.path.ok_or("Model not downloaded")?;
 
-    // Emit progress: extracting audio
-    let _ = app.emit(
-        "transcription-progress",
-        TranscriptionProgress {
-            stage: "extracting_audio".to_string(),
-            progress: 0.0,
-            message: "Extracting audio...".to_string(),
-        },
-    );
+    let video_path_pb = PathBuf::from(&video_path);
 
-    // Extract audio to temp file
-    let temp_dir = tempfile::tempdir().map_err(|e| format!("Failed to create temp dir: {}", e))?;
-    let audio_path = temp_dir.path().join("audio.wav");
+    // First, look for separate audio files (SnapIt stores audio separately)
+    let audio_path = if let Some(project_audio) = find_project_audio(&video_path_pb) {
+        // Emit progress: using project audio
+        let _ = app.emit(
+            "transcription-progress",
+            TranscriptionProgress {
+                stage: "loading_audio".to_string(),
+                progress: 10.0,
+                message: "Loading audio file...".to_string(),
+            },
+        );
 
-    let video_path_clone = video_path.clone();
-    let audio_path_clone = audio_path.clone();
+        // Always convert to 16kHz mono WAV for Whisper
+        // Even WAV files might be at different sample rates (e.g., 48kHz)
+        let _ = app.emit(
+            "transcription-progress",
+            TranscriptionProgress {
+                stage: "converting_audio".to_string(),
+                progress: 20.0,
+                message: "Converting audio to 16kHz...".to_string(),
+            },
+        );
 
-    tokio::task::spawn_blocking(move || {
-        audio::extract_audio_for_whisper(std::path::Path::new(&video_path_clone), &audio_path_clone)
-    })
-    .await
-    .map_err(|e| format!("Task error: {}", e))??;
+        let temp_dir =
+            tempfile::tempdir().map_err(|e| format!("Failed to create temp dir: {}", e))?;
+        let temp_audio = temp_dir.path().join("audio.wav");
+        let project_audio_clone = project_audio.clone();
+        let temp_audio_clone = temp_audio.clone();
+
+        tokio::task::spawn_blocking(move || {
+            audio::convert_to_whisper_format(&project_audio_clone, &temp_audio_clone)
+        })
+        .await
+        .map_err(|e| format!("Task error: {}", e))??;
+
+        temp_audio
+    } else {
+        // No separate audio - try extracting from video
+        let _ = app.emit(
+            "transcription-progress",
+            TranscriptionProgress {
+                stage: "extracting_audio".to_string(),
+                progress: 0.0,
+                message: "Extracting audio from video...".to_string(),
+            },
+        );
+
+        let temp_dir =
+            tempfile::tempdir().map_err(|e| format!("Failed to create temp dir: {}", e))?;
+        let temp_audio = temp_dir.path().join("audio.wav");
+        let video_path_clone = video_path.clone();
+        let temp_audio_clone = temp_audio.clone();
+
+        tokio::task::spawn_blocking(move || {
+            audio::extract_audio_for_whisper(
+                std::path::Path::new(&video_path_clone),
+                &temp_audio_clone,
+            )
+        })
+        .await
+        .map_err(|e| format!("Task error: {}", e))??;
+
+        temp_audio
+    };
 
     // Emit progress: transcribing
     let _ = app.emit(
