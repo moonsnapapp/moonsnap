@@ -322,6 +322,12 @@ pub fn run() {
             commands::capture_overlay::start_highlight_preview,
             commands::capture_overlay::stop_highlight_preview,
             commands::capture_overlay::is_highlight_preview_active,
+            // Caption/transcription commands
+            commands::captions::check_whisper_model,
+            commands::captions::list_whisper_models,
+            commands::captions::download_whisper_model,
+            commands::captions::delete_whisper_model,
+            commands::captions::transcribe_video,
         ])
         .setup(|app| {
             // Initialize logging system first
