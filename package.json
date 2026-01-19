@@ -63,7 +63,7 @@
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
     "date-fns": "^4.1.0",
-    "konva": "^10.0.12",
+    "konva": "^10.2.0",
     "lucide-react": "^0.562.0",
     "mediabunny": "^1.27.3",
     "postcss": "^8.5.6",
