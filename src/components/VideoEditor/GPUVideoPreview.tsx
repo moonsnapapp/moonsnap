@@ -184,10 +184,11 @@ const SceneModeRenderer = memo(function SceneModeRenderer({
 
   return (
     <>
-      {/* Shadow wrapper */}
+      {/* Shadow wrapper - position:relative for caption overlay positioning */}
       <div
         className="flex items-center justify-center"
         style={{
+          position: 'relative',
           width: '100%',
           height: '100%',
           ...shadowStyle,
@@ -281,17 +282,18 @@ const SceneModeRenderer = memo(function SceneModeRenderer({
           />
         )}
 
-        {/* Caption overlay - transcribed speech */}
-        {showScreen && containerWidth > 0 && containerHeight > 0 && (
-          <CaptionOverlay
-            containerWidth={containerWidth}
-            containerHeight={containerHeight}
-            videoWidth={videoWidth}
-            videoHeight={videoHeight}
-          />
-        )}
         </div>
       </div>
+
+      {/* Caption overlay - positioned outside zoom container to anchor to composition */}
+      {showScreen && containerWidth > 0 && containerHeight > 0 && (
+        <CaptionOverlay
+          containerWidth={containerWidth}
+          containerHeight={containerHeight}
+          videoWidth={videoWidth}
+          videoHeight={videoHeight}
+        />
+      )}
 
       {/* Fullscreen webcam - outside the frame wrapper */}
       {webcamVideoPath && (
