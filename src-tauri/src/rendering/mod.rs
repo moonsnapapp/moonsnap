@@ -20,6 +20,7 @@ pub mod cursor;
 pub mod decoder;
 pub mod editor_instance;
 pub mod exporter;
+pub mod parity;
 pub mod renderer;
 pub mod renderer_state;
 pub mod scene;
@@ -49,6 +50,7 @@ pub use cursor::{
 pub use decoder::VideoDecoder;
 pub use editor_instance::EditorInstance;
 pub use exporter::export_video_gpu;
+pub use parity::{get_parity_layout, scale_factor, ParityLayout};
 pub use renderer::Renderer;
 pub use renderer_state::RendererState;
 pub use scene::{InterpolatedScene, SceneInterpolator};
