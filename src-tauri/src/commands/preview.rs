@@ -1,5 +1,6 @@
 //! Tauri commands for GPU-rendered preview.
 
+use crate::commands::captions::{CaptionSegment, CaptionSettings};
 use crate::commands::video_recording::video_project::{TextSegment, VideoProject};
 use crate::preview::{
     create_frame_ws, get_preview_instance, remove_preview_instance, PreviewRenderer,
@@ -174,6 +175,27 @@ pub async fn render_text_overlay(
 
     renderer
         .render_text_with_segments(time_ms, width, height, &segments)
+        .await
+}
+
+/// Render caption overlay with segments and settings passed directly.
+/// Uses the same GPU pipeline as export for visual consistency.
+#[command]
+pub async fn render_caption_overlay(
+    state: State<'_, PreviewState>,
+    time_ms: u64,
+    width: u32,
+    height: u32,
+    segments: Vec<CaptionSegment>,
+    settings: CaptionSettings,
+) -> Result<(), String> {
+    let renderer = state.renderer.read().await;
+    let renderer = renderer
+        .as_ref()
+        .ok_or_else(|| "Preview not initialized".to_string())?;
+
+    renderer
+        .render_captions_with_data(time_ms, width, height, &segments, &settings)
         .await
 }
 
@@ -357,5 +379,184 @@ pub async fn destroy_native_text_preview(
     }
 
     log::info!("[NativePreview] Destroyed for window '{}'", label);
+    Ok(())
+}
+
+// =============================================================================
+// Native Caption Preview Commands (zero-latency surface rendering)
+// =============================================================================
+
+/// State for native caption preview surfaces.
+pub struct NativeCaptionPreviewState {
+    /// Preview instances by window label.
+    pub instances: ParkingMutex<HashMap<String, Arc<crate::preview::NativeCaptionPreview>>>,
+}
+
+impl NativeCaptionPreviewState {
+    pub fn new() -> Self {
+        Self {
+            instances: ParkingMutex::new(HashMap::new()),
+        }
+    }
+
+    /// Get a preview instance by window label.
+    pub fn get(&self, label: &str) -> Option<Arc<crate::preview::NativeCaptionPreview>> {
+        self.instances.lock().get(label).cloned()
+    }
+
+    /// Insert a preview instance.
+    pub fn insert(&self, label: String, preview: Arc<crate::preview::NativeCaptionPreview>) {
+        self.instances.lock().insert(label, preview);
+    }
+
+    /// Remove and return a preview instance.
+    pub fn remove(&self, label: &str) -> Option<Arc<crate::preview::NativeCaptionPreview>> {
+        self.instances.lock().remove(label)
+    }
+}
+
+impl Default for NativeCaptionPreviewState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Initialize native caption preview surface for a window.
+///
+/// Creates a child window with wgpu rendering positioned behind the webview.
+/// This provides zero-latency caption rendering without WebSocket overhead.
+#[cfg(windows)]
+#[command]
+pub async fn init_native_caption_preview(
+    window: WebviewWindow,
+    renderer_state: State<'_, RendererState>,
+    native_state: State<'_, NativeCaptionPreviewState>,
+    x: i32,
+    y: i32,
+    width: u32,
+    height: u32,
+) -> Result<(), String> {
+    use raw_window_handle::HasWindowHandle;
+
+    let label = window.label().to_string();
+    log::info!(
+        "[NativeCaptionPreview] Initializing for window '{}' at ({}, {}) {}x{}",
+        label,
+        x,
+        y,
+        width,
+        height
+    );
+
+    // Get parent HWND from Tauri window
+    let hwnd = {
+        let handle = window
+            .window_handle()
+            .map_err(|e| format!("Failed to get window handle: {}", e))?;
+        match handle.as_raw() {
+            raw_window_handle::RawWindowHandle::Win32(h) => h.hwnd.get() as isize,
+            _ => return Err("Expected Win32 window handle".to_string()),
+        }
+    };
+
+    // Get shared renderer
+    let renderer = renderer_state.get_renderer().await?;
+
+    // Create preview instance
+    let preview = crate::preview::NativeCaptionPreview::new(
+        renderer.device().clone(),
+        renderer.queue().clone(),
+    );
+
+    // Initialize surface
+    preview.init_surface(hwnd, x, y, width, height)?;
+
+    // Store instance
+    native_state.insert(label.clone(), Arc::new(preview));
+
+    log::info!("[NativeCaptionPreview] Initialized for window '{}'", label);
+    Ok(())
+}
+
+#[cfg(not(windows))]
+#[command]
+pub async fn init_native_caption_preview(
+    _window: WebviewWindow,
+    _renderer_state: State<'_, RendererState>,
+    _native_state: State<'_, NativeCaptionPreviewState>,
+    _x: i32,
+    _y: i32,
+    _width: u32,
+    _height: u32,
+) -> Result<(), String> {
+    Err("Native caption preview is only supported on Windows".to_string())
+}
+
+/// Resize the native caption preview surface.
+#[command]
+pub async fn resize_native_caption_preview(
+    window: WebviewWindow,
+    native_state: State<'_, NativeCaptionPreviewState>,
+    x: i32,
+    y: i32,
+    width: u32,
+    height: u32,
+) -> Result<(), String> {
+    let label = window.label();
+
+    if let Some(preview) = native_state.get(label) {
+        preview.resize(x, y, width, height);
+    }
+
+    Ok(())
+}
+
+/// Update caption segments and settings for the native preview.
+#[command]
+pub async fn update_native_caption_preview(
+    window: WebviewWindow,
+    native_state: State<'_, NativeCaptionPreviewState>,
+    segments: Vec<CaptionSegment>,
+    settings: CaptionSettings,
+    time_ms: u64,
+) -> Result<(), String> {
+    let label = window.label();
+
+    if let Some(preview) = native_state.get(label) {
+        preview.update_captions(segments, settings, time_ms);
+    }
+
+    Ok(())
+}
+
+/// Update just the time for the native caption preview (for scrubbing).
+#[command]
+pub async fn scrub_native_caption_preview(
+    window: WebviewWindow,
+    native_state: State<'_, NativeCaptionPreviewState>,
+    time_ms: u64,
+) -> Result<(), String> {
+    let label = window.label();
+
+    if let Some(preview) = native_state.get(label) {
+        preview.update_time(time_ms);
+    }
+
+    Ok(())
+}
+
+/// Destroy the native caption preview for a window.
+#[command]
+pub async fn destroy_native_caption_preview(
+    window: WebviewWindow,
+    native_state: State<'_, NativeCaptionPreviewState>,
+) -> Result<(), String> {
+    let label = window.label().to_string();
+
+    if let Some(preview) = native_state.remove(&label) {
+        preview.destroy();
+    }
+
+    log::info!("[NativeCaptionPreview] Destroyed for window '{}'", label);
     Ok(())
 }

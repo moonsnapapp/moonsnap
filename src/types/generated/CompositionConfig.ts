@@ -5,17 +5,25 @@ import type { CompositionMode } from "./CompositionMode";
  * Composition configuration for output canvas.
  * Defines how the cropped video is placed within the output frame.
  */
-export type CompositionConfig = {
+export type CompositionConfig = { 
 /**
  * Composition mode (auto or manual).
  */
-mode: CompositionMode,
+mode: CompositionMode, 
 /**
  * Target aspect ratio for manual mode (width/height, e.g., 1.7778 for 16:9).
  * In auto mode, this is ignored.
  */
-aspectRatio: number | null,
+aspectRatio: number | null, 
 /**
  * Preset aspect ratio name for UI (e.g., "16:9", "1:1").
  */
-aspectPreset: string | null, };
+aspectPreset: string | null, 
+/**
+ * Fixed width for manual mode (if set, overrides aspect_ratio calculation).
+ */
+width: number | null, 
+/**
+ * Fixed height for manual mode (if set, overrides aspect_ratio calculation).
+ */
+height: number | null, };

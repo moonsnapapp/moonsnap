@@ -49,14 +49,15 @@ const ASPECT_PRESETS = [
   { label: 'Original', value: 'original' as const },
 ];
 
-// Composition aspect ratio presets
+// Composition presets - fixed resolutions and aspect ratios
 const COMPOSITION_PRESETS = [
-  { label: 'Auto', value: 'auto', ratio: null, description: 'Match video crop' },
-  { label: '16:9', value: '16:9', ratio: 16 / 9, description: 'Widescreen' },
-  { label: '9:16', value: '9:16', ratio: 9 / 16, description: 'Portrait/TikTok' },
-  { label: '1:1', value: '1:1', ratio: 1, description: 'Square/Instagram' },
-  { label: '4:3', value: '4:3', ratio: 4 / 3, description: 'Standard' },
-  { label: '4:5', value: '4:5', ratio: 4 / 5, description: 'Instagram Portrait' },
+  { label: 'Auto', value: 'auto', ratio: null, width: null, height: null, description: 'Match video crop' },
+  { label: '1080p', value: '1080p', ratio: 16 / 9, width: 1920, height: 1080, description: '1920×1080' },
+  { label: '720p', value: '720p', ratio: 16 / 9, width: 1280, height: 720, description: '1280×720' },
+  { label: '4K', value: '4k', ratio: 16 / 9, width: 3840, height: 2160, description: '3840×2160' },
+  { label: '16:9', value: '16:9', ratio: 16 / 9, width: null, height: null, description: 'Widescreen (fit video)' },
+  { label: '9:16', value: '9:16', ratio: 9 / 16, width: null, height: null, description: 'Portrait/TikTok' },
+  { label: '1:1', value: '1:1', ratio: 1, width: null, height: null, description: 'Square/Instagram' },
 ];
 
 // Snap threshold for aspect ratio detection
@@ -446,6 +447,8 @@ export const CropDialog = memo(function CropDialog({
     mode: 'auto',
     aspectRatio: null,
     aspectPreset: null,
+    width: null,
+    height: null,
   }), []);
 
   // Compute a sensible default crop (centered, 80% of video size)
@@ -659,12 +662,16 @@ export const CropDialog = memo(function CropDialog({
         mode: 'auto',
         aspectRatio: null,
         aspectPreset: null,
+        width: null,
+        height: null,
       });
     } else {
       setComposition({
         mode: 'manual',
         aspectRatio: preset.ratio,
         aspectPreset: preset.value,
+        width: preset.width,
+        height: preset.height,
       });
     }
   }, []);
@@ -674,6 +681,8 @@ export const CropDialog = memo(function CropDialog({
       ...crop,
       enabled: crop.width !== videoWidth || crop.height !== videoHeight || crop.x !== 0 || crop.y !== 0,
     };
+    console.log('[CropDialog] Applying composition:', composition);
+    console.log('[CropDialog] Applying crop:', finalCrop);
     onApply(finalCrop, composition);
     onClose();
   }, [crop, composition, videoWidth, videoHeight, onApply, onClose]);
@@ -758,7 +767,9 @@ export const CropDialog = memo(function CropDialog({
             </ToggleGroup>
             {composition.mode === 'manual' && (
               <p className="text-xs text-[var(--ink-muted)]">
-                Cropped video will be centered within a {composition.aspectPreset} canvas
+                {composition.width && composition.height
+                  ? `Output: ${composition.width}×${composition.height}`
+                  : `Cropped video will be centered within a ${composition.aspectPreset} canvas`}
               </p>
             )}
           </div>

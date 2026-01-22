@@ -14,16 +14,23 @@ use wgpu::{Device, Queue};
 
 use crate::rendering::text::{PreparedText, WordColor};
 
-/// Simple shader for rendering colored rectangles (for text backgrounds).
+/// Shader for rendering rounded rectangles (for text backgrounds).
 const RECT_SHADER: &str = r#"
 struct VertexInput {
     @location(0) position: vec2<f32>,
     @location(1) color: vec4<f32>,
+    @location(2) rect_min: vec2<f32>,
+    @location(3) rect_max: vec2<f32>,
+    @location(4) corner_radius: f32,
 }
 
 struct VertexOutput {
     @builtin(position) position: vec4<f32>,
     @location(0) color: vec4<f32>,
+    @location(1) rect_min: vec2<f32>,
+    @location(2) rect_max: vec2<f32>,
+    @location(3) corner_radius: f32,
+    @location(4) frag_pos: vec2<f32>,
 }
 
 @vertex
@@ -31,27 +38,47 @@ fn vs_main(input: VertexInput) -> VertexOutput {
     var output: VertexOutput;
     output.position = vec4<f32>(input.position, 0.0, 1.0);
     output.color = input.color;
+    output.rect_min = input.rect_min;
+    output.rect_max = input.rect_max;
+    output.corner_radius = input.corner_radius;
+    output.frag_pos = input.position;
     return output;
+}
+
+fn rounded_rect_sdf(p: vec2<f32>, rect_min: vec2<f32>, rect_max: vec2<f32>, radius: f32) -> f32 {
+    let center = (rect_min + rect_max) * 0.5;
+    let half_size = (rect_max - rect_min) * 0.5 - vec2<f32>(radius);
+    let d = abs(p - center) - half_size;
+    return length(max(d, vec2<f32>(0.0))) + min(max(d.x, d.y), 0.0) - radius;
 }
 
 @fragment
 fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
-    return input.color;
+    let dist = rounded_rect_sdf(input.frag_pos, input.rect_min, input.rect_max, input.corner_radius);
+    // Anti-aliased edge - use small fixed threshold for crisp edges
+    let aa = 0.002; // ~2 pixels at 1080p
+    let alpha = 1.0 - smoothstep(-aa, aa, dist);
+    return vec4<f32>(input.color.rgb, input.color.a * alpha);
 }
 "#;
 
-/// Vertex for colored rectangles.
+/// Vertex for rounded rectangles.
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 struct RectVertex {
     position: [f32; 2],
     color: [f32; 4],
+    rect_min: [f32; 2], // NDC coords of rect min
+    rect_max: [f32; 2], // NDC coords of rect max
+    corner_radius: f32, // NDC radius
+    _padding: f32,      // Padding to align to 16 bytes
 }
 
 /// Background rectangle data for rendering.
 struct BackgroundRect {
-    bounds: [f32; 4], // left, top, right, bottom in pixels
-    color: [f32; 4],  // RGBA
+    bounds: [f32; 4],   // left, top, right, bottom in pixels
+    color: [f32; 4],    // RGBA
+    corner_radius: f32, // Corner radius in pixels
 }
 
 /// GPU text rendering layer.
@@ -113,12 +140,27 @@ impl TextLayer {
                         wgpu::VertexAttribute {
                             offset: 0,
                             shader_location: 0,
-                            format: wgpu::VertexFormat::Float32x2,
+                            format: wgpu::VertexFormat::Float32x2, // position
                         },
                         wgpu::VertexAttribute {
                             offset: 8,
                             shader_location: 1,
-                            format: wgpu::VertexFormat::Float32x4,
+                            format: wgpu::VertexFormat::Float32x4, // color
+                        },
+                        wgpu::VertexAttribute {
+                            offset: 24,
+                            shader_location: 2,
+                            format: wgpu::VertexFormat::Float32x2, // rect_min
+                        },
+                        wgpu::VertexAttribute {
+                            offset: 32,
+                            shader_location: 3,
+                            format: wgpu::VertexFormat::Float32x2, // rect_max
+                        },
+                        wgpu::VertexAttribute {
+                            offset: 40,
+                            shader_location: 4,
+                            format: wgpu::VertexFormat::Float32, // corner_radius
                         },
                     ],
                 }],
@@ -211,21 +253,23 @@ impl TextLayer {
     }
 
     /// Measure the actual rendered size of text in a buffer.
-    fn measure_text_size(&self, buffer: &Buffer) -> (f32, f32) {
-        let mut max_width: f32 = 0.0;
-        let mut total_height: f32 = 0.0;
+    /// Returns (width, height) of the text content only, not including centering offset.
+    fn measure_text_size(&self, buffer: &Buffer, font_size: f32) -> (f32, f32) {
+        let mut min_x: f32 = f32::MAX;
+        let mut max_x: f32 = 0.0;
 
         for run in buffer.layout_runs() {
-            // Track the rightmost glyph position
-            let line_width = run
-                .glyphs
-                .iter()
-                .fold(0.0_f32, |acc, glyph| acc.max(glyph.x + glyph.w));
-            max_width = max_width.max(line_width);
-            total_height = total_height.max(run.line_y + run.line_height);
+            // Track the actual text bounds (min_x to max_x)
+            for glyph in run.glyphs.iter() {
+                min_x = min_x.min(glyph.x);
+                max_x = max_x.max(glyph.x + glyph.w);
+            }
         }
 
-        (max_width, total_height)
+        // Width is the span from leftmost to rightmost glyph
+        let width = if min_x < f32::MAX { max_x - min_x } else { 0.0 };
+        // Height uses line_height (font_size * 1.2) for proper vertical centering
+        (width, font_size * 1.2)
     }
 
     /// Prepare text for rendering.
@@ -311,23 +355,43 @@ impl TextLayer {
 
             // Measure actual text width after shaping for background
             if let Some(bg_color) = text.background_color {
-                let (text_width, text_height) = self.measure_text_size(&buffer);
+                let (text_width, text_height) = self.measure_text_size(&buffer, text.font_size);
+                log::debug!(
+                    "TextLayer: bg_color={:?}, text_width={}, text_height={}, font_size={}",
+                    bg_color,
+                    text_width,
+                    text_height,
+                    text.font_size
+                );
                 if text_width > 0.0 {
-                    // Center the background around the text
-                    let center_x = text.bounds[0] + width / 2.0;
-                    let center_y = text.bounds[1] + height / 2.0;
-                    let padding_h = 16.0;
-                    let padding_v = 8.0;
+                    // Scale padding and corner radius based on output resolution (reference: 1080p)
+                    let scale_factor = output_size.1 as f32 / 1080.0;
+                    let padding_h = 16.0 * scale_factor;
+                    let padding_v = 8.0 * scale_factor;
+                    // Use larger corner radius (12px base) for more visible rounded corners
+                    let corner_radius = 12.0 * scale_factor;
 
-                    self.background_rects.push(BackgroundRect {
+                    // Text is rendered at top of bounds, horizontally centered
+                    // Background should wrap around actual text position
+                    let center_x = text.bounds[0] + width / 2.0;
+                    let text_top = text.bounds[1]; // Text starts at top of bounds
+
+                    let bg_rect = BackgroundRect {
                         bounds: [
                             (center_x - text_width / 2.0 - padding_h).max(0.0),
-                            (center_y - text_height / 2.0 - padding_v).max(0.0),
+                            (text_top - padding_v).max(0.0),
                             (center_x + text_width / 2.0 + padding_h).min(output_size.0 as f32),
-                            (center_y + text_height / 2.0 + padding_v).min(output_size.1 as f32),
+                            (text_top + text_height + padding_v).min(output_size.1 as f32),
                         ],
                         color: bg_color,
-                    });
+                        corner_radius,
+                    };
+                    log::debug!(
+                        "TextLayer: created BackgroundRect bounds={:?}, corner_radius={}",
+                        bg_rect.bounds,
+                        bg_rect.corner_radius
+                    );
+                    self.background_rects.push(bg_rect);
                 }
             }
 
@@ -382,6 +446,17 @@ impl TextLayer {
     }
 
     /// Prepare background rectangle vertex data.
+    /// Convert sRGB color component to linear color space.
+    /// sRGB colors from hex need this conversion before passing to shaders
+    /// when using Rgba8UnormSrgb texture format (which applies sRGB encoding on output).
+    fn srgb_to_linear(c: f32) -> f32 {
+        if c <= 0.04045 {
+            c / 12.92
+        } else {
+            ((c + 0.055) / 1.055).powf(2.4)
+        }
+    }
+
     fn prepare_rects(&mut self, queue: &Queue, output_size: (u32, u32)) {
         if self.background_rects.is_empty() {
             return;
@@ -399,35 +474,74 @@ impl TextLayer {
             let right = (rect.bounds[2] / w) * 2.0 - 1.0;
             let bottom = 1.0 - (rect.bounds[3] / h) * 2.0; // Flip Y
 
-            let color = rect.color;
+            // Convert sRGB colors to linear for correct rendering with Rgba8UnormSrgb format
+            let color = [
+                Self::srgb_to_linear(rect.color[0]),
+                Self::srgb_to_linear(rect.color[1]),
+                Self::srgb_to_linear(rect.color[2]),
+                rect.color[3], // Alpha is linear, no conversion needed
+            ];
+            let rect_min = [left, bottom]; // NDC min (bottom-left after Y flip)
+            let rect_max = [right, top]; // NDC max (top-right after Y flip)
+                                         // Convert corner radius to NDC (use average of w/h for aspect ratio)
+            let corner_radius = (rect.corner_radius / w) * 2.0;
 
-            // Two triangles forming a quad
+            log::debug!(
+                "prepare_rects: pixel_bounds={:?}, ndc=[{:.4},{:.4},{:.4},{:.4}], corner_radius_ndc={:.6}",
+                rect.bounds, left, top, right, bottom, corner_radius
+            );
+
+            // Two triangles forming a quad - all vertices share the same rect bounds
             // Triangle 1: top-left, top-right, bottom-left
             vertices.push(RectVertex {
                 position: [left, top],
                 color,
+                rect_min,
+                rect_max,
+                corner_radius,
+                _padding: 0.0,
             });
             vertices.push(RectVertex {
                 position: [right, top],
                 color,
+                rect_min,
+                rect_max,
+                corner_radius,
+                _padding: 0.0,
             });
             vertices.push(RectVertex {
                 position: [left, bottom],
                 color,
+                rect_min,
+                rect_max,
+                corner_radius,
+                _padding: 0.0,
             });
 
             // Triangle 2: top-right, bottom-right, bottom-left
             vertices.push(RectVertex {
                 position: [right, top],
                 color,
+                rect_min,
+                rect_max,
+                corner_radius,
+                _padding: 0.0,
             });
             vertices.push(RectVertex {
                 position: [right, bottom],
                 color,
+                rect_min,
+                rect_max,
+                corner_radius,
+                _padding: 0.0,
             });
             vertices.push(RectVertex {
                 position: [left, bottom],
                 color,
+                rect_min,
+                rect_max,
+                corner_radius,
+                _padding: 0.0,
             });
         }
 
@@ -437,9 +551,14 @@ impl TextLayer {
     /// Render background rectangles to the given render pass.
     pub fn render_backgrounds<'a>(&'a self, pass: &mut wgpu::RenderPass<'a>) {
         if self.background_rects.is_empty() {
+            log::debug!("TextLayer::render_backgrounds: no rects to render");
             return;
         }
 
+        log::debug!(
+            "TextLayer::render_backgrounds: rendering {} rects with rounded corners",
+            self.background_rects.len()
+        );
         pass.set_pipeline(&self.rect_pipeline);
         pass.set_vertex_buffer(0, self.rect_vertex_buffer.slice(..));
         pass.draw(0..(self.background_rects.len() * 6) as u32, 0..1);

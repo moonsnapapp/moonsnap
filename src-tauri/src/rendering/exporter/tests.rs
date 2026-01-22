@@ -5,6 +5,7 @@
 use super::super::types::DecodedFrame;
 use super::frame_ops::*;
 use super::webcam::*;
+use crate::commands::captions::{CaptionSegment, CaptionSettings};
 use crate::commands::video_recording::video_project::{
     AudioTrackSettings, CornerStyle, CursorConfig, ExportConfig, MaskConfig, SceneConfig,
     ShadowConfig, TextConfig, TimelineState, VideoProject, VideoSources, WebcamBorder,
@@ -63,6 +64,8 @@ fn make_test_project(
         scene: SceneConfig::default(),
         text: TextConfig::default(),
         mask: MaskConfig::default(),
+        captions: CaptionSettings::default(),
+        caption_segments: Vec::<CaptionSegment>::new(),
     }
 }
 
@@ -503,7 +506,7 @@ fn test_gpu_webcam_pixel_position_bottom_right() {
         },
     };
 
-    let compositor = crate::rendering::compositor::Compositor::new(&renderer);
+    let mut compositor = crate::rendering::compositor::Compositor::new(&renderer);
 
     // Test parameters
     let out_w = 800u32;
@@ -531,11 +534,13 @@ fn test_gpu_webcam_pixel_position_bottom_right() {
         background: Default::default(),
     };
 
-    // Render frame through GPU
-    let output_texture = compositor.composite(&renderer, &screen_frame, &render_options, 0.0);
-
-    // Read back pixels
-    let pixels = pollster::block_on(renderer.read_texture(&output_texture, out_w, out_h));
+    // Render frame through GPU and read back pixels
+    let pixels = pollster::block_on(async {
+        let output_texture = compositor
+            .composite(&renderer, &screen_frame, &render_options, 0.0)
+            .await;
+        renderer.read_texture(&output_texture, out_w, out_h).await
+    });
 
     // Save to dev folder for visual verification
     save_test_image(&pixels, out_w, out_h, "webcam_bottom_right.png");
@@ -619,7 +624,7 @@ fn test_gpu_webcam_circle_not_oval() {
         },
     };
 
-    let compositor = crate::rendering::compositor::Compositor::new(&renderer);
+    let mut compositor = crate::rendering::compositor::Compositor::new(&renderer);
 
     // Non-square output to test aspect ratio handling
     let out_w = 1920u32;
@@ -641,8 +646,12 @@ fn test_gpu_webcam_circle_not_oval() {
         background: Default::default(),
     };
 
-    let output_texture = compositor.composite(&renderer, &screen_frame, &render_options, 0.0);
-    let pixels = pollster::block_on(renderer.read_texture(&output_texture, out_w, out_h));
+    let pixels = pollster::block_on(async {
+        let output_texture = compositor
+            .composite(&renderer, &screen_frame, &render_options, 0.0)
+            .await;
+        renderer.read_texture(&output_texture, out_w, out_h).await
+    });
 
     // Save to dev folder for visual verification
     save_test_image(&pixels, out_w, out_h, "webcam_circle_16x9.png");
@@ -689,7 +698,7 @@ fn test_gpu_webcam_all_corners() {
         },
     };
 
-    let compositor = crate::rendering::compositor::Compositor::new(&renderer);
+    let mut compositor = crate::rendering::compositor::Compositor::new(&renderer);
 
     let out_w = 640u32;
     let out_h = 480u32;
@@ -736,8 +745,12 @@ fn test_gpu_webcam_all_corners() {
             background: Default::default(),
         };
 
-        let output_texture = compositor.composite(&renderer, &screen_frame, &render_options, 0.0);
-        let pixels = pollster::block_on(renderer.read_texture(&output_texture, out_w, out_h));
+        let pixels = pollster::block_on(async {
+            let output_texture = compositor
+                .composite(&renderer, &screen_frame, &render_options, 0.0)
+                .await;
+            renderer.read_texture(&output_texture, out_w, out_h).await
+        });
 
         // Save to dev folder for visual verification
         save_test_image(

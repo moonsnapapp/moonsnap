@@ -15,6 +15,7 @@ interface CaptionOverlayProps {
 }
 
 export const CaptionOverlay = memo(function CaptionOverlay({
+  containerWidth,
   containerHeight,
 }: CaptionOverlayProps) {
   const captionSegments = useVideoEditorStore((s) => s.captionSegments);
@@ -52,15 +53,28 @@ export const CaptionOverlay = memo(function CaptionOverlay({
     ? `${bgColor}${Math.round(bgOpacity * 255).toString(16).padStart(2, '0')}`
     : 'transparent';
 
-  // Position style
+  // Scale factor based on container (reference 1080p)
+  const scaleFactor = containerHeight / 1080;
+  const fontSize = captionSettings.size * scaleFactor;
+
+  // Match export padding: 40px at 1080p
+  const padding = 40 * scaleFactor;
+
+  // Match export: text_width = output_width - (padding * 2)
+  const maxTextWidth = containerWidth - (padding * 2);
+
+  // Position style - use absolute pixels like export
   const isTop = captionSettings.position === 'top';
   const positionStyle: React.CSSProperties = isTop
-    ? { top: '5%' }
-    : { bottom: '5%' };
+    ? { top: `${padding}px` }
+    : { bottom: `${padding}px` };
 
-  // Scale font size based on container
-  const scaleFactor = containerHeight / 1080; // Reference 1080p
-  const fontSize = captionSettings.size * scaleFactor;
+  // Scale padding and corner radius with resolution (reference 1080p)
+  // These must match text_layer.rs values
+  const bgPaddingV = 8 * scaleFactor;
+  const bgPaddingH = 16 * scaleFactor;
+  // Use larger corner radius (12px base) for more visible rounded corners
+  const cornerRadius = 12 * scaleFactor;
 
   // Render words with highlighting
   const renderText = () => {
@@ -84,6 +98,9 @@ export const CaptionOverlay = memo(function CaptionOverlay({
     ));
   };
 
+  // Export TextLayer uses: padding_h = 16px, padding_v = 8px (fixed, not scaled)
+  // Background wraps tightly around measured text size + padding
+
   return (
     <div
       className="absolute left-0 right-0 flex justify-center pointer-events-none"
@@ -95,15 +112,17 @@ export const CaptionOverlay = memo(function CaptionOverlay({
       <div
         style={{
           backgroundColor,
-          padding: bgOpacity > 0 ? '8px 16px' : '0',
-          borderRadius: bgOpacity > 0 ? '8px' : '0',
-          maxWidth: '90%',
+          // Match TextLayer: padding and corner radius scale with resolution
+          padding: bgOpacity > 0 ? `${bgPaddingV}px ${bgPaddingH}px` : '0',
+          borderRadius: bgOpacity > 0 ? `${cornerRadius}px` : '0',
+          maxWidth: `${maxTextWidth}px`,
           textAlign: 'center',
         }}
       >
         <span
           style={{
-            fontFamily: captionSettings.font || 'system-ui, sans-serif',
+            // Use system-ui which matches glyphon's SansSerif on most platforms
+            fontFamily: captionSettings.font || 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
             fontSize: `${fontSize}px`,
             fontWeight: captionSettings.fontWeight || 700,
             fontStyle: captionSettings.italic ? 'italic' : 'normal',
@@ -111,7 +130,7 @@ export const CaptionOverlay = memo(function CaptionOverlay({
             textShadow: bgOpacity === 0
               ? '2px 2px 4px rgba(0,0,0,0.8), -1px -1px 2px rgba(0,0,0,0.5)'
               : 'none',
-            lineHeight: 1.4,
+            lineHeight: 1.2, // Match glyphon: Metrics::new(font_size, font_size * 1.2)
           }}
         >
           {renderText()}

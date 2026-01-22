@@ -106,22 +106,39 @@ pub fn prepare_caption_text(
     let background_color = get_background_color(settings);
     let text_shadow = settings.background_opacity == 0;
 
-    // Calculate position
-    let padding = 40.0;
-    let text_height = settings.size as f32 * 2.5; // Approximate height with line spacing
+    // Scale factor based on output resolution (reference: 1080p)
+    // This ensures captions look the same relative to frame at any export resolution
+    let scale_factor = output_height / 1080.0;
+
+    // Calculate position - all values scale with output resolution
+    let padding = 40.0 * scale_factor;
+    let font_size = settings.size as f32 * scale_factor;
     let text_width = output_width - (padding * 2.0);
 
+    // CSS positions caption using `bottom: padding` - the bottom edge of the background
+    // is `padding` pixels from container bottom.
+    // text_layer.rs computes: background_bottom = text_top + line_height + bg_padding_v
+    // So: text_top = output_height - padding - line_height - bg_padding_v
+    let line_height = font_size * 1.2;
+    // bg_padding_v scales with resolution (reference: 1080p, base: 8px)
+    let bg_padding_v = 8.0 * scale_factor;
+
     let y_position = if settings.position == "top" {
-        padding
+        // Top: background top at `padding`, so text_top = padding + bg_padding_v
+        padding + bg_padding_v
     } else {
-        output_height - text_height - padding
+        // Bottom: background bottom at `output_height - padding`
+        output_height - padding - line_height - bg_padding_v
     };
+
+    // Bounds height just needs to contain the text (with some buffer for descenders)
+    let bounds_height = font_size * 1.5;
 
     let bounds = [
         padding,
         y_position,
         padding + text_width,
-        y_position + text_height,
+        y_position + bounds_height,
     ];
 
     // Base color (used for text without word highlighting)
@@ -145,7 +162,7 @@ pub fn prepare_caption_text(
     PreparedText {
         content,
         font_family: settings.font.clone(),
-        font_size: settings.size as f32,
+        font_size,
         font_weight: settings.font_weight as f32,
         italic: settings.italic,
         color: base_color,
@@ -189,12 +206,12 @@ mod tests {
     fn make_test_settings() -> CaptionSettings {
         CaptionSettings {
             enabled: true,
-            font: "System Sans-Serif".to_string(),
+            font: "sans-serif".to_string(),
             size: 32,
             font_weight: 700,
             italic: false,
-            color: "#A0A0A0".to_string(),
-            highlight_color: "#FFFFFF".to_string(),
+            color: "#FFFFFF".to_string(),
+            highlight_color: "#FFFF00".to_string(),
             background_color: "#000000".to_string(),
             background_opacity: 60,
             outline: false,

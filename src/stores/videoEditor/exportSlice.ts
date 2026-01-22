@@ -37,6 +37,11 @@ export const createExportSlice: SliceCreator<ExportSlice> = (set, get) => ({
     const { project } = get();
     if (!project) return;
 
+    videoEditorLogger.info('[updateExportConfig] Updates:', updates);
+    if (updates.composition) {
+      videoEditorLogger.info('[updateExportConfig] Composition being set:', updates.composition);
+    }
+
     set({
       project: {
         ...project,
@@ -84,6 +89,8 @@ export const createExportSlice: SliceCreator<ExportSlice> = (set, get) => ({
     );
     videoEditorLogger.debug('Scene config:', sanitizedProject.scene);
     videoEditorLogger.debug('Zoom config:', sanitizedProject.zoom);
+    videoEditorLogger.info('Composition config:', sanitizedProject.export.composition);
+    videoEditorLogger.info('Crop config:', sanitizedProject.export.crop);
 
     set({ isExporting: true, exportProgress: null });
 

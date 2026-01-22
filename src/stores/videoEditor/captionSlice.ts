@@ -12,12 +12,12 @@ import type {
  */
 export const DEFAULT_CAPTION_SETTINGS: CaptionSettings = {
   enabled: false,
-  font: 'System Sans-Serif',
+  font: 'sans-serif',
   size: 32,
   fontWeight: 700,
   italic: false,
-  color: '#A0A0A0',
-  highlightColor: '#FFFFFF',
+  color: '#FFFFFF',
+  highlightColor: '#FFFF00',
   backgroundColor: '#000000',
   backgroundOpacity: 60,
   outline: false,

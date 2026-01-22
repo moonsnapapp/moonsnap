@@ -300,6 +300,14 @@ pub fn run() {
             commands::preview::update_native_text_preview,
             commands::preview::scrub_native_text_preview,
             commands::preview::destroy_native_text_preview,
+            // Caption preview commands (GPU-rendered via WebSocket)
+            commands::preview::render_caption_overlay,
+            // Native caption preview commands (zero-latency surface rendering)
+            commands::preview::init_native_caption_preview,
+            commands::preview::resize_native_caption_preview,
+            commands::preview::update_native_caption_preview,
+            commands::preview::scrub_native_caption_preview,
+            commands::preview::destroy_native_caption_preview,
             // Audio monitoring commands
             commands::video_recording::start_audio_monitoring,
             commands::video_recording::stop_audio_monitoring,
@@ -365,6 +373,9 @@ pub fn run() {
 
             // Initialize native preview state for zero-latency text preview
             app.manage(commands::preview::NativePreviewState::new());
+
+            // Initialize native caption preview state for zero-latency caption preview
+            app.manage(commands::preview::NativeCaptionPreviewState::new());
 
             // Set window icon on library window (kept for when it's shown via tray)
             if let Some(window) = app.get_webview_window("library") {

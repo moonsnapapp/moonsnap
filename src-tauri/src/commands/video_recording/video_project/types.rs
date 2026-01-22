@@ -946,6 +946,10 @@ pub struct CompositionConfig {
     pub aspect_ratio: Option<f32>,
     /// Preset aspect ratio name for UI (e.g., "16:9", "1:1").
     pub aspect_preset: Option<String>,
+    /// Fixed width for manual mode (if set, overrides aspect_ratio calculation).
+    pub width: Option<u32>,
+    /// Fixed height for manual mode (if set, overrides aspect_ratio calculation).
+    pub height: Option<u32>,
 }
 
 impl Default for CompositionConfig {
@@ -954,6 +958,8 @@ impl Default for CompositionConfig {
             mode: CompositionMode::Auto,
             aspect_ratio: None,
             aspect_preset: None,
+            width: None,
+            height: None,
         }
     }
 }

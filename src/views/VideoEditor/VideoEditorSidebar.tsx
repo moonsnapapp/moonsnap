@@ -816,31 +816,69 @@ export function VideoEditorSidebar({ project, onOpenCropDialog }: VideoEditorSid
         {/* Export Tab */}
         {activeTab === 'export' && project && (
           <div className="p-4 space-y-4">
-            {/* Export Preset */}
+            {/* Output Resolution - Most important, put first */}
             <div>
-              <span className="text-xs text-[var(--ink-muted)] block mb-2">Preset</span>
+              <span className="text-xs text-[var(--ink-muted)] block mb-2">Output Resolution</span>
+              <select
+                value={
+                  project.export.composition?.mode === 'manual' && project.export.composition?.width && project.export.composition?.height
+                    ? `${project.export.composition.width}x${project.export.composition.height}`
+                    : 'auto'
+                }
+                onChange={(e) => {
+                  const value = e.target.value;
+                  if (value === 'auto') {
+                    updateExportConfig({
+                      composition: { mode: 'auto', aspectRatio: null, aspectPreset: null, width: null, height: null }
+                    });
+                  } else {
+                    const [w, h] = value.split('x').map(Number);
+                    updateExportConfig({
+                      composition: { mode: 'manual', aspectRatio: w / h, aspectPreset: value, width: w, height: h }
+                    });
+                  }
+                }}
+                className="w-full h-8 bg-[var(--polar-mist)] border border-[var(--glass-border)] rounded-md text-sm text-[var(--ink-dark)] px-2"
+              >
+                <option value="auto">Auto (Match Source)</option>
+                <option value="3840x2160">4K (3840×2160)</option>
+                <option value="1920x1080">1080p (1920×1080)</option>
+                <option value="1280x720">720p (1280×720)</option>
+                <option value="1080x1920">1080p Portrait (1080×1920)</option>
+                <option value="1080x1080">Square (1080×1080)</option>
+              </select>
+              {project.export.composition?.mode === 'manual' && project.export.composition?.width && (
+                <p className="text-[10px] text-[var(--ink-subtle)] mt-1">
+                  Output: {project.export.composition.width}×{project.export.composition.height}
+                </p>
+              )}
+            </div>
+
+            {/* Quality Preset */}
+            <div>
+              <span className="text-xs text-[var(--ink-muted)] block mb-2">Quality</span>
               <select
                 value={project.export.preset}
                 onChange={(e) => updateExportConfig({ preset: e.target.value as ExportPreset })}
                 className="w-full h-8 bg-[var(--polar-mist)] border border-[var(--glass-border)] rounded-md text-sm text-[var(--ink-dark)] px-2"
               >
-                <option value="draft">Draft (720p, 15fps)</option>
-                <option value="standard">Standard (1080p, 30fps)</option>
-                <option value="highQuality">High Quality (1080p, 60fps)</option>
-                <option value="maximum">Maximum (Source)</option>
+                <option value="draft">Draft (15fps, fast)</option>
+                <option value="standard">Standard (30fps)</option>
+                <option value="highQuality">High Quality (60fps)</option>
+                <option value="maximum">Maximum (Source fps)</option>
                 <option value="custom">Custom</option>
               </select>
             </div>
 
-            {/* Aspect Ratio */}
+            {/* Aspect Ratio - for letterboxing */}
             <div>
-              <span className="text-xs text-[var(--ink-muted)] block mb-2">Aspect Ratio</span>
+              <span className="text-xs text-[var(--ink-muted)] block mb-2">Letterbox Aspect</span>
               <select
                 value={project.export.aspectRatio}
                 onChange={(e) => updateExportConfig({ aspectRatio: e.target.value as AspectRatio })}
                 className="w-full h-8 bg-[var(--polar-mist)] border border-[var(--glass-border)] rounded-md text-sm text-[var(--ink-dark)] px-2"
               >
-                <option value="auto">Auto (Source)</option>
+                <option value="auto">Auto (No letterbox)</option>
                 <option value="landscape16x9">16:9 Landscape</option>
                 <option value="portrait9x16">9:16 Portrait</option>
                 <option value="square1x1">1:1 Square</option>

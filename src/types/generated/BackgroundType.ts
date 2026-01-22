@@ -2,5 +2,6 @@
 
 /**
  * Background type for letterboxing.
+ * Matches Cap's BackgroundSource enum.
  */
 export type BackgroundType = "solid" | "gradient" | "wallpaper" | "image";

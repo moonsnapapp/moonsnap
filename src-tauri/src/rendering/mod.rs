@@ -28,6 +28,11 @@ pub mod svg_cursor;
 pub mod text;
 pub mod text_layer;
 pub mod types;
+
+#[cfg(test)]
+mod caption_parity_test;
+#[cfg(test)]
+mod caption_pixel_test;
 pub mod zoom;
 
 pub use background::{hex_to_linear_rgba, srgb_to_linear, Background, BackgroundLayer};

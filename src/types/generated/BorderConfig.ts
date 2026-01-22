@@ -3,21 +3,20 @@
 /**
  * Border configuration for video frame.
  */
-export type BorderConfig = {
-  /**
-   * Border enabled.
-   */
-  enabled: boolean;
-  /**
-   * Border width in pixels (1-20).
-   */
-  width: number;
-  /**
-   * Border color (hex format).
-   */
-  color: string;
-  /**
-   * Border opacity (0-100).
-   */
-  opacity: number;
-};
+export type BorderConfig = { 
+/**
+ * Border enabled.
+ */
+enabled: boolean, 
+/**
+ * Border width in pixels (1-20).
+ */
+width: number, 
+/**
+ * Border color (hex format).
+ */
+color: string, 
+/**
+ * Border opacity (0-100).
+ */
+opacity: number, };

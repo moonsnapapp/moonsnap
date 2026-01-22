@@ -3,7 +3,4 @@
 /**
  * Generic 2D coordinate/size type.
  */
-export type XY = {
-  x: number;
-  y: number;
-};
+export type XY = { x: number, y: number, };

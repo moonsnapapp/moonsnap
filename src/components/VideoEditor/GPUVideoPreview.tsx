@@ -12,7 +12,7 @@ import { ClickHighlightOverlay } from './ClickHighlightOverlay';
 import { MaskOverlay } from './MaskOverlay';
 import { TextOverlay } from './TextOverlay';
 import { UnifiedTextOverlay } from './UnifiedTextOverlay';
-import { CaptionOverlay } from './CaptionOverlay';
+import { UnifiedCaptionOverlay } from './UnifiedCaptionOverlay';
 import {
   WebCodecsCanvasNoZoom,
   VideoNoZoom,
@@ -285,9 +285,9 @@ const SceneModeRenderer = memo(function SceneModeRenderer({
         </div>
       </div>
 
-      {/* Caption overlay - positioned outside zoom container to anchor to composition */}
+      {/* Caption overlay - GPU-rendered using glyphon for WYSIWYG with export */}
       {showScreen && containerWidth > 0 && containerHeight > 0 && (
-        <CaptionOverlay
+        <UnifiedCaptionOverlay
           containerWidth={containerWidth}
           containerHeight={containerHeight}
           videoWidth={videoWidth}

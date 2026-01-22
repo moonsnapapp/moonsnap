@@ -6,62 +6,62 @@ import type { CornerStyle } from "./CornerStyle";
 
 /**
  * Background configuration for letterboxing/padding.
+ * Matches Cap's BackgroundConfiguration struct.
  */
-export type BackgroundConfig = {
-  /**
-   * Type of background (Solid, Gradient, Wallpaper, Image).
-   */
-  bgType: BackgroundType;
-  /**
-   * Solid color (hex format, e.g., "#000000").
-   */
-  solidColor: string;
-  /**
-   * Gradient start color (hex format).
-   */
-  gradientStart: string;
-  /**
-   * Gradient end color (hex format).
-   */
-  gradientEnd: string;
-  /**
-   * Gradient angle in degrees (0-360).
-   */
-  gradientAngle: number;
-  /**
-   * Wallpaper preset name (e.g., "macOS/sequoia-dark").
-   */
-  wallpaper: string | null;
-  /**
-   * Custom image path.
-   */
-  imagePath: string | null;
-  /**
-   * Background blur amount (0-100%).
-   */
-  blur: number;
-  /**
-   * Padding around video frame (0-200 pixels).
-   */
-  padding: number;
-  /**
-   * Inset value (0-100 pixels).
-   */
-  inset: number;
-  /**
-   * Corner rounding radius (0-100 pixels).
-   */
-  rounding: number;
-  /**
-   * Corner rounding style (squircle or rounded).
-   */
-  roundingType: CornerStyle;
-  /**
-   * Shadow configuration.
-   */
-  shadow: BackgroundShadowConfig;
-  /**
-   * Border configuration.
-   */
-  border: BorderConfig;
-};
+export type BackgroundConfig = { 
+/**
+ * Type of background (Solid, Gradient, Wallpaper, Image).
+ */
+bgType: BackgroundType, 
+/**
+ * Solid color (hex format, e.g., "#000000").
+ */
+solidColor: string, 
+/**
+ * Gradient start color (hex format).
+ */
+gradientStart: string, 
+/**
+ * Gradient end color (hex format).
+ */
+gradientEnd: string, 
+/**
+ * Gradient angle in degrees (0-360).
+ */
+gradientAngle: number, 
+/**
+ * Wallpaper preset name (e.g., "macOS/sequoia-dark").
+ */
+wallpaper: string | null, 
+/**
+ * Custom image path.
+ */
+imagePath: string | null, 
+/**
+ * Background blur amount (0-100%).
+ */
+blur: number, 
+/**
+ * Padding around video frame (0-200 pixels).
+ */
+padding: number, 
+/**
+ * Inset value (pixels).
+ */
+inset: number, 
+/**
+ * Corner rounding radius (0-100 pixels).
+ */
+rounding: number, 
+/**
+ * Corner rounding style (squircle or rounded).
+ */
+roundingType: CornerStyle, 
+/**
+ * Shadow configuration.
+ */
+shadow: BackgroundShadowConfig, 
+/**
+ * Border configuration.
+ */
+border: BorderConfig, };

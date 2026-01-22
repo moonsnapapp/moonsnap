@@ -4,54 +4,54 @@ import type { XY } from "./XY";
 /**
  * A text overlay segment.
  * Matches Cap's TextSegment model for consistency.
+ * Supports backward compatibility with old format (startMs/endMs/text/x/y).
  */
-export type TextSegment = {
-  /**
-   * Start time in seconds.
-   */
-  start: number;
-  /**
-   * End time in seconds.
-   */
-  end: number;
-  /**
-   * Whether this segment is enabled.
-   */
-  enabled: boolean;
-  /**
-   * Text content.
-   */
-  content: string;
-  /**
-   * Center position (0-1 normalized, center-based positioning).
-   */
-  center: XY;
-  /**
-   * Bounding box size (0-1 normalized).
-   */
-  size: XY;
-  /**
-   * Font family.
-   */
-  fontFamily: string;
-  /**
-   * Font size in pixels (at 1080p reference).
-   */
-  fontSize: number;
-  /**
-   * Font weight (100-900).
-   */
-  fontWeight: number;
-  /**
-   * Italic style.
-   */
-  italic: boolean;
-  /**
-   * Text color (hex format, e.g., "#ffffff").
-   */
-  color: string;
-  /**
-   * Fade duration in seconds (for fade in/out animation).
-   */
-  fadeDuration: number;
-};
+export type TextSegment = { 
+/**
+ * Start time in seconds.
+ */
+start: number, 
+/**
+ * End time in seconds.
+ */
+end: number, 
+/**
+ * Whether this segment is enabled.
+ */
+enabled: boolean, 
+/**
+ * Text content.
+ */
+content: string, 
+/**
+ * Center position (0-1 normalized, center-based positioning).
+ */
+center: XY, 
+/**
+ * Bounding box size (0-1 normalized).
+ */
+size: XY, 
+/**
+ * Font family.
+ */
+fontFamily: string, 
+/**
+ * Font size in pixels (at 1080p reference).
+ */
+fontSize: number, 
+/**
+ * Font weight (100-900).
+ */
+fontWeight: number, 
+/**
+ * Italic style.
+ */
+italic: boolean, 
+/**
+ * Text color (hex format, e.g., "#ffffff").
+ */
+color: string, 
+/**
+ * Fade duration in seconds (for fade in/out animation).
+ */
+fadeDuration: number, };

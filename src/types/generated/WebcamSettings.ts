@@ -8,27 +8,27 @@ import type { WebcamSize } from "./WebcamSize";
  * Note: Webcam capture always uses 1080p (or best available) and output
  * is capped at 1280 width (like Cap) for consistent file sizes.
  */
-export type WebcamSettings = {
+export type WebcamSettings = { 
 /**
  * Enable webcam overlay.
  */
-enabled: boolean,
+enabled: boolean, 
 /**
  * Selected webcam device index.
  */
-deviceIndex: number,
+deviceIndex: number, 
 /**
  * Position of the webcam overlay.
  */
-position: WebcamPosition,
+position: WebcamPosition, 
 /**
  * Size of the webcam overlay.
  */
-size: WebcamSize,
+size: WebcamSize, 
 /**
  * Shape of the webcam overlay (circle or rectangle).
  */
-shape: WebcamShape,
+shape: WebcamShape, 
 /**
  * Whether to mirror the webcam horizontally (selfie mode).
  */

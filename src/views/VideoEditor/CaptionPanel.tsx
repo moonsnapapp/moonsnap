@@ -343,6 +343,21 @@ export function CaptionPanel({ videoPath }: CaptionPanelProps) {
             </div>
           </div>
 
+          {/* Background Color */}
+          <div className="flex items-center justify-between">
+            <span className="text-xs text-[var(--ink-muted)]">
+              Background Color
+            </span>
+            <input
+              type="color"
+              value={captionSettings.backgroundColor}
+              onChange={(e) =>
+                updateCaptionSettings({ backgroundColor: e.target.value })
+              }
+              className="w-8 h-6 rounded border border-[var(--glass-border)] cursor-pointer bg-transparent"
+            />
+          </div>
+
           {/* Background Opacity */}
           <div>
             <div className="flex items-center justify-between mb-1">

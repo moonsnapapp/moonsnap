@@ -87,6 +87,13 @@ pub async fn export_video_gpu(
     // Clone configs to avoid borrow issues with project
     let crop = project.export.crop.clone();
     let composition = project.export.composition.clone();
+    log::info!(
+        "[EXPORT] Composition config: mode={:?}, width={:?}, height={:?}, aspect_ratio={:?}",
+        composition.mode,
+        composition.width,
+        composition.height,
+        composition.aspect_ratio
+    );
     let padding = project.export.background.padding as u32;
 
     // Step 1: Determine video dimensions after crop
@@ -127,8 +134,25 @@ pub async fn export_video_gpu(
             (w, h)
         },
         CompositionMode::Manual => {
-            // Manual mode: use specified aspect ratio, scale to fit video
-            if let Some(target_ratio) = composition.aspect_ratio {
+            // Manual mode: check for fixed dimensions first, then aspect ratio
+            log::info!(
+                "[EXPORT] Manual mode - checking fixed dimensions: width={:?}, height={:?}",
+                composition.width,
+                composition.height
+            );
+            if let (Some(fixed_w), Some(fixed_h)) = (composition.width, composition.height) {
+                // Fixed dimensions specified - use them directly
+                let w = (fixed_w / 2) * 2; // Ensure even
+                let h = (fixed_h / 2) * 2;
+                log::info!(
+                    "[EXPORT] Manual composition (fixed): {}x{} (requested {}x{})",
+                    w,
+                    h,
+                    fixed_w,
+                    fixed_h
+                );
+                (w, h)
+            } else if let Some(target_ratio) = composition.aspect_ratio {
                 // Calculate composition size that fits the video at the target aspect ratio
                 let video_ratio = video_w as f32 / video_h as f32;
 

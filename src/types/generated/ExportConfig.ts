@@ -10,44 +10,45 @@ import type { ExportResolution } from "./ExportResolution";
 /**
  * Export settings for the final video.
  */
-export type ExportConfig = {
+export type ExportConfig = { 
 /**
  * Export preset for quick selection.
  */
-preset: ExportPreset,
+preset: ExportPreset, 
 /**
  * Output format.
  */
-format: ExportFormat,
+format: ExportFormat, 
 /**
  * Output resolution.
  */
-resolution: ExportResolution,
+resolution: ExportResolution, 
 /**
  * Quality (1-100).
  */
-quality: number,
+quality: number, 
 /**
  * Frames per second.
  */
-fps: number,
+fps: number, 
 /**
  * Output aspect ratio (for letterboxing).
  */
-aspectRatio: AspectRatio,
+aspectRatio: AspectRatio, 
 /**
  * Background configuration for letterboxing/padding.
  */
-background: BackgroundConfig,
+background: BackgroundConfig, 
 /**
  * Crop configuration for video content (crops source video before composition).
  */
-crop: CropConfig,
+crop: CropConfig, 
 /**
  * Composition configuration (output canvas size/aspect).
  */
-composition: CompositionConfig,
+composition: CompositionConfig, 
 /**
  * Prefer hardware encoding (NVENC) when available.
+ * Defaults to true. Set to false to force software encoding.
  */
-preferHardwareEncoding?: boolean, };
+preferHardwareEncoding: boolean | null, };

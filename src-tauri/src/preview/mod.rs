@@ -11,9 +11,14 @@ pub mod native_surface;
 
 pub use decoder::{spawn_decoder, AsyncVideoDecoderHandle, DecodedFrame as AsyncDecodedFrame};
 pub use frame_ws::{create_frame_ws, ShutdownSignal, WSFrame};
-pub use native_surface::{get_preview_instance, remove_preview_instance, NativeTextPreview};
+pub use native_surface::{
+    get_caption_preview_instance, get_preview_instance, remove_caption_preview_instance,
+    remove_preview_instance, NativeCaptionPreview, NativeTextPreview,
+};
 
+use crate::commands::captions::{CaptionSegment, CaptionSettings};
 use crate::commands::video_recording::video_project::{VideoProject, XY};
+use crate::rendering::caption_layer::prepare_captions;
 use crate::rendering::compositor::Compositor;
 use crate::rendering::renderer::Renderer;
 use crate::rendering::text::prepare_texts;
@@ -223,6 +228,51 @@ impl PreviewRenderer {
         // Render text-only (transparent background)
         let mut compositor = self.compositor.lock().await;
         let output_texture = compositor.composite_text_only(width, height, &prepared_texts);
+
+        // Read rendered frame back to CPU
+        let rgba_data = self
+            .renderer
+            .read_texture(&output_texture, width, height)
+            .await;
+
+        // Update frame number
+        let mut frame_num = self.frame_number.lock().await;
+        *frame_num += 1;
+
+        // Send frame to WebSocket
+        let ws_frame = WSFrame {
+            data: rgba_data,
+            width,
+            height,
+            stride: width * 4,
+            frame_number: *frame_num,
+            target_time_ns: time_ms * 1_000_000,
+            created_at: Instant::now(),
+        };
+
+        self.frame_tx.send(Some(ws_frame)).ok();
+
+        Ok(())
+    }
+
+    /// Render caption overlay with segments and settings passed directly.
+    /// Uses the same GPU pipeline as export for visual consistency.
+    pub async fn render_captions_with_data(
+        &self,
+        time_ms: u64,
+        width: u32,
+        height: u32,
+        segments: &[CaptionSegment],
+        settings: &CaptionSettings,
+    ) -> Result<(), String> {
+        // Prepare captions using the caption_layer module (same as export)
+        let time_secs = time_ms as f32 / 1000.0;
+        let prepared_captions =
+            prepare_captions(segments, settings, time_secs, width as f32, height as f32);
+
+        // Render captions as text-only (transparent background)
+        let mut compositor = self.compositor.lock().await;
+        let output_texture = compositor.composite_text_only(width, height, &prepared_captions);
 
         // Read rendered frame back to CPU
         let rgba_data = self
