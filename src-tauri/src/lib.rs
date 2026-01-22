@@ -338,6 +338,10 @@ pub fn run() {
             commands::captions::transcribe_video,
             commands::captions::save_caption_data,
             commands::captions::load_caption_data,
+            // Parity commands (preview/export CSS sync)
+            rendering::parity::get_parity_layout,
+            rendering::parity::get_composition_bounds,
+            rendering::parity::get_font_metrics,
         ])
         .setup(|app| {
             // Initialize logging system first
