@@ -77,6 +77,102 @@ pub fn get_parity_layout() -> ParityLayout {
     ParityLayout::default()
 }
 
+/// Composition bounds calculated for both preview and export.
+/// This ensures identical frame positioning in both systems.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "../../src/types/generated/")]
+pub struct CompositionBounds {
+    /// Total output width
+    pub output_width: f32,
+    /// Total output height
+    pub output_height: f32,
+    /// Video frame X position within output
+    pub frame_x: f32,
+    /// Video frame Y position within output
+    pub frame_y: f32,
+    /// Video frame width
+    pub frame_width: f32,
+    /// Video frame height
+    pub frame_height: f32,
+    /// Actual padding used (may differ from requested in manual mode)
+    pub effective_padding: f32,
+}
+
+/// Calculate composition bounds - THE source of truth for both preview and export.
+///
+/// # Arguments
+/// * `video_width` - Source video width (after crop if applicable)
+/// * `video_height` - Source video height (after crop if applicable)
+/// * `requested_padding` - Desired padding around video
+/// * `manual_output` - If Some, fixed output dimensions (manual composition mode)
+pub fn calculate_composition_bounds(
+    video_width: f32,
+    video_height: f32,
+    requested_padding: f32,
+    manual_output: Option<(f32, f32)>,
+) -> CompositionBounds {
+    let video_aspect = video_width / video_height;
+
+    match manual_output {
+        None => {
+            // Auto mode: output = video + padding
+            let output_width = video_width + requested_padding * 2.0;
+            let output_height = video_height + requested_padding * 2.0;
+            CompositionBounds {
+                output_width,
+                output_height,
+                frame_x: requested_padding,
+                frame_y: requested_padding,
+                frame_width: video_width,
+                frame_height: video_height,
+                effective_padding: requested_padding,
+            }
+        },
+        Some((fixed_w, fixed_h)) => {
+            // Manual mode: fit video + padding INTO fixed output
+            let available_w = (fixed_w - requested_padding * 2.0).max(1.0);
+            let available_h = (fixed_h - requested_padding * 2.0).max(1.0);
+            let available_aspect = available_w / available_h;
+
+            let (frame_w, frame_h) = if video_aspect > available_aspect {
+                // Video is wider - fit to width
+                (available_w, available_w / video_aspect)
+            } else {
+                // Video is taller - fit to height
+                (available_h * video_aspect, available_h)
+            };
+
+            // Center the frame in the output
+            let frame_x = (fixed_w - frame_w) / 2.0;
+            let frame_y = (fixed_h - frame_h) / 2.0;
+
+            CompositionBounds {
+                output_width: fixed_w,
+                output_height: fixed_h,
+                frame_x,
+                frame_y,
+                frame_width: frame_w,
+                frame_height: frame_h,
+                effective_padding: requested_padding,
+            }
+        },
+    }
+}
+
+/// Tauri command to get composition bounds.
+#[tauri::command]
+pub fn get_composition_bounds(
+    video_width: f32,
+    video_height: f32,
+    padding: f32,
+    manual_width: Option<f32>,
+    manual_height: Option<f32>,
+) -> CompositionBounds {
+    let manual_output = manual_width.zip(manual_height);
+    calculate_composition_bounds(video_width, video_height, padding, manual_output)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -94,5 +190,38 @@ mod tests {
         assert_eq!(layout.reference_height, 1080.0);
         assert_eq!(layout.caption_padding, 40.0);
         assert_eq!(layout.line_height_multiplier, 1.2);
+    }
+
+    #[test]
+    fn test_composition_bounds_auto_mode() {
+        let bounds = calculate_composition_bounds(1920.0, 1080.0, 40.0, None);
+        assert_eq!(bounds.output_width, 2000.0);
+        assert_eq!(bounds.output_height, 1160.0);
+        assert_eq!(bounds.frame_x, 40.0);
+        assert_eq!(bounds.frame_y, 40.0);
+        assert_eq!(bounds.frame_width, 1920.0);
+        assert_eq!(bounds.frame_height, 1080.0);
+    }
+
+    #[test]
+    fn test_composition_bounds_manual_mode() {
+        let bounds = calculate_composition_bounds(1920.0, 1080.0, 40.0, Some((1920.0, 1080.0)));
+        assert_eq!(bounds.output_width, 1920.0);
+        assert_eq!(bounds.output_height, 1080.0);
+        // Video should be shrunk to fit within fixed output minus padding
+        assert!(bounds.frame_width < 1920.0);
+        assert!(bounds.frame_height < 1080.0);
+        // Should be centered
+        assert!(bounds.frame_x > 0.0);
+        assert!(bounds.frame_y > 0.0);
+    }
+
+    #[test]
+    fn test_composition_bounds_no_padding() {
+        let bounds = calculate_composition_bounds(1920.0, 1080.0, 0.0, None);
+        assert_eq!(bounds.output_width, 1920.0);
+        assert_eq!(bounds.output_height, 1080.0);
+        assert_eq!(bounds.frame_x, 0.0);
+        assert_eq!(bounds.frame_y, 0.0);
     }
 }
