@@ -4,6 +4,7 @@
 //! Handles timing, word highlighting, and positioning.
 
 use crate::commands::captions::{CaptionSegment, CaptionSettings, CaptionWord};
+use crate::rendering::parity::{layout, scale_factor};
 use crate::rendering::text::{PreparedText, WordColor};
 
 /// Find the active caption segment at a given time.
@@ -108,20 +109,20 @@ pub fn prepare_caption_text(
 
     // Scale factor based on output resolution (reference: 1080p)
     // This ensures captions look the same relative to frame at any export resolution
-    let scale_factor = output_height / 1080.0;
+    let scale = scale_factor(output_height);
 
     // Calculate position - all values scale with output resolution
-    let padding = 40.0 * scale_factor;
-    let font_size = settings.size as f32 * scale_factor;
+    let padding = layout::CAPTION_PADDING * scale;
+    let font_size = settings.size as f32 * scale;
     let text_width = output_width - (padding * 2.0);
 
     // CSS positions caption using `bottom: padding` - the bottom edge of the background
     // is `padding` pixels from container bottom.
     // text_layer.rs computes: background_bottom = text_top + line_height + bg_padding_v
     // So: text_top = output_height - padding - line_height - bg_padding_v
-    let line_height = font_size * 1.2;
-    // bg_padding_v scales with resolution (reference: 1080p, base: 8px)
-    let bg_padding_v = 8.0 * scale_factor;
+    let line_height = font_size * layout::LINE_HEIGHT_MULTIPLIER;
+    // bg_padding_v scales with resolution (reference: 1080p)
+    let bg_padding_v = layout::CAPTION_BG_PADDING_V * scale;
 
     let y_position = if settings.position == "top" {
         // Top: background top at `padding`, so text_top = padding + bg_padding_v
