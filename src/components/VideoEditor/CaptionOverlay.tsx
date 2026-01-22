@@ -6,6 +6,7 @@
 import { memo, useMemo } from 'react';
 import { useVideoEditorStore } from '../../stores/videoEditorStore';
 import { usePreviewOrPlaybackTime } from '../../hooks/usePlaybackEngine';
+import { useScaledLayout } from '@/hooks/useParityLayout';
 
 interface CaptionOverlayProps {
   containerWidth: number;
@@ -22,6 +23,10 @@ export const CaptionOverlay = memo(function CaptionOverlay({
   const captionSettings = useVideoEditorStore((s) => s.captionSettings);
   const currentTimeMs = usePreviewOrPlaybackTime();
   const currentTimeSecs = currentTimeMs / 1000;
+
+  // Use parity system for layout values (synced with Rust export)
+  // Must be called before any early returns to respect React hooks rules
+  const scaledLayout = useScaledLayout(containerHeight);
 
   // Find active caption segment
   const activeSegment = useMemo(() => {
@@ -41,10 +46,22 @@ export const CaptionOverlay = memo(function CaptionOverlay({
     );
   }, [activeSegment, currentTimeSecs]);
 
-  // Don't render if captions are disabled or no active segment
-  if (!captionSettings.enabled || !activeSegment) {
+  // Don't render if captions are disabled, no active segment, or layout not loaded
+  if (!captionSettings.enabled || !activeSegment || !scaledLayout) {
     return null;
   }
+
+  const {
+    scale: scaleFactor,
+    captionPadding: padding,
+    captionBgPaddingH: bgPaddingH,
+    captionBgPaddingV: bgPaddingV,
+    captionCornerRadius: cornerRadius,
+    lineHeightMultiplier
+  } = scaledLayout;
+
+  const fontSize = captionSettings.size * scaleFactor;
+  const maxTextWidth = containerWidth - (padding * 2);
 
   // Calculate background color with opacity
   const bgColor = captionSettings.backgroundColor || '#000000';
@@ -53,28 +70,11 @@ export const CaptionOverlay = memo(function CaptionOverlay({
     ? `${bgColor}${Math.round(bgOpacity * 255).toString(16).padStart(2, '0')}`
     : 'transparent';
 
-  // Scale factor based on container (reference 1080p)
-  const scaleFactor = containerHeight / 1080;
-  const fontSize = captionSettings.size * scaleFactor;
-
-  // Match export padding: 40px at 1080p
-  const padding = 40 * scaleFactor;
-
-  // Match export: text_width = output_width - (padding * 2)
-  const maxTextWidth = containerWidth - (padding * 2);
-
   // Position style - use absolute pixels like export
   const isTop = captionSettings.position === 'top';
   const positionStyle: React.CSSProperties = isTop
     ? { top: `${padding}px` }
     : { bottom: `${padding}px` };
-
-  // Scale padding and corner radius with resolution (reference 1080p)
-  // These must match text_layer.rs values
-  const bgPaddingV = 8 * scaleFactor;
-  const bgPaddingH = 16 * scaleFactor;
-  // Use larger corner radius (12px base) for more visible rounded corners
-  const cornerRadius = 12 * scaleFactor;
 
   // Render words with highlighting
   const renderText = () => {
@@ -130,7 +130,7 @@ export const CaptionOverlay = memo(function CaptionOverlay({
             textShadow: bgOpacity === 0
               ? '2px 2px 4px rgba(0,0,0,0.8), -1px -1px 2px rgba(0,0,0,0.5)'
               : 'none',
-            lineHeight: 1.2, // Match glyphon: Metrics::new(font_size, font_size * 1.2)
+            lineHeight: lineHeightMultiplier, // From parity system - matches Rust export
           }}
         >
           {renderText()}
