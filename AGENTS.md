@@ -176,6 +176,23 @@ setInvokeResponse('command_name', mockResult);
 
 **Pattern**: Tests colocated with source (`*.test.ts`)
 
+## Export Resolution Architecture
+
+Output resolution is controlled by `CompositionConfig` (not export presets):
+- `mode: 'auto'` - matches source/crop dimensions
+- `mode: 'manual'` with `width`/`height` - fixed output size (e.g., 1920x1080)
+- Export tab has "Output Resolution" dropdown that sets `CompositionConfig`
+- Crop dialog also allows setting composition for advanced use
+
+## Caption Rendering (Preview vs Export Parity)
+
+Preview uses CSS/HTML (`CaptionOverlay.tsx`), export uses GPU/glyphon (`caption_layer.rs`).
+To maintain visual parity:
+- Line height: use `font_size * 1.2` (glyphon default), not CSS 1.4
+- Colors: convert sRGB to linear for GPU (`srgb_to_linear()` in text_layer.rs)
+- Scaling: all values (padding, corner radius) scale with `height / 1080.0`
+- Font: use `system-ui` font stack in CSS to approximate system sans-serif
+
 ## Debugging
 
 | Issue | Check |
@@ -184,6 +201,9 @@ setInvokeResponse('command_name', mockResult);
 | Type mismatch Rust↔TS | Run `cargo test --lib` |
 | Shadows clipped | Use `filter: drop-shadow()` |
 | State not persisting | Correct store + devtools enabled |
+| Export wrong resolution | Check `project.export.composition` not just `preset` |
+| Caption colors wrong | Ensure sRGB→linear conversion for GPU textures |
+| Port 1420 in use | Kill existing dev server or use `npx kill-port 1420` |
 
 ## Video Recording Gotchas
 
