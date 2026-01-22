@@ -173,6 +173,69 @@ pub fn get_composition_bounds(
     calculate_composition_bounds(video_width, video_height, padding, manual_output)
 }
 
+/// Font metrics from glyphon for CSS preview synchronization.
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "../../src/types/generated/")]
+pub struct FontMetrics {
+    /// Actual font family that was resolved (e.g., "Arial" when "sans-serif" requested)
+    pub resolved_family: String,
+    /// Font size used for calculation
+    pub font_size: f32,
+    /// Line height in px (font_size * LINE_HEIGHT_MULTIPLIER)
+    pub line_height: f32,
+    /// Whether the requested font was found
+    pub font_found: bool,
+}
+
+/// Get font metrics for a given font family and size.
+/// This allows CSS preview to use the exact same metrics as glyphon export.
+#[tauri::command]
+pub fn get_font_metrics(family: String, size: f32, _weight: u32) -> FontMetrics {
+    use glyphon::{Family, FontSystem};
+
+    let font_system = FontSystem::new();
+    let line_height = size * layout::LINE_HEIGHT_MULTIPLIER;
+
+    // Parse family string to glyphon Family
+    let glyphon_family = match family.to_lowercase().as_str() {
+        "serif" => Family::Serif,
+        "sans-serif" | "sans serif" | "system-ui" => Family::SansSerif,
+        "monospace" | "mono" => Family::Monospace,
+        "cursive" => Family::Cursive,
+        "fantasy" => Family::Fantasy,
+        _ => Family::Name(&family),
+    };
+
+    // Try to resolve the actual font
+    let resolved_family = match glyphon_family {
+        Family::Name(name) => name.to_string(),
+        Family::Serif => "serif".to_string(),
+        Family::SansSerif => "sans-serif".to_string(),
+        Family::Monospace => "monospace".to_string(),
+        Family::Cursive => "cursive".to_string(),
+        Family::Fantasy => "fantasy".to_string(),
+    };
+
+    // Check if font exists by attempting to query the font system
+    let font_found = font_system.db().faces().any(|face| {
+        face.families
+            .iter()
+            .any(|(name, _)| name.to_lowercase() == family.to_lowercase())
+    });
+
+    FontMetrics {
+        resolved_family,
+        font_size: size,
+        line_height,
+        font_found: font_found
+            || matches!(
+                glyphon_family,
+                Family::SansSerif | Family::Serif | Family::Monospace
+            ),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

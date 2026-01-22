@@ -51,8 +51,8 @@ pub use decoder::VideoDecoder;
 pub use editor_instance::EditorInstance;
 pub use exporter::export_video_gpu;
 pub use parity::{
-    calculate_composition_bounds, get_composition_bounds, get_parity_layout, scale_factor,
-    CompositionBounds, ParityLayout,
+    calculate_composition_bounds, get_composition_bounds, get_font_metrics, get_parity_layout,
+    scale_factor, CompositionBounds, FontMetrics, ParityLayout,
 };
 pub use renderer::Renderer;
 pub use renderer_state::RendererState;
