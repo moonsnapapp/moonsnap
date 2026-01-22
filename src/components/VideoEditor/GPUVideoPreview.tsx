@@ -285,16 +285,6 @@ const SceneModeRenderer = memo(function SceneModeRenderer({
         </div>
       </div>
 
-      {/* Caption overlay - GPU-rendered using glyphon for WYSIWYG with export */}
-      {showScreen && containerWidth > 0 && containerHeight > 0 && (
-        <UnifiedCaptionOverlay
-          containerWidth={containerWidth}
-          containerHeight={containerHeight}
-          videoWidth={videoWidth}
-          videoHeight={videoHeight}
-        />
-      )}
-
       {/* Fullscreen webcam - outside the frame wrapper */}
       {webcamVideoPath && (
         <div style={{
@@ -458,7 +448,7 @@ export function GPUVideoPreview() {
     frameShadowStyle,
     containedSize,
     compositionSize,
-    compositeWidth,
+    previewScale,
   } = usePreviewStyles({
     backgroundConfig,
     cropConfig,
@@ -547,8 +537,9 @@ export function GPUVideoPreview() {
         style={{
           width: containedSize?.width,
           height: containedSize?.height,
+          // Use pixel-based padding scaled to preview size (matches Rust parity system)
           padding: hasFrameStyling && backgroundConfig?.padding
-            ? `${(backgroundConfig.padding / compositeWidth) * 100}%`
+            ? `${backgroundConfig.padding * previewScale}px`
             : undefined,
           background: hasFrameStyling
             ? backgroundConfig?.bgType === 'solid'
@@ -659,6 +650,16 @@ export function GPUVideoPreview() {
             containerWidth={compositionSize.width}
             containerHeight={compositionSize.height}
             sceneOpacity={webcamOverlayOpacity}
+          />
+        )}
+
+        {/* Caption overlay - positioned relative to composition (video + padding) to match export */}
+        {compositionSize.width > 0 && compositionSize.height > 0 && (
+          <UnifiedCaptionOverlay
+            containerWidth={compositionSize.width}
+            containerHeight={compositionSize.height}
+            videoWidth={project?.sources.originalWidth ?? 1920}
+            videoHeight={project?.sources.originalHeight ?? 1080}
           />
         )}
       </div>

@@ -70,11 +70,23 @@ export const CaptionOverlay = memo(function CaptionOverlay({
     ? `${bgColor}${Math.round(bgOpacity * 255).toString(16).padStart(2, '0')}`
     : 'transparent';
 
-  // Position style - use absolute pixels like export
+  // Position style - calculate exact Y position to match Rust export
+  // Rust calculates text_top position. CSS inner div has padding that offsets text.
+  // So we position the BACKGROUND div and let CSS padding position the text.
+  //
+  // For bottom: background_bottom at (output_height - padding)
+  //   → background_top = output_height - padding - line_height - bgPaddingV*2
+  // For top: background_top at padding
+  //   → background_top = padding
   const isTop = captionSettings.position === 'top';
-  const positionStyle: React.CSSProperties = isTop
-    ? { top: `${padding}px` }
-    : { bottom: `${padding}px` };
+  const lineHeight = fontSize * lineHeightMultiplier;
+
+  // Calculate where background div top should be (text will be offset by bgPaddingV inside)
+  const backgroundTop = isTop
+    ? padding
+    : containerHeight - padding - lineHeight - bgPaddingV * 2;
+
+  const positionStyle: React.CSSProperties = { top: `${backgroundTop}px` };
 
   // Render words with highlighting
   const renderText = () => {
