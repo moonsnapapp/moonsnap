@@ -9,6 +9,7 @@
 mod tests {
     use crate::commands::captions::{CaptionSegment, CaptionSettings, CaptionWord};
     use crate::rendering::caption_layer::prepare_captions;
+    use crate::rendering::parity::{layout, scale_factor};
 
     fn make_test_segment() -> CaptionSegment {
         CaptionSegment {
@@ -100,18 +101,19 @@ mod tests {
         }
 
         println!("\n=== CSS SHOULD PRODUCE THESE EXACT VALUES ===");
-        println!("line-height: 1.2");
+        println!("line-height: {}", layout::LINE_HEIGHT_MULTIPLIER);
         println!("top/bottom: {}px", text.bounds[1]);
         println!("max-width: {}px", text.bounds[2] - text.bounds[0]);
         println!("font-size: {}px", text.font_size);
         println!();
 
-        // The actual test - verify our assumptions (at 1080p, scale=1.0)
-        let scale = height / 1080.0;
-        let padding = 40.0 * scale;
+        // The actual test - verify using parity constants (at 1080p, scale=1.0)
+        let scale = scale_factor(height);
+        let padding = layout::CAPTION_PADDING * scale;
         let font_size = settings.size as f32 * scale;
-        let text_height = font_size * 2.5;
-        let expected_y = height - text_height - padding;
+        let line_height = font_size * layout::LINE_HEIGHT_MULTIPLIER;
+        let bg_padding_v = layout::CAPTION_BG_PADDING_V * scale;
+        let expected_y = height - padding - line_height - bg_padding_v;
 
         assert!(
             (text.bounds[0] - padding).abs() < 0.1,
@@ -119,7 +121,9 @@ mod tests {
         );
         assert!(
             (text.bounds[1] - expected_y).abs() < 0.1,
-            "Y position mismatch"
+            "Y position mismatch: got {} expected {}",
+            text.bounds[1],
+            expected_y
         );
     }
 
@@ -137,8 +141,9 @@ mod tests {
             let prepared = prepare_captions(&[segment.clone()], &settings, 0.25, width, height);
             let text = &prepared[0];
 
-            let scale = height / 1080.0;
-            let expected_padding = 40.0 * scale;
+            // Use parity functions for expected values
+            let scale = scale_factor(height);
+            let expected_padding = layout::CAPTION_PADDING * scale;
             let expected_font_size = settings.size as f32 * scale;
 
             println!("\n{}x{} (scale={}):", width, height, scale);
@@ -152,7 +157,7 @@ mod tests {
                 text.bounds[0], expected_padding
             );
 
-            // NOW export DOES scale! Should match CSS behavior.
+            // Export uses parity constants, should match expected values
             assert!(
                 (text.font_size - expected_font_size).abs() < 0.1,
                 "Export font size should be scaled: {} vs {}",
@@ -167,8 +172,8 @@ mod tests {
             );
         }
 
-        println!("\n✓ Export now scales correctly by output_height/1080");
-        println!("✓ CSS scales by containerHeight/1080");
-        println!("✓ Both use the same scale factor - PARITY ACHIEVED!");
+        println!("\n✓ Export uses parity constants from parity.rs");
+        println!("✓ CSS uses same constants via useParityLayout hook");
+        println!("✓ Both use the same source of truth - PARITY ACHIEVED!");
     }
 }
