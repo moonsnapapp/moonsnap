@@ -12,25 +12,27 @@ use glyphon::{
 use log::warn;
 use wgpu::{Device, Queue};
 
+use crate::rendering::parity::{layout, scale_factor};
 use crate::rendering::text::{PreparedText, WordColor};
 
 /// Shader for rendering rounded rectangles (for text backgrounds).
+/// Works in pixel coordinates for correct rounded corners regardless of aspect ratio.
 const RECT_SHADER: &str = r#"
 struct VertexInput {
     @location(0) position: vec2<f32>,
     @location(1) color: vec4<f32>,
-    @location(2) rect_min: vec2<f32>,
-    @location(3) rect_max: vec2<f32>,
-    @location(4) corner_radius: f32,
+    @location(2) rect_bounds: vec4<f32>,  // left, top, right, bottom in PIXELS
+    @location(3) corner_radius: f32,      // in PIXELS
+    @location(4) output_size: vec2<f32>,  // width, height in pixels
 }
 
 struct VertexOutput {
     @builtin(position) position: vec4<f32>,
     @location(0) color: vec4<f32>,
-    @location(1) rect_min: vec2<f32>,
-    @location(2) rect_max: vec2<f32>,
-    @location(3) corner_radius: f32,
-    @location(4) frag_pos: vec2<f32>,
+    @location(1) rect_bounds: vec4<f32>,
+    @location(2) corner_radius: f32,
+    @location(3) frag_pos_ndc: vec2<f32>,
+    @location(4) output_size: vec2<f32>,
 }
 
 @vertex
@@ -38,14 +40,15 @@ fn vs_main(input: VertexInput) -> VertexOutput {
     var output: VertexOutput;
     output.position = vec4<f32>(input.position, 0.0, 1.0);
     output.color = input.color;
-    output.rect_min = input.rect_min;
-    output.rect_max = input.rect_max;
+    output.rect_bounds = input.rect_bounds;
     output.corner_radius = input.corner_radius;
-    output.frag_pos = input.position;
+    output.frag_pos_ndc = input.position;
+    output.output_size = input.output_size;
     return output;
 }
 
-fn rounded_rect_sdf(p: vec2<f32>, rect_min: vec2<f32>, rect_max: vec2<f32>, radius: f32) -> f32 {
+// Standard rounded rect SDF in pixel coordinates
+fn rounded_rect_sdf_pixels(p: vec2<f32>, rect_min: vec2<f32>, rect_max: vec2<f32>, radius: f32) -> f32 {
     let center = (rect_min + rect_max) * 0.5;
     let half_size = (rect_max - rect_min) * 0.5 - vec2<f32>(radius);
     let d = abs(p - center) - half_size;
@@ -54,10 +57,19 @@ fn rounded_rect_sdf(p: vec2<f32>, rect_min: vec2<f32>, rect_max: vec2<f32>, radi
 
 @fragment
 fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
-    let dist = rounded_rect_sdf(input.frag_pos, input.rect_min, input.rect_max, input.corner_radius);
-    // Anti-aliased edge - use small fixed threshold for crisp edges
-    let aa = 0.002; // ~2 pixels at 1080p
-    let alpha = 1.0 - smoothstep(-aa, aa, dist);
+    // Convert NDC fragment position to pixel coordinates
+    let pixel_x = (input.frag_pos_ndc.x + 1.0) * 0.5 * input.output_size.x;
+    let pixel_y = (1.0 - input.frag_pos_ndc.y) * 0.5 * input.output_size.y;  // Flip Y
+    let pixel_pos = vec2<f32>(pixel_x, pixel_y);
+
+    // rect_bounds is (left, top, right, bottom) in pixels
+    let rect_min = vec2<f32>(input.rect_bounds.x, input.rect_bounds.y);
+    let rect_max = vec2<f32>(input.rect_bounds.z, input.rect_bounds.w);
+
+    let dist = rounded_rect_sdf_pixels(pixel_pos, rect_min, rect_max, input.corner_radius);
+
+    // Anti-aliased edge - 1 pixel threshold for crisp edges
+    let alpha = 1.0 - smoothstep(-1.0, 1.0, dist);
     return vec4<f32>(input.color.rgb, input.color.a * alpha);
 }
 "#;
@@ -66,12 +78,12 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 struct RectVertex {
-    position: [f32; 2],
-    color: [f32; 4],
-    rect_min: [f32; 2], // NDC coords of rect min
-    rect_max: [f32; 2], // NDC coords of rect max
-    corner_radius: f32, // NDC radius
-    _padding: f32,      // Padding to align to 16 bytes
+    position: [f32; 2],    // NDC position for vertex
+    color: [f32; 4],       // RGBA color
+    rect_bounds: [f32; 4], // left, top, right, bottom in PIXELS
+    corner_radius: f32,    // corner radius in PIXELS
+    output_size: [f32; 2], // output width, height in pixels
+    _padding: f32,         // padding to align to 16 bytes
 }
 
 /// Background rectangle data for rendering.
@@ -140,7 +152,7 @@ impl TextLayer {
                         wgpu::VertexAttribute {
                             offset: 0,
                             shader_location: 0,
-                            format: wgpu::VertexFormat::Float32x2, // position
+                            format: wgpu::VertexFormat::Float32x2, // position (NDC)
                         },
                         wgpu::VertexAttribute {
                             offset: 8,
@@ -150,17 +162,17 @@ impl TextLayer {
                         wgpu::VertexAttribute {
                             offset: 24,
                             shader_location: 2,
-                            format: wgpu::VertexFormat::Float32x2, // rect_min
-                        },
-                        wgpu::VertexAttribute {
-                            offset: 32,
-                            shader_location: 3,
-                            format: wgpu::VertexFormat::Float32x2, // rect_max
+                            format: wgpu::VertexFormat::Float32x4, // rect_bounds (pixels)
                         },
                         wgpu::VertexAttribute {
                             offset: 40,
+                            shader_location: 3,
+                            format: wgpu::VertexFormat::Float32, // corner_radius (pixels)
+                        },
+                        wgpu::VertexAttribute {
+                            offset: 44,
                             shader_location: 4,
-                            format: wgpu::VertexFormat::Float32, // corner_radius
+                            format: wgpu::VertexFormat::Float32x2, // output_size (pixels)
                         },
                     ],
                 }],
@@ -364,12 +376,11 @@ impl TextLayer {
                     text.font_size
                 );
                 if text_width > 0.0 {
-                    // Scale padding and corner radius based on output resolution (reference: 1080p)
-                    let scale_factor = output_size.1 as f32 / 1080.0;
-                    let padding_h = 16.0 * scale_factor;
-                    let padding_v = 8.0 * scale_factor;
-                    // Use larger corner radius (12px base) for more visible rounded corners
-                    let corner_radius = 12.0 * scale_factor;
+                    // Use parity constants for consistent preview/export rendering
+                    let scale = scale_factor(output_size.1 as f32);
+                    let padding_h = layout::CAPTION_BG_PADDING_H * scale;
+                    let padding_v = layout::CAPTION_BG_PADDING_V * scale;
+                    let corner_radius = layout::CAPTION_CORNER_RADIUS * scale;
 
                     // Text is rendered at top of bounds, horizontally centered
                     // Background should wrap around actual text position
@@ -464,15 +475,16 @@ impl TextLayer {
 
         let w = output_size.0 as f32;
         let h = output_size.1 as f32;
+        let output_size_arr = [w, h];
 
         let mut vertices = Vec::with_capacity(self.background_rects.len() * 6);
 
         for rect in &self.background_rects {
-            // Convert pixel coordinates to normalized device coordinates (-1 to 1)
-            let left = (rect.bounds[0] / w) * 2.0 - 1.0;
-            let top = 1.0 - (rect.bounds[1] / h) * 2.0; // Flip Y
-            let right = (rect.bounds[2] / w) * 2.0 - 1.0;
-            let bottom = 1.0 - (rect.bounds[3] / h) * 2.0; // Flip Y
+            // Convert pixel coordinates to NDC for vertex positions only
+            let left_ndc = (rect.bounds[0] / w) * 2.0 - 1.0;
+            let top_ndc = 1.0 - (rect.bounds[1] / h) * 2.0; // Flip Y
+            let right_ndc = (rect.bounds[2] / w) * 2.0 - 1.0;
+            let bottom_ndc = 1.0 - (rect.bounds[3] / h) * 2.0; // Flip Y
 
             // Convert sRGB colors to linear for correct rendering with Rgba8UnormSrgb format
             let color = [
@@ -481,66 +493,68 @@ impl TextLayer {
                 Self::srgb_to_linear(rect.color[2]),
                 rect.color[3], // Alpha is linear, no conversion needed
             ];
-            let rect_min = [left, bottom]; // NDC min (bottom-left after Y flip)
-            let rect_max = [right, top]; // NDC max (top-right after Y flip)
-                                         // Convert corner radius to NDC (use average of w/h for aspect ratio)
-            let corner_radius = (rect.corner_radius / w) * 2.0;
+
+            // Pass rect bounds in PIXELS (left, top, right, bottom)
+            let rect_bounds = rect.bounds;
+            // Pass corner radius in PIXELS
+            let corner_radius = rect.corner_radius;
 
             log::debug!(
-                "prepare_rects: pixel_bounds={:?}, ndc=[{:.4},{:.4},{:.4},{:.4}], corner_radius_ndc={:.6}",
-                rect.bounds, left, top, right, bottom, corner_radius
+                "prepare_rects: pixel_bounds={:?}, corner_radius_px={:.2}",
+                rect.bounds,
+                corner_radius
             );
 
             // Two triangles forming a quad - all vertices share the same rect bounds
             // Triangle 1: top-left, top-right, bottom-left
             vertices.push(RectVertex {
-                position: [left, top],
+                position: [left_ndc, top_ndc],
                 color,
-                rect_min,
-                rect_max,
+                rect_bounds,
                 corner_radius,
+                output_size: output_size_arr,
                 _padding: 0.0,
             });
             vertices.push(RectVertex {
-                position: [right, top],
+                position: [right_ndc, top_ndc],
                 color,
-                rect_min,
-                rect_max,
+                rect_bounds,
                 corner_radius,
+                output_size: output_size_arr,
                 _padding: 0.0,
             });
             vertices.push(RectVertex {
-                position: [left, bottom],
+                position: [left_ndc, bottom_ndc],
                 color,
-                rect_min,
-                rect_max,
+                rect_bounds,
                 corner_radius,
+                output_size: output_size_arr,
                 _padding: 0.0,
             });
 
             // Triangle 2: top-right, bottom-right, bottom-left
             vertices.push(RectVertex {
-                position: [right, top],
+                position: [right_ndc, top_ndc],
                 color,
-                rect_min,
-                rect_max,
+                rect_bounds,
                 corner_radius,
+                output_size: output_size_arr,
                 _padding: 0.0,
             });
             vertices.push(RectVertex {
-                position: [right, bottom],
+                position: [right_ndc, bottom_ndc],
                 color,
-                rect_min,
-                rect_max,
+                rect_bounds,
                 corner_radius,
+                output_size: output_size_arr,
                 _padding: 0.0,
             });
             vertices.push(RectVertex {
-                position: [left, bottom],
+                position: [left_ndc, bottom_ndc],
                 color,
-                rect_min,
-                rect_max,
+                rect_bounds,
                 corner_radius,
+                output_size: output_size_arr,
                 _padding: 0.0,
             });
         }

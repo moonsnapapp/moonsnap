@@ -26,7 +26,7 @@ const PARITY = {
   captionBgPaddingV: 8,
 
   // layout::CAPTION_CORNER_RADIUS
-  captionCornerRadius: 12,
+  captionCornerRadius: 20,
 
   // layout::LINE_HEIGHT_MULTIPLIER
   lineHeightMultiplier: 1.2,
@@ -61,8 +61,8 @@ describe('Caption Rendering Parity', () => {
       expect(PARITY.captionBgPaddingV).toBe(8);
     });
 
-    it('has expected corner radius (12px)', () => {
-      expect(PARITY.captionCornerRadius).toBe(12);
+    it('has expected corner radius (20px)', () => {
+      expect(PARITY.captionCornerRadius).toBe(20);
     });
   });
 

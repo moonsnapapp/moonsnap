@@ -23,7 +23,7 @@ pub mod layout {
     pub const CAPTION_BG_PADDING_V: f32 = 8.0;
 
     /// Caption corner radius (px at 1080p)
-    pub const CAPTION_CORNER_RADIUS: f32 = 12.0;
+    pub const CAPTION_CORNER_RADIUS: f32 = 20.0;
 
     /// Line height multiplier (glyphon uses font_size * this)
     pub const LINE_HEIGHT_MULTIPLIER: f32 = 1.2;
