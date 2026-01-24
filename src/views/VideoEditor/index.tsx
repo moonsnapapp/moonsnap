@@ -10,17 +10,16 @@
 
 import { useCallback, forwardRef, useImperativeHandle, useEffect, useState, lazy, Suspense } from 'react';
 import { toast } from 'sonner';
-import { X } from 'lucide-react';
 import { listen } from '@tauri-apps/api/event';
 import { save } from '@tauri-apps/plugin-dialog';
 import { useCaptureStore } from '../../stores/captureStore';
 import { useVideoEditorStore } from '../../stores/videoEditorStore';
 import { useVideoEditorShortcuts } from '../../hooks/useVideoEditorShortcuts';
-import { Button } from '../../components/ui/button';
 import { VideoEditorToolbar } from './VideoEditorToolbar';
 import { VideoEditorSidebar } from './VideoEditorSidebar';
 import { VideoEditorPreview } from './VideoEditorPreview';
 import { VideoEditorTimeline } from './VideoEditorTimeline';
+import { ExportProgressOverlay } from './components/ExportProgressOverlay';
 import type { ExportProgress, CropConfig, CompositionConfig } from '../../types';
 import { videoEditorLogger } from '../../utils/logger';
 
@@ -332,44 +331,11 @@ export const VideoEditorView = forwardRef<VideoEditorViewRef, VideoEditorViewPro
       )}
 
       {/* Export Progress Overlay */}
-      {isExporting && (
-        <div className="absolute inset-0 bg-black/80 flex items-center justify-center z-50">
-          <div className="bg-[var(--polar-ice)] rounded-lg p-6 w-80 shadow-xl border border-[var(--glass-border)]">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-sm font-medium text-[var(--ink-dark)]">Exporting Video</h3>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-6 w-6 p-0"
-                onClick={cancelExport}
-              >
-                <X className="h-4 w-4" />
-              </Button>
-            </div>
-
-            {/* Progress bar */}
-            <div className="h-2 bg-[var(--polar-mist)] rounded-full overflow-hidden mb-2">
-              <div
-                className="h-full bg-[var(--coral-400)] transition-all duration-300"
-                style={{ width: `${(exportProgress?.progress ?? 0) * 100}%` }}
-              />
-            </div>
-
-            {/* Progress info */}
-            <div className="flex items-center justify-between text-xs text-[var(--ink-muted)]">
-              <span className="capitalize">{exportProgress?.stage ?? 'preparing'}</span>
-              <span>{Math.round((exportProgress?.progress ?? 0) * 100)}%</span>
-            </div>
-
-            {/* Status message */}
-            {exportProgress?.message && (
-              <p className="text-xs text-[var(--ink-subtle)] mt-2 truncate">
-                {exportProgress.message}
-              </p>
-            )}
-          </div>
-        </div>
-      )}
+      <ExportProgressOverlay
+        isExporting={isExporting}
+        exportProgress={exportProgress}
+        onCancel={cancelExport}
+      />
     </div>
   );
 });

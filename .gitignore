@@ -52,3 +52,4 @@ src-tauri/binaries/
 # WASM text renderer build artifacts
 wasm/text-renderer/target/
 wasm/text-renderer/Cargo.lock
+**/*/test_output/
