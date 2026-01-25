@@ -82,7 +82,7 @@ jobs:
       - name: Rust cache
         uses: swatinem/rust-cache@v2
         with:
-          workspaces: './src-tauri -> target'
+          workspaces: './apps/desktop/src-tauri -> target'
 
       - name: Install FFmpeg (Windows)
         if: matrix.platform == 'windows-latest'
@@ -108,7 +108,7 @@ jobs:
 
           # Copy FFmpeg DLLs to binaries folder for bundling
           Write-Host "Copying FFmpeg DLLs for bundling..."
-          $binariesDir = "src-tauri\binaries"
+          $binariesDir = "apps\desktop\src-tauri\binaries"
           if (!(Test-Path $binariesDir)) { New-Item -ItemType Directory -Path $binariesDir -Force }
           Copy-Item "$($ffmpegPath.FullName)\bin\*.dll" -Destination $binariesDir -Force
           Get-ChildItem $binariesDir -Filter "*.dll" | ForEach-Object { Write-Host "  - $($_.Name)" }
@@ -128,6 +128,7 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           releaseId: ${{ needs.create-release.outputs.release_id }}
+          projectPath: apps/desktop
           args: ${{ matrix.args }}
 
   publish-release:

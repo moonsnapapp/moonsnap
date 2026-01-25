@@ -1,0 +1,6 @@
+[install]
+# Hoist dependencies to the root node_modules
+exact = true
+
+[workspace]
+packages = ["apps/*", "packages/*"]

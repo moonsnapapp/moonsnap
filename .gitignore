@@ -12,6 +12,9 @@ dist
 dist-ssr
 *.local
 
+# Turborepo
+.turbo
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
@@ -39,17 +42,21 @@ nul
 .env.*
 
 # Test output media files
-src-tauri/src/tests/*
-!src-tauri/src/tests/.gitkeep
+apps/desktop/src-tauri/src/tests/*
+!apps/desktop/src-tauri/src/tests/.gitkeep
 
 # Test coverage output
 coverage/
 
 # FFmpeg binaries (downloaded during build)
-src-tauri/binaries/
+apps/desktop/src-tauri/binaries/
 *-cwd*
 
 # WASM text renderer build artifacts
 wasm/text-renderer/target/
 wasm/text-renderer/Cargo.lock
 **/*/test_output/
+
+# Next.js
+.next/
+out/

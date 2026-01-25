@@ -1,0 +1,15 @@
+{
+  "extends": "@snapit/config-typescript/react.json",
+  "compilerOptions": {
+    "allowImportingTsExtensions": true,
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["./src/*"],
+      "@snapit/ui": ["../../packages/ui/src"],
+      "@snapit/ui/*": ["../../packages/ui/src/*"]
+    }
+  },
+  "include": ["src"],
+  "exclude": ["src/**/*.test.ts", "src/**/*.test.tsx", "src/test/**/*"],
+  "references": [{ "path": "./tsconfig.node.json" }]
+}
