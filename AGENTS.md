@@ -67,6 +67,9 @@ npm run test:run         # Vitest once
 npm run lint             # ESLint
 npm run typecheck        # tsc --noEmit
 cargo clippy             # Rust linting
+
+# Before pushing (CI runs all three)
+bun run typecheck && bun run lint && bun run test:run
 ```
 
 ## Conventions
@@ -109,6 +112,7 @@ pub async fn my_command() -> SnapItResult<MyType> {
 #[ts(export, export_to = "../../src/types/generated/")]
 pub struct MyType { /* fields */ }
 ```
+**CRITICAL**: All `export_to` paths MUST be identical (`"../../src/types/generated/"`) across ALL Rust files. Different paths cause ts-rs to generate incorrect relative imports between types.
 
 ### CSS
 
@@ -130,6 +134,7 @@ filter: drop-shadow(0 2px 4px rgba(0,0,0,0.5));
 | `box-shadow` for external shadows | Clipped in Tauri windows |
 | Hard-coded numbers/strings | Use `src/constants/` |
 | Empty catch blocks | Handle or propagate errors |
+| Private interfaces in exported contexts | TS4023 error - export interfaces used by exported symbols |
 
 ## Key Patterns
 
