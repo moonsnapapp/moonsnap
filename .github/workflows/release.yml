@@ -152,3 +152,110 @@ jobs:
               draft: false,
               prerelease: false
             })
+
+  # Mirror release to public repo for downloads
+  mirror-to-public:
+    runs-on: ubuntu-latest
+    needs: [create-release, build-tauri, publish-release]
+    env:
+      PUBLIC_REPO: walterlow/snapit-releases
+      VERSION: ${{ needs.create-release.outputs.version }}
+
+    steps:
+      - name: Download release assets
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const path = require('path');
+
+            // Get release assets from private repo
+            const { data: release } = await github.rest.repos.getRelease({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              release_id: ${{ needs.create-release.outputs.release_id }}
+            });
+
+            // Create assets directory
+            fs.mkdirSync('assets', { recursive: true });
+
+            // Download each asset
+            for (const asset of release.assets) {
+              console.log(`Downloading ${asset.name}...`);
+              const { data } = await github.rest.repos.getReleaseAsset({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                asset_id: asset.id,
+                headers: { Accept: 'application/octet-stream' }
+              });
+              fs.writeFileSync(path.join('assets', asset.name), Buffer.from(data));
+            }
+
+      - name: Create release on public repo
+        uses: actions/github-script@v7
+        env:
+          RELEASES_PAT: ${{ secrets.RELEASES_PAT }}
+        with:
+          github-token: ${{ secrets.RELEASES_PAT }}
+          script: |
+            const fs = require('fs');
+            const path = require('path');
+            const [owner, repo] = process.env.PUBLIC_REPO.split('/');
+            const version = process.env.VERSION;
+
+            // Check if release already exists
+            let release;
+            try {
+              const { data } = await github.rest.repos.getReleaseByTag({
+                owner,
+                repo,
+                tag: `v${version}`
+              });
+              release = data;
+              console.log(`Release v${version} already exists, updating...`);
+            } catch (e) {
+              // Create new release
+              const { data } = await github.rest.repos.createRelease({
+                owner,
+                repo,
+                tag_name: `v${version}`,
+                name: `SnapIt v${version}`,
+                body: `## Download\n\nDownload the installer for your platform below.\n\n**Windows:** Download the \`.exe\` installer.\n\n---\n\n[View changelog](https://github.com/${owner}/${repo}/releases)`,
+                draft: false,
+                prerelease: false
+              });
+              release = data;
+              console.log(`Created release v${version}`);
+            }
+
+            // Upload assets
+            const assetsDir = 'assets';
+            const files = fs.readdirSync(assetsDir);
+
+            for (const file of files) {
+              const filePath = path.join(assetsDir, file);
+              const content = fs.readFileSync(filePath);
+
+              console.log(`Uploading ${file}...`);
+
+              // Delete existing asset if it exists
+              for (const existingAsset of release.assets || []) {
+                if (existingAsset.name === file) {
+                  await github.rest.repos.deleteReleaseAsset({
+                    owner,
+                    repo,
+                    asset_id: existingAsset.id
+                  });
+                }
+              }
+
+              await github.rest.repos.uploadReleaseAsset({
+                owner,
+                repo,
+                release_id: release.id,
+                name: file,
+                data: content
+              });
+            }
+
+            console.log('✅ Release mirrored to public repo!')
