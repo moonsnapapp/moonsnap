@@ -5,9 +5,12 @@ import type { CaptionSettings } from "./CaptionSettings";
 /**
  * Complete caption data for a video.
  */
-export interface CaptionData {
-  /** Caption segments with word-level timing. */
-  segments: Array<CaptionSegment>;
-  /** Caption display settings. */
-  settings: CaptionSettings;
-}
+export type CaptionData = { 
+/**
+ * Caption segments with word-level timing.
+ */
+segments: Array<CaptionSegment>, 
+/**
+ * Caption display settings.
+ */
+settings: CaptionSettings, };

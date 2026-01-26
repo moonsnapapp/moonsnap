@@ -3,9 +3,12 @@
 /**
  * Download progress event.
  */
-export interface DownloadProgress {
-  /** Progress percentage (0-100). */
-  progress: number;
-  /** Status message. */
-  message: string;
-}
+export type DownloadProgress = { 
+/**
+ * Progress percentage (0-100).
+ */
+progress: number, 
+/**
+ * Status message.
+ */
+message: string, };

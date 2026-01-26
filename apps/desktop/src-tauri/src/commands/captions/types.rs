@@ -6,7 +6,7 @@ use ts_rs::TS;
 /// A single word with timing information.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
-#[ts(export, export_to = "../../../src/types/generated/")]
+#[ts(export, export_to = "../../src/types/generated/")]
 pub struct CaptionWord {
     /// The word text.
     pub text: String,
@@ -19,7 +19,7 @@ pub struct CaptionWord {
 /// A caption segment containing multiple words.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
-#[ts(export, export_to = "../../../src/types/generated/")]
+#[ts(export, export_to = "../../src/types/generated/")]
 pub struct CaptionSegment {
     /// Unique segment identifier.
     pub id: String,
@@ -36,7 +36,7 @@ pub struct CaptionSegment {
 /// Caption styling and display settings.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
-#[ts(export, export_to = "../../../src/types/generated/")]
+#[ts(export, export_to = "../../src/types/generated/")]
 pub struct CaptionSettings {
     /// Whether captions are enabled.
     pub enabled: bool,
@@ -108,7 +108,7 @@ impl Default for CaptionSettings {
 /// Complete caption data for a video.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
-#[ts(export, export_to = "../../../src/types/generated/")]
+#[ts(export, export_to = "../../src/types/generated/")]
 pub struct CaptionData {
     /// Caption segments with word-level timing.
     pub segments: Vec<CaptionSegment>,
@@ -128,7 +128,7 @@ impl Default for CaptionData {
 /// Whisper model information.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
-#[ts(export, export_to = "../../../src/types/generated/")]
+#[ts(export, export_to = "../../src/types/generated/")]
 pub struct WhisperModelInfo {
     /// Model name (tiny, base, small, medium, large-v3).
     pub name: String,
@@ -143,7 +143,7 @@ pub struct WhisperModelInfo {
 /// Download progress event.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
-#[ts(export, export_to = "../../../src/types/generated/")]
+#[ts(export, export_to = "../../src/types/generated/")]
 pub struct DownloadProgress {
     /// Progress percentage (0-100).
     pub progress: f64,
@@ -154,7 +154,7 @@ pub struct DownloadProgress {
 /// Transcription progress event.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
-#[ts(export, export_to = "../../../src/types/generated/")]
+#[ts(export, export_to = "../../src/types/generated/")]
 pub struct TranscriptionProgress {
     /// Current stage: "extracting_audio", "transcribing", "complete".
     pub stage: String,

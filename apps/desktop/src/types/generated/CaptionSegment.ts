@@ -4,15 +4,24 @@ import type { CaptionWord } from "./CaptionWord";
 /**
  * A caption segment containing multiple words.
  */
-export interface CaptionSegment {
-  /** Unique segment identifier. */
-  id: string;
-  /** Start time in seconds. */
-  start: number;
-  /** End time in seconds. */
-  end: number;
-  /** Full text of the segment. */
-  text: string;
-  /** Individual words with timing. */
-  words: Array<CaptionWord>;
-}
+export type CaptionSegment = { 
+/**
+ * Unique segment identifier.
+ */
+id: string, 
+/**
+ * Start time in seconds.
+ */
+start: number, 
+/**
+ * End time in seconds.
+ */
+end: number, 
+/**
+ * Full text of the segment.
+ */
+text: string, 
+/**
+ * Individual words with timing.
+ */
+words: Array<CaptionWord>, };

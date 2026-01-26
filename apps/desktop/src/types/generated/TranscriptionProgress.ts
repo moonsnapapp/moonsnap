@@ -3,11 +3,16 @@
 /**
  * Transcription progress event.
  */
-export interface TranscriptionProgress {
-  /** Current stage: "extracting_audio", "transcribing", "complete". */
-  stage: string;
-  /** Progress percentage (0-100). */
-  progress: number;
-  /** Status message. */
-  message: string;
-}
+export type TranscriptionProgress = { 
+/**
+ * Current stage: "extracting_audio", "transcribing", "complete".
+ */
+stage: string, 
+/**
+ * Progress percentage (0-100).
+ */
+progress: number, 
+/**
+ * Status message.
+ */
+message: string, };

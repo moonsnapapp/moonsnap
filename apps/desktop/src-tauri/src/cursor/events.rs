@@ -17,7 +17,7 @@ pub const SHORT_CURSOR_SHAPE_DEBOUNCE_MS: f64 = 1000.0;
 /// 2D coordinate helper type.
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
-#[ts(export, export_to = "../../src/types/generated/")]
+#[ts(export, export_to = "../../src/types/generated/", concrete(T = f64))]
 pub struct XY<T> {
     pub x: T,
     pub y: T,

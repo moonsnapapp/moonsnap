@@ -32,7 +32,7 @@ const CURSOR_POLL_INTERVAL_MS: u64 = 16;
 /// Information about a recorded cursor image.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
-#[ts(export, export_to = "../../../src/types/generated/")]
+#[ts(export, export_to = "../../src/types/generated/")]
 pub struct Cursor {
     /// PNG file name in the cursors directory.
     pub file_name: String,

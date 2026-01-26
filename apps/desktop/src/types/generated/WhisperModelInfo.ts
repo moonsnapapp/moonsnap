@@ -3,13 +3,20 @@
 /**
  * Whisper model information.
  */
-export interface WhisperModelInfo {
-  /** Model name (tiny, base, small, medium, large-v3). */
-  name: string;
-  /** Approximate file size in bytes. */
-  sizeBytes: number;
-  /** Whether the model is downloaded. */
-  downloaded: boolean;
-  /** Local file path if downloaded. */
-  path: string | null;
-}
+export type WhisperModelInfo = { 
+/**
+ * Model name (tiny, base, small, medium, large-v3).
+ */
+name: string, 
+/**
+ * Approximate file size in bytes.
+ */
+sizeBytes: bigint, 
+/**
+ * Whether the model is downloaded.
+ */
+downloaded: boolean, 
+/**
+ * Local file path if downloaded.
+ */
+path: string | null, };

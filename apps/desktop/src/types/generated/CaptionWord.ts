@@ -3,11 +3,16 @@
 /**
  * A single word with timing information.
  */
-export interface CaptionWord {
-  /** The word text. */
-  text: string;
-  /** Start time in seconds. */
-  start: number;
-  /** End time in seconds. */
-  end: number;
-}
+export type CaptionWord = { 
+/**
+ * The word text.
+ */
+text: string, 
+/**
+ * Start time in seconds.
+ */
+start: number, 
+/**
+ * End time in seconds.
+ */
+end: number, };
