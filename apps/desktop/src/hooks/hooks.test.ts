@@ -8,11 +8,6 @@ vi.mock('nanoid', () => ({
   nanoid: () => `mock_id_${Date.now()}`,
 }));
 
-// Mock recordAction from editorStore
-vi.mock('../stores/editorStore', () => ({
-  recordAction: (fn: () => void) => fn(),
-}));
-
 // Helper to create test shapes
 function createTestShape(overrides: Partial<CanvasShape> = {}): CanvasShape {
   return {
@@ -32,6 +27,7 @@ function createTestShape(overrides: Partial<CanvasShape> = {}): CanvasShape {
 describe('useKeyboardShortcuts', () => {
   const mockSetSelectedIds = vi.fn();
   const mockOnShapesChange = vi.fn();
+  const mockRecordAction = vi.fn((fn: () => void) => fn());
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -45,6 +41,7 @@ describe('useKeyboardShortcuts', () => {
           setSelectedIds: mockSetSelectedIds,
           shapes: [],
           onShapesChange: mockOnShapesChange,
+          recordAction: mockRecordAction,
         })
       );
 
@@ -77,6 +74,7 @@ describe('useKeyboardShortcuts', () => {
           setSelectedIds: mockSetSelectedIds,
           shapes: [shape1, shape2],
           onShapesChange: mockOnShapesChange,
+          recordAction: mockRecordAction,
         })
       );
 
@@ -98,6 +96,7 @@ describe('useKeyboardShortcuts', () => {
           setSelectedIds: mockSetSelectedIds,
           shapes: [shape1],
           onShapesChange: mockOnShapesChange,
+          recordAction: mockRecordAction,
         })
       );
 
@@ -117,6 +116,7 @@ describe('useKeyboardShortcuts', () => {
           setSelectedIds: mockSetSelectedIds,
           shapes: [shape1],
           onShapesChange: mockOnShapesChange,
+          recordAction: mockRecordAction,
         })
       );
 
@@ -139,6 +139,7 @@ describe('useKeyboardShortcuts', () => {
           setSelectedIds: mockSetSelectedIds,
           shapes: [shape1, shape2],
           onShapesChange: mockOnShapesChange,
+          recordAction: mockRecordAction,
         })
       );
 
@@ -156,6 +157,7 @@ describe('useKeyboardShortcuts', () => {
           setSelectedIds: mockSetSelectedIds,
           shapes: [],
           onShapesChange: mockOnShapesChange,
+          recordAction: mockRecordAction,
         })
       );
 
@@ -177,6 +179,7 @@ describe('useKeyboardShortcuts', () => {
           setSelectedIds: mockSetSelectedIds,
           shapes: [shape1],
           onShapesChange: mockOnShapesChange,
+          recordAction: mockRecordAction,
         })
       );
 
@@ -201,6 +204,7 @@ describe('useKeyboardShortcuts', () => {
           setSelectedIds: mockSetSelectedIds,
           shapes: [shape1],
           onShapesChange: mockOnShapesChange,
+          recordAction: mockRecordAction,
         })
       );
 
@@ -221,6 +225,7 @@ describe('useKeyboardShortcuts', () => {
           setSelectedIds: mockSetSelectedIds,
           shapes: [shape1, shape2],
           onShapesChange: mockOnShapesChange,
+          recordAction: mockRecordAction,
         })
       );
 
@@ -243,6 +248,7 @@ describe('useKeyboardShortcuts', () => {
           setSelectedIds: mockSetSelectedIds,
           shapes: [shape1],
           onShapesChange: mockOnShapesChange,
+          recordAction: mockRecordAction,
         })
       );
 
@@ -277,6 +283,7 @@ describe('useKeyboardShortcuts', () => {
           setSelectedIds: mockSetSelectedIds,
           shapes: [],
           onShapesChange: mockOnShapesChange,
+          recordAction: mockRecordAction,
         })
       );
 
