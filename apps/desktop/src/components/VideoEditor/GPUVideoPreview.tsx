@@ -226,8 +226,12 @@ const SceneModeRenderer = memo(function SceneModeRenderer({
             clickHighlightConfig={cursorConfig?.clickHighlight}
             containerWidth={containerWidth}
             containerHeight={containerHeight}
+            videoWidth={videoWidth}
+            videoHeight={videoHeight}
             videoAspectRatio={videoAspectRatio}
             zoomRegions={zoomRegions}
+            backgroundPadding={backgroundPadding}
+            rounding={rounding}
           />
         )}
 
@@ -242,6 +246,8 @@ const SceneModeRenderer = memo(function SceneModeRenderer({
             videoHeight={videoHeight}
             videoAspectRatio={videoAspectRatio}
             zoomRegions={zoomRegions}
+            backgroundPadding={backgroundPadding}
+            rounding={rounding}
           />
         )}
 

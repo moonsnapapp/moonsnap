@@ -45,7 +45,7 @@ pub use coord::{
 };
 pub use cursor::{
     composite_cursor, composite_cursor_with_motion_blur, get_svg_cursor_image, CursorInterpolator,
-    DecodedCursorImage, InterpolatedCursor,
+    DecodedCursorImage, InterpolatedCursor, VideoContentBounds,
 };
 pub use decoder::VideoDecoder;
 pub use editor_instance::EditorInstance;

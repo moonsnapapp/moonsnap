@@ -43,6 +43,10 @@ interface CursorOverlayProps {
   videoAspectRatio?: number;
   /** Zoom regions for applying the same transform as the video */
   zoomRegions?: ZoomRegion[];
+  /** Background padding in pixels - needed for zoom transform alignment */
+  backgroundPadding?: number;
+  /** Corner rounding in pixels - needed for zoom transform alignment */
+  rounding?: number;
 }
 
 /**
@@ -197,16 +201,23 @@ export const CursorOverlay = memo(function CursorOverlay({
   cursorConfig,
   containerWidth,
   containerHeight,
-  videoWidth: _videoWidth, // Used for aspect ratio, actual scaling uses videoHeight
+  videoWidth,
   videoHeight: actualVideoHeight,
   videoAspectRatio,
   zoomRegions,
+  backgroundPadding = 0,
+  rounding = 0,
 }: CursorOverlayProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const currentTimeMs = usePreviewOrPlaybackTime();
 
   // Get zoom transform - must match video exactly for cursor alignment at all zoom levels
-  const zoomStyle = useZoomPreview(zoomRegions, currentTimeMs, cursorRecording);
+  const zoomStyle = useZoomPreview(zoomRegions, currentTimeMs, cursorRecording, {
+    backgroundPadding,
+    rounding,
+    videoWidth,
+    videoHeight: actualVideoHeight,
+  });
 
   // Simple counter to force re-render when images load
   // This counter is included in render useEffect deps to ensure canvas redraws after SVG load
@@ -397,11 +408,15 @@ export const CursorOverlay = memo(function CursorOverlay({
       ctx.stroke();
     };
 
+    // Get click animation scale from cursor data (0.7-1.0)
+    const clickAnimationScale = cursorData.scale ?? 1.0;
+
     // Helper to draw cursor with image and definition (for SVG cursors)
     // SVG cursors use fractional hotspot (0-1)
     const drawCursor = (img: HTMLImageElement, def: CursorDefinition) => {
       ctx.clearRect(0, 0, containerWidth, containerHeight);
-      const drawHeight = finalCursorHeight;
+      // Apply click animation scale (matches export behavior)
+      const drawHeight = finalCursorHeight * clickAnimationScale;
       const drawWidth = (img.width / img.height) * drawHeight;
       const drawX = pixelX - drawWidth * def.hotspotX;
       const drawY = pixelY - drawHeight * def.hotspotY;
@@ -414,7 +429,8 @@ export const CursorOverlay = memo(function CursorOverlay({
       ctx.clearRect(0, 0, containerWidth, containerHeight);
       // Scale bitmap to finalCursorHeight, matching export formula:
       // bitmap_scale = final_cursor_height / cursor_image.height
-      const bitmapScale = finalCursorHeight / img.height;
+      // Apply click animation scale (matches export behavior)
+      const bitmapScale = (finalCursorHeight / img.height) * clickAnimationScale;
       const drawWidth = img.width * bitmapScale;
       const drawHeight = img.height * bitmapScale;
       const drawX = pixelX - hotspotX * bitmapScale;

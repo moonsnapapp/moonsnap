@@ -69,6 +69,30 @@ fn vs_main(@builtin(vertex_index) vertex_index: u32) -> VertexOutput {
     return output;
 }
 
+// sRGB <-> Linear conversion for CSS-compatible blending
+// CSS blends colors in sRGB space, so we convert to sRGB, blend, then convert back
+fn linear_to_srgb(c: f32) -> f32 {
+    if (c <= 0.0031308) {
+        return c * 12.92;
+    }
+    return 1.055 * pow(c, 1.0 / 2.4) - 0.055;
+}
+
+fn srgb_to_linear(c: f32) -> f32 {
+    if (c <= 0.04045) {
+        return c / 12.92;
+    }
+    return pow((c + 0.055) / 1.055, 2.4);
+}
+
+fn linear_to_srgb_vec3(c: vec3<f32>) -> vec3<f32> {
+    return vec3<f32>(linear_to_srgb(c.x), linear_to_srgb(c.y), linear_to_srgb(c.z));
+}
+
+fn srgb_to_linear_vec3(c: vec3<f32>) -> vec3<f32> {
+    return vec3<f32>(srgb_to_linear(c.x), srgb_to_linear(c.y), srgb_to_linear(c.z));
+}
+
 // Superellipse norm for squircle (iOS-style rounded corners)
 // Power of 4.0 gives the classic squircle shape
 fn superellipse_norm(p: vec2<f32>, power: f32) -> f32 {
@@ -129,13 +153,13 @@ fn webcam_sdf(p: vec2<f32>, half_size: vec2<f32>, shape: f32, corner_radius: f32
 fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     let pixel_pos = input.uv * uniforms.output_size.xy;
 
-    // Frame bounds and styling
+    // Frame bounds and styling (base values before zoom)
     let frame_pos = uniforms.frame_bounds.xy;
     let frame_size = uniforms.frame_bounds.zw;
-    let frame_center = frame_pos + frame_size * 0.5;
-    let frame_half_size = frame_size * 0.5;
+    let base_frame_center = frame_pos + frame_size * 0.5;
+    let base_half_size = frame_size * 0.5;
 
-    let rounding_px = uniforms.frame_rounding.x;
+    let base_rounding = uniforms.frame_rounding.x;
     let rounding_type = uniforms.frame_rounding.y;
 
     // Single shadow value (0-100) - same as webcam for simplicity
@@ -143,10 +167,34 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     let shadow_enabled = shadow_value > 0.0;
 
     let border_enabled = uniforms.frame_border.x > 0.5;
-    let border_width = uniforms.frame_border.y;
+    let base_border_width = uniforms.frame_border.y;
     // border_opacity not used - Cap uses border_color.w directly
 
-    // Calculate SDF for video frame
+    // Zoom parameters
+    let zoom_scale = uniforms.zoom.x;
+    let zoom_center = vec2<f32>(uniforms.zoom.y, uniforms.zoom.z);
+
+    // Apply zoom to frame geometry (CSS-style: scale the entire frame+border+shadow)
+    // When zoom > 1, the frame appears larger, so we scale all dimensions
+    var frame_half_size = base_half_size;
+    var rounding_px = base_rounding;
+    var border_width = base_border_width;
+    var frame_center = base_frame_center;
+
+    if (zoom_scale > 1.0) {
+        // Scale frame dimensions by zoom factor
+        frame_half_size = base_half_size * zoom_scale;
+        rounding_px = base_rounding * zoom_scale;
+        border_width = base_border_width * zoom_scale;
+
+        // Offset frame center based on zoom target
+        // When zooming at (0.5, 0.5), center stays the same
+        // When zooming at other points, the frame shifts so that point stays centered
+        let zoom_offset = (zoom_center - vec2<f32>(0.5)) * frame_size * (zoom_scale - 1.0);
+        frame_center = base_frame_center - zoom_offset;
+    }
+
+    // Calculate SDF for video frame using zoomed geometry
     let rel_pos = pixel_pos - frame_center;
     let frame_dist = sdf_rounded_rect_styled(rel_pos, frame_half_size, rounding_px, rounding_type);
 
@@ -192,24 +240,26 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
 
             let border_alpha = edge_alpha * uniforms.border_color.w;
             let border_rgb = uniforms.border_color.xyz;
-            color = mix(color, vec4<f32>(border_rgb, 1.0), border_alpha);
+
+            // Blend in sRGB space to match CSS preview appearance
+            // CSS does gamma-incorrect blending, so we match it for consistency
+            let srgb_prev = linear_to_srgb_vec3(color.rgb);
+            let srgb_border = linear_to_srgb_vec3(border_rgb);
+            let blended_srgb = mix(srgb_prev, srgb_border, border_alpha);
+            let blended_linear = srgb_to_linear_vec3(blended_srgb);
+
+            // Calculate alpha: standard over composite
+            let result_alpha = color.a * (1.0 - border_alpha) + border_alpha;
+            color = vec4<f32>(blended_linear, result_alpha);
         }
     }
 
     // Render video frame content
     if (frame_dist <= 0.0) {
-        let zoom_scale = uniforms.zoom.x;
-        let zoom_center = vec2<f32>(uniforms.zoom.y, uniforms.zoom.z);
-
-        // Calculate UV within the frame bounds
-        let frame_uv = (pixel_pos - frame_pos) / frame_size;
-
-        // Apply zoom transformation
-        var video_uv = frame_uv;
-        if (zoom_scale > 1.0) {
-            video_uv = (frame_uv - zoom_center) / zoom_scale + zoom_center;
-        }
-        video_uv = clamp(video_uv, vec2<f32>(0.0), vec2<f32>(1.0));
+        // Calculate UV within the zoomed frame
+        // Since zoom is already applied to frame geometry, UV is a simple mapping
+        // rel_pos is relative to zoomed frame center, frame_half_size is zoomed
+        let video_uv = clamp(rel_pos / (frame_half_size * 2.0) + vec2<f32>(0.5), vec2<f32>(0.0), vec2<f32>(1.0));
 
         // Sample video
         var video_color = textureSample(video_texture, video_sampler, video_uv);

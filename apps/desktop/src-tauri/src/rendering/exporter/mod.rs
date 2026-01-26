@@ -23,7 +23,7 @@ use tauri::{AppHandle, Manager};
 
 use super::caption_layer::prepare_captions;
 use super::compositor::Compositor;
-use super::cursor::{composite_cursor, CursorInterpolator};
+use super::cursor::{composite_cursor, CursorInterpolator, VideoContentBounds};
 use super::renderer::Renderer;
 use super::scene::SceneInterpolator;
 use super::stream_decoder::StreamDecoder;
@@ -351,8 +351,17 @@ pub async fn export_video_gpu(
         // Scene segments, zoom regions, and visibility all use timeline-relative time
         let relative_time_ms = ((frame_idx as f64 / fps as f64) * 1000.0) as u64;
 
+        // Get cursor position for Auto zoom mode (if cursor data is available)
+        // This allows zoom to follow cursor position dynamically
+        let cursor_pos_for_zoom = cursor_interpolator.as_ref().map(|interp| {
+            let cursor = interp.get_cursor_at(relative_time_ms);
+            (cursor.x as f64, cursor.y as f64)
+        });
+
         // Scene segments and zoom regions use RELATIVE time (timeline position)
-        let zoom_state = zoom_interpolator.get_zoom_at(relative_time_ms);
+        // Pass cursor position so Auto zoom mode can follow cursor
+        let zoom_state =
+            zoom_interpolator.get_zoom_at_with_cursor(relative_time_ms, cursor_pos_for_zoom);
         let interpolated_scene = scene_interpolator.get_scene_at(relative_time_ms);
         let webcam_visible = is_webcam_visible_at(&project, relative_time_ms);
 
@@ -526,7 +535,22 @@ pub async fn export_video_gpu(
         if let Some(ref cursor_interp) = cursor_interpolator {
             // Only show cursor when screen is visible (not in cameraOnly mode)
             if camera_only_opacity < 0.99 {
-                let cursor = cursor_interp.get_cursor_at(relative_time_ms);
+                // Use cursor config for idle hiding behavior
+                let cursor = cursor_interp.get_cursor_at_with_config(
+                    relative_time_ms,
+                    project.cursor.hide_when_idle,
+                    project.cursor.idle_timeout_ms as u64,
+                );
+
+                // Calculate video content bounds within composition
+                // Cursor coordinates are normalized to video content, not full composition
+                let video_bounds = VideoContentBounds::with_padding(
+                    composition_w,
+                    composition_h,
+                    video_w,
+                    video_h,
+                    padding,
+                );
 
                 // Get cursor image based on cursor type
                 if project.cursor.cursor_type == CursorType::Circle {
@@ -535,6 +559,7 @@ pub async fn export_video_gpu(
                         &mut rgba_data,
                         composition_w,
                         composition_h,
+                        &video_bounds,
                         cursor.x,
                         cursor.y,
                         project.cursor.scale,
@@ -574,6 +599,7 @@ pub async fn export_video_gpu(
                                 &mut rgba_data,
                                 composition_w,
                                 composition_h,
+                                &video_bounds,
                                 &cursor,
                                 &svg_decoded,
                                 1.0,
@@ -592,6 +618,7 @@ pub async fn export_video_gpu(
                                     &mut rgba_data,
                                     composition_w,
                                     composition_h,
+                                    &video_bounds,
                                     &cursor,
                                     cursor_image,
                                     bitmap_scale,

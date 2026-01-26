@@ -18,10 +18,18 @@ interface ClickHighlightOverlayProps {
   containerWidth: number;
   /** Container height in pixels */
   containerHeight: number;
+  /** Video width in pixels - needed for zoom transform alignment */
+  videoWidth?: number;
+  /** Video height in pixels - needed for zoom transform alignment */
+  videoHeight?: number;
   /** Video aspect ratio (width/height) for object-contain offset calculation */
   videoAspectRatio?: number;
   /** Zoom regions for applying the same transform as the video */
   zoomRegions?: ZoomRegion[];
+  /** Background padding in pixels - needed for zoom transform alignment */
+  backgroundPadding?: number;
+  /** Corner rounding in pixels - needed for zoom transform alignment */
+  rounding?: number;
 }
 
 /**
@@ -240,15 +248,24 @@ export const ClickHighlightOverlay = memo(function ClickHighlightOverlay({
   clickHighlightConfig,
   containerWidth,
   containerHeight,
+  videoWidth = 1920,
+  videoHeight = 1080,
   videoAspectRatio,
   zoomRegions,
+  backgroundPadding = 0,
+  rounding = 0,
 }: ClickHighlightOverlayProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const currentTimeMs = usePreviewOrPlaybackTime();
   const lastRenderTimeRef = useRef<number>(-1);
 
   // Get zoom transform - must match video exactly for click highlight alignment at all zoom levels
-  const zoomStyle = useZoomPreview(zoomRegions, currentTimeMs, cursorRecording);
+  const zoomStyle = useZoomPreview(zoomRegions, currentTimeMs, cursorRecording, {
+    backgroundPadding,
+    rounding,
+    videoWidth,
+    videoHeight,
+  });
   
   // Get config values with defaults
   const enabled = clickHighlightConfig?.enabled ?? true;

@@ -2,6 +2,7 @@
 //!
 //! Includes scaling, blending, cropping, and cursor drawing.
 
+use super::super::cursor::VideoContentBounds;
 use super::super::types::DecodedFrame;
 use crate::commands::video_recording::video_project::SceneMode;
 
@@ -225,6 +226,7 @@ pub fn draw_cursor_circle(
     frame_data: &mut [u8],
     frame_width: u32,
     frame_height: u32,
+    video_bounds: &VideoContentBounds,
     cursor_x: f32, // normalized 0-1
     cursor_y: f32, // normalized 0-1
     scale: f32,
@@ -234,9 +236,10 @@ pub fn draw_cursor_circle(
     let radius = base_radius * scale;
     let border_width = 2.0 * scale;
 
-    // Convert normalized position to pixel position
-    let center_x = cursor_x * frame_width as f32;
-    let center_y = cursor_y * frame_height as f32;
+    // Convert normalized position to pixel position within video content area,
+    // then offset by video bounds to position correctly within composition
+    let center_x = video_bounds.x + cursor_x * video_bounds.width;
+    let center_y = video_bounds.y + cursor_y * video_bounds.height;
 
     // Bounding box for the circle
     let min_x = ((center_x - radius - border_width).floor() as i32).max(0);

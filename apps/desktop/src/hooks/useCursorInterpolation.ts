@@ -44,6 +44,11 @@ const DRAG_SPRING: SpringConfig = {
 // Time window for snappy response after click
 const CLICK_REACTION_WINDOW_MS = 160;
 
+// Click animation is disabled - cursor stays at constant size
+// These constants are kept for reference if animation is re-enabled
+// const CURSOR_CLICK_DURATION_MS = 250;
+// const CLICK_SHRINK_SIZE = 0.7;
+
 // Simulation tick rate (60fps internal)
 const SIMULATION_TICK_MS = 1000 / 60;
 
@@ -77,6 +82,8 @@ export interface InterpolatedCursor {
   velocityY: number;
   /** Active cursor image ID (references cursorImages map) */
   cursorId: string | null;
+  /** Scale factor (0.7-1.0) based on click animation */
+  scale: number;
 }
 
 // ============================================================================
@@ -266,6 +273,15 @@ function getSpringProfile(
 }
 
 /**
+ * Calculate cursor scale based on click state.
+ * Currently disabled - always returns 1.0 (no click shrink animation).
+ */
+function getCursorClickScale(_clicks: CursorEvent[], _timeMs: number): number {
+  // Click shrink animation disabled - cursor stays at normal size
+  return 1.0;
+}
+
+/**
  * Pre-compute smoothed cursor events for the entire recording.
  * This runs spring simulation once and caches results.
  */
@@ -370,11 +386,15 @@ function getActiveCursorId(
  */
 function interpolateAtTime(
   events: SmoothedCursorEvent[],
+  originalEvents: CursorEvent[],
   timeMs: number,
   cursorId: string | null
 ): InterpolatedCursor {
+  // Calculate click animation scale
+  const scale = getCursorClickScale(originalEvents, timeMs);
+
   if (events.length === 0) {
-    return { x: 0.5, y: 0.5, velocityX: 0, velocityY: 0, cursorId };
+    return { x: 0.5, y: 0.5, velocityX: 0, velocityY: 0, cursorId, scale };
   }
 
   // Before first event
@@ -386,6 +406,7 @@ function interpolateAtTime(
       velocityX: e.velocity.x,
       velocityY: e.velocity.y,
       cursorId,
+      scale,
     };
   }
 
@@ -398,6 +419,7 @@ function interpolateAtTime(
       velocityX: last.velocity.x,
       velocityY: last.velocity.y,
       cursorId,
+      scale,
     };
   }
 
@@ -422,6 +444,7 @@ function interpolateAtTime(
         velocityX: sim.velocity.x,
         velocityY: sim.velocity.y,
         cursorId,
+        scale,
       };
     }
   }
@@ -433,6 +456,7 @@ function interpolateAtTime(
     velocityX: last.velocity.x,
     velocityY: last.velocity.y,
     cursorId,
+    scale,
   };
 }
 
@@ -497,7 +521,7 @@ export function useCursorInterpolation(
       // Video time 0 corresponds to cursor time videoStartOffsetMs
       const adjustedTimeMs = timeMs + videoStartOffsetMs;
       const cursorId = getActiveCursorId(originalEvents, adjustedTimeMs) ?? fallbackCursorId;
-      return interpolateAtTime(smoothedEvents, adjustedTimeMs, cursorId);
+      return interpolateAtTime(smoothedEvents, originalEvents, adjustedTimeMs, cursorId);
     },
     [smoothedEvents, originalEvents, fallbackCursorId, videoStartOffsetMs]
   );
@@ -518,15 +542,15 @@ export function getRawCursorAt(
   timeMs: number
 ): InterpolatedCursor {
   if (!recording || recording.events.length === 0) {
-    return { x: 0.5, y: 0.5, velocityX: 0, velocityY: 0, cursorId: null };
+    return { x: 0.5, y: 0.5, velocityX: 0, velocityY: 0, cursorId: null, scale: 1.0 };
   }
 
   // Adjust time by video start offset to sync cursor with video
   const adjustedTimeMs = timeMs + (recording.videoStartOffsetMs ?? 0);
 
-  const moves = recording.events.filter(e => e.eventType.type === 'move');
+  const moves = recording.events.filter((e: CursorEvent) => e.eventType.type === 'move');
   if (moves.length === 0) {
-    return { x: 0.5, y: 0.5, velocityX: 0, velocityY: 0, cursorId: null };
+    return { x: 0.5, y: 0.5, velocityX: 0, velocityY: 0, cursorId: null, scale: 1.0 };
   }
 
   // Find the event closest to but not after adjustedTimeMs
@@ -548,7 +572,7 @@ export function getRawCursorAt(
     } else {
       // Find cursor with arrow shape
       for (const [id, img] of Object.entries(recording.cursorImages)) {
-        if (img?.cursorShape === 'arrow') {
+        if ((img as { cursorShape?: string })?.cursorShape === 'arrow') {
           cursorId = id;
           break;
         }
@@ -563,6 +587,9 @@ export function getRawCursorAt(
     }
   }
 
+  // Calculate click animation scale
+  const scale = getCursorClickScale(recording.events, adjustedTimeMs);
+
   // Events already have normalized (0-1) coordinates
   return {
     x: closest.x,
@@ -570,5 +597,6 @@ export function getRawCursorAt(
     velocityX: 0,
     velocityY: 0,
     cursorId,
+    scale,
   };
 }

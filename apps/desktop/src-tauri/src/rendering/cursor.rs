@@ -596,6 +596,22 @@ impl CursorInterpolator {
     /// - `cursor_id`: Active cursor image ID (with fallback)
     /// - `cursor_shape`: Debounced cursor shape for SVG rendering (prevents flickering)
     pub fn get_cursor_at(&self, time_ms: u64) -> InterpolatedCursor {
+        // Default: no idle hiding (cursor always visible)
+        self.get_cursor_at_with_config(time_ms, false, CURSOR_IDLE_MIN_DELAY_MS as u64)
+    }
+
+    /// Get cursor state with configurable idle hiding behavior.
+    ///
+    /// # Arguments
+    /// * `time_ms` - Playback time in milliseconds
+    /// * `hide_when_idle` - Whether to fade out cursor when idle
+    /// * `idle_timeout_ms` - Delay before cursor starts fading (only used if hide_when_idle is true)
+    pub fn get_cursor_at_with_config(
+        &self,
+        time_ms: u64,
+        hide_when_idle: bool,
+        idle_timeout_ms: u64,
+    ) -> InterpolatedCursor {
         let cursor_id = get_active_cursor_id(&self.original_events, time_ms);
         let mut cursor = interpolate_at_time(&self.smoothed_events, time_ms, cursor_id);
 
@@ -613,12 +629,16 @@ impl CursorInterpolator {
             cursor.cursor_shape = self.fallback_cursor_shape;
         }
 
-        // Compute opacity based on idle time
-        cursor.opacity =
-            compute_cursor_idle_opacity(&self.original_events, time_ms, CURSOR_IDLE_MIN_DELAY_MS);
+        // Compute opacity based on idle time (only if hide_when_idle is enabled)
+        if hide_when_idle {
+            cursor.opacity =
+                compute_cursor_idle_opacity(&self.original_events, time_ms, idle_timeout_ms as f64);
+        } else {
+            cursor.opacity = 1.0;
+        }
 
-        // Compute scale based on click animation
-        cursor.scale = get_cursor_click_scale(&self.original_events, time_ms);
+        // Cursor scale is always 1.0 (no click shrink animation)
+        cursor.scale = 1.0;
 
         cursor
     }
@@ -1121,6 +1141,51 @@ pub fn calculate_aspect_aware_scale(
     scale.max(0.1) // Ensure minimum scale
 }
 
+/// Video content bounds within the composition frame.
+/// Used to correctly position cursor when padding is applied.
+#[derive(Debug, Clone, Copy)]
+pub struct VideoContentBounds {
+    /// X offset of video content within composition
+    pub x: f32,
+    /// Y offset of video content within composition
+    pub y: f32,
+    /// Width of video content area
+    pub width: f32,
+    /// Height of video content area
+    pub height: f32,
+}
+
+impl VideoContentBounds {
+    /// Create bounds where video fills the entire frame (no padding).
+    pub fn full_frame(frame_width: u32, frame_height: u32) -> Self {
+        Self {
+            x: 0.0,
+            y: 0.0,
+            width: frame_width as f32,
+            height: frame_height as f32,
+        }
+    }
+
+    /// Create bounds with padding (video centered within composition).
+    pub fn with_padding(
+        composition_width: u32,
+        composition_height: u32,
+        video_width: u32,
+        video_height: u32,
+        padding: u32,
+    ) -> Self {
+        // In auto mode, video is centered with padding on all sides
+        // frame_x = padding, frame_y = padding
+        // frame_width = video_width, frame_height = video_height
+        Self {
+            x: padding as f32,
+            y: padding as f32,
+            width: video_width as f32,
+            height: video_height as f32,
+        }
+    }
+}
+
 /// Composite cursor image onto frame (CPU-based).
 ///
 /// Uses the cursor's opacity and scale properties for idle fade-out and click animation.
@@ -1129,8 +1194,9 @@ pub fn calculate_aspect_aware_scale(
 ///
 /// # Arguments
 /// * `frame_data` - Mutable reference to frame RGBA data
-/// * `frame_width` - Frame width in pixels
-/// * `frame_height` - Frame height in pixels
+/// * `frame_width` - Frame width in pixels (full composition including padding)
+/// * `frame_height` - Frame height in pixels (full composition including padding)
+/// * `video_bounds` - Bounds of video content within the frame (for cursor positioning)
 /// * `cursor` - Interpolated cursor position (normalized 0-1) with opacity and scale
 /// * `cursor_image` - Decoded cursor image
 /// * `base_scale` - Base cursor scale factor (1.0 = native size), multiplied with cursor.scale
@@ -1138,6 +1204,7 @@ pub fn composite_cursor(
     frame_data: &mut [u8],
     frame_width: u32,
     frame_height: u32,
+    video_bounds: &VideoContentBounds,
     cursor: &InterpolatedCursor,
     cursor_image: &DecodedCursorImage,
     base_scale: f32,
@@ -1150,9 +1217,10 @@ pub fn composite_cursor(
     // Combine base scale with click animation scale
     let scale = base_scale * cursor.scale;
 
-    // Convert normalized position to pixel position
-    let pixel_x = cursor.x * frame_width as f32;
-    let pixel_y = cursor.y * frame_height as f32;
+    // Convert normalized position to pixel position within video content area,
+    // then offset by video bounds to position correctly within composition
+    let pixel_x = video_bounds.x + cursor.x * video_bounds.width;
+    let pixel_y = video_bounds.y + cursor.y * video_bounds.height;
 
     // Apply hotspot offset and scale
     let draw_x = pixel_x - (cursor_image.hotspot_x as f32 * scale);
@@ -1225,8 +1293,9 @@ pub fn composite_cursor(
 ///
 /// # Arguments
 /// * `frame_data` - Mutable reference to frame RGBA data
-/// * `frame_width` - Frame width in pixels
-/// * `frame_height` - Frame height in pixels
+/// * `frame_width` - Frame width in pixels (full composition including padding)
+/// * `frame_height` - Frame height in pixels (full composition including padding)
+/// * `video_bounds` - Bounds of video content within the frame (for cursor positioning)
 /// * `cursor` - Interpolated cursor position with velocity
 /// * `cursor_image` - Decoded cursor image
 /// * `base_scale` - Base cursor scale factor
@@ -1234,6 +1303,7 @@ pub fn composite_cursor_with_motion_blur(
     frame_data: &mut [u8],
     frame_width: u32,
     frame_height: u32,
+    video_bounds: &VideoContentBounds,
     cursor: &InterpolatedCursor,
     cursor_image: &DecodedCursorImage,
     base_scale: f32,
@@ -1248,6 +1318,7 @@ pub fn composite_cursor_with_motion_blur(
             frame_data,
             frame_width,
             frame_height,
+            video_bounds,
             cursor,
             cursor_image,
             base_scale,
@@ -1299,6 +1370,7 @@ pub fn composite_cursor_with_motion_blur(
             frame_data,
             frame_width,
             frame_height,
+            video_bounds,
             &trail_cursor,
             cursor_image,
             base_scale,
