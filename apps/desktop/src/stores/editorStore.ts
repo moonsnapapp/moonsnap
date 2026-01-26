@@ -23,7 +23,7 @@ export interface CompositorPreview {
   gradientAngle?: number;
 }
 
-interface EditorState {
+export interface EditorState {
   shapes: CanvasShape[];
   selectedIds: string[];
   stepCount: number;
