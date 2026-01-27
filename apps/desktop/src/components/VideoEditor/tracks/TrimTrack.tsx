@@ -1,6 +1,7 @@
-import { memo, useCallback, useMemo, useRef } from 'react';
+import { memo, useCallback, useMemo, useRef, useEffect, useState } from 'react';
 import { GripVertical, Film } from 'lucide-react';
-import type { TrimSegment } from '../../../types';
+import { invoke } from '@tauri-apps/api/core';
+import type { TrimSegment, AudioWaveform } from '../../../types';
 import {
   useVideoEditorStore,
   formatTimeSimple,
@@ -8,6 +9,7 @@ import {
   getSegmentTimelinePosition,
   getEffectiveDuration,
 } from '../../../stores/videoEditorStore';
+import { audioLogger } from '../../../utils/logger';
 
 interface TrimTrackProps {
   segments: TrimSegment[];
@@ -15,6 +17,53 @@ interface TrimTrackProps {
   timelineZoom: number;
   width: number;
   audioPath?: string;
+}
+
+/**
+ * Hook to load waveform data and calculate global visual gain
+ */
+function useWaveform(audioPath: string | undefined) {
+  const [waveform, setWaveform] = useState<AudioWaveform | null>(null);
+  const [visualGain, setVisualGain] = useState<number>(1);
+
+  useEffect(() => {
+    if (!audioPath) return;
+
+    let cancelled = false;
+
+    async function loadWaveform() {
+      try {
+        const data = await invoke<AudioWaveform>('extract_audio_waveform', {
+          audioPath,
+          samplesPerSecond: 100,
+        });
+
+        if (!cancelled) {
+          // Calculate global peak amplitude for consistent visualization
+          let peakAmplitude = 0;
+          for (const sample of data.samples) {
+            const abs = Math.abs(sample);
+            if (abs > peakAmplitude) peakAmplitude = abs;
+          }
+          // Visual boost - normalize to peak
+          const gain = peakAmplitude > 0.01 ? Math.min(1 / peakAmplitude, 10) : 10;
+
+          setWaveform(data);
+          setVisualGain(gain);
+        }
+      } catch (err) {
+        audioLogger.error('Failed to load waveform:', err);
+      }
+    }
+
+    loadWaveform();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [audioPath]);
+
+  return { waveform, visualGain };
 }
 
 // CSS variable names for trim track styling
@@ -46,6 +95,8 @@ const TrimSegmentItem = memo(function TrimSegmentItem({
   onUpdate,
   onDelete,
   onDragStart,
+  waveform,
+  visualGain,
 }: {
   segment: TrimSegment;
   segmentIndex: number;
@@ -57,6 +108,8 @@ const TrimSegmentItem = memo(function TrimSegmentItem({
   onUpdate: (id: string, updates: Partial<Pick<TrimSegment, 'sourceStartMs' | 'sourceEndMs'>>) => void;
   onDelete: (id: string) => void;
   onDragStart: (dragging: boolean, edge?: 'start' | 'end' | 'move') => void;
+  waveform: AudioWaveform | null;
+  visualGain: number;
 }) {
   const elementRef = useRef<HTMLDivElement>(null);
   const tooltipRef = useRef<HTMLDivElement>(null);
@@ -170,6 +223,19 @@ const TrimSegmentItem = memo(function TrimSegmentItem({
       }}
       onClick={handleClick}
     >
+      {/* Waveform background */}
+      {waveform && (
+        <SegmentWaveform
+          waveform={waveform}
+          visualGain={visualGain}
+          sourceStartMs={segment.sourceStartMs}
+          sourceEndMs={segment.sourceEndMs}
+          sourceDurationMs={sourceDurationMs}
+          width={segmentWidth}
+          height={40}
+        />
+      )}
+
       {/* Left resize handle */}
       <div
         className="absolute left-0 top-0 bottom-0 w-2 cursor-ew-resize rounded-l-md touch-none z-10"
@@ -222,6 +288,100 @@ const TrimSegmentItem = memo(function TrimSegmentItem({
 });
 
 /**
+ * Waveform canvas that renders inside a segment.
+ * Uses global visualGain for consistent appearance across all segments.
+ */
+const SegmentWaveform = memo(function SegmentWaveform({
+  waveform,
+  visualGain,
+  sourceStartMs,
+  sourceEndMs,
+  sourceDurationMs,
+  width,
+  height,
+}: {
+  waveform: AudioWaveform;
+  visualGain: number;
+  sourceStartMs: number;
+  sourceEndMs: number;
+  sourceDurationMs: number;
+  width: number;
+  height: number;
+}) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas || !waveform || waveform.samples.length === 0) return;
+
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    // Use device pixel ratio for sharper rendering
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = width * dpr;
+    canvas.height = height * dpr;
+    ctx.scale(dpr, dpr);
+
+    ctx.clearRect(0, 0, width, height);
+
+    const { samples } = waveform;
+
+    // Calculate which portion of the waveform to render
+    const startRatio = sourceStartMs / sourceDurationMs;
+    const endRatio = sourceEndMs / sourceDurationMs;
+    const startSample = Math.floor(startRatio * samples.length);
+    const endSample = Math.ceil(endRatio * samples.length);
+    const segmentSamples = samples.slice(startSample, endSample);
+
+    if (segmentSamples.length === 0) return;
+
+    const centerY = height / 2;
+    const maxAmplitude = height / 2 - 2;
+
+    // Calculate samples per pixel
+    const samplesPerPixel = segmentSamples.length / width;
+
+    // Create gradient
+    const gradient = ctx.createLinearGradient(0, 0, 0, height);
+    gradient.addColorStop(0, 'rgba(249, 112, 102, 0.7)'); // coral-400
+    gradient.addColorStop(0.5, 'rgba(240, 68, 56, 0.5)'); // coral-500
+    gradient.addColorStop(1, 'rgba(249, 112, 102, 0.7)');
+
+    ctx.fillStyle = gradient;
+    ctx.beginPath();
+    ctx.moveTo(0, centerY);
+
+    // Draw top half - use global visualGain for consistent scaling
+    for (let x = 0; x < width; x++) {
+      const sampleIndex = Math.floor(x * samplesPerPixel);
+      const sample = segmentSamples[Math.min(sampleIndex, segmentSamples.length - 1)];
+      const amplitude = Math.min(Math.abs(sample) * visualGain, 1) * maxAmplitude;
+      ctx.lineTo(x, centerY - amplitude);
+    }
+
+    // Draw bottom half (mirror)
+    for (let x = width - 1; x >= 0; x--) {
+      const sampleIndex = Math.floor(x * samplesPerPixel);
+      const sample = segmentSamples[Math.min(sampleIndex, segmentSamples.length - 1)];
+      const amplitude = Math.min(Math.abs(sample) * visualGain, 1) * maxAmplitude;
+      ctx.lineTo(x, centerY + amplitude);
+    }
+
+    ctx.closePath();
+    ctx.fill();
+  }, [waveform, visualGain, sourceStartMs, sourceEndMs, sourceDurationMs, width, height]);
+
+  return (
+    <canvas
+      ref={canvasRef}
+      className="absolute inset-0 pointer-events-none"
+      style={{ width, height }}
+    />
+  );
+});
+
+/**
  * TrimTrackContent - Track content for video trim segments.
  * Shows segments rippled together (no gaps between them).
  */
@@ -230,8 +390,10 @@ export const TrimTrackContent = memo(function TrimTrackContent({
   durationMs,
   timelineZoom,
   width,
+  audioPath,
 }: TrimTrackProps) {
   const selectedTrimSegmentId = useVideoEditorStore(selectSelectedTrimSegmentId);
+  const { waveform, visualGain } = useWaveform(audioPath);
 
   const {
     selectTrimSegment,
@@ -265,6 +427,17 @@ export const TrimTrackContent = memo(function TrimTrackContent({
           className="absolute top-1 bottom-1 rounded-md bg-[var(--coral-100)] border border-[var(--coral-200)] overflow-hidden"
           style={{ left: 0, width: `${durationMs * timelineZoom}px` }}
         >
+          {waveform && (
+            <SegmentWaveform
+              waveform={waveform}
+              visualGain={visualGain}
+              sourceStartMs={0}
+              sourceEndMs={durationMs}
+              sourceDurationMs={durationMs}
+              width={durationMs * timelineZoom}
+              height={40}
+            />
+          )}
           <div className="absolute top-0 left-0 right-0 flex items-center px-2 h-full pointer-events-none">
             <span className="text-[10px] text-[var(--coral-300)]/80 font-medium truncate drop-shadow-sm">
               <Film className="w-3 h-3 inline mr-1" />
@@ -295,6 +468,8 @@ export const TrimTrackContent = memo(function TrimTrackContent({
           onUpdate={updateTrimSegment}
           onDelete={deleteTrimSegment}
           onDragStart={handleDragStart}
+          waveform={waveform}
+          visualGain={visualGain}
         />
       ))}
 
