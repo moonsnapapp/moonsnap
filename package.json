@@ -20,7 +20,9 @@
     "tauri": "cd apps/desktop && tauri",
     "tauri:dev": "cd apps/desktop && tauri dev",
     "tauri:build": "cd apps/desktop && tauri build",
-    "release": "npm version patch && git push && git push --tags",
+    "release": "bash scripts/release.sh",
+    "release:minor": "bash scripts/release.sh minor",
+    "release:major": "bash scripts/release.sh major",
     "prepare": "husky"
   },
   "devDependencies": {

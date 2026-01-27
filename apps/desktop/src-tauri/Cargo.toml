@@ -1,6 +1,6 @@
 [package]
 name = "snapit"
-version = "0.4.14"
+version = "0.4.17"
 description = "A Snagit-like screen capture and annotation tool"
 authors = ["SnapIt"]
 edition = "2021"
