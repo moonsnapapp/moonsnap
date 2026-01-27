@@ -14,6 +14,7 @@ import {
   Video,
   EyeOff,
   Scissors,
+  RotateCcw,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -75,6 +76,7 @@ const PreviewScrubber = memo(function PreviewScrubber({
 interface VideoTimelineProps {
   onExport: () => void;
   onSplitAtPlayhead?: () => void;
+  onResetTrimSegments?: () => void;
 }
 
 /**
@@ -169,7 +171,7 @@ const PlayheadTimeIndicator = memo(function PlayheadTimeIndicator() {
  * VideoTimeline - Main timeline component with ruler, tracks, and playhead.
  * Optimized to prevent re-renders during playback.
  */
-export function VideoTimeline({ onExport, onSplitAtPlayhead }: VideoTimelineProps) {
+export function VideoTimeline({ onExport, onSplitAtPlayhead, onResetTrimSegments }: VideoTimelineProps) {
   const project = useVideoEditorStore(selectProject);
   const timelineZoom = useVideoEditorStore(selectTimelineZoom);
   const isDraggingPlayhead = useVideoEditorStore(selectIsDraggingPlayhead);
@@ -394,6 +396,23 @@ export function VideoTimeline({ onExport, onSplitAtPlayhead }: VideoTimelineProp
                   </TooltipContent>
                 </Tooltip>
               </>
+            )}
+
+            {/* Reset button - restore full video */}
+            {onResetTrimSegments && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    onClick={onResetTrimSegments}
+                    className="glass-btn h-8 w-8"
+                  >
+                    <RotateCcw className="w-4 h-4" />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom">
+                  <span className="text-xs">Reset Trims</span>
+                </TooltipContent>
+              </Tooltip>
             )}
           </div>
 

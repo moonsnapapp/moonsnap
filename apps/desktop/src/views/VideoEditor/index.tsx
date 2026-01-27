@@ -85,6 +85,7 @@ export const VideoEditorView = forwardRef<VideoEditorViewRef, VideoEditorViewPro
     selectTrimSegment,
     deleteTrimSegment,
     splitAtPlayhead,
+    resetTrimSegments,
     undoTrim,
     redoTrim,
     // Save
@@ -170,6 +171,11 @@ export const VideoEditorView = forwardRef<VideoEditorViewRef, VideoEditorViewPro
   const handleSplitAtPlayhead = useCallback(() => {
     splitAtPlayhead();
   }, [splitAtPlayhead]);
+
+  // Handle reset trim segments - restore full video
+  const handleResetTrimSegments = useCallback(() => {
+    resetTrimSegments();
+  }, [resetTrimSegments]);
 
   // Undo/redo handlers for trim operations
   const handleUndoTrim = useCallback(() => {
@@ -327,7 +333,11 @@ export const VideoEditorView = forwardRef<VideoEditorViewRef, VideoEditorViewPro
       </div>
 
       {/* Timeline with integrated controls */}
-      <VideoEditorTimeline onExport={handleExport} onSplitAtPlayhead={handleSplitAtPlayhead} />
+      <VideoEditorTimeline
+        onExport={handleExport}
+        onSplitAtPlayhead={handleSplitAtPlayhead}
+        onResetTrimSegments={handleResetTrimSegments}
+      />
 
       {/* Crop Dialog - lazy loaded, crops video content before composition */}
       {project && isCropDialogOpen && (

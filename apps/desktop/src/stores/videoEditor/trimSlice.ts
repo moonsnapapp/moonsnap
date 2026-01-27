@@ -183,6 +183,9 @@ export interface TrimSlice {
   // Initialize segments
   initializeTrimSegments: () => void;
 
+  // Reset to full video
+  resetTrimSegments: () => void;
+
   // Undo/redo
   undoTrim: () => void;
   redoTrim: () => void;
@@ -261,6 +264,40 @@ export const createTrimSlice: SliceCreator<TrimSlice> = (set, get) => ({
       },
       trimHistory: history,
       trimHistoryIndex: index,
+    });
+  },
+
+  // Reset to full video (single segment covering entire duration)
+  resetTrimSegments: () => {
+    const { project, trimHistory, trimHistoryIndex } = get();
+    if (!project) return;
+
+    const fullSegment: TrimSegment = {
+      id: generateTrimSegmentId(),
+      sourceStartMs: 0,
+      sourceEndMs: Math.round(project.timeline.durationMs),
+    };
+
+    const newSegments = [fullSegment];
+
+    // Push to history so user can undo the reset
+    const { history, index } = pushTrimHistory(trimHistory, trimHistoryIndex, {
+      segments: newSegments,
+      selectedId: null,
+    });
+
+    set({
+      project: {
+        ...project,
+        timeline: {
+          ...project.timeline,
+          segments: newSegments,
+        },
+      },
+      selectedTrimSegmentId: null,
+      trimHistory: history,
+      trimHistoryIndex: index,
+      currentTimeMs: 0,
     });
   },
 
