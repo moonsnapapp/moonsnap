@@ -20,9 +20,10 @@
     "tauri": "cd apps/desktop && tauri",
     "tauri:dev": "cd apps/desktop && tauri dev",
     "tauri:build": "cd apps/desktop && tauri build",
-    "release": "node scripts/release.js",
-    "release:minor": "node scripts/release.js minor",
-    "release:major": "node scripts/release.js major",
+    "version": "node scripts/sync-versions.js && git add -A",
+    "release": "npm version patch",
+    "release:minor": "npm version minor",
+    "release:major": "npm version major",
     "prepare": "husky"
   },
   "devDependencies": {
