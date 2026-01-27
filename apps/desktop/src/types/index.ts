@@ -397,6 +397,7 @@ export type {
   VideoProject,
   VideoSources,
   TimelineState,
+  TrimSegment,
   ZoomConfig,
   ZoomMode,
   ZoomRegion,

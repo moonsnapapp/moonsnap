@@ -10,6 +10,15 @@ export {
   formatTimeSimple,
   sanitizeProjectForSave,
   DEFAULT_TIMELINE_ZOOM,
+  // Trim slice exports
+  generateTrimSegmentId,
+  timelineToSource,
+  sourceToTimeline,
+  getEffectiveDuration,
+  getSegmentTimelinePosition,
+  findSegmentAtSourceTime,
+  findSegmentIndexAtTimelineTime,
+  MIN_TRIM_SEGMENT_DURATION_MS,
 } from './videoEditor';
 
 export type {
@@ -21,4 +30,5 @@ export type {
   ExportSlice,
   ProjectSlice,
   GPUEditorSlice,
+  TrimSlice,
 } from './videoEditor';

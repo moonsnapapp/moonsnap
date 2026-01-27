@@ -9,6 +9,7 @@ import { createExportSlice } from './exportSlice';
 import { createProjectSlice } from './projectSlice';
 import { createGPUEditorSlice } from './gpuEditorSlice';
 import { createCaptionSlice } from './captionSlice';
+import { createTrimSlice } from './trimSlice';
 
 // Import and re-export types
 import type { VideoEditorState } from './types';
@@ -22,6 +23,7 @@ export type { ExportSlice } from './exportSlice';
 export type { ProjectSlice } from './projectSlice';
 export type { GPUEditorSlice } from './gpuEditorSlice';
 export type { CaptionSlice } from './captionSlice';
+export type { TrimSlice } from './trimSlice';
 
 // Type alias for the store
 export type VideoEditorStore = StoreApi<VideoEditorState>;
@@ -39,6 +41,7 @@ export const useVideoEditorStore = create<VideoEditorState>()(
       ...createProjectSlice(...a),
       ...createGPUEditorSlice(...a),
       ...createCaptionSlice(...a),
+      ...createTrimSlice(...a),
     }),
     { name: 'VideoEditorStore', enabled: process.env.NODE_ENV === 'development' }
   )
@@ -49,6 +52,16 @@ export { generateZoomRegionId } from './segmentsSlice';
 export { sanitizeProjectForSave } from './projectSlice';
 export { DEFAULT_TIMELINE_ZOOM } from './timelineSlice';
 export { DEFAULT_CAPTION_SETTINGS } from './captionSlice';
+export {
+  generateTrimSegmentId,
+  timelineToSource,
+  sourceToTimeline,
+  getEffectiveDuration,
+  getSegmentTimelinePosition,
+  findSegmentAtSourceTime,
+  findSegmentIndexAtTimelineTime,
+  MIN_TRIM_SEGMENT_DURATION_MS,
+} from './trimSlice';
 
 /**
  * Format milliseconds as timecode (MM:SS:FF at 30fps)

@@ -5,15 +5,17 @@
  * Zoom is applied at the frame wrapper level in SceneModeRenderer.
  */
 
-import { memo, useRef, useEffect, useState, useMemo } from 'react';
+import { memo, useRef, useEffect, useState, useMemo, useCallback } from 'react';
 import { convertFileSrc } from '@tauri-apps/api/core';
-import { useVideoEditorStore } from '../../../stores/videoEditorStore';
+import { useVideoEditorStore, timelineToSource } from '../../../stores/videoEditorStore';
 import { usePreviewOrPlaybackTime } from '../../../hooks/usePlaybackEngine';
 import { useWebCodecsPreview } from '../../../hooks/useWebCodecsPreview';
+import type { TrimSegment } from '../../../types';
 
 // Selectors to prevent re-renders from unrelated store changes
 const selectPreviewTimeMs = (s: ReturnType<typeof useVideoEditorStore.getState>) => s.previewTimeMs;
 const selectIsPlaying = (s: ReturnType<typeof useVideoEditorStore.getState>) => s.isPlaying;
+const selectSegments = (s: ReturnType<typeof useVideoEditorStore.getState>) => s.project?.timeline.segments as TrimSegment[] | undefined;
 
 /**
  * WebCodecs-accelerated preview canvas for instant scrubbing.
@@ -35,13 +37,23 @@ export const WebCodecsCanvasNoZoom = memo(function WebCodecsCanvasNoZoom({
 
   const previewTimeMs = useVideoEditorStore(selectPreviewTimeMs);
   const isPlaying = useVideoEditorStore(selectIsPlaying);
+  const segments = useVideoEditorStore(selectSegments);
   const { getFrame, prefetchAround, isReady } = useWebCodecsPreview(videoPath);
 
-  // Prefetch frames when preview position changes
+  // Convert timeline time to source time for video seeking
+  const getSourceTime = useCallback((timelineTimeMs: number): number => {
+    if (!segments || segments.length === 0) {
+      return timelineTimeMs;
+    }
+    return timelineToSource(timelineTimeMs, segments);
+  }, [segments]);
+
+  // Prefetch frames when preview position changes (use source time)
   useEffect(() => {
     if (!isReady || isPlaying || previewTimeMs === null) return;
-    prefetchAround(previewTimeMs);
-  }, [isReady, isPlaying, previewTimeMs, prefetchAround]);
+    const sourceTimeMs = getSourceTime(previewTimeMs);
+    prefetchAround(sourceTimeMs);
+  }, [isReady, isPlaying, previewTimeMs, prefetchAround, getSourceTime]);
 
   // RAF-based canvas drawing - polls for frames without causing React re-renders
   useEffect(() => {
@@ -49,6 +61,9 @@ export const WebCodecsCanvasNoZoom = memo(function WebCodecsCanvasNoZoom({
       setHasFrame(false);
       return;
     }
+
+    // Convert timeline time to source time for fetching the correct frame
+    const sourceTimeMs = getSourceTime(previewTimeMs);
 
     let active = true;
     let attempts = 0;
@@ -60,10 +75,10 @@ export const WebCodecsCanvasNoZoom = memo(function WebCodecsCanvasNoZoom({
       const canvas = canvasRef.current;
       if (!canvas) return;
 
-      const frame = getFrame(previewTimeMs);
+      const frame = getFrame(sourceTimeMs);
 
       if (frame) {
-        if (lastDrawnTimeRef.current !== previewTimeMs) {
+        if (lastDrawnTimeRef.current !== sourceTimeMs) {
           const ctx = canvas.getContext('2d');
           if (ctx) {
             if (canvas.width !== frame.width || canvas.height !== frame.height) {
@@ -71,7 +86,7 @@ export const WebCodecsCanvasNoZoom = memo(function WebCodecsCanvasNoZoom({
               canvas.height = frame.height;
             }
             ctx.drawImage(frame, 0, 0);
-            lastDrawnTimeRef.current = previewTimeMs;
+            lastDrawnTimeRef.current = sourceTimeMs;
           }
         }
         setHasFrame(true);
@@ -93,7 +108,7 @@ export const WebCodecsCanvasNoZoom = memo(function WebCodecsCanvasNoZoom({
         cancelAnimationFrame(rafIdRef.current);
       }
     };
-  }, [isReady, isPlaying, previewTimeMs, getFrame]);
+  }, [isReady, isPlaying, previewTimeMs, getFrame, getSourceTime]);
 
   const showCanvas = !isPlaying && previewTimeMs !== null && isReady && hasFrame;
 
@@ -135,20 +150,31 @@ export const VideoNoZoom = memo(function VideoNoZoom({
 }) {
   const currentTimeMs = usePreviewOrPlaybackTime();
   const isPlaying = useVideoEditorStore(selectIsPlaying);
+  const segments = useVideoEditorStore(selectSegments);
+
+  // Convert timeline time to source time for video seeking
+  const getSourceTime = useCallback((timelineTimeMs: number): number => {
+    if (!segments || segments.length === 0) {
+      return timelineTimeMs;
+    }
+    return timelineToSource(timelineTimeMs, segments);
+  }, [segments]);
 
   // Keep video seeked even when hidden (needed for mask overlay sampling)
+  // Convert timeline time to source time before seeking
   useEffect(() => {
     const video = videoRef.current;
     if (!video || isPlaying) return;
 
-    const targetTime = currentTimeMs / 1000;
+    const sourceTimeMs = getSourceTime(currentTimeMs);
+    const targetTime = sourceTimeMs / 1000;
     const diff = Math.abs(video.currentTime - targetTime);
 
     // Seek when difference is noticeable
     if (diff > 0.05) {
       video.currentTime = targetTime;
     }
-  }, [videoRef, currentTimeMs, isPlaying]);
+  }, [videoRef, currentTimeMs, isPlaying, getSourceTime]);
 
   // Default to contain, but crop style can override with cover + position
   const hasCrop = cropStyle && cropStyle.objectFit === 'cover';
@@ -188,8 +214,17 @@ export const FullscreenWebcam = memo(function FullscreenWebcam({
   const videoRef = useRef<HTMLVideoElement>(null);
   const currentTimeMs = usePreviewOrPlaybackTime();
   const isPlaying = useVideoEditorStore(selectIsPlaying);
+  const segments = useVideoEditorStore(selectSegments);
 
   const videoSrc = useMemo(() => convertFileSrc(webcamVideoPath), [webcamVideoPath]);
+
+  // Convert timeline time to source time for video seeking
+  const getSourceTime = useCallback((timelineTimeMs: number): number => {
+    if (!segments || segments.length === 0) {
+      return timelineTimeMs;
+    }
+    return timelineToSource(timelineTimeMs, segments);
+  }, [segments]);
 
   // Sync webcam video play/pause state with main playback
   useEffect(() => {
@@ -198,27 +233,30 @@ export const FullscreenWebcam = memo(function FullscreenWebcam({
 
     if (isPlaying && video.paused) {
       // Read current time once from store, don't subscribe to updates
-      const targetTime = useVideoEditorStore.getState().currentTimeMs / 1000;
-      video.currentTime = targetTime;
+      const timelineTime = useVideoEditorStore.getState().currentTimeMs;
+      const sourceTime = getSourceTime(timelineTime);
+      video.currentTime = sourceTime / 1000;
       video.play().catch(() => {});
     } else if (!isPlaying && !video.paused) {
       video.pause();
     }
-  }, [isPlaying]); // Remove currentTimeMs - only respond to play/pause changes
+  }, [isPlaying, getSourceTime]); // Remove currentTimeMs - only respond to play/pause changes
 
   // Seek webcam video when scrubbing (not playing)
+  // Convert timeline time to source time before seeking
   useEffect(() => {
     const video = videoRef.current;
     if (!video || isPlaying) return;
 
-    const targetTime = currentTimeMs / 1000;
+    const sourceTimeMs = getSourceTime(currentTimeMs);
+    const targetTime = sourceTimeMs / 1000;
     const diff = Math.abs(video.currentTime - targetTime);
 
     // Use smaller threshold for more responsive scrubbing
     if (diff > 0.05) {
       video.currentTime = targetTime;
     }
-  }, [currentTimeMs, isPlaying]);
+  }, [currentTimeMs, isPlaying, getSourceTime]);
 
   return (
     <video

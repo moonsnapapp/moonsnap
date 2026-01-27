@@ -3,10 +3,15 @@
  *
  * Uses RAF to poll video.currentTime during playback and update the store.
  * Components subscribe to store.currentTimeMs for reactive updates.
+ *
+ * Note: Currently operates in source time. Trim segments define which portions
+ * of the source video are included, but playback still traverses source time.
+ * The TrimTrack shows gaps where content has been cut, and the export will
+ * skip those regions.
  */
 
 import { useCallback, useMemo } from 'react';
-import { useVideoEditorStore } from '../stores/videoEditorStore';
+import { useVideoEditorStore, getEffectiveDuration, sourceToTimeline, timelineToSource, findSegmentAtSourceTime } from '../stores/videoEditorStore';
 
 // Module-level state for RAF loop
 let rafId: number | null = null;
@@ -15,6 +20,7 @@ let isPlayingInternal = false;
 
 /**
  * RAF loop that updates store with current video time.
+ * Handles trim segment boundaries - skips deleted regions and converts to timeline time.
  */
 function rafLoop() {
   if (!isPlayingInternal) {
@@ -24,8 +30,57 @@ function rafLoop() {
 
   // Update store with current video time
   if (videoElement) {
-    const timeMs = videoElement.currentTime * 1000;
-    useVideoEditorStore.getState().setCurrentTime(timeMs);
+    const sourceTimeMs = videoElement.currentTime * 1000;
+    const state = useVideoEditorStore.getState();
+    const segments = state.project?.timeline.segments;
+    const sourceDurationMs = state.project?.timeline.durationMs ?? 0;
+
+    if (segments && segments.length > 0) {
+      // Check if we're in a deleted region
+      const currentSegment = findSegmentAtSourceTime(sourceTimeMs, segments);
+
+      if (!currentSegment) {
+        // We're in a deleted region - find the next segment to jump to
+        let nextSegment = null;
+        for (const seg of segments) {
+          if (seg.sourceStartMs > sourceTimeMs) {
+            nextSegment = seg;
+            break;
+          }
+        }
+
+        if (nextSegment) {
+          // Jump to the start of the next segment
+          videoElement.currentTime = nextSegment.sourceStartMs / 1000;
+        } else {
+          // No more segments - we've reached the end
+          const effectiveDuration = getEffectiveDuration(segments, sourceDurationMs);
+          useVideoEditorStore.getState().setCurrentTime(effectiveDuration);
+          useVideoEditorStore.getState().setIsPlaying(false);
+          rafId = null;
+          return;
+        }
+      } else {
+        // We're in a valid segment - convert to timeline time
+        const timelineTimeMs = sourceToTimeline(sourceTimeMs, segments);
+        if (timelineTimeMs !== null) {
+          useVideoEditorStore.getState().setCurrentTime(timelineTimeMs);
+        }
+      }
+
+      // Check if we've reached the end of the effective duration
+      const effectiveDuration = getEffectiveDuration(segments, sourceDurationMs);
+      const currentTimelineTime = sourceToTimeline(sourceTimeMs, segments) ?? 0;
+      if (currentTimelineTime >= effectiveDuration) {
+        useVideoEditorStore.getState().setCurrentTime(effectiveDuration);
+        useVideoEditorStore.getState().setIsPlaying(false);
+        rafId = null;
+        return;
+      }
+    } else {
+      // No segments - use source time directly
+      useVideoEditorStore.getState().setCurrentTime(sourceTimeMs);
+    }
   }
 
   // Continue loop
@@ -103,17 +158,31 @@ export function usePlaybackControls() {
     useVideoEditorStore.getState().setIsPlaying(false);
   }, []);
 
-  const seek = useCallback((timeMs: number) => {
-    const duration = useVideoEditorStore.getState().project?.timeline.durationMs ?? 0;
-    const clampedTime = Math.max(0, Math.min(timeMs, duration));
+  const seek = useCallback((timelineTimeMs: number) => {
+    const state = useVideoEditorStore.getState();
+    const segments = state.project?.timeline.segments;
+    const sourceDuration = state.project?.timeline.durationMs ?? 0;
+
+    // Get effective duration (timeline duration after cuts)
+    const effectiveDuration = segments && segments.length > 0
+      ? getEffectiveDuration(segments, sourceDuration)
+      : sourceDuration;
+
+    // Clamp to effective timeline duration
+    const clampedTimelineTime = Math.max(0, Math.min(timelineTimeMs, effectiveDuration));
+
+    // Convert timeline time to source time for video seeking
+    const sourceTimeMs = segments && segments.length > 0
+      ? timelineToSource(clampedTimelineTime, segments)
+      : clampedTimelineTime;
 
     // Sync video element (use module-level variable)
     if (videoElement) {
-      videoElement.currentTime = clampedTime / 1000;
+      videoElement.currentTime = sourceTimeMs / 1000;
     }
 
-    // Update store
-    useVideoEditorStore.getState().setCurrentTime(clampedTime);
+    // Update store with timeline time (not source time)
+    useVideoEditorStore.getState().setCurrentTime(clampedTimelineTime);
   }, []);
 
   const toggle = useCallback(() => {
@@ -175,9 +244,17 @@ export function resetPlaybackEngine() {
  */
 export function getPlaybackState() {
   const state = useVideoEditorStore.getState();
+  const project = state.project;
+  const sourceDuration = project?.timeline.durationMs ?? 0;
+  const segments = project?.timeline.segments ?? [];
+
   return {
     currentTimeMs: state.currentTimeMs,
     isPlaying: state.isPlaying,
-    durationMs: state.project?.timeline.durationMs ?? 0,
+    durationMs: sourceDuration,
+    // Effective duration after cuts (for UI display)
+    effectiveDurationMs: getEffectiveDuration(segments, sourceDuration),
+    // Whether trim segments exist
+    hasTrimSegments: segments.length > 0,
   };
 }

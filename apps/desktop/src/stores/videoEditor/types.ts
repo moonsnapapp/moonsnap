@@ -17,6 +17,7 @@ import type {
   TextSegment,
   MaskSegment,
   CursorRecording,
+  TrimSegment,
 } from '../../types';
 
 // Re-export types for external use
@@ -38,6 +39,7 @@ export type {
   TextSegment,
   MaskSegment,
   CursorRecording,
+  TrimSegment,
 };
 
 // Import slice types
@@ -48,6 +50,7 @@ import type { ExportSlice } from './exportSlice';
 import type { ProjectSlice } from './projectSlice';
 import type { GPUEditorSlice } from './gpuEditorSlice';
 import type { CaptionSlice } from './captionSlice';
+import type { TrimSlice } from './trimSlice';
 
 /**
  * Combined VideoEditorState type from all slices
@@ -58,7 +61,8 @@ export type VideoEditorState = PlaybackSlice &
   ExportSlice &
   ProjectSlice &
   GPUEditorSlice &
-  CaptionSlice;
+  CaptionSlice &
+  TrimSlice;
 
 /**
  * Slice creator type for creating slice with access to full state

@@ -62,9 +62,6 @@ export const VideoEditorView = forwardRef<VideoEditorViewRef, VideoEditorViewPro
     setExportProgress,
     cancelExport,
     updateExportConfig,
-    splitMode,
-    setSplitMode,
-    splitZoomRegionAtPlayhead,
     selectZoomRegion,
     timelineZoom,
     setTimelineZoom,
@@ -83,6 +80,13 @@ export const VideoEditorView = forwardRef<VideoEditorViewRef, VideoEditorViewPro
     selectedTextSegmentId,
     selectTextSegment,
     deleteTextSegment,
+    // Trim segment
+    selectedTrimSegmentId,
+    selectTrimSegment,
+    deleteTrimSegment,
+    splitAtPlayhead,
+    undoTrim,
+    redoTrim,
     // Save
     saveProject,
     isSaving,
@@ -108,26 +112,20 @@ export const VideoEditorView = forwardRef<VideoEditorViewRef, VideoEditorViewPro
     setCurrentTime(newTime);
   }, [setCurrentTime]);
 
-  const handleToggleSplitMode = useCallback(() => {
-    setSplitMode(!splitMode);
-    toast.info(splitMode ? 'Split mode off' : 'Split mode on (press C to cut)');
-  }, [splitMode, setSplitMode]);
-
   const handleDeselect = useCallback(() => {
-    if (splitMode) {
-      setSplitMode(false);
-    } else {
-      // Deselect all segment types
-      selectZoomRegion(null);
-      selectSceneSegment(null);
-      selectMaskSegment(null);
-      selectTextSegment(null);
-    }
-  }, [splitMode, setSplitMode, selectZoomRegion, selectSceneSegment, selectMaskSegment, selectTextSegment]);
+    // Deselect all segment types
+    selectZoomRegion(null);
+    selectSceneSegment(null);
+    selectMaskSegment(null);
+    selectTextSegment(null);
+    selectTrimSegment(null);
+  }, [selectZoomRegion, selectSceneSegment, selectMaskSegment, selectTextSegment, selectTrimSegment]);
 
   // Delete whichever segment type is currently selected
   const handleDeleteSelected = useCallback(() => {
-    if (selectedZoomRegionId) {
+    if (selectedTrimSegmentId) {
+      deleteTrimSegment(selectedTrimSegmentId);
+    } else if (selectedZoomRegionId) {
       deleteZoomRegion(selectedZoomRegionId);
     } else if (selectedSceneSegmentId) {
       deleteSceneSegment(selectedSceneSegmentId);
@@ -137,10 +135,12 @@ export const VideoEditorView = forwardRef<VideoEditorViewRef, VideoEditorViewPro
       deleteTextSegment(selectedTextSegmentId);
     }
   }, [
+    selectedTrimSegmentId,
     selectedZoomRegionId,
     selectedSceneSegmentId,
     selectedMaskSegmentId,
     selectedTextSegmentId,
+    deleteTrimSegment,
     deleteZoomRegion,
     deleteSceneSegment,
     deleteMaskSegment,
@@ -166,6 +166,20 @@ export const VideoEditorView = forwardRef<VideoEditorViewRef, VideoEditorViewPro
     }
   }, [project, isSaving, saveProject]);
 
+  // Handle split at playhead - splits video trim segments
+  const handleSplitAtPlayhead = useCallback(() => {
+    splitAtPlayhead();
+  }, [splitAtPlayhead]);
+
+  // Undo/redo handlers for trim operations
+  const handleUndoTrim = useCallback(() => {
+    undoTrim();
+  }, [undoTrim]);
+
+  const handleRedoTrim = useCallback(() => {
+    redoTrim();
+  }, [redoTrim]);
+
   // Use keyboard shortcuts
   useVideoEditorShortcuts({
     enabled: !!project && !isExporting,
@@ -174,14 +188,15 @@ export const VideoEditorView = forwardRef<VideoEditorViewRef, VideoEditorViewPro
     onSeekToEnd: () => project && setCurrentTime(project.timeline.durationMs),
     onSkipBack: handleSkipBack,
     onSkipForward: handleSkipForward,
-    onSplitAtPlayhead: splitZoomRegionAtPlayhead,
-    onToggleSplitMode: handleToggleSplitMode,
+    onSplitAtPlayhead: handleSplitAtPlayhead,
     onDeleteSelected: handleDeleteSelected,
     onTimelineZoomIn: handleTimelineZoomIn,
     onTimelineZoomOut: handleTimelineZoomOut,
     onDeselect: handleDeselect,
     onSave: handleSave,
     onExport: () => {}, // Will be wired to handleExport after it's defined
+    onUndoTrim: handleUndoTrim,
+    onRedoTrim: handleRedoTrim,
   });
 
   // Listen for export progress events from Rust backend
@@ -312,7 +327,7 @@ export const VideoEditorView = forwardRef<VideoEditorViewRef, VideoEditorViewPro
       </div>
 
       {/* Timeline with integrated controls */}
-      <VideoEditorTimeline onExport={handleExport} />
+      <VideoEditorTimeline onExport={handleExport} onSplitAtPlayhead={handleSplitAtPlayhead} />
 
       {/* Crop Dialog - lazy loaded, crops video content before composition */}
       {project && isCropDialogOpen && (

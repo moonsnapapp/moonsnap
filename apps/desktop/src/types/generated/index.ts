@@ -48,6 +48,7 @@ export type { WindowsCursorShape } from './WindowsCursorShape';
 export type { VideoProject } from './VideoProject';
 export type { VideoSources } from './VideoSources';
 export type { TimelineState } from './TimelineState';
+export type { TrimSegment } from './TrimSegment';
 
 // Video editor - Zoom types
 export type { AutoZoomConfig } from './AutoZoomConfig';

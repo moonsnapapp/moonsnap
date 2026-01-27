@@ -6,12 +6,13 @@ import { VideoTimeline } from '../../components/VideoEditor/VideoTimeline';
 
 export interface VideoEditorTimelineProps {
   onExport: () => void;
+  onSplitAtPlayhead?: () => void;
 }
 
-export function VideoEditorTimeline({ onExport }: VideoEditorTimelineProps) {
+export function VideoEditorTimeline({ onExport, onSplitAtPlayhead }: VideoEditorTimelineProps) {
   return (
     <div className="h-80 flex flex-col">
-      <VideoTimeline onExport={onExport} />
+      <VideoTimeline onExport={onExport} onSplitAtPlayhead={onSplitAtPlayhead} />
     </div>
   );
 }

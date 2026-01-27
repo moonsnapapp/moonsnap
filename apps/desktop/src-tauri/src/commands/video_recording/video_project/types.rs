@@ -93,6 +93,23 @@ pub struct VideoSources {
 // Timeline
 // ============================================================================
 
+/// A trim segment representing a portion of the original video to include.
+/// Multiple segments allow for non-linear editing (cutting out parts of the video).
+/// The order of segments in the array determines playback order.
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "../../src/types/generated/")]
+pub struct TrimSegment {
+    /// Unique identifier for this segment.
+    pub id: String,
+    /// Start position in the ORIGINAL video (milliseconds).
+    #[ts(type = "number")]
+    pub source_start_ms: u64,
+    /// End position in the ORIGINAL video (milliseconds).
+    #[ts(type = "number")]
+    pub source_end_ms: u64,
+}
+
 /// Timeline editing state.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
@@ -109,6 +126,11 @@ pub struct TimelineState {
     pub out_point: u64,
     /// Playback speed multiplier (1.0 = normal).
     pub speed: f32,
+    /// Trim segments for non-linear editing.
+    /// Empty array means use the full video (no cuts).
+    /// When segments exist, only the specified portions are included in playback/export.
+    #[serde(default)]
+    pub segments: Vec<TrimSegment>,
 }
 
 impl Default for TimelineState {
@@ -118,6 +140,7 @@ impl Default for TimelineState {
             in_point: 0,
             out_point: 0,
             speed: 1.0,
+            segments: Vec::new(),
         }
     }
 }
@@ -1356,6 +1379,7 @@ impl VideoProject {
                 in_point: 0,
                 out_point: duration_ms,
                 speed: 1.0,
+                segments: Vec::new(),
             },
             zoom: ZoomConfig::default(),
             cursor: CursorConfig::default(),

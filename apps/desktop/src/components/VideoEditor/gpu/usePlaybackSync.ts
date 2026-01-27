@@ -8,10 +8,10 @@
  */
 
 import { useEffect, useCallback } from 'react';
-import { useVideoEditorStore } from '../../../stores/videoEditorStore';
+import { useVideoEditorStore, timelineToSource } from '../../../stores/videoEditorStore';
 import { usePlaybackControls, initPlaybackEngine, startPlaybackLoop, stopPlaybackLoop } from '../../../hooks/usePlaybackEngine';
 import { videoEditorLogger } from '../../../utils/logger';
-import type { AudioTrackSettings } from '../../../types';
+import type { AudioTrackSettings, TrimSegment } from '../../../types';
 
 interface PlaybackSyncOptions {
   /** Main video element ref */
@@ -69,6 +69,17 @@ export function usePlaybackSync(options: PlaybackSyncOptions): PlaybackSyncResul
 
   const controls = usePlaybackControls();
   const hasSeparateAudio = Boolean(systemAudioSrc || micAudioSrc);
+
+  // Get trim segments for time conversion
+  const segments = useVideoEditorStore((s) => s.project?.timeline.segments) as TrimSegment[] | undefined;
+
+  // Convert timeline time to source time for seeking
+  const getSourceTime = useCallback((timelineTimeMs: number): number => {
+    if (!segments || segments.length === 0) {
+      return timelineTimeMs;
+    }
+    return timelineToSource(timelineTimeMs, segments);
+  }, [segments]);
 
   // Initialize playback engine when project loads
   useEffect(() => {
@@ -144,7 +155,8 @@ export function usePlaybackSync(options: PlaybackSyncOptions): PlaybackSyncResul
 
     if (isPlaying) {
       const playheadTime = useVideoEditorStore.getState().currentTimeMs;
-      video.currentTime = playheadTime / 1000;
+      const sourceTime = getSourceTime(playheadTime);
+      video.currentTime = sourceTime / 1000;
       if (video.paused) {
         video.play().catch(e => {
           if (e.name === 'AbortError') return;
@@ -159,7 +171,7 @@ export function usePlaybackSync(options: PlaybackSyncOptions): PlaybackSyncResul
       }
       stopPlaybackLoop();
     }
-  }, [isPlaying, controls]);
+  }, [isPlaying, controls, getSourceTime]);
 
   // Apply volume settings to main video element
   useEffect(() => {
@@ -233,7 +245,9 @@ export function usePlaybackSync(options: PlaybackSyncOptions): PlaybackSyncResul
 
   // Seek audio when preview time or current time changes
   useEffect(() => {
-    const targetTime = (previewTimeMs !== null ? previewTimeMs : currentTimeMs) / 1000;
+    const timelineTime = previewTimeMs !== null ? previewTimeMs : currentTimeMs;
+    const sourceTime = getSourceTime(timelineTime);
+    const targetTime = sourceTime / 1000;
 
     if (isPlaying) {
       const audioTime = systemAudioRef.current?.currentTime ?? micAudioRef.current?.currentTime ?? 0;
@@ -247,16 +261,17 @@ export function usePlaybackSync(options: PlaybackSyncOptions): PlaybackSyncResul
     if (micAudioRef.current) {
       micAudioRef.current.currentTime = targetTime;
     }
-  }, [previewTimeMs, currentTimeMs, isPlaying]);
+  }, [previewTimeMs, currentTimeMs, isPlaying, getSourceTime]);
 
   // Seek video when preview time or current time changes
   useEffect(() => {
     const video = videoRef.current;
     if (!video || isPlaying) return;
 
-    const targetTime = previewTimeMs !== null ? previewTimeMs : currentTimeMs;
-    video.currentTime = targetTime / 1000;
-  }, [previewTimeMs, currentTimeMs, isPlaying]);
+    const timelineTime = previewTimeMs !== null ? previewTimeMs : currentTimeMs;
+    const sourceTime = getSourceTime(timelineTime);
+    video.currentTime = sourceTime / 1000;
+  }, [previewTimeMs, currentTimeMs, isPlaying, getSourceTime]);
 
   const handleVideoClick = useCallback(() => {
     controls.toggle();

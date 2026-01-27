@@ -9,13 +9,14 @@ import { useEffect, useCallback } from 'react';
  * - End: Seek to end
  * - ArrowLeft: Skip back 5 seconds
  * - ArrowRight: Skip forward 5 seconds
- * - C: Split selected region at playhead
- * - S: Toggle split mode
- * - Delete/Backspace: Delete selected region(s)
- * - Escape: Deselect all / exit split mode
+ * - S: Split video at playhead (creates trim segments)
+ * - Delete/Backspace: Delete selected segment (trim/zoom/scene/mask/text)
+ * - Escape: Deselect all
  *
  * With modifiers:
  * - Ctrl+S: Save project
+ * - Ctrl+Z: Undo trim operation
+ * - Ctrl+Shift+Z: Redo trim operation
  * - Ctrl+-: Zoom out timeline
  * - Ctrl+=: Zoom in timeline
  * - Ctrl+E: Export
@@ -29,13 +30,14 @@ interface UseVideoEditorShortcutsProps {
   onSkipBack: () => void;
   onSkipForward: () => void;
   onSplitAtPlayhead: () => void;
-  onToggleSplitMode: () => void;
   onDeleteSelected: () => void;
   onTimelineZoomIn: () => void;
   onTimelineZoomOut: () => void;
   onDeselect: () => void;
   onSave: () => void;
   onExport: () => void;
+  onUndoTrim?: () => void;
+  onRedoTrim?: () => void;
 }
 
 export function useVideoEditorShortcuts({
@@ -46,13 +48,14 @@ export function useVideoEditorShortcuts({
   onSkipBack,
   onSkipForward,
   onSplitAtPlayhead,
-  onToggleSplitMode,
   onDeleteSelected,
   onTimelineZoomIn,
   onTimelineZoomOut,
   onDeselect,
   onSave,
   onExport,
+  onUndoTrim,
+  onRedoTrim,
 }: UseVideoEditorShortcutsProps) {
   // Check if event target is an input field
   const isInputTarget = useCallback((e: KeyboardEvent): boolean => {
@@ -74,6 +77,15 @@ export function useVideoEditorShortcuts({
           case 's':
             e.preventDefault();
             onSave();
+            return;
+          case 'z':
+          case 'Z':
+            e.preventDefault();
+            if (e.shiftKey) {
+              onRedoTrim?.();
+            } else {
+              onUndoTrim?.();
+            }
             return;
           case '-':
           case '_':
@@ -117,15 +129,10 @@ export function useVideoEditorShortcuts({
           e.preventDefault();
           onSkipForward();
           break;
-        case 'c':
-        case 'C':
-          e.preventDefault();
-          onSplitAtPlayhead();
-          break;
         case 's':
         case 'S':
           e.preventDefault();
-          onToggleSplitMode();
+          onSplitAtPlayhead();
           break;
         case 'Delete':
         case 'Backspace':
@@ -150,12 +157,13 @@ export function useVideoEditorShortcuts({
     onSkipBack,
     onSkipForward,
     onSplitAtPlayhead,
-    onToggleSplitMode,
     onDeleteSelected,
     onTimelineZoomIn,
     onTimelineZoomOut,
     onDeselect,
     onSave,
     onExport,
+    onUndoTrim,
+    onRedoTrim,
   ]);
 }

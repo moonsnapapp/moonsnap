@@ -13,22 +13,20 @@ import {
   Type,
   Video,
   EyeOff,
+  Scissors,
 } from 'lucide-react';
-import { invoke } from '@tauri-apps/api/core';
 import { Button } from '@/components/ui/button';
-import { videoEditorLogger } from '@/utils/logger';
 import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
-import { useVideoEditorStore, formatTimeSimple } from '../../stores/videoEditorStore';
+import { useVideoEditorStore, formatTimeSimple, getEffectiveDuration } from '../../stores/videoEditorStore';
 import { usePlaybackTime, usePlaybackControls, getPlaybackState } from '../../hooks/usePlaybackEngine';
 import { TimelineRuler } from './TimelineRuler';
-import { ZoomTrackContent, SceneTrackContent, MaskTrackContent, TextTrackContent } from './tracks';
+import { ZoomTrackContent, SceneTrackContent, MaskTrackContent, TextTrackContent, TrimTrackContent } from './tracks';
 import { TrackManager } from './TrackManager';
-import type { AudioWaveform } from '../../types';
 
 // Selectors to prevent re-renders from unrelated store changes
 const selectProject = (s: ReturnType<typeof useVideoEditorStore.getState>) => s.project;
@@ -76,6 +74,7 @@ const PreviewScrubber = memo(function PreviewScrubber({
 
 interface VideoTimelineProps {
   onExport: () => void;
+  onSplitAtPlayhead?: () => void;
 }
 
 /**
@@ -167,177 +166,10 @@ const PlayheadTimeIndicator = memo(function PlayheadTimeIndicator() {
 });
 
 /**
- * WaveformCanvas - Renders audio waveform on canvas.
- * Samples are normalized linear values (-1.0 to 1.0).
- */
-const WaveformCanvas = memo(function WaveformCanvas({
-  audioPath,
-  width,
-  height,
-}: {
-  audioPath: string;
-  width: number;
-  height: number;
-}) {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [waveform, setWaveform] = useState<AudioWaveform | null>(null);
-
-  // Fetch waveform data
-  useEffect(() => {
-    if (!audioPath) return;
-
-    let cancelled = false;
-
-    async function loadWaveform() {
-      try {
-        const data = await invoke<AudioWaveform>('extract_audio_waveform', {
-          audioPath,
-          samplesPerSecond: 100,
-        });
-
-        if (!cancelled) {
-          setWaveform(data);
-        }
-      } catch (err) {
-        videoEditorLogger.error('WaveformCanvas failed to load waveform:', err);
-      }
-    }
-
-    loadWaveform();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [audioPath]);
-
-  // Render waveform to canvas
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas || !waveform || waveform.samples.length === 0) return;
-
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
-    const dpr = window.devicePixelRatio || 1;
-    canvas.width = width * dpr;
-    canvas.height = height * dpr;
-    ctx.scale(dpr, dpr);
-
-    // Clear canvas
-    ctx.clearRect(0, 0, width, height);
-
-    const { samples } = waveform;
-    const centerY = height / 2;
-    const maxAmplitude = height / 2 - 2;
-
-    // Find the peak amplitude for normalization
-    let peakAmplitude = 0;
-    for (const sample of samples) {
-      const abs = Math.abs(sample);
-      if (abs > peakAmplitude) peakAmplitude = abs;
-    }
-
-    // Visual boost - normalize to peak and add minimum visibility
-    // If peak is very low, boost more; if peak is high, boost less
-    const visualGain = peakAmplitude > 0.01 ? Math.min(1 / peakAmplitude, 10) : 10;
-
-    // Calculate samples per pixel
-    const samplesPerPixel = samples.length / width;
-
-    // Create gradient
-    const gradient = ctx.createLinearGradient(0, 0, 0, height);
-    gradient.addColorStop(0, 'rgba(249, 112, 102, 0.7)'); // coral-400
-    gradient.addColorStop(0.5, 'rgba(240, 68, 56, 0.5)'); // coral-500
-    gradient.addColorStop(1, 'rgba(249, 112, 102, 0.7)');
-
-    ctx.fillStyle = gradient;
-    ctx.beginPath();
-    ctx.moveTo(0, centerY);
-
-    // Draw top half - apply visual gain and clamp to max amplitude
-    for (let x = 0; x < width; x++) {
-      const sampleIndex = Math.floor(x * samplesPerPixel);
-      const sample = samples[Math.min(sampleIndex, samples.length - 1)];
-      const amplitude = Math.min(Math.abs(sample) * visualGain, 1) * maxAmplitude;
-      ctx.lineTo(x, centerY - amplitude);
-    }
-
-    // Draw bottom half (mirror)
-    for (let x = width - 1; x >= 0; x--) {
-      const sampleIndex = Math.floor(x * samplesPerPixel);
-      const sample = samples[Math.min(sampleIndex, samples.length - 1)];
-      const amplitude = Math.min(Math.abs(sample) * visualGain, 1) * maxAmplitude;
-      ctx.lineTo(x, centerY + amplitude);
-    }
-
-    ctx.closePath();
-    ctx.fill();
-  }, [waveform, width, height]);
-
-  if (!waveform) {
-    return null;
-  }
-
-  return (
-    <canvas
-      ref={canvasRef}
-      className="absolute inset-0 pointer-events-none"
-      style={{ width, height }}
-    />
-  );
-});
-
-/**
- * Memoized video track content (without label) with thumbnails and waveform.
- */
-const VideoTrackContent = memo(function VideoTrackContent({
-  durationMs,
-  timelineZoom,
-  width,
-  audioPath,
-}: {
-  durationMs: number;
-  timelineZoom: number;
-  width: number;
-  audioPath?: string;
-}) {
-  const clipWidth = durationMs * timelineZoom;
-
-  return (
-    <div
-      className="relative h-12 bg-[var(--polar-mist)]/60 border-b border-[var(--glass-border)]"
-      style={{ width: `${width}px` }}
-    >
-      {/* Video clip item */}
-      <div
-        className="absolute top-1 bottom-1 rounded-md bg-[var(--coral-100)] border border-[var(--coral-200)] overflow-hidden"
-        style={{ left: 0, width: `${clipWidth}px` }}
-      >
-        {/* Waveform overlay */}
-        {audioPath && clipWidth > 0 && (
-          <WaveformCanvas
-            audioPath={audioPath}
-            width={clipWidth}
-            height={40}
-          />
-        )}
-
-        {/* Clip label */}
-        <div className="absolute top-0 left-0 right-0 flex items-center px-2 h-full pointer-events-none">
-          <span className="text-[10px] text-[var(--coral-300)]/80 font-medium truncate drop-shadow-sm">
-            Recording
-          </span>
-        </div>
-      </div>
-    </div>
-  );
-});
-
-/**
  * VideoTimeline - Main timeline component with ruler, tracks, and playhead.
  * Optimized to prevent re-renders during playback.
  */
-export function VideoTimeline({ onExport }: VideoTimelineProps) {
+export function VideoTimeline({ onExport, onSplitAtPlayhead }: VideoTimelineProps) {
   const project = useVideoEditorStore(selectProject);
   const timelineZoom = useVideoEditorStore(selectTimelineZoom);
   const isDraggingPlayhead = useVideoEditorStore(selectIsDraggingPlayhead);
@@ -408,9 +240,13 @@ export function VideoTimeline({ onExport }: VideoTimelineProps) {
   }, [isPlaying, setPreviewTime]);
 
   // Calculate timeline dimensions - extend to fill container width at minimum
-  const durationMs = project?.timeline.durationMs ?? 60000;
+  // sourceDurationMs is the original video duration (needed for TrimTrack segment boundaries)
+  // effectiveDurationMs is the timeline duration after cuts (used for UI constraints)
+  const sourceDurationMs = project?.timeline.durationMs ?? 60000;
+  const segments = project?.timeline.segments;
+  const effectiveDurationMs = getEffectiveDuration(segments ?? [], sourceDurationMs);
   const trackLabelWidth = 80;
-  const durationWidth = durationMs * timelineZoom;
+  const durationWidth = effectiveDurationMs * timelineZoom;
   const timelineWidth = Math.max(durationWidth, containerWidth - trackLabelWidth);
 
   // Handle clicking on timeline to seek (event is on content div which moves with scroll)
@@ -419,28 +255,29 @@ export function VideoTimeline({ onExport }: VideoTimelineProps) {
     const rect = e.currentTarget.getBoundingClientRect();
     // No scroll offset needed - event target already accounts for scroll position
     const x = e.clientX - rect.left;
-    const newTimeMs = Math.max(0, Math.min(durationMs, x / timelineZoom));
+    const newTimeMs = Math.max(0, Math.min(effectiveDurationMs, x / timelineZoom));
     controls.seek(newTimeMs);
-  }, [durationMs, timelineZoom, controls]);
+  }, [effectiveDurationMs, timelineZoom, controls]);
 
-  // Handle mouse move for preview scrubber (event is on content div which moves with scroll)
+  // Handle mouse move for preview scrubber (on scroll container to catch moves outside content)
   const handleTimelineMouseMove = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
     if (isPlaying) {
       setPreviewTime(null);
       return;
     }
-    const rect = e.currentTarget.getBoundingClientRect();
-    // No scroll offset needed - event target already accounts for scroll position
-    const x = e.clientX - rect.left;
-    if (x < 0) {
-      setPreviewTime(null);
-      return;
-    }
-    const timeMs = Math.max(0, Math.min(durationMs, x / timelineZoom));
-    setPreviewTime(timeMs);
-  }, [isPlaying, durationMs, timelineZoom, setPreviewTime]);
+    const scrollContainer = scrollRef.current;
+    if (!scrollContainer) return;
 
-  // Clear preview on mouse leave
+    const rect = scrollContainer.getBoundingClientRect();
+    const scrollLeft = scrollContainer.scrollLeft;
+    // Calculate x position relative to timeline content (account for scroll)
+    const x = e.clientX - rect.left + scrollLeft;
+    // Clamp to valid range (0 to effectiveDurationMs) - don't hide when outside bounds
+    const timeMs = Math.max(0, Math.min(effectiveDurationMs, x / timelineZoom));
+    setPreviewTime(timeMs);
+  }, [isPlaying, effectiveDurationMs, timelineZoom, setPreviewTime]);
+
+  // Clear preview on mouse leave (only when leaving the scroll container entirely)
   const handleTimelineMouseLeave = useCallback(() => {
     setPreviewTime(null);
   }, [setPreviewTime]);
@@ -458,7 +295,7 @@ export function VideoTimeline({ onExport }: VideoTimelineProps) {
       const rect = scrollContainer.getBoundingClientRect();
       const scrollLeft = scrollContainer.scrollLeft;
       const x = moveEvent.clientX - rect.left + scrollLeft;
-      const newTimeMs = Math.max(0, Math.min(durationMs, x / timelineZoom));
+      const newTimeMs = Math.max(0, Math.min(effectiveDurationMs, x / timelineZoom));
       controls.seek(newTimeMs);
     };
 
@@ -470,7 +307,7 @@ export function VideoTimeline({ onExport }: VideoTimelineProps) {
 
     document.addEventListener('mousemove', handleMouseMove);
     document.addEventListener('mouseup', handleMouseUp);
-  }, [durationMs, timelineZoom, controls, setDraggingPlayhead]);
+  }, [effectiveDurationMs, timelineZoom, controls, setDraggingPlayhead]);
 
   // Handle scroll
   const handleScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
@@ -483,8 +320,8 @@ export function VideoTimeline({ onExport }: VideoTimelineProps) {
   }, [controls]);
 
   const handleGoToEnd = useCallback(() => {
-    controls.seek(durationMs);
-  }, [controls, durationMs]);
+    controls.seek(effectiveDurationMs);
+  }, [controls, effectiveDurationMs]);
 
   const handleSkipBack = useCallback(() => {
     const { currentTimeMs } = getPlaybackState();
@@ -493,8 +330,8 @@ export function VideoTimeline({ onExport }: VideoTimelineProps) {
 
   const handleSkipForward = useCallback(() => {
     const { currentTimeMs } = getPlaybackState();
-    controls.seek(Math.min(durationMs, currentTimeMs + 5000));
-  }, [controls, durationMs]);
+    controls.seek(Math.min(effectiveDurationMs, currentTimeMs + 5000));
+  }, [controls, effectiveDurationMs]);
 
   // Timeline zoom controls
   const handleZoomIn = useCallback(() => {
@@ -535,6 +372,29 @@ export function VideoTimeline({ onExport }: VideoTimelineProps) {
           <div className="flex items-center gap-2">
             {/* Track Manager */}
             <TrackManager />
+
+            {/* Scissors button - split at playhead */}
+            {onSplitAtPlayhead && (
+              <>
+                <div className="w-px h-5 bg-[var(--glass-border)]" />
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      onClick={onSplitAtPlayhead}
+                      className="glass-btn h-8 w-8"
+                    >
+                      <Scissors className="w-4 h-4" />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs">Split at Playhead</span>
+                      <kbd className="kbd text-[10px] px-1.5 py-0.5">S</kbd>
+                    </div>
+                  </TooltipContent>
+                </Tooltip>
+              </>
+            )}
           </div>
 
           {/* Center Section - Playback Controls */}
@@ -618,7 +478,7 @@ export function VideoTimeline({ onExport }: VideoTimelineProps) {
               </Tooltip>
             </div>
 
-            <TimeDisplay durationMs={durationMs} />
+            <TimeDisplay durationMs={effectiveDurationMs} />
           </div>
 
           {/* Right Section */}
@@ -750,28 +610,29 @@ export function VideoTimeline({ onExport }: VideoTimelineProps) {
           className="flex-1 min-w-0 overflow-x-auto overflow-y-auto"
           onScroll={handleScroll}
           onWheel={handleWheel}
+          onMouseMove={handleTimelineMouseMove}
+          onMouseLeave={handleTimelineMouseLeave}
         >
           <div
             className="relative"
             style={{ width: `${timelineWidth}px` }}
             onClick={handleTimelineClick}
-            onMouseMove={handleTimelineMouseMove}
-            onMouseLeave={handleTimelineMouseLeave}
           >
             {/* Time Ruler */}
             <TimelineRuler
-              durationMs={durationMs}
+              durationMs={effectiveDurationMs}
               timelineZoom={timelineZoom}
               width={timelineWidth}
             />
 
-            {/* Video Track Content */}
-            {trackVisibility.video && (
-              <VideoTrackContent
-                durationMs={durationMs}
+            {/* Video Track Content (Trim Segments) */}
+            {trackVisibility.video && project && (
+              <TrimTrackContent
+                segments={project.timeline.segments}
+                durationMs={sourceDurationMs}
                 timelineZoom={timelineZoom}
                 width={timelineWidth}
-                audioPath={project?.sources.systemAudio ?? project?.sources.microphoneAudio ?? project?.sources.screenVideo ?? undefined}
+                audioPath={project.sources.systemAudio ?? project.sources.microphoneAudio ?? project.sources.screenVideo ?? undefined}
               />
             )}
 
@@ -779,7 +640,7 @@ export function VideoTimeline({ onExport }: VideoTimelineProps) {
             {project && trackVisibility.text && (
               <TextTrackContent
                 segments={project.text.segments}
-                durationMs={durationMs}
+                durationMs={effectiveDurationMs}
                 timelineZoom={timelineZoom}
                 width={timelineWidth}
               />
@@ -789,7 +650,7 @@ export function VideoTimeline({ onExport }: VideoTimelineProps) {
             {project && trackVisibility.zoom && (
               <ZoomTrackContent
                 regions={project.zoom.regions}
-                durationMs={durationMs}
+                durationMs={effectiveDurationMs}
                 timelineZoom={timelineZoom}
                 width={timelineWidth}
               />
@@ -800,7 +661,7 @@ export function VideoTimeline({ onExport }: VideoTimelineProps) {
               <SceneTrackContent
                 segments={project.scene.segments}
                 defaultMode={project.scene.defaultMode}
-                durationMs={durationMs}
+                durationMs={effectiveDurationMs}
                 timelineZoom={timelineZoom}
                 width={timelineWidth}
               />
@@ -810,7 +671,7 @@ export function VideoTimeline({ onExport }: VideoTimelineProps) {
             {project && trackVisibility.mask && (
               <MaskTrackContent
                 segments={project.mask.segments}
-                durationMs={durationMs}
+                durationMs={effectiveDurationMs}
                 timelineZoom={timelineZoom}
                 width={timelineWidth}
               />
