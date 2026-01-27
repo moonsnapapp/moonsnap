@@ -21,6 +21,7 @@
     "tauri:dev": "cd apps/desktop && tauri dev",
     "tauri:build": "cd apps/desktop && tauri build",
     "version": "node scripts/sync-versions.js && git add -A",
+    "postversion": "git push && git push --tags",
     "release": "npm version patch",
     "release:minor": "npm version minor",
     "release:major": "npm version major",
