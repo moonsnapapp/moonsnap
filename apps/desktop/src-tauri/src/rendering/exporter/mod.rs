@@ -78,11 +78,29 @@ pub async fn export_video_gpu(
     let fps = project.export.fps;
     let original_width = project.sources.original_width;
     let original_height = project.sources.original_height;
-    let in_point_ms = project.timeline.in_point;
-    let out_point_ms = project.timeline.out_point;
-    let duration_ms = out_point_ms - in_point_ms;
-    let duration_secs = duration_ms as f64 / 1000.0;
-    let total_frames = ((duration_ms as f64 / 1000.0) * fps as f64).ceil() as u32;
+
+    // Use effective duration (respects trim segments)
+    let effective_duration_ms = project.timeline.effective_duration_ms();
+    let duration_secs = effective_duration_ms as f64 / 1000.0;
+    let total_output_frames = ((effective_duration_ms as f64 / 1000.0) * fps as f64).ceil() as u32;
+
+    // Get decode range (first segment start to last segment end, or in/out points)
+    let (decode_start_ms, decode_end_ms) = project.timeline.decode_range();
+    let has_segments = !project.timeline.segments.is_empty();
+
+    // Calculate how many frames to decode (may be more than output when there are gaps)
+    let decode_duration_ms = decode_end_ms - decode_start_ms;
+    let total_decode_frames = ((decode_duration_ms as f64 / 1000.0) * fps as f64).ceil() as u32;
+
+    log::info!(
+        "[EXPORT] Timeline: effective_duration={}ms, decode_range={}ms-{}ms, segments={}, decode_frames={}, output_frames={}",
+        effective_duration_ms,
+        decode_start_ms,
+        decode_end_ms,
+        project.timeline.segments.len(),
+        total_decode_frames,
+        total_output_frames
+    );
 
     // Clone configs to avoid borrow issues with project
     let crop = project.export.crop.clone();
@@ -205,8 +223,9 @@ pub async fn export_video_gpu(
     let out_h = composition_h;
 
     // Initialize streaming decoders (ONE FFmpeg process each!)
+    // Use decode_range which respects segments (first seg start to last seg end)
     let screen_path = Path::new(&project.sources.screen_video);
-    let mut screen_decoder = StreamDecoder::new(screen_path, in_point_ms, out_point_ms)?;
+    let mut screen_decoder = StreamDecoder::new(screen_path, decode_start_ms, decode_end_ms)?;
     screen_decoder.start(screen_path)?;
 
     // Webcam decoder if enabled
@@ -214,7 +233,7 @@ pub async fn export_video_gpu(
         if let Some(ref path) = project.sources.webcam_video {
             let webcam_path = Path::new(path);
             if webcam_path.exists() {
-                let mut decoder = StreamDecoder::new(webcam_path, in_point_ms, out_point_ms)?;
+                let mut decoder = StreamDecoder::new(webcam_path, decode_start_ms, decode_end_ms)?;
                 decoder.start(webcam_path)?;
                 Some(decoder)
             } else {
@@ -230,15 +249,17 @@ pub async fn export_video_gpu(
     let has_webcam = webcam_decoder.is_some();
 
     // Spawn decode task for pipeline parallelism
+    // Use total_decode_frames (full range including gaps) for decoding
     let (mut decode_rx, decode_handle) =
-        spawn_decode_task(screen_decoder, webcam_decoder, total_frames);
+        spawn_decode_task(screen_decoder, webcam_decoder, total_decode_frames);
 
     log::info!(
-        "[EXPORT] GPU export (streaming): {}x{} @ {}fps, {} frames, webcam={}",
+        "[EXPORT] GPU export (streaming): {}x{} @ {}fps, decode={} frames, output={} frames, webcam={}",
         out_w,
         out_h,
         fps,
-        total_frames,
+        total_decode_frames,
+        total_output_frames,
         has_webcam
     );
 
@@ -329,10 +350,32 @@ pub async fn export_video_gpu(
 
     emit_progress(&app, 0.08, ExportStage::Encoding, "Rendering frames...");
 
+    // Track output frames separately from decoded frames
+    let mut output_frame_count = 0u32;
+
     // Render frames from decode pipeline, send to encode pipeline
     while let Some(bundle) = decode_rx.recv().await {
-        let frame_idx = bundle.frame_idx;
+        let decoded_frame_idx = bundle.frame_idx;
         let current_webcam_frame = bundle.webcam_frame;
+
+        // Calculate source time for this decoded frame
+        let source_time_ms =
+            decode_start_ms + ((decoded_frame_idx as f64 / fps as f64) * 1000.0) as u64;
+
+        // For segment-aware export: check if this frame is in a kept segment
+        // source_to_timeline returns None if the source time is in a deleted region
+        let timeline_time_ms = if has_segments {
+            match project.timeline.source_to_timeline(source_time_ms) {
+                Some(t) => t,
+                None => {
+                    // This frame is in a deleted region - skip it
+                    continue;
+                },
+            }
+        } else {
+            // No segments - use simple offset from decode start
+            source_time_ms - decode_start_ms
+        };
 
         // Apply video crop to screen frame BEFORE composition
         let screen_frame = if crop_enabled {
@@ -347,9 +390,9 @@ pub async fn export_video_gpu(
             bundle.screen_frame
         };
 
-        // Calculate relative timestamp (position in trimmed video = what timeline shows)
+        // Use timeline_time_ms for effects (position in edited video)
         // Scene segments, zoom regions, and visibility all use timeline-relative time
-        let relative_time_ms = ((frame_idx as f64 / fps as f64) * 1000.0) as u64;
+        let relative_time_ms = timeline_time_ms;
 
         // Get cursor position for Auto zoom mode (if cursor data is available)
         // This allows zoom to follow cursor position dynamically
@@ -366,11 +409,12 @@ pub async fn export_video_gpu(
         let webcam_visible = is_webcam_visible_at(&project, relative_time_ms);
 
         // Log first few frames for debugging
-        if frame_idx < 3 || (6000..=6200).contains(&relative_time_ms) {
+        if output_frame_count < 3 || (6000..=6200).contains(&relative_time_ms) {
             log::debug!(
-                "[EXPORT] Frame {}: relative={}ms, scene_mode={:?}, transition_progress={:.2}",
-                frame_idx,
+                "[EXPORT] Frame {}: timeline={}ms, source={}ms, scene_mode={:?}, transition_progress={:.2}",
+                output_frame_count,
                 relative_time_ms,
+                source_time_ms,
                 interpolated_scene.scene_mode,
                 interpolated_scene.transition_progress
             );
@@ -383,10 +427,10 @@ pub async fn export_video_gpu(
         let is_in_camera_only_transition = interpolated_scene.is_transitioning_camera_only();
 
         // Log transition state for debugging
-        if is_in_camera_only_transition && frame_idx.is_multiple_of(10) {
+        if is_in_camera_only_transition && output_frame_count.is_multiple_of(10) {
             log::debug!(
                 "[EXPORT] Frame {}: cameraOnly transition - camera_only_opacity={:.2}, regular_camera_opacity={:.2}, screen_blur={:.2}",
-                frame_idx, camera_only_opacity, regular_camera_opacity, interpolated_scene.screen_blur
+                output_frame_count, camera_only_opacity, regular_camera_opacity, interpolated_scene.screen_blur
             );
         }
 
@@ -476,7 +520,7 @@ pub async fn export_video_gpu(
             BackgroundStyle::from_config(&project.export.background, resource_dir.as_deref());
 
         // Log background config on first frame
-        if frame_idx == 0 {
+        if output_frame_count == 0 {
             log::info!(
                 "[EXPORT] Background: type={:?}, padding={}, rounding={}",
                 background_style.background_type,
@@ -637,9 +681,12 @@ pub async fn export_video_gpu(
             break;
         }
 
+        // Increment output frame counter
+        output_frame_count += 1;
+
         // Progress update (every 10 frames)
-        if frame_idx.is_multiple_of(10) {
-            let progress = (frame_idx + 1) as f32 / total_frames as f32;
+        if output_frame_count.is_multiple_of(10) {
+            let progress = output_frame_count as f32 / total_output_frames as f32;
             let stage_progress = 0.08 + progress * 0.87;
             emit_progress(
                 &app,
@@ -647,6 +694,11 @@ pub async fn export_video_gpu(
                 ExportStage::Encoding,
                 &format!("Rendering: {:.0}%", progress * 100.0),
             );
+        }
+
+        // Check if we've output enough frames
+        if output_frame_count >= total_output_frames {
+            break;
         }
     }
 

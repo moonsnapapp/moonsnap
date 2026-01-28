@@ -145,6 +145,99 @@ impl Default for TimelineState {
     }
 }
 
+impl TimelineState {
+    /// Get the effective duration based on segments.
+    /// If segments exist, returns sum of all segment durations.
+    /// Otherwise returns out_point - in_point.
+    pub fn effective_duration_ms(&self) -> u64 {
+        if self.segments.is_empty() {
+            self.out_point - self.in_point
+        } else {
+            self.segments
+                .iter()
+                .map(|s| s.source_end_ms - s.source_start_ms)
+                .sum()
+        }
+    }
+
+    /// Convert timeline time (position in edited video) to source time (position in original video).
+    /// Timeline time is the accumulated position after edits.
+    /// Returns None if timeline_time is out of range.
+    pub fn timeline_to_source(&self, timeline_time_ms: u64) -> Option<u64> {
+        if self.segments.is_empty() {
+            // No segments - simple offset from in_point
+            Some(self.in_point + timeline_time_ms)
+        } else {
+            let mut accumulated = 0u64;
+            for segment in &self.segments {
+                let segment_duration = segment.source_end_ms - segment.source_start_ms;
+                if timeline_time_ms < accumulated + segment_duration {
+                    // Found the segment - calculate offset within it
+                    let offset = timeline_time_ms - accumulated;
+                    return Some(segment.source_start_ms + offset);
+                }
+                accumulated += segment_duration;
+            }
+            // Past all segments - return end of last segment
+            self.segments.last().map(|s| s.source_end_ms)
+        }
+    }
+
+    /// Check if a source time falls within any kept segment.
+    pub fn is_source_time_in_segments(&self, source_time_ms: u64) -> bool {
+        if self.segments.is_empty() {
+            source_time_ms >= self.in_point && source_time_ms <= self.out_point
+        } else {
+            self.segments
+                .iter()
+                .any(|s| source_time_ms >= s.source_start_ms && source_time_ms < s.source_end_ms)
+        }
+    }
+
+    /// Get the decode range (start, end) in source time.
+    /// When segments exist, returns (first_segment_start, last_segment_end).
+    pub fn decode_range(&self) -> (u64, u64) {
+        if self.segments.is_empty() {
+            (self.in_point, self.out_point)
+        } else {
+            let start = self
+                .segments
+                .first()
+                .map(|s| s.source_start_ms)
+                .unwrap_or(0);
+            let end = self.segments.last().map(|s| s.source_end_ms).unwrap_or(0);
+            (start, end)
+        }
+    }
+
+    /// Convert source time (position in original video) to timeline time (position in edited video).
+    /// Returns None if source_time is not in any kept segment.
+    pub fn source_to_timeline(&self, source_time_ms: u64) -> Option<u64> {
+        if self.segments.is_empty() {
+            // No segments - simple offset from in_point
+            if source_time_ms >= self.in_point && source_time_ms <= self.out_point {
+                Some(source_time_ms - self.in_point)
+            } else {
+                None
+            }
+        } else {
+            let mut timeline_pos = 0u64;
+            for segment in &self.segments {
+                if source_time_ms >= segment.source_start_ms
+                    && source_time_ms < segment.source_end_ms
+                {
+                    // Found the segment - calculate offset within it
+                    let offset = source_time_ms - segment.source_start_ms;
+                    return Some(timeline_pos + offset);
+                }
+                timeline_pos += segment.source_end_ms - segment.source_start_ms;
+            }
+            // Not in any segment
+            None
+        }
+    }
+}
+
 // ============================================================================
 // Audio Track Settings
 // ============================================================================
