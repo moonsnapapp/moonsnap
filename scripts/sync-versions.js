@@ -6,6 +6,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const { execSync } = require('child_process');
 
 const ROOT = path.resolve(__dirname, '..');
 const version = require(path.join(ROOT, 'package.json')).version;
@@ -27,5 +28,16 @@ const cargoToml = path.join(ROOT, 'apps/desktop/src-tauri/Cargo.toml');
 let cargoContent = fs.readFileSync(cargoToml, 'utf8');
 cargoContent = cargoContent.replace(/^version = "[^"]*"/m, `version = "${version}"`);
 fs.writeFileSync(cargoToml, cargoContent);
+
+// Update Cargo.lock by running cargo metadata (fast, just updates lockfile)
+const tauriDir = path.join(ROOT, 'apps/desktop/src-tauri');
+try {
+  execSync('cargo metadata --format-version=1', {
+    cwd: tauriDir,
+    stdio: 'ignore',
+  });
+} catch {
+  // Ignore errors - Cargo.lock will be updated on next build anyway
+}
 
 console.log(`Synced version ${version} to all files`);
