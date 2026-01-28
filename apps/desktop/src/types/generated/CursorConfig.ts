@@ -42,16 +42,8 @@ friction: number,
 /**
  * Motion blur amount (0.0 = none, 1.0 = maximum).
  */
-motionBlur: number, 
+motionBlur: number,
 /**
  * Click highlight settings.
  */
-clickHighlight: ClickHighlightConfig, 
-/**
- * Hide cursor when idle.
- */
-hideWhenIdle: boolean, 
-/**
- * Time before hiding idle cursor (milliseconds).
- */
-idleTimeoutMs: number, };
+clickHighlight: ClickHighlightConfig, };

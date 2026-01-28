@@ -59,8 +59,6 @@ function createTestProject(overrides: Partial<VideoProject> = {}): VideoProject 
         opacity: 0.6,
         duration: 300,
       },
-      hideWhenIdle: false,
-      idleTimeoutMs: 3000,
     },
     webcam: {
       enabled: false,

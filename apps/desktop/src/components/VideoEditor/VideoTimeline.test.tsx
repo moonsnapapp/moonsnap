@@ -41,8 +41,6 @@ const createMockProject = (overrides: Partial<VideoProject> = {}): VideoProject 
     trail: false,
     trailLength: 10,
     trailOpacity: 0.3,
-    hideWhenIdle: false,
-    idleTimeout: 3000,
     visibility: [],
   },
   webcam: {

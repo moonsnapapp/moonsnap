@@ -71,12 +71,6 @@ const MAX_INTERPOLATED_STEPS: usize = 120;
 // Cursor Idle Fade-Out (from Cap)
 // ============================================================================
 
-/// Minimum delay before cursor starts fading out when idle (ms).
-const CURSOR_IDLE_MIN_DELAY_MS: f64 = 500.0;
-
-/// Duration of the fade-out animation (ms).
-const CURSOR_IDLE_FADE_OUT_MS: f64 = 400.0;
-
 // ============================================================================
 // Cursor Click Animation (from Cap)
 // ============================================================================
@@ -123,106 +117,13 @@ const MIN_MOTION_THRESHOLD: f32 = 0.01;
 const STANDARD_CURSOR_HEIGHT: f32 = 200.0;
 
 // ============================================================================
-// Idle Fade-Out & Click Animation Functions (from Cap)
+// Click Animation Functions (from Cap)
 // ============================================================================
-
-/// Smooth interpolation function (cubic Hermite).
-fn smoothstep64(edge0: f64, edge1: f64, x: f64) -> f64 {
-    if edge1 <= edge0 {
-        return if x < edge0 { 0.0 } else { 1.0 };
-    }
-
-    let t = ((x - edge0) / (edge1 - edge0)).clamp(0.0, 1.0);
-    t * t * (3.0 - 2.0 * t)
-}
 
 /// Smooth interpolation function (f32 version for click animation).
 fn smoothstep(low: f32, high: f32, v: f32) -> f32 {
     let t = f32::clamp((v - low) / (high - low), 0.0, 1.0);
     t * t * (3.0 - 2.0 * t)
-}
-
-/// Compute cursor opacity based on idle time.
-///
-/// Returns 0-1 opacity value. Cursor fades out after being idle for `hide_delay_ms`,
-/// and fades back in when movement resumes.
-///
-/// # Arguments
-/// * `events` - All cursor events (moves and clicks)
-/// * `current_time_ms` - Current playback time in milliseconds
-/// * `hide_delay_ms` - Delay before fade-out starts (default: CURSOR_IDLE_MIN_DELAY_MS)
-fn compute_cursor_idle_opacity(
-    events: &[CursorEvent],
-    current_time_ms: u64,
-    hide_delay_ms: f64,
-) -> f32 {
-    // Filter to move events only
-    let moves: Vec<_> = events
-        .iter()
-        .filter(|e| matches!(e.event_type, CursorEventType::Move))
-        .collect();
-
-    if moves.is_empty() {
-        return 0.0;
-    }
-
-    let current_time = current_time_ms as f64;
-
-    if current_time <= moves[0].timestamp_ms as f64 {
-        return 1.0;
-    }
-
-    // Find last move before current time
-    let last_move = moves
-        .iter()
-        .rev()
-        .find(|e| (e.timestamp_ms as f64) <= current_time);
-
-    let Some(last_move) = last_move else {
-        return 1.0;
-    };
-
-    let time_since_move = (current_time - last_move.timestamp_ms as f64).max(0.0);
-
-    // Calculate fade-in (in case cursor just resumed moving after being idle)
-    let mut opacity = compute_cursor_fade_in(&moves, current_time, hide_delay_ms);
-
-    // Calculate fade-out
-    let fade_out = if time_since_move <= hide_delay_ms {
-        1.0
-    } else {
-        let delta = time_since_move - hide_delay_ms;
-        let fade = 1.0 - smoothstep64(0.0, CURSOR_IDLE_FADE_OUT_MS, delta);
-        fade.clamp(0.0, 1.0) as f32
-    };
-
-    opacity *= fade_out;
-    opacity.clamp(0.0, 1.0)
-}
-
-/// Compute fade-in opacity when cursor resumes moving after being idle.
-fn compute_cursor_fade_in(moves: &[&CursorEvent], current_time_ms: f64, hide_delay_ms: f64) -> f32 {
-    // Find the most recent "resume" point - where cursor started moving again
-    // after a gap longer than hide_delay_ms
-    let resume_time = moves
-        .windows(2)
-        .rev()
-        .find(|pair| {
-            let prev = pair[0];
-            let next = pair[1];
-            let next_time = next.timestamp_ms as f64;
-            let gap = next_time - prev.timestamp_ms as f64;
-            next_time <= current_time_ms && gap > hide_delay_ms
-        })
-        .map(|pair| pair[1].timestamp_ms as f64);
-
-    let Some(resume_time_ms) = resume_time else {
-        return 1.0;
-    };
-
-    let time_since_resume = (current_time_ms - resume_time_ms).max(0.0);
-
-    smoothstep64(0.0, CURSOR_IDLE_FADE_OUT_MS, time_since_resume) as f32
 }
 
 /// Get click animation progress (0-1).
@@ -591,27 +492,9 @@ impl CursorInterpolator {
     /// Get interpolated cursor position at a specific timestamp.
     ///
     /// This returns the smoothed cursor position along with:
-    /// - `opacity`: Fades out when idle, fades in when movement resumes
-    /// - `scale`: Shrinks during click animation
     /// - `cursor_id`: Active cursor image ID (with fallback)
     /// - `cursor_shape`: Debounced cursor shape for SVG rendering (prevents flickering)
     pub fn get_cursor_at(&self, time_ms: u64) -> InterpolatedCursor {
-        // Default: no idle hiding (cursor always visible)
-        self.get_cursor_at_with_config(time_ms, false, CURSOR_IDLE_MIN_DELAY_MS as u64)
-    }
-
-    /// Get cursor state with configurable idle hiding behavior.
-    ///
-    /// # Arguments
-    /// * `time_ms` - Playback time in milliseconds
-    /// * `hide_when_idle` - Whether to fade out cursor when idle
-    /// * `idle_timeout_ms` - Delay before cursor starts fading (only used if hide_when_idle is true)
-    pub fn get_cursor_at_with_config(
-        &self,
-        time_ms: u64,
-        hide_when_idle: bool,
-        idle_timeout_ms: u64,
-    ) -> InterpolatedCursor {
         let cursor_id = get_active_cursor_id(&self.original_events, time_ms);
         let mut cursor = interpolate_at_time(&self.smoothed_events, time_ms, cursor_id);
 
@@ -629,15 +512,8 @@ impl CursorInterpolator {
             cursor.cursor_shape = self.fallback_cursor_shape;
         }
 
-        // Compute opacity based on idle time (only if hide_when_idle is enabled)
-        if hide_when_idle {
-            cursor.opacity =
-                compute_cursor_idle_opacity(&self.original_events, time_ms, idle_timeout_ms as f64);
-        } else {
-            cursor.opacity = 1.0;
-        }
-
-        // Cursor scale is always 1.0 (no click shrink animation)
+        // Opacity and scale are always 1.0
+        cursor.opacity = 1.0;
         cursor.scale = 1.0;
 
         cursor

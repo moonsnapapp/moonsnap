@@ -580,11 +580,7 @@ pub async fn export_video_gpu(
             // Only show cursor when screen is visible (not in cameraOnly mode)
             if camera_only_opacity < 0.99 {
                 // Use SOURCE time for cursor lookup (cursor data is recorded in source time)
-                let cursor = cursor_interp.get_cursor_at_with_config(
-                    source_time_ms,
-                    project.cursor.hide_when_idle,
-                    project.cursor.idle_timeout_ms as u64,
-                );
+                let cursor = cursor_interp.get_cursor_at(source_time_ms);
 
                 // Calculate video content bounds within composition
                 // Cursor coordinates are normalized to video content, not full composition

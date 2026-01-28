@@ -493,10 +493,6 @@ pub struct CursorConfig {
     pub motion_blur: f32,
     /// Click highlight settings.
     pub click_highlight: ClickHighlightConfig,
-    /// Hide cursor when idle.
-    pub hide_when_idle: bool,
-    /// Time before hiding idle cursor (milliseconds).
-    pub idle_timeout_ms: u32,
 }
 
 impl CursorConfig {
@@ -526,8 +522,6 @@ impl Default for CursorConfig {
             friction,
             motion_blur: 0.0,
             click_highlight: ClickHighlightConfig::default(),
-            hide_when_idle: false,
-            idle_timeout_ms: 3000,
         }
     }
 }

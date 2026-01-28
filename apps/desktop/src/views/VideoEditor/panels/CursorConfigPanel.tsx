@@ -67,42 +67,6 @@ export function CursorConfigPanel({ project, onUpdateCursorConfig }: CursorConfi
         />
       </div>
 
-      {/* Hide When Idle */}
-      <div className="flex items-center justify-between">
-        <span className="text-xs text-[var(--ink-muted)]">Hide When Idle</span>
-        <button
-          onClick={() => onUpdateCursorConfig({ hideWhenIdle: !project.cursor.hideWhenIdle })}
-          className={`relative w-10 h-5 rounded-full transition-colors ${
-            project.cursor.hideWhenIdle ? 'bg-[var(--coral-400)]' : 'bg-[var(--polar-frost)]'
-          }`}
-        >
-          <span
-            className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${
-              project.cursor.hideWhenIdle ? 'translate-x-5' : 'translate-x-0'
-            }`}
-          />
-        </button>
-      </div>
-
-      {/* Idle Timeout (only when hideWhenIdle is enabled) */}
-      {project.cursor.hideWhenIdle && (
-        <div className="pl-3 border-l border-[var(--glass-border)]">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-[11px] text-[var(--ink-subtle)]">Inactivity Delay</span>
-            <span className="text-[11px] text-[var(--ink-muted)] font-mono">
-              {(project.cursor.idleTimeoutMs / 1000).toFixed(1)}s
-            </span>
-          </div>
-          <Slider
-            value={[project.cursor.idleTimeoutMs]}
-            onValueChange={(values) => onUpdateCursorConfig({ idleTimeoutMs: values[0] })}
-            min={500}
-            max={5000}
-            step={100}
-          />
-        </div>
-      )}
-
       {/* Smooth Movement */}
       <div className="flex items-center justify-between">
         <span className="text-xs text-[var(--ink-muted)]">Smooth Movement</span>

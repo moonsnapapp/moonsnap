@@ -286,12 +286,6 @@ export const CursorOverlay = memo(function CursorOverlay({
   const visible = cursorConfig?.visible ?? true;
   const cursorType = cursorConfig?.cursorType ?? 'auto';
   const scale = cursorConfig?.scale ?? DEFAULT_CURSOR_SCALE;
-  const hideWhenIdle = cursorConfig?.hideWhenIdle ?? false;
-  const idleTimeoutMs = cursorConfig?.idleTimeoutMs ?? 3000;
-
-  // Track if cursor is idle (no movement for idleTimeoutMs)
-  const [isIdle, setIsIdle] = useState(false);
-  const lastPositionRef = useRef<{ x: number; y: number; time: number } | null>(null);
 
   // Get cursor position at source time (cursor data is in source time coordinates)
   const cursorData = hasCursorData ? getCursorAt(sourceTimeMs) : null;
@@ -313,26 +307,6 @@ export const CursorOverlay = memo(function CursorOverlay({
     return { cursorId, shape };
   }, [cursorData?.cursorId, cursorImages, fallbackCursorShape]);
 
-  useEffect(() => {
-    if (!hideWhenIdle || !cursorData) {
-      setIsIdle(false);
-      return;
-    }
-
-    const { x, y } = cursorData;
-    const now = Date.now();
-    const lastPos = lastPositionRef.current;
-
-    if (lastPos && Math.abs(lastPos.x - x) < 0.001 && Math.abs(lastPos.y - y) < 0.001) {
-      if (now - lastPos.time > idleTimeoutMs) {
-        setIsIdle(true);
-      }
-    } else {
-      lastPositionRef.current = { x, y, time: now };
-      setIsIdle(false);
-    }
-  }, [cursorData, hideWhenIdle, idleTimeoutMs]);
-
   // Calculate current zoom scale for high-resolution canvas rendering
   const zoomScale = useMemo(() => {
     if (!zoomRegions || zoomRegions.length === 0) return 1;
@@ -343,7 +317,7 @@ export const CursorOverlay = memo(function CursorOverlay({
   // Draw cursor on canvas
   useEffect(() => {
     const canvas = canvasRef.current;
-    if (!canvas || !cursorData || !visible || (hideWhenIdle && isIdle)) return;
+    if (!canvas || !cursorData || !visible) return;
 
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
@@ -502,8 +476,6 @@ export const CursorOverlay = memo(function CursorOverlay({
     actualVideoHeight, // For WYSIWYG cursor sizing
     videoAspectRatio,
     cursorImages,
-    hideWhenIdle,
-    isIdle,
     currentTimeMs,
     cursorRecording?.width,
     cursorRecording?.height,
