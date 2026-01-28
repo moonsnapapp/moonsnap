@@ -390,14 +390,14 @@ pub async fn export_video_gpu(
             bundle.screen_frame
         };
 
-        // Use timeline_time_ms for effects (position in edited video)
-        // Scene segments, zoom regions, and visibility all use timeline-relative time
+        // Use timeline_time_ms for user-defined effects (zoom regions, scene segments, visibility)
+        // Use source_time_ms for recorded data (cursor position)
         let relative_time_ms = timeline_time_ms;
 
-        // Get cursor position for Auto zoom mode (if cursor data is available)
-        // This allows zoom to follow cursor position dynamically
+        // Get cursor position using SOURCE time (cursor data is recorded in source time)
+        // This ensures cursor appears at correct position even after trimming
         let cursor_pos_for_zoom = cursor_interpolator.as_ref().map(|interp| {
-            let cursor = interp.get_cursor_at(relative_time_ms);
+            let cursor = interp.get_cursor_at(source_time_ms);
             (cursor.x as f64, cursor.y as f64)
         });
 
@@ -579,9 +579,9 @@ pub async fn export_video_gpu(
         if let Some(ref cursor_interp) = cursor_interpolator {
             // Only show cursor when screen is visible (not in cameraOnly mode)
             if camera_only_opacity < 0.99 {
-                // Use cursor config for idle hiding behavior
+                // Use SOURCE time for cursor lookup (cursor data is recorded in source time)
                 let cursor = cursor_interp.get_cursor_at_with_config(
-                    relative_time_ms,
+                    source_time_ms,
                     project.cursor.hide_when_idle,
                     project.cursor.idle_timeout_ms as u64,
                 );

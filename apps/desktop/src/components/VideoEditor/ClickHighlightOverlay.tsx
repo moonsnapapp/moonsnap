@@ -6,9 +6,11 @@
  * the cursor recording data.
  */
 
-import { memo, useRef, useEffect, useCallback } from 'react';
+import { memo, useRef, useEffect, useCallback, useMemo } from 'react';
 import { usePreviewOrPlaybackTime } from '../../hooks/usePlaybackEngine';
 import { useZoomPreview } from '../../hooks/useZoomPreview';
+import { useVideoEditorStore } from '../../stores/videoEditorStore';
+import { timelineToSource } from '../../stores/videoEditor/trimSlice';
 import type { CursorRecording, ClickHighlightConfig, CursorEvent, ZoomRegion } from '../../types';
 
 interface ClickHighlightOverlayProps {
@@ -240,6 +242,10 @@ function renderRing(
   ctx.stroke();
 }
 
+// Selector for trim segments
+const selectSegments = (s: ReturnType<typeof useVideoEditorStore.getState>) =>
+  s.project?.timeline.segments;
+
 /**
  * ClickHighlightOverlay component - renders click highlight animations on video.
  */
@@ -258,6 +264,14 @@ export const ClickHighlightOverlay = memo(function ClickHighlightOverlay({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const currentTimeMs = usePreviewOrPlaybackTime();
   const lastRenderTimeRef = useRef<number>(-1);
+  const segments = useVideoEditorStore(selectSegments);
+
+  // Convert timeline time to source time for cursor lookup
+  // Click events are recorded in source time (original video), but currentTimeMs is in timeline time (after cuts)
+  const sourceTimeMs = useMemo(
+    () => timelineToSource(currentTimeMs, segments ?? []),
+    [currentTimeMs, segments]
+  );
 
   // Get zoom transform - must match video exactly for click highlight alignment at all zoom levels
   const zoomStyle = useZoomPreview(zoomRegions, currentTimeMs, cursorRecording, {
@@ -295,8 +309,8 @@ export const ClickHighlightOverlay = memo(function ClickHighlightOverlay({
     ctx.clearRect(0, 0, containerWidth, containerHeight);
     
     // Get active click highlights
-    // Adjust time by video start offset to sync with cursor timestamps
-    const adjustedTimeMs = currentTimeMs + (cursorRecording.videoStartOffsetMs ?? 0);
+    // Use source time (converted from timeline time) and adjust by video start offset to sync with cursor timestamps
+    const adjustedTimeMs = sourceTimeMs + (cursorRecording.videoStartOffsetMs ?? 0);
     const activeClicks = getActiveClicks(
       cursorRecording.events,
       adjustedTimeMs,
@@ -355,20 +369,20 @@ export const ClickHighlightOverlay = memo(function ClickHighlightOverlay({
     containerWidth,
     containerHeight,
     videoAspectRatio,
-    currentTimeMs,
+    sourceTimeMs,
     parsedColor,
   ]);
   
   // Animation loop for smooth rendering
   useEffect(() => {
     if (!enabled || !cursorRecording) return;
-    
-    // Only re-render if time changed
-    if (lastRenderTimeRef.current === currentTimeMs) return;
-    lastRenderTimeRef.current = currentTimeMs;
-    
+
+    // Only re-render if source time changed
+    if (lastRenderTimeRef.current === sourceTimeMs) return;
+    lastRenderTimeRef.current = sourceTimeMs;
+
     render();
-  }, [enabled, cursorRecording, currentTimeMs, render]);
+  }, [enabled, cursorRecording, sourceTimeMs, render]);
   
   // Don't render if disabled or no cursor data
   if (!enabled || !cursorRecording || cursorRecording.events.length === 0) {

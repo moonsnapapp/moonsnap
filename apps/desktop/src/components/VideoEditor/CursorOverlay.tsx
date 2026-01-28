@@ -13,6 +13,8 @@ import { usePreviewOrPlaybackTime } from '../../hooks/usePlaybackEngine';
 import { useZoomPreview, getZoomStateAt } from '../../hooks/useZoomPreview';
 import { WINDOWS_CURSORS, DEFAULT_CURSOR, type CursorDefinition } from '../../constants/cursors';
 import { editorLogger } from '../../utils/logger';
+import { useVideoEditorStore } from '../../stores/videoEditorStore';
+import { timelineToSource } from '../../stores/videoEditor/trimSlice';
 import type { CursorRecording, CursorConfig, CursorImage, WindowsCursorShape, ZoomRegion } from '../../types';
 
 // Default cursor config values
@@ -196,6 +198,10 @@ function calculateVideoBounds(
   }
 }
 
+// Selector for trim segments
+const selectSegments = (s: ReturnType<typeof useVideoEditorStore.getState>) =>
+  s.project?.timeline.segments;
+
 export const CursorOverlay = memo(function CursorOverlay({
   cursorRecording,
   cursorConfig,
@@ -210,6 +216,14 @@ export const CursorOverlay = memo(function CursorOverlay({
 }: CursorOverlayProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const currentTimeMs = usePreviewOrPlaybackTime();
+  const segments = useVideoEditorStore(selectSegments);
+
+  // Convert timeline time to source time for cursor lookup
+  // Cursor data is recorded in source time (original video), but currentTimeMs is in timeline time (after cuts)
+  const sourceTimeMs = useMemo(
+    () => timelineToSource(currentTimeMs, segments ?? []),
+    [currentTimeMs, segments]
+  );
 
   // Get zoom transform - must match video exactly for cursor alignment at all zoom levels
   const zoomStyle = useZoomPreview(zoomRegions, currentTimeMs, cursorRecording, {
@@ -279,8 +293,8 @@ export const CursorOverlay = memo(function CursorOverlay({
   const [isIdle, setIsIdle] = useState(false);
   const lastPositionRef = useRef<{ x: number; y: number; time: number } | null>(null);
 
-  // Get cursor position at current time
-  const cursorData = hasCursorData ? getCursorAt(currentTimeMs) : null;
+  // Get cursor position at source time (cursor data is in source time coordinates)
+  const cursorData = hasCursorData ? getCursorAt(sourceTimeMs) : null;
 
   // Get current cursor shape directly from cursor data
   // Note: Cursor shape stabilization (debouncing short-lived shapes) should happen
