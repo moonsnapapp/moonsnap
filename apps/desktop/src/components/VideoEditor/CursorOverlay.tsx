@@ -10,7 +10,6 @@
 import { memo, useRef, useEffect, useState, useCallback, useMemo } from 'react';
 import { useCursorInterpolation } from '../../hooks/useCursorInterpolation';
 import { usePreviewOrPlaybackTime } from '../../hooks/usePlaybackEngine';
-import { getZoomStateAt } from '../../hooks/useZoomPreview';
 import { WINDOWS_CURSORS, DEFAULT_CURSOR, type CursorDefinition } from '../../constants/cursors';
 import { editorLogger } from '../../utils/logger';
 import { useVideoEditorStore } from '../../stores/videoEditorStore';
@@ -210,7 +209,7 @@ export const CursorOverlay = memo(function CursorOverlay({
   videoWidth: _videoWidth,
   videoHeight: actualVideoHeight,
   videoAspectRatio,
-  zoomRegions,
+  zoomRegions: _zoomRegions,
   backgroundPadding: _backgroundPadding = 0,
   rounding: _rounding = 0,
 }: CursorOverlayProps) {
@@ -302,13 +301,6 @@ export const CursorOverlay = memo(function CursorOverlay({
     return { cursorId, shape };
   }, [cursorData?.cursorId, cursorImages, fallbackCursorShape]);
 
-  // Calculate current zoom scale for high-resolution canvas rendering
-  const zoomScale = useMemo(() => {
-    if (!zoomRegions || zoomRegions.length === 0) return 1;
-    const state = getZoomStateAt(zoomRegions, currentTimeMs);
-    return state.scale;
-  }, [zoomRegions, currentTimeMs]);
-
   // Draw cursor on canvas
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -317,10 +309,10 @@ export const CursorOverlay = memo(function CursorOverlay({
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    // Calculate the render scale: DPR * zoom scale
-    // This ensures the cursor remains sharp when zoomed in
-    const dpr = window.devicePixelRatio || 1;
-    const renderScale = dpr * Math.max(1, zoomScale);
+    // Use DPR for retina sharpness, capped for performance on high-DPI displays
+    // Zoom is handled by parent container's CSS transform, not here
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const renderScale = dpr;
 
     // Set canvas size at higher resolution for sharpness
     const targetWidth = Math.round(containerWidth * renderScale);
@@ -475,7 +467,6 @@ export const CursorOverlay = memo(function CursorOverlay({
     cursorRecording?.width,
     cursorRecording?.height,
     imageLoadCounter, // Re-run when SVG/bitmap images finish loading
-    zoomScale, // Re-render at higher resolution when zoomed
   ]);
 
   // Don't render if no cursor data or not visible
