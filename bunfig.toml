@@ -4,3 +4,6 @@ exact = true
 
 [workspace]
 packages = ["apps/*", "packages/*"]
+
+# Note: Use `bun run test` (not `bun test`) to run vitest
+# `bun test` uses Bun's built-in runner which lacks jsdom and vi.waitFor
