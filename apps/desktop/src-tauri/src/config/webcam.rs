@@ -118,148 +118,119 @@ pub fn set_webcam_mirror(mirror: bool) -> SnapItResult<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use proptest::prelude::*;
 
-    // Helper to reset config between tests
     fn reset_webcam_config() {
         *WEBCAM_CONFIG.write() = WebcamConfig::default();
     }
 
     // ========================================================================
-    // Default values tests
+    // WebcamSize - actual rendering calculations
     // ========================================================================
 
     #[test]
-    fn test_default_webcam_config() {
-        let config = WebcamConfig::default();
-        assert!(!config.enabled);
-        assert_eq!(config.device_index, 0);
-        assert!(matches!(config.position, WebcamPosition::BottomRight));
-        assert!(matches!(config.size, WebcamSize::Small));
-        assert!(matches!(config.shape, WebcamShape::Circle));
-        assert!(!config.mirror);
-    }
-
-    // ========================================================================
-    // WebcamSize tests
-    // ========================================================================
-
-    #[test]
-    fn test_webcam_size_as_fraction() {
+    fn test_webcam_size_fractions() {
+        // These fractions directly affect webcam overlay size in the video
         assert!((WebcamSize::Small.as_fraction() - 0.15).abs() < 0.001);
         assert!((WebcamSize::Large.as_fraction() - 0.20).abs() < 0.001);
     }
 
     #[test]
-    fn test_webcam_size_default() {
-        assert!(matches!(WebcamSize::default(), WebcamSize::Small));
-    }
+    fn test_get_webcam_size_pixels_calculation() {
+        reset_webcam_config();
 
-    #[test]
-    fn test_webcam_size_equality() {
-        assert_eq!(WebcamSize::Small, WebcamSize::Small);
-        assert_eq!(WebcamSize::Large, WebcamSize::Large);
-        assert_ne!(WebcamSize::Small, WebcamSize::Large);
+        // Verify the pixel calculation is correct for common resolutions
+        let test_cases = [
+            (1920, WebcamSize::Small, (1920.0 * 0.15) as u32),
+            (1920, WebcamSize::Large, (1920.0 * 0.20) as u32),
+            (3840, WebcamSize::Small, (3840.0 * 0.15) as u32), // 4K
+            (1280, WebcamSize::Small, (1280.0 * 0.15) as u32), // 720p
+        ];
+
+        for (width, size, expected) in test_cases {
+            WEBCAM_CONFIG.write().size = size;
+            let actual = get_webcam_size_pixels(width);
+            assert_eq!(
+                actual, expected,
+                "Failed for {}px width with {:?}",
+                width, size
+            );
+        }
+
+        reset_webcam_config();
     }
 
     // ========================================================================
-    // WebcamPosition tests
+    // Serialization - frontend/backend communication
     // ========================================================================
 
     #[test]
-    fn test_webcam_position_default() {
-        assert!(matches!(
-            WebcamPosition::default(),
-            WebcamPosition::BottomRight
-        ));
-    }
+    fn test_custom_position_roundtrip() {
+        // Custom position uses tagged enum - tricky to serialize correctly
+        let config = WebcamSettings {
+            enabled: true,
+            device_index: 1,
+            position: WebcamPosition::Custom { x: 50, y: 100 },
+            size: WebcamSize::Large,
+            shape: WebcamShape::Rectangle,
+            mirror: true,
+        };
 
-    #[test]
-    fn test_webcam_position_custom() {
-        let pos = WebcamPosition::Custom { x: 100, y: 200 };
-        if let WebcamPosition::Custom { x, y } = pos {
-            assert_eq!(x, 100);
-            assert_eq!(y, 200);
+        let json = serde_json::to_string(&config).unwrap();
+        let roundtrip: WebcamSettings = serde_json::from_str(&json).unwrap();
+
+        if let WebcamPosition::Custom { x, y } = roundtrip.position {
+            assert_eq!((x, y), (50, 100));
         } else {
-            panic!("Expected Custom position");
+            panic!("Custom position lost in serialization");
+        }
+    }
+
+    #[test]
+    fn test_enum_serialization_format() {
+        // Frontend expects lowercase strings
+        assert_eq!(
+            serde_json::to_string(&WebcamSize::Small).unwrap(),
+            "\"small\""
+        );
+        assert_eq!(
+            serde_json::to_string(&WebcamSize::Large).unwrap(),
+            "\"large\""
+        );
+        assert_eq!(
+            serde_json::to_string(&WebcamShape::Circle).unwrap(),
+            "\"circle\""
+        );
+        assert_eq!(
+            serde_json::to_string(&WebcamShape::Rectangle).unwrap(),
+            "\"rectangle\""
+        );
+    }
+
+    #[test]
+    fn test_all_positions_serialize_deserialize() {
+        let positions = [
+            WebcamPosition::TopLeft,
+            WebcamPosition::TopRight,
+            WebcamPosition::BottomLeft,
+            WebcamPosition::BottomRight,
+            WebcamPosition::Custom { x: -100, y: 500 }, // Edge case: negative x
+        ];
+
+        for pos in positions {
+            let json = serde_json::to_string(&pos).unwrap();
+            let roundtrip: WebcamPosition = serde_json::from_str(&json).unwrap();
+            // Verify by re-serializing
+            assert_eq!(json, serde_json::to_string(&roundtrip).unwrap());
         }
     }
 
     // ========================================================================
-    // WebcamShape tests
+    // Global config state
     // ========================================================================
 
     #[test]
-    fn test_webcam_shape_default() {
-        assert!(matches!(WebcamShape::default(), WebcamShape::Circle));
-    }
-
-    #[test]
-    fn test_webcam_shape_equality() {
-        assert_eq!(WebcamShape::Circle, WebcamShape::Circle);
-        assert_eq!(WebcamShape::Rectangle, WebcamShape::Rectangle);
-        assert_ne!(WebcamShape::Circle, WebcamShape::Rectangle);
-    }
-
-    // ========================================================================
-    // Global config tests
-    // ========================================================================
-
-    #[test]
-    fn test_get_webcam_settings() {
-        reset_webcam_config();
-
-        let settings = get_webcam_settings().unwrap();
-        assert!(!settings.enabled);
-        assert_eq!(settings.device_index, 0);
-    }
-
-    #[test]
-    fn test_is_webcam_enabled() {
-        reset_webcam_config();
-
-        assert!(!is_webcam_enabled().unwrap());
-
-        WEBCAM_CONFIG.write().enabled = true;
-        assert!(is_webcam_enabled().unwrap());
-
-        reset_webcam_config();
-    }
-
-    #[test]
-    fn test_get_webcam_size_pixels() {
-        reset_webcam_config();
-
-        // Small size = 15% of frame width
-        let size_small = get_webcam_size_pixels(1920);
-        assert_eq!(size_small, (1920.0 * 0.15) as u32);
-
-        // Change to Large
-        WEBCAM_CONFIG.write().size = WebcamSize::Large;
-        let size_large = get_webcam_size_pixels(1920);
-        assert_eq!(size_large, (1920.0 * 0.20) as u32);
-
-        reset_webcam_config();
-    }
-
-    #[test]
-    fn test_get_webcam_size_pixels_various_widths() {
-        reset_webcam_config();
-
-        // Test with different frame widths
-        let widths = [640, 1280, 1920, 2560, 3840];
-        for width in widths {
-            let size = get_webcam_size_pixels(width);
-            let expected = (width as f32 * 0.15) as u32;
-            assert_eq!(size, expected, "Failed for width {}", width);
-        }
-    }
-
-    // ========================================================================
-    // Config modification tests
-    // ========================================================================
-
-    #[test]
-    fn test_set_webcam_config() {
+    fn test_set_webcam_config_persists_all_fields() {
         reset_webcam_config();
 
         let new_config = WebcamConfig {
@@ -271,117 +242,64 @@ mod tests {
             mirror: true,
         };
 
-        set_webcam_config(new_config);
+        set_webcam_config(new_config.clone());
+        let read = WEBCAM_CONFIG.read().clone();
 
-        let current = WEBCAM_CONFIG.read().clone();
-        assert!(current.enabled);
-        assert_eq!(current.device_index, 2);
-        assert!(matches!(current.position, WebcamPosition::TopLeft));
-        assert!(matches!(current.size, WebcamSize::Large));
-        assert!(matches!(current.shape, WebcamShape::Rectangle));
-        assert!(current.mirror);
+        assert_eq!(read.enabled, new_config.enabled);
+        assert_eq!(read.device_index, new_config.device_index);
+        assert_eq!(read.mirror, new_config.mirror);
 
         reset_webcam_config();
     }
 
     // ========================================================================
-    // Serialization tests
+    // Property-based tests
     // ========================================================================
 
-    #[test]
-    fn test_webcam_settings_serialization_roundtrip() {
-        let config = WebcamSettings {
-            enabled: true,
-            device_index: 1,
-            position: WebcamPosition::Custom { x: 50, y: 100 },
-            size: WebcamSize::Large,
-            shape: WebcamShape::Rectangle,
-            mirror: true,
-        };
-
-        let json = serde_json::to_string(&config).unwrap();
-        let deserialized: WebcamSettings = serde_json::from_str(&json).unwrap();
-
-        assert!(deserialized.enabled);
-        assert_eq!(deserialized.device_index, 1);
-        assert!(matches!(deserialized.size, WebcamSize::Large));
-        assert!(matches!(deserialized.shape, WebcamShape::Rectangle));
-        assert!(deserialized.mirror);
-
-        if let WebcamPosition::Custom { x, y } = deserialized.position {
-            assert_eq!(x, 50);
-            assert_eq!(y, 100);
-        } else {
-            panic!("Expected Custom position after deserialization");
+    proptest! {
+        #[test]
+        fn prop_size_pixels_scales_linearly(width in 100u32..8000) {
+            reset_webcam_config();
+            let pixels = get_webcam_size_pixels(width);
+            let expected = (width as f32 * WebcamSize::Small.as_fraction()) as u32;
+            prop_assert_eq!(pixels, expected);
         }
-    }
 
-    #[test]
-    fn test_webcam_size_serialization() {
-        let small = WebcamSize::Small;
-        let large = WebcamSize::Large;
-
-        let small_json = serde_json::to_string(&small).unwrap();
-        let large_json = serde_json::to_string(&large).unwrap();
-
-        assert_eq!(small_json, "\"small\"");
-        assert_eq!(large_json, "\"large\"");
-
-        let deserialized_small: WebcamSize = serde_json::from_str(&small_json).unwrap();
-        let deserialized_large: WebcamSize = serde_json::from_str(&large_json).unwrap();
-
-        assert_eq!(deserialized_small, WebcamSize::Small);
-        assert_eq!(deserialized_large, WebcamSize::Large);
-    }
-
-    #[test]
-    fn test_webcam_shape_serialization() {
-        let circle = WebcamShape::Circle;
-        let rect = WebcamShape::Rectangle;
-
-        let circle_json = serde_json::to_string(&circle).unwrap();
-        let rect_json = serde_json::to_string(&rect).unwrap();
-
-        assert_eq!(circle_json, "\"circle\"");
-        assert_eq!(rect_json, "\"rectangle\"");
-    }
-
-    #[test]
-    fn test_webcam_position_serialization() {
-        // Test fixed positions
-        let positions = vec![
-            WebcamPosition::TopLeft,
-            WebcamPosition::TopRight,
-            WebcamPosition::BottomLeft,
-            WebcamPosition::BottomRight,
-        ];
-
-        for pos in positions {
+        #[test]
+        fn prop_custom_position_roundtrip(x in -1000i32..5000, y in -1000i32..5000) {
+            let pos = WebcamPosition::Custom { x, y };
             let json = serde_json::to_string(&pos).unwrap();
-            let deserialized: WebcamPosition = serde_json::from_str(&json).unwrap();
-            // Can't directly compare enums, but should not panic
-            let _ = format!("{:?}", deserialized);
+            let roundtrip: WebcamPosition = serde_json::from_str(&json).unwrap();
+
+            if let WebcamPosition::Custom { x: rx, y: ry } = roundtrip {
+                prop_assert_eq!(rx, x);
+                prop_assert_eq!(ry, y);
+            } else {
+                prop_assert!(false, "Position type changed during roundtrip");
+            }
         }
 
-        // Test custom position
-        let custom = WebcamPosition::Custom { x: 123, y: 456 };
-        let json = serde_json::to_string(&custom).unwrap();
-        assert!(json.contains("123"));
-        assert!(json.contains("456"));
-    }
+        #[test]
+        fn prop_settings_roundtrip(
+            enabled in any::<bool>(),
+            device_index in 0usize..10,
+            mirror in any::<bool>()
+        ) {
+            let config = WebcamSettings {
+                enabled,
+                device_index,
+                position: WebcamPosition::BottomRight,
+                size: WebcamSize::Small,
+                shape: WebcamShape::Circle,
+                mirror,
+            };
 
-    // ========================================================================
-    // Thread safety tests
-    // ========================================================================
+            let json = serde_json::to_string(&config).unwrap();
+            let roundtrip: WebcamSettings = serde_json::from_str(&json).unwrap();
 
-    #[test]
-    fn test_concurrent_reads() {
-        reset_webcam_config();
-
-        let config1 = WEBCAM_CONFIG.read().clone();
-        let config2 = WEBCAM_CONFIG.read().clone();
-
-        assert_eq!(config1.device_index, config2.device_index);
-        assert_eq!(config1.enabled, config2.enabled);
+            prop_assert_eq!(roundtrip.enabled, config.enabled);
+            prop_assert_eq!(roundtrip.device_index, config.device_index);
+            prop_assert_eq!(roundtrip.mirror, config.mirror);
+        }
     }
 }

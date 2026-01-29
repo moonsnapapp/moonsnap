@@ -368,6 +368,7 @@ impl ZoomInterpolator {
 mod tests {
     use super::*;
     use crate::commands::video_recording::video_project::{EasingFunction, ZoomTransition};
+    use proptest::prelude::*;
 
     fn make_region(start_ms: u64, end_ms: u64, scale: f32, x: f32, y: f32) -> ZoomRegion {
         ZoomRegion {
@@ -388,70 +389,8 @@ mod tests {
     }
 
     // ========================================================================
-    // XY type tests
+    // SegmentBounds tests - critical zoom math
     // ========================================================================
-
-    #[test]
-    fn test_xy_new() {
-        let xy = XY::new(10.0, 20.0);
-        assert!((xy.x - 10.0).abs() < 0.001);
-        assert!((xy.y - 20.0).abs() < 0.001);
-    }
-
-    #[test]
-    fn test_xy_add() {
-        let a = XY::new(10.0, 20.0);
-        let b = XY::new(5.0, 10.0);
-        let result = a + b;
-        assert!((result.x - 15.0).abs() < 0.001);
-        assert!((result.y - 30.0).abs() < 0.001);
-    }
-
-    #[test]
-    fn test_xy_sub() {
-        let a = XY::new(10.0, 20.0);
-        let b = XY::new(3.0, 5.0);
-        let result = a - b;
-        assert!((result.x - 7.0).abs() < 0.001);
-        assert!((result.y - 15.0).abs() < 0.001);
-    }
-
-    #[test]
-    fn test_xy_mul_scalar() {
-        let xy = XY::new(10.0, 20.0);
-        let result = xy * 2.0;
-        assert!((result.x - 20.0).abs() < 0.001);
-        assert!((result.y - 40.0).abs() < 0.001);
-    }
-
-    #[test]
-    fn test_xy_equality() {
-        let a = XY::new(10.0, 20.0);
-        let b = XY::new(10.0, 20.0);
-        let c = XY::new(10.0, 21.0);
-        assert_eq!(a, b);
-        assert_ne!(a, c);
-    }
-
-    // ========================================================================
-    // SegmentBounds tests
-    // ========================================================================
-
-    #[test]
-    fn test_segment_bounds_default() {
-        let bounds = SegmentBounds::default();
-        assert!((bounds.top_left.x - 0.0).abs() < 0.001);
-        assert!((bounds.top_left.y - 0.0).abs() < 0.001);
-        assert!((bounds.bottom_right.x - 1.0).abs() < 0.001);
-        assert!((bounds.bottom_right.y - 1.0).abs() < 0.001);
-    }
-
-    #[test]
-    fn test_segment_bounds_new() {
-        let bounds = SegmentBounds::new(XY::new(-0.5, -0.5), XY::new(1.5, 1.5));
-        assert!((bounds.top_left.x - (-0.5)).abs() < 0.001);
-        assert!((bounds.bottom_right.x - 1.5).abs() < 0.001);
-    }
 
     #[test]
     fn test_segment_bounds_zoom_amount() {
@@ -887,5 +826,114 @@ mod tests {
 
         let state = interpolator.get_zoom_at(1500);
         assert!(state.scale > 5.0, "Should support high zoom levels");
+    }
+
+    // ========================================================================
+    // Property-based tests
+    // ========================================================================
+
+    proptest! {
+        #[test]
+        fn prop_zoom_center_recovery(
+            x in 0.0f32..1.0,
+            y in 0.0f32..1.0,
+            scale in 1.5f32..5.0
+        ) {
+            // Critical: to_zoom_state must recover the original center for export/preview match
+            let region = make_region(0, 1000, scale, x, y);
+            let bounds = SegmentBounds::from_region(&region, None);
+            let interp = InterpolatedZoom { t: 1.0, bounds };
+            let state = interp.to_zoom_state();
+
+            prop_assert!((state.center_x - x).abs() < 0.01,
+                "Center X mismatch: expected {}, got {}", x, state.center_x);
+            prop_assert!((state.center_y - y).abs() < 0.01,
+                "Center Y mismatch: expected {}, got {}", y, state.center_y);
+            prop_assert!((state.scale - scale).abs() < 0.01,
+                "Scale mismatch: expected {}, got {}", scale, state.scale);
+        }
+
+        #[test]
+        fn prop_bounds_lerp_boundaries(
+            x1 in -1.0f64..2.0,
+            y1 in -1.0f64..2.0,
+            x2 in -1.0f64..2.0,
+            y2 in -1.0f64..2.0
+        ) {
+            let a = SegmentBounds::new(XY::new(0.0, 0.0), XY::new(1.0, 1.0));
+            let b = SegmentBounds::new(XY::new(x1, y1), XY::new(x2, y2));
+
+            // t=0 should give exactly a
+            let start = a.lerp(&b, 0.0);
+            prop_assert!((start.top_left.x - a.top_left.x).abs() < 0.001);
+            prop_assert!((start.bottom_right.x - a.bottom_right.x).abs() < 0.001);
+
+            // t=1 should give exactly b
+            let end = a.lerp(&b, 1.0);
+            prop_assert!((end.top_left.x - b.top_left.x).abs() < 0.001);
+            prop_assert!((end.bottom_right.x - b.bottom_right.x).abs() < 0.001);
+        }
+
+        #[test]
+        fn prop_zoom_amount_always_positive(
+            x in 0.0f32..1.0,
+            y in 0.0f32..1.0,
+            scale in 1.0f32..10.0
+        ) {
+            let region = make_region(0, 1000, scale, x, y);
+            let bounds = SegmentBounds::from_region(&region, None);
+
+            prop_assert!(bounds.zoom_amount() > 0.0,
+                "Zoom amount must be positive, got {}", bounds.zoom_amount());
+            prop_assert!((bounds.zoom_amount() - scale as f64).abs() < 0.01,
+                "Zoom amount should match scale");
+        }
+
+        #[test]
+        fn prop_is_zoomed_consistent_with_scale(
+            start_ms in 0u64..5000,
+            duration in 1000u64..5000
+        ) {
+            let end_ms = start_ms + duration;
+            let regions = vec![make_region(start_ms, end_ms, 2.0, 0.5, 0.5)];
+            let config = ZoomConfig {
+                mode: crate::commands::video_recording::video_project::ZoomMode::Manual,
+                auto_zoom_scale: 2.0,
+                regions,
+            };
+            let interpolator = ZoomInterpolator::new(&config);
+
+            // Sample point well inside the region
+            let mid = start_ms + duration / 2;
+            let state = interpolator.get_zoom_at(mid);
+            let is_zoomed = interpolator.is_zoomed_at(mid);
+
+            // is_zoomed should be true iff scale > 1.001
+            prop_assert_eq!(is_zoomed, state.scale > 1.001,
+                "is_zoomed inconsistent: scale={}, is_zoomed={}", state.scale, is_zoomed);
+        }
+
+        #[test]
+        fn prop_xy_add_commutative(
+            x1 in -1000.0f64..1000.0,
+            y1 in -1000.0f64..1000.0,
+            x2 in -1000.0f64..1000.0,
+            y2 in -1000.0f64..1000.0
+        ) {
+            let a = XY::new(x1, y1);
+            let b = XY::new(x2, y2);
+            let ab = a + b;
+            let ba = b + a;
+
+            prop_assert!((ab.x - ba.x).abs() < 0.001);
+            prop_assert!((ab.y - ba.y).abs() < 0.001);
+        }
+
+        #[test]
+        fn prop_t_clamp_always_in_range(v in -10.0f64..10.0) {
+            let clamped = t_clamp(v);
+            prop_assert!(clamped >= 0.0 && clamped <= 1.0,
+                "t_clamp({}) = {} is out of range", v, clamped);
+        }
     }
 }

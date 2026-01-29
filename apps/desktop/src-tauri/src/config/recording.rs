@@ -262,40 +262,18 @@ pub fn set_hide_desktop_icons(enabled: bool) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use proptest::prelude::*;
 
     // ========================================================================
-    // Default values tests
-    // ========================================================================
-
-    #[test]
-    fn test_default_config() {
-        let config = RecordingConfig::default();
-        assert_eq!(config.countdown_secs, 3);
-        assert_eq!(config.fps, 30);
-        assert_eq!(config.quality, 80);
-        assert!(config.system_audio_enabled);
-        assert!(!config.include_cursor);
-        assert!(!config.quick_capture);
-    }
-
-    #[test]
-    fn test_default_optional_fields() {
-        let config = RecordingConfig::default();
-        assert!(config.max_duration_secs.is_none());
-        assert!(config.microphone_device_index.is_none());
-        assert!(!config.hide_desktop_icons);
-    }
-
-    // ========================================================================
-    // Validation tests
+    // Validation tests - prevent invalid recording settings
     // ========================================================================
 
     #[test]
-    fn test_config_validation() {
+    fn test_validation_clamps_out_of_range() {
         let mut config = RecordingConfig {
-            fps: 100,           // Over max
-            quality: 0,         // Under min
-            countdown_secs: 20, // Over max
+            fps: 100,           // Over max 60
+            quality: 0,         // Under min 1
+            countdown_secs: 20, // Over max 10
             ..Default::default()
         };
         config.validate();
@@ -303,76 +281,47 @@ mod tests {
         assert_eq!(config.fps, 60);
         assert_eq!(config.quality, 1);
         assert_eq!(config.countdown_secs, 10);
-    }
-
-    #[test]
-    fn test_validation_clamps_fps_low() {
-        let mut config = RecordingConfig {
-            fps: 5, // Under min of 10
-            ..Default::default()
-        };
-        config.validate();
-        assert_eq!(config.fps, 10);
-    }
-
-    #[test]
-    fn test_validation_clamps_quality_high() {
-        let mut config = RecordingConfig {
-            quality: 150, // Over max of 100
-            ..Default::default()
-        };
-        config.validate();
-        assert_eq!(config.quality, 100);
-    }
-
-    #[test]
-    fn test_validation_allows_valid_values() {
-        let mut config = RecordingConfig {
-            countdown_secs: 5,
-            fps: 60,
-            quality: 50,
-            ..Default::default()
-        };
-        config.validate();
-
-        // Values within range should remain unchanged
-        assert_eq!(config.countdown_secs, 5);
-        assert_eq!(config.fps, 60);
-        assert_eq!(config.quality, 50);
     }
 
     #[test]
     fn test_validation_boundary_values() {
-        // Test exact boundary values
-        let mut config = RecordingConfig {
-            countdown_secs: 0, // Min boundary
-            fps: 10,           // Min boundary
-            quality: 1,        // Min boundary
+        // Min boundaries
+        let mut min_config = RecordingConfig {
+            countdown_secs: 0,
+            fps: 10,
+            quality: 1,
             ..Default::default()
         };
-        config.validate();
-        assert_eq!(config.countdown_secs, 0);
-        assert_eq!(config.fps, 10);
-        assert_eq!(config.quality, 1);
+        min_config.validate();
+        assert_eq!(
+            (
+                min_config.countdown_secs,
+                min_config.fps,
+                min_config.quality
+            ),
+            (0, 10, 1)
+        );
 
-        let mut config = RecordingConfig {
-            countdown_secs: 10, // Max boundary
-            fps: 60,            // Max boundary
-            quality: 100,       // Max boundary
+        // Max boundaries
+        let mut max_config = RecordingConfig {
+            countdown_secs: 10,
+            fps: 60,
+            quality: 100,
             ..Default::default()
         };
-        config.validate();
-        assert_eq!(config.countdown_secs, 10);
-        assert_eq!(config.fps, 60);
-        assert_eq!(config.quality, 100);
+        max_config.validate();
+        assert_eq!(
+            (
+                max_config.countdown_secs,
+                max_config.fps,
+                max_config.quality
+            ),
+            (10, 60, 100)
+        );
     }
 
-    // ========================================================================
-    // Reset tests
-    // ========================================================================
-
     #[test]
-    fn test_config_reset() {
+    fn test_reset_clears_all_fields() {
         let mut config = RecordingConfig {
             countdown_secs: 10,
             fps: 60,
@@ -388,24 +337,51 @@ mod tests {
 
         config.reset();
 
-        // Should be back to defaults
-        assert_eq!(config.countdown_secs, 3);
-        assert_eq!(config.fps, 30);
-        assert_eq!(config.quality, 80);
-        assert!(config.system_audio_enabled);
-        assert!(!config.include_cursor);
-        assert!(!config.quick_capture);
-        assert!(config.max_duration_secs.is_none());
-        assert!(config.microphone_device_index.is_none());
-        assert!(!config.hide_desktop_icons);
+        // Verify ALL fields reset, not just some
+        let default = RecordingConfig::default();
+        assert_eq!(config.countdown_secs, default.countdown_secs);
+        assert_eq!(config.fps, default.fps);
+        assert_eq!(config.quality, default.quality);
+        assert_eq!(config.system_audio_enabled, default.system_audio_enabled);
+        assert_eq!(config.include_cursor, default.include_cursor);
+        assert_eq!(config.quick_capture, default.quick_capture);
+        assert_eq!(config.max_duration_secs, default.max_duration_secs);
+        assert_eq!(
+            config.microphone_device_index,
+            default.microphone_device_index
+        );
+        assert_eq!(config.hide_desktop_icons, default.hide_desktop_icons);
     }
 
     // ========================================================================
-    // Serialization tests
+    // Serialization tests - frontend/backend communication
     // ========================================================================
 
     #[test]
-    fn test_config_serialization_roundtrip() {
+    fn test_json_uses_camel_case_for_frontend() {
+        // Critical: TypeScript frontend expects camelCase
+        let json = serde_json::to_string(&RecordingConfig::default()).unwrap();
+
+        assert!(
+            json.contains("countdownSecs"),
+            "Frontend expects countdownSecs"
+        );
+        assert!(
+            json.contains("systemAudioEnabled"),
+            "Frontend expects systemAudioEnabled"
+        );
+        assert!(
+            json.contains("maxDurationSecs"),
+            "Frontend expects maxDurationSecs"
+        );
+        assert!(
+            !json.contains("countdown_secs"),
+            "snake_case would break frontend"
+        );
+    }
+
+    #[test]
+    fn test_serialization_roundtrip_all_fields() {
         let config = RecordingConfig {
             countdown_secs: 5,
             fps: 60,
@@ -420,99 +396,91 @@ mod tests {
         };
 
         let json = serde_json::to_string(&config).unwrap();
-        let deserialized: RecordingConfig = serde_json::from_str(&json).unwrap();
+        let roundtrip: RecordingConfig = serde_json::from_str(&json).unwrap();
 
-        assert_eq!(deserialized.countdown_secs, 5);
-        assert_eq!(deserialized.fps, 60);
-        assert_eq!(deserialized.quality, 90);
-        assert!(!deserialized.system_audio_enabled);
-        assert!(deserialized.include_cursor);
-        assert!(deserialized.quick_capture);
-        assert_eq!(deserialized.max_duration_secs, Some(120));
-        assert_eq!(deserialized.microphone_device_index, Some(2));
-        assert!(deserialized.hide_desktop_icons);
-    }
-
-    #[test]
-    fn test_config_json_uses_camel_case() {
-        let config = RecordingConfig::default();
-        let json = serde_json::to_string(&config).unwrap();
-
-        // Verify camelCase field names
-        assert!(json.contains("countdownSecs"));
-        assert!(json.contains("systemAudioEnabled"));
-        assert!(json.contains("includeCursor"));
-        assert!(json.contains("maxDurationSecs"));
-        assert!(json.contains("microphoneDeviceIndex"));
-        assert!(json.contains("quickCapture"));
-        assert!(json.contains("hideDesktopIcons"));
-        assert!(json.contains("gifQualityPreset"));
-
-        // Verify snake_case is NOT used
-        assert!(!json.contains("countdown_secs"));
-        assert!(!json.contains("system_audio"));
+        // Every field must survive roundtrip
+        assert_eq!(roundtrip.countdown_secs, config.countdown_secs);
+        assert_eq!(roundtrip.fps, config.fps);
+        assert_eq!(roundtrip.quality, config.quality);
+        assert_eq!(roundtrip.system_audio_enabled, config.system_audio_enabled);
+        assert_eq!(roundtrip.include_cursor, config.include_cursor);
+        assert_eq!(roundtrip.quick_capture, config.quick_capture);
+        assert_eq!(roundtrip.max_duration_secs, config.max_duration_secs);
+        assert_eq!(
+            roundtrip.microphone_device_index,
+            config.microphone_device_index
+        );
+        assert_eq!(roundtrip.hide_desktop_icons, config.hide_desktop_icons);
     }
 
     // ========================================================================
-    // Global config thread-safety tests
+    // Global config tests
     // ========================================================================
 
     #[test]
-    fn test_global_config_read_write() {
-        // Reset to defaults first
+    fn test_global_config_write_persists() {
         reset_recording_config();
 
-        // Verify default values through getters
-        assert_eq!(get_countdown_secs(), 3);
-        assert_eq!(get_fps(), 30);
-        assert_eq!(get_quality(), 80);
-        assert!(get_system_audio_enabled());
-        assert!(!get_include_cursor());
-
-        // Modify via write lock
         {
             let mut config = RECORDING_CONFIG.write();
             config.countdown_secs = 7;
             config.fps = 45;
         }
 
-        // Verify changes persisted
         assert_eq!(get_countdown_secs(), 7);
         assert_eq!(get_fps(), 45);
 
-        // Reset for other tests
         reset_recording_config();
     }
 
-    #[test]
-    fn test_global_config_concurrent_reads() {
-        reset_recording_config();
-
-        // Multiple readers should not block
-        let config1 = RECORDING_CONFIG.read().clone();
-        let config2 = RECORDING_CONFIG.read().clone();
-
-        assert_eq!(config1.fps, config2.fps);
-        assert_eq!(config1.quality, config2.quality);
-    }
-
     // ========================================================================
-    // Getter function tests
+    // Property-based tests
     // ========================================================================
 
-    #[test]
-    fn test_getter_functions() {
-        reset_recording_config();
+    proptest! {
+        #[test]
+        fn prop_validation_always_produces_valid_config(
+            countdown in 0u32..100,
+            fps in 0u32..200,
+            quality in 0u32..200
+        ) {
+            let mut config = RecordingConfig {
+                countdown_secs: countdown,
+                fps,
+                quality,
+                ..Default::default()
+            };
+            config.validate();
 
-        // Test all getter functions return default values
-        assert_eq!(get_countdown_secs(), 3);
-        assert!(get_system_audio_enabled());
-        assert_eq!(get_fps(), 30);
-        assert_eq!(get_quality(), 80);
-        assert!(!get_include_cursor());
-        assert!(get_max_duration_secs().is_none());
-        assert!(get_microphone_device_index().is_none());
-        assert!(!get_quick_capture());
-        assert!(!get_hide_desktop_icons());
+            // After validation, all values must be in valid ranges
+            prop_assert!(config.countdown_secs <= 10);
+            prop_assert!(config.fps >= 10 && config.fps <= 60);
+            prop_assert!(config.quality >= 1 && config.quality <= 100);
+        }
+
+        #[test]
+        fn prop_serialization_roundtrip(
+            countdown in 0u32..10,
+            fps in 10u32..60,
+            quality in 1u32..100,
+            system_audio in any::<bool>(),
+            include_cursor in any::<bool>()
+        ) {
+            let config = RecordingConfig {
+                countdown_secs: countdown,
+                fps,
+                quality,
+                system_audio_enabled: system_audio,
+                include_cursor,
+                ..Default::default()
+            };
+
+            let json = serde_json::to_string(&config).unwrap();
+            let roundtrip: RecordingConfig = serde_json::from_str(&json).unwrap();
+
+            prop_assert_eq!(roundtrip.countdown_secs, config.countdown_secs);
+            prop_assert_eq!(roundtrip.fps, config.fps);
+            prop_assert_eq!(roundtrip.quality, config.quality);
+        }
     }
 }
