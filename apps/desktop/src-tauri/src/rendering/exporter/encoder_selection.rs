@@ -26,11 +26,11 @@ pub struct EncoderConfig {
 /// p4 is balanced speed/quality for most use cases.
 fn nvenc_preset_from_quality(quality: u32) -> &'static str {
     match quality {
-        0..=25 => "p1",   // Fastest, lowest quality
-        26..=50 => "p3",  // Fast
-        51..=75 => "p4",  // Balanced (default)
-        76..=90 => "p5",  // Quality
-        91..=100 => "p7", // Maximum quality
+        0..=24 => "p1",   // Fastest, lowest quality
+        25..=49 => "p3",  // Fast
+        50..=74 => "p4",  // Balanced (default) - 50% quality maps here
+        75..=89 => "p5",  // Quality
+        90..=100 => "p7", // Maximum quality
         _ => "p4",
     }
 }

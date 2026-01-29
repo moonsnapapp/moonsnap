@@ -451,6 +451,354 @@ impl From<Coord<FrameSpace>> for super::zoom::XY {
 mod tests {
     use super::*;
 
+    // ========================================================================
+    // Coord creation and conversion tests
+    // ========================================================================
+
+    #[test]
+    fn test_coord_new() {
+        let c = Coord::<FrameSpace>::new(10.5, 20.5);
+        assert!((c.x - 10.5).abs() < 0.001);
+        assert!((c.y - 20.5).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_coord_from_tuple() {
+        let c = Coord::<FrameSpace>::from_tuple((15.0, 25.0));
+        assert!((c.x - 15.0).abs() < 0.001);
+        assert!((c.y - 25.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_coord_from_u32() {
+        let c = Coord::<ScreenSpace>::from_u32(100, 200);
+        assert!((c.x - 100.0).abs() < 0.001);
+        assert!((c.y - 200.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_coord_from_i32() {
+        let c = Coord::<ScreenSpace>::from_i32(-50, 150);
+        assert!((c.x - (-50.0)).abs() < 0.001);
+        assert!((c.y - 150.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_coord_from_f32() {
+        let c = Coord::<FrameSpace>::from_f32(1.5f32, 2.5f32);
+        assert!((c.x - 1.5).abs() < 0.001);
+        assert!((c.y - 2.5).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_coord_as_tuple() {
+        let c = Coord::<FrameSpace>::new(10.0, 20.0);
+        let (x, y) = c.as_tuple();
+        assert!((x - 10.0).abs() < 0.001);
+        assert!((y - 20.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_coord_as_f32() {
+        let c = Coord::<FrameSpace>::new(10.5, 20.5);
+        let (x, y) = c.as_f32();
+        assert!((x - 10.5f32).abs() < 0.001);
+        assert!((y - 20.5f32).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_coord_as_i32() {
+        let c = Coord::<FrameSpace>::new(10.9, 20.1);
+        let (x, y) = c.as_i32();
+        assert_eq!(x, 10);
+        assert_eq!(y, 20);
+    }
+
+    #[test]
+    fn test_coord_as_u32() {
+        let c = Coord::<FrameSpace>::new(10.9, 20.1);
+        let (x, y) = c.as_u32();
+        assert_eq!(x, 10);
+        assert_eq!(y, 20);
+    }
+
+    #[test]
+    fn test_coord_as_u32_clamps_negative() {
+        let c = Coord::<FrameSpace>::new(-10.0, -20.0);
+        let (x, y) = c.as_u32();
+        assert_eq!(x, 0);
+        assert_eq!(y, 0);
+    }
+
+    // ========================================================================
+    // Coord clamping tests
+    // ========================================================================
+
+    #[test]
+    fn test_coord_clamp() {
+        let c = Coord::<FrameSpace>::new(150.0, 250.0);
+        let min = Coord::new(0.0, 0.0);
+        let max = Coord::new(100.0, 200.0);
+
+        let clamped = c.clamp(min, max);
+        assert!((clamped.x - 100.0).abs() < 0.001);
+        assert!((clamped.y - 200.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_coord_clamp_negative() {
+        let c = Coord::<FrameSpace>::new(-50.0, -100.0);
+        let min = Coord::new(0.0, 0.0);
+        let max = Coord::new(100.0, 200.0);
+
+        let clamped = c.clamp(min, max);
+        assert!((clamped.x - 0.0).abs() < 0.001);
+        assert!((clamped.y - 0.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_coord_clamp_unit() {
+        let c = Coord::<ScreenUVSpace>::new(1.5, -0.5);
+        let clamped = c.clamp_unit();
+        assert!((clamped.x - 1.0).abs() < 0.001);
+        assert!((clamped.y - 0.0).abs() < 0.001);
+    }
+
+    // ========================================================================
+    // Coord interpolation and distance tests
+    // ========================================================================
+
+    #[test]
+    fn test_lerp() {
+        let a = Coord::<FrameSpace>::new(0.0, 0.0);
+        let b = Coord::<FrameSpace>::new(100.0, 100.0);
+
+        let mid = a.lerp(b, 0.5);
+        assert!((mid.x - 50.0).abs() < 0.001);
+        assert!((mid.y - 50.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_lerp_boundaries() {
+        let a = Coord::<FrameSpace>::new(10.0, 20.0);
+        let b = Coord::<FrameSpace>::new(100.0, 200.0);
+
+        let start = a.lerp(b, 0.0);
+        assert!((start.x - 10.0).abs() < 0.001);
+        assert!((start.y - 20.0).abs() < 0.001);
+
+        let end = a.lerp(b, 1.0);
+        assert!((end.x - 100.0).abs() < 0.001);
+        assert!((end.y - 200.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_coord_length() {
+        let c = Coord::<FrameSpace>::new(3.0, 4.0);
+        assert!((c.length() - 5.0).abs() < 0.001);
+
+        let zero = Coord::<FrameSpace>::new(0.0, 0.0);
+        assert!((zero.length() - 0.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_coord_distance() {
+        let a = Coord::<FrameSpace>::new(0.0, 0.0);
+        let b = Coord::<FrameSpace>::new(3.0, 4.0);
+        assert!((a.distance(&b) - 5.0).abs() < 0.001);
+
+        // Distance to self should be 0
+        assert!((a.distance(&a) - 0.0).abs() < 0.001);
+    }
+
+    // ========================================================================
+    // Coord arithmetic tests
+    // ========================================================================
+
+    #[test]
+    fn test_coord_arithmetic() {
+        let a = Coord::<FrameSpace>::new(10.0, 20.0);
+        let b = Coord::<FrameSpace>::new(5.0, 10.0);
+
+        let sum = a + b;
+        assert!((sum.x - 15.0).abs() < 0.001);
+        assert!((sum.y - 30.0).abs() < 0.001);
+
+        let diff = a - b;
+        assert!((diff.x - 5.0).abs() < 0.001);
+        assert!((diff.y - 10.0).abs() < 0.001);
+
+        let scaled = a * 2.0;
+        assert!((scaled.x - 20.0).abs() < 0.001);
+        assert!((scaled.y - 40.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_coord_division() {
+        let c = Coord::<FrameSpace>::new(100.0, 200.0);
+        let divided = c / 2.0;
+        assert!((divided.x - 50.0).abs() < 0.001);
+        assert!((divided.y - 100.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_coord_multiply_coord() {
+        let a = Coord::<FrameSpace>::new(10.0, 20.0);
+        let b = Coord::<FrameSpace>::new(2.0, 3.0);
+        let result = a * b;
+        assert!((result.x - 20.0).abs() < 0.001);
+        assert!((result.y - 60.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_coord_divide_coord() {
+        let a = Coord::<FrameSpace>::new(100.0, 200.0);
+        let b = Coord::<FrameSpace>::new(10.0, 20.0);
+        let result = a / b;
+        assert!((result.x - 10.0).abs() < 0.001);
+        assert!((result.y - 10.0).abs() < 0.001);
+    }
+
+    // ========================================================================
+    // Size tests
+    // ========================================================================
+
+    #[test]
+    fn test_size_new() {
+        let s = Size::<ScreenSpace>::new(1920.0, 1080.0);
+        assert!((s.width - 1920.0).abs() < 0.001);
+        assert!((s.height - 1080.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_size_from_u32() {
+        let s = Size::<ScreenSpace>::from_u32(1920, 1080);
+        assert!((s.width - 1920.0).abs() < 0.001);
+        assert!((s.height - 1080.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_size_as_coord() {
+        let s = Size::<FrameSpace>::new(100.0, 200.0);
+        let c = s.as_coord();
+        assert!((c.x - 100.0).abs() < 0.001);
+        assert!((c.y - 200.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_size_aspect_ratio() {
+        let s = Size::<ScreenSpace>::new(1920.0, 1080.0);
+        let ratio = s.aspect_ratio();
+        assert!((ratio - (1920.0 / 1080.0)).abs() < 0.001);
+
+        let square = Size::<ScreenSpace>::new(100.0, 100.0);
+        assert!((square.aspect_ratio() - 1.0).abs() < 0.001);
+    }
+
+    // ========================================================================
+    // Rect tests
+    // ========================================================================
+
+    #[test]
+    fn test_rect_new() {
+        let origin = Coord::<ScreenSpace>::new(10.0, 20.0);
+        let size = Size::new(100.0, 200.0);
+        let rect = Rect::new(origin, size);
+
+        assert!((rect.origin.x - 10.0).abs() < 0.001);
+        assert!((rect.origin.y - 20.0).abs() < 0.001);
+        assert!((rect.size.width - 100.0).abs() < 0.001);
+        assert!((rect.size.height - 200.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_rect_from_coords() {
+        let rect = Rect::<ScreenSpace>::from_coords(10.0, 20.0, 100.0, 200.0);
+        assert!((rect.origin.x - 10.0).abs() < 0.001);
+        assert!((rect.origin.y - 20.0).abs() < 0.001);
+        assert!((rect.size.width - 100.0).abs() < 0.001);
+        assert!((rect.size.height - 200.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_rect_top_left() {
+        let rect = Rect::<ScreenSpace>::from_coords(10.0, 20.0, 100.0, 200.0);
+        let tl = rect.top_left();
+        assert!((tl.x - 10.0).abs() < 0.001);
+        assert!((tl.y - 20.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_rect_bottom_right() {
+        let rect = Rect::<ScreenSpace>::from_coords(10.0, 20.0, 100.0, 200.0);
+        let br = rect.bottom_right();
+        assert!((br.x - 110.0).abs() < 0.001);
+        assert!((br.y - 220.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_rect_center() {
+        let rect = Rect::<ScreenSpace>::from_coords(0.0, 0.0, 100.0, 200.0);
+        let center = rect.center();
+        assert!((center.x - 50.0).abs() < 0.001);
+        assert!((center.y - 100.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_rect_contains() {
+        let rect = Rect::<ScreenSpace>::from_coords(0.0, 0.0, 100.0, 100.0);
+
+        // Inside
+        assert!(rect.contains(Coord::new(50.0, 50.0)));
+
+        // On boundary (inclusive)
+        assert!(rect.contains(Coord::new(0.0, 0.0)));
+        assert!(rect.contains(Coord::new(100.0, 100.0)));
+
+        // Outside
+        assert!(!rect.contains(Coord::new(-1.0, 50.0)));
+        assert!(!rect.contains(Coord::new(50.0, 101.0)));
+    }
+
+    // ========================================================================
+    // TransformParams tests
+    // ========================================================================
+
+    #[test]
+    fn test_transform_params_fullscreen() {
+        let params = TransformParams::fullscreen(1920, 1080);
+
+        assert!((params.screen_size.width - 1920.0).abs() < 0.001);
+        assert!((params.screen_size.height - 1080.0).abs() < 0.001);
+        assert!((params.capture_rect.origin.x - 0.0).abs() < 0.001);
+        assert!((params.capture_rect.origin.y - 0.0).abs() < 0.001);
+        assert!((params.output_size.width - 1920.0).abs() < 0.001);
+        assert!((params.padding.x - 0.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_capture_to_output_scale_same_size() {
+        let params = TransformParams::fullscreen(1920, 1080);
+        let scale = params.capture_to_output_scale();
+        assert!((scale - 1.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_capture_to_output_scale_downscale() {
+        let params = TransformParams {
+            screen_size: Size::new(1920.0, 1080.0),
+            capture_rect: Rect::from_coords(0.0, 0.0, 1920.0, 1080.0),
+            output_size: Size::new(960.0, 540.0),
+            padding: Coord::new(0.0, 0.0),
+        };
+        let scale = params.capture_to_output_scale();
+        assert!((scale - 0.5).abs() < 0.001);
+    }
+
+    // ========================================================================
+    // Coordinate space conversion tests
+    // ========================================================================
+
     #[test]
     fn test_screen_to_capture_space() {
         let params = TransformParams {
@@ -515,6 +863,53 @@ mod tests {
     }
 
     #[test]
+    fn test_uv_to_screen_corners() {
+        let screen_size = Size::<ScreenSpace>::new(1920.0, 1080.0);
+
+        let top_left = Coord::<ScreenUVSpace>::new(0.0, 0.0).to_screen_space(screen_size);
+        assert!((top_left.x - 0.0).abs() < 0.001);
+        assert!((top_left.y - 0.0).abs() < 0.001);
+
+        let bottom_right = Coord::<ScreenUVSpace>::new(1.0, 1.0).to_screen_space(screen_size);
+        assert!((bottom_right.x - 1920.0).abs() < 0.001);
+        assert!((bottom_right.y - 1080.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_screen_to_uv() {
+        let screen_size = Size::<ScreenSpace>::new(1920.0, 1080.0);
+
+        let screen = Coord::<ScreenSpace>::new(960.0, 540.0);
+        let uv = screen.to_uv_space(screen_size);
+        assert!((uv.x - 0.5).abs() < 0.001);
+        assert!((uv.y - 0.5).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_capture_to_normalized() {
+        let capture_size = Size::<CaptureSpace>::new(800.0, 600.0);
+        let pos = Coord::<CaptureSpace>::new(400.0, 300.0);
+        let normalized = pos.to_normalized(capture_size);
+
+        assert!((normalized.x - 0.5).abs() < 0.001);
+        assert!((normalized.y - 0.5).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_frame_to_normalized() {
+        let frame_size = Size::<FrameSpace>::new(1920.0, 1080.0);
+        let pos = Coord::<FrameSpace>::new(1920.0, 1080.0);
+        let normalized = pos.to_normalized(frame_size);
+
+        assert!((normalized.x - 1.0).abs() < 0.001);
+        assert!((normalized.y - 1.0).abs() < 0.001);
+    }
+
+    // ========================================================================
+    // Zoom transformation tests
+    // ========================================================================
+
+    #[test]
     fn test_zoom_transformation() {
         let frame_size = Size::<FrameSpace>::new(1920.0, 1080.0);
         let zoom_center = Coord::<FrameSpace>::new(0.5, 0.5); // Center of frame
@@ -533,30 +928,65 @@ mod tests {
     }
 
     #[test]
-    fn test_coord_arithmetic() {
-        let a = Coord::<FrameSpace>::new(10.0, 20.0);
-        let b = Coord::<FrameSpace>::new(5.0, 10.0);
+    fn test_zoom_no_zoom() {
+        let frame_size = Size::<FrameSpace>::new(1920.0, 1080.0);
+        let zoom_center = Coord::<FrameSpace>::new(0.5, 0.5);
 
-        let sum = a + b;
-        assert!((sum.x - 15.0).abs() < 0.001);
-        assert!((sum.y - 30.0).abs() < 0.001);
+        let pos = Coord::<FrameSpace>::new(100.0, 200.0);
 
-        let diff = a - b;
-        assert!((diff.x - 5.0).abs() < 0.001);
-        assert!((diff.y - 10.0).abs() < 0.001);
+        // Scale <= 1.0 should return same coordinates
+        let zoomed = pos.to_zoomed_frame_space(1.0, zoom_center, frame_size);
+        assert!((zoomed.x - 100.0).abs() < 0.001);
+        assert!((zoomed.y - 200.0).abs() < 0.001);
 
-        let scaled = a * 2.0;
-        assert!((scaled.x - 20.0).abs() < 0.001);
-        assert!((scaled.y - 40.0).abs() < 0.001);
+        let zoomed = pos.to_zoomed_frame_space(0.5, zoom_center, frame_size);
+        assert!((zoomed.x - 100.0).abs() < 0.001);
+        assert!((zoomed.y - 200.0).abs() < 0.001);
+    }
+
+    // ========================================================================
+    // Edge cases and error handling
+    // ========================================================================
+
+    #[test]
+    fn test_coord_with_zero_values() {
+        let zero = Coord::<FrameSpace>::new(0.0, 0.0);
+        assert!((zero.length() - 0.0).abs() < 0.001);
+
+        let other = Coord::new(10.0, 10.0);
+        let sum = zero + other;
+        assert!((sum.x - 10.0).abs() < 0.001);
+        assert!((sum.y - 10.0).abs() < 0.001);
     }
 
     #[test]
-    fn test_lerp() {
-        let a = Coord::<FrameSpace>::new(0.0, 0.0);
-        let b = Coord::<FrameSpace>::new(100.0, 100.0);
+    fn test_coord_with_negative_values() {
+        let neg = Coord::<ScreenSpace>::new(-100.0, -200.0);
+        assert!((neg.x - (-100.0)).abs() < 0.001);
+        assert!((neg.y - (-200.0)).abs() < 0.001);
 
-        let mid = a.lerp(b, 0.5);
-        assert!((mid.x - 50.0).abs() < 0.001);
-        assert!((mid.y - 50.0).abs() < 0.001);
+        let pos = Coord::new(100.0, 200.0);
+        let sum = neg + pos;
+        assert!((sum.x - 0.0).abs() < 0.001);
+        assert!((sum.y - 0.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_coord_with_large_values() {
+        let large = Coord::<ScreenSpace>::new(10000.0, 10000.0);
+        let scaled = large * 100.0;
+        assert!((scaled.x - 1_000_000.0).abs() < 0.001);
+        assert!((scaled.y - 1_000_000.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_uv_to_frame_space_chain() {
+        let params = TransformParams::fullscreen(1920, 1080);
+
+        let uv = Coord::<ScreenUVSpace>::new(0.5, 0.5);
+        let frame = uv.to_frame_space(&params);
+
+        assert!((frame.x - 960.0).abs() < 0.001);
+        assert!((frame.y - 540.0).abs() < 0.001);
     }
 }

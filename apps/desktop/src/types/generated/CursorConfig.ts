@@ -42,7 +42,7 @@ friction: number,
 /**
  * Motion blur amount (0.0 = none, 1.0 = maximum).
  */
-motionBlur: number,
+motionBlur: number, 
 /**
  * Click highlight settings.
  */

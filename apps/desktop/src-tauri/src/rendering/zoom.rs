@@ -387,6 +387,166 @@ mod tests {
         }
     }
 
+    // ========================================================================
+    // XY type tests
+    // ========================================================================
+
+    #[test]
+    fn test_xy_new() {
+        let xy = XY::new(10.0, 20.0);
+        assert!((xy.x - 10.0).abs() < 0.001);
+        assert!((xy.y - 20.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_xy_add() {
+        let a = XY::new(10.0, 20.0);
+        let b = XY::new(5.0, 10.0);
+        let result = a + b;
+        assert!((result.x - 15.0).abs() < 0.001);
+        assert!((result.y - 30.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_xy_sub() {
+        let a = XY::new(10.0, 20.0);
+        let b = XY::new(3.0, 5.0);
+        let result = a - b;
+        assert!((result.x - 7.0).abs() < 0.001);
+        assert!((result.y - 15.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_xy_mul_scalar() {
+        let xy = XY::new(10.0, 20.0);
+        let result = xy * 2.0;
+        assert!((result.x - 20.0).abs() < 0.001);
+        assert!((result.y - 40.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_xy_equality() {
+        let a = XY::new(10.0, 20.0);
+        let b = XY::new(10.0, 20.0);
+        let c = XY::new(10.0, 21.0);
+        assert_eq!(a, b);
+        assert_ne!(a, c);
+    }
+
+    // ========================================================================
+    // SegmentBounds tests
+    // ========================================================================
+
+    #[test]
+    fn test_segment_bounds_default() {
+        let bounds = SegmentBounds::default();
+        assert!((bounds.top_left.x - 0.0).abs() < 0.001);
+        assert!((bounds.top_left.y - 0.0).abs() < 0.001);
+        assert!((bounds.bottom_right.x - 1.0).abs() < 0.001);
+        assert!((bounds.bottom_right.y - 1.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_segment_bounds_new() {
+        let bounds = SegmentBounds::new(XY::new(-0.5, -0.5), XY::new(1.5, 1.5));
+        assert!((bounds.top_left.x - (-0.5)).abs() < 0.001);
+        assert!((bounds.bottom_right.x - 1.5).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_segment_bounds_zoom_amount() {
+        let bounds = SegmentBounds::new(XY::new(-0.5, -0.5), XY::new(1.5, 1.5));
+        assert!((bounds.zoom_amount() - 2.0).abs() < 0.001);
+
+        let default = SegmentBounds::default();
+        assert!((default.zoom_amount() - 1.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_segment_bounds_lerp() {
+        let a = SegmentBounds::default();
+        let b = SegmentBounds::new(XY::new(-0.5, -0.5), XY::new(1.5, 1.5));
+
+        let mid = a.lerp(&b, 0.5);
+        assert!((mid.top_left.x - (-0.25)).abs() < 0.001);
+        assert!((mid.top_left.y - (-0.25)).abs() < 0.001);
+        assert!((mid.bottom_right.x - 1.25).abs() < 0.001);
+        assert!((mid.bottom_right.y - 1.25).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_segment_bounds_lerp_boundaries() {
+        let a = SegmentBounds::default();
+        let b = SegmentBounds::new(XY::new(-1.0, -1.0), XY::new(2.0, 2.0));
+
+        // t=0 should give a
+        let start = a.lerp(&b, 0.0);
+        assert!((start.top_left.x - a.top_left.x).abs() < 0.001);
+
+        // t=1 should give b
+        let end = a.lerp(&b, 1.0);
+        assert!((end.top_left.x - b.top_left.x).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_segment_bounds_calculation() {
+        let region = make_region(0, 1000, 2.0, 0.5, 0.5);
+        let bounds = SegmentBounds::from_region(&region, None);
+
+        // For 2x zoom centered at (0.5, 0.5):
+        // The bounds should extend from (-0.5, -0.5) to (1.5, 1.5)
+        assert!((bounds.top_left.x - (-0.5)).abs() < 0.01);
+        assert!((bounds.top_left.y - (-0.5)).abs() < 0.01);
+        assert!((bounds.bottom_right.x - 1.5).abs() < 0.01);
+        assert!((bounds.bottom_right.y - 1.5).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_segment_bounds_corner() {
+        // Zoom to top-left corner
+        let region = make_region(0, 1000, 2.0, 0.0, 0.0);
+        let bounds = SegmentBounds::from_region(&region, None);
+
+        // For 2x zoom at (0, 0): bounds (0, 0) to (2, 2)
+        assert!((bounds.top_left.x - 0.0).abs() < 0.01);
+        assert!((bounds.top_left.y - 0.0).abs() < 0.01);
+        assert!((bounds.bottom_right.x - 2.0).abs() < 0.01);
+        assert!((bounds.bottom_right.y - 2.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_segment_bounds_bottom_right_corner() {
+        // Zoom to bottom-right corner
+        let region = make_region(0, 1000, 2.0, 1.0, 1.0);
+        let bounds = SegmentBounds::from_region(&region, None);
+
+        // For 2x zoom at (1, 1): bounds (-1, -1) to (1, 1)
+        assert!((bounds.top_left.x - (-1.0)).abs() < 0.01);
+        assert!((bounds.top_left.y - (-1.0)).abs() < 0.01);
+        assert!((bounds.bottom_right.x - 1.0).abs() < 0.01);
+        assert!((bounds.bottom_right.y - 1.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_segment_bounds_with_cursor_pos() {
+        // Auto mode should use cursor position
+        let mut region = make_region(0, 1000, 2.0, 0.5, 0.5);
+        region.mode = ZoomRegionMode::Auto;
+
+        let bounds = SegmentBounds::from_region(&region, Some((0.3, 0.7)));
+
+        // Should use cursor position (0.3, 0.7) instead of target (0.5, 0.5)
+        // For 2x zoom at (0.3, 0.7):
+        // center_diff = [0.3 * 2 - 0.3, 0.7 * 2 - 0.7] = [0.3, 0.7]
+        // topLeft = [0 - 0.3, 0 - 0.7] = [-0.3, -0.7]
+        assert!((bounds.top_left.x - (-0.3)).abs() < 0.01);
+        assert!((bounds.top_left.y - (-0.7)).abs() < 0.01);
+    }
+
+    // ========================================================================
+    // ZoomInterpolator tests
+    // ========================================================================
+
     #[test]
     fn test_no_regions() {
         let config = ZoomConfig {
@@ -455,30 +615,50 @@ mod tests {
     }
 
     #[test]
-    fn test_segment_bounds_calculation() {
-        let region = make_region(0, 1000, 2.0, 0.5, 0.5);
-        let bounds = SegmentBounds::from_region(&region, None);
+    fn test_is_zoomed_at() {
+        let regions = vec![make_region(1000, 3000, 2.0, 0.5, 0.5)];
+        let config = ZoomConfig {
+            mode: crate::commands::video_recording::video_project::ZoomMode::Manual,
+            auto_zoom_scale: 2.0,
+            regions,
+        };
+        let interpolator = ZoomInterpolator::new(&config);
 
-        // For 2x zoom centered at (0.5, 0.5):
-        // The bounds should extend from (-0.5, -0.5) to (1.5, 1.5)
-        assert!((bounds.top_left.x - (-0.5)).abs() < 0.01);
-        assert!((bounds.top_left.y - (-0.5)).abs() < 0.01);
-        assert!((bounds.bottom_right.x - 1.5).abs() < 0.01);
-        assert!((bounds.bottom_right.y - 1.5).abs() < 0.01);
+        // Before zoom
+        assert!(!interpolator.is_zoomed_at(0));
+
+        // During zoom
+        assert!(interpolator.is_zoomed_at(2000));
+
+        // After zoom settles
+        assert!(!interpolator.is_zoomed_at(5000));
     }
 
     #[test]
-    fn test_segment_bounds_corner() {
-        // Zoom to top-left corner
-        let region = make_region(0, 1000, 2.0, 0.0, 0.0);
-        let bounds = SegmentBounds::from_region(&region, None);
+    fn test_regions_sorted_by_start() {
+        // Regions provided out of order
+        let regions = vec![
+            make_region(4000, 6000, 2.0, 0.5, 0.5),
+            make_region(1000, 2000, 3.0, 0.5, 0.5),
+        ];
+        let config = ZoomConfig {
+            mode: crate::commands::video_recording::video_project::ZoomMode::Manual,
+            auto_zoom_scale: 2.0,
+            regions,
+        };
+        let interpolator = ZoomInterpolator::new(&config);
 
-        // For 2x zoom at (0, 0): bounds (0, 0) to (2, 2)
-        assert!((bounds.top_left.x - 0.0).abs() < 0.01);
-        assert!((bounds.top_left.y - 0.0).abs() < 0.01);
-        assert!((bounds.bottom_right.x - 2.0).abs() < 0.01);
-        assert!((bounds.bottom_right.y - 2.0).abs() < 0.01);
+        // Should work correctly even with out-of-order input
+        let state_early = interpolator.get_zoom_at(1500);
+        assert!(state_early.scale > 1.5, "Early region should be active");
+
+        let state_late = interpolator.get_zoom_at(5000);
+        assert!(state_late.scale > 1.5, "Late region should be active");
     }
+
+    // ========================================================================
+    // InterpolatedZoom and to_zoom_state tests
+    // ========================================================================
 
     #[test]
     fn test_to_zoom_state_recovers_center() {
@@ -538,5 +718,174 @@ mod tests {
             "Off-center zoom: center_y should be 0.3, got {}",
             state3.center_y
         );
+    }
+
+    #[test]
+    fn test_to_zoom_state_identity_when_no_zoom() {
+        let bounds = SegmentBounds::default();
+        let interp = InterpolatedZoom { t: 0.0, bounds };
+        let state = interp.to_zoom_state();
+
+        assert!((state.scale - 1.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_interpolated_zoom_with_different_scales() {
+        // Test 3x zoom
+        let region_3x = make_region(0, 1000, 3.0, 0.5, 0.5);
+        let bounds_3x = SegmentBounds::from_region(&region_3x, None);
+        let interp_3x = InterpolatedZoom {
+            t: 1.0,
+            bounds: bounds_3x,
+        };
+        let state_3x = interp_3x.to_zoom_state();
+        assert!((state_3x.scale - 3.0).abs() < 0.01);
+
+        // Test 1.5x zoom
+        let region_15x = make_region(0, 1000, 1.5, 0.5, 0.5);
+        let bounds_15x = SegmentBounds::from_region(&region_15x, None);
+        let interp_15x = InterpolatedZoom {
+            t: 1.0,
+            bounds: bounds_15x,
+        };
+        let state_15x = interp_15x.to_zoom_state();
+        assert!((state_15x.scale - 1.5).abs() < 0.01);
+    }
+
+    // ========================================================================
+    // SegmentsCursor tests
+    // ========================================================================
+
+    #[test]
+    fn test_segments_cursor_no_segments() {
+        let segments: Vec<ZoomRegion> = vec![];
+        let cursor = SegmentsCursor::new(1.0, &segments);
+
+        assert!(cursor.segment.is_none());
+        assert!(cursor.prev_segment.is_none());
+    }
+
+    #[test]
+    fn test_segments_cursor_before_first_segment() {
+        let segments = vec![make_region(2000, 4000, 2.0, 0.5, 0.5)];
+        let cursor = SegmentsCursor::new(1.0, &segments); // 1s, before 2s start
+
+        assert!(cursor.segment.is_none());
+        assert!(cursor.prev_segment.is_none());
+    }
+
+    #[test]
+    fn test_segments_cursor_during_segment() {
+        let segments = vec![make_region(2000, 4000, 2.0, 0.5, 0.5)];
+        let cursor = SegmentsCursor::new(3.0, &segments); // 3s, during 2s-4s
+
+        assert!(cursor.segment.is_some());
+        assert!(cursor.prev_segment.is_none());
+    }
+
+    #[test]
+    fn test_segments_cursor_after_segment() {
+        let segments = vec![make_region(2000, 4000, 2.0, 0.5, 0.5)];
+        let cursor = SegmentsCursor::new(5.0, &segments); // 5s, after 4s end
+
+        assert!(cursor.segment.is_none());
+        assert!(cursor.prev_segment.is_some());
+    }
+
+    // ========================================================================
+    // Linear easing tests (for deterministic testing)
+    // ========================================================================
+
+    #[test]
+    fn test_interpolated_zoom_linear_zoom_in() {
+        let segments = vec![make_region(0, 2000, 2.0, 0.5, 0.5)];
+
+        // Halfway through zoom-in (0.5s into 1s transition)
+        let cursor = SegmentsCursor::new(0.5, &segments);
+        let interp = InterpolatedZoom::new_linear(cursor, None);
+
+        // With linear easing, t should be 0.5
+        assert!(
+            (interp.t - 0.5).abs() < 0.01,
+            "t should be ~0.5, got {}",
+            interp.t
+        );
+    }
+
+    #[test]
+    fn test_interpolated_zoom_linear_zoom_out() {
+        let segments = vec![make_region(0, 1000, 2.0, 0.5, 0.5)];
+
+        // Halfway through zoom-out (0.5s after end)
+        let cursor = SegmentsCursor::new(1.5, &segments);
+        let interp = InterpolatedZoom::new_linear(cursor, None);
+
+        // With linear easing, t should be 0.5 (halfway zoomed out)
+        assert!(
+            (interp.t - 0.5).abs() < 0.01,
+            "t should be ~0.5, got {}",
+            interp.t
+        );
+    }
+
+    // ========================================================================
+    // t_clamp tests
+    // ========================================================================
+
+    #[test]
+    fn test_t_clamp() {
+        assert!((t_clamp(0.5) - 0.5).abs() < 0.001);
+        assert!((t_clamp(-0.5) - 0.0).abs() < 0.001);
+        assert!((t_clamp(1.5) - 1.0).abs() < 0.001);
+        assert!((t_clamp(0.0) - 0.0).abs() < 0.001);
+        assert!((t_clamp(1.0) - 1.0).abs() < 0.001);
+    }
+
+    // ========================================================================
+    // Edge cases
+    // ========================================================================
+
+    #[test]
+    fn test_very_short_region() {
+        let regions = vec![make_region(1000, 1100, 2.0, 0.5, 0.5)]; // 100ms region
+        let config = ZoomConfig {
+            mode: crate::commands::video_recording::video_project::ZoomMode::Manual,
+            auto_zoom_scale: 2.0,
+            regions,
+        };
+        let interpolator = ZoomInterpolator::new(&config);
+
+        // Should still work even with very short regions
+        let state = interpolator.get_zoom_at(1050);
+        assert!(state.scale > 1.0);
+    }
+
+    #[test]
+    fn test_very_long_region() {
+        let regions = vec![make_region(0, 3600000, 2.0, 0.5, 0.5)]; // 1 hour region
+        let config = ZoomConfig {
+            mode: crate::commands::video_recording::video_project::ZoomMode::Manual,
+            auto_zoom_scale: 2.0,
+            regions,
+        };
+        let interpolator = ZoomInterpolator::new(&config);
+
+        // Should be zoomed in middle of hour-long region
+        let state = interpolator.get_zoom_at(1800000); // 30 minutes
+        assert!(state.scale > 1.5);
+    }
+
+    #[test]
+    fn test_extreme_zoom_scale() {
+        let regions = vec![make_region(0, 2000, 10.0, 0.5, 0.5)]; // 10x zoom
+        let config = ZoomConfig {
+            mode: crate::commands::video_recording::video_project::ZoomMode::Manual,
+            auto_zoom_scale: 2.0,
+            regions,
+        };
+        let interpolator = ZoomInterpolator::new(&config);
+
+        let state = interpolator.get_zoom_at(1500);
+        assert!(state.scale > 5.0, "Should support high zoom levels");
     }
 }

@@ -287,6 +287,10 @@ impl Timestamps {
 mod tests {
     use super::*;
 
+    // ========================================================================
+    // PerformanceCounterTimestamp basic tests
+    // ========================================================================
+
     #[test]
     fn test_timestamps_now() {
         let ts = Timestamps::now();
@@ -317,5 +321,265 @@ mod tests {
         // So later.duration_since(earlier) should be zero
         let duration = later.duration_since(earlier);
         assert_eq!(duration, Duration::ZERO);
+    }
+
+    // ========================================================================
+    // PerformanceCounterTimestamp arithmetic tests
+    // ========================================================================
+
+    #[test]
+    fn test_performance_counter_new_and_raw() {
+        let ts = PerformanceCounterTimestamp::new(12345);
+        assert_eq!(ts.raw(), 12345);
+
+        let ts_zero = PerformanceCounterTimestamp::new(0);
+        assert_eq!(ts_zero.raw(), 0);
+
+        let ts_negative = PerformanceCounterTimestamp::new(-100);
+        assert_eq!(ts_negative.raw(), -100);
+    }
+
+    #[test]
+    fn test_performance_counter_add_duration() {
+        let start = PerformanceCounterTimestamp::now();
+        let added = start + Duration::from_secs(1);
+
+        // Adding 1 second should increase the raw value
+        assert!(added.raw() > start.raw());
+
+        // The difference should be approximately 1 second
+        let duration = added.duration_since(start);
+        assert!(duration >= Duration::from_millis(990));
+        assert!(duration <= Duration::from_millis(1010));
+    }
+
+    #[test]
+    fn test_performance_counter_sub_duration() {
+        let end = PerformanceCounterTimestamp::now();
+        let subtracted = end - Duration::from_secs(1);
+
+        // Subtracting 1 second should decrease the raw value
+        assert!(subtracted.raw() < end.raw());
+
+        // The difference should be approximately 1 second
+        let duration = end.duration_since(subtracted);
+        assert!(duration >= Duration::from_millis(990));
+        assert!(duration <= Duration::from_millis(1010));
+    }
+
+    #[test]
+    fn test_performance_counter_add_zero_duration() {
+        let ts = PerformanceCounterTimestamp::now();
+        let added = ts + Duration::ZERO;
+
+        // Adding zero should give the same raw value
+        assert_eq!(ts.raw(), added.raw());
+    }
+
+    #[test]
+    fn test_performance_counter_sub_zero_duration() {
+        let ts = PerformanceCounterTimestamp::now();
+        let subtracted = ts - Duration::ZERO;
+
+        // Subtracting zero should give the same raw value
+        assert_eq!(ts.raw(), subtracted.raw());
+    }
+
+    // ========================================================================
+    // PerformanceCounterTimestamp duration calculation tests
+    // ========================================================================
+
+    #[test]
+    fn test_checked_duration_since_returns_some() {
+        let start = PerformanceCounterTimestamp::now();
+        std::thread::sleep(Duration::from_millis(10));
+        let end = PerformanceCounterTimestamp::now();
+
+        let duration = end.checked_duration_since(start);
+        assert!(duration.is_some());
+        assert!(duration.unwrap() >= Duration::from_millis(5));
+    }
+
+    #[test]
+    fn test_checked_duration_since_returns_none_when_earlier() {
+        let later = PerformanceCounterTimestamp::now();
+        std::thread::sleep(Duration::from_millis(10));
+        let earlier = PerformanceCounterTimestamp::now();
+
+        // Later is actually earlier in time, so should return None
+        let duration = later.checked_duration_since(earlier);
+        assert!(duration.is_none());
+    }
+
+    #[test]
+    fn test_checked_duration_since_same_timestamp() {
+        let ts = PerformanceCounterTimestamp::now();
+        let duration = ts.checked_duration_since(ts);
+
+        // Same timestamp should return Some(Duration::ZERO)
+        assert!(duration.is_some());
+        assert_eq!(duration.unwrap(), Duration::ZERO);
+    }
+
+    #[test]
+    fn test_signed_duration_since_secs_positive() {
+        let start = PerformanceCounterTimestamp::now();
+        std::thread::sleep(Duration::from_millis(50));
+        let end = PerformanceCounterTimestamp::now();
+
+        let secs = end.signed_duration_since_secs(start);
+        assert!(secs > 0.0);
+        assert!(secs >= 0.04); // At least 40ms
+        assert!(secs <= 0.15); // At most 150ms
+    }
+
+    #[test]
+    fn test_signed_duration_since_secs_negative() {
+        let start = PerformanceCounterTimestamp::now();
+        std::thread::sleep(Duration::from_millis(50));
+        let end = PerformanceCounterTimestamp::now();
+
+        // Reversed order should give negative
+        let secs = start.signed_duration_since_secs(end);
+        assert!(secs < 0.0);
+        assert!(secs <= -0.04);
+        assert!(secs >= -0.15);
+    }
+
+    #[test]
+    fn test_millis_since() {
+        let start = PerformanceCounterTimestamp::now();
+        std::thread::sleep(Duration::from_millis(50));
+        let end = PerformanceCounterTimestamp::now();
+
+        let millis = end.millis_since(start);
+        assert!(millis >= 40);
+        assert!(millis <= 100);
+    }
+
+    #[test]
+    fn test_millis_since_zero_when_earlier() {
+        let later = PerformanceCounterTimestamp::now();
+        std::thread::sleep(Duration::from_millis(10));
+        let earlier = PerformanceCounterTimestamp::now();
+
+        // Should return 0 when the "start" is actually later
+        let millis = later.millis_since(earlier);
+        assert_eq!(millis, 0);
+    }
+
+    // ========================================================================
+    // Timestamps struct tests
+    // ========================================================================
+
+    #[test]
+    fn test_timestamps_accessors() {
+        let ts = Timestamps::now();
+
+        // All accessors should return valid values
+        let _instant = ts.instant();
+        let _pc = ts.performance_counter();
+        let system_time = ts.system_time_100ns();
+
+        // System time should be positive (after Unix epoch)
+        assert!(system_time > 0);
+    }
+
+    #[test]
+    fn test_timestamps_scap_frame_time_to_ms_zero_elapsed() {
+        let ts = Timestamps::now();
+
+        // Frame time at exactly the start time should be 0ms
+        let ms = ts.scap_frame_time_to_ms(ts.system_time_100ns());
+        assert_eq!(ms, 0);
+    }
+
+    #[test]
+    fn test_timestamps_scap_frame_time_to_ms_positive_elapsed() {
+        let ts = Timestamps::now();
+
+        // Frame 1 second after start
+        let frame_time = ts.system_time_100ns() + 10_000_000; // 1 second in 100ns units
+        let ms = ts.scap_frame_time_to_ms(frame_time);
+
+        assert!(ms >= 990);
+        assert!(ms <= 1010);
+    }
+
+    #[test]
+    fn test_timestamps_scap_frame_time_to_ms_before_start() {
+        let ts = Timestamps::now();
+
+        // Frame time before recording started should return 0
+        let frame_time = ts.system_time_100ns() - 10_000_000;
+        let ms = ts.scap_frame_time_to_ms(frame_time);
+
+        assert_eq!(ms, 0);
+    }
+
+    #[test]
+    fn test_timestamps_instant_to_perf_counter() {
+        let ts = Timestamps::now();
+        let start_instant = ts.instant();
+
+        std::thread::sleep(Duration::from_millis(50));
+
+        let later_instant = Instant::now();
+        let converted_pc = ts.instant_to_perf_counter(later_instant);
+
+        // The converted timestamp should be after the start performance counter
+        let elapsed = converted_pc.duration_since(ts.performance_counter());
+        assert!(elapsed >= Duration::from_millis(40));
+        assert!(elapsed <= Duration::from_millis(100));
+
+        // Also verify it matches the instant's elapsed time
+        let instant_elapsed = later_instant.duration_since(start_instant);
+        let diff = if elapsed > instant_elapsed {
+            elapsed - instant_elapsed
+        } else {
+            instant_elapsed - elapsed
+        };
+        // Should be within 10ms tolerance
+        assert!(diff < Duration::from_millis(10));
+    }
+
+    #[test]
+    fn test_timestamps_frame_time_to_ms_alias() {
+        let ts = Timestamps::now();
+        let frame_time = ts.system_time_100ns() + 5_000_000; // 0.5 seconds
+
+        // frame_time_to_ms should be an alias for scap_frame_time_to_ms
+        let scap_ms = ts.scap_frame_time_to_ms(frame_time);
+        let alias_ms = ts.frame_time_to_ms(frame_time);
+
+        assert_eq!(scap_ms, alias_ms);
+    }
+
+    // ========================================================================
+    // Edge cases and overflow tests
+    // ========================================================================
+
+    #[test]
+    fn test_performance_counter_large_duration() {
+        let start = PerformanceCounterTimestamp::new(0);
+        let end = start + Duration::from_secs(3600); // 1 hour
+
+        let duration = end.duration_since(start);
+        assert!(duration >= Duration::from_secs(3595));
+        assert!(duration <= Duration::from_secs(3605));
+    }
+
+    #[test]
+    fn test_scap_frame_time_large_elapsed() {
+        let ts = Timestamps::now();
+
+        // Frame 1 hour after start
+        let one_hour_100ns = 10_000_000i64 * 3600; // 1 hour in 100ns units
+        let frame_time = ts.system_time_100ns() + one_hour_100ns;
+        let ms = ts.scap_frame_time_to_ms(frame_time);
+
+        // Should be approximately 3,600,000 ms (1 hour)
+        assert!(ms >= 3_599_000);
+        assert!(ms <= 3_601_000);
     }
 }

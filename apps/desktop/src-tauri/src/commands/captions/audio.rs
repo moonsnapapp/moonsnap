@@ -207,7 +207,9 @@ pub fn load_wav_as_f32(wav_path: &Path) -> Result<Vec<f32>, String> {
 /// Find the data chunk offset in a WAV file.
 fn find_wav_data_offset(data: &[u8]) -> Option<usize> {
     // Look for "data" marker in WAV file
-    for i in 0..data.len().saturating_sub(8) {
+    // Need at least 8 bytes after position i (4 for "data" + 4 for size)
+    // so search up to len - 7 to include position where "data" starts at last valid spot
+    for i in 0..data.len().saturating_sub(7) {
         if &data[i..i + 4] == b"data" {
             // Skip "data" (4) + size (4) = 8 bytes after marker
             return Some(i + 8);

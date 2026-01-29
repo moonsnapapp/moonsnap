@@ -182,6 +182,10 @@ windows-core = "0.58"
 [profile.dev]
 incremental = true # Compile your binary in smaller steps.
 
+[dev-dependencies]
+proptest = "1.4"      # Property-based testing for math
+rstest = "0.18"       # Test fixtures and parameterized tests
+
 [profile.release]
 lto = true
 opt-level = "s"
