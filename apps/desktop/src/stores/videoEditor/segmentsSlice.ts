@@ -155,18 +155,15 @@ export const createSegmentsSlice: SliceCreator<SegmentsSlice> = (set, get) => ({
     }
 
     // Create two new regions from the split
-    const id1 = `zoom_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-    const id2 = `zoom_${Date.now() + 1}_${Math.random().toString(36).substr(2, 9)}`;
-
     const region1: ZoomRegion = {
       ...region,
-      id: id1,
+      id: generateZoomRegionId(),
       endMs: currentTimeMs,
     };
 
     const region2: ZoomRegion = {
       ...region,
-      id: id2,
+      id: generateZoomRegionId(),
       startMs: currentTimeMs,
     };
 
@@ -184,24 +181,15 @@ export const createSegmentsSlice: SliceCreator<SegmentsSlice> = (set, get) => ({
           regions: newRegions,
         },
       },
-      selectedZoomRegionId: id1, // Select the first part
+      selectedZoomRegionId: region1.id, // Select the first part
     });
   },
 
   deleteSelectedZoomRegion: () => {
-    const { project, selectedZoomRegionId } = get();
-    if (!project || !selectedZoomRegionId) return;
-
-    set({
-      project: {
-        ...project,
-        zoom: {
-          ...project.zoom,
-          regions: project.zoom.regions.filter((r) => r.id !== selectedZoomRegionId),
-        },
-      },
-      selectedZoomRegionId: null,
-    });
+    const { selectedZoomRegionId, deleteZoomRegion } = get();
+    if (selectedZoomRegionId) {
+      deleteZoomRegion(selectedZoomRegionId);
+    }
   },
 
   // Text segment actions

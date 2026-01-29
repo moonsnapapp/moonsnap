@@ -162,6 +162,17 @@ interface TrimHistoryEntry {
 }
 
 /**
+ * Create a single segment covering the full video duration.
+ */
+function createFullSegment(durationMs: number): TrimSegment {
+  return {
+    id: generateTrimSegmentId(),
+    sourceStartMs: 0,
+    sourceEndMs: Math.round(durationMs),
+  };
+}
+
+/**
  * Trim state and actions for managing video trim segments.
  */
 export interface TrimSlice {
@@ -237,18 +248,9 @@ export const createTrimSlice: SliceCreator<TrimSlice> = (set, get) => ({
   initializeTrimSegments: () => {
     const { project, trimHistory, trimHistoryIndex } = get();
     if (!project) return;
-
     if (project.timeline.segments && project.timeline.segments.length > 0) return;
 
-    const fullSegment: TrimSegment = {
-      id: generateTrimSegmentId(),
-      sourceStartMs: 0,
-      sourceEndMs: Math.round(project.timeline.durationMs),
-    };
-
-    const newSegments = [fullSegment];
-
-    // Initialize history with the full segment
+    const newSegments = [createFullSegment(project.timeline.durationMs)];
     const { history, index } = pushTrimHistory(trimHistory, trimHistoryIndex, {
       segments: newSegments,
       selectedId: null,
@@ -257,10 +259,7 @@ export const createTrimSlice: SliceCreator<TrimSlice> = (set, get) => ({
     set({
       project: {
         ...project,
-        timeline: {
-          ...project.timeline,
-          segments: newSegments,
-        },
+        timeline: { ...project.timeline, segments: newSegments },
       },
       trimHistory: history,
       trimHistoryIndex: index,
@@ -272,15 +271,7 @@ export const createTrimSlice: SliceCreator<TrimSlice> = (set, get) => ({
     const { project, trimHistory, trimHistoryIndex } = get();
     if (!project) return;
 
-    const fullSegment: TrimSegment = {
-      id: generateTrimSegmentId(),
-      sourceStartMs: 0,
-      sourceEndMs: Math.round(project.timeline.durationMs),
-    };
-
-    const newSegments = [fullSegment];
-
-    // Push to history so user can undo the reset
+    const newSegments = [createFullSegment(project.timeline.durationMs)];
     const { history, index } = pushTrimHistory(trimHistory, trimHistoryIndex, {
       segments: newSegments,
       selectedId: null,
@@ -289,10 +280,7 @@ export const createTrimSlice: SliceCreator<TrimSlice> = (set, get) => ({
     set({
       project: {
         ...project,
-        timeline: {
-          ...project.timeline,
-          segments: newSegments,
-        },
+        timeline: { ...project.timeline, segments: newSegments },
       },
       selectedTrimSegmentId: null,
       trimHistory: history,
@@ -311,11 +299,7 @@ export const createTrimSlice: SliceCreator<TrimSlice> = (set, get) => ({
 
     // If no segments, create initial segment first
     if (segments.length === 0) {
-      segments = [{
-        id: generateTrimSegmentId(),
-        sourceStartMs: 0,
-        sourceEndMs: Math.round(project.timeline.durationMs),
-      }];
+      segments = [createFullSegment(project.timeline.durationMs)];
     }
 
     // If history is empty, push the current state first so we can undo back to it

@@ -87,13 +87,17 @@ export const useKeyboardShortcuts = ({
     });
   }, [selectedIds, shapes, onShapesChange, setSelectedIds]);
 
-  // Keyboard shortcuts for shape manipulation
+  // Combined keyboard event handler for shortcuts and shift tracking
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Don't handle if user is typing in an input
-      if (isTextInputTarget(e)) {
+      // Track Shift key for proportional resize constraint
+      if (e.key === 'Shift') {
+        setIsShiftHeld(true);
         return;
       }
+
+      // Don't handle shortcuts if user is typing in an input
+      if (isTextInputTarget(e)) return;
 
       // Delete selected shapes
       if ((e.key === 'Delete' || e.key === 'Backspace') && selectedIds.length > 0) {
@@ -113,19 +117,9 @@ export const useKeyboardShortcuts = ({
       if ((e.ctrlKey || e.metaKey) && e.key === 'd' && selectedIds.length > 0) {
         e.preventDefault();
         handleDuplicate();
-        return;
       }
     };
 
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedIds, shapes, handleDelete, handleSelectAll, handleDuplicate]);
-
-  // Track Shift key for proportional resize constraint
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Shift') setIsShiftHeld(true);
-    };
     const handleKeyUp = (e: KeyboardEvent) => {
       if (e.key === 'Shift') setIsShiftHeld(false);
     };
@@ -136,7 +130,7 @@ export const useKeyboardShortcuts = ({
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
     };
-  }, []);
+  }, [selectedIds, shapes, handleDelete, handleSelectAll, handleDuplicate]);
 
   return { isShiftHeld };
 };
