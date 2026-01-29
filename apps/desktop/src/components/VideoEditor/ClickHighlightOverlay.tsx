@@ -8,7 +8,6 @@
 
 import { memo, useRef, useEffect, useCallback, useMemo } from 'react';
 import { usePreviewOrPlaybackTime } from '../../hooks/usePlaybackEngine';
-import { useZoomPreview } from '../../hooks/useZoomPreview';
 import { useVideoEditorStore } from '../../stores/videoEditorStore';
 import { timelineToSource } from '../../stores/videoEditor/trimSlice';
 import type { CursorRecording, ClickHighlightConfig, CursorEvent, ZoomRegion } from '../../types';
@@ -254,12 +253,12 @@ export const ClickHighlightOverlay = memo(function ClickHighlightOverlay({
   clickHighlightConfig,
   containerWidth,
   containerHeight,
-  videoWidth = 1920,
-  videoHeight = 1080,
+  videoWidth: _videoWidth = 1920,
+  videoHeight: _videoHeight = 1080,
   videoAspectRatio,
-  zoomRegions,
-  backgroundPadding = 0,
-  rounding = 0,
+  zoomRegions: _zoomRegions,
+  backgroundPadding: _backgroundPadding = 0,
+  rounding: _rounding = 0,
 }: ClickHighlightOverlayProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const currentTimeMs = usePreviewOrPlaybackTime();
@@ -273,13 +272,8 @@ export const ClickHighlightOverlay = memo(function ClickHighlightOverlay({
     [currentTimeMs, segments]
   );
 
-  // Get zoom transform - must match video exactly for click highlight alignment at all zoom levels
-  const zoomStyle = useZoomPreview(zoomRegions, currentTimeMs, cursorRecording, {
-    backgroundPadding,
-    rounding,
-    videoWidth,
-    videoHeight,
-  });
+  // NOTE: Zoom transform is applied by parent container (GPUVideoPreview's frameZoomStyle)
+  // ClickHighlightOverlay should NOT apply its own zoom transform to avoid double-zooming
   
   // Get config values with defaults
   const enabled = clickHighlightConfig?.enabled ?? true;
@@ -395,8 +389,7 @@ export const ClickHighlightOverlay = memo(function ClickHighlightOverlay({
       className="absolute inset-0 pointer-events-none"
       style={{
         zIndex: 14, // Below cursor (15), above video content
-        // Apply the same zoom transform as the video for click highlight alignment at all zoom levels
-        ...zoomStyle,
+        // NOTE: Zoom transform is applied by parent container, not here
       }}
       width={containerWidth}
       height={containerHeight}

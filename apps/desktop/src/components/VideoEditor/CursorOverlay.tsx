@@ -10,7 +10,7 @@
 import { memo, useRef, useEffect, useState, useCallback, useMemo } from 'react';
 import { useCursorInterpolation } from '../../hooks/useCursorInterpolation';
 import { usePreviewOrPlaybackTime } from '../../hooks/usePlaybackEngine';
-import { useZoomPreview, getZoomStateAt } from '../../hooks/useZoomPreview';
+import { getZoomStateAt } from '../../hooks/useZoomPreview';
 import { WINDOWS_CURSORS, DEFAULT_CURSOR, type CursorDefinition } from '../../constants/cursors';
 import { editorLogger } from '../../utils/logger';
 import { useVideoEditorStore } from '../../stores/videoEditorStore';
@@ -207,12 +207,12 @@ export const CursorOverlay = memo(function CursorOverlay({
   cursorConfig,
   containerWidth,
   containerHeight,
-  videoWidth,
+  videoWidth: _videoWidth,
   videoHeight: actualVideoHeight,
   videoAspectRatio,
   zoomRegions,
-  backgroundPadding = 0,
-  rounding = 0,
+  backgroundPadding: _backgroundPadding = 0,
+  rounding: _rounding = 0,
 }: CursorOverlayProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const currentTimeMs = usePreviewOrPlaybackTime();
@@ -225,13 +225,8 @@ export const CursorOverlay = memo(function CursorOverlay({
     [currentTimeMs, segments]
   );
 
-  // Get zoom transform - must match video exactly for cursor alignment at all zoom levels
-  const zoomStyle = useZoomPreview(zoomRegions, currentTimeMs, cursorRecording, {
-    backgroundPadding,
-    rounding,
-    videoWidth,
-    videoHeight: actualVideoHeight,
-  });
+  // NOTE: Zoom transform is applied by parent container (GPUVideoPreview's frameZoomStyle)
+  // CursorOverlay should NOT apply its own zoom transform to avoid double-zooming
 
   // Simple counter to force re-render when images load
   // This counter is included in render useEffect deps to ensure canvas redraws after SVG load
@@ -497,8 +492,7 @@ export const CursorOverlay = memo(function CursorOverlay({
         // Use CSS dimensions for visual size (canvas internal resolution is higher for sharpness)
         width: containerWidth,
         height: containerHeight,
-        // Apply the same zoom transform as the video for cursor alignment at all zoom levels
-        ...zoomStyle,
+        // NOTE: Zoom transform is applied by parent container, not here
       }}
     />
   );
