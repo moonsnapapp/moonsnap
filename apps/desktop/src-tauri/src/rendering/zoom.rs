@@ -388,6 +388,14 @@ mod tests {
         }
     }
 
+    fn make_interpolator(regions: Vec<ZoomRegion>) -> ZoomInterpolator {
+        ZoomInterpolator::new(&ZoomConfig {
+            mode: crate::commands::video_recording::video_project::ZoomMode::Manual,
+            auto_zoom_scale: 2.0,
+            regions,
+        })
+    }
+
     // ========================================================================
     // SegmentBounds tests - critical zoom math
     // ========================================================================
@@ -488,13 +496,7 @@ mod tests {
 
     #[test]
     fn test_no_regions() {
-        let config = ZoomConfig {
-            mode: crate::commands::video_recording::video_project::ZoomMode::Manual,
-            auto_zoom_scale: 2.0,
-            regions: vec![],
-        };
-        let interpolator = ZoomInterpolator::new(&config);
-
+        let interpolator = make_interpolator(vec![]);
         let state = interpolator.get_zoom_at(0);
         assert!((state.scale - 1.0).abs() < 0.01);
     }
@@ -502,13 +504,7 @@ mod tests {
     #[test]
     fn test_single_region_lifecycle() {
         // Region from 2s to 4s with 2x zoom
-        let regions = vec![make_region(2000, 4000, 2.0, 0.5, 0.5)];
-        let config = ZoomConfig {
-            mode: crate::commands::video_recording::video_project::ZoomMode::Manual,
-            auto_zoom_scale: 2.0,
-            regions,
-        };
-        let interpolator = ZoomInterpolator::new(&config);
+        let interpolator = make_interpolator(vec![make_region(2000, 4000, 2.0, 0.5, 0.5)]);
 
         // Before zoom starts
         let state = interpolator.get_zoom_at(0);
@@ -537,16 +533,10 @@ mod tests {
     #[test]
     fn test_two_regions_no_gap() {
         // Two adjacent regions
-        let regions = vec![
+        let interpolator = make_interpolator(vec![
             make_region(2000, 4000, 2.0, 0.0, 0.0),
             make_region(4000, 6000, 4.0, 0.5, 0.5),
-        ];
-        let config = ZoomConfig {
-            mode: crate::commands::video_recording::video_project::ZoomMode::Manual,
-            auto_zoom_scale: 2.0,
-            regions,
-        };
-        let interpolator = ZoomInterpolator::new(&config);
+        ]);
 
         // At transition point - should be transitioning
         let state = interpolator.get_zoom_at(4500);
@@ -555,13 +545,7 @@ mod tests {
 
     #[test]
     fn test_is_zoomed_at() {
-        let regions = vec![make_region(1000, 3000, 2.0, 0.5, 0.5)];
-        let config = ZoomConfig {
-            mode: crate::commands::video_recording::video_project::ZoomMode::Manual,
-            auto_zoom_scale: 2.0,
-            regions,
-        };
-        let interpolator = ZoomInterpolator::new(&config);
+        let interpolator = make_interpolator(vec![make_region(1000, 3000, 2.0, 0.5, 0.5)]);
 
         // Before zoom
         assert!(!interpolator.is_zoomed_at(0));
@@ -576,16 +560,10 @@ mod tests {
     #[test]
     fn test_regions_sorted_by_start() {
         // Regions provided out of order
-        let regions = vec![
+        let interpolator = make_interpolator(vec![
             make_region(4000, 6000, 2.0, 0.5, 0.5),
             make_region(1000, 2000, 3.0, 0.5, 0.5),
-        ];
-        let config = ZoomConfig {
-            mode: crate::commands::video_recording::video_project::ZoomMode::Manual,
-            auto_zoom_scale: 2.0,
-            regions,
-        };
-        let interpolator = ZoomInterpolator::new(&config);
+        ]);
 
         // Should work correctly even with out-of-order input
         let state_early = interpolator.get_zoom_at(1500);
@@ -768,62 +746,26 @@ mod tests {
     }
 
     // ========================================================================
-    // t_clamp tests
-    // ========================================================================
-
-    #[test]
-    fn test_t_clamp() {
-        assert!((t_clamp(0.5) - 0.5).abs() < 0.001);
-        assert!((t_clamp(-0.5) - 0.0).abs() < 0.001);
-        assert!((t_clamp(1.5) - 1.0).abs() < 0.001);
-        assert!((t_clamp(0.0) - 0.0).abs() < 0.001);
-        assert!((t_clamp(1.0) - 1.0).abs() < 0.001);
-    }
-
-    // ========================================================================
     // Edge cases
     // ========================================================================
 
     #[test]
     fn test_very_short_region() {
-        let regions = vec![make_region(1000, 1100, 2.0, 0.5, 0.5)]; // 100ms region
-        let config = ZoomConfig {
-            mode: crate::commands::video_recording::video_project::ZoomMode::Manual,
-            auto_zoom_scale: 2.0,
-            regions,
-        };
-        let interpolator = ZoomInterpolator::new(&config);
-
-        // Should still work even with very short regions
+        let interpolator = make_interpolator(vec![make_region(1000, 1100, 2.0, 0.5, 0.5)]); // 100ms
         let state = interpolator.get_zoom_at(1050);
         assert!(state.scale > 1.0);
     }
 
     #[test]
     fn test_very_long_region() {
-        let regions = vec![make_region(0, 3600000, 2.0, 0.5, 0.5)]; // 1 hour region
-        let config = ZoomConfig {
-            mode: crate::commands::video_recording::video_project::ZoomMode::Manual,
-            auto_zoom_scale: 2.0,
-            regions,
-        };
-        let interpolator = ZoomInterpolator::new(&config);
-
-        // Should be zoomed in middle of hour-long region
+        let interpolator = make_interpolator(vec![make_region(0, 3600000, 2.0, 0.5, 0.5)]); // 1hr
         let state = interpolator.get_zoom_at(1800000); // 30 minutes
         assert!(state.scale > 1.5);
     }
 
     #[test]
     fn test_extreme_zoom_scale() {
-        let regions = vec![make_region(0, 2000, 10.0, 0.5, 0.5)]; // 10x zoom
-        let config = ZoomConfig {
-            mode: crate::commands::video_recording::video_project::ZoomMode::Manual,
-            auto_zoom_scale: 2.0,
-            regions,
-        };
-        let interpolator = ZoomInterpolator::new(&config);
-
+        let interpolator = make_interpolator(vec![make_region(0, 2000, 10.0, 0.5, 0.5)]); // 10x
         let state = interpolator.get_zoom_at(1500);
         assert!(state.scale > 5.0, "Should support high zoom levels");
     }

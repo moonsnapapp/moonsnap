@@ -271,11 +271,12 @@ mod tests {
             let json = serde_json::to_string(&pos).unwrap();
             let roundtrip: WebcamPosition = serde_json::from_str(&json).unwrap();
 
-            if let WebcamPosition::Custom { x: rx, y: ry } = roundtrip {
-                prop_assert_eq!(rx, x);
-                prop_assert_eq!(ry, y);
-            } else {
-                prop_assert!(false, "Position type changed during roundtrip");
+            match roundtrip {
+                WebcamPosition::Custom { x: rx, y: ry } => {
+                    prop_assert_eq!(rx, x);
+                    prop_assert_eq!(ry, y);
+                }
+                _ => unreachable!("Position type changed during roundtrip"),
             }
         }
 
