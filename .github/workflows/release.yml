@@ -191,6 +191,20 @@ jobs:
               fs.writeFileSync(path.join('assets', asset.name), Buffer.from(data));
             }
 
+      - name: Rewrite latest.json URLs for public repo
+        env:
+          PRIVATE_REPO: ${{ github.repository }}
+        run: |
+          if [ -f assets/latest.json ]; then
+            echo "Rewriting URLs in latest.json..."
+            echo "Before:"
+            cat assets/latest.json
+            # Replace private repo URLs with public repo URLs
+            sed -i "s|github.com/${PRIVATE_REPO}/releases|github.com/${PUBLIC_REPO}/releases|g" assets/latest.json
+            echo "After:"
+            cat assets/latest.json
+          fi
+
       - name: Create release on public repo
         uses: actions/github-script@v7
         env:
