@@ -307,7 +307,7 @@ fn record_system_audio(
     output_path: &PathBuf,
     should_stop: Arc<AtomicBool>,
     is_paused: Arc<AtomicBool>,
-    _start_time: Instant,
+    start_time: Instant,
 ) -> Result<(), String> {
     // Spawn async writer thread first
     let (sample_tx, writer_handle) = spawn_wav_writer(
@@ -384,10 +384,26 @@ fn record_system_audio(
     let mut sample_queue: VecDeque<u8> = VecDeque::with_capacity(buffer_capacity * 4);
     let mut captured_samples = 0u64;
 
+    // Track total pause duration to calculate expected samples correctly
+    let mut total_pause_duration = Duration::ZERO;
+    let mut pause_start: Option<Instant> = None;
+
+    // Samples per channel per second (stereo = 2 channels)
+    let samples_per_sec = (SAMPLE_RATE * CHANNELS as u32) as u64;
+
+    // Pre-allocate silence buffer for ~50ms of silence (used when no audio is playing)
+    // This ensures audio stream maintains sync with video even during silence
+    let silence_chunk_samples = (samples_per_sec as usize) / 20; // 50ms worth
+    let silence_buffer: Vec<f32> = vec![0.0; silence_chunk_samples];
+
     // Capture loop - only captures, never blocks on disk I/O
     while !should_stop.load(Ordering::Relaxed) {
         // Handle pause
         if is_paused.load(Ordering::Relaxed) {
+            // Track pause start
+            if pause_start.is_none() {
+                pause_start = Some(Instant::now());
+            }
             // Drain buffer during pause
             if event_handle.wait_for_event(10).is_ok() {
                 let _ = capture_client.read_from_device_to_deque(&mut sample_queue);
@@ -395,27 +411,45 @@ fn record_system_audio(
             }
             thread::sleep(Duration::from_millis(5));
             continue;
+        } else if let Some(ps) = pause_start.take() {
+            // Pause ended, accumulate pause duration
+            total_pause_duration += ps.elapsed();
         }
+
+        // Calculate expected samples based on elapsed recording time (excluding pauses)
+        let elapsed = start_time.elapsed().saturating_sub(total_pause_duration);
+        let expected_samples = (elapsed.as_secs_f64() * samples_per_sec as f64) as u64;
 
         // Wait for buffer event with lower timeout for responsive capture
-        if event_handle.wait_for_event(EVENT_TIMEOUT_MS).is_err() {
-            continue;
-        }
+        let has_data = event_handle.wait_for_event(EVENT_TIMEOUT_MS).is_ok();
 
-        // Read audio data
-        if capture_client
-            .read_from_device_to_deque(&mut sample_queue)
-            .is_ok()
+        // Read audio data if available
+        let mut got_samples = false;
+        if has_data
+            && capture_client
+                .read_from_device_to_deque(&mut sample_queue)
+                .is_ok()
             && sample_queue.len() >= 4
         {
             // Convert to f32 samples
             let samples = bytes_to_f32_samples(&sample_queue);
             captured_samples += samples.len() as u64;
             sample_queue.clear();
+            got_samples = true;
 
             // Send to async writer (non-blocking - drops samples if queue full)
             if sample_tx.try_send(samples).is_err() {
                 log::warn!("[MULTITRACK] System audio write queue full, dropping samples");
+            }
+        }
+
+        // If no audio data was received but we're behind on expected samples,
+        // inject silence to maintain sync with video (WASAPI loopback doesn't
+        // produce data during system silence, causing audio/video desync)
+        if !got_samples && captured_samples + silence_chunk_samples as u64 <= expected_samples {
+            captured_samples += silence_chunk_samples as u64;
+            if sample_tx.try_send(silence_buffer.clone()).is_err() {
+                log::warn!("[MULTITRACK] System audio write queue full, dropping silence");
             }
         }
     }
@@ -451,7 +485,7 @@ fn record_microphone(
     output_path: &PathBuf,
     should_stop: Arc<AtomicBool>,
     is_paused: Arc<AtomicBool>,
-    _start_time: Instant,
+    start_time: Instant,
 ) -> Result<(), String> {
     // Spawn async writer thread first
     let (sample_tx, writer_handle) =
@@ -525,10 +559,25 @@ fn record_microphone(
     let mut sample_queue: VecDeque<u8> = VecDeque::with_capacity(buffer_capacity * 4);
     let mut captured_samples = 0u64;
 
+    // Track total pause duration to calculate expected samples correctly
+    let mut total_pause_duration = Duration::ZERO;
+    let mut pause_start: Option<Instant> = None;
+
+    // Samples per channel per second (stereo = 2 channels)
+    let samples_per_sec = (SAMPLE_RATE * CHANNELS as u32) as u64;
+
+    // Pre-allocate silence buffer for ~50ms of silence
+    let silence_chunk_samples = (samples_per_sec as usize) / 20; // 50ms worth
+    let silence_buffer: Vec<f32> = vec![0.0; silence_chunk_samples];
+
     // Capture loop - only captures, never blocks on disk I/O
     while !should_stop.load(Ordering::Relaxed) {
         // Handle pause
         if is_paused.load(Ordering::Relaxed) {
+            // Track pause start
+            if pause_start.is_none() {
+                pause_start = Some(Instant::now());
+            }
             // Drain buffer during pause
             if event_handle.wait_for_event(10).is_ok() {
                 let _ = capture_client.read_from_device_to_deque(&mut sample_queue);
@@ -536,27 +585,44 @@ fn record_microphone(
             }
             thread::sleep(Duration::from_millis(5));
             continue;
+        } else if let Some(ps) = pause_start.take() {
+            // Pause ended, accumulate pause duration
+            total_pause_duration += ps.elapsed();
         }
+
+        // Calculate expected samples based on elapsed recording time (excluding pauses)
+        let elapsed = start_time.elapsed().saturating_sub(total_pause_duration);
+        let expected_samples = (elapsed.as_secs_f64() * samples_per_sec as f64) as u64;
 
         // Wait for buffer event with lower timeout for responsive capture
-        if event_handle.wait_for_event(EVENT_TIMEOUT_MS).is_err() {
-            continue;
-        }
+        let has_data = event_handle.wait_for_event(EVENT_TIMEOUT_MS).is_ok();
 
-        // Read audio data
-        if capture_client
-            .read_from_device_to_deque(&mut sample_queue)
-            .is_ok()
+        // Read audio data if available
+        let mut got_samples = false;
+        if has_data
+            && capture_client
+                .read_from_device_to_deque(&mut sample_queue)
+                .is_ok()
             && sample_queue.len() >= 4
         {
             // Convert to f32 samples
             let samples = bytes_to_f32_samples(&sample_queue);
             captured_samples += samples.len() as u64;
             sample_queue.clear();
+            got_samples = true;
 
             // Send to async writer (non-blocking - drops samples if queue full)
             if sample_tx.try_send(samples).is_err() {
                 log::warn!("[MULTITRACK] Microphone write queue full, dropping samples");
+            }
+        }
+
+        // If no audio data was received but we're behind on expected samples,
+        // inject silence to maintain sync with video
+        if !got_samples && captured_samples + silence_chunk_samples as u64 <= expected_samples {
+            captured_samples += silence_chunk_samples as u64;
+            if sample_tx.try_send(silence_buffer.clone()).is_err() {
+                log::warn!("[MULTITRACK] Microphone write queue full, dropping silence");
             }
         }
     }
