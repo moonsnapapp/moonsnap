@@ -178,6 +178,7 @@ pub(crate) fn apply_rounded_corners(_window: &tauri::WebviewWindow) -> Result<()
 /// Apply a circular window region to make the window actually circular.
 /// This is needed for wgpu transparency to work on Windows - the window shape
 /// is clipped at the OS level so alpha blending isn't needed.
+#[allow(dead_code)]
 #[cfg(target_os = "windows")]
 pub fn apply_circular_region(window: &tauri::WebviewWindow, diameter: i32) -> Result<(), String> {
     use windows::Win32::Foundation::HWND;
@@ -204,6 +205,7 @@ pub fn apply_circular_region(window: &tauri::WebviewWindow, diameter: i32) -> Re
     Ok(())
 }
 
+#[allow(dead_code)]
 #[cfg(not(target_os = "windows"))]
 pub fn apply_circular_region(_window: &tauri::WebviewWindow, _diameter: i32) -> Result<(), String> {
     Ok(())
@@ -211,6 +213,7 @@ pub fn apply_circular_region(_window: &tauri::WebviewWindow, _diameter: i32) -> 
 
 /// Apply a rounded rectangle window region.
 /// Used for rectangle webcam shape with rounded corners.
+#[allow(dead_code)]
 #[cfg(target_os = "windows")]
 pub fn apply_rounded_region(
     window: &tauri::WebviewWindow,
@@ -242,6 +245,7 @@ pub fn apply_rounded_region(
     Ok(())
 }
 
+#[allow(dead_code)]
 #[cfg(not(target_os = "windows"))]
 pub fn apply_rounded_region(
     _window: &tauri::WebviewWindow,
@@ -254,6 +258,7 @@ pub fn apply_rounded_region(
 
 /// Clear window region (restore to rectangular shape).
 /// Used when switching from circle to rectangle shape.
+#[allow(dead_code)]
 #[cfg(target_os = "windows")]
 pub fn clear_window_region(window: &tauri::WebviewWindow) -> Result<(), String> {
     use windows::Win32::Foundation::HWND;
@@ -274,6 +279,7 @@ pub fn clear_window_region(window: &tauri::WebviewWindow) -> Result<(), String> 
     Ok(())
 }
 
+#[allow(dead_code)]
 #[cfg(not(target_os = "windows"))]
 pub fn clear_window_region(_window: &tauri::WebviewWindow) -> Result<(), String> {
     Ok(())

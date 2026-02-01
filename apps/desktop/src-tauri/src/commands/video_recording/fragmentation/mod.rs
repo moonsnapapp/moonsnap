@@ -7,7 +7,4 @@
 
 mod manifest;
 
-pub use manifest::{
-    atomic_write_json, read_manifest, sync_file, FragmentInfo, FragmentManifest,
-    CURRENT_MANIFEST_VERSION,
-};
+pub use manifest::{atomic_write_json, sync_file, FragmentManifest};

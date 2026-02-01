@@ -116,6 +116,7 @@ fn get_prepared_output_path() -> &'static StdMutex<Option<std::path::PathBuf>> {
 }
 
 /// Take the pre-spawned webcam pipe if available.
+#[allow(dead_code)]
 pub fn take_prepared_webcam_pipe() -> Option<webcam::WebcamEncoderPipe> {
     get_prepared_webcam_pipe().lock().ok()?.take()
 }

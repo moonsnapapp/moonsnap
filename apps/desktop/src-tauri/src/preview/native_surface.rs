@@ -161,7 +161,7 @@ impl NativeTextPreview {
             )
             .ok();
 
-            ShowWindow(child, SW_SHOW).ok();
+            let _ = ShowWindow(child, SW_SHOW);
 
             // Create wgpu surface from child window
             let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
@@ -582,7 +582,7 @@ impl NativeCaptionPreview {
                 SWP_NOACTIVATE,
             )
             .ok();
-            ShowWindow(child, SW_SHOW).ok();
+            let _ = ShowWindow(child, SW_SHOW);
 
             // Create wgpu surface from child window
             let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {

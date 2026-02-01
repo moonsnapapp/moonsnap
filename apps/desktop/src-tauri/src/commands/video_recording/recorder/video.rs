@@ -21,7 +21,7 @@ use super::super::state::{RecorderCommand, RecordingProgress};
 use super::super::timestamp::Timestamps;
 use super::super::webcam::{
     global_feed_dimensions, start_global_feed, stop_capture_service, stop_global_feed,
-    FeedWebcamEncoder, WebcamEncoderPipe,
+    FeedWebcamEncoder,
 };
 use super::super::{
     emit_state_change, find_monitor_for_point, get_scap_display_bounds, get_webcam_settings,
@@ -224,7 +224,7 @@ pub fn run_video_capture(
 
     // === WEBCAM ENCODER SETUP (Feed-based) ===
     // Uses the camera feed subscription system for zero-copy frame sharing.
-    let mut webcam_encoder: Option<FeedWebcamEncoder> =
+    let webcam_encoder: Option<FeedWebcamEncoder> =
         if let Some(ref webcam_path) = webcam_output_path {
             // Ensure camera feed is running (should be from GPU preview pre-warm)
             let device_index = get_webcam_settings().map(|s| s.device_index).unwrap_or(0);
@@ -339,7 +339,7 @@ pub fn run_video_capture(
     let mut pause_time = Duration::ZERO;
     let mut pause_start: Option<Instant> = None;
     let mut first_frame_captured = false;
-    let mut first_frame_hw_timestamp: i64 = 0; // Hardware timestamp of first video frame
+    let mut _first_frame_hw_timestamp: i64 = 0; // Hardware timestamp of first video frame (debug only)
 
     // === START RECORDING ===
     // Recording state was already emitted before thread started (optimistic UI)
@@ -608,7 +608,7 @@ pub fn run_video_capture(
         // Cap's approach: use single clock source (Instant) for everything.
         if !first_frame_captured {
             first_frame_captured = true;
-            first_frame_hw_timestamp = frame_hw_timestamp;
+            _first_frame_hw_timestamp = frame_hw_timestamp;
 
             // Use Instant-based timing (same clock as cursor capture)
             let first_frame_offset_ms = actual_elapsed.as_millis() as u64;

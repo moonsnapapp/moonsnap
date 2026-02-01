@@ -26,6 +26,7 @@ pub struct RenderedSvgCursor {
 }
 
 /// Cache of rendered SVG cursors at different scales.
+#[allow(dead_code)]
 static SVG_CURSOR_CACHE: OnceLock<HashMap<(WindowsCursorShape, u32), RenderedSvgCursor>> =
     OnceLock::new();
 

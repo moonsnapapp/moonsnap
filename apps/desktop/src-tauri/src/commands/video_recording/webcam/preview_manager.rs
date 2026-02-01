@@ -12,7 +12,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tauri::{AppHandle, Manager, WebviewWindowBuilder};
 
-use super::preview::{self, start_preview, stop_preview};
+use super::preview::{start_preview, stop_preview};
 use super::{WebcamSettings, WebcamShape, WebcamSize};
 
 /// Control bar height in pixels

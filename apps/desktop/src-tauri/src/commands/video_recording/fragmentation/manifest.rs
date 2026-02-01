@@ -3,6 +3,9 @@
 //! Tracks completed and in-progress segments to enable recovery
 //! if recording is interrupted (crash, power loss, etc.).
 
+// Some methods kept for crash recovery feature implementation
+#![allow(dead_code)]
+
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::time::Duration;

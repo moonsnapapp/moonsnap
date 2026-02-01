@@ -1044,8 +1044,8 @@ impl VideoContentBounds {
 
     /// Create bounds with padding (video centered within composition).
     pub fn with_padding(
-        composition_width: u32,
-        composition_height: u32,
+        _composition_width: u32,
+        _composition_height: u32,
         video_width: u32,
         video_height: u32,
         padding: u32,

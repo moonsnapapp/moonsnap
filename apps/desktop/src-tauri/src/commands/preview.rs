@@ -2,15 +2,12 @@
 
 use crate::commands::captions::{CaptionSegment, CaptionSettings};
 use crate::commands::video_recording::video_project::{TextSegment, VideoProject};
-use crate::preview::{
-    create_frame_ws, get_preview_instance, remove_preview_instance, PreviewRenderer,
-    ShutdownSignal, WSFrame,
-};
+use crate::preview::{create_frame_ws, PreviewRenderer, ShutdownSignal, WSFrame};
 use crate::rendering::RendererState;
 use parking_lot::Mutex as ParkingMutex;
 use std::collections::HashMap;
 use std::sync::Arc;
-use tauri::{command, Manager, State, WebviewWindow};
+use tauri::{command, State, WebviewWindow};
 use tokio::sync::{watch, RwLock};
 
 /// Global preview state.

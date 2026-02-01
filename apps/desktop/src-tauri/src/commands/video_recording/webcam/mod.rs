@@ -26,36 +26,26 @@ mod segmented;
 
 // Legacy capture API (deprecated - use feed/preview instead)
 pub use capture::{
-    get_frame_receiver, is_capture_running, start_capture_service, start_capture_with_receiver,
-    stop_capture_service, FrameReceiver, FrameSender, WEBCAM_BUFFER,
+    is_capture_running, start_capture_service, start_capture_with_receiver, stop_capture_service,
 };
 
 // New broadcast-based architecture
-pub use feed::{
-    global_feed_dimensions, is_global_feed_running, restart_global_feed, start_global_feed,
-    stop_global_feed, subscribe_global, CameraFeed, Subscription,
-};
-pub use preview::{get_preview_jpeg, is_preview_running, start_preview, stop_preview};
+pub use feed::{global_feed_dimensions, start_global_feed, stop_global_feed};
 // GPU-accelerated preview (Cap-style direct rendering)
-pub use drift::{TimestampAnomalyTracker, VideoDriftTracker};
 pub use gpu_preview::{
-    get_manager as get_gpu_preview_manager, is_gpu_preview_running, start_gpu_preview,
-    stop_gpu_preview, update_gpu_preview_state, GpuPreviewState,
+    is_gpu_preview_running, start_gpu_preview, stop_gpu_preview, update_gpu_preview_state,
+    GpuPreviewState,
 };
 pub use native_frame::NativeCameraFrame;
 // composite_webcam no longer used - webcam composited via GPU in editor
-pub use channel_encoder::{ChannelWebcamEncoder, EncoderResult};
-pub use device::{get_webcam_devices, SupportedResolutions, WebcamDevice};
+pub use device::{get_webcam_devices, WebcamDevice};
 pub use encoder::{FeedWebcamEncoder, WebcamEncoderPipe};
-pub use segmented::{
-    concatenate_segments, SegmentInfo, SegmentedRecordingResult, SegmentedWebcamConfig,
-    SegmentedWebcamMuxer,
-};
+pub use segmented::{SegmentedRecordingResult, SegmentedWebcamMuxer};
 
 // Centralized camera preview manager (Cap-style)
 pub use preview_manager::{
-    get_preview_manager, hide_camera_preview, is_camera_preview_showing, on_preview_window_close,
-    show_camera_preview_async, update_preview_settings, CameraPreviewManager,
+    hide_camera_preview, is_camera_preview_showing, on_preview_window_close,
+    show_camera_preview_async, update_preview_settings,
 };
 
 use serde::{Deserialize, Serialize};

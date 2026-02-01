@@ -3,6 +3,9 @@
 //! This replaces the messy scap_capture.rs with a simpler, more reliable approach
 //! based on Cap's capture architecture.
 
+// Some constructors/helpers kept for future use
+#![allow(dead_code)]
+
 use scap_direct3d::{Capturer, Frame, PixelFormat, Settings};
 use scap_targets::Display;
 use std::sync::{

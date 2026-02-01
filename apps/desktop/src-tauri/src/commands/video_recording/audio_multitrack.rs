@@ -2,6 +2,9 @@
 //!
 //! Records system audio and microphone to separate WAV files for later mixing.
 //! This enables independent volume control and audio editing in post-production.
+
+// Some methods kept for future use
+#![allow(dead_code)]
 //!
 //! # Architecture
 //!

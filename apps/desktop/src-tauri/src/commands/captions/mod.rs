@@ -251,7 +251,7 @@ fn process_with_whisper(
     let mut segments = Vec::new();
 
     for i in 0..num_segments {
-        let segment_text = state
+        let _segment_text = state
             .full_get_segment_text(i)
             .map_err(|e| format!("Failed to get text: {}", e))?;
 
