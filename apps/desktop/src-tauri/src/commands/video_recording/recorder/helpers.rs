@@ -183,10 +183,8 @@ pub fn mux_audio_to_video(
     system_audio_path: Option<&PathBuf>,
     mic_audio_path: Option<&PathBuf>,
 ) -> Result<(), String> {
-    let has_system = system_audio_path.map(|p| p.exists()).unwrap_or(false);
-    let has_mic = mic_audio_path.map(|p| p.exists()).unwrap_or(false);
-
-    if !has_system && !has_mic {
+    // Early return if no audio paths provided at all
+    if system_audio_path.is_none() && mic_audio_path.is_none() {
         return Ok(());
     }
 
@@ -213,72 +211,85 @@ pub fn mux_audio_to_video(
     std::fs::rename(video_path, &temp_video_path)
         .map_err(|e| format!("Failed to rename video for muxing: {}", e))?;
 
-    let result = if has_system && has_mic {
-        let system_path = system_audio_path.unwrap();
-        let mic_path = mic_audio_path.unwrap();
-
-        crate::commands::storage::ffmpeg::create_hidden_command(&ffmpeg_path)
-            .args([
-                "-y",
-                "-i",
-                &temp_video_path.to_string_lossy(),
-                "-i",
-                &system_path.to_string_lossy(),
-                "-i",
-                &mic_path.to_string_lossy(),
-                "-filter_complex",
-                "[1:a][2:a]amix=inputs=2:duration=longest[aout]",
-                "-map",
-                "0:v",
-                "-map",
-                "[aout]",
-                "-c:v",
-                "copy",
-                "-c:a",
-                "aac",
-                "-b:a",
-                "192k",
-                &video_path.to_string_lossy(),
-            ])
-            .output()
-    } else if has_system {
-        let system_path = system_audio_path.unwrap();
-
-        crate::commands::storage::ffmpeg::create_hidden_command(&ffmpeg_path)
-            .args([
-                "-y",
-                "-i",
-                &temp_video_path.to_string_lossy(),
-                "-i",
-                &system_path.to_string_lossy(),
-                "-c:v",
-                "copy",
-                "-c:a",
-                "aac",
-                "-b:a",
-                "192k",
-                &video_path.to_string_lossy(),
-            ])
-            .output()
-    } else {
-        let mic_path = mic_audio_path.unwrap();
-
-        crate::commands::storage::ffmpeg::create_hidden_command(&ffmpeg_path)
-            .args([
-                "-y",
-                "-i",
-                &temp_video_path.to_string_lossy(),
-                "-i",
-                &mic_path.to_string_lossy(),
-                "-c:v",
-                "copy",
-                "-c:a",
-                "aac",
-                "-b:a",
-                "192k",
-                &video_path.to_string_lossy(),
-            ])
-            .output()
+    // Use match to destructure and validate paths in one step, eliminating TOCTOU risk
+    // and making safety obvious (existence check and binding happen together)
+    let result = match (
+        system_audio_path.filter(|p| p.exists()),
+        mic_audio_path.filter(|p| p.exists()),
+    ) {
+        (Some(system_path), Some(mic_path)) => {
+            // Both audio tracks - use amix filter
+            crate::commands::storage::ffmpeg::create_hidden_command(&ffmpeg_path)
+                .args([
+                    "-y",
+                    "-i",
+                    &temp_video_path.to_string_lossy(),
+                    "-i",
+                    &system_path.to_string_lossy(),
+                    "-i",
+                    &mic_path.to_string_lossy(),
+                    "-filter_complex",
+                    "[1:a][2:a]amix=inputs=2:duration=longest[aout]",
+                    "-map",
+                    "0:v",
+                    "-map",
+                    "[aout]",
+                    "-c:v",
+                    "copy",
+                    "-c:a",
+                    "aac",
+                    "-b:a",
+                    "192k",
+                    &video_path.to_string_lossy(),
+                ])
+                .output()
+        },
+        (Some(system_path), None) => {
+            // System audio only
+            crate::commands::storage::ffmpeg::create_hidden_command(&ffmpeg_path)
+                .args([
+                    "-y",
+                    "-i",
+                    &temp_video_path.to_string_lossy(),
+                    "-i",
+                    &system_path.to_string_lossy(),
+                    "-c:v",
+                    "copy",
+                    "-c:a",
+                    "aac",
+                    "-b:a",
+                    "192k",
+                    &video_path.to_string_lossy(),
+                ])
+                .output()
+        },
+        (None, Some(mic_path)) => {
+            // Mic audio only
+            crate::commands::storage::ffmpeg::create_hidden_command(&ffmpeg_path)
+                .args([
+                    "-y",
+                    "-i",
+                    &temp_video_path.to_string_lossy(),
+                    "-i",
+                    &mic_path.to_string_lossy(),
+                    "-c:v",
+                    "copy",
+                    "-c:a",
+                    "aac",
+                    "-b:a",
+                    "192k",
+                    &video_path.to_string_lossy(),
+                ])
+                .output()
+        },
+        (None, None) => {
+            // No audio files exist - restore original video and return success
+            // This handles the edge case where files were deleted between the initial check and here
+            if let Err(rename_err) = std::fs::rename(&temp_video_path, video_path) {
+                return Err(format!("Failed to restore video file: {}", rename_err));
+            }
+            return Ok(());
+        },
     };
 
     match result {

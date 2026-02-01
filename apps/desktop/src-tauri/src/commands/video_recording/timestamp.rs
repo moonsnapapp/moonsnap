@@ -8,6 +8,9 @@
 //! the same clock source as Windows Graphics Capture's SystemRelativeTime.
 //! This ensures cursor events and video frames can be perfectly aligned.
 
+// Timestamp utilities kept for advanced timing features
+#![allow(dead_code)]
+
 use std::sync::OnceLock;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -25,9 +28,18 @@ static PERF_FREQ: OnceLock<i64> = OnceLock::new();
 fn perf_freq() -> i64 {
     *PERF_FREQ.get_or_init(|| {
         let mut freq: i64 = 0;
-        // SAFETY: QueryPerformanceFrequency succeeds on all Windows XP+ systems
-        unsafe { QueryPerformanceFrequency(&mut freq).unwrap() };
-        freq
+        // QueryPerformanceFrequency should succeed on all Windows XP+ systems,
+        // but we handle the error case gracefully with a standard 10MHz fallback
+        match unsafe { QueryPerformanceFrequency(&mut freq) } {
+            Ok(_) => freq,
+            Err(e) => {
+                log::error!(
+                    "QueryPerformanceFrequency failed: {:?}, using 10MHz default",
+                    e
+                );
+                10_000_000 // Standard 10MHz fallback
+            },
+        }
     })
 }
 
@@ -67,8 +79,18 @@ impl PerformanceCounterTimestamp {
     #[cfg(target_os = "windows")]
     pub fn now() -> Self {
         let mut value: i64 = 0;
-        unsafe { QueryPerformanceCounter(&mut value).unwrap() };
-        Self(value)
+        match unsafe { QueryPerformanceCounter(&mut value) } {
+            Ok(_) => Self(value),
+            Err(e) => {
+                log::warn!("QueryPerformanceCounter failed: {:?}, using fallback", e);
+                // Fallback to system time in 100ns units (same scale as QPC typically uses)
+                let nanos = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_nanos();
+                Self((nanos / 100) as i64)
+            },
+        }
     }
 
     #[cfg(not(target_os = "windows"))]

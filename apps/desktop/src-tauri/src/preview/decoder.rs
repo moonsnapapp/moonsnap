@@ -37,6 +37,7 @@ pub struct DecoderInitResult {
     pub width: u32,
     pub height: u32,
     pub fps: f64,
+    #[allow(dead_code)]
     pub duration_ms: u64,
 }
 
@@ -110,12 +111,17 @@ pub fn spawn_decoder(path: PathBuf) -> Result<AsyncVideoDecoderHandle, String> {
             },
         };
 
-        let stream = ictx.stream(video_stream_index).unwrap();
+        let stream = match ictx.stream(video_stream_index) {
+            Some(s) => s,
+            None => {
+                let _ = init_tx.send(Err("Video stream index became invalid".to_string()));
+                return;
+            },
+        };
         let time_base = stream.time_base();
         let duration = stream.duration();
         let fps = stream.avg_frame_rate();
         let fps_f64 = fps.0 as f64 / fps.1.max(1) as f64;
-        let fps_u32 = fps_f64.round() as u32;
 
         // Get decoder
         let decoder_params = stream.parameters();

@@ -32,13 +32,32 @@ pub fn get_monitors() -> Result<Vec<MonitorInfo>, CaptureError> {
 
     let mut infos = Vec::new();
     for (idx, m) in monitors.iter().enumerate() {
+        let name = m.name().unwrap_or_default();
+        let width = m.width().unwrap_or_else(|e| {
+            log::warn!(
+                "Monitor {} ({}) width unavailable: {:?}, using fallback 1920",
+                idx,
+                name,
+                e
+            );
+            1920
+        });
+        let height = m.height().unwrap_or_else(|e| {
+            log::warn!(
+                "Monitor {} ({}) height unavailable: {:?}, using fallback 1080",
+                idx,
+                name,
+                e
+            );
+            1080
+        });
         infos.push(MonitorInfo {
             id: idx as u32,
-            name: m.name().unwrap_or_default(),
+            name,
             x: m.x().unwrap_or(0),
             y: m.y().unwrap_or(0),
-            width: m.width().unwrap_or(1920),
-            height: m.height().unwrap_or(1080),
+            width,
+            height,
             is_primary: m.is_primary().unwrap_or(false),
             scale_factor: m.scale_factor().unwrap_or(1.0),
         });
@@ -237,8 +256,8 @@ pub fn capture_screen_region_raw(
         let (_idx, mon) = overlapping[0];
         let mon_x = mon.x().unwrap_or(0);
         let mon_y = mon.y().unwrap_or(0);
-        let mon_w = mon.width().unwrap_or(0);
-        let mon_h = mon.height().unwrap_or(0);
+        let _mon_w = mon.width().unwrap_or(0);
+        let _mon_h = mon.height().unwrap_or(0);
         let rel_x = (sel_x - mon_x).max(0) as u32;
         let rel_y = (sel_y - mon_y).max(0) as u32;
 
