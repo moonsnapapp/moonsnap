@@ -187,17 +187,22 @@ impl InterpolatedZoom {
     ) -> Self {
         let default = SegmentBounds::default();
 
-        // Helper to apply easing
+        // Create easing functions once. These parameters are valid, so ok() won't fail,
+        // but we handle the error case with a linear fallback for robustness.
+        let ease_in_fn = bezier_easing::bezier_easing(0.1, 0.0, 0.3, 1.0).ok();
+        let ease_out_fn = bezier_easing::bezier_easing(0.5, 0.0, 0.5, 1.0).ok();
+
+        // Helper to apply easing - uses bezier if available and enabled, else linear
         let apply_ease_in = |t: f32| -> f32 {
             if use_bezier {
-                bezier_easing::bezier_easing(0.1, 0.0, 0.3, 1.0).unwrap()(t)
+                ease_in_fn.as_ref().map(|f| f(t)).unwrap_or(t)
             } else {
                 t
             }
         };
         let apply_ease_out = |t: f32| -> f32 {
             if use_bezier {
-                bezier_easing::bezier_easing(0.5, 0.0, 0.5, 1.0).unwrap()(t)
+                ease_out_fn.as_ref().map(|f| f(t)).unwrap_or(t)
             } else {
                 t
             }

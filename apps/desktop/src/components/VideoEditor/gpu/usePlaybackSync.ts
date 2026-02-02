@@ -9,7 +9,7 @@
 
 import { useEffect, useCallback } from 'react';
 import { useVideoEditorStore, timelineToSource } from '../../../stores/videoEditorStore';
-import { usePlaybackControls, initPlaybackEngine, startPlaybackLoop, stopPlaybackLoop } from '../../../hooks/usePlaybackEngine';
+import { usePlaybackControls, initPlaybackEngine } from '../../../hooks/usePlaybackEngine';
 import { videoEditorLogger } from '../../../utils/logger';
 import type { AudioTrackSettings, TrimSegment } from '../../../types';
 
@@ -164,12 +164,12 @@ export function usePlaybackSync(options: PlaybackSyncOptions): PlaybackSyncResul
           controls.pause();
         });
       }
-      startPlaybackLoop();
+      controls.startRAFLoop();
     } else {
       if (!video.paused) {
         video.pause();
       }
-      stopPlaybackLoop();
+      controls.stopRAFLoop();
     }
   }, [isPlaying, controls, getSourceTime]);
 

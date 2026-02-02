@@ -8,105 +8,144 @@
  * of the source video are included, but playback still traverses source time.
  * The TrimTrack shows gaps where content has been cut, and the export will
  * skip those regions.
+ *
+ * REFACTORED: Now uses ref-based state to support multiple video editor instances.
  */
 
-import { useCallback, useMemo } from 'react';
+import { useCallback, useMemo, useRef, useEffect } from 'react';
 import { useVideoEditorStore, getEffectiveDuration, sourceToTimeline, timelineToSource, findSegmentAtSourceTime } from '../stores/videoEditorStore';
 
-// Module-level state for RAF loop
-let rafId: number | null = null;
-let videoElement: HTMLVideoElement | null = null;
-let isPlayingInternal = false;
-
 /**
- * RAF loop that updates store with current video time.
- * Handles trim segment boundaries - skips deleted regions and converts to timeline time.
+ * PlaybackEngine class - manages playback state for a single video editor instance.
+ * Using a class allows proper encapsulation of RAF loop and video element references.
  */
-function rafLoop() {
-  if (!isPlayingInternal) {
-    rafId = null;
-    return;
-  }
+class PlaybackEngine {
+  private rafId: number | null = null;
+  private videoElement: HTMLVideoElement | null = null;
+  private isPlayingInternal = false;
 
-  // Update store with current video time
-  if (videoElement) {
-    const sourceTimeMs = videoElement.currentTime * 1000;
-    const state = useVideoEditorStore.getState();
-    const segments = state.project?.timeline.segments;
-    const sourceDurationMs = state.project?.timeline.durationMs ?? 0;
+  /**
+   * RAF loop that updates store with current video time.
+   * Handles trim segment boundaries - skips deleted regions and converts to timeline time.
+   */
+  private rafLoop = () => {
+    if (!this.isPlayingInternal) {
+      this.rafId = null;
+      return;
+    }
 
-    if (segments && segments.length > 0) {
-      // Check if we're in a deleted region
-      const currentSegment = findSegmentAtSourceTime(sourceTimeMs, segments);
+    // Update store with current video time
+    if (this.videoElement) {
+      const sourceTimeMs = this.videoElement.currentTime * 1000;
+      const state = useVideoEditorStore.getState();
+      const segments = state.project?.timeline.segments;
+      const sourceDurationMs = state.project?.timeline.durationMs ?? 0;
 
-      if (!currentSegment) {
-        // We're in a deleted region - find the next segment to jump to
-        let nextSegment = null;
-        for (const seg of segments) {
-          if (seg.sourceStartMs > sourceTimeMs) {
-            nextSegment = seg;
-            break;
+      if (segments && segments.length > 0) {
+        // Check if we're in a deleted region
+        const currentSegment = findSegmentAtSourceTime(sourceTimeMs, segments);
+
+        if (!currentSegment) {
+          // We're in a deleted region - find the next segment to jump to
+          let nextSegment = null;
+          for (const seg of segments) {
+            if (seg.sourceStartMs > sourceTimeMs) {
+              nextSegment = seg;
+              break;
+            }
+          }
+
+          if (nextSegment) {
+            // Jump to the start of the next segment
+            this.videoElement.currentTime = nextSegment.sourceStartMs / 1000;
+          } else {
+            // No more segments - we've reached the end
+            const effectiveDuration = getEffectiveDuration(segments, sourceDurationMs);
+            useVideoEditorStore.getState().setCurrentTime(effectiveDuration);
+            useVideoEditorStore.getState().setIsPlaying(false);
+            this.rafId = null;
+            return;
+          }
+        } else {
+          // We're in a valid segment - convert to timeline time
+          const timelineTimeMs = sourceToTimeline(sourceTimeMs, segments);
+          if (timelineTimeMs !== null) {
+            useVideoEditorStore.getState().setCurrentTime(timelineTimeMs);
           }
         }
 
-        if (nextSegment) {
-          // Jump to the start of the next segment
-          videoElement.currentTime = nextSegment.sourceStartMs / 1000;
-        } else {
-          // No more segments - we've reached the end
-          const effectiveDuration = getEffectiveDuration(segments, sourceDurationMs);
+        // Check if we've reached the end of the effective duration
+        const effectiveDuration = getEffectiveDuration(segments, sourceDurationMs);
+        const currentTimelineTime = sourceToTimeline(sourceTimeMs, segments) ?? 0;
+        if (currentTimelineTime >= effectiveDuration) {
           useVideoEditorStore.getState().setCurrentTime(effectiveDuration);
           useVideoEditorStore.getState().setIsPlaying(false);
-          rafId = null;
+          this.rafId = null;
           return;
         }
       } else {
-        // We're in a valid segment - convert to timeline time
-        const timelineTimeMs = sourceToTimeline(sourceTimeMs, segments);
-        if (timelineTimeMs !== null) {
-          useVideoEditorStore.getState().setCurrentTime(timelineTimeMs);
-        }
+        // No segments - use source time directly
+        useVideoEditorStore.getState().setCurrentTime(sourceTimeMs);
       }
+    }
 
-      // Check if we've reached the end of the effective duration
-      const effectiveDuration = getEffectiveDuration(segments, sourceDurationMs);
-      const currentTimelineTime = sourceToTimeline(sourceTimeMs, segments) ?? 0;
-      if (currentTimelineTime >= effectiveDuration) {
-        useVideoEditorStore.getState().setCurrentTime(effectiveDuration);
-        useVideoEditorStore.getState().setIsPlaying(false);
-        rafId = null;
-        return;
-      }
-    } else {
-      // No segments - use source time directly
-      useVideoEditorStore.getState().setCurrentTime(sourceTimeMs);
+    // Continue loop
+    this.rafId = requestAnimationFrame(this.rafLoop);
+  };
+
+  startRAFLoop() {
+    if (this.rafId !== null) return;
+    this.isPlayingInternal = true;
+    this.rafId = requestAnimationFrame(this.rafLoop);
+  }
+
+  stopRAFLoop() {
+    this.isPlayingInternal = false;
+    if (this.rafId !== null) {
+      cancelAnimationFrame(this.rafId);
+      this.rafId = null;
     }
   }
 
-  // Continue loop
-  rafId = requestAnimationFrame(rafLoop);
-}
+  setVideoElement(el: HTMLVideoElement | null) {
+    this.videoElement = el;
+  }
 
-function startRAFLoop() {
-  if (rafId !== null) return;
-  isPlayingInternal = true;
-  rafId = requestAnimationFrame(rafLoop);
-}
+  getVideoElement() {
+    return this.videoElement;
+  }
 
-function stopRAFLoop() {
-  isPlayingInternal = false;
-  if (rafId !== null) {
-    cancelAnimationFrame(rafId);
-    rafId = null;
+  isPlaying() {
+    return this.isPlayingInternal;
+  }
+
+  setIsPlaying(playing: boolean) {
+    this.isPlayingInternal = playing;
+  }
+
+  reset() {
+    this.stopRAFLoop();
+    this.isPlayingInternal = false;
+    this.videoElement = null;
+    useVideoEditorStore.getState().setCurrentTime(0);
+  }
+
+  init(_projectDurationMs: number, initialTimeMs = 0) {
+    this.stopRAFLoop();
+    this.isPlayingInternal = false;
+    useVideoEditorStore.getState().setCurrentTime(initialTimeMs);
   }
 }
+
+// Default singleton for backward compatibility
+const defaultEngine = new PlaybackEngine();
 
 /**
  * Start the RAF loop for playback time updates.
  * Called by GPUVideoPreview when isPlaying becomes true.
  */
 export function startPlaybackLoop() {
-  startRAFLoop();
+  defaultEngine.startRAFLoop();
 }
 
 /**
@@ -114,7 +153,7 @@ export function startPlaybackLoop() {
  * Called by GPUVideoPreview when isPlaying becomes false.
  */
 export function stopPlaybackLoop() {
-  stopRAFLoop();
+  defaultEngine.stopRAFLoop();
 }
 
 /**
@@ -137,26 +176,45 @@ export function usePreviewOrPlaybackTime(): number {
 
 /**
  * Hook for components that need playback controls.
- * Uses module-level videoElement so all callers operate on the same video.
+ * Each instance of this hook gets its own PlaybackEngine via ref,
+ * enabling multiple video editors with independent playback state.
  */
 export function usePlaybackControls() {
+  // Each component instance gets its own engine via ref
+  const engineRef = useRef<PlaybackEngine | null>(null);
+
+  // Lazy initialization of engine
+  if (!engineRef.current) {
+    engineRef.current = new PlaybackEngine();
+  }
+
+  const engine = engineRef.current;
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      engine.reset();
+    };
+  }, [engine]);
+
   const play = useCallback(() => {
-    if (isPlayingInternal) return;
-    isPlayingInternal = true;
+    if (engine.isPlaying()) return;
+    engine.setIsPlaying(true);
     // Only update store - the effect in GPUVideoPreview handles video.play()
     useVideoEditorStore.getState().setIsPlaying(true);
-  }, []);
+  }, [engine]);
 
   const pause = useCallback(() => {
-    if (!isPlayingInternal) return;
-    isPlayingInternal = false;
+    if (!engine.isPlaying()) return;
+    engine.setIsPlaying(false);
     // Sync final time to store before pausing
+    const videoElement = engine.getVideoElement();
     if (videoElement) {
       useVideoEditorStore.getState().setCurrentTime(videoElement.currentTime * 1000);
     }
     // Only update store - the effect in GPUVideoPreview handles video.pause()
     useVideoEditorStore.getState().setIsPlaying(false);
-  }, []);
+  }, [engine]);
 
   const seek = useCallback((timelineTimeMs: number) => {
     const state = useVideoEditorStore.getState();
@@ -176,30 +234,31 @@ export function usePlaybackControls() {
       ? timelineToSource(clampedTimelineTime, segments)
       : clampedTimelineTime;
 
-    // Sync video element (use module-level variable)
+    // Sync video element
+    const videoElement = engine.getVideoElement();
     if (videoElement) {
       videoElement.currentTime = sourceTimeMs / 1000;
     }
 
     // Update store with timeline time (not source time)
     useVideoEditorStore.getState().setCurrentTime(clampedTimelineTime);
-  }, []);
+  }, [engine]);
 
   const toggle = useCallback(() => {
-    if (isPlayingInternal) {
+    if (engine.isPlaying()) {
       pause();
     } else {
       play();
     }
-  }, [play, pause]);
+  }, [engine, play, pause]);
 
   const setDuration = useCallback((_ms: number) => {
     // Duration comes from project, no need to store separately
   }, []);
 
   const setVideoElement = useCallback((el: HTMLVideoElement | null) => {
-    videoElement = el;
-  }, []);
+    engine.setVideoElement(el);
+  }, [engine]);
 
   const syncFromVideo = useCallback((_timeMs: number) => {
     // Not used anymore - RAF loop handles syncing
@@ -215,28 +274,26 @@ export function usePlaybackControls() {
     setDuration,
     setVideoElement,
     syncFromVideo,
-    isPlaying: () => isPlayingInternal,
+    isPlaying: () => engine.isPlaying(),
     getCurrentTime: () => useVideoEditorStore.getState().currentTimeMs,
-  }), [play, pause, seek, toggle, setDuration, setVideoElement, syncFromVideo]);
+    // Expose engine methods for external RAF loop control
+    startRAFLoop: () => engine.startRAFLoop(),
+    stopRAFLoop: () => engine.stopRAFLoop(),
+  }), [engine, play, pause, seek, toggle, setDuration, setVideoElement, syncFromVideo]);
 }
 
 /**
  * Initialize playback engine with project data.
  */
-export function initPlaybackEngine(_projectDurationMs: number, initialTimeMs = 0) {
-  stopRAFLoop();
-  isPlayingInternal = false;
-  useVideoEditorStore.getState().setCurrentTime(initialTimeMs);
+export function initPlaybackEngine(projectDurationMs: number, initialTimeMs = 0) {
+  defaultEngine.init(projectDurationMs, initialTimeMs);
 }
 
 /**
  * Reset playback engine state.
  */
 export function resetPlaybackEngine() {
-  stopRAFLoop();
-  isPlayingInternal = false;
-  videoElement = null;
-  useVideoEditorStore.getState().setCurrentTime(0);
+  defaultEngine.reset();
 }
 
 /**
