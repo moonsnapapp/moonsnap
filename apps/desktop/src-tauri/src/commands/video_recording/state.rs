@@ -216,14 +216,17 @@ impl RecordingController {
     /// Set paused state.
     pub fn set_paused(&mut self, paused: bool) {
         if paused {
-            if let RecordingState::Recording {
-                elapsed_secs,
-                frame_count,
-                ..
-            } = &self.state
-            {
+            if let RecordingState::Recording { frame_count, .. } = &self.state {
+                // Calculate actual elapsed time from active recording's start time
+                // (self.state.elapsed_secs is not updated during recording, only emitted to frontend)
+                let elapsed_secs = self
+                    .active
+                    .as_ref()
+                    .map(|a| a.started_at.elapsed().as_secs_f64())
+                    .unwrap_or(0.0);
+
                 self.state = RecordingState::Paused {
-                    elapsed_secs: *elapsed_secs,
+                    elapsed_secs,
                     frame_count: *frame_count,
                 };
             }

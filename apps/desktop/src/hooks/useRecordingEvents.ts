@@ -50,9 +50,12 @@ export function useRecordingEvents(): UseRecordingEventsReturn {
   const modeRef = useRef<ToolbarMode>('selection');
   const recordingInitiatedRef = useRef(false);
   const isRecordingActiveRef = useRef(false);
-  
-  // Track the last backend sync for accurate time calculation
-  const lastBackendSyncRef = useRef<{ backendTime: number; localTime: number } | null>(null);
+
+  // Timer refs for smooth pause/resume (no jumps)
+  // - timerBaseTime: accumulated elapsed time when timer was last paused/started
+  // - timerStartedAt: timestamp when current timer segment started (null if paused)
+  const timerBaseTimeRef = useRef(0);
+  const timerStartedAtRef = useRef<number | null>(null);
 
   // Wrapper to update both state and ref
   const setMode = useCallback((newMode: ToolbarMode) => {
@@ -61,32 +64,33 @@ export function useRecordingEvents(): UseRecordingEventsReturn {
   }, []);
 
   // Timer for elapsed time during recording
-  // Uses hybrid approach: backend sync + local interpolation for smooth display
+  // Pure local timer - no backend sync needed, just counts up smoothly
   useEffect(() => {
+    // Only run timer when actively recording (not paused)
     if (mode !== 'recording') return;
-    
-    // Initialize sync point when timer starts
-    if (!lastBackendSyncRef.current) {
-      lastBackendSyncRef.current = { backendTime: 0, localTime: Date.now() };
-    }
-    const startTime = Date.now();
-    recordingLogger.debug('Frontend timer STARTED at', new Date().toISOString());
-    
+
+    // Start timer from current base time
+    timerStartedAtRef.current = Date.now();
+
     const interval = setInterval(() => {
-      const sync = lastBackendSyncRef.current;
-      if (sync) {
-        // Calculate: backend_elapsed + local_delta since last sync
-        const localDelta = (Date.now() - sync.localTime) / 1000;
-        setElapsedTime(sync.backendTime + localDelta);
+      // Double-check we're still recording (race condition prevention)
+      // modeRef is updated synchronously, so this catches cases where
+      // the interval fires between mode state change and effect cleanup
+      if (modeRef.current !== 'recording') return;
+
+      if (timerStartedAtRef.current !== null) {
+        const currentSegment = (Date.now() - timerStartedAtRef.current) / 1000;
+        setElapsedTime(timerBaseTimeRef.current + currentSegment);
       }
     }, 100);
-    
+
     return () => {
       clearInterval(interval);
-      const finalTime = lastBackendSyncRef.current?.backendTime ?? 0;
-      const localDuration = (Date.now() - startTime) / 1000;
-      recordingLogger.debug('Frontend timer STOPPED. Backend sync:', finalTime.toFixed(3), 's, Local:', localDuration.toFixed(3), 's');
-      // Don't null the ref - preserves last value for debugging
+      // Save current elapsed time as base for next segment (pause/resume)
+      if (timerStartedAtRef.current !== null) {
+        timerBaseTimeRef.current += (Date.now() - timerStartedAtRef.current) / 1000;
+        timerStartedAtRef.current = null;
+      }
     };
   }, [mode]);
 
@@ -118,6 +122,8 @@ export function useRecordingEvents(): UseRecordingEventsReturn {
         switch (state.status) {
           case 'countdown':
             isRecordingActiveRef.current = false;
+            timerBaseTimeRef.current = 0;
+            timerStartedAtRef.current = null;
             setMode('starting');
             setElapsedTime(0);
             setProgress(0);
@@ -128,19 +134,22 @@ export function useRecordingEvents(): UseRecordingEventsReturn {
           case 'recording':
             recordingLogger.debug('Received recording state, backend elapsedSecs:', state.elapsedSecs);
             if (!isRecordingActiveRef.current) {
+              // First time entering recording - reset timer
               isRecordingActiveRef.current = true;
-              recordingLogger.debug('Recording mode ACTIVATED, initial elapsedSecs:', state.elapsedSecs);
+              timerBaseTimeRef.current = 0;
+              timerStartedAtRef.current = null;
+              setElapsedTime(0);
+              recordingLogger.debug('Recording mode ACTIVATED, timer reset');
             }
-            // Sync with backend elapsed time - store for hybrid timer calculation
-            // Timer will interpolate between backend updates for smooth display
-            lastBackendSyncRef.current = { backendTime: state.elapsedSecs, localTime: Date.now() };
-            setElapsedTime(state.elapsedSecs);
+            // Just set mode - timer effect handles the counting
+            // Don't setElapsedTime here to avoid jumps (timer effect manages display)
             setMode('recording');
             break;
 
           case 'paused':
+            // Just set mode - timer effect cleanup saves current time to base
+            // Don't setElapsedTime here to avoid jumps
             setMode('paused');
-            setElapsedTime(state.elapsedSecs);
             break;
 
           case 'processing':
@@ -152,6 +161,8 @@ export function useRecordingEvents(): UseRecordingEventsReturn {
           case 'completed':
             recordingLogger.info('Recording COMPLETED. Backend duration:', state.durationSecs, 's, file:', state.outputPath);
             isRecordingActiveRef.current = false;
+            timerBaseTimeRef.current = 0;
+            timerStartedAtRef.current = null;
             setMode('selection');
             setElapsedTime(0);
             setProgress(0);
@@ -176,6 +187,8 @@ export function useRecordingEvents(): UseRecordingEventsReturn {
             break;
           case 'idle':
             isRecordingActiveRef.current = false;
+            timerBaseTimeRef.current = 0;
+            timerStartedAtRef.current = null;
             setMode('selection');
             setElapsedTime(0);
             setProgress(0);
@@ -201,6 +214,8 @@ export function useRecordingEvents(): UseRecordingEventsReturn {
 
           case 'error':
             isRecordingActiveRef.current = false;
+            timerBaseTimeRef.current = 0;
+            timerStartedAtRef.current = null;
             setErrorMessage(state.message);
             setMode('error');
             invoke('hide_recording_border').catch(
@@ -261,7 +276,6 @@ export function useRecordingEvents(): UseRecordingEventsReturn {
       unlistenClosed?.();
       unlistenReselecting?.();
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // Empty deps - listeners must not be recreated
 
   return {

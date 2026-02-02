@@ -14,7 +14,7 @@
 use device_query::{DeviceQuery, DeviceState};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
@@ -358,6 +358,8 @@ pub struct CursorEventCapture {
     data: Arc<Mutex<SharedCursorData>>,
     /// Signal to stop capture thread.
     should_stop: Arc<AtomicBool>,
+    /// Signal that recording is paused (skip capturing events during pause).
+    is_paused: Arc<AtomicBool>,
     /// Recording start time for timestamp calculation.
     start_time: Option<Instant>,
     /// Position capture thread handle.
@@ -374,6 +376,12 @@ pub struct CursorEventCapture {
 impl CursorEventCapture {
     /// Create a new cursor event capture manager.
     pub fn new() -> Self {
+        Self::with_pause_signal(None)
+    }
+
+    /// Create a new cursor event capture manager with an optional pause signal.
+    /// When is_paused is true, cursor events are not captured (maintains sync with video).
+    pub fn with_pause_signal(is_paused: Option<Arc<AtomicBool>>) -> Self {
         Self {
             data: Arc::new(Mutex::new(SharedCursorData {
                 events: Vec::with_capacity(18000), // Pre-allocate for ~3 min at 100Hz
@@ -383,6 +391,7 @@ impl CursorEventCapture {
                 next_cursor_id: 0,
             })),
             should_stop: Arc::new(AtomicBool::new(false)),
+            is_paused: is_paused.unwrap_or_else(|| Arc::new(AtomicBool::new(false))),
             start_time: None,
             position_thread: None,
             hook_thread: None,
@@ -478,6 +487,7 @@ impl CursorEventCapture {
         // Start position capture thread (100Hz polling) - also captures cursor images
         let data_clone = Arc::clone(&self.data);
         let should_stop_clone = Arc::clone(&self.should_stop);
+        let is_paused_clone = Arc::clone(&self.is_paused);
         let capture_region = self.capture_region;
         let start_time = self.start_time.unwrap();
 
@@ -488,6 +498,7 @@ impl CursorEventCapture {
                     run_position_capture_loop(
                         data_clone,
                         should_stop_clone,
+                        is_paused_clone,
                         start_time,
                         capture_region,
                     );
@@ -498,6 +509,7 @@ impl CursorEventCapture {
         // Start mouse hook thread (for click events)
         let data_clone = Arc::clone(&self.data);
         let should_stop_clone = Arc::clone(&self.should_stop);
+        let is_paused_clone = Arc::clone(&self.is_paused);
         let capture_region = self.capture_region;
         let start_time = self.start_time.unwrap();
 
@@ -505,7 +517,13 @@ impl CursorEventCapture {
             thread::Builder::new()
                 .name("cursor-hook-capture".to_string())
                 .spawn(move || {
-                    run_mouse_hook_loop(data_clone, should_stop_clone, start_time, capture_region);
+                    run_mouse_hook_loop(
+                        data_clone,
+                        should_stop_clone,
+                        is_paused_clone,
+                        start_time,
+                        capture_region,
+                    );
                 })
                 .map_err(|e| format!("Failed to spawn mouse hook thread: {}", e))?,
         );
@@ -1044,10 +1062,15 @@ fn capture_and_dedupe_cursor(
 fn run_position_capture_loop(
     data: Arc<Mutex<SharedCursorData>>,
     should_stop: Arc<AtomicBool>,
+    is_paused: Arc<AtomicBool>,
     start_time: Instant,
     region: CaptureRegion,
 ) {
     let interval = Duration::from_millis(10); // 100Hz
+
+    // Track pause duration to adjust timestamps
+    let mut total_pause_duration = Duration::ZERO;
+    let mut pause_start: Option<Instant> = None;
 
     // Get initial position via device_query (more reliable)
     let (init_x, init_y) = get_cursor_position_raw();
@@ -1097,6 +1120,18 @@ fn run_position_capture_loop(
     while !should_stop.load(Ordering::SeqCst) {
         let loop_start = Instant::now();
 
+        // Handle pause - skip capturing events but track pause duration
+        if is_paused.load(Ordering::Relaxed) {
+            if pause_start.is_none() {
+                pause_start = Some(Instant::now());
+            }
+            thread::sleep(interval);
+            continue;
+        } else if let Some(ps) = pause_start.take() {
+            // Pause ended, accumulate pause duration
+            total_pause_duration += ps.elapsed();
+        }
+
         // Get cursor position via device_query (more reliable, like Cap does)
         let (x, y) = get_cursor_position_raw();
         // Get cursor handle separately for image capture
@@ -1130,7 +1165,9 @@ fn run_position_capture_loop(
 
         // Only record if position changed (reduces data size significantly)
         if x != last_x || y != last_y {
-            let timestamp_ms = start_time.elapsed().as_millis() as u64;
+            // Adjust timestamp for pause duration
+            let elapsed = start_time.elapsed().saturating_sub(total_pause_duration);
+            let timestamp_ms = elapsed.as_millis() as u64;
 
             // Normalize to 0.0-1.0 relative to capture region
             let (norm_x, norm_y) = region.normalize(x, y);
@@ -1173,10 +1210,12 @@ fn run_position_capture_loop(
 
 /// Mouse hook loop - captures click events via Windows low-level hook.
 /// Click positions are normalized to 0.0-1.0 relative to the capture region.
+/// Respects pause state - click events during pause are not recorded.
 #[cfg(target_os = "windows")]
 fn run_mouse_hook_loop(
     data: Arc<Mutex<SharedCursorData>>,
     should_stop: Arc<AtomicBool>,
+    is_paused: Arc<AtomicBool>,
     start_time: Instant,
     region: CaptureRegion,
 ) {
@@ -1188,14 +1227,30 @@ fn run_mouse_hook_loop(
         WM_LBUTTONUP, WM_MBUTTONDOWN, WM_MBUTTONUP, WM_MOUSEWHEEL, WM_RBUTTONDOWN, WM_RBUTTONUP,
     };
 
-    // Thread-local storage for hook callback data (includes region for normalization)
+    // Thread-local storage for hook callback data (includes region for normalization and pause signal)
+    // The pause duration is tracked separately in the message loop and passed via AtomicU64
     thread_local! {
-        static HOOK_DATA: RefCell<Option<(Arc<Mutex<SharedCursorData>>, Instant, CaptureRegion)>> = RefCell::new(None);
+        static HOOK_DATA: RefCell<Option<(
+            Arc<Mutex<SharedCursorData>>,
+            Instant,
+            CaptureRegion,
+            Arc<AtomicBool>,  // is_paused
+            Arc<AtomicU64>,   // total_pause_duration_ms (updated by message loop)
+        )>> = RefCell::new(None);
     }
+
+    // Shared pause duration (updated by message loop, read by hook callback)
+    let total_pause_duration_ms = Arc::new(AtomicU64::new(0));
 
     // Set up thread-local data
     HOOK_DATA.with(|hook_data| {
-        *hook_data.borrow_mut() = Some((Arc::clone(&data), start_time, region));
+        *hook_data.borrow_mut() = Some((
+            Arc::clone(&data),
+            start_time,
+            region,
+            Arc::clone(&is_paused),
+            Arc::clone(&total_pause_duration_ms),
+        ));
     });
 
     // Low-level mouse hook callback
@@ -1227,8 +1282,19 @@ fn run_mouse_hook_loop(
 
             if let Some(event_type) = event_type {
                 HOOK_DATA.with(|hook_data| {
-                    if let Some((data, start_time, region)) = hook_data.borrow().as_ref() {
-                        let timestamp_ms = start_time.elapsed().as_millis() as u64;
+                    if let Some((data, start_time, region, is_paused, pause_duration_ms)) =
+                        hook_data.borrow().as_ref()
+                    {
+                        // Skip events while paused
+                        if is_paused.load(Ordering::Relaxed) {
+                            return;
+                        }
+
+                        // Calculate timestamp adjusted for pause duration
+                        let elapsed_ms = start_time.elapsed().as_millis() as u64;
+                        let pause_ms = pause_duration_ms.load(Ordering::Relaxed);
+                        let timestamp_ms = elapsed_ms.saturating_sub(pause_ms);
+
                         // Normalize click position
                         let (norm_x, norm_y) =
                             region.normalize(mouse_struct.pt.x, mouse_struct.pt.y);
@@ -1250,6 +1316,10 @@ fn run_mouse_hook_loop(
         CallNextHookEx(HHOOK::default(), code, wparam, lparam)
     }
 
+    // Track pause duration locally
+    let mut local_pause_duration = Duration::ZERO;
+    let mut pause_start: Option<Instant> = None;
+
     unsafe {
         // Install the hook
         let hook = SetWindowsHookExW(WH_MOUSE_LL, Some(mouse_hook_proc), None, 0);
@@ -1267,6 +1337,19 @@ fn run_mouse_hook_loop(
         // to allow checking should_stop flag
         let mut msg = MSG::default();
         while !should_stop.load(Ordering::SeqCst) {
+            // Handle pause state transitions and update shared pause duration
+            let currently_paused = is_paused.load(Ordering::Relaxed);
+            if currently_paused {
+                if pause_start.is_none() {
+                    pause_start = Some(Instant::now());
+                }
+            } else if let Some(ps) = pause_start.take() {
+                // Pause ended, accumulate pause duration
+                local_pause_duration += ps.elapsed();
+                total_pause_duration_ms
+                    .store(local_pause_duration.as_millis() as u64, Ordering::Relaxed);
+            }
+
             // Non-blocking message peek
             while PeekMessageW(&mut msg, None, 0, 0, PM_REMOVE).as_bool() {
                 let _ = TranslateMessage(&msg);
@@ -1292,6 +1375,7 @@ fn run_mouse_hook_loop(
 fn run_mouse_hook_loop(
     _data: Arc<Mutex<SharedCursorData>>,
     should_stop: Arc<AtomicBool>,
+    _is_paused: Arc<AtomicBool>,
     _start_time: Instant,
     _region: CaptureRegion,
 ) {

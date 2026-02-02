@@ -288,6 +288,7 @@ impl BackgroundWebcamEncoder {
 /// Runs encoding in a background thread, receives frames via subscription.
 pub struct FeedWebcamEncoder {
     stop_signal: Arc<AtomicBool>,
+    pause_signal: Arc<AtomicBool>,
     frames_written: Arc<AtomicU64>,
     thread: Option<JoinHandle<Result<(), String>>>,
     output_path: PathBuf,
@@ -298,7 +299,19 @@ impl FeedWebcamEncoder {
     /// Create and start the encoder.
     /// Subscribes to the global camera feed and encodes frames as they arrive.
     pub fn new(output_path: PathBuf, width: u32, height: u32) -> Result<Self, String> {
+        Self::with_pause_signal(output_path, width, height, None)
+    }
+
+    /// Create and start the encoder with an optional pause signal.
+    /// When pause_signal is true, frames are dropped to maintain sync with video.
+    pub fn with_pause_signal(
+        output_path: PathBuf,
+        width: u32,
+        height: u32,
+        pause_signal: Option<Arc<AtomicBool>>,
+    ) -> Result<Self, String> {
         let stop_signal = Arc::new(AtomicBool::new(false));
+        let pause_signal = pause_signal.unwrap_or_else(|| Arc::new(AtomicBool::new(false)));
         let frames_written = Arc::new(AtomicU64::new(0));
         let start_time = Instant::now();
 
@@ -313,16 +326,20 @@ impl FeedWebcamEncoder {
         );
 
         let stop = Arc::clone(&stop_signal);
+        let pause = Arc::clone(&pause_signal);
         let frames = Arc::clone(&frames_written);
         let path = output_path.clone();
 
         let thread = std::thread::Builder::new()
             .name("webcam-encoder".to_string())
-            .spawn(move || Self::encode_loop(subscription, path, width, height, stop, frames))
+            .spawn(move || {
+                Self::encode_loop(subscription, path, width, height, stop, pause, frames)
+            })
             .map_err(|e| format!("Failed to spawn encoder thread: {}", e))?;
 
         Ok(Self {
             stop_signal,
+            pause_signal,
             frames_written,
             thread: Some(thread),
             output_path,
@@ -336,6 +353,7 @@ impl FeedWebcamEncoder {
         _width: u32,
         _height: u32,
         stop_signal: Arc<AtomicBool>,
+        pause_signal: Arc<AtomicBool>,
         frames_written: Arc<AtomicU64>,
     ) -> Result<(), String> {
         let ffmpeg_path = crate::commands::storage::find_ffmpeg().ok_or("FFmpeg not found")?;
@@ -467,6 +485,13 @@ impl FeedWebcamEncoder {
         // Receive and encode remaining frames
         let mut conversion_failures = 0u64;
         while !stop_signal.load(Ordering::Relaxed) {
+            // Handle pause - drop frames to maintain sync with video
+            if pause_signal.load(Ordering::Relaxed) {
+                // Drain subscription but don't encode (keeps subscription responsive)
+                let _ = subscription.recv_timeout(std::time::Duration::from_millis(50));
+                continue;
+            }
+
             match subscription.recv_timeout(std::time::Duration::from_millis(50)) {
                 Some(frame) => {
                     let frame_data = if is_mjpeg {

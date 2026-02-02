@@ -246,8 +246,13 @@ pub fn run_video_capture(
             // Get dimensions from feed
             let (width, height) = global_feed_dimensions().unwrap_or((1280, 720));
 
-            // Create feed-based encoder
-            match FeedWebcamEncoder::new(webcam_path.clone(), width, height) {
+            // Create feed-based encoder with pause signal for sync with video
+            match FeedWebcamEncoder::with_pause_signal(
+                webcam_path.clone(),
+                width,
+                height,
+                Some(Arc::clone(&is_paused)),
+            ) {
                 Ok(encoder) => {
                     log::info!("[WEBCAM] Feed encoder started: {}x{}", width, height);
                     Some(encoder)
@@ -363,7 +368,9 @@ pub fn run_video_capture(
     // Only used in editor flow (not quick capture) since cursor is baked into video for quick capture.
     // IMPORTANT: Start cursor capture with the SAME start_time as video to ensure
     // cursor timestamps are synchronized with video timestamps.
-    let mut cursor_event_capture = CursorEventCapture::new();
+    // Pass the pause signal so cursor events are synchronized with video pause/resume.
+    let mut cursor_event_capture =
+        CursorEventCapture::with_pause_signal(Some(Arc::clone(&is_paused)));
     let cursor_data_path = if !settings.quick_capture {
         Some(output_path.join("cursor.json"))
     } else {
@@ -666,7 +673,13 @@ pub fn run_video_capture(
 
     // Calculate recording stats
     let total_elapsed = start_time.elapsed();
-    let recording_duration = total_elapsed - pause_time;
+    // If we stopped while paused, add the current pause duration to the total
+    let final_pause_time = if let Some(ps) = pause_start {
+        pause_time + ps.elapsed()
+    } else {
+        pause_time
+    };
+    let recording_duration = total_elapsed - final_pause_time;
     let webcam_frames = webcam_encoder
         .as_ref()
         .map(|e| e.frames_written())
