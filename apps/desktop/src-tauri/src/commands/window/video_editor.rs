@@ -15,7 +15,9 @@ const VIDEO_EDITOR_LABEL_PREFIX: &str = "video-editor-";
 static OPEN_EDITORS: Mutex<Option<HashMap<String, String>>> = Mutex::new(None);
 
 fn get_editors() -> std::sync::MutexGuard<'static, Option<HashMap<String, String>>> {
-    let mut guard = OPEN_EDITORS.lock().unwrap();
+    let mut guard = OPEN_EDITORS
+        .lock()
+        .expect("video_editor: OPEN_EDITORS lock poisoned");
     if guard.is_none() {
         *guard = Some(HashMap::new());
     }
@@ -26,7 +28,7 @@ fn get_editors() -> std::sync::MutexGuard<'static, Option<HashMap<String, String
 fn generate_window_label() -> String {
     let timestamp = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
+        .expect("system time before unix epoch")
         .as_millis();
     format!("{}{}", VIDEO_EDITOR_LABEL_PREFIX, timestamp)
 }
@@ -39,7 +41,10 @@ pub async fn show_video_editor_window(
     project_path: String,
 ) -> Result<String, String> {
     let mut editors = get_editors();
-    let editors_map = editors.as_mut().unwrap();
+    // Safe: get_editors() initializes to Some if None
+    let editors_map = editors
+        .as_mut()
+        .expect("editors initialized by get_editors");
 
     // Check if a window for this project already exists
     if let Some(existing_label) = editors_map.get(&project_path) {
@@ -102,7 +107,10 @@ pub async fn show_video_editor_window(
 pub async fn close_video_editor_window(app: AppHandle, label: String) -> Result<(), String> {
     // Remove from tracking
     let mut editors = get_editors();
-    let editors_map = editors.as_mut().unwrap();
+    // Safe: get_editors() initializes to Some if None
+    let editors_map = editors
+        .as_mut()
+        .expect("editors initialized by get_editors");
 
     // Find and remove by label
     let project_path = editors_map
@@ -128,7 +136,10 @@ pub async fn close_video_editor_window(app: AppHandle, label: String) -> Result<
 #[command]
 pub fn get_video_editor_project_path(label: String) -> Option<String> {
     let editors = get_editors();
-    let editors_map = editors.as_ref().unwrap();
+    // Safe: get_editors() initializes to Some if None
+    let editors_map = editors
+        .as_ref()
+        .expect("editors initialized by get_editors");
 
     editors_map
         .iter()
@@ -144,7 +155,10 @@ pub fn on_video_editor_closed(label: &str) {
     }
 
     let mut editors = get_editors();
-    let editors_map = editors.as_mut().unwrap();
+    // Safe: get_editors() initializes to Some if None
+    let editors_map = editors
+        .as_mut()
+        .expect("editors initialized by get_editors");
 
     // Find and remove by label
     let project_path = editors_map

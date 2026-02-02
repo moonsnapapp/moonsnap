@@ -375,7 +375,6 @@ export function useEditorStore<T>(selector?: (state: EditorState) => T): T | Edi
   }
 
   // useStore must be called unconditionally to satisfy React hooks rules
-  // Type assertion is safe because overloads guarantee correct usage
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Function overload implementation requires cast; call-site types are enforced by overload signatures above
   return useStore(store, (selector ?? ((state: EditorState) => state)) as any);
 }

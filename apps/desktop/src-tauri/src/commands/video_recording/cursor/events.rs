@@ -489,7 +489,10 @@ impl CursorEventCapture {
         let should_stop_clone = Arc::clone(&self.should_stop);
         let is_paused_clone = Arc::clone(&self.is_paused);
         let capture_region = self.capture_region;
-        let start_time = self.start_time.unwrap();
+        // Safe: start_time is always set before threads are started
+        let start_time = self
+            .start_time
+            .expect("start_time set at beginning of start_with_time");
 
         self.position_thread = Some(
             thread::Builder::new()
@@ -511,7 +514,10 @@ impl CursorEventCapture {
         let should_stop_clone = Arc::clone(&self.should_stop);
         let is_paused_clone = Arc::clone(&self.is_paused);
         let capture_region = self.capture_region;
-        let start_time = self.start_time.unwrap();
+        // Safe: start_time is always set before threads are started
+        let start_time = self
+            .start_time
+            .expect("start_time set at beginning of start_with_time");
 
         self.hook_thread = Some(
             thread::Builder::new()
@@ -781,7 +787,8 @@ fn capture_cursor_image_with_data(cursor_handle: isize) -> Option<CapturedCursor
             return None;
         }
 
-        let dib = dib.unwrap();
+        // Safe: checked is_err() above and returned early
+        let dib = dib.expect("dib error checked above");
 
         // Select DIB into DC
         let old_bitmap = SelectObject(mem_dc, dib);
@@ -1329,7 +1336,8 @@ fn run_mouse_hook_loop(
             return;
         }
 
-        let hook = hook.unwrap();
+        // Safe: checked is_err() above and returned early
+        let hook = hook.expect("hook error checked above");
         log::debug!("[CURSOR_EVENTS] Mouse hook installed");
 
         // Message loop (required for low-level hooks to work)

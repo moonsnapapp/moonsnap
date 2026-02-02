@@ -82,7 +82,8 @@ pub fn run_gif_capture(
     } else if crop_region.is_some() {
         // Region mode: use D3D with crop
         log::debug!("[GIF] Using D3D region capture, monitor={}", monitor_index);
-        let (x, y, w, h) = crop_region.unwrap();
+        // Safe: guarded by is_some() check above
+        let (x, y, w, h) = crop_region.expect("crop_region checked above");
         let capture = CaptureSource::new_region(
             monitor_index,
             (x, y, w, h),

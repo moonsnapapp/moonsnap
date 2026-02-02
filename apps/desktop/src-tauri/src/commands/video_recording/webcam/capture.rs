@@ -117,6 +117,7 @@ impl WebcamFrameBuffer {
     }
 
     /// Get the latest frame (zero-copy Arc clone).
+    /// Note: This is a read-only operation that returns None if no frame has been captured.
     pub fn get(&self) -> Option<SharedFrame> {
         self.frame.read().clone()
     }

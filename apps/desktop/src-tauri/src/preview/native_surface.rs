@@ -422,7 +422,8 @@ pub fn get_preview_instance(
         *instances = Some(HashMap::new());
     }
 
-    let map = instances.as_mut().unwrap();
+    // Safe: initialized to Some above if None
+    let map = instances.as_mut().expect("instances initialized above");
     map.entry(label.to_string())
         .or_insert_with(|| Arc::new(NativeTextPreview::new(device, queue)))
         .clone()
@@ -853,7 +854,8 @@ pub fn get_caption_preview_instance(
         *instances = Some(HashMap::new());
     }
 
-    let map = instances.as_mut().unwrap();
+    // Safe: initialized to Some above if None
+    let map = instances.as_mut().expect("instances initialized above");
     map.entry(label.to_string())
         .or_insert_with(|| Arc::new(NativeCaptionPreview::new(device, queue)))
         .clone()

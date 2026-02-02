@@ -891,7 +891,11 @@ impl Renderer {
             self.update_window_uniforms(sw / GPU_SURFACE_SCALE, sh / GPU_SURFACE_SCALE);
         }
 
-        let cached = self.texture_cache.as_ref().unwrap();
+        // Safe: needs_new_texture is true when cache is None, which triggers creation above
+        let cached = self
+            .texture_cache
+            .as_ref()
+            .expect("texture_cache created when needs_new_texture is true");
 
         // Upload frame data based on format (with downsampling)
         match yuv_format {

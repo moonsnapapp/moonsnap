@@ -89,7 +89,10 @@ pub async fn create_frame_ws(frame_rx: watch::Receiver<Option<WSFrame>>) -> (u16
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
         .await
         .expect("Failed to bind WebSocket server");
-    let port = listener.local_addr().unwrap().port();
+    let port = listener
+        .local_addr()
+        .expect("listener has local address after bind")
+        .port();
 
     log::info!("[FrameWS] Started on port {}", port);
 
