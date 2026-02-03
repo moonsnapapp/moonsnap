@@ -16,6 +16,12 @@ struct AudioInput {
     volume: f32,
 }
 
+/// Segment info for audio trimming (in seconds for FFmpeg).
+struct AudioSegment {
+    start_sec: f64,
+    end_sec: f64,
+}
+
 /// Start FFmpeg process for encoding raw RGBA input.
 pub fn start_ffmpeg_encoder(
     project: &VideoProject,
@@ -71,7 +77,27 @@ pub fn start_ffmpeg_encoder(
     }
 
     // Build audio filter graph if we have audio inputs
-    let audio_filter = build_audio_filter(&audio_inputs);
+    // Convert segments to audio segments (ms -> seconds) for FFmpeg
+    // If no segments, use in_point/out_point as a single segment
+    let audio_segments: Vec<AudioSegment> = if project.timeline.segments.is_empty() {
+        // No cuts - use in_point/out_point (single segment)
+        vec![AudioSegment {
+            start_sec: project.timeline.in_point as f64 / 1000.0,
+            end_sec: project.timeline.out_point as f64 / 1000.0,
+        }]
+    } else {
+        // Use the trim segments
+        project
+            .timeline
+            .segments
+            .iter()
+            .map(|s| AudioSegment {
+                start_sec: s.source_start_ms as f64 / 1000.0,
+                end_sec: s.source_end_ms as f64 / 1000.0,
+            })
+            .collect()
+    };
+    let audio_filter = build_audio_filter(&audio_inputs, &audio_segments);
 
     // Output encoding based on format
     match project.export.format {
@@ -196,42 +222,78 @@ pub fn start_ffmpeg_encoder(
 }
 
 /// Build audio filter graph for mixing multiple audio tracks with volume control.
+/// Trims audio to match the kept segments and concatenates them.
 /// Returns None if no audio inputs, otherwise returns the filter string.
-fn build_audio_filter(audio_inputs: &[AudioInput]) -> Option<String> {
-    if audio_inputs.is_empty() {
+fn build_audio_filter(audio_inputs: &[AudioInput], segments: &[AudioSegment]) -> Option<String> {
+    if audio_inputs.is_empty() || segments.is_empty() {
         return None;
     }
 
-    if audio_inputs.len() == 1 {
-        // Single audio track - just apply volume
-        let input = &audio_inputs[0];
-        Some(format!(
-            "[{}:a]volume={:.2}[aout]",
-            input.input_index, input.volume
-        ))
-    } else {
-        // Multiple audio tracks - apply volume to each, then mix
-        let mut filter_parts: Vec<String> = Vec::new();
-        let mut mix_inputs: Vec<String> = Vec::new();
+    // Build segment-aware filter that trims and concatenates audio portions
+    let mut filter_parts: Vec<String> = Vec::new();
+    let mut final_labels: Vec<String> = Vec::new();
 
-        for (i, input) in audio_inputs.iter().enumerate() {
-            let label = format!("a{}", i);
+    for (input_idx, input) in audio_inputs.iter().enumerate() {
+        let mut segment_labels: Vec<String> = Vec::new();
+
+        // Create atrim filter for each segment
+        for (seg_idx, segment) in segments.iter().enumerate() {
+            let label = format!("a{}s{}", input_idx, seg_idx);
+            // atrim extracts the segment, asetpts resets timestamps to start from 0
             filter_parts.push(format!(
-                "[{}:a]volume={:.2}[{}]",
-                input.input_index, input.volume, label
+                "[{}:a]atrim=start={:.3}:end={:.3},asetpts=PTS-STARTPTS[{}]",
+                input.input_index, segment.start_sec, segment.end_sec, label
             ));
-            mix_inputs.push(format!("[{}]", label));
+            segment_labels.push(format!("[{}]", label));
         }
 
-        // Mix all audio streams together
+        // Concatenate all segments for this audio track
+        let concat_label = format!("a{}_concat", input_idx);
+        if segment_labels.len() > 1 {
+            filter_parts.push(format!(
+                "{}concat=n={}:v=0:a=1[{}]",
+                segment_labels.join(""),
+                segment_labels.len(),
+                concat_label
+            ));
+        } else {
+            // Only one segment - just rename the label
+            let single_label = &segment_labels[0];
+            // Extract label name without brackets
+            let inner_label = &single_label[1..single_label.len() - 1];
+            filter_parts.push(format!("[{}]anull[{}]", inner_label, concat_label));
+        }
+
+        // Apply volume to the concatenated audio
+        let vol_label = format!("a{}_vol", input_idx);
+        filter_parts.push(format!(
+            "[{}]volume={:.2}[{}]",
+            concat_label, input.volume, vol_label
+        ));
+        final_labels.push(format!("[{}]", vol_label));
+    }
+
+    // Mix all audio tracks if multiple, otherwise just rename to aout
+    if final_labels.len() > 1 {
         filter_parts.push(format!(
             "{}amix=inputs={}:duration=longest[aout]",
-            mix_inputs.join(""),
-            audio_inputs.len()
+            final_labels.join(""),
+            final_labels.len()
         ));
-
-        Some(filter_parts.join(";"))
+    } else {
+        // Single track - rename to aout
+        let single_label = &final_labels[0];
+        let inner_label = &single_label[1..single_label.len() - 1];
+        filter_parts.push(format!("[{}]anull[aout]", inner_label));
     }
+
+    log::info!(
+        "[EXPORT] Audio filter with {} segment(s): {}",
+        segments.len(),
+        filter_parts.join(";")
+    );
+
+    Some(filter_parts.join(";"))
 }
 
 /// Convert quality percentage to CRF value.

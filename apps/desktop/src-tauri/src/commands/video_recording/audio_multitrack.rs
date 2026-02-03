@@ -413,7 +413,75 @@ fn record_system_audio(
             continue;
         } else if let Some(ps) = pause_start.take() {
             // Pause ended, accumulate pause duration
-            total_pause_duration += ps.elapsed();
+            let pause_duration = ps.elapsed();
+            total_pause_duration += pause_duration;
+            log::debug!(
+                "[MULTITRACK] System audio resumed after pause of {:?}",
+                pause_duration
+            );
+
+            // Drain stale audio after resume - more aggressive for longer pauses
+            let drain_iterations = if pause_duration.as_secs() >= 5 {
+                20
+            } else if pause_duration.as_secs() >= 1 {
+                10
+            } else {
+                5
+            };
+
+            let mut drained_samples = 0;
+            let mut consecutive_empty = 0;
+            for _ in 0..drain_iterations {
+                if should_stop.load(Ordering::Relaxed) {
+                    break;
+                }
+                if event_handle.wait_for_event(10).is_ok() {
+                    if capture_client
+                        .read_from_device_to_deque(&mut sample_queue)
+                        .is_ok()
+                    {
+                        if !sample_queue.is_empty() {
+                            drained_samples += sample_queue.len();
+                            sample_queue.clear();
+                            consecutive_empty = 0;
+                        } else {
+                            consecutive_empty += 1;
+                            if consecutive_empty >= 2 {
+                                break;
+                            }
+                        }
+                    }
+                } else {
+                    consecutive_empty += 1;
+                    if consecutive_empty >= 2 {
+                        break;
+                    }
+                }
+            }
+
+            // After long pauses, discard one more buffer for transition artifacts
+            if pause_duration.as_secs() >= 3 {
+                if event_handle.wait_for_event(50).is_ok() {
+                    if capture_client
+                        .read_from_device_to_deque(&mut sample_queue)
+                        .is_ok()
+                        && !sample_queue.is_empty()
+                    {
+                        log::debug!(
+                            "[MULTITRACK] System audio discarded {} bytes of transition audio",
+                            sample_queue.len()
+                        );
+                        sample_queue.clear();
+                    }
+                }
+            }
+
+            if drained_samples > 0 {
+                log::debug!(
+                    "[MULTITRACK] System audio drained {} bytes after resume",
+                    drained_samples
+                );
+            }
         }
 
         // Calculate expected samples based on elapsed recording time (excluding pauses)
@@ -587,7 +655,75 @@ fn record_microphone(
             continue;
         } else if let Some(ps) = pause_start.take() {
             // Pause ended, accumulate pause duration
-            total_pause_duration += ps.elapsed();
+            let pause_duration = ps.elapsed();
+            total_pause_duration += pause_duration;
+            log::debug!(
+                "[MULTITRACK] Microphone resumed after pause of {:?}",
+                pause_duration
+            );
+
+            // Drain stale audio after resume - more aggressive for longer pauses
+            let drain_iterations = if pause_duration.as_secs() >= 5 {
+                20
+            } else if pause_duration.as_secs() >= 1 {
+                10
+            } else {
+                5
+            };
+
+            let mut drained_samples = 0;
+            let mut consecutive_empty = 0;
+            for _ in 0..drain_iterations {
+                if should_stop.load(Ordering::Relaxed) {
+                    break;
+                }
+                if event_handle.wait_for_event(10).is_ok() {
+                    if capture_client
+                        .read_from_device_to_deque(&mut sample_queue)
+                        .is_ok()
+                    {
+                        if !sample_queue.is_empty() {
+                            drained_samples += sample_queue.len();
+                            sample_queue.clear();
+                            consecutive_empty = 0;
+                        } else {
+                            consecutive_empty += 1;
+                            if consecutive_empty >= 2 {
+                                break;
+                            }
+                        }
+                    }
+                } else {
+                    consecutive_empty += 1;
+                    if consecutive_empty >= 2 {
+                        break;
+                    }
+                }
+            }
+
+            // After long pauses, discard one more buffer for transition artifacts
+            if pause_duration.as_secs() >= 3 {
+                if event_handle.wait_for_event(50).is_ok() {
+                    if capture_client
+                        .read_from_device_to_deque(&mut sample_queue)
+                        .is_ok()
+                        && !sample_queue.is_empty()
+                    {
+                        log::debug!(
+                            "[MULTITRACK] Microphone discarded {} bytes of transition audio",
+                            sample_queue.len()
+                        );
+                        sample_queue.clear();
+                    }
+                }
+            }
+
+            if drained_samples > 0 {
+                log::debug!(
+                    "[MULTITRACK] Microphone drained {} bytes after resume",
+                    drained_samples
+                );
+            }
         }
 
         // Calculate expected samples based on elapsed recording time (excluding pauses)

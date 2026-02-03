@@ -31,11 +31,12 @@ use super::svg_cursor::render_svg_cursor_to_height;
 use super::text::prepare_texts;
 use super::types::{BackgroundStyle, RenderOptions};
 use super::zoom::ZoomInterpolator;
+use crate::commands::captions::types::CaptionSegment;
 use crate::commands::video_recording::cursor::events::load_cursor_recording;
 use crate::commands::video_recording::video_export::{ExportResult, ExportStage};
 use crate::commands::video_recording::video_project::XY;
 use crate::commands::video_recording::video_project::{
-    CompositionMode, CursorType, SceneMode, VideoProject,
+    CompositionMode, CursorType, SceneMode, TimelineState, VideoProject,
 };
 
 // Re-export submodule functions used externally
@@ -307,6 +308,16 @@ pub async fn export_video_gpu(
     // Create scene interpolator for smooth scene transitions
     let scene_interpolator = SceneInterpolator::new(project.scene.segments.clone());
 
+    // Remap captions from source time to timeline time (accounts for deleted segments)
+    let timeline_captions =
+        remap_captions_to_timeline(&project.caption_segments, &project.timeline);
+    if !timeline_captions.is_empty() {
+        log::info!(
+            "[EXPORT] Captions: {} segments remapped to timeline time",
+            timeline_captions.len()
+        );
+    }
+
     // Load cursor recording and create interpolator if cursor is visible
     let cursor_interpolator = if project.cursor.visible {
         if let Some(ref cursor_data_path) = project.sources.cursor_data {
@@ -548,9 +559,10 @@ pub async fn export_video_gpu(
         );
 
         // Prepare caption overlays for this frame (if enabled)
+        // Uses timeline_captions which are already remapped from source time to timeline time
         if project.captions.enabled {
             let caption_texts = prepare_captions(
-                &project.caption_segments,
+                &timeline_captions,
                 &project.captions,
                 frame_time_secs as f32,
                 composition_w as f32,
@@ -740,4 +752,139 @@ pub async fn export_video_gpu(
         file_size_bytes: metadata.len(),
         format: project.export.format,
     })
+}
+
+/// Remap caption segments from source time to timeline time.
+/// Filters out captions that fall entirely within deleted segments.
+/// For captions that partially overlap kept segments, clips them to the segment boundaries.
+fn remap_captions_to_timeline(
+    captions: &[CaptionSegment],
+    timeline: &TimelineState,
+) -> Vec<CaptionSegment> {
+    // If no segments (no cuts), captions are already in the right time space
+    // Just offset by in_point
+    if timeline.segments.is_empty() {
+        return captions
+            .iter()
+            .filter_map(|cap| {
+                let start_ms = (cap.start * 1000.0) as u64;
+                let end_ms = (cap.end * 1000.0) as u64;
+
+                // Check if caption is within in_point/out_point range
+                if end_ms <= timeline.in_point || start_ms >= timeline.out_point {
+                    return None; // Caption is outside trim range
+                }
+
+                // Clip to in_point/out_point and offset to timeline
+                let clipped_start_ms = start_ms.max(timeline.in_point);
+                let clipped_end_ms = end_ms.min(timeline.out_point);
+                let timeline_start = (clipped_start_ms - timeline.in_point) as f32 / 1000.0;
+                let timeline_end = (clipped_end_ms - timeline.in_point) as f32 / 1000.0;
+
+                // Remap words too
+                let remapped_words = cap
+                    .words
+                    .iter()
+                    .filter_map(|word| {
+                        let word_start_ms = (word.start * 1000.0) as u64;
+                        let word_end_ms = (word.end * 1000.0) as u64;
+
+                        if word_end_ms <= timeline.in_point || word_start_ms >= timeline.out_point {
+                            return None;
+                        }
+
+                        let w_start = word_start_ms.max(timeline.in_point);
+                        let w_end = word_end_ms.min(timeline.out_point);
+
+                        Some(crate::commands::captions::types::CaptionWord {
+                            text: word.text.clone(),
+                            start: (w_start - timeline.in_point) as f32 / 1000.0,
+                            end: (w_end - timeline.in_point) as f32 / 1000.0,
+                        })
+                    })
+                    .collect();
+
+                Some(CaptionSegment {
+                    id: cap.id.clone(),
+                    start: timeline_start,
+                    end: timeline_end,
+                    text: cap.text.clone(),
+                    words: remapped_words,
+                })
+            })
+            .collect();
+    }
+
+    // With segments: remap each caption through all kept segments
+    let mut remapped: Vec<CaptionSegment> = Vec::new();
+
+    for cap in captions {
+        let cap_start_ms = (cap.start * 1000.0) as u64;
+        let cap_end_ms = (cap.end * 1000.0) as u64;
+
+        // Check if this caption overlaps with any kept segment
+        let mut timeline_offset = 0u64;
+        for seg in &timeline.segments {
+            // Check if caption overlaps this segment
+            if cap_end_ms > seg.source_start_ms && cap_start_ms < seg.source_end_ms {
+                // Caption overlaps this segment - clip and remap
+                let clipped_start_ms = cap_start_ms.max(seg.source_start_ms);
+                let clipped_end_ms = cap_end_ms.min(seg.source_end_ms);
+
+                // Convert to timeline time
+                let timeline_start =
+                    (timeline_offset + (clipped_start_ms - seg.source_start_ms)) as f32 / 1000.0;
+                let timeline_end =
+                    (timeline_offset + (clipped_end_ms - seg.source_start_ms)) as f32 / 1000.0;
+
+                // Remap words that fall within this segment
+                let remapped_words: Vec<_> = cap
+                    .words
+                    .iter()
+                    .filter_map(|word| {
+                        let word_start_ms = (word.start * 1000.0) as u64;
+                        let word_end_ms = (word.end * 1000.0) as u64;
+
+                        // Check if word overlaps this segment
+                        if word_end_ms > seg.source_start_ms && word_start_ms < seg.source_end_ms {
+                            let w_start = word_start_ms.max(seg.source_start_ms);
+                            let w_end = word_end_ms.min(seg.source_end_ms);
+
+                            Some(crate::commands::captions::types::CaptionWord {
+                                text: word.text.clone(),
+                                start: (timeline_offset + (w_start - seg.source_start_ms)) as f32
+                                    / 1000.0,
+                                end: (timeline_offset + (w_end - seg.source_start_ms)) as f32
+                                    / 1000.0,
+                            })
+                        } else {
+                            None
+                        }
+                    })
+                    .collect();
+
+                // Only add if we have content
+                if !remapped_words.is_empty() || timeline_end > timeline_start {
+                    remapped.push(CaptionSegment {
+                        id: format!("{}_{}", cap.id, seg.source_start_ms),
+                        start: timeline_start,
+                        end: timeline_end,
+                        text: cap.text.clone(),
+                        words: remapped_words,
+                    });
+                }
+            }
+
+            // Advance timeline offset for next segment
+            timeline_offset += seg.source_end_ms - seg.source_start_ms;
+        }
+    }
+
+    log::debug!(
+        "[EXPORT] Remapped {} captions to {} timeline captions",
+        captions.len(),
+        remapped.len()
+    );
+
+    remapped
 }

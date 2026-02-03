@@ -206,17 +206,36 @@ impl WasapiLoopback {
                 continue;
             } else if was_paused {
                 // Just resumed - accumulate pause duration and reset hybrid timing
-                if let Some(pause_start) = pause_started_at.take() {
-                    total_pause_duration += pause_start.elapsed();
-                }
+                let pause_duration = if let Some(pause_start) = pause_started_at.take() {
+                    let duration = pause_start.elapsed();
+                    total_pause_duration += duration;
+                    duration
+                } else {
+                    std::time::Duration::ZERO
+                };
                 // Reset hybrid timing to re-sync with video after resume
                 base_timestamp_100ns = None;
                 samples_since_base = 0;
-                log::debug!("Audio resumed, total pause: {:?}", total_pause_duration);
+                log::debug!(
+                    "Audio resumed after pause of {:?}, total pause: {:?}",
+                    pause_duration,
+                    total_pause_duration
+                );
 
-                // Drain any stale audio
+                // Drain any stale audio - be more aggressive after longer pauses
+                // After long pauses, the audio buffer may have accumulated more stale data
+                // and the device may need time to stabilize
+                let drain_iterations = if pause_duration.as_secs() >= 5 {
+                    20 // ~200ms of drain time for long pauses
+                } else if pause_duration.as_secs() >= 1 {
+                    10 // ~100ms for medium pauses
+                } else {
+                    5 // ~50ms for short pauses
+                };
+
                 let mut drained_samples = 0;
-                for _ in 0..5 {
+                let mut consecutive_empty = 0;
+                for _ in 0..drain_iterations {
                     if should_stop.load(Ordering::Relaxed) {
                         break;
                     }
@@ -229,12 +248,44 @@ impl WasapiLoopback {
                             if !sample_queue.is_empty() {
                                 drained_samples += sample_queue.len();
                                 sample_queue.clear();
+                                consecutive_empty = 0;
+                            } else {
+                                consecutive_empty += 1;
+                                // Exit early if we've had 2 consecutive empty reads
+                                if consecutive_empty >= 2 {
+                                    break;
+                                }
                             }
                         }
                     } else {
-                        break;
+                        consecutive_empty += 1;
+                        if consecutive_empty >= 2 {
+                            break;
+                        }
                     }
                 }
+
+                // After long pauses, discard the first batch of "fresh" audio too
+                // as it may contain transition artifacts
+                if pause_duration.as_secs() >= 3 {
+                    // Wait for and discard one more buffer to skip transition artifacts
+                    if self.event_handle.wait_for_event(50).is_ok() {
+                        if self
+                            .capture_client
+                            .read_from_device_to_deque(&mut sample_queue)
+                            .is_ok()
+                        {
+                            if !sample_queue.is_empty() {
+                                log::debug!(
+                                    "Discarded {} bytes of transition audio after long pause",
+                                    sample_queue.len()
+                                );
+                                sample_queue.clear();
+                            }
+                        }
+                    }
+                }
+
                 if drained_samples > 0 {
                     log::debug!(
                         "Drained {} bytes of accumulated audio after resume",
