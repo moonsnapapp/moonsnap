@@ -24,9 +24,8 @@ const DEFAULT_CIRCLE_SIZE = 20; // Circle diameter in pixels at scale 1.0
 const BASE_CURSOR_HEIGHT = 24.0; // Base cursor height in pixels
 const REFERENCE_HEIGHT = 720.0;  // Reference video height for scaling
 
-// SVG rasterization height (matches Cap's SVG_CURSOR_RASTERIZED_HEIGHT = 200)
-// Larger value = higher quality when zoomed, but more memory
-const SVG_RASTERIZATION_HEIGHT = 200;
+// SVG rasterization - now done at exact target size for lossless quality
+// Cache key includes size to avoid re-rasterizing at the same size
 
 
 interface CursorOverlayProps {
@@ -54,91 +53,125 @@ interface CursorOverlayProps {
 
 /**
  * Global cache for decoded cursor images (both SVGs and bitmaps).
+ * SVGs are cached by shape + target height for lossless rendering at any size.
  * Persists across component re-renders.
  */
 const cursorImageCache = new Map<string, HTMLImageElement>();
 
+/** Cache for raw SVG text to avoid re-fetching */
+const svgTextCache = new Map<WindowsCursorShape, string>();
+
+/** Pending SVG fetch promises to avoid duplicate fetches */
+const svgFetchPromises = new Map<WindowsCursorShape, Promise<string>>();
+
 /**
- * Generate cache key for SVG cursors.
+ * Generate cache key for SVG cursors at a specific size.
  */
-function svgCacheKey(shape: WindowsCursorShape): string {
-  return `__svg_${shape}__`;
+function svgCacheKey(shape: WindowsCursorShape, targetHeight?: number): string {
+  return targetHeight ? `__svg_${shape}_${targetHeight}__` : `__svg_${shape}__`;
 }
 
 /**
- * Load an SVG cursor by shape at high resolution.
- * Fetches the SVG, modifies dimensions for high-quality rasterization (like Cap's 200px),
- * then creates an Image from the modified SVG.
+ * Fetch SVG text (with caching and deduplication).
  */
-function loadSvgCursor(
-  shape: WindowsCursorShape,
-  onLoad: () => void
-): HTMLImageElement | null {
-  const key = svgCacheKey(shape);
-  const cached = cursorImageCache.get(key);
-  if (cached) {
-    return cached;
-  }
+async function fetchSvgText(shape: WindowsCursorShape): Promise<string | null> {
+  // Return cached text if available
+  const cached = svgTextCache.get(shape);
+  if (cached) return cached;
+
+  // Return pending promise if already fetching
+  const pending = svgFetchPromises.get(shape);
+  if (pending) return pending;
 
   const definition = WINDOWS_CURSORS[shape];
-  if (!definition) {
-    return null;
-  }
+  if (!definition) return null;
 
-  // Fetch SVG and modify dimensions for high-quality rasterization
-  fetch(definition.svg)
+  // Start fetch and cache the promise
+  const fetchPromise = fetch(definition.svg)
     .then(response => response.text())
-    .then(svgText => {
-      // Parse the SVG to get original dimensions
-      const parser = new DOMParser();
-      const doc = parser.parseFromString(svgText, 'image/svg+xml');
-      const svgElement = doc.querySelector('svg');
-
-      if (!svgElement) {
-        throw new Error('Invalid SVG');
-      }
-
-      // Get original dimensions
-      const origWidth = parseFloat(svgElement.getAttribute('width') || '24');
-      const origHeight = parseFloat(svgElement.getAttribute('height') || '24');
-
-      // Calculate new dimensions maintaining aspect ratio (target: SVG_RASTERIZATION_HEIGHT)
-      const scale = SVG_RASTERIZATION_HEIGHT / origHeight;
-      const newWidth = Math.round(origWidth * scale);
-      const newHeight = SVG_RASTERIZATION_HEIGHT;
-
-      // Update SVG dimensions for high-res rasterization
-      svgElement.setAttribute('width', String(newWidth));
-      svgElement.setAttribute('height', String(newHeight));
-
-      // Create data URL from modified SVG
-      const serializer = new XMLSerializer();
-      const modifiedSvg = serializer.serializeToString(doc);
-      const dataUrl = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(modifiedSvg)}`;
-
-      // Load as Image
-      const img = new Image();
-      img.onload = () => {
-        cursorImageCache.set(key, img);
-        onLoad();
-      };
-      img.onerror = () => {
-        editorLogger.warn(`Failed to load high-res SVG cursor: ${shape}`);
-      };
-      img.src = dataUrl;
+    .then(text => {
+      svgTextCache.set(shape, text);
+      svgFetchPromises.delete(shape);
+      return text;
     })
     .catch(err => {
       editorLogger.warn(`Failed to fetch SVG cursor ${shape}:`, err);
-      // Fallback: load at original size
-      const img = new Image();
-      img.onload = () => {
-        cursorImageCache.set(key, img);
-        onLoad();
-      };
-      img.src = definition.svg;
+      svgFetchPromises.delete(shape);
+      return null;
     });
 
-  return null;
+  svgFetchPromises.set(shape, fetchPromise as Promise<string>);
+  return fetchPromise;
+}
+
+/**
+ * Rasterize SVG at exact target height for lossless quality.
+ * Returns cached image if already rasterized at this size.
+ */
+function getSvgCursorAtSize(
+  shape: WindowsCursorShape,
+  targetHeight: number,
+  onLoad: () => void
+): HTMLImageElement | null {
+  const key = svgCacheKey(shape, targetHeight);
+  const cached = cursorImageCache.get(key);
+  if (cached) return cached;
+
+  const definition = WINDOWS_CURSORS[shape];
+  if (!definition) return null;
+
+  // Check if we have the SVG text cached
+  const svgText = svgTextCache.get(shape);
+  if (!svgText) {
+    // Fetch SVG text first, then retry
+    fetchSvgText(shape).then(() => onLoad());
+    return null;
+  }
+
+  // Parse and rasterize at exact target size
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(svgText, 'image/svg+xml');
+  const svgElement = doc.querySelector('svg');
+
+  if (!svgElement) return null;
+
+  // Get original dimensions
+  const origWidth = parseFloat(svgElement.getAttribute('width') || '24');
+  const origHeight = parseFloat(svgElement.getAttribute('height') || '24');
+
+  // Calculate exact dimensions for target height
+  const scale = targetHeight / origHeight;
+  const newWidth = Math.round(origWidth * scale);
+  const newHeight = targetHeight;
+
+  // Update SVG dimensions
+  svgElement.setAttribute('width', String(newWidth));
+  svgElement.setAttribute('height', String(newHeight));
+
+  // Create data URL
+  const serializer = new XMLSerializer();
+  const modifiedSvg = serializer.serializeToString(doc);
+  const dataUrl = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(modifiedSvg)}`;
+
+  // Load as Image
+  const img = new Image();
+  img.onload = () => {
+    cursorImageCache.set(key, img);
+    onLoad();
+  };
+  img.onerror = () => {
+    editorLogger.warn(`Failed to rasterize SVG cursor ${shape} at ${targetHeight}px`);
+  };
+  img.src = dataUrl;
+
+  return null; // Image loading async, will trigger onLoad when ready
+}
+
+/**
+ * Preload SVG text for a shape (doesn't rasterize yet).
+ */
+function preloadSvgCursor(shape: WindowsCursorShape, onLoad: () => void): void {
+  fetchSvgText(shape).then(() => onLoad());
 }
 
 /**
@@ -256,10 +289,11 @@ export const CursorOverlay = memo(function CursorOverlay({
       }
     }
 
-    // Always load default arrow as final fallback
-    loadSvgCursor('arrow', triggerUpdate);
+    // Preload SVG text for default arrow (final fallback)
+    preloadSvgCursor('arrow', triggerUpdate);
 
-    // Load SVGs for all cursor shapes in the recording
+    // Preload SVG text for all cursor shapes in the recording
+    // (actual rasterization happens at render time at exact size needed)
     const shapesInRecording = new Set<WindowsCursorShape>();
     for (const image of Object.values(cursorImages)) {
       if (image?.cursorShape) {
@@ -268,7 +302,7 @@ export const CursorOverlay = memo(function CursorOverlay({
     }
 
     for (const shape of shapesInRecording) {
-      loadSvgCursor(shape, triggerUpdate);
+      preloadSvgCursor(shape, triggerUpdate);
     }
 
     // Also load bitmap fallbacks for cursors without shapes
@@ -454,15 +488,21 @@ export const CursorOverlay = memo(function CursorOverlay({
     // Get click animation scale from cursor data (0.7-1.0)
     const clickAnimationScale = cursorData.scale ?? 1.0;
 
-    // Helper to draw cursor with image and definition (for SVG cursors)
+    // Calculate exact SVG rasterization height for lossless rendering
+    // Account for DPR so the SVG is rasterized at screen pixel resolution
+    const svgTargetHeight = Math.round(finalCursorHeight * clickAnimationScale * renderScale);
+
+    // Helper to draw SVG cursor at exact size (lossless - no scaling in drawImage)
     // SVG cursors use fractional hotspot (0-1)
-    const drawCursor = (img: HTMLImageElement, def: CursorDefinition) => {
+    const drawSvgCursor = (img: HTMLImageElement, def: CursorDefinition) => {
       ctx.clearRect(0, 0, containerWidth, containerHeight);
-      // Apply click animation scale (matches export behavior)
+      // Image is already at exact size (svgTargetHeight), draw at 1:1
+      // But we need to account for renderScale in our coordinate system
       const drawHeight = finalCursorHeight * clickAnimationScale;
       const drawWidth = (img.width / img.height) * drawHeight;
       const drawX = pixelX - drawWidth * def.hotspotX;
       const drawY = pixelY - drawHeight * def.hotspotY;
+      // Draw at exact pixel size (img is already scaled for DPR)
       ctx.drawImage(img, drawX, drawY, drawWidth, drawHeight);
     };
 
@@ -490,16 +530,18 @@ export const CursorOverlay = memo(function CursorOverlay({
     const { cursorId, shape } = currentCursor;
     const cursorImageData = cursorId ? cursorImages[cursorId] : null;
 
-    // Priority 1: SVG cursor (if cursorShape is detected)
+    // Priority 1: SVG cursor at exact size (if cursorShape is detected)
     if (shape) {
-      const svgImage = cursorImageCache.get(svgCacheKey(shape));
       const definition: CursorDefinition | undefined = WINDOWS_CURSORS[shape as WindowsCursorShape];
-
-      if (svgImage && definition) {
-        drawCursor(svgImage, definition);
-        return;
+      if (definition) {
+        // Get or trigger rasterization at exact target height
+        const svgImage = getSvgCursorAtSize(shape, svgTargetHeight, triggerUpdate);
+        if (svgImage) {
+          drawSvgCursor(svgImage, definition);
+          return;
+        }
       }
-      // SVG not loaded yet - continue to check bitmap
+      // SVG not ready yet - continue to check bitmap fallback
     }
 
     // Priority 2: Bitmap cursor (fallback for custom cursors)
@@ -512,10 +554,10 @@ export const CursorOverlay = memo(function CursorOverlay({
       // Bitmap not loaded yet - continue to default
     }
 
-    // Priority 3: Default arrow SVG (final fallback)
-    const defaultImage = cursorImageCache.get(svgCacheKey('arrow'));
+    // Priority 3: Default arrow SVG at exact size (final fallback)
+    const defaultImage = getSvgCursorAtSize('arrow', svgTargetHeight, triggerUpdate);
     if (defaultImage) {
-      drawCursor(defaultImage, DEFAULT_CURSOR);
+      drawSvgCursor(defaultImage, DEFAULT_CURSOR);
       return;
     }
 
