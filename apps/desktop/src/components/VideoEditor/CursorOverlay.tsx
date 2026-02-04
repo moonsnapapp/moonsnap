@@ -14,7 +14,7 @@ import { WINDOWS_CURSORS, DEFAULT_CURSOR, type CursorDefinition } from '../../co
 import { editorLogger } from '../../utils/logger';
 import { useVideoEditorStore } from '../../stores/videoEditorStore';
 import { timelineToSource } from '../../stores/videoEditor/trimSlice';
-import type { CursorRecording, CursorConfig, CursorImage, WindowsCursorShape, ZoomRegion } from '../../types';
+import type { CursorRecording, CursorConfig, CursorImage, WindowsCursorShape, ZoomRegion, CropConfig } from '../../types';
 
 // Default cursor config values
 const DEFAULT_CURSOR_SCALE = 1.0;
@@ -48,6 +48,8 @@ interface CursorOverlayProps {
   backgroundPadding?: number;
   /** Corner rounding in pixels - needed for zoom transform alignment */
   rounding?: number;
+  /** Crop configuration - cursor positions need to be transformed when crop is applied */
+  cropConfig?: CropConfig;
 }
 
 /**
@@ -206,12 +208,13 @@ export const CursorOverlay = memo(function CursorOverlay({
   cursorConfig,
   containerWidth,
   containerHeight,
-  videoWidth: _videoWidth,
+  videoWidth,
   videoHeight: actualVideoHeight,
   videoAspectRatio,
   zoomRegions: _zoomRegions,
   backgroundPadding: _backgroundPadding = 0,
   rounding: _rounding = 0,
+  cropConfig,
 }: CursorOverlayProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const currentTimeMs = usePreviewOrPlaybackTime();
@@ -339,22 +342,87 @@ export const CursorOverlay = memo(function CursorOverlay({
     let pixelY: number;
     let previewVideoHeight: number;
 
+    // Transform cursor coordinates for crop
+    // Cursor coords are 0-1 relative to original video, need to transform to cropped space
+    let cursorX = cursorData.x;
+    let cursorY = cursorData.y;
+    const cropEnabled = cropConfig?.enabled && cropConfig.width > 0 && cropConfig.height > 0;
+
+    if (cropEnabled && cropConfig) {
+      // The video uses CSS object-fit: cover + object-position to show the crop region.
+      // CSS formula: posX% = (cropConfig.x / (videoWidth - cropWidth)) * 100
+      //
+      // With object-fit: cover, the video scales to FILL the container, potentially
+      // clipping content. The actual visible region depends on container aspect ratio.
+      //
+      // Match the CSS behavior by calculating what portion of the video is actually visible
+      const recordingWidth = cursorRecording?.width ?? videoWidth;
+      const recordingHeight = cursorRecording?.height ?? actualVideoHeight;
+
+      const cursorPxX = cursorX * recordingWidth;
+      const cursorPxY = cursorY * recordingHeight;
+
+      // Calculate overflow (same as CSS formula in GPUVideoPreview)
+      const overflowX = recordingWidth - cropConfig.width;
+      const overflowY = recordingHeight - cropConfig.height;
+
+      // CSS object-position percentages
+      const posXPercent = overflowX > 0 ? cropConfig.x / overflowX : 0.5;
+      const posYPercent = overflowY > 0 ? cropConfig.y / overflowY : 0.5;
+
+      // With object-fit: cover, the visible region in video pixels:
+      // The video is scaled so both dimensions fill or exceed the container
+      // For a container matching crop aspect ratio (1:1 for square crop):
+      const cropAspect = cropConfig.width / cropConfig.height;
+      const videoAspect = recordingWidth / recordingHeight;
+
+      let visibleX: number, visibleY: number, visibleW: number, visibleH: number;
+
+      if (videoAspect > cropAspect) {
+        // Video is wider - scaled by height, horizontal clipping
+        visibleH = recordingHeight;
+        visibleW = recordingHeight * cropAspect;
+        visibleY = 0;
+        const totalOverflowX = recordingWidth - visibleW;
+        visibleX = totalOverflowX * posXPercent;
+      } else {
+        // Video is taller - scaled by width, vertical clipping
+        visibleW = recordingWidth;
+        visibleH = recordingWidth / cropAspect;
+        visibleX = 0;
+        const totalOverflowY = recordingHeight - visibleH;
+        visibleY = totalOverflowY * posYPercent;
+      }
+
+      // Transform cursor to the CSS-visible region coordinates
+      cursorX = (cursorPxX - visibleX) / visibleW;
+      cursorY = (cursorPxY - visibleY) / visibleH;
+
+      // Hide cursor if outside visible region
+      if (cursorX < -0.1 || cursorX > 1.1 || cursorY < -0.1 || cursorY > 1.1) {
+        ctx.clearRect(0, 0, containerWidth, containerHeight);
+        return;
+      }
+    }
+
     // Use cursor recording's aspect ratio for cursor positioning
-    // This ensures cursor positions match the capture region they were normalized to
-    const cursorAspectRatio = cursorRecording?.width && cursorRecording?.height
-      ? cursorRecording.width / cursorRecording.height
-      : videoAspectRatio;
+    // When crop is enabled, use crop aspect ratio instead
+    const cursorAspectRatio = cropEnabled && cropConfig
+      ? cropConfig.width / cropConfig.height
+      : cursorRecording?.width && cursorRecording?.height
+        ? cursorRecording.width / cursorRecording.height
+        : videoAspectRatio;
 
     if (cursorAspectRatio && cursorAspectRatio > 0) {
       // Calculate actual video bounds within the container (accounting for object-contain)
       const bounds = calculateVideoBounds(containerWidth, containerHeight, cursorAspectRatio);
-      pixelX = bounds.offsetX + cursorData.x * bounds.width;
-      pixelY = bounds.offsetY + cursorData.y * bounds.height;
+      pixelX = bounds.offsetX + cursorX * bounds.width;
+      pixelY = bounds.offsetY + cursorY * bounds.height;
       previewVideoHeight = bounds.height;
     } else {
       // Fallback: assume container matches video aspect ratio exactly
-      pixelX = cursorData.x * containerWidth;
-      pixelY = cursorData.y * containerHeight;
+      pixelX = cursorX * containerWidth;
+      pixelY = cursorY * containerHeight;
       previewVideoHeight = containerHeight;
     }
 

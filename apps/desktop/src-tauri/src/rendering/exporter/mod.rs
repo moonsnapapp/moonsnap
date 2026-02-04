@@ -42,11 +42,10 @@ use crate::commands::video_recording::video_project::{
 // Re-export submodule functions used externally
 pub use ffmpeg::emit_progress;
 pub use frame_ops::draw_cursor_circle;
-pub use webcam::build_webcam_overlay;
+pub use webcam::{build_webcam_overlay, is_webcam_visible_at};
 
 use ffmpeg::start_ffmpeg_encoder;
 use frame_ops::{blend_frames_alpha, crop_decoded_frame, scale_frame_to_fill};
-use webcam::is_webcam_visible_at;
 
 /// Export a video project using GPU rendering.
 ///
@@ -592,89 +591,119 @@ pub async fn export_video_gpu(
             // Only show cursor when screen is visible (not in cameraOnly mode)
             if camera_only_opacity < 0.99 {
                 // Use SOURCE time for cursor lookup (cursor data is recorded in source time)
-                let cursor = cursor_interp.get_cursor_at(source_time_ms);
+                let mut cursor = cursor_interp.get_cursor_at(source_time_ms);
 
-                // Calculate video content bounds within composition
-                // Cursor coordinates are normalized to video content, not full composition
-                let video_bounds = VideoContentBounds::with_padding(
-                    composition_w,
-                    composition_h,
-                    video_w,
-                    video_h,
-                    padding,
-                );
+                // Transform cursor position for crop
+                // Cursor coordinates are normalized 0-1 relative to original video
+                // If crop is enabled, transform to cropped region coordinates
+                let mut cursor_visible = true;
+                if crop_enabled {
+                    let orig_w = original_width as f32;
+                    let orig_h = original_height as f32;
+                    let crop_x = crop.x as f32;
+                    let crop_y = crop.y as f32;
+                    let crop_w = crop.width as f32;
+                    let crop_h = crop.height as f32;
 
-                // Get cursor image based on cursor type
-                if project.cursor.cursor_type == CursorType::Circle {
-                    // Draw circle indicator instead of actual cursor
-                    draw_cursor_circle(
-                        &mut rgba_data,
+                    // Convert cursor from original coords to crop-relative coords
+                    let cursor_px_x = cursor.x * orig_w;
+                    let cursor_px_y = cursor.y * orig_h;
+                    cursor.x = (cursor_px_x - crop_x) / crop_w;
+                    cursor.y = (cursor_px_y - crop_y) / crop_h;
+
+                    // Skip if cursor is outside cropped region
+                    if cursor.x < -0.1 || cursor.x > 1.1 || cursor.y < -0.1 || cursor.y > 1.1 {
+                        cursor_visible = false;
+                    }
+                }
+
+                if cursor_visible {
+                    // Calculate video content bounds within composition
+                    // Cursor coordinates are now relative to cropped video content
+                    let video_bounds = VideoContentBounds::with_padding(
                         composition_w,
                         composition_h,
-                        &video_bounds,
-                        cursor.x,
-                        cursor.y,
-                        project.cursor.scale,
+                        video_w,
+                        video_h,
+                        padding,
                     );
-                } else {
-                    // Priority: SVG cursor (if shape detected) > Bitmap cursor (fallback)
-                    // This matches Cap's approach for consistent, resolution-independent cursors.
-                    let mut rendered = false;
 
-                    // Calculate cursor scale relative to composition size
-                    // Base cursor is 24px (same as editor DEFAULT_CURSOR_SIZE)
-                    // Scale relative to 720p reference so cursor looks proportional
-                    let base_cursor_height = 24.0;
-                    let reference_height = 720.0;
-                    let size_scale = composition_h as f32 / reference_height;
-                    let final_cursor_height =
-                        base_cursor_height * size_scale * project.cursor.scale;
-                    let final_cursor_height = final_cursor_height.clamp(16.0, 256.0);
+                    // Get cursor image based on cursor type
+                    if project.cursor.cursor_type == CursorType::Circle {
+                        // Draw circle indicator instead of actual cursor
+                        draw_cursor_circle(
+                            &mut rgba_data,
+                            composition_w,
+                            composition_h,
+                            &video_bounds,
+                            cursor.x,
+                            cursor.y,
+                            project.cursor.scale,
+                        );
+                    } else {
+                        // Priority: SVG cursor (if shape detected) > Bitmap cursor (fallback)
+                        // This matches Cap's approach for consistent, resolution-independent cursors.
+                        let mut rendered = false;
 
-                    // Try SVG cursor first (if shape is detected)
-                    if let Some(shape) = cursor.cursor_shape {
-                        // Render SVG at final cursor height (handles any original SVG size)
-                        let target_height = final_cursor_height.round() as u32;
+                        // Calculate cursor scale relative to composition size
+                        // Base cursor is 24px (same as editor DEFAULT_CURSOR_SIZE)
+                        // Scale relative to 720p reference so cursor looks proportional
+                        let base_cursor_height = 24.0;
+                        let reference_height = 720.0;
+                        let size_scale = composition_h as f32 / reference_height;
+                        let final_cursor_height =
+                            base_cursor_height * size_scale * project.cursor.scale;
+                        let final_cursor_height = final_cursor_height.clamp(16.0, 256.0);
 
-                        if let Some(svg_cursor) = render_svg_cursor_to_height(shape, target_height)
-                        {
-                            let svg_decoded = super::cursor::DecodedCursorImage {
-                                width: svg_cursor.width,
-                                height: svg_cursor.height,
-                                hotspot_x: svg_cursor.hotspot_x,
-                                hotspot_y: svg_cursor.hotspot_y,
-                                data: svg_cursor.data,
-                            };
-                            // Pass 1.0 as base_scale since SVG is already at final size
-                            // cursor.scale (click animation) is applied internally
-                            composite_cursor(
-                                &mut rgba_data,
-                                composition_w,
-                                composition_h,
-                                &video_bounds,
-                                &cursor,
-                                &svg_decoded,
-                                1.0,
-                            );
-                            rendered = true;
-                        }
-                    }
+                        // Try SVG cursor first (if shape is detected)
+                        if let Some(shape) = cursor.cursor_shape {
+                            // Render SVG at final cursor height (handles any original SVG size)
+                            let target_height = final_cursor_height.round() as u32;
 
-                    // Fall back to bitmap cursor if SVG not available
-                    if !rendered {
-                        if let Some(ref cursor_id) = cursor.cursor_id {
-                            if let Some(cursor_image) = cursor_interp.get_cursor_image(cursor_id) {
-                                // For bitmap, apply the full scale factor
-                                let bitmap_scale = final_cursor_height / cursor_image.height as f32;
+                            if let Some(svg_cursor) =
+                                render_svg_cursor_to_height(shape, target_height)
+                            {
+                                let svg_decoded = super::cursor::DecodedCursorImage {
+                                    width: svg_cursor.width,
+                                    height: svg_cursor.height,
+                                    hotspot_x: svg_cursor.hotspot_x,
+                                    hotspot_y: svg_cursor.hotspot_y,
+                                    data: svg_cursor.data,
+                                };
+                                // Pass 1.0 as base_scale since SVG is already at final size
+                                // cursor.scale (click animation) is applied internally
                                 composite_cursor(
                                     &mut rgba_data,
                                     composition_w,
                                     composition_h,
                                     &video_bounds,
                                     &cursor,
-                                    cursor_image,
-                                    bitmap_scale,
+                                    &svg_decoded,
+                                    1.0,
                                 );
+                                rendered = true;
+                            }
+                        }
+
+                        // Fall back to bitmap cursor if SVG not available
+                        if !rendered {
+                            if let Some(ref cursor_id) = cursor.cursor_id {
+                                if let Some(cursor_image) =
+                                    cursor_interp.get_cursor_image(cursor_id)
+                                {
+                                    // For bitmap, apply the full scale factor
+                                    let bitmap_scale =
+                                        final_cursor_height / cursor_image.height as f32;
+                                    composite_cursor(
+                                        &mut rgba_data,
+                                        composition_w,
+                                        composition_h,
+                                        &video_bounds,
+                                        &cursor,
+                                        cursor_image,
+                                        bitmap_scale,
+                                    );
+                                }
                             }
                         }
                     }

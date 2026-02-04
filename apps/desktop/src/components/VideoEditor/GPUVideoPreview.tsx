@@ -248,6 +248,7 @@ const SceneModeRenderer = memo(function SceneModeRenderer({
             zoomRegions={zoomRegions}
             backgroundPadding={backgroundPadding}
             rounding={rounding}
+            cropConfig={cropConfig}
           />
         )}
 
