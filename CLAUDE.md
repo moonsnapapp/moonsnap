@@ -86,9 +86,15 @@ overlayX = (pixelX - visibleX) / visibleW;
 - Verify overlay alignment with actual video content (context menus, buttons)
 
 ### Key Files
-- `CursorOverlay.tsx` - Frontend cursor positioning with crop transform
+- `CursorOverlay.tsx` - Frontend cursor positioning with crop transform; SVG rasterization at exact size
 - `GPUVideoPreview.tsx` - CSS crop via `object-fit: cover` + `object-position`
 - `editor_instance.rs` - Backend frame cropping for export parity
+- `exporter/mod.rs` - Backend cursor compositing with crop-aware coordinate transform
+
+### Lossless Preview Rendering
+- SVG cursors are rasterized at **exact target size** (not pre-rasterized and scaled)
+- Cache keys must include size: `__svg_${shape}_${targetHeight}__`
+- Export and preview should use same rasterization approach for WYSIWYG
 
 ## Workflow Conventions
 
