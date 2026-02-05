@@ -9,7 +9,41 @@ interface UpdateState {
   version: string | null;
   downloading: boolean;
   progress: number;
+  contentLength: number;
   error: string | null;
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+interface UpdateProgressToastProps {
+  progress: number;
+  contentLength: number;
+}
+
+function UpdateProgressToast({ progress, contentLength }: UpdateProgressToastProps) {
+  const percent = contentLength > 0 ? Math.min((progress / contentLength) * 100, 100) : 0;
+
+  return (
+    <div className="w-[280px] rounded-lg p-4 bg-[var(--card)] border border-[var(--polar-frost)] shadow-lg">
+      <div className="text-sm font-medium text-[var(--ink-dark)] mb-3">
+        Downloading update...
+      </div>
+      <div className="h-2 bg-[var(--polar-mist)] rounded-full overflow-hidden mb-2">
+        <div
+          className="h-full bg-[var(--coral-400)] transition-all duration-300"
+          style={{ width: `${percent}%` }}
+        />
+      </div>
+      <div className="flex items-center justify-between text-xs text-[var(--ink-muted)]">
+        <span>{formatBytes(progress)} / {formatBytes(contentLength)}</span>
+        <span>{Math.round(percent)}%</span>
+      </div>
+    </div>
+  );
 }
 
 export function useUpdater(checkOnMount = true) {
@@ -18,6 +52,7 @@ export function useUpdater(checkOnMount = true) {
     version: null,
     downloading: false,
     progress: 0,
+    contentLength: 0,
     error: null,
   });
   const [update, setUpdate] = useState<Update | null>(null);
@@ -58,19 +93,37 @@ export function useUpdater(checkOnMount = true) {
     const target = updateToInstall || update;
     if (!target) return;
 
-    const toastId = toast.loading('Downloading update...', { duration: Infinity });
+    const toastId = 'update-progress';
+    let currentProgress = 0;
+    let currentContentLength = 0;
 
-    setState(prev => ({ ...prev, downloading: true, progress: 0 }));
+    // Show initial progress toast
+    toast.custom(
+      () => <UpdateProgressToast progress={0} contentLength={0} />,
+      { id: toastId, duration: Infinity }
+    );
+
+    setState(prev => ({ ...prev, downloading: true, progress: 0, contentLength: 0 }));
 
     try {
       await target.downloadAndInstall((event) => {
         if (event.event === 'Started' && event.data.contentLength) {
-          setState(prev => ({ ...prev, progress: 0 }));
+          currentContentLength = event.data.contentLength;
+          currentProgress = 0;
+          setState(prev => ({ ...prev, progress: 0, contentLength: currentContentLength }));
+          toast.custom(
+            () => <UpdateProgressToast progress={0} contentLength={currentContentLength} />,
+            { id: toastId, duration: Infinity }
+          );
         } else if (event.event === 'Progress') {
-          const progress = event.data.chunkLength;
-          setState(prev => ({ ...prev, progress: prev.progress + progress }));
+          currentProgress += event.data.chunkLength;
+          setState(prev => ({ ...prev, progress: currentProgress }));
+          toast.custom(
+            () => <UpdateProgressToast progress={currentProgress} contentLength={currentContentLength} />,
+            { id: toastId, duration: Infinity }
+          );
         } else if (event.event === 'Finished') {
-          setState(prev => ({ ...prev, progress: 100 }));
+          setState(prev => ({ ...prev, progress: currentContentLength }));
         }
       });
 
