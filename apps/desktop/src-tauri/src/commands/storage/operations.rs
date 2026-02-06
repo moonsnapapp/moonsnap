@@ -1416,12 +1416,9 @@ fn create_migration_project_json(
             "musicMuted": false
         },
         "export": {
-            "preset": "standard",
             "format": "mp4",
-            "resolution": "original",
             "quality": 80,
             "fps": 30,
-            "aspectRatio": "auto",
             "background": {
                 "bgType": "solid",
                 "solidColor": "#000000",

@@ -1,9 +1,9 @@
 /**
- * ExportConfigPanel - Resolution, quality, aspect ratio settings.
+ * ExportConfigPanel - Format, FPS, resolution, and crop settings.
  */
 import { Crop } from 'lucide-react';
 import { Button } from '../../../components/ui/button';
-import type { VideoProject, ExportConfig, AspectRatio, ExportPreset } from '../../../types';
+import type { VideoProject, ExportConfig, ExportFormat } from '../../../types';
 
 export interface ExportConfigPanelProps {
   project: VideoProject;
@@ -14,7 +14,36 @@ export interface ExportConfigPanelProps {
 export function ExportConfigPanel({ project, onUpdateExportConfig, onOpenCropDialog }: ExportConfigPanelProps) {
   return (
     <div className="space-y-4">
-      {/* Output Resolution - Most important, put first */}
+      {/* Format */}
+      <div>
+        <span className="text-xs text-[var(--ink-muted)] block mb-2">Format</span>
+        <select
+          value={project.export.format}
+          onChange={(e) => onUpdateExportConfig({ format: e.target.value as ExportFormat })}
+          className="w-full h-8 bg-[var(--polar-mist)] border border-[var(--glass-border)] rounded-md text-sm text-[var(--ink-dark)] px-2"
+        >
+          <option value="mp4">MP4</option>
+          <option value="webm">WebM</option>
+          <option value="gif">GIF</option>
+        </select>
+      </div>
+
+      {/* FPS */}
+      <div>
+        <span className="text-xs text-[var(--ink-muted)] block mb-2">Frame Rate</span>
+        <select
+          value={project.export.fps}
+          onChange={(e) => onUpdateExportConfig({ fps: Number(e.target.value) })}
+          className="w-full h-8 bg-[var(--polar-mist)] border border-[var(--glass-border)] rounded-md text-sm text-[var(--ink-dark)] px-2"
+        >
+          <option value={15}>15 fps</option>
+          <option value={24}>24 fps</option>
+          <option value={30}>30 fps</option>
+          <option value={60}>60 fps</option>
+        </select>
+      </div>
+
+      {/* Output Resolution */}
       <div>
         <span className="text-xs text-[var(--ink-muted)] block mb-2">Output Resolution</span>
         <select
@@ -52,38 +81,6 @@ export function ExportConfigPanel({ project, onUpdateExportConfig, onOpenCropDia
         )}
       </div>
 
-      {/* Quality Preset */}
-      <div>
-        <span className="text-xs text-[var(--ink-muted)] block mb-2">Quality</span>
-        <select
-          value={project.export.preset}
-          onChange={(e) => onUpdateExportConfig({ preset: e.target.value as ExportPreset })}
-          className="w-full h-8 bg-[var(--polar-mist)] border border-[var(--glass-border)] rounded-md text-sm text-[var(--ink-dark)] px-2"
-        >
-          <option value="draft">Draft (15fps, fast)</option>
-          <option value="standard">Standard (30fps)</option>
-          <option value="highQuality">High Quality (60fps)</option>
-          <option value="maximum">Maximum (Source fps)</option>
-          <option value="custom">Custom</option>
-        </select>
-      </div>
-
-      {/* Aspect Ratio - for letterboxing */}
-      <div>
-        <span className="text-xs text-[var(--ink-muted)] block mb-2">Letterbox Aspect</span>
-        <select
-          value={project.export.aspectRatio}
-          onChange={(e) => onUpdateExportConfig({ aspectRatio: e.target.value as AspectRatio })}
-          className="w-full h-8 bg-[var(--polar-mist)] border border-[var(--glass-border)] rounded-md text-sm text-[var(--ink-dark)] px-2"
-        >
-          <option value="auto">Auto (No letterbox)</option>
-          <option value="landscape16x9">16:9 Landscape</option>
-          <option value="portrait9x16">9:16 Portrait</option>
-          <option value="square1x1">1:1 Square</option>
-          <option value="standard4x3">4:3 Standard</option>
-        </select>
-      </div>
-
       {/* Crop Video */}
       <div className="pt-3 border-t border-[var(--glass-border)]">
         <div className="flex items-center justify-between mb-2">
@@ -109,6 +106,7 @@ export function ExportConfigPanel({ project, onUpdateExportConfig, onOpenCropDia
           </p>
         )}
       </div>
+
     </div>
   );
 }

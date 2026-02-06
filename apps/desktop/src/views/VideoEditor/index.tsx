@@ -20,7 +20,7 @@ import { VideoEditorSidebar } from './VideoEditorSidebar';
 import { VideoEditorPreview } from './VideoEditorPreview';
 import { VideoEditorTimeline } from './VideoEditorTimeline';
 import { ExportProgressOverlay } from './components/ExportProgressOverlay';
-import type { ExportProgress, CropConfig, CompositionConfig } from '../../types';
+import type { ExportProgress, CropConfig } from '../../types';
 import { videoEditorLogger } from '../../utils/logger';
 
 // Lazy load CropDialog - only needed when crop tool is opened (861 lines)
@@ -279,15 +279,10 @@ export const VideoEditorView = forwardRef<VideoEditorViewRef, VideoEditorViewPro
     }
   }, [project, exportVideo]);
 
-  // Handle crop apply (with composition)
-  const handleCropApply = useCallback((crop: CropConfig, composition: CompositionConfig) => {
-    updateExportConfig({ crop, composition });
-    const message = crop.enabled
-      ? composition.mode === 'manual'
-        ? `Video cropped, composition set to ${composition.aspectPreset}`
-        : 'Crop applied'
-      : 'Crop removed';
-    toast.success(message);
+  // Handle crop apply
+  const handleCropApply = useCallback((crop: CropConfig) => {
+    updateExportConfig({ crop });
+    toast.success(crop.enabled ? 'Crop applied' : 'Crop removed');
   }, [updateExportConfig]);
 
   // Seek to start
@@ -349,7 +344,6 @@ export const VideoEditorView = forwardRef<VideoEditorViewRef, VideoEditorViewPro
             videoWidth={project.sources.originalWidth}
             videoHeight={project.sources.originalHeight}
             initialCrop={project.export.crop}
-            initialComposition={project.export.composition}
             videoPath={project.sources.screenVideo}
           />
         </Suspense>

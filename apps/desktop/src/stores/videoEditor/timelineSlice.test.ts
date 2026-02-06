@@ -55,12 +55,9 @@ function createTestProject(overrides: Partial<VideoProject> = {}): VideoProject 
       muted: false,
     },
     export: {
-      preset: 'high',
       format: 'mp4',
-      resolution: '1080p',
-      frameRate: 30,
-      customWidth: null,
-      customHeight: null,
+      fps: 30,
+      quality: 80,
     },
     scene: {
       segments: [],

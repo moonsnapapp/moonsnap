@@ -3,6 +3,7 @@
 
 export type { AudioInputDevice } from './AudioInputDevice';
 export type { AudioLevels } from './AudioLevels';
+export type { AudioOutputDevice } from './AudioOutputDevice';
 export type { AudioSettings } from './AudioSettings';
 export type { GifQualityPreset } from './GifQualityPreset';
 export type { RecordingFormat } from './RecordingFormat';
@@ -97,9 +98,6 @@ export type { MaskConfig } from './MaskConfig';
 // Video editor - Export types
 export type { ExportConfig } from './ExportConfig';
 export type { ExportFormat } from './ExportFormat';
-export type { ExportResolution } from './ExportResolution';
-export type { ExportPreset } from './ExportPreset';
-export type { AspectRatio } from './AspectRatio';
 export type { BackgroundType } from './BackgroundType';
 export type { BackgroundConfig } from './BackgroundConfig';
 export type { BackgroundShadowConfig } from './BackgroundShadowConfig';

@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, within } from '@testing-library/react';
 import { CropDialog } from './CropDialog';
-import type { CropConfig, CompositionConfig } from '../../types';
+import type { CropConfig } from '../../types';
 
 // Mock convertFileSrc from Tauri
 vi.mock('@tauri-apps/api/core', () => ({
@@ -70,9 +70,7 @@ describe('CropDialog', () => {
     it('should render aspect ratio controls', () => {
       render(<CropDialog {...defaultProps} />);
 
-      // Check for aspect ratio section labels
       expect(screen.getByText('Video Crop Aspect Ratio')).toBeInTheDocument();
-      expect(screen.getByText('Composition (Output Canvas)')).toBeInTheDocument();
     });
 
     it('should render action buttons (Lock, Fill, Reset)', () => {
@@ -98,15 +96,6 @@ describe('CropDialog', () => {
       expect(within(cropSection).getByRole('radio', { name: /original/i })).toBeInTheDocument();
     });
 
-    it('should render composition presets', () => {
-      render(<CropDialog {...defaultProps} />);
-
-      // Find the composition section
-      const compositionSection = screen.getByText('Composition (Output Canvas)').parentElement!;
-
-      // Auto preset should be in composition section
-      expect(within(compositionSection).getByRole('radio', { name: /auto/i })).toBeInTheDocument();
-    });
   });
 
   describe('initial crop values', () => {
@@ -167,19 +156,6 @@ describe('CropDialog', () => {
       expect(inputs[2]).toHaveValue(Math.round(1920 * 0.8)); // Width
     });
 
-    it('should use initialComposition when provided', () => {
-      const initialComposition: CompositionConfig = {
-        mode: 'manual',
-        aspectRatio: 16 / 9,
-        aspectPreset: '16:9',
-      };
-
-      render(<CropDialog {...defaultProps} initialComposition={initialComposition} />);
-
-      // 16:9 should be selected in composition section
-      // This is indicated by the selected state of the toggle group item
-      // The exact verification depends on how ToggleGroup renders selected state
-    });
   });
 
   describe('onApply callback', () => {
@@ -197,9 +173,6 @@ describe('CropDialog', () => {
           width: expect.any(Number),
           height: expect.any(Number),
           lockAspectRatio: expect.any(Boolean),
-        }),
-        expect.objectContaining({
-          mode: expect.any(String),
         })
       );
     });
@@ -232,8 +205,7 @@ describe('CropDialog', () => {
       expect(onApply).toHaveBeenCalledWith(
         expect.objectContaining({
           enabled: true, // Should be true since crop is not full video
-        }),
-        expect.any(Object)
+        })
       );
     });
 
@@ -256,8 +228,7 @@ describe('CropDialog', () => {
       expect(onApply).toHaveBeenCalledWith(
         expect.objectContaining({
           enabled: false, // Should be false since crop equals full video
-        }),
-        expect.any(Object)
+        })
       );
     });
   });
@@ -611,50 +582,6 @@ describe('CropDialog', () => {
       // Centered horizontally
       expect(cropArg.x).toBe(Math.round((1920 - 1080) / 2));
       expect(cropArg.y).toBe(0);
-    });
-  });
-
-  describe('composition presets', () => {
-    it('should apply auto composition mode by default', () => {
-      const onApply = vi.fn();
-      render(<CropDialog {...defaultProps} onApply={onApply} />);
-
-      fireEvent.click(screen.getByRole('button', { name: /apply crop/i }));
-
-      const [, compositionArg] = onApply.mock.calls[0];
-      expect(compositionArg.mode).toBe('auto');
-      expect(compositionArg.aspectRatio).toBeNull();
-    });
-
-    it('should apply manual composition mode with 16:9 preset', () => {
-      const onApply = vi.fn();
-      render(<CropDialog {...defaultProps} onApply={onApply} />);
-
-      // Find the composition section and click 16:9
-      const compositionSection = screen.getByText('Composition (Output Canvas)').parentElement!;
-      const compositionRadio = within(compositionSection).getByRole('radio', { name: '16:9' });
-      fireEvent.click(compositionRadio);
-
-      fireEvent.click(screen.getByRole('button', { name: /apply crop/i }));
-
-      const [, compositionArg] = onApply.mock.calls[0];
-      expect(compositionArg.mode).toBe('manual');
-      expect(compositionArg.aspectRatio).toBeCloseTo(16 / 9, 2);
-      expect(compositionArg.aspectPreset).toBe('16:9');
-    });
-
-    it('should show description when manual composition is selected', () => {
-      render(<CropDialog {...defaultProps} />);
-
-      // Find the composition section and click 9:16
-      const compositionSection = screen.getByText('Composition (Output Canvas)').parentElement!;
-      const compositionRadio = within(compositionSection).getByRole('radio', { name: '9:16' });
-      fireEvent.click(compositionRadio);
-
-      // Should show description text for manual mode
-      expect(
-        screen.getByText(/Cropped video will be centered within a/i)
-      ).toBeInTheDocument();
     });
   });
 

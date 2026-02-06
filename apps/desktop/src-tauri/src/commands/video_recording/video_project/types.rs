@@ -746,18 +746,12 @@ pub struct VisibilitySegment {
 #[serde(rename_all = "camelCase")]
 #[ts(export, export_to = "../../src/types/generated/")]
 pub struct ExportConfig {
-    /// Export preset for quick selection.
-    pub preset: ExportPreset,
     /// Output format.
     pub format: ExportFormat,
-    /// Output resolution.
-    pub resolution: ExportResolution,
     /// Quality (1-100).
     pub quality: u32,
     /// Frames per second.
     pub fps: u32,
-    /// Output aspect ratio (for letterboxing).
-    pub aspect_ratio: AspectRatio,
     /// Background configuration for letterboxing/padding.
     pub background: BackgroundConfig,
     /// Crop configuration for video content (crops source video before composition).
@@ -779,12 +773,9 @@ fn default_prefer_hardware() -> Option<bool> {
 impl Default for ExportConfig {
     fn default() -> Self {
         Self {
-            preset: ExportPreset::Standard,
             format: ExportFormat::Mp4,
-            resolution: ExportResolution::Original,
             quality: 80,
             fps: 30,
-            aspect_ratio: AspectRatio::Auto,
             background: BackgroundConfig::default(),
             crop: CropConfig::default(),
             composition: CompositionConfig::default(),
@@ -801,57 +792,6 @@ pub enum ExportFormat {
     Mp4,
     Webm,
     Gif,
-}
-
-/// Export resolution.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[serde(rename_all = "camelCase")]
-#[ts(export, export_to = "../../src/types/generated/")]
-pub enum ExportResolution {
-    /// Keep original recording resolution.
-    Original,
-    /// 1280x720.
-    Hd720,
-    /// 1920x1080.
-    Hd1080,
-    /// 2560x1440.
-    Qhd1440,
-    /// 3840x2160.
-    Uhd4k,
-}
-
-/// Export preset for quick quality selection.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[serde(rename_all = "camelCase")]
-#[ts(export, export_to = "../../src/types/generated/")]
-pub enum ExportPreset {
-    /// Draft quality - fast encoding, lower quality (720p, 15fps).
-    Draft,
-    /// Standard quality - balanced (1080p, 30fps).
-    Standard,
-    /// High quality - for final output (1080p, 60fps).
-    HighQuality,
-    /// Maximum quality - uses source resolution and framerate.
-    Maximum,
-    /// Custom settings.
-    Custom,
-}
-
-/// Aspect ratio for output video.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[serde(rename_all = "camelCase")]
-#[ts(export, export_to = "../../src/types/generated/")]
-pub enum AspectRatio {
-    /// Use source aspect ratio (no letterboxing).
-    Auto,
-    /// 16:9 widescreen landscape.
-    Landscape16x9,
-    /// 9:16 portrait (social media vertical).
-    Portrait9x16,
-    /// 1:1 square.
-    Square1x1,
-    /// 4:3 standard/classic.
-    Standard4x3,
 }
 
 /// Background type for letterboxing.

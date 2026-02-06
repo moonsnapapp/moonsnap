@@ -13,18 +13,17 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { CropPreview } from './CropPreview';
-import type { CropConfig, CompositionConfig } from '../../types';
+import type { CropConfig } from '../../types';
 
 interface CropDialogProps {
   open: boolean;
   onClose: () => void;
-  onApply: (crop: CropConfig, composition: CompositionConfig) => void;
+  onApply: (crop: CropConfig) => void;
   /** Original video width (before crop) */
   videoWidth: number;
   /** Original video height (before crop) */
   videoHeight: number;
   initialCrop?: CropConfig;
-  initialComposition?: CompositionConfig;
   videoPath?: string;
 }
 
@@ -36,17 +35,6 @@ const ASPECT_PRESETS = [
   { label: '1:1', value: 1 },
   { label: '4:3', value: 4 / 3 },
   { label: 'Original', value: 'original' as const },
-];
-
-// Composition presets - fixed resolutions and aspect ratios
-const COMPOSITION_PRESETS = [
-  { label: 'Auto', value: 'auto', ratio: null, width: null, height: null, description: 'Match video crop' },
-  { label: '1080p', value: '1080p', ratio: 16 / 9, width: 1920, height: 1080, description: '1920×1080' },
-  { label: '720p', value: '720p', ratio: 16 / 9, width: 1280, height: 720, description: '1280×720' },
-  { label: '4K', value: '4k', ratio: 16 / 9, width: 3840, height: 2160, description: '3840×2160' },
-  { label: '16:9', value: '16:9', ratio: 16 / 9, width: null, height: null, description: 'Widescreen (fit video)' },
-  { label: '9:16', value: '9:16', ratio: 9 / 16, width: null, height: null, description: 'Portrait/TikTok' },
-  { label: '1:1', value: '1:1', ratio: 1, width: null, height: null, description: 'Square/Instagram' },
 ];
 
 // Animation duration in ms
@@ -71,18 +59,8 @@ export const CropDialog = memo(function CropDialog({
   videoWidth,
   videoHeight,
   initialCrop,
-  initialComposition,
   videoPath,
 }: CropDialogProps) {
-  // Default composition (auto mode)
-  const defaultComposition: CompositionConfig = useMemo(() => ({
-    mode: 'auto',
-    aspectRatio: null,
-    aspectPreset: null,
-    width: null,
-    height: null,
-  }), []);
-
   // Compute a sensible default crop (centered, 80% of video size)
   const defaultCrop = useMemo((): CropConfig => {
     const cropWidth = Math.round(videoWidth * 0.8);
@@ -106,30 +84,20 @@ export const CropDialog = memo(function CropDialog({
     return defaultCrop;
   }, [initialCrop, defaultCrop]);
 
-  // Use initialComposition or default
-  const computeInitialComposition = useCallback(() => {
-    if (initialComposition) {
-      return initialComposition;
-    }
-    return defaultComposition;
-  }, [initialComposition, defaultComposition]);
-
   const [crop, setCrop] = useState<CropConfig>(computeInitialCrop);
   const [displayCrop, setDisplayCrop] = useState<CropConfig>(computeInitialCrop);
-  const [composition, setComposition] = useState<CompositionConfig>(computeInitialComposition);
   const [snappedRatio, setSnappedRatio] = useState<[number, number] | null>(null);
   const animationRef = useRef<number | null>(null);
 
-  // Reset crop and composition when dialog opens
+  // Reset crop when dialog opens
   useEffect(() => {
     if (open) {
       const initialCropVal = computeInitialCrop();
       setCrop(initialCropVal);
       setDisplayCrop(initialCropVal);
-      setComposition(computeInitialComposition());
       setSnappedRatio(null);
     }
-  }, [open, computeInitialCrop, computeInitialComposition]);
+  }, [open, computeInitialCrop]);
 
   // Animate crop changes
   const animateTo = useCallback((target: CropConfig) => {
@@ -285,39 +253,14 @@ export const CropDialog = memo(function CropDialog({
     }
   }, [crop, videoWidth, videoHeight, handleCropChange]);
 
-  const handleCompositionPreset = useCallback((presetValue: string) => {
-    const preset = COMPOSITION_PRESETS.find(p => p.value === presetValue);
-    if (!preset) return;
-
-    if (preset.value === 'auto') {
-      setComposition({
-        mode: 'auto',
-        aspectRatio: null,
-        aspectPreset: null,
-        width: null,
-        height: null,
-      });
-    } else {
-      setComposition({
-        mode: 'manual',
-        aspectRatio: preset.ratio,
-        aspectPreset: preset.value,
-        width: preset.width,
-        height: preset.height,
-      });
-    }
-  }, []);
-
   const handleApply = useCallback(() => {
     const finalCrop: CropConfig = {
       ...crop,
       enabled: crop.width !== videoWidth || crop.height !== videoHeight || crop.x !== 0 || crop.y !== 0,
     };
-    console.log('[CropDialog] Applying composition:', composition);
-    console.log('[CropDialog] Applying crop:', finalCrop);
-    onApply(finalCrop, composition);
+    onApply(finalCrop);
     onClose();
-  }, [crop, composition, videoWidth, videoHeight, onApply, onClose]);
+  }, [crop, videoWidth, videoHeight, onApply, onClose]);
 
   // Cleanup animation on unmount
   useEffect(() => {
@@ -337,7 +280,7 @@ export const CropDialog = memo(function CropDialog({
             Crop Video
           </DialogTitle>
           <DialogDescription>
-            Crop the video content. The cropped video will be placed within the composition canvas.
+            Crop the video content. Crop is non-destructive and applied during export.
           </DialogDescription>
         </DialogHeader>
 
@@ -375,35 +318,6 @@ export const CropDialog = memo(function CropDialog({
                 </ToggleGroupItem>
               ))}
             </ToggleGroup>
-          </div>
-
-          {/* Composition aspect ratio (output canvas) */}
-          <div className="space-y-2">
-            <Label>Composition (Output Canvas)</Label>
-            <ToggleGroup
-              type="single"
-              value={composition.mode === 'auto' ? 'auto' : (composition.aspectPreset || '')}
-              onValueChange={handleCompositionPreset}
-              className="justify-start flex-wrap"
-            >
-              {COMPOSITION_PRESETS.map((preset) => (
-                <ToggleGroupItem
-                  key={preset.value}
-                  value={preset.value}
-                  className="text-xs"
-                  title={preset.description}
-                >
-                  {preset.label}
-                </ToggleGroupItem>
-              ))}
-            </ToggleGroup>
-            {composition.mode === 'manual' && (
-              <p className="text-xs text-[var(--ink-muted)]">
-                {composition.width && composition.height
-                  ? `Output: ${composition.width}×${composition.height}`
-                  : `Cropped video will be centered within a ${composition.aspectPreset} canvas`}
-              </p>
-            )}
           </div>
 
           {/* Position and size inputs */}

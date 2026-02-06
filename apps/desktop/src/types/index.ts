@@ -418,9 +418,6 @@ export type {
   ShadowConfig,
   ExportConfig,
   ExportFormat,
-  ExportResolution,
-  ExportPreset,
-  AspectRatio,
   BackgroundType as VideoBackgroundType,
   BackgroundConfig,
   CropConfig,
@@ -482,6 +479,7 @@ export const DEFAULT_RECORDING_SETTINGS: RecordingSettings = {
   includeCursor: false,
   audio: {
     captureSystemAudio: true,
+    systemAudioDeviceId: null,
     microphoneDeviceIndex: null,
   },
   quality: 80,
