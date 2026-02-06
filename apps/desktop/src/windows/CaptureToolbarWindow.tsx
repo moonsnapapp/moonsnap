@@ -282,6 +282,7 @@ const CaptureToolbarWindow: React.FC = () => {
           includeCursor,
           audio: {
             captureSystemAudio: systemAudioEnabled,
+            systemAudioDeviceId: captureType === 'video' ? (settings.video.systemAudioDeviceId ?? null) : null,
             microphoneDeviceIndex: microphoneDeviceIndex ?? null,
           },
           quality,

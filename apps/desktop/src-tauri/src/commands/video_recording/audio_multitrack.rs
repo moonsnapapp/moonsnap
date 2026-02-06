@@ -116,6 +116,24 @@ impl MultiTrackAudioRecorder {
         system_audio_path: Option<PathBuf>,
         mic_audio_path: Option<PathBuf>,
     ) -> Result<(Option<PathBuf>, Option<PathBuf>), String> {
+        self.start_with_device(system_audio_path, mic_audio_path, None)
+    }
+
+    /// Start recording audio with optional device selection.
+    ///
+    /// # Arguments
+    /// * `system_audio_path` - Path for system audio WAV file (None to skip)
+    /// * `mic_audio_path` - Path for microphone WAV file (None to skip)
+    /// * `system_device_id` - Optional output device ID for system audio. None = default.
+    ///
+    /// # Returns
+    /// Tuple of (system_audio_path, mic_audio_path) for files that were started
+    pub fn start_with_device(
+        &mut self,
+        system_audio_path: Option<PathBuf>,
+        mic_audio_path: Option<PathBuf>,
+        system_device_id: Option<String>,
+    ) -> Result<(Option<PathBuf>, Option<PathBuf>), String> {
         // Reset stop flag
         self.should_stop.store(false, Ordering::SeqCst);
         self.is_paused.store(false, Ordering::SeqCst);
@@ -129,9 +147,10 @@ impl MultiTrackAudioRecorder {
             let should_stop = Arc::clone(&self.should_stop);
             let is_paused = Arc::clone(&self.is_paused);
             let path_clone = path.clone();
+            let device_id = system_device_id.clone();
 
             let handle = thread::spawn(move || {
-                record_system_audio(&path_clone, should_stop, is_paused, start_time)
+                record_system_audio(&path_clone, should_stop, is_paused, start_time, device_id)
             });
 
             self.system_thread = Some(handle);
@@ -308,6 +327,7 @@ fn record_system_audio(
     should_stop: Arc<AtomicBool>,
     is_paused: Arc<AtomicBool>,
     start_time: Instant,
+    device_id: Option<String>,
 ) -> Result<(), String> {
     // Spawn async writer thread first
     let (sample_tx, writer_handle) = spawn_wav_writer(
@@ -321,13 +341,39 @@ fn record_system_audio(
         .ok()
         .map_err(|e| format!("Failed to initialize COM: {:?}", e))?;
 
-    // Get default render device for loopback
+    // Get render device — use specified device or fall back to default
     let enumerator = DeviceEnumerator::new()
         .map_err(|e| format!("Failed to create device enumerator: {:?}", e))?;
 
-    let device = enumerator
-        .get_default_device(&Direction::Render)
-        .map_err(|e| format!("Failed to get default audio device: {:?}", e))?;
+    let device = if let Some(ref id) = device_id {
+        // Try to find the specified device
+        let collection = enumerator
+            .get_device_collection(&Direction::Render)
+            .map_err(|e| format!("Failed to get device collection: {:?}", e))?;
+
+        let mut found = None;
+        for device_result in collection.into_iter() {
+            if let Ok(dev) = device_result {
+                if let Ok(dev_id) = dev.get_id() {
+                    if dev_id == *id {
+                        found = Some(dev);
+                        break;
+                    }
+                }
+            }
+        }
+
+        found.unwrap_or_else(|| {
+            log::warn!("[MULTITRACK] Device '{}' not found, using default", id);
+            enumerator
+                .get_default_device(&Direction::Render)
+                .expect("Failed to get default audio device")
+        })
+    } else {
+        enumerator
+            .get_default_device(&Direction::Render)
+            .map_err(|e| format!("Failed to get default audio device: {:?}", e))?
+    };
 
     let device_name = device
         .get_friendlyname()

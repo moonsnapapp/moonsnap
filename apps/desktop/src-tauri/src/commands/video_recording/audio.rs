@@ -94,7 +94,7 @@ impl AudioCapture {
         let samples = Arc::new(Mutex::new(Vec::new()));
         let samples_clone = Arc::clone(&samples);
 
-        let err_fn = |err| eprintln!("Audio capture error: {}", err);
+        let err_fn = |err| log::error!("Audio capture error: {}", err);
 
         // Build the appropriate stream based on sample format
         let stream = match sample_format {
@@ -204,7 +204,7 @@ impl CombinedAudioCapture {
             match AudioCapture::new(AudioSource::SystemAudio) {
                 Ok(capture) => Some(capture),
                 Err(e) => {
-                    eprintln!("Warning: Failed to initialize system audio capture: {}", e);
+                    log::warn!("Failed to initialize system audio capture: {}", e);
                     None
                 },
             }
@@ -216,7 +216,7 @@ impl CombinedAudioCapture {
             match AudioCapture::new(AudioSource::Microphone) {
                 Ok(capture) => Some(capture),
                 Err(e) => {
-                    eprintln!("Warning: Failed to initialize microphone capture: {}", e);
+                    log::warn!("Failed to initialize microphone capture: {}", e);
                     None
                 },
             }

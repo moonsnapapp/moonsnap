@@ -329,7 +329,11 @@ pub fn run_video_capture(
             system_audio_path,
             mic_audio_path
         );
-        if let Err(e) = multitrack_audio.start(system_audio_path.clone(), mic_audio_path.clone()) {
+        if let Err(e) = multitrack_audio.start_with_device(
+            system_audio_path.clone(),
+            mic_audio_path.clone(),
+            settings.audio.system_audio_device_id.clone(),
+        ) {
             log::warn!("Failed to start multi-track audio: {}", e);
         }
     }

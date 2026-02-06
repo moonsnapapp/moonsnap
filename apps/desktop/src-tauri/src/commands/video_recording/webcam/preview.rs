@@ -165,7 +165,7 @@ pub fn get_preview_dimensions() -> Option<(u32, u32)> {
 /// The preview loop - converts frames to JPEG.
 fn preview_loop(subscription: Subscription, stop_signal: Arc<AtomicBool>) {
     log::info!("[PREVIEW] Loop started, waiting for frames...");
-    eprintln!("[PREVIEW_LOOP] Started, waiting for frames...");
+    log::debug!("[PREVIEW_LOOP] Started, waiting for frames...");
     let mut frame_count = 0u64;
 
     while !stop_signal.load(Ordering::Relaxed) {
@@ -174,9 +174,11 @@ fn preview_loop(subscription: Subscription, stop_signal: Arc<AtomicBool>) {
             Some(f) => {
                 frame_count += 1;
                 if frame_count <= 3 || frame_count % 60 == 0 {
-                    eprintln!(
+                    log::debug!(
                         "[PREVIEW_LOOP] Received frame #{} (id={}), format={:?}",
-                        frame_count, f.frame_id, f.pixel_format
+                        frame_count,
+                        f.frame_id,
+                        f.pixel_format
                     );
                 }
                 f
@@ -188,7 +190,7 @@ fn preview_loop(subscription: Subscription, stop_signal: Arc<AtomicBool>) {
                         std::sync::atomic::AtomicU64::new(0);
                     let count = WAIT_COUNT.fetch_add(1, Ordering::Relaxed);
                     if count % 50 == 0 {
-                        eprintln!(
+                        log::debug!(
                             "[PREVIEW_LOOP] Still waiting for first frame (waited {}s)",
                             count / 10
                         );
@@ -208,7 +210,7 @@ fn preview_loop(subscription: Subscription, stop_signal: Arc<AtomicBool>) {
             match frame.to_jpeg(75) {
                 Some(data) => data,
                 None => {
-                    eprintln!(
+                    log::warn!(
                         "[PREVIEW_LOOP] Failed to convert frame {} to JPEG",
                         frame_count
                     );
@@ -219,7 +221,7 @@ fn preview_loop(subscription: Subscription, stop_signal: Arc<AtomicBool>) {
         let elapsed = start.elapsed();
 
         if frame_count <= 3 || frame_count % 60 == 0 {
-            eprintln!(
+            log::debug!(
                 "[PREVIEW_LOOP] Frame {} converted to JPEG ({} bytes) in {:?}",
                 frame_count,
                 jpeg_data.len(),
@@ -231,5 +233,5 @@ fn preview_loop(subscription: Subscription, stop_signal: Arc<AtomicBool>) {
         PREVIEW_BUFFER.update(jpeg_data, frame.width, frame.height);
     }
 
-    eprintln!("[PREVIEW_LOOP] Stopped");
+    log::debug!("[PREVIEW_LOOP] Stopped");
 }

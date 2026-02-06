@@ -13,6 +13,7 @@ import { useUpdater } from './hooks/useUpdater';
 import { useTheme } from './hooks/useTheme';
 import { useAppEventListeners } from './hooks/useAppEventListeners';
 import { useAppInitialization } from './hooks/useAppInitialization';
+import { logger } from './utils/logger';
 import { useCaptureActions } from './hooks/useCaptureActions';
 
 function App() {
@@ -49,7 +50,7 @@ function App() {
       onCaptureCompleteFast: async (data: { file_path: string; width: number; height: number }) => {
         // Open editor immediately with RGBA file (fast path - no waiting for save)
         invoke('show_image_editor_window', { capturePath: data.file_path }).catch((error) => {
-          console.error('Failed to open image editor:', error);
+          logger.error('Failed to open image editor:', error);
         });
 
         // Save to library in background (don't block editor)
@@ -65,12 +66,12 @@ function App() {
               try {
                 await invoke('copy_image_to_clipboard', { path: imagePath });
               } catch (error) {
-                console.error('Failed to copy to clipboard:', error);
+                logger.error('Failed to copy to clipboard:', error);
               }
             }
           })
           .catch((error) => {
-            console.error('Failed to save capture:', error);
+            logger.error('Failed to save capture:', error);
           });
       },
       onCaptureDeleted: loadCaptures,

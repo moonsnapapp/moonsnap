@@ -6,6 +6,7 @@ import type {
   CaptionSettings,
   WhisperModelInfo,
 } from '../../types';
+import { videoEditorLogger } from '../../utils/logger';
 
 /**
  * Default caption settings
@@ -198,7 +199,7 @@ export const createCaptionSlice: SliceCreator<CaptionSlice> = (set, get) => ({
       const models = await invoke<WhisperModelInfo[]>('list_whisper_models');
       set({ whisperModels: models });
     } catch (error) {
-      console.error('Failed to load Whisper models:', error);
+      videoEditorLogger.error('Failed to load Whisper models:', error);
     }
   },
 
@@ -239,7 +240,7 @@ export const createCaptionSlice: SliceCreator<CaptionSlice> = (set, get) => ({
       const models = await invoke<WhisperModelInfo[]>('list_whisper_models');
       set({ whisperModels: models });
     } catch (error) {
-      console.error('Failed to delete model:', error);
+      videoEditorLogger.error('Failed to delete model:', error);
       throw error;
     }
   },
@@ -269,7 +270,7 @@ export const createCaptionSlice: SliceCreator<CaptionSlice> = (set, get) => ({
         });
       }
     } catch (error) {
-      console.error('Failed to load captions:', error);
+      videoEditorLogger.error('Failed to load captions:', error);
     }
   },
 });

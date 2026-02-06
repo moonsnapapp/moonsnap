@@ -159,6 +159,19 @@ pub struct AudioInputDevice {
     pub is_default: bool,
 }
 
+/// Information about an available audio output device (speakers/headphones).
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "../../src/types/generated/")]
+pub struct AudioOutputDevice {
+    /// Device ID string from wasapi (used to look up device).
+    pub id: String,
+    /// Human-readable device name.
+    pub name: String,
+    /// Whether this is the system default output device.
+    pub is_default: bool,
+}
+
 /// Audio capture settings.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
@@ -166,6 +179,10 @@ pub struct AudioInputDevice {
 pub struct AudioSettings {
     /// Capture system audio (what's playing on the computer).
     pub capture_system_audio: bool,
+    /// Selected system audio output device ID. None = system default.
+    #[serde(default)]
+    #[ts(type = "string | null")]
+    pub system_audio_device_id: Option<String>,
     /// Selected microphone device index. None = no microphone.
     #[ts(type = "number | null")]
     pub microphone_device_index: Option<usize>,
@@ -175,6 +192,7 @@ impl Default for AudioSettings {
     fn default() -> Self {
         Self {
             capture_system_audio: true,
+            system_audio_device_id: None,
             microphone_device_index: None,
         }
     }

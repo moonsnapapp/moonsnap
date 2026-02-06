@@ -8,6 +8,7 @@ export { SourceSelector, type CaptureSource } from './SourceSelector';
 export { DevicePopover } from './DevicePopover';
 export { MicrophonePopover } from './MicrophonePopover';
 export { SystemAudioToggle } from './SystemAudioToggle';
+export { SystemAudioPopover } from './SystemAudioPopover';
 export { SettingsPopover } from './SettingsPopover';
 
 // Legacy components (may be deprecated)

@@ -303,7 +303,7 @@ fn handle_window_selection(state: &mut OverlayState, window_bounds: Rect, window
             String::from("(no title)")
         }
     };
-    println!(
+    log::debug!(
         "[OVERLAY] Window selected: hwnd={}, title='{}', bounds={}x{}",
         window_id,
         title,

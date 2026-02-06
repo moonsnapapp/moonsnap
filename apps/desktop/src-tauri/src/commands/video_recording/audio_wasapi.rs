@@ -45,24 +45,40 @@ pub struct WasapiLoopback {
 impl WasapiLoopback {
     /// Create a new WASAPI loopback capture using the default render device.
     pub fn new() -> Result<Self, String> {
+        Self::with_device(None)
+    }
+
+    /// Create a new WASAPI loopback capture, optionally targeting a specific device.
+    ///
+    /// If `device_id` is `None`, uses the system default render device.
+    pub fn with_device(device_id: Option<&str>) -> Result<Self, String> {
         // Initialize COM for this thread
         initialize_mta()
             .ok()
             .map_err(|e| format!("Failed to initialize COM: {:?}", e))?;
 
-        // Get the default render (output) device - this is what we'll capture from
         let enumerator = DeviceEnumerator::new()
             .map_err(|e| format!("Failed to create device enumerator: {:?}", e))?;
 
-        let device = enumerator
-            .get_default_device(&Direction::Render)
-            .map_err(|e| format!("Failed to get default audio device: {:?}", e))?;
+        // Look up device by ID, or fall back to default
+        let device = if let Some(id) = device_id {
+            Self::find_device_by_id(&enumerator, id)?
+        } else {
+            enumerator
+                .get_default_device(&Direction::Render)
+                .map_err(|e| format!("Failed to get default audio device: {:?}", e))?
+        };
 
         let device_name = device
             .get_friendlyname()
             .unwrap_or_else(|_| "Unknown".to_string());
         log::info!("WASAPI loopback: using device '{}'", device_name);
 
+        Self::from_device(device)
+    }
+
+    /// Initialize loopback capture from a specific wasapi Device.
+    fn from_device(device: Device) -> Result<Self, String> {
         // Get audio client
         let mut audio_client = device
             .get_iaudioclient()
@@ -117,6 +133,32 @@ impl WasapiLoopback {
             channels,
             sample_rate,
         })
+    }
+
+    /// Find a render device by its wasapi ID string.
+    fn find_device_by_id(enumerator: &DeviceEnumerator, target_id: &str) -> Result<Device, String> {
+        let collection = enumerator
+            .get_device_collection(&Direction::Render)
+            .map_err(|e| format!("Failed to get device collection: {:?}", e))?;
+
+        for device_result in collection.into_iter() {
+            if let Ok(device) = device_result {
+                if let Ok(id) = device.get_id() {
+                    if id == target_id {
+                        return Ok(device);
+                    }
+                }
+            }
+        }
+
+        // Device not found — fall back to default
+        log::warn!(
+            "WASAPI: device ID '{}' not found, falling back to default",
+            target_id
+        );
+        enumerator
+            .get_default_device(&Direction::Render)
+            .map_err(|e| format!("Failed to get default audio device: {:?}", e))
     }
 
     /// Get the sample rate.
@@ -373,15 +415,47 @@ fn bytes_to_f32_samples(data: &VecDeque<u8>) -> Vec<f32> {
         .collect()
 }
 
-/// List available audio output devices (for future device selection feature).
+/// List available audio output (render) devices.
 ///
-/// TODO: Implement device enumeration for user selection.
-/// For now, we use the system default device.
-#[allow(dead_code)]
-pub fn list_output_devices() -> Vec<(String, String)> {
-    // Stubbed for now - device enumeration will be implemented
-    // when we add device selection UI to settings
-    Vec::new()
+/// Returns a list of output devices with ID, name, and default status.
+pub fn list_output_devices() -> Result<Vec<super::types::AudioOutputDevice>, String> {
+    let _ = initialize_mta();
+
+    let enumerator = DeviceEnumerator::new()
+        .map_err(|e| format!("Failed to create device enumerator: {:?}", e))?;
+
+    // Get default device ID for comparison
+    let default_id = enumerator
+        .get_default_device(&Direction::Render)
+        .ok()
+        .and_then(|d| d.get_id().ok());
+
+    let collection = enumerator
+        .get_device_collection(&Direction::Render)
+        .map_err(|e| format!("Failed to get device collection: {:?}", e))?;
+
+    let mut result = Vec::new();
+    for device_result in collection.into_iter() {
+        if let Ok(device) = device_result {
+            let device_id = device.get_id().ok();
+            let is_default = device_id.is_some() && device_id == default_id;
+
+            let name = device
+                .get_friendlyname()
+                .unwrap_or_else(|_| "Unknown Device".to_string());
+
+            if let Some(id) = device_id {
+                result.push(super::types::AudioOutputDevice {
+                    id,
+                    name,
+                    is_default,
+                });
+            }
+        }
+    }
+
+    log::debug!("[AUDIO] Found {} output devices", result.len());
+    Ok(result)
 }
 
 #[cfg(test)]
@@ -403,10 +477,13 @@ mod tests {
     #[test]
     fn test_list_output_devices() {
         // Should not panic
-        let devices = list_output_devices();
+        let devices = list_output_devices().unwrap_or_default();
         println!("Found {} output devices", devices.len());
-        for (id, name) in &devices {
-            println!("  {} - {}", name, id);
+        for device in &devices {
+            println!(
+                "  {} - {} (default: {})",
+                device.name, device.id, device.is_default
+            );
         }
     }
 }

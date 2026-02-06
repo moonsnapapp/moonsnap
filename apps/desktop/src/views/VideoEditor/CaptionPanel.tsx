@@ -9,6 +9,7 @@ import { useVideoEditorStore } from '../../stores/videoEditorStore';
 import { Button } from '../../components/ui/button';
 import { Slider } from '../../components/ui/slider';
 import type { TranscriptionProgress, DownloadProgress } from '../../types';
+import { videoEditorLogger } from '../../utils/logger';
 
 interface CaptionPanelProps {
   videoPath: string | null;
@@ -63,7 +64,7 @@ export function CaptionPanel({ videoPath }: CaptionPanelProps) {
       'whisper-download-progress',
       (event) => {
         // Download progress is handled via store state
-        console.log('Download progress:', event.payload);
+        void event.payload;
       }
     );
 
@@ -84,7 +85,7 @@ export function CaptionPanel({ videoPath }: CaptionPanelProps) {
       try {
         await downloadModel(selectedModelName);
       } catch (error) {
-        console.error('Failed to download model:', error);
+        videoEditorLogger.error('Failed to download model:', error);
         return;
       }
     }
@@ -92,7 +93,7 @@ export function CaptionPanel({ videoPath }: CaptionPanelProps) {
     try {
       await startTranscription(videoPath);
     } catch (error) {
-      console.error('Transcription failed:', error);
+      videoEditorLogger.error('Transcription failed:', error);
     }
   };
 

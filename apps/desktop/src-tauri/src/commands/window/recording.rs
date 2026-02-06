@@ -11,18 +11,6 @@ use super::{
 // Recording Border Window
 // ============================================================================
 
-/// Show the recording border window (synchronous version for internal use).
-#[allow(dead_code)]
-pub fn show_recording_border_sync(
-    app: &AppHandle,
-    x: i32,
-    y: i32,
-    width: u32,
-    height: u32,
-) -> Result<(), String> {
-    show_recording_border_impl(app.clone(), x, y, width, height)
-}
-
 /// Show the recording border window around the recording region.
 /// This is a transparent click-through window that shows a border to indicate
 /// what area is being recorded. The window is excluded from screen capture

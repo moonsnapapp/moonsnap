@@ -444,10 +444,10 @@ fn capture_region_dxgi(selection: &ScreenRegionSelection) -> Result<(Vec<u8>, u3
 /// Uses DXGI Desktop Duplication (full monitor capture + crop at window bounds).
 #[command]
 pub async fn capture_window_fast(hwnd: isize) -> Result<FastCaptureResult, String> {
-    println!("[CAPTURE] Window capture for hwnd={}", hwnd);
+    log::debug!("[CAPTURE] Window capture for hwnd={}", hwnd);
 
     let (rgba_data, width, height) = capture_window_dxgi(hwnd)?;
-    println!("[CAPTURE] DXGI capture succeeded: {}x{}", width, height);
+    log::debug!("[CAPTURE] DXGI capture succeeded: {}x{}", width, height);
 
     let file_path = write_rgba_to_temp_file(&rgba_data, width, height)?;
     Ok(FastCaptureResult {

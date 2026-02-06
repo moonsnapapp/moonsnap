@@ -40,6 +40,7 @@ const DEFAULT_VIDEO_SETTINGS: VideoSettings = {
   maxDurationSecs: null,
   includeCursor: true,
   captureSystemAudio: true,
+  systemAudioDeviceId: null,
   microphoneDeviceIndex: null,
   captureWebcam: false, // Placeholder - always false for now
   countdownSecs: 3,

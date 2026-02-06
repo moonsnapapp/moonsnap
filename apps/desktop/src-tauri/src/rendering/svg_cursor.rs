@@ -25,10 +25,16 @@ pub struct RenderedSvgCursor {
     pub data: Vec<u8>, // RGBA
 }
 
-/// Cache of rendered SVG cursors at different scales.
-#[allow(dead_code)]
-static SVG_CURSOR_CACHE: OnceLock<HashMap<(WindowsCursorShape, u32), RenderedSvgCursor>> =
-    OnceLock::new();
+/// Cache of rendered SVG cursors at different sizes.
+/// Uses parking_lot::Mutex for interior mutability (OnceLock alone is immutable after init).
+static SVG_CURSOR_CACHE: OnceLock<
+    parking_lot::Mutex<HashMap<(WindowsCursorShape, u32), RenderedSvgCursor>>,
+> = OnceLock::new();
+
+fn cursor_cache(
+) -> &'static parking_lot::Mutex<HashMap<(WindowsCursorShape, u32), RenderedSvgCursor>> {
+    SVG_CURSOR_CACHE.get_or_init(|| parking_lot::Mutex::new(HashMap::new()))
+}
 
 // Embed SVG files at compile time
 const ARROW_SVG: &str = include_str!("../cursor/info/assets/windows/arrow.svg");
@@ -273,8 +279,24 @@ pub fn render_svg_cursor_to_height(
 /// Uses a cache to avoid re-rendering the same cursor at the same size.
 /// The cursor is scaled to fit the target_height while preserving aspect ratio.
 pub fn get_svg_cursor(shape: WindowsCursorShape, target_height: u32) -> Option<RenderedSvgCursor> {
-    // Render at the exact target height
-    render_svg_cursor_to_height(shape, target_height)
+    let cache = cursor_cache();
+    let key = (shape, target_height);
+
+    // Check cache first
+    {
+        let guard = cache.lock();
+        if let Some(cached) = guard.get(&key) {
+            return Some(cached.clone());
+        }
+    }
+
+    // Cache miss — render and store
+    let rendered = render_svg_cursor_to_height(shape, target_height)?;
+    {
+        let mut guard = cache.lock();
+        guard.insert(key, rendered.clone());
+    }
+    Some(rendered)
 }
 
 #[cfg(test)]

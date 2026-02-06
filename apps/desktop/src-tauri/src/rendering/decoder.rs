@@ -13,7 +13,17 @@ use tokio::sync::mpsc;
 use super::types::DecodedFrame;
 
 /// Number of frames to prefetch ahead of playback position.
-const PREFETCH_COUNT: usize = 5;
+/// Configurable via SNAPIT_PREFETCH_COUNT env var (default: 5).
+static PREFETCH_COUNT: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
+
+fn prefetch_count() -> usize {
+    *PREFETCH_COUNT.get_or_init(|| {
+        std::env::var("SNAPIT_PREFETCH_COUNT")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(5)
+    })
+}
 
 /// Video decoder with async frame extraction.
 pub struct VideoDecoder {
@@ -124,7 +134,7 @@ impl VideoDecoder {
             fps: metadata.fps,
             duration_ms: metadata.duration_ms,
             frame_count: metadata.frame_count,
-            frame_cache: Arc::new(Mutex::new(FrameCache::new(PREFETCH_COUNT * 2))),
+            frame_cache: Arc::new(Mutex::new(FrameCache::new(prefetch_count() * 2))),
             decoder_task: None,
             decode_tx: None,
         })
@@ -295,7 +305,7 @@ async fn decoder_task(
                 let cache_clone = Arc::clone(&cache);
                 let _ = tokio::task::spawn_blocking(move || {
                     let path = Path::new(&path_clone);
-                    for i in 0..PREFETCH_COUNT {
+                    for i in 0..prefetch_count() {
                         let frame = from_frame + i as u32;
 
                         // Skip if already cached

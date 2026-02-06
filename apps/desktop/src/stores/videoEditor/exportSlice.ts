@@ -115,7 +115,7 @@ export const createExportSlice: SliceCreator<ExportSlice> = (set, get) => ({
   },
 
   cancelExport: () => {
-    // TODO: Implement cancel via Tauri command when backend supports it
+    invoke('cancel_export').catch(() => {});
     set({ isExporting: false, exportProgress: null });
   },
 

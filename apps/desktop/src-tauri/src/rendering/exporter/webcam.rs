@@ -86,8 +86,7 @@ pub fn build_webcam_overlay(
     let x_norm = left_px / out_w as f32;
     let y_norm = top_px / out_h as f32;
 
-    // Log for debugging
-    eprintln!(
+    log::debug!(
         "[EXPORT] Webcam: {}x{} aspect={:.3}, overlay={}x{}px, pos=({:.0},{:.0})px norm=({:.3},{:.3}), source_aspect={}",
         frame.width,
         frame.height,

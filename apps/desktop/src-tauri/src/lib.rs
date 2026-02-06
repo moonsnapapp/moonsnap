@@ -84,7 +84,7 @@ pub fn run() {
                     log::error!("Failed to show startup toolbar on second instance: {}", e);
                 }
             });
-            println!("Second instance blocked. Args: {:?}, CWD: {:?}", args, cwd);
+            log::info!("Second instance blocked. Args: {:?}, CWD: {:?}", args, cwd);
         }))
         .plugin(tauri_plugin_window_state::Builder::default().build());
 
@@ -224,6 +224,7 @@ pub fn run() {
             config::webcam::set_webcam_config,
             commands::video_recording::list_webcam_devices,
             commands::video_recording::list_audio_input_devices,
+            commands::video_recording::list_audio_output_devices,
             commands::video_recording::close_webcam_preview,
             commands::video_recording::bring_webcam_preview_to_front,
             commands::video_recording::move_webcam_to_anchor,
@@ -275,6 +276,7 @@ pub fn run() {
             commands::video_recording::extract_audio_waveform,
             commands::video_recording::generate_auto_zoom,
             commands::video_recording::export_video,
+            commands::video_recording::cancel_export,
             commands::video_recording::check_nvenc_available,
             // GPU-accelerated video editor commands
             commands::video_recording::gpu_editor::create_editor_instance,

@@ -101,6 +101,10 @@ pub struct VideoSettings {
     pub include_cursor: bool,
     /// Capture system audio (what's playing on the computer).
     pub capture_system_audio: bool,
+    /// Selected system audio output device ID. None = system default.
+    #[serde(default)]
+    #[ts(type = "string | null")]
+    pub system_audio_device_id: Option<String>,
     /// Selected microphone device index. None = no microphone.
     #[ts(type = "number | null")]
     pub microphone_device_index: Option<usize>,
@@ -126,6 +130,7 @@ impl Default for VideoSettings {
             max_duration_secs: None,
             include_cursor: true,
             capture_system_audio: true,
+            system_audio_device_id: None,
             microphone_device_index: None,
             capture_webcam: false, // Placeholder - always false for now
             countdown_secs: 3,

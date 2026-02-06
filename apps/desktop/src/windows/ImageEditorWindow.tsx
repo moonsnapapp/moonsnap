@@ -35,6 +35,7 @@ import { reportError } from '@/utils/errorReporting';
 import { useEditorActions } from '@/hooks/useEditorActions';
 import { useEditorKeyboardShortcuts } from '@/hooks/useEditorKeyboardShortcuts';
 import { DeleteDialog } from '@/components/Library/components/DeleteDialog';
+import { KeyboardShortcutsDialog } from '@/components/Editor/KeyboardShortcutsDialog';
 
 // Default stroke colors per tool - used when switching tools on new captures
 const TOOL_DEFAULT_COLORS: Partial<Record<Tool, string>> = {
@@ -72,6 +73,7 @@ const ImageEditorContent: React.FC<{
 
   const [selectedTool, setSelectedTool] = useState<Tool>('select');
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
 
   const { isCopying, isSaving, handleCopy, handleSave, handleSaveAs } = useEditorActions({ stageRef, imageData });
 
@@ -80,9 +82,9 @@ const ImageEditorContent: React.FC<{
     window.dispatchEvent(new CustomEvent('fit-to-center'));
   }, []);
 
-  // Show shortcuts handler (no-op for now, could add modal later)
+  // Show shortcuts handler
   const handleShowShortcuts = useCallback(() => {
-    // TODO: Add keyboard shortcuts help modal
+    setShortcutsOpen(true);
   }, []);
 
   // Deselect handler
@@ -216,6 +218,11 @@ const ImageEditorContent: React.FC<{
         count={1}
         onConfirm={handleConfirmDelete}
         onCancel={handleCancelDelete}
+      />
+
+      <KeyboardShortcutsDialog
+        open={shortcutsOpen}
+        onOpenChange={setShortcutsOpen}
       />
     </>
   );

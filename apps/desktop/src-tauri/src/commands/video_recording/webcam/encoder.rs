@@ -43,7 +43,7 @@ impl WebcamEncoderPipe {
             (1280, 720)
         };
 
-        eprintln!("[WEBCAM_PIPE] Spawning FFmpeg: {}x{}", width, height);
+        log::debug!("[WEBCAM_PIPE] Spawning FFmpeg: {}x{}", width, height);
 
         let ffmpeg_path = crate::commands::storage::find_ffmpeg().ok_or("FFmpeg not found")?;
 
@@ -82,7 +82,7 @@ impl WebcamEncoderPipe {
         let last_frame_id = WEBCAM_BUFFER.current_frame_id();
         let start_time = Instant::now();
 
-        eprintln!(
+        log::debug!(
             "[WEBCAM_PIPE] FFmpeg spawned at {:?}, waiting for frames",
             std::time::SystemTime::now()
         );
@@ -121,7 +121,7 @@ impl WebcamEncoderPipe {
         if self.first_frame_time.is_none() {
             self.first_frame_time = Some(Instant::now());
             let delay = self.start_time.elapsed();
-            eprintln!(
+            log::debug!(
                 "[WEBCAM_PIPE] First frame written after {:.3}s delay from FFmpeg spawn",
                 delay.as_secs_f64()
             );
@@ -144,13 +144,13 @@ impl WebcamEncoderPipe {
         let frames_written = self.frames_written;
         let output_path = self.output_path.clone();
 
-        eprintln!("[WEBCAM_PIPE] === WEBCAM ENCODER FINISHING ===");
-        eprintln!(
+        log::info!("[WEBCAM_PIPE] === WEBCAM ENCODER FINISHING ===");
+        log::debug!(
             "[WEBCAM_PIPE] Total time since spawn: {:.3}s",
             total_elapsed.as_secs_f64()
         );
-        eprintln!("[WEBCAM_PIPE] Frames written: {}", frames_written);
-        eprintln!("[WEBCAM_PIPE] Target duration: {:.3}s", actual_duration);
+        log::debug!("[WEBCAM_PIPE] Frames written: {}", frames_written);
+        log::debug!("[WEBCAM_PIPE] Target duration: {:.3}s", actual_duration);
 
         // Calculate actual FPS needed to match screen duration
         let actual_fps = if actual_duration > 0.0 {
@@ -158,7 +158,7 @@ impl WebcamEncoderPipe {
         } else {
             30.0
         };
-        eprintln!("[WEBCAM_PIPE] Calculated FPS for sync: {:.2}", actual_fps);
+        log::debug!("[WEBCAM_PIPE] Calculated FPS for sync: {:.2}", actual_fps);
 
         // Close stdin to signal EOF
         drop(self.stdin);
@@ -177,7 +177,7 @@ impl WebcamEncoderPipe {
         // This ensures webcam video has same duration as screen video
         Self::remux_with_correct_fps(&output_path, actual_fps)?;
 
-        eprintln!(
+        log::info!(
             "[WEBCAM_PIPE] Webcam encoding complete, synced to {:.3}s",
             actual_duration
         );
@@ -201,9 +201,10 @@ impl WebcamEncoderPipe {
         let scale_factor = 30.0 / target_fps;
         let scale_str = format!("{:.6}", scale_factor);
 
-        eprintln!(
+        log::debug!(
             "[WEBCAM_PIPE] Remuxing with itsscale={} (30fps -> {:.2}fps)",
-            scale_str, target_fps
+            scale_str,
+            target_fps
         );
 
         // Use -itsscale to scale input timestamps, -c copy for stream copy (no re-encoding)
@@ -232,7 +233,7 @@ impl WebcamEncoderPipe {
             return Err(format!("FFmpeg remux failed: {}", stderr));
         }
 
-        eprintln!(
+        log::debug!(
             "[WEBCAM_PIPE] Remuxed with stream copy, target FPS: {:.2}",
             target_fps
         );

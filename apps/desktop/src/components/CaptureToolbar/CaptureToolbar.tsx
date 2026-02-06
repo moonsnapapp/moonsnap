@@ -16,7 +16,7 @@ import { DimensionSelect } from './DimensionSelect';
 import { SourceInfoDisplay } from './SourceInfoDisplay';
 import { DevicePopover } from './DevicePopover';
 import { MicrophonePopover } from './MicrophonePopover';
-import { SystemAudioToggle } from './SystemAudioToggle';
+import { SystemAudioPopover } from './SystemAudioPopover';
 import { SettingsPopover } from './SettingsPopover';
 import { AudioLevelMeter } from './AudioLevelMeter';
 import { useCaptureSettingsStore } from '@/stores/captureSettingsStore';
@@ -322,7 +322,7 @@ export const CaptureToolbar: React.FC<CaptureToolbarProps> = ({
           </div>
 
           <div className="glass-device-column">
-            <SystemAudioToggle disabled={!isVideoMode || isBusy} />
+            <SystemAudioPopover disabled={!isVideoMode || isBusy} />
             <AudioLevelMeter
               enabled
               level={isSystemAudioEnabled && isVideoMode ? systemLevel : 0}

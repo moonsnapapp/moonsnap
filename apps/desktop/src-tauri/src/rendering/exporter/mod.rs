@@ -18,8 +18,23 @@ use pipeline::{spawn_decode_task, spawn_encode_task};
 mod tests;
 
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, OnceLock};
 
 use tauri::{AppHandle, Manager};
+
+/// Global cancel flag for export. Set via `request_cancel_export()`.
+static EXPORT_CANCEL_FLAG: OnceLock<Arc<AtomicBool>> = OnceLock::new();
+
+fn cancel_flag() -> &'static Arc<AtomicBool> {
+    EXPORT_CANCEL_FLAG.get_or_init(|| Arc::new(AtomicBool::new(false)))
+}
+
+/// Request cancellation of the currently running export.
+pub fn request_cancel_export() {
+    cancel_flag().store(true, Ordering::Relaxed);
+    log::info!("[EXPORT] Cancel requested");
+}
 
 use super::caption_layer::prepare_captions;
 use super::compositor::Compositor;
@@ -27,7 +42,7 @@ use super::cursor::{composite_cursor, CursorInterpolator, VideoContentBounds};
 use super::renderer::Renderer;
 use super::scene::SceneInterpolator;
 use super::stream_decoder::StreamDecoder;
-use super::svg_cursor::render_svg_cursor_to_height;
+use super::svg_cursor::get_svg_cursor;
 use super::text::prepare_texts;
 use super::types::{BackgroundStyle, RenderOptions};
 use super::zoom::ZoomInterpolator;
@@ -56,6 +71,9 @@ pub async fn export_video_gpu(
     output_path: String,
 ) -> Result<ExportResult, String> {
     let start_time = std::time::Instant::now();
+
+    // Reset cancel flag at the start of each export
+    cancel_flag().store(false, Ordering::Relaxed);
 
     // Get resource directory for wallpaper path resolution
     let resource_dir = app.path().resource_dir().ok();
@@ -365,6 +383,12 @@ pub async fn export_video_gpu(
 
     // Render frames from decode pipeline, send to encode pipeline
     while let Some(bundle) = decode_rx.recv().await {
+        // Check for cancellation
+        if cancel_flag().load(Ordering::Relaxed) {
+            log::info!("[EXPORT] Export cancelled by user");
+            break;
+        }
+
         let decoded_frame_idx = bundle.frame_idx;
         let current_webcam_frame = bundle.webcam_frame;
 
@@ -660,9 +684,7 @@ pub async fn export_video_gpu(
                             // Render SVG at final cursor height (handles any original SVG size)
                             let target_height = final_cursor_height.round() as u32;
 
-                            if let Some(svg_cursor) =
-                                render_svg_cursor_to_height(shape, target_height)
-                            {
+                            if let Some(svg_cursor) = get_svg_cursor(shape, target_height) {
                                 let svg_decoded = super::cursor::DecodedCursorImage {
                                     width: svg_cursor.width,
                                     height: svg_cursor.height,
@@ -739,8 +761,32 @@ pub async fn export_video_gpu(
         }
     }
 
+    // Check if export was cancelled
+    let was_cancelled = cancel_flag().load(Ordering::Relaxed);
+
     // Signal end of render loop and wait for encode to finish
     drop(encode_tx);
+
+    if was_cancelled {
+        // Kill FFmpeg process immediately and clean up partial file
+        let _ = ffmpeg.kill();
+        let _ = ffmpeg.wait();
+
+        // Wait for pipeline tasks to complete
+        drop(decode_rx);
+        let _ = decode_handle.await;
+        let _ = encode_handle.await;
+
+        // Delete partial output file
+        if output_path.exists() {
+            let _ = std::fs::remove_file(&output_path);
+            log::info!("[EXPORT] Deleted partial output file: {:?}", output_path);
+        }
+
+        emit_progress(&app, 0.0, ExportStage::Complete, "Export cancelled");
+
+        return Err("Export cancelled by user".to_string());
+    }
 
     emit_progress(&app, 0.95, ExportStage::Finalizing, "Finalizing...");
 

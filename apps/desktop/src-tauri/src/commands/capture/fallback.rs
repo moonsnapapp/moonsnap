@@ -170,9 +170,14 @@ pub fn capture_window_xcap(hwnd_value: isize) -> Result<(Vec<u8>, u32, u32), Cap
         ));
     }
 
-    println!(
+    log::debug!(
         "[CAPTURE] Window capture via screen region: hwnd={} (0x{:X}), bounds=({},{}) {}x{}",
-        hwnd_value, hwnd_value, x, y, width, height
+        hwnd_value,
+        hwnd_value,
+        x,
+        y,
+        width,
+        height
     );
 
     // Use the same capture path as Area mode (which works)
@@ -261,9 +266,16 @@ pub fn capture_screen_region_raw(
         let rel_x = (sel_x - mon_x).max(0) as u32;
         let rel_y = (sel_y - mon_y).max(0) as u32;
 
-        println!(
+        log::debug!(
             "[CAPTURE] Region via full capture: sel=({},{}) mon=({},{}) rel=({},{}) size={}x{}",
-            sel_x, sel_y, mon_x, mon_y, rel_x, rel_y, selection.width, selection.height
+            sel_x,
+            sel_y,
+            mon_x,
+            mon_y,
+            rel_x,
+            rel_y,
+            selection.width,
+            selection.height
         );
 
         // Capture full monitor (uses DXGI Desktop Duplication)
@@ -328,7 +340,7 @@ pub fn capture_screen_region_raw(
         let full_image = match mon.capture_image() {
             Ok(img) => img,
             Err(e) => {
-                println!("[CAPTURE] Failed to capture monitor: {}", e);
+                log::warn!("[CAPTURE] Failed to capture monitor: {}", e);
                 continue;
             },
         };

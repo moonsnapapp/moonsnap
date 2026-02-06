@@ -24,7 +24,7 @@
 //!   +-- cursor/ (cursor event capture)
 //!   +-- audio*.rs (audio capture modules)
 //!   +-- video_project.rs (project management)
-//!   +-- video_export.rs (export pipeline)
+//!   +-- video_export.rs (export types)
 //!   +-- gpu_editor.rs (GPU-accelerated editing)
 //! ```
 
@@ -113,12 +113,6 @@ fn get_prepared_webcam_pipe() -> &'static StdMutex<Option<webcam::WebcamEncoderP
 
 fn get_prepared_output_path() -> &'static StdMutex<Option<std::path::PathBuf>> {
     PREPARED_OUTPUT_PATH.get_or_init(|| StdMutex::new(None))
-}
-
-/// Take the pre-spawned webcam pipe if available.
-#[allow(dead_code)]
-pub fn take_prepared_webcam_pipe() -> Option<webcam::WebcamEncoderPipe> {
-    get_prepared_webcam_pipe().lock().ok()?.take()
 }
 
 /// Take the pre-generated output path if available.
@@ -311,7 +305,7 @@ pub fn get_webcam_preview_frame(quality: Option<u8>) -> Option<String> {
         static CALL_COUNT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
         let count = CALL_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         if count % 30 == 0 {
-            eprintln!(
+            log::debug!(
                 "[WEBCAM] get_webcam_preview_frame: no frame available (call #{})",
                 count
             );
@@ -490,6 +484,12 @@ pub fn is_camera_preview_showing() -> bool {
 pub fn notify_preview_window_closed() {
     log::info!("[WEBCAM] notify_preview_window_closed()");
     webcam::on_preview_window_close();
+}
+
+/// Get available audio output devices (speakers/headphones) for system audio capture.
+#[command]
+pub fn list_audio_output_devices() -> Result<Vec<types::AudioOutputDevice>, String> {
+    audio_wasapi::list_output_devices()
 }
 
 /// Get available audio input devices (microphones).
@@ -1305,6 +1305,15 @@ pub async fn export_video(
     Ok(result)
 }
 
+/// Cancel a running video export.
+///
+/// Sets an internal flag that the export render loop checks each iteration.
+/// The export will stop, kill FFmpeg, and delete the partial output file.
+#[command]
+pub fn cancel_export() {
+    crate::rendering::exporter::request_cancel_export();
+}
+
 /// Check if NVENC hardware encoding is available.
 ///
 /// This tests if the system has an NVIDIA GPU with NVENC support
@@ -1379,7 +1388,7 @@ pub fn generate_output_path(settings: &RecordingSettings) -> Result<PathBuf, Str
 pub fn emit_state_change(app: &AppHandle, state: &RecordingState) {
     // Debug: log the serialized JSON to verify field names
     if let Ok(json) = serde_json::to_string(state) {
-        println!("[EMIT] recording-state-changed: {}", json);
+        log::debug!("[EMIT] recording-state-changed: {}", json);
     }
     let _ = app.emit("recording-state-changed", state);
 }

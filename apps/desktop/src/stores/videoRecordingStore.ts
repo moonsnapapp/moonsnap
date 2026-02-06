@@ -64,6 +64,7 @@ const defaultSettings: RecordingSettings = {
   includeCursor: true,
   audio: {
     captureSystemAudio: true,
+    systemAudioDeviceId: null,
     microphoneDeviceIndex: null,
   },
   quality: 80,

@@ -253,7 +253,15 @@ impl AudioCaptureManager {
     }
 
     /// Start capturing system audio (WASAPI loopback).
-    pub fn start_system_audio(&mut self, start_time: Instant) -> Result<(), String> {
+    ///
+    /// # Arguments
+    /// * `start_time` - Recording start time for timestamp calculation
+    /// * `device_id` - Optional output device ID. None = system default.
+    pub fn start_system_audio(
+        &mut self,
+        start_time: Instant,
+        device_id: Option<String>,
+    ) -> Result<(), String> {
         use super::audio_wasapi::WasapiLoopback;
 
         let (tx, rx) = bounded::<AudioFrame>(AUDIO_CHANNEL_SIZE);
@@ -265,7 +273,7 @@ impl AudioCaptureManager {
         let handle = std::thread::Builder::new()
             .name("audio-wasapi".to_string())
             .spawn(move || {
-                let loopback = WasapiLoopback::new()?;
+                let loopback = WasapiLoopback::with_device(device_id.as_deref())?;
                 loopback.capture_loop(tx, start_time, should_stop, is_paused)
             })
             .map_err(|e| format!("Failed to spawn WASAPI thread: {}", e))?;

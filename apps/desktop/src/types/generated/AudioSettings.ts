@@ -9,6 +9,10 @@ export type AudioSettings = {
  */
 captureSystemAudio: boolean, 
 /**
+ * Selected system audio output device ID. None = system default.
+ */
+systemAudioDeviceId: string | null, 
+/**
  * Selected microphone device index. None = no microphone.
  */
 microphoneDeviceIndex: number | null, };
