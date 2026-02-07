@@ -1,7 +1,8 @@
 import { invoke } from '@tauri-apps/api/core';
-import type { SliceCreator, ExportProgress, ExportResult, ExportConfig, AutoZoomConfig, VideoProject } from './types';
+import type { SliceCreator, ExportProgress, ExportResult, ExportConfig, AutoZoomConfig, VideoProject, ZoomRegion, SceneSegment, MaskSegment, TextSegment } from './types';
 import { videoEditorLogger } from '../../utils/logger';
 import { sanitizeProjectForSave } from './projectSlice';
+import { clipSegmentsToTimelineRange, getEffectiveDuration } from './trimSlice';
 
 /**
  * Export state and actions for video export and auto-zoom generation
@@ -55,7 +56,7 @@ export const createExportSlice: SliceCreator<ExportSlice> = (set, get) => ({
 
   // Export actions
   exportVideo: async (outputPath: string): Promise<ExportResult> => {
-    const { project, captionSegments, captionSettings } = get();
+    const { project, captionSegments, captionSettings, exportInPointMs, exportOutPointMs } = get();
     if (!project) {
       throw new Error('No project loaded');
     }
@@ -70,7 +71,7 @@ export const createExportSlice: SliceCreator<ExportSlice> = (set, get) => ({
     const selectedFormat = formatMap[ext ?? 'mp4'] ?? 'mp4';
 
     // Create project with correct format and caption data for export
-    const projectWithCaptions = {
+    let projectWithCaptions = {
       ...project,
       export: {
         ...project.export,
@@ -79,6 +80,90 @@ export const createExportSlice: SliceCreator<ExportSlice> = (set, get) => ({
       captions: captionSettings,
       captionSegments: captionSegments,
     };
+
+    // Clip to IO range if markers are set
+    if (exportInPointMs !== null || exportOutPointMs !== null) {
+      const segments = projectWithCaptions.timeline.segments ?? [];
+      const totalDurationMs = projectWithCaptions.timeline.durationMs;
+      const effectiveDur = getEffectiveDuration(segments, totalDurationMs);
+
+      // Clamp outPoint to effective duration
+      const clampedOut = exportOutPointMs !== null ? Math.min(exportOutPointMs, effectiveDur) : null;
+
+      const clippedSegments = clipSegmentsToTimelineRange(
+        segments,
+        exportInPointMs,
+        clampedOut,
+        totalDurationMs
+      );
+
+      const effectiveIn = exportInPointMs ?? 0;
+      const effectiveOut = clampedOut ?? effectiveDur;
+
+      // Clip zoom regions to IO range
+      const clippedZoomRegions: ZoomRegion[] = projectWithCaptions.zoom.regions
+        .filter((r) => r.startMs < effectiveOut && r.endMs > effectiveIn)
+        .map((r) => ({
+          ...r,
+          startMs: Math.max(r.startMs, effectiveIn) - effectiveIn,
+          endMs: Math.min(r.endMs, effectiveOut) - effectiveIn,
+        }));
+
+      // Clip scene segments to IO range
+      const clippedSceneSegments: SceneSegment[] = projectWithCaptions.scene.segments
+        .filter((s) => s.startMs < effectiveOut && s.endMs > effectiveIn)
+        .map((s) => ({
+          ...s,
+          startMs: Math.max(s.startMs, effectiveIn) - effectiveIn,
+          endMs: Math.min(s.endMs, effectiveOut) - effectiveIn,
+        }));
+
+      // Clip mask segments to IO range
+      const clippedMaskSegments: MaskSegment[] = projectWithCaptions.mask.segments
+        .filter((s) => s.startMs < effectiveOut && s.endMs > effectiveIn)
+        .map((s) => ({
+          ...s,
+          startMs: Math.max(s.startMs, effectiveIn) - effectiveIn,
+          endMs: Math.min(s.endMs, effectiveOut) - effectiveIn,
+        }));
+
+      // Clip text segments to IO range (text uses seconds, not ms)
+      const effectiveInSec = effectiveIn / 1000;
+      const effectiveOutSec = effectiveOut / 1000;
+      const clippedTextSegments: TextSegment[] = projectWithCaptions.text.segments
+        .filter((s) => s.start < effectiveOutSec && s.end > effectiveInSec)
+        .map((s) => ({
+          ...s,
+          start: Math.max(s.start, effectiveInSec) - effectiveInSec,
+          end: Math.min(s.end, effectiveOutSec) - effectiveInSec,
+        }));
+
+      projectWithCaptions = {
+        ...projectWithCaptions,
+        timeline: {
+          ...projectWithCaptions.timeline,
+          segments: clippedSegments,
+        },
+        zoom: {
+          ...projectWithCaptions.zoom,
+          regions: clippedZoomRegions,
+        },
+        scene: {
+          ...projectWithCaptions.scene,
+          segments: clippedSceneSegments,
+        },
+        mask: {
+          ...projectWithCaptions.mask,
+          segments: clippedMaskSegments,
+        },
+        text: {
+          ...projectWithCaptions.text,
+          segments: clippedTextSegments,
+        },
+      };
+
+      videoEditorLogger.info(`IO range: ${effectiveIn}ms - ${effectiveOut}ms (${clippedSegments.length} segments)`);
+    }
 
     // Sanitize project to ensure all ms values are integers (Rust expects u64)
     const sanitizedProject = sanitizeProjectForSave(projectWithCaptions);

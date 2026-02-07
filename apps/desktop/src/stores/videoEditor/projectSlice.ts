@@ -85,6 +85,14 @@ export const createProjectSlice: SliceCreator<ProjectSlice> = (set, get) => ({
 
   // Project actions
   setProject: (project) => {
+    // Restore IO markers from project (inPoint=0 → null, outPoint=durationMs → null)
+    const exportInPointMs = project && project.timeline.inPoint > 0
+      ? project.timeline.inPoint
+      : null;
+    const exportOutPointMs = project && project.timeline.outPoint < project.timeline.durationMs
+      ? project.timeline.outPoint
+      : null;
+
     set({
       project,
       cursorRecording: null, // Reset cursor recording when project changes
@@ -95,6 +103,9 @@ export const createProjectSlice: SliceCreator<ProjectSlice> = (set, get) => ({
       // Load caption data from project if available
       captionSegments: project?.captionSegments ?? [],
       captionSettings: project?.captions ?? get().captionSettings,
+      // Restore IO markers
+      exportInPointMs,
+      exportOutPointMs,
     });
 
     // Save video project path to session storage for F5 persistence
@@ -217,6 +228,8 @@ export const createProjectSlice: SliceCreator<ProjectSlice> = (set, get) => ({
       isGeneratingAutoZoom: false,
       isExporting: false,
       exportProgress: null,
+      exportInPointMs: null,
+      exportOutPointMs: null,
     });
   },
 });

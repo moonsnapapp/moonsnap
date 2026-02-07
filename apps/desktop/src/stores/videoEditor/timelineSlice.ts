@@ -44,6 +44,13 @@ export interface TimelineSlice {
 
   // Split mode actions
   setSplitMode: (enabled: boolean) => void;
+
+  // IO markers for export range
+  exportInPointMs: number | null;
+  exportOutPointMs: number | null;
+  setExportInPoint: (ms: number) => void;
+  setExportOutPoint: (ms: number) => void;
+  clearExportRange: () => void;
 }
 
 export const createTimelineSlice: SliceCreator<TimelineSlice> = (set, get) => ({
@@ -140,4 +147,68 @@ export const createTimelineSlice: SliceCreator<TimelineSlice> = (set, get) => ({
 
   // Split mode actions
   setSplitMode: (enabled) => set({ splitMode: enabled }),
+
+  // IO markers for export range
+  exportInPointMs: null,
+  exportOutPointMs: null,
+
+  setExportInPoint: (ms) => {
+    const { exportOutPointMs, project } = get();
+    // If I >= O, clear the out point (standard NLE behavior: newer marker wins)
+    const newIn = ms;
+    const newOut = (exportOutPointMs !== null && ms >= exportOutPointMs) ? null : exportOutPointMs;
+    set({ exportInPointMs: newIn, exportOutPointMs: newOut });
+    // Sync to project for persistence
+    if (project) {
+      set({
+        project: {
+          ...project,
+          timeline: {
+            ...project.timeline,
+            inPoint: newIn,
+            outPoint: newOut ?? project.timeline.durationMs,
+          },
+        },
+      });
+    }
+  },
+
+  setExportOutPoint: (ms) => {
+    const { exportInPointMs, project } = get();
+    // If O <= I, clear the in point (standard NLE behavior: newer marker wins)
+    const newOut = ms;
+    const newIn = (exportInPointMs !== null && ms <= exportInPointMs) ? null : exportInPointMs;
+    set({ exportOutPointMs: newOut, exportInPointMs: newIn });
+    // Sync to project for persistence
+    if (project) {
+      set({
+        project: {
+          ...project,
+          timeline: {
+            ...project.timeline,
+            inPoint: newIn ?? 0,
+            outPoint: newOut,
+          },
+        },
+      });
+    }
+  },
+
+  clearExportRange: () => {
+    const { project } = get();
+    set({ exportInPointMs: null, exportOutPointMs: null });
+    // Sync to project for persistence
+    if (project) {
+      set({
+        project: {
+          ...project,
+          timeline: {
+            ...project.timeline,
+            inPoint: 0,
+            outPoint: project.timeline.durationMs,
+          },
+        },
+      });
+    }
+  },
 });

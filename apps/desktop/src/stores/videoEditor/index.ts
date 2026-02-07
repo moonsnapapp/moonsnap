@@ -60,6 +60,7 @@ export {
   getSegmentTimelinePosition,
   findSegmentAtSourceTime,
   findSegmentIndexAtTimelineTime,
+  clipSegmentsToTimelineRange,
   MIN_TRIM_SEGMENT_DURATION_MS,
 } from './trimSlice';
 

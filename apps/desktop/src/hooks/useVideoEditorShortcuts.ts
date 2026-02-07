@@ -20,6 +20,8 @@ import { useEffect, useCallback } from 'react';
  * - Ctrl+-: Zoom out timeline
  * - Ctrl+=: Zoom in timeline
  * - Ctrl+E: Export
+ * - I: Set in point at playhead
+ * - O: Set out point at playhead
  */
 
 interface UseVideoEditorShortcutsProps {
@@ -38,6 +40,8 @@ interface UseVideoEditorShortcutsProps {
   onExport: () => void;
   onUndoTrim?: () => void;
   onRedoTrim?: () => void;
+  onSetInPoint?: () => void;
+  onSetOutPoint?: () => void;
 }
 
 export function useVideoEditorShortcuts({
@@ -56,6 +60,8 @@ export function useVideoEditorShortcuts({
   onExport,
   onUndoTrim,
   onRedoTrim,
+  onSetInPoint,
+  onSetOutPoint,
 }: UseVideoEditorShortcutsProps) {
   // Check if event target is an input field
   const isInputTarget = useCallback((e: KeyboardEvent): boolean => {
@@ -139,6 +145,16 @@ export function useVideoEditorShortcuts({
           e.preventDefault();
           onDeleteSelected();
           break;
+        case 'i':
+        case 'I':
+          e.preventDefault();
+          onSetInPoint?.();
+          break;
+        case 'o':
+        case 'O':
+          e.preventDefault();
+          onSetOutPoint?.();
+          break;
         case 'Escape':
           e.preventDefault();
           onDeselect();
@@ -165,5 +181,7 @@ export function useVideoEditorShortcuts({
     onExport,
     onUndoTrim,
     onRedoTrim,
+    onSetInPoint,
+    onSetOutPoint,
   ]);
 }

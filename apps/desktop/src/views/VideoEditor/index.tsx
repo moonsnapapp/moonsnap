@@ -91,6 +91,10 @@ export const VideoEditorView = forwardRef<VideoEditorViewRef, VideoEditorViewPro
     // Save
     saveProject,
     isSaving,
+    // IO markers
+    setExportInPoint,
+    setExportOutPoint,
+    clearExportRange,
   } = useVideoEditorStore();
 
   // Crop dialog state
@@ -186,6 +190,21 @@ export const VideoEditorView = forwardRef<VideoEditorViewRef, VideoEditorViewPro
     redoTrim();
   }, [redoTrim]);
 
+  // IO marker handlers
+  const handleSetInPoint = useCallback(() => {
+    const { currentTimeMs } = useVideoEditorStore.getState();
+    setExportInPoint(currentTimeMs);
+  }, [setExportInPoint]);
+
+  const handleSetOutPoint = useCallback(() => {
+    const { currentTimeMs } = useVideoEditorStore.getState();
+    setExportOutPoint(currentTimeMs);
+  }, [setExportOutPoint]);
+
+  const handleClearExportRange = useCallback(() => {
+    clearExportRange();
+  }, [clearExportRange]);
+
   // Use keyboard shortcuts
   useVideoEditorShortcuts({
     enabled: !!project && !isExporting,
@@ -203,6 +222,8 @@ export const VideoEditorView = forwardRef<VideoEditorViewRef, VideoEditorViewPro
     onExport: () => {}, // Will be wired to handleExport after it's defined
     onUndoTrim: handleUndoTrim,
     onRedoTrim: handleRedoTrim,
+    onSetInPoint: handleSetInPoint,
+    onSetOutPoint: handleSetOutPoint,
   });
 
   // Listen for export progress events from Rust backend
@@ -332,6 +353,9 @@ export const VideoEditorView = forwardRef<VideoEditorViewRef, VideoEditorViewPro
         onExport={handleExport}
         onSplitAtPlayhead={handleSplitAtPlayhead}
         onResetTrimSegments={handleResetTrimSegments}
+        onSetInPoint={handleSetInPoint}
+        onSetOutPoint={handleSetOutPoint}
+        onClearExportRange={handleClearExportRange}
       />
 
       {/* Crop Dialog - lazy loaded, crops video content before composition */}

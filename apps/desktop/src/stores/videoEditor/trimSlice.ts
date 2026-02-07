@@ -154,6 +154,66 @@ export function findSegmentIndexAtTimelineTime(timelineMs: number, segments: Tri
 }
 
 /**
+ * Clip trim segments to a timeline range defined by in/out points.
+ * Walks segments tracking accumulated timeline time, clips each to the IO overlap.
+ * When no segments exist, creates a single segment [inPointMs, outPointMs).
+ *
+ * @param segments - Array of trim segments (may be empty)
+ * @param inPointMs - Start of export range in timeline time (null = start of timeline)
+ * @param outPointMs - End of export range in timeline time (null = end of timeline)
+ * @param totalDurationMs - Original video duration (used when no segments exist)
+ * @returns Clipped array of trim segments
+ */
+export function clipSegmentsToTimelineRange(
+  segments: TrimSegment[],
+  inPointMs: number | null,
+  outPointMs: number | null,
+  totalDurationMs: number
+): TrimSegment[] {
+  const effectiveIn = inPointMs ?? 0;
+  const effectiveOut = outPointMs ?? Infinity;
+
+  // No segments means untrimmed: create a single segment for the IO range
+  if (!segments || segments.length === 0) {
+    const clampedOut = Math.min(effectiveOut, totalDurationMs);
+    return [{
+      id: generateTrimSegmentId(),
+      sourceStartMs: Math.round(effectiveIn),
+      sourceEndMs: Math.round(clampedOut),
+    }];
+  }
+
+  const result: TrimSegment[] = [];
+  let accumulatedTimeline = 0;
+
+  for (const segment of segments) {
+    const segmentDuration = segment.sourceEndMs - segment.sourceStartMs;
+    const segmentTimelineStart = accumulatedTimeline;
+    const segmentTimelineEnd = accumulatedTimeline + segmentDuration;
+
+    // Find overlap between [segmentTimelineStart, segmentTimelineEnd) and [effectiveIn, effectiveOut)
+    const overlapStart = Math.max(segmentTimelineStart, effectiveIn);
+    const overlapEnd = Math.min(segmentTimelineEnd, effectiveOut);
+
+    if (overlapStart < overlapEnd) {
+      // Map back to source time
+      const sourceOffset = overlapStart - segmentTimelineStart;
+      const sourceLength = overlapEnd - overlapStart;
+
+      result.push({
+        id: segment.id,
+        sourceStartMs: Math.round(segment.sourceStartMs + sourceOffset),
+        sourceEndMs: Math.round(segment.sourceStartMs + sourceOffset + sourceLength),
+      });
+    }
+
+    accumulatedTimeline += segmentDuration;
+  }
+
+  return result;
+}
+
+/**
  * Undo history entry for trim operations.
  */
 interface TrimHistoryEntry {

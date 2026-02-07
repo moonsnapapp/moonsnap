@@ -15,6 +15,7 @@ import {
   EyeOff,
   Scissors,
   RotateCcw,
+  X,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -28,6 +29,9 @@ import { usePlaybackTime, usePlaybackControls, getPlaybackState } from '../../ho
 import { TimelineRuler } from './TimelineRuler';
 import { ZoomTrackContent, SceneTrackContent, MaskTrackContent, TextTrackContent, TrimTrackContent } from './tracks';
 import { TrackManager } from './TrackManager';
+
+const selectExportInPointMs = (s: ReturnType<typeof useVideoEditorStore.getState>) => s.exportInPointMs;
+const selectExportOutPointMs = (s: ReturnType<typeof useVideoEditorStore.getState>) => s.exportOutPointMs;
 
 // Selectors to prevent re-renders from unrelated store changes
 const selectProject = (s: ReturnType<typeof useVideoEditorStore.getState>) => s.project;
@@ -77,6 +81,9 @@ interface VideoTimelineProps {
   onExport: () => void;
   onSplitAtPlayhead?: () => void;
   onResetTrimSegments?: () => void;
+  onSetInPoint?: () => void;
+  onSetOutPoint?: () => void;
+  onClearExportRange?: () => void;
 }
 
 /**
@@ -168,16 +175,118 @@ const PlayheadTimeIndicator = memo(function PlayheadTimeIndicator() {
 });
 
 /**
+ * IO Marker - teal vertical line confined to the ruler area with "I" or "O" label.
+ * Draggable: grab the label handle to reposition.
+ */
+const IOMarker = memo(function IOMarker({
+  timeMs,
+  label,
+  timelineZoom,
+  isDragging,
+  onMouseDown,
+}: {
+  timeMs: number;
+  label: 'I' | 'O';
+  timelineZoom: number;
+  isDragging: boolean;
+  onMouseDown: (e: React.MouseEvent) => void;
+}) {
+  const position = timeMs * timelineZoom;
+
+  return (
+    <div
+      className="absolute top-0 h-8 w-0.5 z-25 pointer-events-none"
+      style={{
+        left: `${position}px`,
+        backgroundColor: 'var(--teal-400, #2dd4bf)',
+      }}
+    >
+      {/* Draggable label handle */}
+      <div
+        className={`absolute top-0 left-1/2 -translate-x-1/2 w-4 h-4 rounded-b-sm flex items-center justify-center text-[9px] font-bold text-white pointer-events-auto ${isDragging ? 'cursor-grabbing scale-110' : 'cursor-grab hover:scale-105'} transition-transform`}
+        style={{ backgroundColor: 'var(--teal-400, #2dd4bf)' }}
+        onMouseDown={onMouseDown}
+      >
+        {label}
+      </div>
+      {/* Time tooltip while dragging */}
+      {isDragging && (
+        <div
+          className="absolute top-5 left-1/2 -translate-x-1/2 px-2 py-0.5 rounded text-[10px] font-mono whitespace-nowrap shadow-lg pointer-events-none"
+          style={{
+            backgroundColor: 'var(--teal-400, #2dd4bf)',
+            color: 'white',
+          }}
+        >
+          {formatTimeSimple(timeMs)}
+        </div>
+      )}
+    </div>
+  );
+});
+
+/**
+ * IO Region Overlay - dims areas outside the IO range with a semi-transparent overlay.
+ */
+const IORegionOverlay = memo(function IORegionOverlay({
+  inPointMs,
+  outPointMs,
+  effectiveDurationMs,
+  timelineZoom,
+}: {
+  inPointMs: number | null;
+  outPointMs: number | null;
+  effectiveDurationMs: number;
+  timelineZoom: number;
+}) {
+  const effectiveIn = inPointMs ?? 0;
+  const effectiveOut = outPointMs ?? effectiveDurationMs;
+
+  const inPosition = effectiveIn * timelineZoom;
+  const outPosition = effectiveOut * timelineZoom;
+  const totalWidth = effectiveDurationMs * timelineZoom;
+
+  return (
+    <>
+      {/* Dim region before in point */}
+      {effectiveIn > 0 && (
+        <div
+          className="absolute top-0 bottom-0 z-15 pointer-events-none"
+          style={{
+            left: 0,
+            width: `${inPosition}px`,
+            backgroundColor: 'rgba(0, 0, 0, 0.15)',
+          }}
+        />
+      )}
+      {/* Dim region after out point */}
+      {effectiveOut < effectiveDurationMs && (
+        <div
+          className="absolute top-0 bottom-0 z-15 pointer-events-none"
+          style={{
+            left: `${outPosition}px`,
+            width: `${Math.max(0, totalWidth - outPosition)}px`,
+            backgroundColor: 'rgba(0, 0, 0, 0.15)',
+          }}
+        />
+      )}
+    </>
+  );
+});
+
+/**
  * VideoTimeline - Main timeline component with ruler, tracks, and playhead.
  * Optimized to prevent re-renders during playback.
  */
-export function VideoTimeline({ onExport, onSplitAtPlayhead, onResetTrimSegments }: VideoTimelineProps) {
+export function VideoTimeline({ onExport, onSplitAtPlayhead, onResetTrimSegments, onSetInPoint, onSetOutPoint, onClearExportRange }: VideoTimelineProps) {
   const project = useVideoEditorStore(selectProject);
   const timelineZoom = useVideoEditorStore(selectTimelineZoom);
   const isDraggingPlayhead = useVideoEditorStore(selectIsDraggingPlayhead);
   const isPlaying = useVideoEditorStore(selectIsPlaying);
   const previewTimeMs = useVideoEditorStore(selectPreviewTimeMs);
   const trackVisibility = useVideoEditorStore(selectTrackVisibility);
+  const exportInPointMs = useVideoEditorStore(selectExportInPointMs);
+  const exportOutPointMs = useVideoEditorStore(selectExportOutPointMs);
 
   const {
     setTimelineScrollLeft,
@@ -187,7 +296,11 @@ export function VideoTimeline({ onExport, onSplitAtPlayhead, onResetTrimSegments
     setPreviewTime,
     togglePlayback,
     fitTimelineToWindow,
+    setExportInPoint,
+    setExportOutPoint,
   } = useVideoEditorStore();
+
+  const [draggingIOMarker, setDraggingIOMarker] = useState<'in' | 'out' | null>(null);
 
   const controls = usePlaybackControls();
   const containerRef = useRef<HTMLDivElement>(null);
@@ -311,6 +424,47 @@ export function VideoTimeline({ onExport, onSplitAtPlayhead, onResetTrimSegments
     document.addEventListener('mouseup', handleMouseUp);
   }, [effectiveDurationMs, timelineZoom, controls, setDraggingPlayhead]);
 
+  // Handle IO marker dragging
+  const handleIOMarkerMouseDown = useCallback((marker: 'in' | 'out', e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDraggingIOMarker(marker);
+
+    const handleMouseMove = (moveEvent: MouseEvent) => {
+      const scrollContainer = scrollRef.current;
+      if (!scrollContainer) return;
+
+      const rect = scrollContainer.getBoundingClientRect();
+      const scrollLeft = scrollContainer.scrollLeft;
+      const x = moveEvent.clientX - rect.left + scrollLeft;
+      const rawTimeMs = Math.max(0, Math.min(effectiveDurationMs, x / timelineZoom));
+
+      // Read the latest marker positions from the store directly
+      const { exportInPointMs: currentIn, exportOutPointMs: currentOut } = useVideoEditorStore.getState();
+
+      if (marker === 'in') {
+        // Clamp: can't go past the out point
+        const maxMs = currentOut !== null ? currentOut - 1 : effectiveDurationMs;
+        const clampedMs = Math.min(rawTimeMs, maxMs);
+        setExportInPoint(Math.max(0, clampedMs));
+      } else {
+        // Clamp: can't go before the in point
+        const minMs = currentIn !== null ? currentIn + 1 : 0;
+        const clampedMs = Math.max(rawTimeMs, minMs);
+        setExportOutPoint(Math.min(effectiveDurationMs, clampedMs));
+      }
+    };
+
+    const handleMouseUp = () => {
+      setDraggingIOMarker(null);
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+  }, [effectiveDurationMs, timelineZoom, setExportInPoint, setExportOutPoint]);
+
   // Handle scroll
   const handleScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
     setTimelineScrollLeft(e.currentTarget.scrollLeft);
@@ -413,6 +567,69 @@ export function VideoTimeline({ onExport, onSplitAtPlayhead, onResetTrimSegments
                   <span className="text-xs">Reset Trims</span>
                 </TooltipContent>
               </Tooltip>
+            )}
+
+            {/* IO marker buttons */}
+            {(onSetInPoint || onSetOutPoint) && (
+              <>
+                <div className="w-px h-5 bg-[var(--glass-border)]" />
+
+                {onSetInPoint && (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
+                        onClick={onSetInPoint}
+                        className="glass-btn h-8 px-2 text-[11px] font-semibold"
+                        style={{ color: exportInPointMs !== null ? 'var(--teal-400, #2dd4bf)' : undefined }}
+                      >
+                        I
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent side="bottom">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs">Set In Point</span>
+                        <kbd className="kbd text-[10px] px-1.5 py-0.5">I</kbd>
+                      </div>
+                    </TooltipContent>
+                  </Tooltip>
+                )}
+
+                {onSetOutPoint && (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
+                        onClick={onSetOutPoint}
+                        className="glass-btn h-8 px-2 text-[11px] font-semibold"
+                        style={{ color: exportOutPointMs !== null ? 'var(--teal-400, #2dd4bf)' : undefined }}
+                      >
+                        O
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent side="bottom">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs">Set Out Point</span>
+                        <kbd className="kbd text-[10px] px-1.5 py-0.5">O</kbd>
+                      </div>
+                    </TooltipContent>
+                  </Tooltip>
+                )}
+
+                {onClearExportRange && (exportInPointMs !== null || exportOutPointMs !== null) && (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
+                        onClick={onClearExportRange}
+                        className="glass-btn h-8 w-8"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent side="bottom">
+                      <span className="text-xs">Clear IO Range</span>
+                    </TooltipContent>
+                  </Tooltip>
+                )}
+              </>
             )}
           </div>
 
@@ -693,6 +910,36 @@ export function VideoTimeline({ onExport, onSplitAtPlayhead, onResetTrimSegments
                 durationMs={effectiveDurationMs}
                 timelineZoom={timelineZoom}
                 width={timelineWidth}
+              />
+            )}
+
+            {/* IO Region Overlay - dims areas outside export range */}
+            {(exportInPointMs !== null || exportOutPointMs !== null) && (
+              <IORegionOverlay
+                inPointMs={exportInPointMs}
+                outPointMs={exportOutPointMs}
+                effectiveDurationMs={effectiveDurationMs}
+                timelineZoom={timelineZoom}
+              />
+            )}
+
+            {/* IO Markers */}
+            {exportInPointMs !== null && (
+              <IOMarker
+                timeMs={exportInPointMs}
+                label="I"
+                timelineZoom={timelineZoom}
+                isDragging={draggingIOMarker === 'in'}
+                onMouseDown={(e) => handleIOMarkerMouseDown('in', e)}
+              />
+            )}
+            {exportOutPointMs !== null && (
+              <IOMarker
+                timeMs={exportOutPointMs}
+                label="O"
+                timelineZoom={timelineZoom}
+                isDragging={draggingIOMarker === 'out'}
+                onMouseDown={(e) => handleIOMarkerMouseDown('out', e)}
               />
             )}
 
