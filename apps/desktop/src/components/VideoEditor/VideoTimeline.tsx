@@ -305,6 +305,7 @@ export function VideoTimeline({ onExport, onSplitAtPlayhead, onResetTrimSegments
   const controls = usePlaybackControls();
   const containerRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const suppressNextClickRef = useRef(false);
   const [containerWidth, setContainerWidth] = useState(0);
 
   // Measure container width and sync to store (debounced to avoid resize lag)
@@ -367,6 +368,11 @@ export function VideoTimeline({ onExport, onSplitAtPlayhead, onResetTrimSegments
   // Handle clicking on timeline to seek (event is on content div which moves with scroll)
   // Keep any selected segments - user can click empty track area to deselect
   const handleTimelineClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    // Skip seek if an IO marker drag just finished (mouseup fires click)
+    if (suppressNextClickRef.current) {
+      suppressNextClickRef.current = false;
+      return;
+    }
     const rect = e.currentTarget.getBoundingClientRect();
     // No scroll offset needed - event target already accounts for scroll position
     const x = e.clientX - rect.left;
@@ -457,6 +463,8 @@ export function VideoTimeline({ onExport, onSplitAtPlayhead, onResetTrimSegments
 
     const handleMouseUp = () => {
       setDraggingIOMarker(null);
+      // Suppress the click event that fires after mouseup to prevent playhead seek
+      suppressNextClickRef.current = true;
       document.removeEventListener('mousemove', handleMouseMove);
       document.removeEventListener('mouseup', handleMouseUp);
     };

@@ -2,50 +2,16 @@ import { memo, useCallback, useRef, useState, useEffect, useMemo } from 'react';
 import { convertFileSrc } from '@tauri-apps/api/core';
 import type { CropConfig } from '../../types';
 
-// Common aspect ratios for snapping
-const COMMON_RATIOS: [number, number][] = [
-  [1, 1],
-  [4, 3],
-  [3, 2],
-  [16, 9],
-  [9, 16],
-  [16, 10],
-  [21, 9],
-];
-
-// Snap threshold for aspect ratio detection
-const SNAP_THRESHOLD = 0.03;
-
-/**
- * Find closest common aspect ratio within threshold
- */
-function findClosestRatio(width: number, height: number): [number, number] | null {
-  const currentRatio = width / height;
-  for (const [w, h] of COMMON_RATIOS) {
-    const ratio = w / h;
-    if (Math.abs(currentRatio - ratio) < SNAP_THRESHOLD) {
-      return [w, h];
-    }
-    // Also check inverted
-    const invertedRatio = h / w;
-    if (Math.abs(currentRatio - invertedRatio) < SNAP_THRESHOLD) {
-      return [h, w];
-    }
-  }
-  return null;
-}
-
 type DragType = 'move' | 'resize-tl' | 'resize-tr' | 'resize-bl' | 'resize-br' | 'resize-t' | 'resize-b' | 'resize-l' | 'resize-r' | null;
 
 export interface CropPreviewProps {
   crop: CropConfig;
   displayCrop: CropConfig; // Animated display values
   onCropChange: (crop: CropConfig, animate?: boolean) => void;
+  onDragEnd: () => void;
   videoWidth: number;
   videoHeight: number;
   videoPath?: string;
-  snappedRatio: [number, number] | null;
-  onSnappedRatioChange: (ratio: [number, number] | null) => void;
 }
 
 /**
@@ -56,16 +22,16 @@ export const CropPreview = memo(function CropPreview({
   crop,
   displayCrop,
   onCropChange,
+  onDragEnd,
   videoWidth,
   videoHeight,
   videoPath,
-  snappedRatio,
-  onSnappedRatioChange,
 }: CropPreviewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const [dragType, setDragType] = useState<DragType>(null);
   const dragStartRef = useRef<{ x: number; y: number; crop: CropConfig } | null>(null);
+  const rafRef = useRef<number | null>(null);
 
   // Calculate scale factor to fit video in preview area
   const maxPreviewWidth = 600;
@@ -90,6 +56,15 @@ export const CropPreview = memo(function CropPreview({
     }
   }, [videoPath]);
 
+  // Cleanup pending rAF on unmount
+  useEffect(() => {
+    return () => {
+      if (rafRef.current !== null) {
+        cancelAnimationFrame(rafRef.current);
+      }
+    };
+  }, []);
+
   const handleMouseDown = useCallback((
     e: React.MouseEvent,
     type: DragType
@@ -104,74 +79,75 @@ export const CropPreview = memo(function CropPreview({
       crop: { ...crop },
     };
 
-    const handleMouseMove = (moveEvent: MouseEvent) => {
-      if (!dragStartRef.current || !containerRef.current) return;
+    // Track latest mouse position for rAF coalescing
+    const latestPos = { clientX: e.clientX, clientY: e.clientY };
 
-      const deltaX = (moveEvent.clientX - dragStartRef.current.x) / scale;
-      const deltaY = (moveEvent.clientY - dragStartRef.current.y) / scale;
+    const processDrag = () => {
+      if (!dragStartRef.current) return;
+
+      const deltaX = (latestPos.clientX - dragStartRef.current.x) / scale;
+      const deltaY = (latestPos.clientY - dragStartRef.current.y) / scale;
 
       const startCrop = dragStartRef.current.crop;
       const newCrop = { ...crop };
 
-      const minSize = 50; // Minimum crop size in pixels
+      const minSize = 50;
+      const rightEdge = startCrop.x + startCrop.width;
+      const bottomEdge = startCrop.y + startCrop.height;
 
+      // Round the moving edge first, then derive the linked dimension
+      // so the pinned (opposite) edge never shifts.
       switch (type) {
         case 'move':
-          newCrop.x = Math.max(0, Math.min(videoWidth - startCrop.width, startCrop.x + deltaX));
-          newCrop.y = Math.max(0, Math.min(videoHeight - startCrop.height, startCrop.y + deltaY));
+          newCrop.x = Math.round(Math.max(0, Math.min(videoWidth - startCrop.width, startCrop.x + deltaX)));
+          newCrop.y = Math.round(Math.max(0, Math.min(videoHeight - startCrop.height, startCrop.y + deltaY)));
           break;
 
         case 'resize-tl': {
-          newCrop.x = Math.max(0, Math.min(startCrop.x + startCrop.width - minSize, startCrop.x + deltaX));
-          newCrop.y = Math.max(0, Math.min(startCrop.y + startCrop.height - minSize, startCrop.y + deltaY));
-          newCrop.width = startCrop.x + startCrop.width - newCrop.x;
-          newCrop.height = startCrop.y + startCrop.height - newCrop.y;
+          newCrop.x = Math.round(Math.max(0, Math.min(rightEdge - minSize, startCrop.x + deltaX)));
+          newCrop.y = Math.round(Math.max(0, Math.min(bottomEdge - minSize, startCrop.y + deltaY)));
+          newCrop.width = rightEdge - newCrop.x;
+          newCrop.height = bottomEdge - newCrop.y;
           break;
         }
 
         case 'resize-tr': {
-          newCrop.y = Math.max(0, Math.min(startCrop.y + startCrop.height - minSize, startCrop.y + deltaY));
-          newCrop.width = Math.max(minSize, Math.min(videoWidth - startCrop.x, startCrop.width + deltaX));
-          newCrop.height = startCrop.y + startCrop.height - newCrop.y;
+          newCrop.y = Math.round(Math.max(0, Math.min(bottomEdge - minSize, startCrop.y + deltaY)));
+          newCrop.width = Math.round(Math.max(minSize, Math.min(videoWidth - startCrop.x, startCrop.width + deltaX)));
+          newCrop.height = bottomEdge - newCrop.y;
           break;
         }
 
         case 'resize-bl': {
-          newCrop.x = Math.max(0, Math.min(startCrop.x + startCrop.width - minSize, startCrop.x + deltaX));
-          newCrop.width = startCrop.x + startCrop.width - newCrop.x;
-          newCrop.height = Math.max(minSize, Math.min(videoHeight - startCrop.y, startCrop.height + deltaY));
+          newCrop.x = Math.round(Math.max(0, Math.min(rightEdge - minSize, startCrop.x + deltaX)));
+          newCrop.width = rightEdge - newCrop.x;
+          newCrop.height = Math.round(Math.max(minSize, Math.min(videoHeight - startCrop.y, startCrop.height + deltaY)));
           break;
         }
 
         case 'resize-br':
-          newCrop.width = Math.max(minSize, Math.min(videoWidth - startCrop.x, startCrop.width + deltaX));
-          newCrop.height = Math.max(minSize, Math.min(videoHeight - startCrop.y, startCrop.height + deltaY));
+          newCrop.width = Math.round(Math.max(minSize, Math.min(videoWidth - startCrop.x, startCrop.width + deltaX)));
+          newCrop.height = Math.round(Math.max(minSize, Math.min(videoHeight - startCrop.y, startCrop.height + deltaY)));
           break;
 
         case 'resize-t':
-          newCrop.y = Math.max(0, Math.min(startCrop.y + startCrop.height - minSize, startCrop.y + deltaY));
-          newCrop.height = startCrop.y + startCrop.height - newCrop.y;
+          newCrop.y = Math.round(Math.max(0, Math.min(bottomEdge - minSize, startCrop.y + deltaY)));
+          newCrop.height = bottomEdge - newCrop.y;
           break;
 
         case 'resize-b':
-          newCrop.height = Math.max(minSize, Math.min(videoHeight - startCrop.y, startCrop.height + deltaY));
+          newCrop.height = Math.round(Math.max(minSize, Math.min(videoHeight - startCrop.y, startCrop.height + deltaY)));
           break;
 
         case 'resize-l':
-          newCrop.x = Math.max(0, Math.min(startCrop.x + startCrop.width - minSize, startCrop.x + deltaX));
-          newCrop.width = startCrop.x + startCrop.width - newCrop.x;
+          newCrop.x = Math.round(Math.max(0, Math.min(rightEdge - minSize, startCrop.x + deltaX)));
+          newCrop.width = rightEdge - newCrop.x;
           break;
 
         case 'resize-r':
-          newCrop.width = Math.max(minSize, Math.min(videoWidth - startCrop.x, startCrop.width + deltaX));
+          newCrop.width = Math.round(Math.max(minSize, Math.min(videoWidth - startCrop.x, startCrop.width + deltaX)));
           break;
       }
-
-      // Round values
-      newCrop.x = Math.round(newCrop.x);
-      newCrop.y = Math.round(newCrop.y);
-      newCrop.width = Math.round(newCrop.width);
-      newCrop.height = Math.round(newCrop.height);
 
       // Apply aspect ratio constraint if locked
       if (crop.lockAspectRatio && crop.aspectRatio) {
@@ -183,9 +159,7 @@ export const CropPreview = memo(function CropPreview({
         } else if (isHorizontalResize) {
           newCrop.height = Math.round(newCrop.width / crop.aspectRatio);
         } else {
-          // Corner resize - use dominant direction
-          const targetHeight = newCrop.width / crop.aspectRatio;
-          newCrop.height = Math.round(targetHeight);
+          newCrop.height = Math.round(newCrop.width / crop.aspectRatio);
         }
 
         // Ensure we don't exceed bounds after ratio adjustment
@@ -197,40 +171,41 @@ export const CropPreview = memo(function CropPreview({
           newCrop.height = videoHeight - newCrop.y;
           newCrop.width = Math.round(newCrop.height * crop.aspectRatio);
         }
-      } else if (type !== 'move') {
-        // Free resize - check for snap to common ratios
-        const snapRatio = findClosestRatio(newCrop.width, newCrop.height);
-        if (snapRatio && !snappedRatio) {
-          onSnappedRatioChange(snapRatio);
-        } else if (!snapRatio && snappedRatio) {
-          onSnappedRatioChange(null);
-        }
-
-        // Apply snap if detected
-        if (snapRatio) {
-          const targetRatio = snapRatio[0] / snapRatio[1];
-          const isVerticalDominant = type === 'resize-t' || type === 'resize-b';
-          if (isVerticalDominant) {
-            newCrop.width = Math.round(newCrop.height * targetRatio);
-          } else {
-            newCrop.height = Math.round(newCrop.width / targetRatio);
-          }
-        }
       }
 
-      onCropChange(newCrop, false); // Don't animate during drag
+      onCropChange(newCrop, false);
+    };
+
+    const handleMouseMove = (moveEvent: MouseEvent) => {
+      latestPos.clientX = moveEvent.clientX;
+      latestPos.clientY = moveEvent.clientY;
+
+      // Coalesce rapid mousemove events into one update per frame
+      if (rafRef.current !== null) return;
+      rafRef.current = requestAnimationFrame(() => {
+        rafRef.current = null;
+        processDrag();
+      });
     };
 
     const handleMouseUp = () => {
+      if (rafRef.current !== null) {
+        cancelAnimationFrame(rafRef.current);
+        rafRef.current = null;
+      }
+      // Process final position so we don't lose the last movement
+      processDrag();
       setDragType(null);
       dragStartRef.current = null;
       document.removeEventListener('mousemove', handleMouseMove);
       document.removeEventListener('mouseup', handleMouseUp);
+      // Commit final crop to parent state (deferred during drag)
+      onDragEnd();
     };
 
     document.addEventListener('mousemove', handleMouseMove);
     document.addEventListener('mouseup', handleMouseUp);
-  }, [crop, scale, videoWidth, videoHeight, onCropChange, snappedRatio, onSnappedRatioChange]);
+  }, [crop, scale, videoWidth, videoHeight, onCropChange, onDragEnd]);
 
   const videoSrc = useMemo(() => {
     if (!videoPath) return undefined;
@@ -260,30 +235,21 @@ export const CropPreview = memo(function CropPreview({
         </div>
       )}
 
-      {/* Dark overlay outside crop area */}
-      <div
-        className="absolute inset-0 bg-black/60 pointer-events-none"
-        style={{
-          clipPath: `polygon(
-            0 0, 100% 0, 100% 100%, 0 100%, 0 0,
-            ${cropLeft}px ${cropTop}px,
-            ${cropLeft}px ${cropTop + cropHeight}px,
-            ${cropLeft + cropWidth}px ${cropTop + cropHeight}px,
-            ${cropLeft + cropWidth}px ${cropTop}px,
-            ${cropLeft}px ${cropTop}px
-          )`,
-        }}
-      />
+      {/* Dark overlay — 4 simple boxes instead of expensive clip-path polygon */}
+      <div className="absolute pointer-events-none bg-black/60" style={{ left: 0, top: 0, right: 0, height: cropTop }} />
+      <div className="absolute pointer-events-none bg-black/60" style={{ left: 0, top: cropTop + cropHeight, right: 0, bottom: 0 }} />
+      <div className="absolute pointer-events-none bg-black/60" style={{ left: 0, top: cropTop, width: cropLeft, height: cropHeight }} />
+      <div className="absolute pointer-events-none bg-black/60" style={{ left: cropLeft + cropWidth, top: cropTop, right: 0, height: cropHeight }} />
 
       {/* Crop rectangle */}
       <div
-        className="absolute border-2 border-white shadow-lg"
+        className="absolute border-2 border-white"
         style={{
-          left: cropLeft,
-          top: cropTop,
+          transform: `translate3d(${cropLeft}px, ${cropTop}px, 0)`,
           width: cropWidth,
           height: cropHeight,
           cursor: dragType === 'move' ? 'grabbing' : 'grab',
+          willChange: dragType ? 'transform, width, height' : 'auto',
         }}
       >
         {/* Move area */}
@@ -332,19 +298,19 @@ export const CropPreview = memo(function CropPreview({
 
         {/* Edge handles */}
         <div
-          className="absolute top-1/2 -left-1 w-2 h-6 -translate-y-1/2 bg-white rounded-full cursor-ew-resize shadow"
+          className="absolute top-1/2 -left-1 w-2 h-6 -translate-y-1/2 bg-white rounded-full cursor-ew-resize"
           onMouseDown={(e) => handleMouseDown(e, 'resize-l')}
         />
         <div
-          className="absolute top-1/2 -right-1 w-2 h-6 -translate-y-1/2 bg-white rounded-full cursor-ew-resize shadow"
+          className="absolute top-1/2 -right-1 w-2 h-6 -translate-y-1/2 bg-white rounded-full cursor-ew-resize"
           onMouseDown={(e) => handleMouseDown(e, 'resize-r')}
         />
         <div
-          className="absolute left-1/2 -top-1 w-6 h-2 -translate-x-1/2 bg-white rounded-full cursor-ns-resize shadow"
+          className="absolute left-1/2 -top-1 w-6 h-2 -translate-x-1/2 bg-white rounded-full cursor-ns-resize"
           onMouseDown={(e) => handleMouseDown(e, 'resize-t')}
         />
         <div
-          className="absolute left-1/2 -bottom-1 w-6 h-2 -translate-x-1/2 bg-white rounded-full cursor-ns-resize shadow"
+          className="absolute left-1/2 -bottom-1 w-6 h-2 -translate-x-1/2 bg-white rounded-full cursor-ns-resize"
           onMouseDown={(e) => handleMouseDown(e, 'resize-b')}
         />
 
@@ -358,16 +324,9 @@ export const CropPreview = memo(function CropPreview({
           </div>
         )}
 
-        {/* Snapped ratio indicator */}
-        {snappedRatio && (
-          <div className="absolute -top-8 left-1/2 -translate-x-1/2 bg-black/80 text-white text-xs px-2 py-1 rounded-full whitespace-nowrap border border-white/30">
-            {snappedRatio[0]}:{snappedRatio[1]}
-          </div>
-        )}
-
         {/* Size indicator */}
         <div className="absolute -bottom-8 left-1/2 -translate-x-1/2 bg-black/80 text-white text-xs px-2 py-1 rounded whitespace-nowrap">
-          {crop.width} × {crop.height}
+          {displayCrop.width} × {displayCrop.height}
         </div>
       </div>
     </div>

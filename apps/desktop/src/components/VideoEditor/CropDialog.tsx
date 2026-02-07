@@ -86,8 +86,9 @@ export const CropDialog = memo(function CropDialog({
 
   const [crop, setCrop] = useState<CropConfig>(computeInitialCrop);
   const [displayCrop, setDisplayCrop] = useState<CropConfig>(computeInitialCrop);
-  const [snappedRatio, setSnappedRatio] = useState<[number, number] | null>(null);
   const animationRef = useRef<number | null>(null);
+  const displayCropRef = useRef<CropConfig>(computeInitialCrop());
+  const pendingCropRef = useRef<CropConfig | null>(null);
 
   // Reset crop when dialog opens
   useEffect(() => {
@@ -95,17 +96,18 @@ export const CropDialog = memo(function CropDialog({
       const initialCropVal = computeInitialCrop();
       setCrop(initialCropVal);
       setDisplayCrop(initialCropVal);
-      setSnappedRatio(null);
+      displayCropRef.current = initialCropVal;
+      pendingCropRef.current = null;
     }
   }, [open, computeInitialCrop]);
 
-  // Animate crop changes
+  // Animate crop changes (uses ref for start value → stable callback)
   const animateTo = useCallback((target: CropConfig) => {
     if (animationRef.current) {
       cancelAnimationFrame(animationRef.current);
     }
 
-    const start = { ...displayCrop };
+    const start = { ...displayCropRef.current };
     const startTime = performance.now();
 
     const animate = (currentTime: number) => {
@@ -113,13 +115,16 @@ export const CropDialog = memo(function CropDialog({
       const progress = Math.min(1, elapsed / ANIMATION_DURATION);
       const eased = easeOutCubic(progress);
 
-      setDisplayCrop({
+      const interpolated = {
         ...target,
         x: Math.round(start.x + (target.x - start.x) * eased),
         y: Math.round(start.y + (target.y - start.y) * eased),
         width: Math.round(start.width + (target.width - start.width) * eased),
         height: Math.round(start.height + (target.height - start.height) * eased),
-      });
+      };
+
+      displayCropRef.current = interpolated;
+      setDisplayCrop(interpolated);
 
       if (progress < 1) {
         animationRef.current = requestAnimationFrame(animate);
@@ -129,16 +134,28 @@ export const CropDialog = memo(function CropDialog({
     };
 
     animationRef.current = requestAnimationFrame(animate);
-  }, [displayCrop]);
+  }, []);
 
   const handleCropChange = useCallback((newCrop: CropConfig, animate = true) => {
-    setCrop(newCrop);
     if (animate) {
+      // Committed change (presets, inputs, reset) — update both
+      setCrop(newCrop);
       animateTo(newCrop);
     } else {
+      // Drag frame — only update visual display, defer crop state
+      displayCropRef.current = newCrop;
       setDisplayCrop(newCrop);
+      pendingCropRef.current = newCrop;
     }
   }, [animateTo]);
+
+  // Commit pending crop from drag end
+  const handleDragEnd = useCallback(() => {
+    if (pendingCropRef.current) {
+      setCrop(pendingCropRef.current);
+      pendingCropRef.current = null;
+    }
+  }, []);
 
   const handleAspectPreset = useCallback((value: string | null) => {
     if (value === null || value === '') {
@@ -149,7 +166,7 @@ export const CropDialog = memo(function CropDialog({
         aspectRatio: null,
       };
       handleCropChange(newCrop, true);
-      setSnappedRatio(null);
+
     } else if (value === 'original') {
       // Original video aspect
       const originalAspect = videoWidth / videoHeight;
@@ -161,7 +178,7 @@ export const CropDialog = memo(function CropDialog({
         height: Math.min(newHeight, videoHeight - crop.y),
       };
       handleCropChange(newCrop, true);
-      setSnappedRatio(null);
+
     } else {
       // Specific aspect ratio
       const ratio = parseFloat(value);
@@ -185,7 +202,7 @@ export const CropDialog = memo(function CropDialog({
         height: finalHeight,
       };
       handleCropChange(newCrop, true);
-      setSnappedRatio(null);
+
     }
   }, [crop, videoWidth, videoHeight, handleCropChange]);
 
@@ -209,7 +226,6 @@ export const CropDialog = memo(function CropDialog({
       aspectRatio: null,
     };
     handleCropChange(newCrop, true);
-    setSnappedRatio(null);
   }, [videoWidth, videoHeight, handleCropChange]);
 
   const handleFill = useCallback(() => {
@@ -291,11 +307,10 @@ export const CropDialog = memo(function CropDialog({
               crop={crop}
               displayCrop={displayCrop}
               onCropChange={handleCropChange}
+              onDragEnd={handleDragEnd}
               videoWidth={videoWidth}
               videoHeight={videoHeight}
               videoPath={videoPath}
-              snappedRatio={snappedRatio}
-              onSnappedRatioChange={setSnappedRatio}
             />
           </div>
 
