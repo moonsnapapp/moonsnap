@@ -1,5 +1,11 @@
 import type { SliceCreator } from './types';
 import type { TrimSegment } from '../../types';
+import {
+  adjustOverlaySegmentsForDeletion,
+  adjustTextSegmentsForDeletion,
+  snapshotOverlayState,
+  type OverlaySnapshot,
+} from './overlayAdjustment';
 
 /**
  * Minimum segment duration in milliseconds.
@@ -214,11 +220,12 @@ export function clipSegmentsToTimelineRange(
 }
 
 /**
- * Undo history entry for trim operations.
+ * Undo history entry for timeline operations (trim + overlays).
  */
-interface TrimHistoryEntry {
+interface TimelineHistoryEntry {
   segments: TrimSegment[];
   selectedId: string | null;
+  overlays: OverlaySnapshot;
 }
 
 /**
@@ -240,7 +247,7 @@ export interface TrimSlice {
   selectedTrimSegmentId: string | null;
 
   // Undo/redo history
-  trimHistory: TrimHistoryEntry[];
+  trimHistory: TimelineHistoryEntry[];
   trimHistoryIndex: number;
 
   // Selection actions
@@ -268,10 +275,10 @@ export interface TrimSlice {
  * Push a new state to history, clearing any redo states.
  */
 function pushTrimHistory(
-  history: TrimHistoryEntry[],
+  history: TimelineHistoryEntry[],
   historyIndex: number,
-  newEntry: TrimHistoryEntry
-): { history: TrimHistoryEntry[]; index: number } {
+  newEntry: TimelineHistoryEntry
+): { history: TimelineHistoryEntry[]; index: number } {
   // Remove any future states (redo stack)
   const newHistory = history.slice(0, historyIndex + 1);
 
@@ -314,6 +321,7 @@ export const createTrimSlice: SliceCreator<TrimSlice> = (set, get) => ({
     const { history, index } = pushTrimHistory(trimHistory, trimHistoryIndex, {
       segments: newSegments,
       selectedId: null,
+      overlays: snapshotOverlayState(project),
     });
 
     set({
@@ -335,6 +343,7 @@ export const createTrimSlice: SliceCreator<TrimSlice> = (set, get) => ({
     const { history, index } = pushTrimHistory(trimHistory, trimHistoryIndex, {
       segments: newSegments,
       selectedId: null,
+      overlays: snapshotOverlayState(project),
     });
 
     set({
@@ -368,6 +377,7 @@ export const createTrimSlice: SliceCreator<TrimSlice> = (set, get) => ({
       const initialHistory = pushTrimHistory([], -1, {
         segments: [...segments],
         selectedId: selectedTrimSegmentId,
+        overlays: snapshotOverlayState(project),
       });
       trimHistory = initialHistory.history;
       trimHistoryIndex = initialHistory.index;
@@ -416,10 +426,11 @@ export const createTrimSlice: SliceCreator<TrimSlice> = (set, get) => ({
       ...segments.slice(segmentIndex + 1),
     ];
 
-    // Push to history
+    // Push to history (split doesn't change overlays — snapshot current state)
     const { history, index } = pushTrimHistory(trimHistory, trimHistoryIndex, {
       segments: newSegments,
       selectedId: rightSegment.id,
+      overlays: snapshotOverlayState(project),
     });
 
     set({
@@ -436,7 +447,7 @@ export const createTrimSlice: SliceCreator<TrimSlice> = (set, get) => ({
     });
   },
 
-  // Delete a trim segment (ripple: remaining segments collapse together)
+  // Delete a trim segment (ripple: remaining segments collapse together, overlays adjusted)
   deleteTrimSegment: (id) => {
     const { project, selectedTrimSegmentId, trimHistory, trimHistoryIndex } = get();
     if (!project) return;
@@ -446,12 +457,36 @@ export const createTrimSlice: SliceCreator<TrimSlice> = (set, get) => ({
       return;
     }
 
+    // Find the deleted segment's index to calculate its timeline position
+    const deletedIndex = segments.findIndex((s) => s.id === id);
+    if (deletedIndex === -1) return;
+
+    const deletedSegment = segments[deletedIndex];
+    const delStartMs = getSegmentTimelinePosition(deletedIndex, segments);
+    const delEndMs = delStartMs + (deletedSegment.sourceEndMs - deletedSegment.sourceStartMs);
+
     const newSegments = segments.filter((s) => s.id !== id);
 
-    // Push to history
+    // Adjust all overlay segments for the deleted timeline range
+    const newZoomRegions = adjustOverlaySegmentsForDeletion(project.zoom.regions, delStartMs, delEndMs);
+    const newMaskSegments = adjustOverlaySegmentsForDeletion(project.mask.segments, delStartMs, delEndMs);
+    const newSceneSegments = adjustOverlaySegmentsForDeletion(project.scene.segments, delStartMs, delEndMs);
+    const newTextSegments = adjustTextSegmentsForDeletion(project.text.segments, delStartMs, delEndMs);
+    const newWebcamSegments = adjustOverlaySegmentsForDeletion(project.webcam.visibilitySegments, delStartMs, delEndMs);
+
+    const newSelectedId = selectedTrimSegmentId === id ? null : selectedTrimSegmentId;
+
+    // Push to history with new overlay state
     const { history, index } = pushTrimHistory(trimHistory, trimHistoryIndex, {
       segments: newSegments,
-      selectedId: selectedTrimSegmentId === id ? null : selectedTrimSegmentId,
+      selectedId: newSelectedId,
+      overlays: {
+        zoomRegions: newZoomRegions,
+        maskSegments: newMaskSegments,
+        sceneSegments: newSceneSegments,
+        textSegments: newTextSegments,
+        webcamVisibilitySegments: newWebcamSegments,
+      },
     });
 
     set({
@@ -461,8 +496,13 @@ export const createTrimSlice: SliceCreator<TrimSlice> = (set, get) => ({
           ...project.timeline,
           segments: newSegments,
         },
+        zoom: { ...project.zoom, regions: newZoomRegions },
+        mask: { ...project.mask, segments: newMaskSegments },
+        scene: { ...project.scene, segments: newSceneSegments },
+        text: { ...project.text, segments: newTextSegments },
+        webcam: { ...project.webcam, visibilitySegments: newWebcamSegments },
       },
-      selectedTrimSegmentId: selectedTrimSegmentId === id ? null : selectedTrimSegmentId,
+      selectedTrimSegmentId: newSelectedId,
       trimHistory: history,
       trimHistoryIndex: index,
     });
@@ -506,6 +546,7 @@ export const createTrimSlice: SliceCreator<TrimSlice> = (set, get) => ({
     const { history, index } = pushTrimHistory(trimHistory, trimHistoryIndex, {
       segments: newSegments,
       selectedId: id,
+      overlays: snapshotOverlayState(project),
     });
 
     set({
@@ -521,7 +562,7 @@ export const createTrimSlice: SliceCreator<TrimSlice> = (set, get) => ({
     });
   },
 
-  // Undo last trim operation
+  // Undo last trim operation (restores both trim segments and overlay state)
   undoTrim: () => {
     const { project, trimHistory, trimHistoryIndex } = get();
     if (!project || trimHistoryIndex <= 0) return;
@@ -535,13 +576,18 @@ export const createTrimSlice: SliceCreator<TrimSlice> = (set, get) => ({
           ...project.timeline,
           segments: prevEntry.segments,
         },
+        zoom: { ...project.zoom, regions: prevEntry.overlays.zoomRegions },
+        mask: { ...project.mask, segments: prevEntry.overlays.maskSegments },
+        scene: { ...project.scene, segments: prevEntry.overlays.sceneSegments },
+        text: { ...project.text, segments: prevEntry.overlays.textSegments },
+        webcam: { ...project.webcam, visibilitySegments: prevEntry.overlays.webcamVisibilitySegments },
       },
       selectedTrimSegmentId: prevEntry.selectedId,
       trimHistoryIndex: trimHistoryIndex - 1,
     });
   },
 
-  // Redo last undone trim operation
+  // Redo last undone trim operation (restores both trim segments and overlay state)
   redoTrim: () => {
     const { project, trimHistory, trimHistoryIndex } = get();
     if (!project || trimHistoryIndex >= trimHistory.length - 1) return;
@@ -555,6 +601,11 @@ export const createTrimSlice: SliceCreator<TrimSlice> = (set, get) => ({
           ...project.timeline,
           segments: nextEntry.segments,
         },
+        zoom: { ...project.zoom, regions: nextEntry.overlays.zoomRegions },
+        mask: { ...project.mask, segments: nextEntry.overlays.maskSegments },
+        scene: { ...project.scene, segments: nextEntry.overlays.sceneSegments },
+        text: { ...project.text, segments: nextEntry.overlays.textSegments },
+        webcam: { ...project.webcam, visibilitySegments: nextEntry.overlays.webcamVisibilitySegments },
       },
       selectedTrimSegmentId: nextEntry.selectedId,
       trimHistoryIndex: trimHistoryIndex + 1,
