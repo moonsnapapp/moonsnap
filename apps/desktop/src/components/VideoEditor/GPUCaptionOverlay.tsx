@@ -49,7 +49,9 @@ export const GPUCaptionOverlay = memo(function GPUCaptionOverlay({
   const renderInFlightRef = useRef(false);
   const queuedArgsRef = useRef<RenderCaptionOverlayArgs | null>(null);
   const rafRef = useRef<number | null>(null);
-  const isActive = canUseGpu && captionSettings.enabled && hasFrame;
+  const consecutiveRenderErrorsRef = useRef(0);
+  // Keep GPU path authoritative once connected to avoid subtle CSS fallback drift.
+  const isActive = canUseGpu && captionSettings.enabled && (isConnected || hasFrame);
 
   useEffect(() => {
     onActiveChange?.(isActive);
@@ -72,9 +74,16 @@ export const GPUCaptionOverlay = memo(function GPUCaptionOverlay({
     renderInFlightRef.current = true;
 
     invoke('render_caption_overlay', args)
+      .then(() => {
+        consecutiveRenderErrorsRef.current = 0;
+      })
       .catch((error) => {
         videoEditorLogger.warn('[CaptionParity] render_caption_overlay failed:', error);
-        setGpuFailed(true);
+        consecutiveRenderErrorsRef.current += 1;
+        // Allow transient command/stream hiccups without permanently switching to CSS.
+        if (consecutiveRenderErrorsRef.current >= 3) {
+          setGpuFailed(true);
+        }
       })
       .finally(() => {
         renderInFlightRef.current = false;
