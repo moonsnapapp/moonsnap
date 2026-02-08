@@ -292,16 +292,8 @@ pub fn run() {
             commands::preview::init_preview,
             commands::preview::set_preview_project,
             commands::preview::render_preview_frame,
-            commands::preview::render_text_only_frame,
-            commands::preview::render_text_overlay,
             commands::preview::shutdown_preview,
             commands::preview::get_preview_ws_port,
-            // Native text preview commands (zero-latency surface rendering)
-            commands::preview::init_native_text_preview,
-            commands::preview::resize_native_text_preview,
-            commands::preview::update_native_text_preview,
-            commands::preview::scrub_native_text_preview,
-            commands::preview::destroy_native_text_preview,
             // Caption preview commands (GPU-rendered via WebSocket)
             commands::preview::render_caption_overlay,
             // Native caption preview commands (zero-latency surface rendering)
@@ -332,6 +324,9 @@ pub fn run() {
             commands::capture_overlay::start_highlight_preview,
             commands::capture_overlay::stop_highlight_preview,
             commands::capture_overlay::is_highlight_preview_active,
+            // Pre-rendered text commands (WYSIWYG text export)
+            commands::text_prerender::register_prerendered_text,
+            commands::text_prerender::clear_prerendered_texts,
             // Caption/transcription commands
             commands::captions::check_whisper_model,
             commands::captions::list_whisper_models,
@@ -377,8 +372,8 @@ pub fn run() {
             // Initialize preview state for GPU-rendered preview streaming
             app.manage(commands::preview::PreviewState::new());
 
-            // Initialize native preview state for zero-latency text preview
-            app.manage(commands::preview::NativePreviewState::new());
+            // Initialize pre-rendered text state for WYSIWYG text export
+            app.manage(commands::text_prerender::PreRenderedTextState::new());
 
             // Initialize native caption preview state for zero-latency caption preview
             app.manage(commands::preview::NativeCaptionPreviewState::new());

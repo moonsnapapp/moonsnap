@@ -1,7 +1,7 @@
 //! Tauri commands for GPU-rendered preview.
 
 use crate::commands::captions::{CaptionSegment, CaptionSettings};
-use crate::commands::video_recording::video_project::{TextSegment, VideoProject};
+use crate::commands::video_recording::video_project::VideoProject;
 use crate::preview::{create_frame_ws, PreviewRenderer, ShutdownSignal, WSFrame};
 use crate::rendering::RendererState;
 use parking_lot::Mutex as ParkingMutex;
@@ -126,21 +126,6 @@ pub async fn render_preview_frame(
     renderer.render_frame(time_ms).await
 }
 
-/// Render only text overlays (no video decoding).
-/// Much faster than full frame rendering - used during playback.
-#[command]
-pub async fn render_text_only_frame(
-    state: State<'_, PreviewState>,
-    time_ms: u64,
-) -> Result<(), String> {
-    let renderer = state.renderer.read().await;
-    let renderer = renderer
-        .as_ref()
-        .ok_or_else(|| "Preview not initialized".to_string())?;
-
-    renderer.render_text_only(time_ms).await
-}
-
 /// Shutdown the preview renderer and WebSocket server.
 #[command]
 pub async fn shutdown_preview(state: State<'_, PreviewState>) -> Result<(), String> {
@@ -153,26 +138,6 @@ pub async fn shutdown_preview(state: State<'_, PreviewState>) -> Result<(), Stri
 #[command]
 pub async fn get_preview_ws_port(state: State<'_, PreviewState>) -> Result<Option<u16>, String> {
     Ok(*state.ws_port.read().await)
-}
-
-/// Render text overlay with segments passed directly.
-/// This is the simplest API for text preview - no project setup required.
-#[command]
-pub async fn render_text_overlay(
-    state: State<'_, PreviewState>,
-    time_ms: u64,
-    width: u32,
-    height: u32,
-    segments: Vec<TextSegment>,
-) -> Result<(), String> {
-    let renderer = state.renderer.read().await;
-    let renderer = renderer
-        .as_ref()
-        .ok_or_else(|| "Preview not initialized".to_string())?;
-
-    renderer
-        .render_text_with_segments(time_ms, width, height, &segments)
-        .await
 }
 
 /// Render caption overlay with segments and settings passed directly.
@@ -194,189 +159,6 @@ pub async fn render_caption_overlay(
     renderer
         .render_captions_with_data(time_ms, width, height, &segments, &settings)
         .await
-}
-
-// =============================================================================
-// Native Text Preview Commands (zero-latency surface rendering)
-// =============================================================================
-
-/// State for native text preview surfaces.
-pub struct NativePreviewState {
-    /// Preview instances by window label.
-    pub instances: ParkingMutex<HashMap<String, Arc<crate::preview::NativeTextPreview>>>,
-}
-
-impl NativePreviewState {
-    pub fn new() -> Self {
-        Self {
-            instances: ParkingMutex::new(HashMap::new()),
-        }
-    }
-
-    /// Get a preview instance by window label.
-    pub fn get(&self, label: &str) -> Option<Arc<crate::preview::NativeTextPreview>> {
-        self.instances.lock().get(label).cloned()
-    }
-
-    /// Insert a preview instance.
-    pub fn insert(&self, label: String, preview: Arc<crate::preview::NativeTextPreview>) {
-        self.instances.lock().insert(label, preview);
-    }
-
-    /// Remove and return a preview instance.
-    pub fn remove(&self, label: &str) -> Option<Arc<crate::preview::NativeTextPreview>> {
-        self.instances.lock().remove(label)
-    }
-}
-
-impl Default for NativePreviewState {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-/// Initialize native text preview surface for a window.
-///
-/// Creates a child window with wgpu rendering positioned behind the webview.
-/// This provides zero-latency text rendering without WebSocket overhead.
-///
-/// # Arguments
-/// * `window` - The Tauri window to attach the preview to
-/// * `x` - X position within the window
-/// * `y` - Y position within the window
-/// * `width` - Preview width in pixels
-/// * `height` - Preview height in pixels
-#[cfg(windows)]
-#[command]
-pub async fn init_native_text_preview(
-    window: WebviewWindow,
-    renderer_state: State<'_, RendererState>,
-    native_state: State<'_, NativePreviewState>,
-    x: i32,
-    y: i32,
-    width: u32,
-    height: u32,
-) -> Result<(), String> {
-    use raw_window_handle::HasWindowHandle;
-
-    let label = window.label().to_string();
-    log::info!(
-        "[NativePreview] Initializing for window '{}' at ({}, {}) {}x{}",
-        label,
-        x,
-        y,
-        width,
-        height
-    );
-
-    // Get parent HWND from Tauri window
-    let hwnd = {
-        let handle = window
-            .window_handle()
-            .map_err(|e| format!("Failed to get window handle: {}", e))?;
-        match handle.as_raw() {
-            raw_window_handle::RawWindowHandle::Win32(h) => h.hwnd.get() as isize,
-            _ => return Err("Expected Win32 window handle".to_string()),
-        }
-    };
-
-    // Get shared renderer
-    let renderer = renderer_state.get_renderer().await?;
-
-    // Create preview instance
-    let preview =
-        crate::preview::NativeTextPreview::new(renderer.device().clone(), renderer.queue().clone());
-
-    // Initialize surface
-    preview.init_surface(hwnd, x, y, width, height)?;
-
-    // Store instance
-    native_state.insert(label.clone(), Arc::new(preview));
-
-    log::info!("[NativePreview] Initialized for window '{}'", label);
-    Ok(())
-}
-
-#[cfg(not(windows))]
-#[command]
-pub async fn init_native_text_preview(
-    _window: WebviewWindow,
-    _renderer_state: State<'_, RendererState>,
-    _native_state: State<'_, NativePreviewState>,
-    _x: i32,
-    _y: i32,
-    _width: u32,
-    _height: u32,
-) -> Result<(), String> {
-    Err("Native text preview is only supported on Windows".to_string())
-}
-
-/// Resize the native text preview surface.
-#[command]
-pub async fn resize_native_text_preview(
-    window: WebviewWindow,
-    native_state: State<'_, NativePreviewState>,
-    x: i32,
-    y: i32,
-    width: u32,
-    height: u32,
-) -> Result<(), String> {
-    let label = window.label();
-
-    if let Some(preview) = native_state.get(label) {
-        preview.resize(x, y, width, height);
-    }
-
-    Ok(())
-}
-
-/// Update text segments for the native preview.
-#[command]
-pub async fn update_native_text_preview(
-    window: WebviewWindow,
-    native_state: State<'_, NativePreviewState>,
-    segments: Vec<TextSegment>,
-    time_ms: u64,
-) -> Result<(), String> {
-    let label = window.label();
-
-    if let Some(preview) = native_state.get(label) {
-        preview.update_segments(segments, time_ms);
-    }
-
-    Ok(())
-}
-
-/// Update just the time for the native preview (for scrubbing).
-#[command]
-pub async fn scrub_native_text_preview(
-    window: WebviewWindow,
-    native_state: State<'_, NativePreviewState>,
-    time_ms: u64,
-) -> Result<(), String> {
-    let label = window.label();
-
-    if let Some(preview) = native_state.get(label) {
-        preview.update_time(time_ms);
-    }
-
-    Ok(())
-}
-
-/// Destroy the native text preview for a window.
-#[command]
-pub async fn destroy_native_text_preview(
-    window: WebviewWindow,
-    native_state: State<'_, NativePreviewState>,
-) -> Result<(), String> {
-    let label = window.label().to_string();
-
-    if let Some(preview) = native_state.remove(&label) {
-        preview.destroy();
-    }
-
-    log::info!("[NativePreview] Destroyed for window '{}'", label);
-    Ok(())
 }
 
 // =============================================================================

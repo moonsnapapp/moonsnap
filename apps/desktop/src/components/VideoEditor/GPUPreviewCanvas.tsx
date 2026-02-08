@@ -62,7 +62,6 @@ export const GPUPreviewCanvas = memo(function GPUPreviewCanvas({
     hasFrame,
     initPreview,
     renderFrame,
-    renderTextOnly,
     shutdown,
   } = usePreviewStream({
     onFrame: (_frameNumber) => {
@@ -172,7 +171,6 @@ export const GPUPreviewCanvas = memo(function GPUPreviewCanvas({
         shutdown();
       }
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [enabled]); // Only depend on enabled, not doInit/shutdown
 
   // Compute a version string for text content to detect changes
@@ -230,8 +228,8 @@ export const GPUPreviewCanvas = memo(function GPUPreviewCanvas({
       return;
     }
     lastRenderTimeRef.current = now;
-    renderTextOnly(currentTimeMs);
-  }, [currentTimeMs, isConnected, enabled, projectId, isPlaying, renderFrame, renderTextOnly]);
+    renderFrame(currentTimeMs);
+  }, [currentTimeMs, isConnected, enabled, projectId, isPlaying, renderFrame]);
 
   if (!enabled) {
     return null;

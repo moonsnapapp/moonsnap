@@ -365,6 +365,19 @@ impl TextLayer {
 
             buffer.shape_until_scroll(&mut self.font_system, false);
 
+            // Measure actual text height from layout runs for vertical centering
+            let mut total_text_height: f32 = 0.0;
+            for run in buffer.layout_runs() {
+                total_text_height = total_text_height.max(run.line_y + run.line_height);
+            }
+            let bounds_height = text.bounds[3] - text.bounds[1];
+            let vertical_offset = if total_text_height > 0.0 && total_text_height < bounds_height {
+                (bounds_height - total_text_height) / 2.0
+            } else {
+                0.0
+            };
+            let adjusted_top = text.bounds[1] + vertical_offset;
+
             // Measure actual text width after shaping for background
             if let Some(bg_color) = text.background_color {
                 let (text_width, text_height) = self.measure_text_size(&buffer, text.font_size);
@@ -382,17 +395,15 @@ impl TextLayer {
                     let padding_v = layout::CAPTION_BG_PADDING_V * scale;
                     let corner_radius = layout::CAPTION_CORNER_RADIUS * scale;
 
-                    // Text is rendered at top of bounds, horizontally centered
-                    // Background should wrap around actual text position
+                    // Background wraps around vertically-centered text
                     let center_x = text.bounds[0] + width / 2.0;
-                    let text_top = text.bounds[1]; // Text starts at top of bounds
 
                     let bg_rect = BackgroundRect {
                         bounds: [
                             (center_x - text_width / 2.0 - padding_h).max(0.0),
-                            (text_top - padding_v).max(0.0),
+                            (adjusted_top - padding_v).max(0.0),
                             (center_x + text_width / 2.0 + padding_h).min(output_size.0 as f32),
-                            (text_top + text_height + padding_v).min(output_size.1 as f32),
+                            (adjusted_top + text_height + padding_v).min(output_size.1 as f32),
                         ],
                         color: bg_color,
                         corner_radius,
@@ -406,6 +417,7 @@ impl TextLayer {
                 }
             }
 
+            // TextBounds is the clipping rect — keep it as the full bounding box
             let bounds = TextBounds {
                 left: text.bounds[0].floor() as i32,
                 top: text.bounds[1].floor() as i32,
@@ -414,7 +426,8 @@ impl TextLayer {
             };
 
             self.buffers.push(buffer);
-            text_area_data.push((bounds, text.bounds[0], text.bounds[1], color));
+            // Use adjusted_top for TextArea positioning (vertically centered)
+            text_area_data.push((bounds, text.bounds[0], adjusted_top, color));
         }
 
         // Prepare background rectangles

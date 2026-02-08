@@ -39,14 +39,15 @@ pub fn request_cancel_export() {
 use super::caption_layer::prepare_captions;
 use super::compositor::Compositor;
 use super::cursor::{composite_cursor, CursorInterpolator, VideoContentBounds};
+use super::prerendered_text::composite_prerendered_texts;
 use super::renderer::Renderer;
 use super::scene::SceneInterpolator;
 use super::stream_decoder::StreamDecoder;
 use super::svg_cursor::get_svg_cursor;
-use super::text::prepare_texts;
 use super::types::{BackgroundStyle, RenderOptions};
 use super::zoom::ZoomInterpolator;
 use crate::commands::captions::types::CaptionSegment;
+use crate::commands::text_prerender::PreRenderedTextState;
 use crate::commands::video_recording::cursor::events::load_cursor_recording;
 use crate::commands::video_recording::video_export::{ExportResult, ExportStage};
 use crate::commands::video_recording::video_project::XY;
@@ -89,6 +90,12 @@ pub async fn export_video_gpu(
     // Initialize GPU
     let renderer = Renderer::new().await?;
     let mut compositor = Compositor::new(&renderer);
+
+    // Get pre-rendered text store (populated by frontend before export starts)
+    let prerendered_text_store = {
+        let state = app.state::<PreRenderedTextState>();
+        state.store.clone()
+    };
 
     emit_progress(&app, 0.02, ExportStage::Preparing, "Loading video...");
 
@@ -572,36 +579,56 @@ pub async fn export_video_gpu(
             background: background_style,
         };
 
-        // Prepare text overlays for this frame
-        // Time is in seconds, output_size uses XY struct
         let frame_time_secs = relative_time_ms as f64 / 1000.0;
-        let mut prepared_texts = prepare_texts(
-            XY::new(composition_w, composition_h),
-            frame_time_secs,
-            &project.text.segments,
-        );
 
-        // Prepare caption overlays for this frame (if enabled)
-        // Uses timeline_captions which are already remapped from source time to timeline time
-        if project.captions.enabled {
-            let caption_texts = prepare_captions(
+        // Prepare caption overlays for this frame (captions still use glyphon GPU pipeline)
+        let prepared_captions = if project.captions.enabled {
+            prepare_captions(
                 &timeline_captions,
                 &project.captions,
                 frame_time_secs as f32,
                 composition_w as f32,
                 composition_h as f32,
-            );
-            prepared_texts.extend(caption_texts);
-        }
+            )
+        } else {
+            Vec::new()
+        };
 
-        // Render frame on GPU (with text and caption overlays)
+        // Get pre-rendered text images for this frame (from frontend OffscreenCanvas)
+        // Text coordinates are normalized 0-1 relative to the video content area,
+        // so we need the video frame position within the composition.
+        let prerendered_texts = {
+            let store = prerendered_text_store.lock();
+            let text_bounds = super::parity::calculate_composition_bounds(
+                video_w as f32,
+                video_h as f32,
+                padding as f32,
+                if matches!(composition.mode, CompositionMode::Manual) {
+                    Some((composition_w as f32, composition_h as f32))
+                } else {
+                    None
+                },
+            );
+            store.get_for_frame(
+                frame_time_secs,
+                &project.text.segments,
+                composition_w,
+                composition_h,
+                text_bounds.frame_x as u32,
+                text_bounds.frame_y as u32,
+                text_bounds.frame_width as u32,
+                text_bounds.frame_height as u32,
+            )
+        };
+
+        // GPU composite: base frame (background, video, webcam) + captions (glyphon)
         let output_texture = compositor
             .composite_with_text(
                 &renderer,
                 &frame_to_render,
                 &render_options,
                 relative_time_ms as f32,
-                &prepared_texts,
+                &prepared_captions,
             )
             .await;
 
@@ -609,6 +636,16 @@ pub async fn export_video_gpu(
         let mut rgba_data = renderer
             .read_texture(&output_texture, composition_w, composition_h)
             .await;
+
+        // Composite pre-rendered text overlays (CPU-based, WYSIWYG matching CSS preview)
+        if !prerendered_texts.is_empty() {
+            composite_prerendered_texts(
+                &mut rgba_data,
+                composition_w,
+                composition_h,
+                &prerendered_texts,
+            );
+        }
 
         // Composite cursor onto frame (CPU-based) if cursor is visible and not in cameraOnly mode
         if let Some(ref cursor_interp) = cursor_interpolator {

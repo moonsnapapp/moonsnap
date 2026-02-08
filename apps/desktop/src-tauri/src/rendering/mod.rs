@@ -21,6 +21,7 @@ pub mod decoder;
 pub mod editor_instance;
 pub mod exporter;
 pub mod parity;
+pub mod prerendered_text;
 pub mod renderer;
 pub mod renderer_state;
 pub mod scene;
@@ -54,12 +55,15 @@ pub use parity::{
     calculate_composition_bounds, get_composition_bounds, get_font_metrics, get_parity_layout,
     scale_factor, CompositionBounds, FontMetrics, ParityLayout,
 };
+pub use prerendered_text::{
+    composite_prerendered_texts, PreRenderedTextImage, PreRenderedTextStore, TextCompositeInfo,
+};
 pub use renderer::Renderer;
 pub use renderer_state::RendererState;
 pub use scene::{InterpolatedScene, SceneInterpolator};
 pub use stream_decoder::StreamDecoder;
 pub use svg_cursor::{get_svg_cursor, render_svg_cursor, RenderedSvgCursor};
-pub use text::{parse_color, prepare_texts, PreparedText};
+pub use text::{parse_color, PreparedText};
 pub use text_layer::TextLayer;
 pub use types::*;
 pub use zoom::ZoomInterpolator;

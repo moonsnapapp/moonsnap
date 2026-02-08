@@ -35,6 +35,7 @@ pub mod logging;
 pub mod preview;
 pub mod settings;
 pub mod storage;
+pub mod text_prerender;
 pub mod video_recording;
 pub mod win_utils;
 pub mod window;

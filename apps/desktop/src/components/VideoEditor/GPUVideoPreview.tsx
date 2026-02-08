@@ -11,7 +11,7 @@ import { CursorOverlay } from './CursorOverlay';
 import { ClickHighlightOverlay } from './ClickHighlightOverlay';
 import { MaskOverlay } from './MaskOverlay';
 import { TextOverlay } from './TextOverlay';
-import { UnifiedTextOverlay } from './UnifiedTextOverlay';
+
 import { UnifiedCaptionOverlay } from './UnifiedCaptionOverlay';
 import {
   WebCodecsCanvasNoZoom,
@@ -50,7 +50,6 @@ const SceneModeRenderer = memo(function SceneModeRenderer({
   videoHeight,
   maskSegments,
   textSegments,
-  useGPUPreview,
   isPlaying,
   onVideoClick,
   backgroundPadding = 0,
@@ -75,7 +74,6 @@ const SceneModeRenderer = memo(function SceneModeRenderer({
   videoHeight: number;
   maskSegments: MaskSegment[] | undefined;
   textSegments: TextSegment[] | undefined;
-  useGPUPreview?: boolean;
   isPlaying?: boolean;
   onVideoClick: () => void;
   backgroundPadding?: number;
@@ -182,6 +180,13 @@ const SceneModeRenderer = memo(function SceneModeRenderer({
     };
   }, [cropEnabled, cropConfig, videoWidth, videoHeight]);
 
+  const textOverlayAspectRatio = useMemo(() => {
+    if (cropEnabled && cropConfig && cropConfig.width > 0 && cropConfig.height > 0) {
+      return cropConfig.width / cropConfig.height;
+    }
+    return videoAspectRatio;
+  }, [cropEnabled, cropConfig, videoAspectRatio]);
+
   return (
     <>
       {/* Shadow wrapper - position:relative for caption overlay positioning */}
@@ -252,19 +257,6 @@ const SceneModeRenderer = memo(function SceneModeRenderer({
           />
         )}
 
-        {/* Text rendering - Native wgpu surface */}
-        {useGPUPreview && showScreen && textSegments && textSegments.length > 0 && containerWidth > 0 && (
-          <UnifiedTextOverlay
-            segments={textSegments}
-            currentTime={currentTimeMs / 1000}
-            containerWidth={containerWidth}
-            containerHeight={containerHeight}
-            videoWidth={videoWidth}
-            videoHeight={videoHeight}
-            enabled={true}
-          />
-        )}
-
         {/* Mask overlay */}
         {showScreen && maskSegments && maskSegments.length > 0 && containerWidth > 0 && containerHeight > 0 && (
           <MaskOverlay
@@ -285,7 +277,7 @@ const SceneModeRenderer = memo(function SceneModeRenderer({
             currentTimeMs={currentTimeMs}
             previewWidth={containerWidth}
             previewHeight={containerHeight}
-            videoAspectRatio={videoAspectRatio}
+            videoAspectRatio={textOverlayAspectRatio}
           />
         )}
 
@@ -327,6 +319,7 @@ export function GPUVideoPreview() {
   const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
   const [previewAreaSize, setPreviewAreaSize] = useState({ width: 0, height: 0 });
   const [wallpaperUrl, setWallpaperUrl] = useState<string | null>(null);
+
 
   // Use selectors for stable subscriptions
   const project = useVideoEditorStore(selectProject);
@@ -445,8 +438,6 @@ export function GPUVideoPreview() {
   const cropConfig = project?.export?.crop;
   const originalWidth = project?.sources.originalWidth ?? 1920;
   const originalHeight = project?.sources.originalHeight ?? 1080;
-
-  const useGPUPreview = true;
 
   // Use extracted style calculations
   const {
@@ -622,7 +613,6 @@ export function GPUVideoPreview() {
               videoHeight={project?.sources.originalHeight ?? 1080}
               maskSegments={project?.mask?.segments}
               textSegments={project?.text?.segments}
-              useGPUPreview={useGPUPreview}
               isPlaying={isPlaying}
               onVideoClick={handleVideoClick}
               backgroundPadding={backgroundConfig?.padding ?? 0}

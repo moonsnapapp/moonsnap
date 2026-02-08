@@ -12,16 +12,14 @@ pub mod native_surface;
 pub use decoder::{spawn_decoder, AsyncVideoDecoderHandle, DecodedFrame as AsyncDecodedFrame};
 pub use frame_ws::{create_frame_ws, ShutdownSignal, WSFrame};
 pub use native_surface::{
-    get_caption_preview_instance, get_preview_instance, remove_caption_preview_instance,
-    remove_preview_instance, NativeCaptionPreview, NativeTextPreview,
+    get_caption_preview_instance, remove_caption_preview_instance, NativeCaptionPreview,
 };
 
 use crate::commands::captions::{CaptionSegment, CaptionSettings};
-use crate::commands::video_recording::video_project::{VideoProject, XY};
+use crate::commands::video_recording::video_project::VideoProject;
 use crate::rendering::caption_layer::prepare_captions;
 use crate::rendering::compositor::Compositor;
 use crate::rendering::renderer::Renderer;
-use crate::rendering::text::prepare_texts;
 use crate::rendering::types::{
     BackgroundStyle, BackgroundType, BorderStyle, CornerStyle, DecodedFrame, RenderOptions,
     ShadowStyle, ZoomState,
@@ -116,12 +114,7 @@ impl PreviewRenderer {
         // Build render options from project
         let render_options = self.build_render_options(project);
 
-        // Prepare text overlays
-        let output_size = XY::new(render_options.output_width, render_options.output_height);
-        let frame_time_secs = time_ms as f64 / 1000.0;
-        let prepared_texts = prepare_texts(output_size, frame_time_secs, &project.text.segments);
-
-        // Render frame with compositor
+        // Render frame with compositor (text overlays are now CSS-only, not GPU-rendered)
         let mut compositor = self.compositor.lock().await;
         let output_texture = compositor
             .composite_with_text(
@@ -129,7 +122,7 @@ impl PreviewRenderer {
                 &frame,
                 &render_options,
                 time_ms as f32,
-                &prepared_texts,
+                &[], // No GPU text — text overlays use CSS preview + pre-rendered export
             )
             .await;
 
@@ -153,98 +146,6 @@ impl PreviewRenderer {
             width: render_options.output_width,
             height: render_options.output_height,
             stride: render_options.output_width * 4,
-            frame_number: *frame_num,
-            target_time_ns: time_ms * 1_000_000,
-            created_at: Instant::now(),
-        };
-
-        self.frame_tx.send(Some(ws_frame)).ok();
-
-        Ok(())
-    }
-
-    /// Render only text overlays (no video decoding).
-    /// Much faster than full frame rendering - used during playback.
-    pub async fn render_text_only(&self, time_ms: u64) -> Result<(), String> {
-        let project = self.project.lock().await;
-        let project = project
-            .as_ref()
-            .ok_or_else(|| "No project set".to_string())?;
-
-        let output_width = project.sources.original_width;
-        let output_height = project.sources.original_height;
-
-        // Prepare text overlays
-        let output_size = XY::new(output_width, output_height);
-        let frame_time_secs = time_ms as f64 / 1000.0;
-        let prepared_texts = prepare_texts(output_size, frame_time_secs, &project.text.segments);
-
-        // Render text-only (transparent background)
-        // Always send a frame even if no text - this clears any previous text from canvas
-        let mut compositor = self.compositor.lock().await;
-        let output_texture =
-            compositor.composite_text_only(output_width, output_height, &prepared_texts);
-
-        // Read rendered frame back to CPU
-        let rgba_data = self
-            .renderer
-            .read_texture(&output_texture, output_width, output_height)
-            .await;
-
-        // Update frame number
-        let mut frame_num = self.frame_number.lock().await;
-        *frame_num += 1;
-
-        // Send frame to WebSocket
-        let ws_frame = WSFrame {
-            data: rgba_data,
-            width: output_width,
-            height: output_height,
-            stride: output_width * 4,
-            frame_number: *frame_num,
-            target_time_ns: time_ms * 1_000_000,
-            created_at: Instant::now(),
-        };
-
-        self.frame_tx.send(Some(ws_frame)).ok();
-
-        Ok(())
-    }
-
-    /// Render text overlay with segments passed directly (no project required).
-    /// This is the simplest path for text-only preview.
-    pub async fn render_text_with_segments(
-        &self,
-        time_ms: u64,
-        width: u32,
-        height: u32,
-        segments: &[crate::commands::video_recording::video_project::TextSegment],
-    ) -> Result<(), String> {
-        // Prepare text overlays
-        let output_size = XY::new(width, height);
-        let frame_time_secs = time_ms as f64 / 1000.0;
-        let prepared_texts = prepare_texts(output_size, frame_time_secs, segments);
-
-        // Render text-only (transparent background)
-        let mut compositor = self.compositor.lock().await;
-        let output_texture = compositor.composite_text_only(width, height, &prepared_texts);
-
-        // Read rendered frame back to CPU
-        let rgba_data = self
-            .renderer
-            .read_texture(&output_texture, width, height)
-            .await;
-
-        // Update frame number
-        let mut frame_num = self.frame_number.lock().await;
-        *frame_num += 1;
-
-        // Send frame to WebSocket
-        let ws_frame = WSFrame {
-            data: rgba_data,
-            width,
-            height,
-            stride: width * 4,
             frame_number: *frame_num,
             target_time_ns: time_ms * 1_000_000,
             created_at: Instant::now(),

@@ -1,6 +1,38 @@
-import { memo, useCallback, useState, useRef, useMemo } from 'react';
+import { memo, useCallback, useState, useRef, useMemo, useEffect } from 'react';
 import type { TextSegment } from '../../types';
 import { useVideoEditorStore } from '../../stores/videoEditorStore';
+import { renderTextOnCanvas } from '../../utils/textPreRenderer';
+
+/**
+ * Measure text dimensions using an offscreen canvas.
+ * Returns { width, height } in pixels.
+ */
+let _measureCanvas: OffscreenCanvas | null = null;
+export function measureTextSize(
+  content: string,
+  fontFamily: string,
+  fontSize: number,
+  fontWeight: number,
+  maxWidthPx: number,
+): { width: number; height: number } {
+  if (!_measureCanvas) {
+    _measureCanvas = new OffscreenCanvas(1, 1);
+  }
+  const ctx = _measureCanvas.getContext('2d');
+  if (!ctx) return { width: 100, height: fontSize * 1.2 };
+
+  ctx.font = `${fontWeight} ${fontSize}px ${fontFamily}`;
+  const metrics = ctx.measureText(content);
+  const textWidth = metrics.width;
+
+  // Approximate line wrapping
+  const lines = Math.max(1, Math.ceil(textWidth / maxWidthPx));
+  const lineHeight = fontSize * 1.2;
+  const totalHeight = lines * lineHeight;
+  const effectiveWidth = lines > 1 ? maxWidthPx : textWidth;
+
+  return { width: effectiveWidth, height: totalHeight };
+}
 
 interface TextOverlayProps {
   segments: TextSegment[];
@@ -14,6 +46,7 @@ interface TextItemProps {
   segment: TextSegment;
   segmentId: string;
   isSelected: boolean;
+  opacity: number;
   videoOffset: { x: number; y: number };
   videoSize: { width: number; height: number };
   onSelect: (id: string) => void;
@@ -77,20 +110,48 @@ function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
 }
 
+const MIN_VISIBLE_OPACITY = 0.001;
+
+/**
+ * Match export fade logic (prerendered_text.rs) for preview parity.
+ */
+function calculateTextSegmentOpacity(segment: TextSegment, timeSec: number): number {
+  const fadeDuration = Math.max(segment.fadeDuration, 0);
+  if (fadeDuration <= 0) {
+    return 1;
+  }
+
+  const timeSinceStart = timeSec - segment.start;
+  const timeUntilEnd = segment.end - timeSec;
+  const segmentDuration = segment.end - segment.start;
+
+  if (timeSinceStart < fadeDuration) {
+    return Math.max(0, Math.min(1, timeSinceStart / fadeDuration));
+  }
+
+  if (timeUntilEnd < fadeDuration && segmentDuration > fadeDuration * 2) {
+    return Math.max(0, Math.min(1, timeUntilEnd / fadeDuration));
+  }
+
+  return 1;
+}
+
 /**
  * Individual text item bounding box with drag and resize support.
- * Text rendering is handled by GPU preview (glyphon).
- * Uses center-based positioning matching Cap's model.
+ * Canvas text rendering shares the same code path as export (renderTextOnCanvas)
+ * to guarantee WYSIWYG. Uses center-based positioning matching Cap's model.
  */
 const TextItem = memo(function TextItem({
   segment,
   segmentId,
   isSelected,
+  opacity,
   videoOffset,
   videoSize,
   onSelect,
   onUpdate,
 }: TextItemProps) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
   const [isHovered, setIsHovered] = useState(false);
   const [isResizing, setIsResizing] = useState(false);
   const dragStartRef = useRef<{
@@ -111,6 +172,37 @@ const TextItem = memo(function TextItem({
   const halfH = height / 2;
   const left = Math.max(0, videoOffset.x + segment.center.x * videoSize.width - halfW);
   const top = Math.max(0, videoOffset.y + segment.center.y * videoSize.height - halfH);
+
+  // Render text on canvas — same code path as export for WYSIWYG
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const dpr = window.devicePixelRatio || 1;
+    const pixelWidth = Math.max(1, Math.round(width * dpr));
+    const pixelHeight = Math.max(1, Math.round(height * dpr));
+
+    // Setting canvas dimensions clears it and resets context state
+    canvas.width = pixelWidth;
+    canvas.height = pixelHeight;
+
+    const ctx = canvas.getContext('2d', { alpha: true });
+    if (!ctx) return;
+
+    // Scale for HiDPI — all drawing uses CSS pixel coordinates
+    ctx.scale(dpr, dpr);
+
+    renderTextOnCanvas(ctx, {
+      content: segment.content || 'Text',
+      fontFamily: segment.fontFamily || 'sans-serif',
+      fontWeight: segment.fontWeight || 700,
+      italic: !!segment.italic,
+      fontSize: segment.fontSize,
+      color: segment.color || '#ffffff',
+      sizeY: segment.size.y,
+    }, width, height, videoSize.height);
+  }, [segment.content, segment.fontFamily, segment.fontWeight, segment.fontSize,
+      segment.italic, segment.color, segment.size.y, width, height, videoSize.height]);
 
   // Handle drag to move
   const handleMove = useCallback((e: React.MouseEvent) => {
@@ -308,6 +400,7 @@ const TextItem = memo(function TextItem({
         top: `${top}px`,
         width: `${width}px`,
         height: `${height}px`,
+        opacity,
         cursor: isResizing ? undefined : (isSelected ? 'move' : 'pointer'),
       }}
       onClick={handleClick}
@@ -315,6 +408,13 @@ const TextItem = memo(function TextItem({
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
     >
+      {/* Canvas text — same rendering as export for WYSIWYG */}
+      <canvas
+        ref={canvasRef}
+        className="absolute inset-0 pointer-events-none"
+        style={{ width: '100%', height: '100%' }}
+      />
+
       {/* Bounding box border - visible on hover/select */}
       <div
         className={`absolute inset-0 rounded-md border-2 transition-colors ${
@@ -348,7 +448,7 @@ const TextItem = memo(function TextItem({
  * TextOverlay - Interactive bounding boxes for text segments.
  *
  * Provides selection, dragging, and resizing of text segments.
- * Actual text rendering is handled by GPU preview (glyphon).
+ * Text rendering uses Canvas 2D (shared with export) for WYSIWYG.
  *
  * Uses Cap's model: time in seconds, center-based positioning.
  */
@@ -378,7 +478,13 @@ export const TextOverlay = memo(function TextOverlay({
       .map((seg, originalIndex) => ({ segment: seg, originalIndex }))
       .filter(
         ({ segment: seg }) => seg.enabled && currentTimeSec >= seg.start && currentTimeSec <= seg.end
-      ),
+      )
+      .map(({ segment, originalIndex }) => ({
+        segment,
+        originalIndex,
+        opacity: calculateTextSegmentOpacity(segment, currentTimeSec),
+      }))
+      .filter(({ opacity }) => opacity >= MIN_VISIBLE_OPACITY),
     [segments, currentTimeSec]
   );
 
@@ -406,12 +512,13 @@ export const TextOverlay = memo(function TextOverlay({
       className={`absolute inset-0 ${hasSelection ? '' : 'pointer-events-none'}`}
       onClick={handleContainerClick}
     >
-      {activeSegmentsWithIndex.map(({ segment }, index) => (
+      {activeSegmentsWithIndex.map(({ segment, opacity }, index) => (
         <TextItem
           key={segmentIds[index]}
           segment={segment}
           segmentId={segmentIds[index]}
           isSelected={segmentIds[index] === selectedTextSegmentId}
+          opacity={opacity}
           videoOffset={videoOffset}
           videoSize={videoSize}
           onSelect={selectTextSegment}

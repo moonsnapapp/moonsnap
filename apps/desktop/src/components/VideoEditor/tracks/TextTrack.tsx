@@ -3,6 +3,7 @@ import { Type, GripVertical, Plus } from 'lucide-react';
 import type { TextSegment } from '../../../types';
 import { useVideoEditorStore, formatTimeSimple } from '../../../stores/videoEditorStore';
 import type { DragEdge } from './BaseTrack';
+import { measureTextSize } from '../TextOverlay';
 
 /**
  * TextTrack uses seconds for time values (matching Cap's model),
@@ -355,6 +356,10 @@ export const TextTrackContent = memo(function TextTrackContent({
     setHoveredTrack(null);
   }, [setHoveredTrack]);
 
+  // Get video dimensions for text measurement
+  const videoWidth = useVideoEditorStore((s) => s.project?.sources.originalWidth ?? 1920);
+  const videoHeight = useVideoEditorStore((s) => s.project?.sources.originalHeight ?? 1080);
+
   // Handle click to add segment
   const handleTrackClick = useCallback((e: React.MouseEvent) => {
     // Only add if we have a valid preview segment
@@ -363,17 +368,35 @@ export const TextTrackContent = memo(function TextTrackContent({
     // Don't add if clicking on a segment
     if ((e.target as HTMLElement).closest('[data-segment]')) return;
 
+    // Default text properties
+    const content = 'Text';
+    const fontFamily = 'sans-serif';
+    const fontSize = 48;
+    const fontWeight = 700;
+    const defaultSizeY = 0.2;
+
+    // Measure text to auto-size the gizmo
+    const sizeScale = Math.min(4, Math.max(0.25, defaultSizeY / 0.2));
+    const scaledFontSize = fontSize * sizeScale * (videoHeight / 1080);
+    const maxWidthPx = videoWidth * 0.8;
+    const measured = measureTextSize(content, fontFamily, scaledFontSize, fontWeight, maxWidthPx);
+
+    // Convert pixel measurements to normalized coordinates with padding
+    const paddingFactor = 1.4;
+    const sizeX = Math.min(0.9, Math.max(0.06, (measured.width * paddingFactor) / videoWidth));
+    const sizeY = Math.min(0.9, Math.max(0.05, (measured.height * paddingFactor) / videoHeight));
+
     // Create new segment with Cap's model
     const newSegment: TextSegment = {
       start: previewSegmentDetails.startSec,
       end: previewSegmentDetails.endSec,
       enabled: true,
-      content: 'Text',
+      content,
       center: { x: 0.5, y: 0.5 },
-      size: { x: 0.35, y: 0.2 },
-      fontFamily: 'sans-serif',
-      fontSize: 48,
-      fontWeight: 700,
+      size: { x: sizeX, y: sizeY },
+      fontFamily,
+      fontSize,
+      fontWeight,
       italic: false,
       color: '#ffffff',
       fadeDuration: 0.15,
@@ -381,7 +404,7 @@ export const TextTrackContent = memo(function TextTrackContent({
 
     // addTextSegment handles selection internally after sorting
     addTextSegment(newSegment);
-  }, [previewSegmentDetails, addTextSegment]);
+  }, [previewSegmentDetails, addTextSegment, videoWidth, videoHeight]);
 
   // Generate IDs for segments - must match TextOverlay's ID generation
   // Uses start time + index for selection matching, but key uses just index for stability during drag

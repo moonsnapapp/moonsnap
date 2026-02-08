@@ -1,17 +1,11 @@
-//! Text preparation for GPU rendering.
+//! Text types for GPU rendering (captions).
 //!
-//! Converts TextSegment data from the project into PreparedText structures
-//! ready for GPU rendering with glyphon.
+//! Contains PreparedText, WordColor, and parse_color used by the caption pipeline
+//! (caption_layer.rs, text_layer.rs, compositor.rs).
 //!
-//! Based on Cap's text rendering implementation.
-
-use crate::commands::video_recording::video_project::{TextSegment, XY};
-
-/// Base text height used for size scaling calculations.
-const BASE_TEXT_HEIGHT: f64 = 0.2;
-
-/// Maximum font size in pixels to prevent performance issues.
-const MAX_FONT_SIZE_PX: f32 = 256.0;
+//! Note: Text overlay rendering now uses pre-rendered images from the frontend
+//! (see prerendered_text.rs). The prepare_texts function was removed as text
+//! overlays are rendered via CSS/OffscreenCanvas for WYSIWYG fidelity.
 
 /// Word-level color information for highlighting.
 #[derive(Debug, Clone)]
@@ -65,91 +59,6 @@ pub fn parse_color(hex: &str) -> [f32; 4] {
     }
 
     [1.0, 1.0, 1.0, 1.0]
-}
-
-/// Prepare text segments for rendering at a specific frame time.
-///
-/// Filters segments by time, calculates positions/sizes, and applies fade animations.
-pub fn prepare_texts(
-    output_size: XY<u32>,
-    frame_time: f64,
-    segments: &[TextSegment],
-) -> Vec<PreparedText> {
-    let mut prepared = Vec::new();
-    let height_scale = if output_size.y == 0 {
-        1.0
-    } else {
-        output_size.y as f32 / 1080.0
-    };
-
-    for segment in segments {
-        if !segment.enabled {
-            continue;
-        }
-
-        if frame_time < segment.start || frame_time > segment.end {
-            continue;
-        }
-
-        let center = XY::new(
-            segment.center.x.clamp(0.0, 1.0),
-            segment.center.y.clamp(0.0, 1.0),
-        );
-        let size = XY::new(
-            segment.size.x.clamp(0.01, 2.0),
-            segment.size.y.clamp(0.01, 2.0),
-        );
-        let size_scale = (size.y / BASE_TEXT_HEIGHT).clamp(0.25, 4.0) as f32;
-
-        let width = (size.x * output_size.x as f64).max(1.0) as f32;
-        let height = (size.y * output_size.y as f64).max(1.0) as f32;
-        let half_w = width / 2.0;
-        let half_h = height / 2.0;
-
-        let left = (center.x as f32 * output_size.x as f32 - half_w).max(0.0);
-        let top = (center.y as f32 * output_size.y as f32 - half_h).max(0.0);
-        let right = (left + width).min(output_size.x as f32);
-        let bottom = (top + height).min(output_size.y as f32);
-
-        let fade_duration = segment.fade_duration.max(0.0);
-        let opacity = if fade_duration > 0.0 {
-            let time_since_start = frame_time - segment.start;
-            let time_until_end = segment.end - frame_time;
-            let segment_duration = segment.end - segment.start;
-
-            // Fade in at start
-            if time_since_start < fade_duration {
-                (time_since_start / fade_duration).clamp(0.0, 1.0) as f32
-            }
-            // Fade out at end (only if segment long enough for both fades)
-            else if time_until_end < fade_duration && segment_duration > fade_duration * 2.0 {
-                (time_until_end / fade_duration).clamp(0.0, 1.0) as f32
-            }
-            // Hold at full opacity
-            else {
-                1.0
-            }
-        } else {
-            1.0
-        };
-
-        prepared.push(PreparedText {
-            content: segment.content.clone(),
-            bounds: [left, top, right, bottom],
-            color: parse_color(&segment.color),
-            font_family: segment.font_family.clone(),
-            font_size: ((segment.font_size * size_scale).max(1.0) * height_scale)
-                .min(MAX_FONT_SIZE_PX),
-            font_weight: segment.font_weight,
-            italic: segment.italic,
-            opacity,
-            background_color: None, // Text segments don't have backgrounds
-            text_shadow: false,
-            word_colors: None, // Text segments don't use word highlighting
-        });
-    }
-
-    prepared
 }
 
 #[cfg(test)]

@@ -40,8 +40,6 @@ interface UsePreviewStreamResult {
   initPreview: () => Promise<void>;
   /** Request a full frame render at a specific time (video + text) */
   renderFrame: (timeMs: number) => Promise<void>;
-  /** Request text-only render (no video decoding - much faster) */
-  renderTextOnly: (timeMs: number) => Promise<void>;
   /** Shutdown the preview stream */
   shutdown: () => Promise<void>;
   /** Current WebSocket URL */
@@ -214,15 +212,6 @@ export function usePreviewStream(options: UsePreviewStreamOptions = {}): UsePrev
     }
   }, []);
 
-  // Request text-only render (no video decoding - much faster for playback)
-  const renderTextOnly = useCallback(async (timeMs: number) => {
-    try {
-      await invoke('render_text_only_frame', { timeMs: Math.floor(timeMs) });
-    } catch (error) {
-      videoEditorLogger.error('Failed to render text-only frame:', error);
-    }
-  }, []);
-
   // Shutdown the preview system
   const shutdown = useCallback(async () => {
     // Close WebSocket
@@ -261,7 +250,6 @@ export function usePreviewStream(options: UsePreviewStreamOptions = {}): UsePrev
     frameNumber,
     initPreview,
     renderFrame,
-    renderTextOnly,
     shutdown,
     wsUrl,
   };

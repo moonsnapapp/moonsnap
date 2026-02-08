@@ -3,6 +3,88 @@ import type { SliceCreator, ExportProgress, ExportResult, ExportConfig, AutoZoom
 import { videoEditorLogger } from '../../utils/logger';
 import { sanitizeProjectForSave } from './projectSlice';
 import { clipSegmentsToTimelineRange, getEffectiveDuration } from './trimSlice';
+import { preRenderForExport } from '../../utils/textPreRenderer';
+
+const MIN_FRAME_DIMENSION = 1;
+
+const toEven = (value: number): number => Math.floor(value / 2) * 2;
+
+function calculateCompositionOutputSize(
+  project: VideoProject,
+  videoW: number,
+  videoH: number,
+  padding: number,
+): { width: number; height: number } {
+  const composition = project.export.composition;
+
+  if (composition.mode === 'auto') {
+    return {
+      width: toEven(videoW + padding * 2),
+      height: toEven(videoH + padding * 2),
+    };
+  }
+
+  if (composition.width && composition.height) {
+    return {
+      width: toEven(composition.width),
+      height: toEven(composition.height),
+    };
+  }
+
+  if (composition.aspectRatio) {
+    const videoRatio = videoW / videoH;
+    const targetRatio = composition.aspectRatio;
+
+    if (targetRatio > videoRatio) {
+      const h = videoH + padding * 2;
+      const w = Math.floor(h * targetRatio);
+      return { width: toEven(w), height: toEven(h) };
+    }
+
+    const w = videoW + padding * 2;
+    const h = Math.floor(w / targetRatio);
+    return { width: toEven(w), height: toEven(h) };
+  }
+
+  return {
+    width: toEven(videoW + padding * 2),
+    height: toEven(videoH + padding * 2),
+  };
+}
+
+function calculateTextFrameSizeForExport(project: VideoProject): { width: number; height: number } {
+  const crop = project.export.crop;
+  const cropEnabled = crop?.enabled && crop.width > 0 && crop.height > 0;
+
+  const rawVideoW = cropEnabled ? crop.width : (project.sources.originalWidth ?? 1920);
+  const rawVideoH = cropEnabled ? crop.height : (project.sources.originalHeight ?? 1080);
+  const videoW = toEven(rawVideoW);
+  const videoH = toEven(rawVideoH);
+  const padding = project.export.background.padding;
+
+  const composition = calculateCompositionOutputSize(project, videoW, videoH, padding);
+
+  // Mirrors Rust parity::calculate_composition_bounds() used by exporter/mod.rs.
+  if (project.export.composition.mode !== 'manual') {
+    return {
+      width: Math.max(MIN_FRAME_DIMENSION, videoW),
+      height: Math.max(MIN_FRAME_DIMENSION, videoH),
+    };
+  }
+
+  const availableW = Math.max(MIN_FRAME_DIMENSION, composition.width - padding * 2);
+  const availableH = Math.max(MIN_FRAME_DIMENSION, composition.height - padding * 2);
+  const videoAspect = videoW / videoH;
+  const availableAspect = availableW / availableH;
+
+  const frameW = videoAspect > availableAspect ? availableW : availableH * videoAspect;
+  const frameH = videoAspect > availableAspect ? availableW / videoAspect : availableH;
+
+  return {
+    width: Math.max(MIN_FRAME_DIMENSION, Math.floor(frameW)),
+    height: Math.max(MIN_FRAME_DIMENSION, Math.floor(frameH)),
+  };
+}
 
 /**
  * Export state and actions for video export and auto-zoom generation
@@ -180,6 +262,16 @@ export const createExportSlice: SliceCreator<ExportSlice> = (set, get) => ({
     set({ isExporting: true, exportProgress: null });
 
     try {
+      // Pre-render text segments using OffscreenCanvas (WYSIWYG matching CSS preview)
+      const textSegments = sanitizedProject.text?.segments ?? [];
+      if (textSegments.length > 0) {
+        const textFrameSize = calculateTextFrameSizeForExport(sanitizedProject);
+        videoEditorLogger.info(
+          `Pre-rendering ${textSegments.length} text segments at ${textFrameSize.width}x${textFrameSize.height} (video-content frame)`
+        );
+        await preRenderForExport(textSegments, textFrameSize.width, textFrameSize.height);
+      }
+
       const result = await invoke<ExportResult>('export_video', {
         project: sanitizedProject,
         outputPath,
