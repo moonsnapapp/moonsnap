@@ -31,16 +31,20 @@ const REFERENCE_HEIGHT = 720.0;  // Reference video height for scaling
 interface CursorOverlayProps {
   cursorRecording: CursorRecording | null | undefined;
   cursorConfig: CursorConfig | undefined;
-  /** Container width in pixels */
-  containerWidth: number;
-  /** Container height in pixels */
-  containerHeight: number;
-  /** Actual output video width (for WYSIWYG cursor scaling) */
+  /** Frame width in export/master coordinates */
+  renderWidth: number;
+  /** Frame height in export/master coordinates */
+  renderHeight: number;
+  /** Frame width in preview/display coordinates */
+  displayWidth: number;
+  /** Frame height in preview/display coordinates */
+  displayHeight: number;
+  /** Composition height in export/master coordinates (used for cursor size parity) */
+  compositionRenderHeight: number;
+  /** Original output video width (source coordinates for crop transform) */
   videoWidth: number;
-  /** Actual output video height (for WYSIWYG cursor scaling) */
+  /** Original output video height (source coordinates for crop transform) */
   videoHeight: number;
-  /** Video aspect ratio (width/height) for object-contain offset calculation */
-  videoAspectRatio?: number;
   /** Zoom regions for applying the same transform as the video */
   zoomRegions?: ZoomRegion[];
   /** Background padding in pixels - needed for zoom transform alignment */
@@ -208,30 +212,6 @@ function loadBitmapCursor(
  * 2. Bitmap cursor (fallback for custom cursors)
  * 3. Default arrow SVG (fallback when nothing else available)
  */
-/**
- * Calculate the actual video bounds within a container using object-contain.
- * Returns the offset and dimensions of the video area.
- */
-function calculateVideoBounds(
-  containerWidth: number,
-  containerHeight: number,
-  videoAspectRatio: number
-): { offsetX: number; offsetY: number; width: number; height: number } {
-  const containerAspect = containerWidth / containerHeight;
-
-  if (containerAspect > videoAspectRatio) {
-    // Container is wider than video - letterboxing on sides (pillarboxing)
-    const videoWidth = containerHeight * videoAspectRatio;
-    const offsetX = (containerWidth - videoWidth) / 2;
-    return { offsetX, offsetY: 0, width: videoWidth, height: containerHeight };
-  } else {
-    // Container is taller than video - letterboxing on top/bottom
-    const videoHeight = containerWidth / videoAspectRatio;
-    const offsetY = (containerHeight - videoHeight) / 2;
-    return { offsetX: 0, offsetY, width: containerWidth, height: videoHeight };
-  }
-}
-
 // Selector for trim segments
 const selectSegments = (s: ReturnType<typeof useVideoEditorStore.getState>) =>
   s.project?.timeline.segments;
@@ -239,11 +219,13 @@ const selectSegments = (s: ReturnType<typeof useVideoEditorStore.getState>) =>
 export const CursorOverlay = memo(function CursorOverlay({
   cursorRecording,
   cursorConfig,
-  containerWidth,
-  containerHeight,
+  renderWidth,
+  renderHeight,
+  displayWidth,
+  displayHeight,
+  compositionRenderHeight,
   videoWidth,
   videoHeight: actualVideoHeight,
-  videoAspectRatio,
   zoomRegions: _zoomRegions,
   backgroundPadding: _backgroundPadding = 0,
   rounding: _rounding = 0,
@@ -320,6 +302,10 @@ export const CursorOverlay = memo(function CursorOverlay({
 
   // Get cursor position at source time (cursor data is in source time coordinates)
   const cursorData = hasCursorData ? getCursorAt(sourceTimeMs) : null;
+  const roundedRenderWidth = Math.max(1, Math.round(renderWidth));
+  const roundedRenderHeight = Math.max(1, Math.round(renderHeight));
+  const roundedDisplayWidth = Math.max(1, Math.round(displayWidth));
+  const roundedDisplayHeight = Math.max(1, Math.round(displayHeight));
 
   // Get current cursor shape directly from cursor data
   // Note: Cursor shape stabilization (debouncing short-lived shapes) should happen
@@ -346,14 +332,13 @@ export const CursorOverlay = memo(function CursorOverlay({
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    // Use DPR for retina sharpness, capped for performance on high-DPI displays
-    // Zoom is handled by parent container's CSS transform, not here
+    // Draw in render-space, then display-scale via CSS for stable parity.
+    // DPR is applied to keep edges sharp on HiDPI screens.
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
     const renderScale = dpr;
 
-    // Set canvas size at higher resolution for sharpness
-    const targetWidth = Math.round(containerWidth * renderScale);
-    const targetHeight = Math.round(containerHeight * renderScale);
+    const targetWidth = Math.max(1, Math.round(roundedRenderWidth * renderScale));
+    const targetHeight = Math.max(1, Math.round(roundedRenderHeight * renderScale));
 
     if (canvas.width !== targetWidth || canvas.height !== targetHeight) {
       canvas.width = targetWidth;
@@ -366,15 +351,6 @@ export const CursorOverlay = memo(function CursorOverlay({
     // Enable high-quality image smoothing for SVG cursor rendering
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = 'high';
-
-    // Calculate pixel position from normalized coordinates
-    // The cursor coordinates are normalized (0-1) relative to the capture region.
-    // IMPORTANT: Use cursor recording dimensions (not video dimensions) for positioning,
-    // as cursor coordinates are normalized to the capture region, not the video file.
-    // These can differ for area selection recordings (FFmpeg may force even dimensions, etc.)
-    let pixelX: number;
-    let pixelY: number;
-    let previewVideoHeight: number;
 
     // Transform cursor coordinates for crop
     // Cursor coords are 0-1 relative to original video, need to transform to cropped space
@@ -396,48 +372,28 @@ export const CursorOverlay = memo(function CursorOverlay({
 
       // Hide cursor if outside visible region
       if (cursorX < -0.1 || cursorX > 1.1 || cursorY < -0.1 || cursorY > 1.1) {
-        ctx.clearRect(0, 0, containerWidth, containerHeight);
+        ctx.clearRect(0, 0, roundedRenderWidth, roundedRenderHeight);
         return;
       }
     }
 
-    // Use cursor recording's aspect ratio for cursor positioning
-    // When crop is enabled, use crop aspect ratio instead
-    const cursorAspectRatio = cropEnabled && cropConfig
-      ? cropConfig.width / cropConfig.height
-      : cursorRecording?.width && cursorRecording?.height
-        ? cursorRecording.width / cursorRecording.height
-        : videoAspectRatio;
-
-    if (cursorAspectRatio && cursorAspectRatio > 0) {
-      // Calculate actual video bounds within the container (accounting for object-contain)
-      const bounds = calculateVideoBounds(containerWidth, containerHeight, cursorAspectRatio);
-      pixelX = bounds.offsetX + cursorX * bounds.width;
-      pixelY = bounds.offsetY + cursorY * bounds.height;
-      previewVideoHeight = bounds.height;
-    } else {
-      // Fallback: assume container matches video aspect ratio exactly
-      pixelX = cursorX * containerWidth;
-      pixelY = cursorY * containerHeight;
-      previewVideoHeight = containerHeight;
-    }
+    // Cursor coordinates are normalized (0-1) in source-space.
+    // Convert to render-space after optional crop remapping.
+    const pixelX = cursorX * roundedRenderWidth;
+    const pixelY = cursorY * roundedRenderHeight;
 
     // Calculate cursor size for WYSIWYG with export
-    // Step 1: Calculate at EXPORT resolution (matches exporter/mod.rs exactly)
-    const exportSizeScale = actualVideoHeight / REFERENCE_HEIGHT;
+    // Matches exporter/mod.rs: uses composition height as scale reference.
+    const exportSizeScale = compositionRenderHeight / REFERENCE_HEIGHT;
     const exportCursorHeight = Math.min(Math.max(BASE_CURSOR_HEIGHT * exportSizeScale * scale, 16), 256);
-
-    // Step 2: Scale to preview resolution
-    const previewScale = previewVideoHeight / actualVideoHeight;
-    const finalCursorHeight = exportCursorHeight * previewScale;
+    const finalCursorHeight = exportCursorHeight;
 
     // Helper to draw circle cursor
     const drawCircle = () => {
-      ctx.clearRect(0, 0, containerWidth, containerHeight);
+      ctx.clearRect(0, 0, roundedRenderWidth, roundedRenderHeight);
       // Circle uses the same resolution-dependent scaling as cursor
-      // Calculate at export resolution, then scale to preview
       const exportCircleSize = DEFAULT_CIRCLE_SIZE * exportSizeScale * scale;
-      const radius = (exportCircleSize / 2) * previewScale;
+      const radius = exportCircleSize / 2;
       ctx.beginPath();
       ctx.arc(pixelX, pixelY, radius, 0, Math.PI * 2);
       ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
@@ -457,7 +413,7 @@ export const CursorOverlay = memo(function CursorOverlay({
     // Helper to draw SVG cursor at exact size (lossless - no scaling in drawImage)
     // SVG cursors use fractional hotspot (0-1)
     const drawSvgCursor = (img: HTMLImageElement, def: CursorDefinition) => {
-      ctx.clearRect(0, 0, containerWidth, containerHeight);
+      ctx.clearRect(0, 0, roundedRenderWidth, roundedRenderHeight);
       // Image is already at exact size (svgTargetHeight), draw at 1:1
       // But we need to account for renderScale in our coordinate system
       const drawHeight = finalCursorHeight * clickAnimationScale;
@@ -471,7 +427,7 @@ export const CursorOverlay = memo(function CursorOverlay({
     // Helper to draw bitmap cursor with pixel hotspot
     // Bitmap cursors are scaled to match finalCursorHeight (same as export)
     const drawBitmap = (img: HTMLImageElement, hotspotX: number, hotspotY: number) => {
-      ctx.clearRect(0, 0, containerWidth, containerHeight);
+      ctx.clearRect(0, 0, roundedRenderWidth, roundedRenderHeight);
       // Scale bitmap to finalCursorHeight, matching export formula:
       // bitmap_scale = final_cursor_height / cursor_image.height
       // Apply click animation scale (matches export behavior)
@@ -530,11 +486,11 @@ export const CursorOverlay = memo(function CursorOverlay({
     visible,
     cursorType,
     scale,
-    containerWidth,
-    containerHeight,
-    actualVideoHeight, // For WYSIWYG cursor sizing
+    roundedRenderWidth,
+    roundedRenderHeight,
+    compositionRenderHeight,
     videoWidth,
-    videoAspectRatio,
+    actualVideoHeight,
     cursorImages,
     triggerUpdate,
     currentTimeMs,
@@ -560,9 +516,8 @@ export const CursorOverlay = memo(function CursorOverlay({
       className="absolute inset-0 pointer-events-none"
       style={{
         zIndex: 15,
-        // Use CSS dimensions for visual size (canvas internal resolution is higher for sharpness)
-        width: containerWidth,
-        height: containerHeight,
+        width: `${roundedDisplayWidth}px`,
+        height: `${roundedDisplayHeight}px`,
         // NOTE: Zoom transform is applied by parent container, not here
       }}
     />

@@ -4,8 +4,8 @@
  */
 import { GPUVideoPreview } from '../../components/VideoEditor/GPUVideoPreview';
 import { GPUErrorBoundary } from '../../components/VideoEditor/GPUErrorBoundary';
-
 export function VideoEditorPreview() {
+
   return (
     <div className="flex-1 min-h-0 p-4">
       <GPUErrorBoundary>

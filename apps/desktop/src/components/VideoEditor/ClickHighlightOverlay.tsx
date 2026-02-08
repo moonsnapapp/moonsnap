@@ -15,16 +15,20 @@ import type { CursorRecording, ClickHighlightConfig, CursorEvent, ZoomRegion, Cr
 interface ClickHighlightOverlayProps {
   cursorRecording: CursorRecording | null | undefined;
   clickHighlightConfig: ClickHighlightConfig | undefined;
-  /** Container width in pixels */
-  containerWidth: number;
-  /** Container height in pixels */
-  containerHeight: number;
-  /** Video width in pixels - needed for zoom transform alignment */
+  /** Frame width in export/master coordinates */
+  renderWidth: number;
+  /** Frame height in export/master coordinates */
+  renderHeight: number;
+  /** Frame width in preview/display coordinates */
+  displayWidth: number;
+  /** Frame height in preview/display coordinates */
+  displayHeight: number;
+  /** Composition height in export/master coordinates */
+  compositionRenderHeight: number;
+  /** Video width in source coordinates for crop transform */
   videoWidth?: number;
-  /** Video height in pixels - needed for zoom transform alignment */
+  /** Video height in source coordinates for crop transform */
   videoHeight?: number;
-  /** Video aspect ratio (width/height) for object-contain offset calculation */
-  videoAspectRatio?: number;
   /** Zoom regions for applying the same transform as the video */
   zoomRegions?: ZoomRegion[];
   /** Background padding in pixels - needed for zoom transform alignment */
@@ -33,30 +37,6 @@ interface ClickHighlightOverlayProps {
   rounding?: number;
   /** Crop configuration - click positions need to be transformed when crop is applied */
   cropConfig?: CropConfig;
-}
-
-/**
- * Calculate the actual video bounds within a container using object-contain.
- * Returns the offset and dimensions of the video area.
- */
-function calculateVideoBounds(
-  containerWidth: number,
-  containerHeight: number,
-  videoAspectRatio: number
-): { offsetX: number; offsetY: number; width: number; height: number } {
-  const containerAspect = containerWidth / containerHeight;
-
-  if (containerAspect > videoAspectRatio) {
-    // Container is wider than video - letterboxing on sides (pillarboxing)
-    const videoWidth = containerHeight * videoAspectRatio;
-    const offsetX = (containerWidth - videoWidth) / 2;
-    return { offsetX, offsetY: 0, width: videoWidth, height: containerHeight };
-  } else {
-    // Container is taller than video - letterboxing on top/bottom
-    const videoHeight = containerWidth / videoAspectRatio;
-    const offsetY = (containerHeight - videoHeight) / 2;
-    return { offsetX: 0, offsetY, width: containerWidth, height: videoHeight };
-  }
 }
 
 /**
@@ -253,11 +233,13 @@ const selectSegments = (s: ReturnType<typeof useVideoEditorStore.getState>) =>
 export const ClickHighlightOverlay = memo(function ClickHighlightOverlay({
   cursorRecording,
   clickHighlightConfig,
-  containerWidth,
-  containerHeight,
+  renderWidth,
+  renderHeight,
+  displayWidth,
+  displayHeight,
+  compositionRenderHeight: _compositionRenderHeight,
   videoWidth: _videoWidth = 1920,
   videoHeight: _videoHeight = 1080,
-  videoAspectRatio,
   zoomRegions: _zoomRegions,
   backgroundPadding: _backgroundPadding = 0,
   rounding: _rounding = 0,
@@ -284,6 +266,10 @@ export const ClickHighlightOverlay = memo(function ClickHighlightOverlay({
   const radius = clickHighlightConfig?.radius ?? 30;
   const durationMs = clickHighlightConfig?.durationMs ?? 400;
   const style = clickHighlightConfig?.style ?? 'ripple';
+  const roundedRenderWidth = Math.max(1, Math.round(renderWidth));
+  const roundedRenderHeight = Math.max(1, Math.round(renderHeight));
+  const roundedDisplayWidth = Math.max(1, Math.round(displayWidth));
+  const roundedDisplayHeight = Math.max(1, Math.round(displayHeight));
   
   // Parse color once
   const parsedColor = parseColor(color);
@@ -296,14 +282,14 @@ export const ClickHighlightOverlay = memo(function ClickHighlightOverlay({
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
     
-    // Set canvas size to match container
-    if (canvas.width !== containerWidth || canvas.height !== containerHeight) {
-      canvas.width = containerWidth;
-      canvas.height = containerHeight;
+    // Draw in render-space and display-scale via CSS.
+    if (canvas.width !== roundedRenderWidth || canvas.height !== roundedRenderHeight) {
+      canvas.width = roundedRenderWidth;
+      canvas.height = roundedRenderHeight;
     }
     
     // Clear canvas
-    ctx.clearRect(0, 0, containerWidth, containerHeight);
+    ctx.clearRect(0, 0, roundedRenderWidth, roundedRenderHeight);
     
     // Get active click highlights
     // Use source time (converted from timeline time) and adjust by video start offset to sync with cursor timestamps
@@ -319,14 +305,7 @@ export const ClickHighlightOverlay = memo(function ClickHighlightOverlay({
     // Render each active click highlight
     // Use cursor recording's aspect ratio for positioning (not video dimensions)
     // Cursor coordinates are normalized to the capture region, not the video file
-    const cropEnabled = Boolean(
-      cropConfig?.enabled && cropConfig.width > 0 && cropConfig.height > 0
-    );
-    const cursorAspectRatio = cropEnabled && cropConfig
-      ? cropConfig.width / cropConfig.height
-      : cursorRecording.width && cursorRecording.height
-        ? cursorRecording.width / cursorRecording.height
-        : videoAspectRatio;
+    const cropEnabled = Boolean(cropConfig?.enabled && cropConfig.width > 0 && cropConfig.height > 0);
     const recordingWidth = cursorRecording.width || _videoWidth;
     const recordingHeight = cursorRecording.height || _videoHeight;
 
@@ -345,22 +324,12 @@ export const ClickHighlightOverlay = memo(function ClickHighlightOverlay({
         }
       }
 
-      // Convert normalized coordinates to pixel coordinates
-      // Account for object-contain letterboxing when video aspect ratio differs from container
-      let pixelX: number;
-      let pixelY: number;
-
-      if (cursorAspectRatio && cursorAspectRatio > 0) {
-        const bounds = calculateVideoBounds(containerWidth, containerHeight, cursorAspectRatio);
-        pixelX = bounds.offsetX + clickX * bounds.width;
-        pixelY = bounds.offsetY + clickY * bounds.height;
-      } else {
-        pixelX = clickX * containerWidth;
-        pixelY = clickY * containerHeight;
-      }
+      // Convert normalized coordinates to render-space pixels.
+      const pixelX = clickX * roundedRenderWidth;
+      const pixelY = clickY * roundedRenderHeight;
       
-      // Scale radius based on container size (use smaller dimension as reference)
-      const scaleFactor = Math.min(containerWidth, containerHeight) / 1080;
+      // Keep highlight size stable in master space across preview resizes.
+      const scaleFactor = roundedRenderHeight / 1080;
       const scaledRadius = radius * scaleFactor;
       
       switch (style) {
@@ -384,11 +353,10 @@ export const ClickHighlightOverlay = memo(function ClickHighlightOverlay({
     radius,
     durationMs,
     style,
-    containerWidth,
-    containerHeight,
+    roundedRenderWidth,
+    roundedRenderHeight,
     _videoWidth,
     _videoHeight,
-    videoAspectRatio,
     cropConfig,
     sourceTimeMs,
     parsedColor,
@@ -416,10 +384,12 @@ export const ClickHighlightOverlay = memo(function ClickHighlightOverlay({
       className="absolute inset-0 pointer-events-none"
       style={{
         zIndex: 14, // Below cursor (15), above video content
+        width: `${roundedDisplayWidth}px`,
+        height: `${roundedDisplayHeight}px`,
         // NOTE: Zoom transform is applied by parent container, not here
       }}
-      width={containerWidth}
-      height={containerHeight}
+      width={roundedRenderWidth}
+      height={roundedRenderHeight}
     />
   );
 });

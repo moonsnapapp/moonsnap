@@ -23,10 +23,6 @@ interface PreviewStylesOptions {
   containerSize: { width: number; height: number };
   /** Preview area size (outer container) */
   previewAreaSize: { width: number; height: number };
-  /** Video aspect ratio */
-  aspectRatio: number;
-  /** Crop aspect ratio (if crop enabled) */
-  cropAspectRatio: number | null;
   /** Output composition config (auto/manual) */
   compositionConfig: CompositionConfig | undefined;
 }
@@ -40,8 +36,6 @@ interface PreviewStylesResult {
   frameShadowStyle: React.CSSProperties;
   /** Combined frame style for SceneModeRenderer */
   frameStyle: React.CSSProperties;
-  /** Contained size for outer wrapper */
-  containedSize: { width: number; height: number } | null;
   /** Preview scale factor */
   previewScale: number;
   /** Composition size including padding */
@@ -53,6 +47,8 @@ interface PreviewStylesResult {
   /** Composite dimensions (content + padding) */
   compositeWidth: number;
   compositeHeight: number;
+  /** Video frame render size in export/master coordinates */
+  frameRenderSize: { width: number; height: number };
   compositeAspectRatio: number;
   /** Whether crop is enabled and should be applied to frame */
   applyCropToFrame: boolean;
@@ -62,6 +58,30 @@ interface PreviewStylesResult {
 
 function toEven(value: number): number {
   return Math.floor(value / 2) * 2;
+}
+
+function fitCompositionToArea(
+  areaWidth: number,
+  areaHeight: number,
+  compositionWidth: number,
+  compositionHeight: number
+): { width: number; height: number; scaleX: number; scaleY: number } {
+  if (
+    areaWidth <= 0 ||
+    areaHeight <= 0 ||
+    compositionWidth <= 0 ||
+    compositionHeight <= 0
+  ) {
+    return { width: 0, height: 0, scaleX: 1, scaleY: 1 };
+  }
+
+  const fitScale = Math.min(areaWidth / compositionWidth, areaHeight / compositionHeight);
+  const width = Math.max(1, Math.min(areaWidth, Math.floor(compositionWidth * fitScale)));
+  const height = Math.max(1, Math.min(areaHeight, Math.floor(compositionHeight * fitScale)));
+  const scaleX = width / compositionWidth;
+  const scaleY = height / compositionHeight;
+
+  return { width, height, scaleX, scaleY };
 }
 
 function calculateCompositionOutputSize(
@@ -166,8 +186,6 @@ export function usePreviewStyles(options: PreviewStylesOptions): PreviewStylesRe
     originalHeight,
     containerSize,
     previewAreaSize,
-    aspectRatio,
-    cropAspectRatio,
     compositionConfig,
   } = options;
 
@@ -239,75 +257,94 @@ export function usePreviewStyles(options: PreviewStylesOptions): PreviewStylesRe
     }
   }, [applyCropToFrame, cropConfig, containerSize]);
 
-  // Calculate "contain" size - fit composition within preview area maintaining aspect ratio
-  const containedSize = useMemo(() => {
-    if (previewAreaSize.width === 0 || previewAreaSize.height === 0) {
-      return null;
-    }
+  // Calculate best-fit composition size in the preview area.
+  // Uses integer display dimensions while maximizing filled area.
+  const fittedComposition = useMemo(
+    () =>
+      fitCompositionToArea(
+        previewAreaSize.width,
+        previewAreaSize.height,
+        compositeWidth,
+        compositeHeight
+      ),
+    [previewAreaSize.width, previewAreaSize.height, compositeWidth, compositeHeight]
+  );
 
-    const targetAspect = hasFrameStyling ? compositeAspectRatio : (cropAspectRatio ?? aspectRatio);
-    const areaAspect = previewAreaSize.width / previewAreaSize.height;
+  const previewScale = Math.min(fittedComposition.scaleX, fittedComposition.scaleY);
+  const compositionSize = useMemo(
+    () => ({ width: fittedComposition.width, height: fittedComposition.height }),
+    [fittedComposition.width, fittedComposition.height]
+  );
 
-    if (areaAspect > targetAspect) {
-      return {
-        width: previewAreaSize.height * targetAspect,
-        height: previewAreaSize.height,
-      };
-    } else {
-      return {
-        width: previewAreaSize.width,
-        height: previewAreaSize.width / targetAspect,
-      };
-    }
-  }, [previewAreaSize, hasFrameStyling, compositeAspectRatio, cropAspectRatio, aspectRatio]);
-
-  // Calculate composition display scale in preview area
-  const previewScale = useMemo(() => {
-    if (previewAreaSize.width === 0 || previewAreaSize.height === 0) {
-      return 1;
-    }
-    const scaleX = previewAreaSize.width / Math.max(1, compositeWidth);
-    const scaleY = previewAreaSize.height / Math.max(1, compositeHeight);
-    return Math.min(scaleX, scaleY);
-  }, [previewAreaSize.width, previewAreaSize.height, compositeWidth, compositeHeight]);
-
-  // Calculate composition and frame size/offset in preview coordinates
-  const compositionSize = useMemo(() => {
+  const frameRectInPreview = useMemo(() => {
     if (!hasFrameStyling) {
       return {
-        width: containerSize.width,
-        height: containerSize.height,
+        x: 0,
+        y: 0,
+        width: compositionSize.width,
+        height: compositionSize.height,
       };
     }
 
-    return {
-      width: Math.max(1, Math.round(compositeWidth * previewScale)),
-      height: Math.max(1, Math.round(compositeHeight * previewScale)),
-    };
-  }, [hasFrameStyling, containerSize.width, containerSize.height, compositeWidth, compositeHeight, previewScale]);
+    if (compositionSize.width === 0 || compositionSize.height === 0) {
+      return { x: 0, y: 0, width: 0, height: 0 };
+    }
+
+    const clampLeft = (value: number) =>
+      Math.min(Math.max(value, 0), Math.max(0, compositionSize.width - 1));
+    const clampTop = (value: number) =>
+      Math.min(Math.max(value, 0), Math.max(0, compositionSize.height - 1));
+    const clampRight = (value: number) => Math.min(Math.max(value, 1), compositionSize.width);
+    const clampBottom = (value: number) => Math.min(Math.max(value, 1), compositionSize.height);
+
+    const left = clampLeft(Math.round(frameOutputBounds.x * fittedComposition.scaleX));
+    const top = clampTop(Math.round(frameOutputBounds.y * fittedComposition.scaleY));
+    const right = clampRight(
+      Math.round((frameOutputBounds.x + frameOutputBounds.width) * fittedComposition.scaleX)
+    );
+    const bottom = clampBottom(
+      Math.round((frameOutputBounds.y + frameOutputBounds.height) * fittedComposition.scaleY)
+    );
+
+    const safeRight = Math.max(right, left + 1);
+    const safeBottom = Math.max(bottom, top + 1);
+    const width = Math.max(1, safeRight - left);
+    const height = Math.max(1, safeBottom - top);
+
+    return { x: left, y: top, width, height };
+  }, [
+    hasFrameStyling,
+    compositionSize.width,
+    compositionSize.height,
+    frameOutputBounds.x,
+    frameOutputBounds.y,
+    frameOutputBounds.width,
+    frameOutputBounds.height,
+    fittedComposition.scaleX,
+    fittedComposition.scaleY,
+  ]);
 
   const frameDisplaySize = useMemo(() => {
-    if (!hasFrameStyling) {
-      return {
-        width: containerSize.width,
-        height: containerSize.height,
-      };
-    }
     return {
-      width: Math.max(1, Math.round(frameOutputBounds.width * previewScale)),
-      height: Math.max(1, Math.round(frameOutputBounds.height * previewScale)),
+      width: frameRectInPreview.width,
+      height: frameRectInPreview.height,
     };
-  }, [hasFrameStyling, containerSize.width, containerSize.height, frameOutputBounds.width, frameOutputBounds.height, previewScale]);
+  }, [frameRectInPreview.height, frameRectInPreview.width]);
 
   const frameOffset = useMemo(() => {
-    if (!hasFrameStyling) {
-      return { x: 0, y: 0 };
-    }
     return {
-      x: Math.round(frameOutputBounds.x * previewScale),
-      y: Math.round(frameOutputBounds.y * previewScale),
+      x: frameRectInPreview.x,
+      y: frameRectInPreview.y,
     };
-  }, [hasFrameStyling, frameOutputBounds.x, frameOutputBounds.y, previewScale]);
+  }, [frameRectInPreview.x, frameRectInPreview.y]);
+
+  const frameRenderSize = useMemo(
+    () => ({
+      width: Math.max(1, Math.round(frameOutputBounds.width)),
+      height: Math.max(1, Math.round(frameOutputBounds.height)),
+    }),
+    [frameOutputBounds.width, frameOutputBounds.height]
+  );
 
   // Frame clipping style (rounding, border)
   const frameClipStyle = useMemo((): React.CSSProperties => {
@@ -360,13 +397,13 @@ export function usePreviewStyles(options: PreviewStylesOptions): PreviewStylesRe
     frameClipStyle,
     frameShadowStyle,
     frameStyle,
-    containedSize,
     previewScale,
     compositionSize,
     frameDisplaySize,
     frameOffset,
     compositeWidth,
     compositeHeight,
+    frameRenderSize,
     compositeAspectRatio,
     applyCropToFrame,
     croppedFrameSizeInParent,

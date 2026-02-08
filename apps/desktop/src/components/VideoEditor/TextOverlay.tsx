@@ -37,9 +37,10 @@ export function measureTextSize(
 interface TextOverlayProps {
   segments: TextSegment[];
   currentTimeMs: number;
-  previewWidth: number;
-  previewHeight: number;
-  videoAspectRatio: number;
+  renderWidth: number;
+  renderHeight: number;
+  displayWidth: number;
+  displayHeight: number;
 }
 
 interface TextItemProps {
@@ -47,8 +48,8 @@ interface TextItemProps {
   segmentId: string;
   isSelected: boolean;
   opacity: number;
-  videoOffset: { x: number; y: number };
-  videoSize: { width: number; height: number };
+  renderSize: { width: number; height: number };
+  interactionSize: { width: number; height: number };
   onSelect: (id: string) => void;
   onUpdate: (id: string, updates: Partial<TextSegment>) => void;
 }
@@ -78,29 +79,6 @@ const ResizeHandle = memo(function ResizeHandle({ position, onMouseDown }: Resiz
     />
   );
 });
-
-/**
- * Calculate video bounds within container (accounting for letterboxing)
- */
-function calculateVideoBounds(
-  containerWidth: number,
-  containerHeight: number,
-  videoAspectRatio: number
-): { offsetX: number; offsetY: number; width: number; height: number } {
-  const containerAspect = containerWidth / containerHeight;
-
-  if (containerAspect > videoAspectRatio) {
-    // Container is wider than video - pillarboxing (black bars on sides)
-    const videoWidth = containerHeight * videoAspectRatio;
-    const offsetX = (containerWidth - videoWidth) / 2;
-    return { offsetX, offsetY: 0, width: videoWidth, height: containerHeight };
-  } else {
-    // Container is taller than video - letterboxing (black bars top/bottom)
-    const videoHeight = containerWidth / videoAspectRatio;
-    const offsetY = (containerHeight - videoHeight) / 2;
-    return { offsetX: 0, offsetY, width: containerWidth, height: videoHeight };
-  }
-}
 
 /**
  * Clamp a value between min and max, handling edge cases
@@ -146,8 +124,8 @@ const TextItem = memo(function TextItem({
   segmentId,
   isSelected,
   opacity,
-  videoOffset,
-  videoSize,
+  renderSize,
+  interactionSize,
   onSelect,
   onUpdate,
 }: TextItemProps) {
@@ -166,12 +144,12 @@ const TextItem = memo(function TextItem({
 
   // Calculate pixel position from center-based normalized coordinates
   // Match glyphon's calculation exactly
-  const width = Math.max(segment.size.x * videoSize.width, 1);
-  const height = Math.max(segment.size.y * videoSize.height, 1);
+  const width = Math.max(segment.size.x * renderSize.width, 1);
+  const height = Math.max(segment.size.y * renderSize.height, 1);
   const halfW = width / 2;
   const halfH = height / 2;
-  const left = Math.max(0, videoOffset.x + segment.center.x * videoSize.width - halfW);
-  const top = Math.max(0, videoOffset.y + segment.center.y * videoSize.height - halfH);
+  const left = Math.max(0, segment.center.x * renderSize.width - halfW);
+  const top = Math.max(0, segment.center.y * renderSize.height - halfH);
 
   // Render text on canvas — same code path as export for WYSIWYG
   useEffect(() => {
@@ -200,9 +178,9 @@ const TextItem = memo(function TextItem({
       fontSize: segment.fontSize,
       color: segment.color || '#ffffff',
       sizeY: segment.size.y,
-    }, width, height, videoSize.height);
+    }, width, height, renderSize.height);
   }, [segment.content, segment.fontFamily, segment.fontWeight, segment.fontSize,
-      segment.italic, segment.color, segment.size.y, width, height, videoSize.height]);
+      segment.italic, segment.color, segment.size.y, width, height, renderSize.height]);
 
   // Handle drag to move
   const handleMove = useCallback((e: React.MouseEvent) => {
@@ -228,8 +206,8 @@ const TextItem = memo(function TextItem({
     const handleMouseMove = (moveEvent: MouseEvent) => {
       if (!dragStartRef.current) return;
 
-      const dx = (moveEvent.clientX - dragStartRef.current.x) / videoSize.width;
-      const dy = (moveEvent.clientY - dragStartRef.current.y) / videoSize.height;
+      const dx = (moveEvent.clientX - dragStartRef.current.x) / interactionSize.width;
+      const dy = (moveEvent.clientY - dragStartRef.current.y) / interactionSize.height;
 
       const halfW = segment.size.x / 2;
       const halfH = segment.size.y / 2;
@@ -256,7 +234,7 @@ const TextItem = memo(function TextItem({
 
     document.addEventListener('mousemove', handleMouseMove);
     document.addEventListener('mouseup', handleMouseUp);
-  }, [segment, videoSize, isSelected, segmentId, onSelect, onUpdate]);
+  }, [segment, interactionSize, isSelected, segmentId, onSelect, onUpdate]);
 
   // Handle corner resize (proportional scaling with font size)
   const createCornerResizeHandler = useCallback((dirX: -1 | 1, dirY: -1 | 1) => {
@@ -282,11 +260,11 @@ const TextItem = memo(function TextItem({
       const handleMouseMove = (moveEvent: MouseEvent) => {
         if (!dragStartRef.current) return;
 
-        const dy = (moveEvent.clientY - dragStartRef.current.y) / videoSize.height;
+        const dy = (moveEvent.clientY - dragStartRef.current.y) / interactionSize.height;
 
         // Calculate scale based on vertical drag
-        const currentHeightPx = dragStartRef.current.sizeY * videoSize.height;
-        const deltaPxY = dy * videoSize.height * dirY;
+        const currentHeightPx = dragStartRef.current.sizeY * renderSize.height;
+        const deltaPxY = dy * renderSize.height * dirY;
         const scale = (currentHeightPx + deltaPxY) / currentHeightPx;
 
         if (scale > 0.1 && scale < 10) {
@@ -329,7 +307,7 @@ const TextItem = memo(function TextItem({
       document.addEventListener('mousemove', handleMouseMove);
       document.addEventListener('mouseup', handleMouseUp);
     };
-  }, [segment, videoSize, segmentId, onUpdate]);
+  }, [segment, interactionSize, renderSize.height, segmentId, onUpdate]);
 
   // Handle side resize (width only, no font size change)
   const createSideResizeHandler = useCallback((dirX: -1 | 1) => {
@@ -355,7 +333,7 @@ const TextItem = memo(function TextItem({
       const handleMouseMove = (moveEvent: MouseEvent) => {
         if (!dragStartRef.current) return;
 
-        const dx = (moveEvent.clientX - dragStartRef.current.x) / videoSize.width;
+        const dx = (moveEvent.clientX - dragStartRef.current.x) / interactionSize.width;
 
         const targetWidth = dragStartRef.current.sizeX + dx * dirX;
         const newSizeX = clamp(targetWidth, minSize, maxSize);
@@ -385,7 +363,7 @@ const TextItem = memo(function TextItem({
       document.addEventListener('mousemove', handleMouseMove);
       document.addEventListener('mouseup', handleMouseUp);
     };
-  }, [segment, videoSize, segmentId, onUpdate]);
+  }, [segment, interactionSize, segmentId, onUpdate]);
 
   const handleClick = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
@@ -455,18 +433,23 @@ const TextItem = memo(function TextItem({
 export const TextOverlay = memo(function TextOverlay({
   segments,
   currentTimeMs,
-  previewWidth,
-  previewHeight,
-  videoAspectRatio,
+  renderWidth,
+  renderHeight,
+  displayWidth,
+  displayHeight,
 }: TextOverlayProps) {
   const selectedTextSegmentId = useVideoEditorStore((s) => s.selectedTextSegmentId);
   const selectTextSegment = useVideoEditorStore((s) => s.selectTextSegment);
   const updateTextSegment = useVideoEditorStore((s) => s.updateTextSegment);
 
-  // Calculate video bounds within container (accounting for letterboxing)
-  const videoBounds = calculateVideoBounds(previewWidth, previewHeight, videoAspectRatio);
-  const videoOffset = { x: videoBounds.offsetX, y: videoBounds.offsetY };
-  const videoSize = { width: videoBounds.width, height: videoBounds.height };
+  const safeRenderWidth = Math.max(1, Math.round(renderWidth));
+  const safeRenderHeight = Math.max(1, Math.round(renderHeight));
+  const safeDisplayWidth = Math.max(1, Math.round(displayWidth));
+  const safeDisplayHeight = Math.max(1, Math.round(displayHeight));
+  const scaleX = safeDisplayWidth / safeRenderWidth;
+  const scaleY = safeDisplayHeight / safeRenderHeight;
+  const renderSize = { width: safeRenderWidth, height: safeRenderHeight };
+  const interactionSize = { width: safeDisplayWidth, height: safeDisplayHeight };
 
   // Current time in seconds (Cap uses seconds)
   const currentTimeSec = currentTimeMs / 1000;
@@ -509,22 +492,36 @@ export const TextOverlay = memo(function TextOverlay({
 
   return (
     <div
-      className={`absolute inset-0 ${hasSelection ? '' : 'pointer-events-none'}`}
-      onClick={handleContainerClick}
+      className="absolute left-0 top-0"
+      style={{
+        width: `${safeDisplayWidth}px`,
+        height: `${safeDisplayHeight}px`,
+      }}
     >
-      {activeSegmentsWithIndex.map(({ segment, opacity }, index) => (
-        <TextItem
-          key={segmentIds[index]}
-          segment={segment}
-          segmentId={segmentIds[index]}
-          isSelected={segmentIds[index] === selectedTextSegmentId}
-          opacity={opacity}
-          videoOffset={videoOffset}
-          videoSize={videoSize}
-          onSelect={selectTextSegment}
-          onUpdate={updateTextSegment}
-        />
-      ))}
+      <div
+        className={`relative ${hasSelection ? 'pointer-events-auto' : 'pointer-events-none'}`}
+        style={{
+          width: `${safeRenderWidth}px`,
+          height: `${safeRenderHeight}px`,
+          transform: `scale(${scaleX}, ${scaleY})`,
+          transformOrigin: 'top left',
+        }}
+        onClick={handleContainerClick}
+      >
+        {activeSegmentsWithIndex.map(({ segment, opacity }, index) => (
+          <TextItem
+            key={segmentIds[index]}
+            segment={segment}
+            segmentId={segmentIds[index]}
+            isSelected={segmentIds[index] === selectedTextSegmentId}
+            opacity={opacity}
+            renderSize={renderSize}
+            interactionSize={interactionSize}
+            onSelect={selectTextSegment}
+            onUpdate={updateTextSegment}
+          />
+        ))}
+      </div>
     </div>
   );
 });

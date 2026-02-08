@@ -6,8 +6,10 @@ import { usePreviewStream } from '../../hooks/usePreviewStream';
 import { videoEditorLogger } from '../../utils/logger';
 
 interface GPUCaptionOverlayProps {
-  containerWidth: number;
-  containerHeight: number;
+  renderWidth: number;
+  renderHeight: number;
+  displayWidth: number;
+  displayHeight: number;
   onActiveChange?: (active: boolean) => void;
 }
 
@@ -20,8 +22,10 @@ type RenderCaptionOverlayArgs = {
 };
 
 export const GPUCaptionOverlay = memo(function GPUCaptionOverlay({
-  containerWidth,
-  containerHeight,
+  renderWidth,
+  renderHeight,
+  displayWidth,
+  displayHeight,
   onActiveChange,
 }: GPUCaptionOverlayProps) {
   const captionSegments = useVideoEditorStore((s) => s.captionSegments);
@@ -30,8 +34,10 @@ export const GPUCaptionOverlay = memo(function GPUCaptionOverlay({
   const [gpuFailed, setGpuFailed] = useState(false);
 
   const canUseGpu = !gpuFailed;
-  const roundedWidth = Math.max(1, Math.round(containerWidth));
-  const roundedHeight = Math.max(1, Math.round(containerHeight));
+  const roundedRenderWidth = Math.max(1, Math.round(renderWidth));
+  const roundedRenderHeight = Math.max(1, Math.round(renderHeight));
+  const roundedDisplayWidth = Math.max(1, Math.round(displayWidth));
+  const roundedDisplayHeight = Math.max(1, Math.round(displayHeight));
 
   const { canvasRef, hasFrame, isConnected, initPreview, shutdown } = usePreviewStream({
     onError: (error) => {
@@ -108,8 +114,8 @@ export const GPUCaptionOverlay = memo(function GPUCaptionOverlay({
 
     queuedArgsRef.current = {
       timeMs: Math.max(0, Math.floor(currentTimeMs)),
-      width: roundedWidth,
-      height: roundedHeight,
+      width: roundedRenderWidth,
+      height: roundedRenderHeight,
       segments: captionSegments,
       settings: captionSettings,
     };
@@ -136,8 +142,8 @@ export const GPUCaptionOverlay = memo(function GPUCaptionOverlay({
     currentTimeMs,
     flushQueuedRender,
     isConnected,
-    roundedHeight,
-    roundedWidth,
+    roundedRenderHeight,
+    roundedRenderWidth,
   ]);
 
   if (!isActive) {
@@ -151,12 +157,14 @@ export const GPUCaptionOverlay = memo(function GPUCaptionOverlay({
     >
       <canvas
         ref={canvasRef}
+        width={roundedRenderWidth}
+        height={roundedRenderHeight}
         style={{
           position: 'absolute',
           left: 0,
           top: 0,
-          width: `${roundedWidth}px`,
-          height: `${roundedHeight}px`,
+          width: `${roundedDisplayWidth}px`,
+          height: `${roundedDisplayHeight}px`,
         }}
       />
     </div>

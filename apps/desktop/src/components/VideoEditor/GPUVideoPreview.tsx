@@ -45,7 +45,9 @@ const SceneModeRenderer = memo(function SceneModeRenderer({
   defaultSceneMode,
   containerWidth,
   containerHeight,
-  videoAspectRatio,
+  frameRenderWidth,
+  frameRenderHeight,
+  compositionRenderHeight,
   videoWidth,
   videoHeight,
   maskSegments,
@@ -69,7 +71,9 @@ const SceneModeRenderer = memo(function SceneModeRenderer({
   defaultSceneMode: SceneMode;
   containerWidth: number;
   containerHeight: number;
-  videoAspectRatio: number;
+  frameRenderWidth: number;
+  frameRenderHeight: number;
+  compositionRenderHeight: number;
   videoWidth: number;
   videoHeight: number;
   maskSegments: MaskSegment[] | undefined;
@@ -141,13 +145,6 @@ const SceneModeRenderer = memo(function SceneModeRenderer({
     };
   }, [cropEnabled, cropConfig, videoWidth, videoHeight]);
 
-  const textOverlayAspectRatio = useMemo(() => {
-    if (cropEnabled && cropConfig && cropConfig.width > 0 && cropConfig.height > 0) {
-      return cropConfig.width / cropConfig.height;
-    }
-    return videoAspectRatio;
-  }, [cropEnabled, cropConfig, videoAspectRatio]);
-
   return (
     <>
       {/* Shadow wrapper - position:relative for caption overlay positioning */}
@@ -190,11 +187,13 @@ const SceneModeRenderer = memo(function SceneModeRenderer({
           <ClickHighlightOverlay
             cursorRecording={cursorRecording}
             clickHighlightConfig={cursorConfig?.clickHighlight}
-            containerWidth={containerWidth}
-            containerHeight={containerHeight}
+            renderWidth={frameRenderWidth}
+            renderHeight={frameRenderHeight}
+            displayWidth={containerWidth}
+            displayHeight={containerHeight}
+            compositionRenderHeight={compositionRenderHeight}
             videoWidth={videoWidth}
             videoHeight={videoHeight}
-            videoAspectRatio={videoAspectRatio}
             zoomRegions={zoomRegions}
             backgroundPadding={backgroundPadding}
             rounding={rounding}
@@ -207,11 +206,13 @@ const SceneModeRenderer = memo(function SceneModeRenderer({
           <CursorOverlay
             cursorRecording={cursorRecording}
             cursorConfig={cursorConfig}
-            containerWidth={containerWidth}
-            containerHeight={containerHeight}
+            renderWidth={frameRenderWidth}
+            renderHeight={frameRenderHeight}
+            displayWidth={containerWidth}
+            displayHeight={containerHeight}
+            compositionRenderHeight={compositionRenderHeight}
             videoWidth={videoWidth}
             videoHeight={videoHeight}
-            videoAspectRatio={videoAspectRatio}
             zoomRegions={zoomRegions}
             backgroundPadding={backgroundPadding}
             rounding={rounding}
@@ -237,9 +238,10 @@ const SceneModeRenderer = memo(function SceneModeRenderer({
           <TextOverlay
             segments={textSegments}
             currentTimeMs={currentTimeMs}
-            previewWidth={containerWidth}
-            previewHeight={containerHeight}
-            videoAspectRatio={textOverlayAspectRatio}
+            renderWidth={frameRenderWidth}
+            renderHeight={frameRenderHeight}
+            displayWidth={containerWidth}
+            displayHeight={containerHeight}
           />
         )}
 
@@ -303,38 +305,23 @@ export function GPUVideoPreview() {
 
   const webcamOverlayOpacity = getRegularCameraTransitionOpacity(scene);
 
-  // Track container size (debounced)
+  // Track container size
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
 
-    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
-
     const observer = new ResizeObserver((entries) => {
       const entry = entries[0];
       if (entry) {
-        const newSize = {
+        setContainerSize({
           width: entry.contentRect.width,
           height: entry.contentRect.height,
-        };
-
-        if (debounceTimer) {
-          clearTimeout(debounceTimer);
-        }
-
-        debounceTimer = setTimeout(() => {
-          setContainerSize(newSize);
-        }, 150);
+        });
       }
     });
 
     observer.observe(container);
-    return () => {
-      observer.disconnect();
-      if (debounceTimer) {
-        clearTimeout(debounceTimer);
-      }
-    };
+    return () => observer.disconnect();
   }, []);
 
   // Track preview area size
@@ -406,10 +393,12 @@ export function GPUVideoPreview() {
     hasFrameStyling,
     frameStyle,
     frameShadowStyle,
-    containedSize,
     compositionSize,
     frameDisplaySize,
     frameOffset,
+    compositeWidth,
+    compositeHeight,
+    frameRenderSize,
   } = usePreviewStyles({
     backgroundConfig,
     cropConfig,
@@ -418,8 +407,6 @@ export function GPUVideoPreview() {
     originalHeight,
     containerSize,
     previewAreaSize,
-    aspectRatio,
-    cropAspectRatio,
   });
 
   // Resolve wallpaper URL
@@ -497,8 +484,8 @@ export function GPUVideoPreview() {
       <div
         className="relative overflow-hidden"
         style={{
-          width: containedSize?.width,
-          height: containedSize?.height,
+          width: compositionSize.width,
+          height: compositionSize.height,
           boxSizing: 'border-box',
           background: hasFrameStyling
             ? backgroundConfig?.bgType === 'solid'
@@ -569,9 +556,11 @@ export function GPUVideoPreview() {
               webcamConfig={project?.webcam}
               sceneSegments={project?.scene?.segments}
               defaultSceneMode={project?.scene?.defaultMode ?? 'default'}
-              containerWidth={containerSize.width}
-              containerHeight={containerSize.height}
-              videoAspectRatio={aspectRatio}
+              containerWidth={frameDisplaySize.width}
+              containerHeight={frameDisplaySize.height}
+              frameRenderWidth={frameRenderSize.width}
+              frameRenderHeight={frameRenderSize.height}
+              compositionRenderHeight={compositeHeight}
               videoWidth={project?.sources.originalWidth ?? 1920}
               cropConfig={cropConfig}
               videoHeight={project?.sources.originalHeight ?? 1080}
@@ -617,8 +606,10 @@ export function GPUVideoPreview() {
         {/* Caption overlay - positioned relative to composition (video + padding) to match export */}
         {compositionSize.width > 0 && compositionSize.height > 0 && (
           <UnifiedCaptionOverlay
-            containerWidth={compositionSize.width}
-            containerHeight={compositionSize.height}
+            renderWidth={compositeWidth}
+            renderHeight={compositeHeight}
+            displayWidth={compositionSize.width}
+            displayHeight={compositionSize.height}
             videoWidth={project?.sources.originalWidth ?? 1920}
             videoHeight={project?.sources.originalHeight ?? 1080}
           />
