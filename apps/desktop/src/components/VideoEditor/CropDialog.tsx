@@ -212,7 +212,7 @@ export const CropDialog = memo(function CropDialog({
       lockAspectRatio: !crop.lockAspectRatio,
       aspectRatio: crop.lockAspectRatio ? null : crop.width / crop.height,
     };
-    handleCropChange(newCrop, false);
+    handleCropChange(newCrop, true);
   }, [crop, handleCropChange]);
 
   const handleReset = useCallback(() => {
