@@ -280,7 +280,7 @@ impl TextLayer {
 
         // Width is the span from leftmost to rightmost glyph
         let width = if min_x < f32::MAX { max_x - min_x } else { 0.0 };
-        // Height uses line_height (font_size * 1.2) for proper vertical centering
+        // Height uses line_height (font_size * 1.2) to match glyphon metrics.
         (width, font_size * 1.2)
     }
 
@@ -365,18 +365,9 @@ impl TextLayer {
 
             buffer.shape_until_scroll(&mut self.font_system, false);
 
-            // Measure actual text height from layout runs for vertical centering
-            let mut total_text_height: f32 = 0.0;
-            for run in buffer.layout_runs() {
-                total_text_height = total_text_height.max(run.line_y + run.line_height);
-            }
-            let bounds_height = text.bounds[3] - text.bounds[1];
-            let vertical_offset = if total_text_height > 0.0 && total_text_height < bounds_height {
-                (bounds_height - total_text_height) / 2.0
-            } else {
-                0.0
-            };
-            let adjusted_top = text.bounds[1] + vertical_offset;
+            // Use provided bounds top directly so caption positioning math in caption_layer.rs
+            // remains the single source of truth for vertical placement.
+            let adjusted_top = text.bounds[1];
 
             // Measure actual text width after shaping for background
             if let Some(bg_color) = text.background_color {

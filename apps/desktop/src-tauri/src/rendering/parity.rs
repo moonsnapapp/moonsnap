@@ -20,7 +20,7 @@ pub mod layout {
     pub const CAPTION_BG_PADDING_H: f32 = 16.0;
 
     /// Caption background vertical padding (px at 1080p)
-    pub const CAPTION_BG_PADDING_V: f32 = 8.0;
+    pub const CAPTION_BG_PADDING_V: f32 = 16.0;
 
     /// Caption corner radius (px at 1080p)
     pub const CAPTION_CORNER_RADIUS: f32 = 20.0;

@@ -247,6 +247,26 @@ pub async fn export_video_gpu(
     let out_w = composition_w;
     let out_h = composition_h;
 
+    // Compute export-equivalent video content bounds once.
+    // Cursor and pre-rendered text overlays must use the exact same frame bounds
+    // as compositor composition to keep preview/export parity.
+    let composition_bounds = super::parity::calculate_composition_bounds(
+        video_w as f32,
+        video_h as f32,
+        padding as f32,
+        if matches!(composition.mode, CompositionMode::Manual) {
+            Some((composition_w as f32, composition_h as f32))
+        } else {
+            None
+        },
+    );
+    let video_content_bounds = VideoContentBounds {
+        x: composition_bounds.frame_x,
+        y: composition_bounds.frame_y,
+        width: composition_bounds.frame_width,
+        height: composition_bounds.frame_height,
+    };
+
     // Initialize streaming decoders (ONE FFmpeg process each!)
     // Use decode_range which respects segments (first seg start to last seg end)
     let screen_path = Path::new(&project.sources.screen_video);
@@ -599,25 +619,15 @@ pub async fn export_video_gpu(
         // so we need the video frame position within the composition.
         let prerendered_texts = {
             let store = prerendered_text_store.lock();
-            let text_bounds = super::parity::calculate_composition_bounds(
-                video_w as f32,
-                video_h as f32,
-                padding as f32,
-                if matches!(composition.mode, CompositionMode::Manual) {
-                    Some((composition_w as f32, composition_h as f32))
-                } else {
-                    None
-                },
-            );
             store.get_for_frame(
                 frame_time_secs,
                 &project.text.segments,
                 composition_w,
                 composition_h,
-                text_bounds.frame_x as u32,
-                text_bounds.frame_y as u32,
-                text_bounds.frame_width as u32,
-                text_bounds.frame_height as u32,
+                composition_bounds.frame_x as u32,
+                composition_bounds.frame_y as u32,
+                composition_bounds.frame_width as u32,
+                composition_bounds.frame_height as u32,
             )
         };
 
@@ -681,14 +691,6 @@ pub async fn export_video_gpu(
                 if cursor_visible {
                     // Calculate video content bounds within composition
                     // Cursor coordinates are now relative to cropped video content
-                    let video_bounds = VideoContentBounds::with_padding(
-                        composition_w,
-                        composition_h,
-                        video_w,
-                        video_h,
-                        padding,
-                    );
-
                     // Get cursor image based on cursor type
                     if project.cursor.cursor_type == CursorType::Circle {
                         // Draw circle indicator instead of actual cursor
@@ -696,7 +698,7 @@ pub async fn export_video_gpu(
                             &mut rgba_data,
                             composition_w,
                             composition_h,
-                            &video_bounds,
+                            &video_content_bounds,
                             cursor.x,
                             cursor.y,
                             project.cursor.scale,
@@ -735,7 +737,7 @@ pub async fn export_video_gpu(
                                     &mut rgba_data,
                                     composition_w,
                                     composition_h,
-                                    &video_bounds,
+                                    &video_content_bounds,
                                     &cursor,
                                     &svg_decoded,
                                     1.0,
@@ -757,7 +759,7 @@ pub async fn export_video_gpu(
                                         &mut rgba_data,
                                         composition_w,
                                         composition_h,
-                                        &video_bounds,
+                                        &video_content_bounds,
                                         &cursor,
                                         cursor_image,
                                         bitmap_scale,

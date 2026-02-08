@@ -104,47 +104,13 @@ const SceneModeRenderer = memo(function SceneModeRenderer({
 
   const cropEnabled = cropConfig?.enabled && cropConfig.width > 0 && cropConfig.height > 0;
 
-  const cropAspectRatio = cropEnabled && cropConfig
-    ? cropConfig.width / cropConfig.height
-    : null;
-
-  const applyCropToFrameSize = cropEnabled && backgroundPadding > 0;
-
-  const croppedFrameSize = useMemo(() => {
-    if (!applyCropToFrameSize || !cropAspectRatio || containerWidth === 0 || containerHeight === 0) {
-      return null;
-    }
-
-    const containerAspect = containerWidth / containerHeight;
-
-    if (containerAspect > cropAspectRatio) {
-      return {
-        width: containerHeight * cropAspectRatio,
-        height: containerHeight,
-      };
-    } else {
-      return {
-        width: containerWidth,
-        height: containerWidth / cropAspectRatio,
-      };
-    }
-  }, [applyCropToFrameSize, cropAspectRatio, containerWidth, containerHeight]);
-
   const fullscreenWebcamStyle: React.CSSProperties = {
     position: 'absolute',
     zIndex: 10,
     opacity: cameraOnlyOpacity,
     filter: scene.cameraOnlyBlur > 0.01 ? `blur(${scene.cameraOnlyBlur * 10}px)` : undefined,
-    ...(applyCropToFrameSize && croppedFrameSize ? {
-      width: croppedFrameSize.width,
-      height: croppedFrameSize.height,
-      left: '50%',
-      top: '50%',
-      transform: `translate(-50%, -50%) scale(${scene.cameraOnlyZoom})`,
-    } : {
-      inset: 0,
-      transform: `scale(${scene.cameraOnlyZoom})`,
-    }),
+    inset: 0,
+    transform: `scale(${scene.cameraOnlyZoom})`,
   };
 
   const frameZoomStyle: React.CSSProperties = {
@@ -154,13 +120,8 @@ const SceneModeRenderer = memo(function SceneModeRenderer({
     ...(showScreen ? zoomStyle : {}),
     opacity: frameOpacity,
     visibility: frameOpacity < 0.01 ? 'hidden' : 'visible',
-    ...(applyCropToFrameSize && croppedFrameSize ? {
-      width: croppedFrameSize.width,
-      height: croppedFrameSize.height,
-    } : {
-      width: '100%',
-      height: '100%',
-    }),
+    width: '100%',
+    height: '100%',
   };
 
   const videoCropStyle: React.CSSProperties = useMemo(() => {
@@ -237,6 +198,7 @@ const SceneModeRenderer = memo(function SceneModeRenderer({
             zoomRegions={zoomRegions}
             backgroundPadding={backgroundPadding}
             rounding={rounding}
+            cropConfig={cropConfig}
           />
         )}
 
@@ -446,10 +408,12 @@ export function GPUVideoPreview() {
     frameShadowStyle,
     containedSize,
     compositionSize,
-    previewScale,
+    frameDisplaySize,
+    frameOffset,
   } = usePreviewStyles({
     backgroundConfig,
     cropConfig,
+    compositionConfig: project?.export?.composition,
     originalWidth,
     originalHeight,
     containerSize,
@@ -535,10 +499,7 @@ export function GPUVideoPreview() {
         style={{
           width: containedSize?.width,
           height: containedSize?.height,
-          // Use pixel-based padding scaled to preview size (matches Rust parity system)
-          padding: hasFrameStyling && backgroundConfig?.padding
-            ? `${backgroundConfig.padding * previewScale}px`
-            : undefined,
+          boxSizing: 'border-box',
           background: hasFrameStyling
             ? backgroundConfig?.bgType === 'solid'
               ? backgroundConfig.solidColor
@@ -584,8 +545,11 @@ export function GPUVideoPreview() {
           className="relative z-10 flex items-center justify-center"
           style={{
             ...(hasFrameStyling ? {
-              width: '100%',
-              height: '100%',
+              position: 'absolute',
+              left: `${frameOffset.x}px`,
+              top: `${frameOffset.y}px`,
+              width: `${frameDisplaySize.width}px`,
+              height: `${frameDisplaySize.height}px`,
             } : {
               aspectRatio: cropAspectRatio ?? aspectRatio,
               width: '100%',

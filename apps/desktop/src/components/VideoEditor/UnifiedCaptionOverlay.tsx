@@ -1,16 +1,14 @@
 /**
  * UnifiedCaptionOverlay - Caption preview wrapper.
  *
- * Uses CSS-based CaptionOverlay which now matches export rendering:
- * - Both scale by height/1080 reference resolution
- * - Line height: 1.2 (matches glyphon Metrics)
- * - Padding: 40px * scale (matches export)
- * - Font size: settings.size * scale (matches export)
- * - Max width: containerWidth - padding*2 (matches export)
+ * Primary path: GPU glyphon preview via `render_caption_overlay`
+ * to match export pixel-for-pixel.
+ * Fallback path: CSS CaptionOverlay when GPU preview is unavailable.
  */
 
-import { memo } from 'react';
+import { memo, useCallback, useState } from 'react';
 import { CaptionOverlay } from './CaptionOverlay';
+import { GPUCaptionOverlay } from './GPUCaptionOverlay';
 
 interface UnifiedCaptionOverlayProps {
   containerWidth: number;
@@ -25,13 +23,27 @@ export const UnifiedCaptionOverlay = memo(function UnifiedCaptionOverlay({
   videoWidth,
   videoHeight,
 }: UnifiedCaptionOverlayProps) {
+  const [gpuActive, setGpuActive] = useState(false);
+  const handleGpuActiveChange = useCallback((active: boolean) => {
+    setGpuActive(active);
+  }, []);
+
   return (
-    <CaptionOverlay
-      containerWidth={containerWidth}
-      containerHeight={containerHeight}
-      videoWidth={videoWidth}
-      videoHeight={videoHeight}
-    />
+    <>
+      <GPUCaptionOverlay
+        containerWidth={containerWidth}
+        containerHeight={containerHeight}
+        onActiveChange={handleGpuActiveChange}
+      />
+      {!gpuActive && (
+        <CaptionOverlay
+          containerWidth={containerWidth}
+          containerHeight={containerHeight}
+          videoWidth={videoWidth}
+          videoHeight={videoHeight}
+        />
+      )}
+    </>
   );
 });
 

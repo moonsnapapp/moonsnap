@@ -15,6 +15,71 @@ interface CaptionOverlayProps {
   videoHeight: number;
 }
 
+function getCaptionTextContent(
+  segment: { text: string; words: Array<{ text: string }> }
+): string {
+  if (segment.words.length > 0) {
+    return segment.words.map((word) => word.text).join(' ');
+  }
+  return segment.text;
+}
+
+function resolveCaptionFontFamily(font: string | undefined): string {
+  const normalized = font?.trim().toLowerCase() ?? '';
+
+  if (
+    normalized === '' ||
+    normalized === 'sans' ||
+    normalized === 'sans-serif' ||
+    normalized === 'system sans' ||
+    normalized === 'system sans-serif' ||
+    normalized === 'system-ui'
+  ) {
+    return 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+  }
+
+  if (normalized === 'serif' || normalized === 'system serif') {
+    return 'serif';
+  }
+
+  if (
+    normalized === 'mono' ||
+    normalized === 'monospace' ||
+    normalized === 'system mono' ||
+    normalized === 'system monospace'
+  ) {
+    return 'monospace';
+  }
+
+  return `${font}, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif`;
+}
+
+function normalizeHexColor(hex: string): string {
+  const cleaned = hex.trim().replace(/^#/, '');
+
+  if (cleaned.length === 3 || cleaned.length === 4) {
+    return cleaned
+      .slice(0, 3)
+      .split('')
+      .map((c) => `${c}${c}`)
+      .join('');
+  }
+
+  if (cleaned.length >= 6) {
+    return cleaned.slice(0, 6);
+  }
+
+  return '000000';
+}
+
+function hexWithOpacity(hex: string, opacity: number): string {
+  const base = normalizeHexColor(hex);
+  const alpha = Math.round(Math.max(0, Math.min(1, opacity)) * 255)
+    .toString(16)
+    .padStart(2, '0');
+  return `#${base}${alpha}`;
+}
+
 export const CaptionOverlay = memo(function CaptionOverlay({
   containerWidth,
   containerHeight,
@@ -67,7 +132,7 @@ export const CaptionOverlay = memo(function CaptionOverlay({
   const bgColor = captionSettings.backgroundColor || '#000000';
   const bgOpacity = (captionSettings.backgroundOpacity || 0) / 100;
   const backgroundColor = bgOpacity > 0
-    ? `${bgColor}${Math.round(bgOpacity * 255).toString(16).padStart(2, '0')}`
+    ? hexWithOpacity(bgColor, bgOpacity)
     : 'transparent';
 
   // Position style - calculate exact Y position to match Rust export
@@ -88,11 +153,13 @@ export const CaptionOverlay = memo(function CaptionOverlay({
 
   const positionStyle: React.CSSProperties = { top: `${backgroundTop}px` };
 
+  const captionText = getCaptionTextContent(activeSegment);
+
   // Render words with highlighting
   const renderText = () => {
     if (activeWordIndex < 0 || captionSettings.color === captionSettings.highlightColor) {
-      // No word-level highlighting, render plain text
-      return activeSegment.text;
+      // Match export: use words-joined content when words are present.
+      return captionText;
     }
 
     // Render with word highlighting
@@ -110,8 +177,8 @@ export const CaptionOverlay = memo(function CaptionOverlay({
     ));
   };
 
-  // Export TextLayer uses: padding_h = 16px, padding_v = 8px (fixed, not scaled)
-  // Background wraps tightly around measured text size + padding
+  // Export TextLayer uses parity padding values (16px H/V at 1080p, scaled by height).
+  // Background wraps tightly around measured text size + padding.
 
   return (
     <div
@@ -133,15 +200,14 @@ export const CaptionOverlay = memo(function CaptionOverlay({
       >
         <span
           style={{
-            // Use system-ui which matches glyphon's SansSerif on most platforms
-            fontFamily: captionSettings.font || 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+            // Resolve font family names to match glyphon's family mapping.
+            fontFamily: resolveCaptionFontFamily(captionSettings.font),
             fontSize: `${fontSize}px`,
             fontWeight: captionSettings.fontWeight || 700,
             fontStyle: captionSettings.italic ? 'italic' : 'normal',
             color: captionSettings.color,
-            textShadow: bgOpacity === 0
-              ? '2px 2px 4px rgba(0,0,0,0.8), -1px -1px 2px rgba(0,0,0,0.5)'
-              : 'none',
+            // Export caption path currently does not render text shadows.
+            textShadow: 'none',
             lineHeight: lineHeightMultiplier, // From parity system - matches Rust export
           }}
         >

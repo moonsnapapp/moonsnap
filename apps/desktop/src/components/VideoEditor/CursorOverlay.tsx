@@ -383,54 +383,16 @@ export const CursorOverlay = memo(function CursorOverlay({
     const cropEnabled = cropConfig?.enabled && cropConfig.width > 0 && cropConfig.height > 0;
 
     if (cropEnabled && cropConfig) {
-      // The video uses CSS object-fit: cover + object-position to show the crop region.
-      // CSS formula: posX% = (cropConfig.x / (videoWidth - cropWidth)) * 100
-      //
-      // With object-fit: cover, the video scales to FILL the container, potentially
-      // clipping content. The actual visible region depends on container aspect ratio.
-      //
-      // Match the CSS behavior by calculating what portion of the video is actually visible
+      // Match export exactly:
+      // cursor coordinates are normalized to uncropped source dimensions,
+      // then remapped directly into crop-relative coordinates.
       const recordingWidth = cursorRecording?.width ?? videoWidth;
       const recordingHeight = cursorRecording?.height ?? actualVideoHeight;
 
       const cursorPxX = cursorX * recordingWidth;
       const cursorPxY = cursorY * recordingHeight;
-
-      // Calculate overflow (same as CSS formula in GPUVideoPreview)
-      const overflowX = recordingWidth - cropConfig.width;
-      const overflowY = recordingHeight - cropConfig.height;
-
-      // CSS object-position percentages
-      const posXPercent = overflowX > 0 ? cropConfig.x / overflowX : 0.5;
-      const posYPercent = overflowY > 0 ? cropConfig.y / overflowY : 0.5;
-
-      // With object-fit: cover, the visible region in video pixels:
-      // The video is scaled so both dimensions fill or exceed the container
-      // For a container matching crop aspect ratio (1:1 for square crop):
-      const cropAspect = cropConfig.width / cropConfig.height;
-      const videoAspect = recordingWidth / recordingHeight;
-
-      let visibleX: number, visibleY: number, visibleW: number, visibleH: number;
-
-      if (videoAspect > cropAspect) {
-        // Video is wider - scaled by height, horizontal clipping
-        visibleH = recordingHeight;
-        visibleW = recordingHeight * cropAspect;
-        visibleY = 0;
-        const totalOverflowX = recordingWidth - visibleW;
-        visibleX = totalOverflowX * posXPercent;
-      } else {
-        // Video is taller - scaled by width, vertical clipping
-        visibleW = recordingWidth;
-        visibleH = recordingWidth / cropAspect;
-        visibleX = 0;
-        const totalOverflowY = recordingHeight - visibleH;
-        visibleY = totalOverflowY * posYPercent;
-      }
-
-      // Transform cursor to the CSS-visible region coordinates
-      cursorX = (cursorPxX - visibleX) / visibleW;
-      cursorY = (cursorPxY - visibleY) / visibleH;
+      cursorX = (cursorPxX - cropConfig.x) / cropConfig.width;
+      cursorY = (cursorPxY - cropConfig.y) / cropConfig.height;
 
       // Hide cursor if outside visible region
       if (cursorX < -0.1 || cursorX > 1.1 || cursorY < -0.1 || cursorY > 1.1) {
@@ -571,11 +533,19 @@ export const CursorOverlay = memo(function CursorOverlay({
     containerWidth,
     containerHeight,
     actualVideoHeight, // For WYSIWYG cursor sizing
+    videoWidth,
     videoAspectRatio,
     cursorImages,
+    triggerUpdate,
     currentTimeMs,
     cursorRecording?.width,
     cursorRecording?.height,
+    cropConfig,
+    cropConfig?.enabled,
+    cropConfig?.x,
+    cropConfig?.y,
+    cropConfig?.width,
+    cropConfig?.height,
     imageLoadCounter, // Re-run when SVG/bitmap images finish loading
   ]);
 

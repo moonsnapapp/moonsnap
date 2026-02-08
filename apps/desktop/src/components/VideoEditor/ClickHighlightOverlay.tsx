@@ -10,7 +10,7 @@ import { memo, useRef, useEffect, useCallback, useMemo } from 'react';
 import { usePreviewOrPlaybackTime } from '../../hooks/usePlaybackEngine';
 import { useVideoEditorStore } from '../../stores/videoEditorStore';
 import { timelineToSource } from '../../stores/videoEditor/trimSlice';
-import type { CursorRecording, ClickHighlightConfig, CursorEvent, ZoomRegion } from '../../types';
+import type { CursorRecording, ClickHighlightConfig, CursorEvent, ZoomRegion, CropConfig } from '../../types';
 
 interface ClickHighlightOverlayProps {
   cursorRecording: CursorRecording | null | undefined;
@@ -31,6 +31,8 @@ interface ClickHighlightOverlayProps {
   backgroundPadding?: number;
   /** Corner rounding in pixels - needed for zoom transform alignment */
   rounding?: number;
+  /** Crop configuration - click positions need to be transformed when crop is applied */
+  cropConfig?: CropConfig;
 }
 
 /**
@@ -259,6 +261,7 @@ export const ClickHighlightOverlay = memo(function ClickHighlightOverlay({
   zoomRegions: _zoomRegions,
   backgroundPadding: _backgroundPadding = 0,
   rounding: _rounding = 0,
+  cropConfig,
 }: ClickHighlightOverlayProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const currentTimeMs = usePreviewOrPlaybackTime();
@@ -316,11 +319,32 @@ export const ClickHighlightOverlay = memo(function ClickHighlightOverlay({
     // Render each active click highlight
     // Use cursor recording's aspect ratio for positioning (not video dimensions)
     // Cursor coordinates are normalized to the capture region, not the video file
-    const cursorAspectRatio = cursorRecording.width && cursorRecording.height
-      ? cursorRecording.width / cursorRecording.height
-      : videoAspectRatio;
+    const cropEnabled = Boolean(
+      cropConfig?.enabled && cropConfig.width > 0 && cropConfig.height > 0
+    );
+    const cursorAspectRatio = cropEnabled && cropConfig
+      ? cropConfig.width / cropConfig.height
+      : cursorRecording.width && cursorRecording.height
+        ? cursorRecording.width / cursorRecording.height
+        : videoAspectRatio;
+    const recordingWidth = cursorRecording.width || _videoWidth;
+    const recordingHeight = cursorRecording.height || _videoHeight;
 
     for (const click of activeClicks) {
+      let clickX = click.x;
+      let clickY = click.y;
+
+      if (cropEnabled && cropConfig) {
+        const clickPxX = clickX * recordingWidth;
+        const clickPxY = clickY * recordingHeight;
+        clickX = (clickPxX - cropConfig.x) / cropConfig.width;
+        clickY = (clickPxY - cropConfig.y) / cropConfig.height;
+
+        if (clickX < -0.1 || clickX > 1.1 || clickY < -0.1 || clickY > 1.1) {
+          continue;
+        }
+      }
+
       // Convert normalized coordinates to pixel coordinates
       // Account for object-contain letterboxing when video aspect ratio differs from container
       let pixelX: number;
@@ -328,11 +352,11 @@ export const ClickHighlightOverlay = memo(function ClickHighlightOverlay({
 
       if (cursorAspectRatio && cursorAspectRatio > 0) {
         const bounds = calculateVideoBounds(containerWidth, containerHeight, cursorAspectRatio);
-        pixelX = bounds.offsetX + click.x * bounds.width;
-        pixelY = bounds.offsetY + click.y * bounds.height;
+        pixelX = bounds.offsetX + clickX * bounds.width;
+        pixelY = bounds.offsetY + clickY * bounds.height;
       } else {
-        pixelX = click.x * containerWidth;
-        pixelY = click.y * containerHeight;
+        pixelX = clickX * containerWidth;
+        pixelY = clickY * containerHeight;
       }
       
       // Scale radius based on container size (use smaller dimension as reference)
@@ -362,7 +386,10 @@ export const ClickHighlightOverlay = memo(function ClickHighlightOverlay({
     style,
     containerWidth,
     containerHeight,
+    _videoWidth,
+    _videoHeight,
     videoAspectRatio,
+    cropConfig,
     sourceTimeMs,
     parsedColor,
   ]);

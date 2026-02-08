@@ -23,7 +23,7 @@ const PARITY = {
   captionBgPaddingH: 16,
 
   // layout::CAPTION_BG_PADDING_V
-  captionBgPaddingV: 8,
+  captionBgPaddingV: 16,
 
   // layout::CAPTION_CORNER_RADIUS
   captionCornerRadius: 20,
@@ -56,9 +56,9 @@ describe('Caption Rendering Parity', () => {
       expect(PARITY.lineHeightMultiplier).toBe(1.2);
     });
 
-    it('has expected background padding (16px H, 8px V)', () => {
+    it('has expected background padding (16px H, 16px V)', () => {
       expect(PARITY.captionBgPaddingH).toBe(16);
-      expect(PARITY.captionBgPaddingV).toBe(8);
+      expect(PARITY.captionBgPaddingV).toBe(16);
     });
 
     it('has expected corner radius (20px)', () => {
@@ -114,7 +114,7 @@ describe('Caption Rendering Parity', () => {
       const scaledV = PARITY.captionBgPaddingV * scale;
 
       expect(scaledH).toBe(32); // 16 * 2
-      expect(scaledV).toBe(16); // 8 * 2
+      expect(scaledV).toBe(32); // 16 * 2
     });
   });
 

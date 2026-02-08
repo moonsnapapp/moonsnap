@@ -9,7 +9,7 @@
  */
 
 import { useMemo } from 'react';
-import type { BackgroundConfig, CropConfig } from '../../../types';
+import type { BackgroundConfig, CropConfig, CompositionConfig } from '../../../types';
 
 interface PreviewStylesOptions {
   /** Background configuration */
@@ -27,6 +27,8 @@ interface PreviewStylesOptions {
   aspectRatio: number;
   /** Crop aspect ratio (if crop enabled) */
   cropAspectRatio: number | null;
+  /** Output composition config (auto/manual) */
+  compositionConfig: CompositionConfig | undefined;
 }
 
 interface PreviewStylesResult {
@@ -44,6 +46,10 @@ interface PreviewStylesResult {
   previewScale: number;
   /** Composition size including padding */
   compositionSize: { width: number; height: number };
+  /** Video frame size inside composition in preview pixels */
+  frameDisplaySize: { width: number; height: number };
+  /** Video frame offset inside composition in preview pixels */
+  frameOffset: { x: number; y: number };
   /** Composite dimensions (content + padding) */
   compositeWidth: number;
   compositeHeight: number;
@@ -52,6 +58,90 @@ interface PreviewStylesResult {
   applyCropToFrame: boolean;
   /** Cropped frame size in parent coordinates */
   croppedFrameSizeInParent: { width: number; height: number } | null;
+}
+
+function toEven(value: number): number {
+  return Math.floor(value / 2) * 2;
+}
+
+function calculateCompositionOutputSize(
+  videoWidth: number,
+  videoHeight: number,
+  padding: number,
+  compositionConfig: CompositionConfig | undefined
+): { width: number; height: number } {
+  if (!compositionConfig || compositionConfig.mode === 'auto') {
+    return {
+      width: toEven(videoWidth + padding * 2),
+      height: toEven(videoHeight + padding * 2),
+    };
+  }
+
+  if (compositionConfig.width && compositionConfig.height) {
+    return {
+      width: toEven(compositionConfig.width),
+      height: toEven(compositionConfig.height),
+    };
+  }
+
+  if (compositionConfig.aspectRatio) {
+    const videoRatio = videoWidth / videoHeight;
+    const targetRatio = compositionConfig.aspectRatio;
+
+    if (targetRatio > videoRatio) {
+      const h = videoHeight + padding * 2;
+      return { width: toEven(h * targetRatio), height: toEven(h) };
+    }
+
+    const w = videoWidth + padding * 2;
+    return { width: toEven(w), height: toEven(w / targetRatio) };
+  }
+
+  return {
+    width: toEven(videoWidth + padding * 2),
+    height: toEven(videoHeight + padding * 2),
+  };
+}
+
+function calculateFrameBounds(
+  videoWidth: number,
+  videoHeight: number,
+  padding: number,
+  compositionSize: { width: number; height: number },
+  compositionConfig: CompositionConfig | undefined
+): { x: number; y: number; width: number; height: number } {
+  const manualMode = compositionConfig?.mode === 'manual';
+
+  if (!manualMode) {
+    return {
+      x: padding,
+      y: padding,
+      width: videoWidth,
+      height: videoHeight,
+    };
+  }
+
+  const availableW = Math.max(1, compositionSize.width - padding * 2);
+  const availableH = Math.max(1, compositionSize.height - padding * 2);
+  const videoAspect = videoWidth / videoHeight;
+  const availableAspect = availableW / availableH;
+
+  let frameWidth: number;
+  let frameHeight: number;
+  if (videoAspect > availableAspect) {
+    frameWidth = availableW;
+    frameHeight = availableW / videoAspect;
+  } else {
+    frameHeight = availableH;
+    frameWidth = availableH * videoAspect;
+  }
+
+  return {
+    x: (compositionSize.width - frameWidth) / 2,
+    y: (compositionSize.height - frameHeight) / 2,
+    width: frameWidth,
+    height: frameHeight,
+  };
 }
 
 /**
@@ -78,6 +168,7 @@ export function usePreviewStyles(options: PreviewStylesOptions): PreviewStylesRe
     previewAreaSize,
     aspectRatio,
     cropAspectRatio,
+    compositionConfig,
   } = options;
 
   // Check if frame styling is enabled (has any visual effect)
@@ -91,11 +182,35 @@ export function usePreviewStyles(options: PreviewStylesOptions): PreviewStylesRe
     );
   }, [backgroundConfig]);
 
-  // Calculate composite dimensions including padding
+  // Source video dimensions used by export after crop.
   const contentWidth = cropConfig?.enabled && cropConfig.width > 0 ? cropConfig.width : originalWidth;
   const contentHeight = cropConfig?.enabled && cropConfig.height > 0 ? cropConfig.height : originalHeight;
-  const compositeWidth = contentWidth + (backgroundConfig?.padding ?? 0) * 2;
-  const compositeHeight = contentHeight + (backgroundConfig?.padding ?? 0) * 2;
+  const padding = backgroundConfig?.padding ?? 0;
+
+  // Export-equivalent composition dimensions.
+  const compositionOutputSize = useMemo(() => {
+    if (!hasFrameStyling) {
+      return { width: contentWidth, height: contentHeight };
+    }
+    return calculateCompositionOutputSize(contentWidth, contentHeight, padding, compositionConfig);
+  }, [hasFrameStyling, contentWidth, contentHeight, padding, compositionConfig]);
+
+  // Export-equivalent video frame bounds inside composition.
+  const frameOutputBounds = useMemo(() => {
+    if (!hasFrameStyling) {
+      return { x: 0, y: 0, width: contentWidth, height: contentHeight };
+    }
+    return calculateFrameBounds(
+      contentWidth,
+      contentHeight,
+      padding,
+      compositionOutputSize,
+      compositionConfig
+    );
+  }, [hasFrameStyling, contentWidth, contentHeight, padding, compositionOutputSize, compositionConfig]);
+
+  const compositeWidth = compositionOutputSize.width;
+  const compositeHeight = compositionOutputSize.height;
   const compositeAspectRatio = compositeWidth / compositeHeight;
 
   // Check if crop is enabled with background
@@ -146,25 +261,53 @@ export function usePreviewStyles(options: PreviewStylesOptions): PreviewStylesRe
     }
   }, [previewAreaSize, hasFrameStyling, compositeAspectRatio, cropAspectRatio, aspectRatio]);
 
-  // Calculate preview scale factor
+  // Calculate composition display scale in preview area
   const previewScale = useMemo(() => {
-    if (containerSize.width === 0 || originalWidth === 0) return 1;
+    if (previewAreaSize.width === 0 || previewAreaSize.height === 0) {
+      return 1;
+    }
+    const scaleX = previewAreaSize.width / Math.max(1, compositeWidth);
+    const scaleY = previewAreaSize.height / Math.max(1, compositeHeight);
+    return Math.min(scaleX, scaleY);
+  }, [previewAreaSize.width, previewAreaSize.height, compositeWidth, compositeHeight]);
 
-    if (applyCropToFrame && croppedFrameSizeInParent && cropConfig) {
-      return croppedFrameSizeInParent.width / cropConfig.width;
+  // Calculate composition and frame size/offset in preview coordinates
+  const compositionSize = useMemo(() => {
+    if (!hasFrameStyling) {
+      return {
+        width: containerSize.width,
+        height: containerSize.height,
+      };
     }
 
-    return containerSize.width / originalWidth;
-  }, [containerSize.width, originalWidth, applyCropToFrame, croppedFrameSizeInParent, cropConfig]);
-
-  // Calculate composition size in preview coordinates
-  const compositionSize = useMemo(() => {
-    const scaledPadding = hasFrameStyling ? (backgroundConfig?.padding ?? 0) * previewScale : 0;
     return {
-      width: containerSize.width + scaledPadding * 2,
-      height: containerSize.height + scaledPadding * 2,
+      width: Math.max(1, Math.round(compositeWidth * previewScale)),
+      height: Math.max(1, Math.round(compositeHeight * previewScale)),
     };
-  }, [containerSize, hasFrameStyling, backgroundConfig?.padding, previewScale]);
+  }, [hasFrameStyling, containerSize.width, containerSize.height, compositeWidth, compositeHeight, previewScale]);
+
+  const frameDisplaySize = useMemo(() => {
+    if (!hasFrameStyling) {
+      return {
+        width: containerSize.width,
+        height: containerSize.height,
+      };
+    }
+    return {
+      width: Math.max(1, Math.round(frameOutputBounds.width * previewScale)),
+      height: Math.max(1, Math.round(frameOutputBounds.height * previewScale)),
+    };
+  }, [hasFrameStyling, containerSize.width, containerSize.height, frameOutputBounds.width, frameOutputBounds.height, previewScale]);
+
+  const frameOffset = useMemo(() => {
+    if (!hasFrameStyling) {
+      return { x: 0, y: 0 };
+    }
+    return {
+      x: Math.round(frameOutputBounds.x * previewScale),
+      y: Math.round(frameOutputBounds.y * previewScale),
+    };
+  }, [hasFrameStyling, frameOutputBounds.x, frameOutputBounds.y, previewScale]);
 
   // Frame clipping style (rounding, border)
   const frameClipStyle = useMemo((): React.CSSProperties => {
@@ -220,6 +363,8 @@ export function usePreviewStyles(options: PreviewStylesOptions): PreviewStylesRe
     containedSize,
     previewScale,
     compositionSize,
+    frameDisplaySize,
+    frameOffset,
     compositeWidth,
     compositeHeight,
     compositeAspectRatio,
