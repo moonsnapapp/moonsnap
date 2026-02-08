@@ -53,6 +53,15 @@ export function VideoEditorSidebar({ project, onOpenCropDialog }: VideoEditorSid
   // Properties panel tab state
   const [activeTab, setActiveTab] = useState<PropertiesTab>('project');
 
+  // Clicking a sidebar tab dismisses any open segment properties overlay
+  const handleTabChange = (tab: PropertiesTab) => {
+    if (selectedZoomRegionId) selectZoomRegion(null);
+    if (selectedSceneSegmentId) selectSceneSegment(null);
+    if (selectedMaskSegmentId) selectMaskSegment(null);
+    if (selectedTextSegmentId) selectTextSegment(null);
+    setActiveTab(tab);
+  };
+
   // Check if any segment is selected for overlay display
   const hasSelectedSegment = selectedZoomRegionId || selectedSceneSegmentId || selectedMaskSegmentId || selectedTextSegmentId;
 
@@ -61,7 +70,7 @@ export function VideoEditorSidebar({ project, onOpenCropDialog }: VideoEditorSid
       {/* Tab Bar */}
       <SidebarTabBar
         activeTab={activeTab}
-        onTabChange={setActiveTab}
+        onTabChange={handleTabChange}
         hasCursor={!!project?.sources.cursorData}
         hasWebcam={!!project?.sources.webcamVideo}
       />
