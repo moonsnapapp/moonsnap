@@ -148,9 +148,19 @@ export function usePreviewStream(options: UsePreviewStreamOptions = {}): UsePrev
   // Initialize the preview system
   const initPreview = useCallback(async () => {
     // Prevent concurrent initialization
-    if (initializingRef.current || wsRef.current) {
-      videoEditorLogger.debug('Preview stream already initialized or initializing');
+    if (initializingRef.current) {
+      videoEditorLogger.debug('Preview stream already initializing');
       return;
+    }
+
+    // If we still hold a socket reference, allow reconnect when it is closed.
+    if (wsRef.current) {
+      const readyState = wsRef.current.readyState;
+      if (readyState === WebSocket.OPEN || readyState === WebSocket.CONNECTING) {
+        videoEditorLogger.debug('Preview stream already initialized or initializing');
+        return;
+      }
+      wsRef.current = null;
     }
 
     initializingRef.current = true;
@@ -180,7 +190,12 @@ export function usePreviewStream(options: UsePreviewStreamOptions = {}): UsePrev
 
       ws.onclose = () => {
         videoEditorLogger.debug('Preview stream disconnected');
+        if (wsRef.current === ws) {
+          wsRef.current = null;
+        }
         setIsConnected(false);
+        setHasFrame(false);
+        setFrameNumber(0);
       };
 
       ws.onerror = (event) => {
@@ -256,3 +271,4 @@ export function usePreviewStream(options: UsePreviewStreamOptions = {}): UsePrev
 }
 
 export default usePreviewStream;
+

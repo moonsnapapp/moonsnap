@@ -50,8 +50,8 @@ export const GPUCaptionOverlay = memo(function GPUCaptionOverlay({
   const queuedArgsRef = useRef<RenderCaptionOverlayArgs | null>(null);
   const rafRef = useRef<number | null>(null);
   const consecutiveRenderErrorsRef = useRef(0);
-  // Keep GPU path authoritative once connected to avoid subtle CSS fallback drift.
-  const isActive = canUseGpu && captionSettings.enabled && (isConnected || hasFrame);
+  // Only show GPU output when stream is connected and has produced at least one frame.
+  const isActive = canUseGpu && captionSettings.enabled && isConnected && hasFrame;
 
   useEffect(() => {
     onActiveChange?.(isActive);
@@ -181,3 +181,4 @@ export const GPUCaptionOverlay = memo(function GPUCaptionOverlay({
 });
 
 export default GPUCaptionOverlay;
+
