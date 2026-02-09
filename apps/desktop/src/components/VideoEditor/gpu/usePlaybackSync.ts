@@ -47,6 +47,10 @@ interface PlaybackSyncResult {
   handleVideoClick: () => void;
 }
 
+// Keep playback smooth without audible "rewind" artifacts from tiny backward seeks.
+const PLAYBACK_AUDIO_RESYNC_THRESHOLD_SEC = 0.5;
+const PLAYBACK_AUDIO_BACKWARD_HARD_RESYNC_SEC = 1.5;
+
 /**
  * Hook for managing playback synchronization between video and audio elements.
  * Extracts complex playback sync logic from GPUVideoPreview.
@@ -245,23 +249,40 @@ export function usePlaybackSync(options: PlaybackSyncOptions): PlaybackSyncResul
 
   // Seek audio when preview time or current time changes
   useEffect(() => {
+    const video = videoRef.current;
     const timelineTime = previewTimeMs !== null ? previewTimeMs : currentTimeMs;
     const sourceTime = getSourceTime(timelineTime);
-    const targetTime = sourceTime / 1000;
+    // During playback, follow the real video clock directly.
+    const targetTime = isPlaying && video ? video.currentTime : sourceTime / 1000;
 
-    if (isPlaying) {
-      const audioTime = systemAudioRef.current?.currentTime ?? micAudioRef.current?.currentTime ?? 0;
-      const timeDiff = Math.abs(targetTime - audioTime);
-      if (timeDiff < 0.5) return;
-    }
+    const syncAudio = (audio: HTMLAudioElement | null) => {
+      if (!audio) return;
 
-    if (systemAudioRef.current) {
-      systemAudioRef.current.currentTime = targetTime;
-    }
-    if (micAudioRef.current) {
-      micAudioRef.current.currentTime = targetTime;
-    }
-  }, [previewTimeMs, currentTimeMs, isPlaying, getSourceTime]);
+      if (!isPlaying) {
+        audio.currentTime = targetTime;
+        return;
+      }
+
+      const driftSec = targetTime - audio.currentTime;
+      const absDriftSec = Math.abs(driftSec);
+
+      // Ignore small drift while playing.
+      if (absDriftSec < PLAYBACK_AUDIO_RESYNC_THRESHOLD_SEC) {
+        return;
+      }
+
+      // Avoid small backward seeks that can sound like a rewind glitch on some systems.
+      // Still allow large backward jumps (e.g. explicit skip-back).
+      if (driftSec < 0 && absDriftSec < PLAYBACK_AUDIO_BACKWARD_HARD_RESYNC_SEC) {
+        return;
+      }
+
+      audio.currentTime = targetTime;
+    };
+
+    syncAudio(systemAudioRef.current);
+    syncAudio(micAudioRef.current);
+  }, [previewTimeMs, currentTimeMs, isPlaying, getSourceTime, videoRef]);
 
   // Seek video when preview time or current time changes
   useEffect(() => {
