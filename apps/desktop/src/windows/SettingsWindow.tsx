@@ -57,7 +57,7 @@ const SettingsWindow: React.FC = () => {
   const [appVersion, setAppVersion] = useState<string>('');
   const [isCheckingUpdates, setIsCheckingUpdates] = useState(false);
   const { loadSettings, saveSettings, isInitialized } = useSettingsStore();
-  const { available, checkForUpdates, downloadAndInstall, downloading } = useUpdater(false);
+  const { available, version, checkForUpdates, downloadAndInstall, downloading } = useUpdater(false);
 
   // Apply theme
   useTheme();
@@ -169,7 +169,7 @@ const SettingsWindow: React.FC = () => {
                 disabled={downloading}
                 className="w-full px-3 py-1.5 text-xs font-medium rounded-md bg-emerald-500 text-white hover:bg-emerald-600 transition-colors disabled:opacity-50"
               >
-                {downloading ? 'Installing...' : 'Install Update'}
+                {downloading ? 'Installing...' : `Update to v${version}`}
               </button>
             ) : (
               <button
