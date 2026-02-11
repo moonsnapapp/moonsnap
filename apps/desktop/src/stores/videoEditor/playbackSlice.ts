@@ -9,9 +9,11 @@ export interface PlaybackSlice {
   currentFrame: number;
   isPlaying: boolean;
   renderedFrame: RenderedFrame | null;
+  lastSeekToken: number;
 
   // Playback actions
   setCurrentTime: (timeMs: number) => void;
+  requestSeek: (timeMs: number) => void;
   togglePlayback: () => void;
   setIsPlaying: (playing: boolean) => void;
 }
@@ -22,6 +24,7 @@ export const createPlaybackSlice: SliceCreator<PlaybackSlice> = (set, get) => ({
   currentFrame: 0,
   isPlaying: false,
   renderedFrame: null,
+  lastSeekToken: 0,
 
   // Actions
   setCurrentTime: (timeMs) => {
@@ -31,6 +34,13 @@ export const createPlaybackSlice: SliceCreator<PlaybackSlice> = (set, get) => ({
     // Clamp to valid range
     const clampedTime = Math.max(0, Math.min(timeMs, project.timeline.durationMs));
     set({ currentTimeMs: clampedTime });
+  },
+  requestSeek: (timeMs) => {
+    const { project, lastSeekToken } = get();
+    if (!project) return;
+
+    const clampedTime = Math.max(0, Math.min(timeMs, project.timeline.durationMs));
+    set({ currentTimeMs: clampedTime, lastSeekToken: lastSeekToken + 1 });
   },
 
   togglePlayback: () => set((state) => ({ isPlaying: !state.isPlaying })),

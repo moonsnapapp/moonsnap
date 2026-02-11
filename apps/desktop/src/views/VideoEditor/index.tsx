@@ -54,7 +54,7 @@ export const VideoEditorView = forwardRef<VideoEditorViewRef, VideoEditorViewPro
   const {
     project,
     togglePlayback,
-    setCurrentTime,
+    requestSeek,
     clearEditor,
     isExporting,
     exportProgress,
@@ -107,15 +107,15 @@ export const VideoEditorView = forwardRef<VideoEditorViewRef, VideoEditorViewPro
   const handleSkipBack = useCallback(() => {
     const store = useVideoEditorStore.getState();
     const newTime = Math.max(0, store.currentTimeMs - SKIP_AMOUNT_MS);
-    setCurrentTime(newTime);
-  }, [setCurrentTime]);
+    requestSeek(newTime);
+  }, [requestSeek]);
 
   const handleSkipForward = useCallback(() => {
     const store = useVideoEditorStore.getState();
     if (!store.project) return;
     const newTime = Math.min(store.project.timeline.durationMs, store.currentTimeMs + SKIP_AMOUNT_MS);
-    setCurrentTime(newTime);
-  }, [setCurrentTime]);
+    requestSeek(newTime);
+  }, [requestSeek]);
 
   const handleDeselect = useCallback(() => {
     // Deselect all segment types
@@ -209,8 +209,8 @@ export const VideoEditorView = forwardRef<VideoEditorViewRef, VideoEditorViewPro
   useVideoEditorShortcuts({
     enabled: !!project && !isExporting,
     onTogglePlayback: togglePlayback,
-    onSeekToStart: () => setCurrentTime(0),
-    onSeekToEnd: () => project && setCurrentTime(project.timeline.durationMs),
+    onSeekToStart: () => requestSeek(0),
+    onSeekToEnd: () => project && requestSeek(project.timeline.durationMs),
     onSkipBack: handleSkipBack,
     onSkipForward: handleSkipForward,
     onSplitAtPlayhead: handleSplitAtPlayhead,
@@ -308,15 +308,15 @@ export const VideoEditorView = forwardRef<VideoEditorViewRef, VideoEditorViewPro
 
   // Seek to start
   const handleSeekToStart = useCallback(() => {
-    setCurrentTime(0);
-  }, [setCurrentTime]);
+    requestSeek(0);
+  }, [requestSeek]);
 
   // Seek to end
   const handleSeekToEnd = useCallback(() => {
     if (project) {
-      setCurrentTime(project.timeline.durationMs);
+      requestSeek(project.timeline.durationMs);
     }
-  }, [project, setCurrentTime]);
+  }, [project, requestSeek]);
 
   // Expose imperative API
   useImperativeHandle(ref, () => ({

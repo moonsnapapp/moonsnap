@@ -7,7 +7,7 @@
  * - Seeking on timeline scrub/click
  */
 
-import { useEffect, useCallback } from 'react';
+import { useEffect, useCallback, useRef } from 'react';
 import { useVideoEditorStore, timelineToSource } from '../../../stores/videoEditorStore';
 import { usePlaybackControls, initPlaybackEngine } from '../../../hooks/usePlaybackEngine';
 import { videoEditorLogger } from '../../../utils/logger';
@@ -47,9 +47,8 @@ interface PlaybackSyncResult {
   handleVideoClick: () => void;
 }
 
-// Keep playback smooth without audible "rewind" artifacts from tiny backward seeks.
+// Keep playback smooth without audible "rewind" artifacts from backward seeks.
 const PLAYBACK_AUDIO_RESYNC_THRESHOLD_SEC = 0.5;
-const PLAYBACK_AUDIO_BACKWARD_HARD_RESYNC_SEC = 1.5;
 
 /**
  * Hook for managing playback synchronization between video and audio elements.
@@ -73,6 +72,8 @@ export function usePlaybackSync(options: PlaybackSyncOptions): PlaybackSyncResul
 
   const controls = usePlaybackControls();
   const hasSeparateAudio = Boolean(systemAudioSrc || micAudioSrc);
+  const lastSeekToken = useVideoEditorStore((s) => s.lastSeekToken);
+  const lastSeekTokenRef = useRef(lastSeekToken);
 
   // Get trim segments for time conversion
   const segments = useVideoEditorStore((s) => s.project?.timeline.segments) as TrimSegment[] | undefined;
@@ -216,73 +217,67 @@ export function usePlaybackSync(options: PlaybackSyncOptions): PlaybackSyncResul
   useEffect(() => {
     const systemAudio = systemAudioRef.current;
     const micAudio = micAudioRef.current;
-    const video = videoRef.current;
 
-    if (isPlaying && video) {
-      const syncAudio = () => {
-        const videoTime = video.currentTime;
-        if (systemAudio) {
-          systemAudio.currentTime = videoTime;
-          systemAudio.play().catch(e => {
-            videoEditorLogger.warn('System audio play failed:', e);
-          });
-        }
-        if (micAudio) {
-          micAudio.currentTime = videoTime;
-          micAudio.play().catch(e => {
-            videoEditorLogger.warn('Mic audio play failed:', e);
-          });
-        }
-      };
+    if (isPlaying) {
+      const playheadTime = useVideoEditorStore.getState().currentTimeMs;
+      const sourceTimeSec = getSourceTime(playheadTime) / 1000;
 
-      if (!video.paused) {
-        syncAudio();
-      } else {
-        video.addEventListener('playing', syncAudio, { once: true });
-        return () => video.removeEventListener('playing', syncAudio);
+      if (systemAudio) {
+        systemAudio.currentTime = sourceTimeSec;
+        systemAudio.play().catch(e => {
+          videoEditorLogger.warn('System audio play failed:', e);
+        });
+      }
+      if (micAudio) {
+        micAudio.currentTime = sourceTimeSec;
+        micAudio.play().catch(e => {
+          videoEditorLogger.warn('Mic audio play failed:', e);
+        });
       }
     } else {
       if (systemAudio) systemAudio.pause();
       if (micAudio) micAudio.pause();
     }
-  }, [isPlaying]);
+  }, [isPlaying, getSourceTime]);
 
   // Seek audio when preview time or current time changes
   useEffect(() => {
-    const video = videoRef.current;
     const timelineTime = previewTimeMs !== null ? previewTimeMs : currentTimeMs;
     const sourceTime = getSourceTime(timelineTime);
-    // During playback, follow the real video clock directly.
-    const targetTime = isPlaying && video ? video.currentTime : sourceTime / 1000;
+    const seekTokenChanged = lastSeekTokenRef.current !== lastSeekToken;
+    if (seekTokenChanged) {
+      lastSeekTokenRef.current = lastSeekToken;
+    }
 
     const syncAudio = (audio: HTMLAudioElement | null) => {
       if (!audio) return;
-
-      if (!isPlaying) {
-        audio.currentTime = targetTime;
-        return;
+      if (!isPlaying || previewTimeMs !== null || seekTokenChanged) {
+        audio.currentTime = sourceTime / 1000;
       }
-
-      const driftSec = targetTime - audio.currentTime;
-      const absDriftSec = Math.abs(driftSec);
-
-      // Ignore small drift while playing.
-      if (absDriftSec < PLAYBACK_AUDIO_RESYNC_THRESHOLD_SEC) {
-        return;
-      }
-
-      // Avoid small backward seeks that can sound like a rewind glitch on some systems.
-      // Still allow large backward jumps (e.g. explicit skip-back).
-      if (driftSec < 0 && absDriftSec < PLAYBACK_AUDIO_BACKWARD_HARD_RESYNC_SEC) {
-        return;
-      }
-
-      audio.currentTime = targetTime;
     };
 
     syncAudio(systemAudioRef.current);
     syncAudio(micAudioRef.current);
-  }, [previewTimeMs, currentTimeMs, isPlaying, getSourceTime, videoRef]);
+  }, [previewTimeMs, currentTimeMs, isPlaying, getSourceTime, lastSeekToken]);
+
+  // While playing, keep video clock aligned to audio (audio is master).
+  useEffect(() => {
+    if (!isPlaying) return;
+
+    const video = videoRef.current;
+    const masterAudio = systemAudioRef.current ?? micAudioRef.current;
+    if (!video || !masterAudio) return;
+
+    const handleTimeUpdate = () => {
+      const driftSec = masterAudio.currentTime - video.currentTime;
+      if (Math.abs(driftSec) > PLAYBACK_AUDIO_RESYNC_THRESHOLD_SEC) {
+        video.currentTime = masterAudio.currentTime;
+      }
+    };
+
+    masterAudio.addEventListener('timeupdate', handleTimeUpdate);
+    return () => masterAudio.removeEventListener('timeupdate', handleTimeUpdate);
+  }, [isPlaying, systemAudioRef, micAudioRef, videoRef]);
 
   // Seek video when preview time or current time changes
   useEffect(() => {

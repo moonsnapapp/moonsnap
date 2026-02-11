@@ -241,7 +241,7 @@ export function usePlaybackControls() {
     }
 
     // Update store with timeline time (not source time)
-    useVideoEditorStore.getState().setCurrentTime(clampedTimelineTime);
+    useVideoEditorStore.getState().requestSeek(clampedTimelineTime);
   }, [engine]);
 
   const toggle = useCallback(() => {
