@@ -1,0 +1,6 @@
+{
+  "buildCommand": "bun run build --filter=@snapit/web",
+  "installCommand": "bun install",
+  "framework": "nextjs",
+  "outputDirectory": "apps/web/.next"
+}
