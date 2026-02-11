@@ -1,5 +1,5 @@
 {
-  "extends": "@snapit/config-typescript/react.json",
+  "extends": "../../packages/config-typescript/react.json",
   "compilerOptions": {
     "allowImportingTsExtensions": true,
     "baseUrl": ".",
