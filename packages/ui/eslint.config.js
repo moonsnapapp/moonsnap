@@ -1,4 +1,5 @@
-import { base } from "@snapit/config-eslint";
+// Use relative import to bypass broken workspace symlinks on Windows
+import { base } from "../config-eslint/index.js";
 
 export default [
   {

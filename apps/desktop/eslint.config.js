@@ -1,4 +1,6 @@
-import { base, react, testFiles } from "@snapit/config-eslint";
+// Use relative import to bypass broken workspace symlinks on Windows
+// (Bun creates junctions that Node.js/ESLint can't traverse)
+import { base, react, testFiles } from "../../packages/config-eslint/index.js";
 
 export default [
   // Ignore patterns
