@@ -30,6 +30,9 @@ pub struct TextCompositeInfo {
     pub dst_y: u32,
     pub dst_w: u32,
     pub dst_h: u32,
+    /// Source offset when text overflows left/top edges (pixels clipped).
+    pub src_offset_x: u32,
+    pub src_offset_y: u32,
     /// Opacity (0.0-1.0) from fade animation.
     pub opacity: f32,
     /// RGBA pixel data (pre-rendered at correct size).
@@ -121,16 +124,34 @@ impl PreRenderedTextStore {
             let center_px_x = video_x as f64 + image.center_x * video_w as f64;
             let center_px_y = video_y as f64 + image.center_y * video_h as f64;
 
-            let dst_x = (center_px_x - half_w).max(0.0).round() as u32;
-            let dst_y = (center_px_y - half_h).max(0.0).round() as u32;
-            let dst_w = image.width.min(output_w.saturating_sub(dst_x));
-            let dst_h = image.height.min(output_h.saturating_sub(dst_y));
+            // Allow negative positions — text can overflow edges and gets clipped.
+            // When the top-left is negative, skip source pixels accordingly.
+            let raw_x = (center_px_x - half_w).round();
+            let raw_y = (center_px_y - half_h).round();
+            let src_offset_x = if raw_x < 0.0 { (-raw_x) as u32 } else { 0 };
+            let src_offset_y = if raw_y < 0.0 { (-raw_y) as u32 } else { 0 };
+            let dst_x = raw_x.max(0.0) as u32;
+            let dst_y = raw_y.max(0.0) as u32;
+            let dst_w = image
+                .width
+                .saturating_sub(src_offset_x)
+                .min(output_w.saturating_sub(dst_x));
+            let dst_h = image
+                .height
+                .saturating_sub(src_offset_y)
+                .min(output_h.saturating_sub(dst_y));
+
+            if dst_w == 0 || dst_h == 0 {
+                continue;
+            }
 
             result.push(TextCompositeInfo {
                 dst_x,
                 dst_y,
                 dst_w,
                 dst_h,
+                src_offset_x,
+                src_offset_y,
                 opacity,
                 rgba_data: image.rgba_data.clone(),
                 src_w: image.width,
@@ -162,19 +183,21 @@ pub fn composite_prerendered_texts(
 
         let src_stride = text.src_w as usize * 4;
 
-        // Blit each row
-        for sy in 0..text.dst_h.min(text.src_h) {
-            let dy = text.dst_y + sy;
-            if dy >= frame_h {
+        // Blit each row, accounting for source offsets when text overflows edges
+        for row in 0..text.dst_h {
+            let sy = text.src_offset_y + row;
+            let dy = text.dst_y + row;
+            if dy >= frame_h || sy >= text.src_h {
                 break;
             }
 
             let src_row_offset = sy as usize * src_stride;
             let dst_row_offset = dy as usize * stride;
 
-            for sx in 0..text.dst_w.min(text.src_w) {
-                let dx = text.dst_x + sx;
-                if dx >= frame_w {
+            for col in 0..text.dst_w {
+                let sx = text.src_offset_x + col;
+                let dx = text.dst_x + col;
+                if dx >= frame_w || sx >= text.src_w {
                     break;
                 }
 

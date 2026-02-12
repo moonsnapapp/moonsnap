@@ -130,6 +130,7 @@ const TextItem = memo(function TextItem({
   onUpdate,
 }: TextItemProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
   const [isHovered, setIsHovered] = useState(false);
   const [isResizing, setIsResizing] = useState(false);
   const dragStartRef = useRef<{
@@ -148,8 +149,8 @@ const TextItem = memo(function TextItem({
   const height = Math.max(segment.size.y * renderSize.height, 1);
   const halfW = width / 2;
   const halfH = height / 2;
-  const left = Math.max(0, segment.center.x * renderSize.width - halfW);
-  const top = Math.max(0, segment.center.y * renderSize.height - halfH);
+  const left = segment.center.x * renderSize.width - halfW;
+  const top = segment.center.y * renderSize.height - halfH;
 
   // Render text on canvas — same code path as export for WYSIWYG
   useEffect(() => {
@@ -182,7 +183,8 @@ const TextItem = memo(function TextItem({
   }, [segment.content, segment.fontFamily, segment.fontWeight, segment.fontSize,
       segment.italic, segment.color, segment.size.y, width, height, renderSize.height]);
 
-  // Handle drag to move
+  // Handle drag to move — updates DOM directly during drag for zero-lag interaction,
+  // commits final position to store on mouseUp to avoid per-frame re-render cascade.
   const handleMove = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
@@ -201,7 +203,15 @@ const TextItem = memo(function TextItem({
       fontSize: segment.fontSize,
     };
 
-    const minPadding = 0.02;
+    const el = containerRef.current;
+    const pxWidth = Math.max(segment.size.x * renderSize.width, 1);
+    const pxHalfW = pxWidth / 2;
+    const pxHeight = Math.max(segment.size.y * renderSize.height, 1);
+    const pxHalfH = pxHeight / 2;
+
+    // Track final center for store commit
+    let finalCenterX = segment.center.x;
+    let finalCenterY = segment.center.y;
 
     const handleMouseMove = (moveEvent: MouseEvent) => {
       if (!dragStartRef.current) return;
@@ -209,34 +219,31 @@ const TextItem = memo(function TextItem({
       const dx = (moveEvent.clientX - dragStartRef.current.x) / interactionSize.width;
       const dy = (moveEvent.clientY - dragStartRef.current.y) / interactionSize.height;
 
-      const halfW = segment.size.x / 2;
-      const halfH = segment.size.y / 2;
+      // Allow center anywhere in 0..1 — text can overflow edges and gets clipped in export
+      finalCenterX = clamp(dragStartRef.current.centerX + dx, 0, 1);
+      finalCenterY = clamp(dragStartRef.current.centerY + dy, 0, 1);
 
-      const newCenterX = clamp(
-        dragStartRef.current.centerX + dx,
-        halfW + minPadding,
-        1 - halfW - minPadding
-      );
-      const newCenterY = clamp(
-        dragStartRef.current.centerY + dy,
-        halfH + minPadding,
-        1 - halfH - minPadding
-      );
-
-      onUpdate(segmentId, { center: { x: newCenterX, y: newCenterY } });
+      // Update DOM directly — no React state, no store, no re-render
+      if (el) {
+        el.style.left = `${finalCenterX * renderSize.width - pxHalfW}px`;
+        el.style.top = `${finalCenterY * renderSize.height - pxHalfH}px`;
+      }
     };
 
     const handleMouseUp = () => {
       dragStartRef.current = null;
       document.removeEventListener('mousemove', handleMouseMove);
       document.removeEventListener('mouseup', handleMouseUp);
+      // Single store update on release
+      onUpdate(segmentId, { center: { x: finalCenterX, y: finalCenterY } });
     };
 
     document.addEventListener('mousemove', handleMouseMove);
     document.addEventListener('mouseup', handleMouseUp);
-  }, [segment, interactionSize, isSelected, segmentId, onSelect, onUpdate]);
+  }, [segment, interactionSize, renderSize, isSelected, segmentId, onSelect, onUpdate]);
 
   // Handle corner resize (proportional scaling with font size)
+  // Updates DOM directly during drag, commits to store on mouseUp.
   const createCornerResizeHandler = useCallback((dirX: -1 | 1, dirY: -1 | 1) => {
     return (e: React.MouseEvent) => {
       e.preventDefault();
@@ -254,8 +261,10 @@ const TextItem = memo(function TextItem({
       };
 
       const minSize = 0.03;
-      const maxSize = 0.95;
-      const minPadding = 0.02;
+      const el = containerRef.current;
+
+      // Track final values for store commit
+      let finalUpdate: Partial<TextSegment> = {};
 
       const handleMouseMove = (moveEvent: MouseEvent) => {
         if (!dragStartRef.current) return;
@@ -269,31 +278,37 @@ const TextItem = memo(function TextItem({
 
         if (scale > 0.1 && scale < 10) {
           const newFontSize = clamp(dragStartRef.current.fontSize * scale, 8, 400);
-          const newSizeX = clamp(dragStartRef.current.sizeX * scale, minSize, maxSize);
-          const newSizeY = clamp(dragStartRef.current.sizeY * scale, minSize, maxSize);
+          const newSizeX = Math.max(dragStartRef.current.sizeX * scale, minSize);
+          const newSizeY = Math.max(dragStartRef.current.sizeY * scale, minSize);
 
           const widthDiff = newSizeX - dragStartRef.current.sizeX;
           const heightDiff = newSizeY - dragStartRef.current.sizeY;
 
-          const halfWidth = newSizeX / 2;
-          const halfHeight = newSizeY / 2;
-
+          // Allow center anywhere in 0..1 — overflow gets clipped in export
           const newCenterX = clamp(
             dragStartRef.current.centerX + (widthDiff * dirX) / 2,
-            halfWidth + minPadding,
-            1 - halfWidth - minPadding
+            0, 1
           );
           const newCenterY = clamp(
             dragStartRef.current.centerY + (heightDiff * dirY) / 2,
-            halfHeight + minPadding,
-            1 - halfHeight - minPadding
+            0, 1
           );
 
-          onUpdate(segmentId, {
+          finalUpdate = {
             fontSize: newFontSize,
             size: { x: newSizeX, y: newSizeY },
             center: { x: newCenterX, y: newCenterY },
-          });
+          };
+
+          // Update DOM directly for visual feedback
+          if (el) {
+            const pxW = Math.max(newSizeX * renderSize.width, 1);
+            const pxH = Math.max(newSizeY * renderSize.height, 1);
+            el.style.width = `${pxW}px`;
+            el.style.height = `${pxH}px`;
+            el.style.left = `${newCenterX * renderSize.width - pxW / 2}px`;
+            el.style.top = `${newCenterY * renderSize.height - pxH / 2}px`;
+          }
         }
       };
 
@@ -302,14 +317,19 @@ const TextItem = memo(function TextItem({
         dragStartRef.current = null;
         document.removeEventListener('mousemove', handleMouseMove);
         document.removeEventListener('mouseup', handleMouseUp);
+        // Single store update on release
+        if (Object.keys(finalUpdate).length > 0) {
+          onUpdate(segmentId, finalUpdate);
+        }
       };
 
       document.addEventListener('mousemove', handleMouseMove);
       document.addEventListener('mouseup', handleMouseUp);
     };
-  }, [segment, interactionSize, renderSize.height, segmentId, onUpdate]);
+  }, [segment, interactionSize, renderSize, segmentId, onUpdate]);
 
   // Handle side resize (width only, no font size change)
+  // Updates DOM directly during drag, commits to store on mouseUp.
   const createSideResizeHandler = useCallback((dirX: -1 | 1) => {
     return (e: React.MouseEvent) => {
       e.preventDefault();
@@ -327,8 +347,10 @@ const TextItem = memo(function TextItem({
       };
 
       const minSize = 0.03;
-      const maxSize = 0.95;
-      const minPadding = 0.02;
+      const el = containerRef.current;
+
+      // Track final values for store commit
+      let finalUpdate: Partial<TextSegment> = {};
 
       const handleMouseMove = (moveEvent: MouseEvent) => {
         if (!dragStartRef.current) return;
@@ -336,21 +358,26 @@ const TextItem = memo(function TextItem({
         const dx = (moveEvent.clientX - dragStartRef.current.x) / interactionSize.width;
 
         const targetWidth = dragStartRef.current.sizeX + dx * dirX;
-        const newSizeX = clamp(targetWidth, minSize, maxSize);
+        const newSizeX = Math.max(targetWidth, minSize);
         const appliedDelta = newSizeX - dragStartRef.current.sizeX;
 
-        const halfWidth = newSizeX / 2;
-
+        // Allow center anywhere in 0..1 — overflow gets clipped in export
         const newCenterX = clamp(
           dragStartRef.current.centerX + (dirX * appliedDelta) / 2,
-          halfWidth + minPadding,
-          1 - halfWidth - minPadding
+          0, 1
         );
 
-        onUpdate(segmentId, {
+        finalUpdate = {
           size: { x: newSizeX, y: segment.size.y },
           center: { x: newCenterX, y: segment.center.y },
-        });
+        };
+
+        // Update DOM directly for visual feedback
+        if (el) {
+          const pxW = Math.max(newSizeX * renderSize.width, 1);
+          el.style.width = `${pxW}px`;
+          el.style.left = `${newCenterX * renderSize.width - pxW / 2}px`;
+        }
       };
 
       const handleMouseUp = () => {
@@ -358,12 +385,16 @@ const TextItem = memo(function TextItem({
         dragStartRef.current = null;
         document.removeEventListener('mousemove', handleMouseMove);
         document.removeEventListener('mouseup', handleMouseUp);
+        // Single store update on release
+        if (Object.keys(finalUpdate).length > 0) {
+          onUpdate(segmentId, finalUpdate);
+        }
       };
 
       document.addEventListener('mousemove', handleMouseMove);
       document.addEventListener('mouseup', handleMouseUp);
     };
-  }, [segment, interactionSize, segmentId, onUpdate]);
+  }, [segment, interactionSize, renderSize, segmentId, onUpdate]);
 
   const handleClick = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
@@ -372,6 +403,7 @@ const TextItem = memo(function TextItem({
 
   return (
     <div
+      ref={containerRef}
       className="absolute pointer-events-auto"
       style={{
         left: `${left}px`,
@@ -446,10 +478,16 @@ export const TextOverlay = memo(function TextOverlay({
   const safeRenderHeight = Math.max(1, Math.round(renderHeight));
   const safeDisplayWidth = Math.max(1, Math.round(displayWidth));
   const safeDisplayHeight = Math.max(1, Math.round(displayHeight));
-  const scaleX = safeDisplayWidth / safeRenderWidth;
-  const scaleY = safeDisplayHeight / safeRenderHeight;
+  // Use uniform scale matching object-fit: contain on the video element.
+  // Separate scaleX/scaleY would stretch the overlay when rounding causes
+  // the container to be slightly wider/taller than the video's natural fit.
+  const uniformScale = Math.min(safeDisplayWidth / safeRenderWidth, safeDisplayHeight / safeRenderHeight);
+  const fittedWidth = safeRenderWidth * uniformScale;
+  const fittedHeight = safeRenderHeight * uniformScale;
+  const offsetX = (safeDisplayWidth - fittedWidth) / 2;
+  const offsetY = (safeDisplayHeight - fittedHeight) / 2;
   const renderSize = { width: safeRenderWidth, height: safeRenderHeight };
-  const interactionSize = { width: safeDisplayWidth, height: safeDisplayHeight };
+  const interactionSize = { width: fittedWidth, height: fittedHeight };
 
   // Current time in seconds (Cap uses seconds)
   const currentTimeSec = currentTimeMs / 1000;
@@ -503,7 +541,7 @@ export const TextOverlay = memo(function TextOverlay({
         style={{
           width: `${safeRenderWidth}px`,
           height: `${safeRenderHeight}px`,
-          transform: `scale(${scaleX}, ${scaleY})`,
+          transform: `translate(${offsetX}px, ${offsetY}px) scale(${uniformScale})`,
           transformOrigin: 'top left',
         }}
         onClick={handleContainerClick}
