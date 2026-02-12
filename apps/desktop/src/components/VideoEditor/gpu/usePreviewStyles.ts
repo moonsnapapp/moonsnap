@@ -258,15 +258,25 @@ export function usePreviewStyles(options: PreviewStylesOptions): PreviewStylesRe
   }, [applyCropToFrame, cropConfig, containerSize]);
 
   // Calculate best-fit composition size in the preview area.
-  // Uses integer display dimensions while maximizing filled area.
+  // Cap the effective area so physical pixels never exceed the source composition
+  // resolution. On high-DPI displays this avoids rendering more pixels than the
+  // source video contains, which is pure waste (no extra detail exists).
+  // Example: 1920x1080 source on DPR 2 → max 960x540 CSS = 1920x1080 physical.
   const fittedComposition = useMemo(
-    () =>
-      fitCompositionToArea(
-        previewAreaSize.width,
-        previewAreaSize.height,
+    () => {
+      const dpr = window.devicePixelRatio || 1;
+      const maxCSSWidth = Math.ceil(compositeWidth / dpr);
+      const maxCSSHeight = Math.ceil(compositeHeight / dpr);
+      const effectiveWidth = Math.min(previewAreaSize.width, maxCSSWidth);
+      const effectiveHeight = Math.min(previewAreaSize.height, maxCSSHeight);
+
+      return fitCompositionToArea(
+        effectiveWidth,
+        effectiveHeight,
         compositeWidth,
         compositeHeight
-      ),
+      );
+    },
     [previewAreaSize.width, previewAreaSize.height, compositeWidth, compositeHeight]
   );
 
