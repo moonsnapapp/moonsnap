@@ -396,11 +396,6 @@ const TextItem = memo(function TextItem({
     };
   }, [segment, interactionSize, renderSize, segmentId, onUpdate]);
 
-  const handleClick = useCallback((e: React.MouseEvent) => {
-    e.stopPropagation();
-    onSelect(segmentId);
-  }, [segmentId, onSelect]);
-
   return (
     <div
       ref={containerRef}
@@ -411,10 +406,9 @@ const TextItem = memo(function TextItem({
         width: `${width}px`,
         height: `${height}px`,
         opacity,
-        cursor: isResizing ? undefined : (isSelected ? 'move' : 'pointer'),
+        cursor: isResizing ? undefined : 'move',
       }}
-      onClick={handleClick}
-      onMouseDown={isSelected ? handleMove : undefined}
+      onMouseDown={handleMove}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
     >
