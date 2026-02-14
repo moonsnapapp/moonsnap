@@ -311,8 +311,8 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
             }
         }
 
-        // Webcam content
-        let webcam_aa_width = fwidth(webcam_dist) * 2.0;
+        // Webcam content — 1px anti-aliasing matching frame border crispness
+        let webcam_aa_width = max(fwidth(webcam_dist), 0.5 / min_webcam_size);
         if (webcam_dist <= webcam_aa_width) {
             var webcam_uv = (input.uv - webcam_pos) / webcam_size;
 
@@ -332,7 +332,7 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
             webcam_uv = clamp(webcam_uv, vec2<f32>(0.0), vec2<f32>(1.0));
 
             let webcam_color = textureSample(webcam_texture, webcam_sampler, webcam_uv);
-            let webcam_alpha = 1.0 - smoothstep(-webcam_aa_width, webcam_aa_width, webcam_dist);
+            let webcam_alpha = clamp(1.0 - smoothstep(0.0, webcam_aa_width, webcam_dist), 0.0, 1.0);
             color = mix(color, webcam_color, webcam_alpha * webcam_color.a);
         }
     }
@@ -963,12 +963,15 @@ impl Compositor {
     /// Like `composite()`, but avoids per-frame texture allocation.
     /// The caller pre-allocates `video_texture` (TEXTURE_BINDING | COPY_DST)
     /// and `output_texture` (RENDER_ATTACHMENT | COPY_SRC | TEXTURE_BINDING).
-    /// Video frame data is written into the existing video texture.
+    ///
+    /// If `frame` is `Some`, video frame data is written into the existing video texture.
+    /// If `frame` is `None`, the video texture is assumed to be pre-populated
+    /// (e.g. by the NV12 converter), and video dimensions are read from the texture size.
     pub async fn composite_into(
         &mut self,
         renderer: &Renderer,
         video_texture: &wgpu::Texture,
-        frame: &DecodedFrame,
+        frame: Option<&DecodedFrame>,
         output_texture: &wgpu::Texture,
         options: &RenderOptions,
         time_ms: f32,
@@ -1011,8 +1014,14 @@ impl Compositor {
             }
         }
 
-        // Update video texture data in-place (no allocation)
-        renderer.update_texture_data(video_texture, &frame.data, frame.width, frame.height);
+        // Upload video frame data if provided; otherwise texture is pre-populated
+        let (video_w, video_h) = if let Some(frame) = frame {
+            renderer.update_texture_data(video_texture, &frame.data, frame.width, frame.height);
+            (frame.width as f32, frame.height as f32)
+        } else {
+            let tex_size = video_texture.size();
+            (tex_size.width as f32, tex_size.height as f32)
+        };
         let video_view = video_texture.create_view(&wgpu::TextureViewDescriptor::default());
 
         // Create webcam texture if present (webcam dimensions may vary, keep per-frame)
@@ -1090,12 +1099,12 @@ impl Compositor {
 
         let output_view = output_texture.create_view(&wgpu::TextureViewDescriptor::default());
 
-        // Calculate frame bounds
+        // Calculate frame bounds using video dimensions (from frame or texture)
         let out_w = options.output_width as f32;
         let out_h = options.output_height as f32;
         let bounds = calculate_composition_bounds(
-            frame.width as f32,
-            frame.height as f32,
+            video_w,
+            video_h,
             options.background.padding,
             Some((out_w, out_h)),
         );
@@ -1106,7 +1115,7 @@ impl Compositor {
         };
 
         let uniforms = ExtendedUniforms {
-            video_size: [frame.width as f32, frame.height as f32, 0.0, 0.0],
+            video_size: [video_w, video_h, 0.0, 0.0],
             output_size: [out_w, out_h, 0.0, 0.0],
             zoom: [
                 options.zoom.scale,
@@ -1233,11 +1242,13 @@ impl Compositor {
     /// Composite a frame with text overlays into a pre-allocated output texture.
     ///
     /// Export-optimized variant that reuses video and output textures across frames.
+    /// If `frame` is `None`, the video texture is assumed to be pre-populated
+    /// (e.g. by the NV12 converter).
     pub async fn composite_with_text_into(
         &mut self,
         renderer: &Renderer,
         video_texture: &wgpu::Texture,
-        frame: &DecodedFrame,
+        frame: Option<&DecodedFrame>,
         output_texture: &wgpu::Texture,
         options: &RenderOptions,
         time_ms: f32,

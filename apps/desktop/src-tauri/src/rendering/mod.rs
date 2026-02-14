@@ -20,6 +20,7 @@ pub mod cursor;
 pub mod decoder;
 pub mod editor_instance;
 pub mod exporter;
+pub mod nv12_converter;
 pub mod parity;
 pub mod prerendered_text;
 pub mod renderer;

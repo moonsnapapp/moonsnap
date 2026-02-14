@@ -1,18 +1,25 @@
 //! Streaming video decoder - single FFmpeg process for all frames.
 //!
-//! Uses tokio async I/O for non-blocking reads from FFmpeg stdout.
+//! Uses synchronous blocking I/O with BufReader for efficient pipe reads.
+//! Designed to run in a blocking thread (spawn_blocking) to avoid stalling
+//! the tokio runtime.
 
+use std::io::{BufReader, Read};
 use std::path::Path;
-use std::process::Stdio;
-use tokio::io::AsyncReadExt;
-use tokio::process::{Child, Command};
+use std::process::{Child, Command, Stdio};
 
-use super::types::DecodedFrame;
+use super::types::{DecodedFrame, PixelFormat};
+
+/// BufReader capacity for FFmpeg stdout pipe (2MB).
+/// Reduces syscall count for ~8MB/frame reads from thousands to ~4.
+const BUFREADER_CAPACITY: usize = 2 * 1024 * 1024;
 
 /// Streaming video decoder using a single FFmpeg process.
 pub struct StreamDecoder {
     /// FFmpeg child process.
     process: Option<Child>,
+    /// Buffered reader wrapping FFmpeg stdout.
+    stdout: Option<BufReader<std::process::ChildStdout>>,
     /// Video dimensions.
     width: u32,
     height: u32,
@@ -25,10 +32,14 @@ pub struct StreamDecoder {
     frame_count: u32,
     /// Current frame index.
     current_frame: u32,
-    /// Bytes per frame (width * height * 4 for RGBA).
+    /// Bytes per frame (depends on pixel_format).
     frame_size: usize,
     /// Start time offset in seconds.
     start_time_secs: f64,
+    /// Reusable read buffer (swapped out each frame to avoid clone).
+    buffer: Vec<u8>,
+    /// Output pixel format (Rgba or Nv12).
+    pixel_format: PixelFormat,
 }
 
 impl StreamDecoder {
@@ -47,11 +58,12 @@ impl StreamDecoder {
         let fps = metadata.fps;
         let duration_ms = end_ms.saturating_sub(start_ms);
         let frame_count = ((duration_ms as f64 / 1000.0) * fps).ceil() as u32;
-        let frame_size = (width * height * 4) as usize;
+        let frame_size = (width * height * 4) as usize; // Default RGBA
         let start_time_secs = start_ms as f64 / 1000.0;
 
         Ok(Self {
             process: None,
+            stdout: None,
             width,
             height,
             fps,
@@ -60,30 +72,56 @@ impl StreamDecoder {
             current_frame: 0,
             frame_size,
             start_time_secs,
+            buffer: Vec::new(),
+            pixel_format: PixelFormat::Rgba,
         })
     }
 
-    /// Start the decoder with a single FFmpeg process (async spawn).
+    /// Set the output pixel format. Must be called before `start()`.
+    ///
+    /// NV12 reduces pipe bandwidth by 62% (w*h*3/2 vs w*h*4) and skips
+    /// FFmpeg's CPU swscale conversion.
+    pub fn with_pixel_format(mut self, format: PixelFormat) -> Self {
+        self.pixel_format = format;
+        self.frame_size = match format {
+            PixelFormat::Rgba => (self.width * self.height * 4) as usize,
+            PixelFormat::Nv12 => (self.width * self.height * 3 / 2) as usize,
+        };
+        self
+    }
+
+    /// Start the decoder with a single FFmpeg process.
     pub fn start(&mut self, path: &Path) -> Result<(), String> {
         let ffmpeg_path = crate::commands::storage::find_ffmpeg().ok_or("FFmpeg not found")?;
 
+        let pix_fmt = match self.pixel_format {
+            PixelFormat::Rgba => "rgba",
+            PixelFormat::Nv12 => "nv12",
+        };
+
         log::info!(
-            "[STREAM_DECODER] Starting: {:?} at {:.3}s, {}x{} @ {:.2}fps, {} frames",
+            "[STREAM_DECODER] Starting: {:?} at {:.3}s, {}x{} @ {:.2}fps, {} frames, fmt={}",
             path,
             self.start_time_secs,
             self.width,
             self.height,
             self.fps,
-            self.frame_count
+            self.frame_count,
+            pix_fmt
         );
 
-        // Build FFmpeg command to output continuous raw RGBA frames
+        // Build FFmpeg command to output continuous raw frames
         #[cfg(windows)]
-        let process = {
+        let mut process = {
+            use std::os::windows::process::CommandExt;
             const CREATE_NO_WINDOW: u32 = 0x08000000;
             Command::new(&ffmpeg_path)
                 .creation_flags(CREATE_NO_WINDOW)
                 .args([
+                    "-hwaccel",
+                    "auto",
+                    "-threads",
+                    "0",
                     "-ss",
                     &format!("{:.3}", self.start_time_secs),
                     "-i",
@@ -93,7 +131,7 @@ impl StreamDecoder {
                     "-f",
                     "rawvideo",
                     "-pix_fmt",
-                    "rgba",
+                    pix_fmt,
                     "-s",
                     &format!("{}x{}", self.width, self.height),
                     "-",
@@ -106,8 +144,12 @@ impl StreamDecoder {
         };
 
         #[cfg(not(windows))]
-        let process = Command::new(&ffmpeg_path)
+        let mut process = Command::new(&ffmpeg_path)
             .args([
+                "-hwaccel",
+                "auto",
+                "-threads",
+                "0",
                 "-ss",
                 &format!("{:.3}", self.start_time_secs),
                 "-i",
@@ -117,7 +159,7 @@ impl StreamDecoder {
                 "-f",
                 "rawvideo",
                 "-pix_fmt",
-                "rgba",
+                pix_fmt,
                 "-s",
                 &format!("{}x{}", self.width, self.height),
                 "-",
@@ -128,34 +170,47 @@ impl StreamDecoder {
             .spawn()
             .map_err(|e| format!("Failed to start FFmpeg decoder: {}", e))?;
 
+        // Take stdout and wrap in BufReader for efficient large reads
+        let stdout = process
+            .stdout
+            .take()
+            .ok_or("Failed to capture FFmpeg stdout")?;
+        self.stdout = Some(BufReader::with_capacity(BUFREADER_CAPACITY, stdout));
         self.process = Some(process);
         self.current_frame = 0;
+
+        // Pre-allocate reusable read buffer
+        self.buffer = vec![0u8; self.frame_size];
 
         Ok(())
     }
 
-    /// Read the next frame from the stream (async).
-    pub async fn next_frame(&mut self) -> Result<Option<DecodedFrame>, String> {
-        let process = self.process.as_mut().ok_or("Decoder not started")?;
-        let stdout = process.stdout.as_mut().ok_or("No stdout available")?;
+    /// Read the next frame from the stream (blocking).
+    ///
+    /// Moves the internal buffer into the returned frame to avoid an 8MB clone.
+    /// A new buffer is allocated for the next read.
+    pub fn next_frame(&mut self) -> Result<Option<DecodedFrame>, String> {
+        let stdout = self.stdout.as_mut().ok_or("Decoder not started")?;
 
-        // Allocate buffer for one frame
-        let mut buffer = vec![0u8; self.frame_size];
-
-        // Read exactly one frame using async read_exact
-        match stdout.read_exact(&mut buffer).await {
-            Ok(_bytes_read) => {
+        match stdout.read_exact(&mut self.buffer) {
+            Ok(()) => {
                 let frame_number = self.current_frame;
                 let timestamp_ms = ((frame_number as f64 / self.fps) * 1000.0) as u64;
 
                 self.current_frame += 1;
 
+                // Move buffer out (zero-copy handoff), allocate fresh for next read.
+                // The allocator typically recycles the recently-freed memory.
+                let frame_data = std::mem::take(&mut self.buffer);
+                self.buffer = vec![0u8; self.frame_size];
+
                 Ok(Some(DecodedFrame {
                     frame_number,
                     timestamp_ms,
-                    data: buffer,
+                    data: frame_data,
                     width: self.width,
                     height: self.height,
+                    format: self.pixel_format,
                 }))
             },
             Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => {
@@ -166,11 +221,13 @@ impl StreamDecoder {
         }
     }
 
-    /// Stop the decoder and clean up (async).
-    pub async fn stop(&mut self) {
+    /// Stop the decoder and clean up.
+    pub fn stop(&mut self) {
+        // Drop stdout first to close the pipe (unblocks FFmpeg if it's writing)
+        self.stdout.take();
         if let Some(mut process) = self.process.take() {
-            let _ = process.kill().await;
-            let _ = process.wait().await;
+            let _ = process.kill();
+            let _ = process.wait();
         }
     }
 
@@ -198,9 +255,11 @@ impl StreamDecoder {
 
 impl Drop for StreamDecoder {
     fn drop(&mut self) {
-        // Sync cleanup - start kill (doesn't wait)
-        if let Some(ref mut process) = self.process {
-            let _ = process.start_kill();
+        // Drop stdout to close the pipe
+        self.stdout.take();
+        if let Some(mut process) = self.process.take() {
+            let _ = process.kill();
+            let _ = process.wait();
         }
     }
 }

@@ -39,12 +39,13 @@ pub fn request_cancel_export() {
 use super::caption_layer::prepare_captions;
 use super::compositor::Compositor;
 use super::cursor::{composite_cursor, CursorInterpolator, VideoContentBounds};
+use super::nv12_converter::{CropRect, Nv12Converter};
 use super::prerendered_text::{composite_prerendered_texts, TextCompositeInfo};
 use super::renderer::Renderer;
 use super::scene::SceneInterpolator;
 use super::stream_decoder::StreamDecoder;
 use super::svg_cursor::get_svg_cursor;
-use super::types::{BackgroundStyle, RenderOptions};
+use super::types::{BackgroundStyle, PixelFormat, RenderOptions};
 use super::zoom::ZoomInterpolator;
 use crate::commands::captions::types::CaptionSegment;
 use crate::commands::text_prerender::PreRenderedTextState;
@@ -83,6 +84,18 @@ struct CpuCompositeCtx<'a> {
 /// Per-frame state for deferred CPU compositing (double-buffer pipeline).
 struct PendingCpuWork {
     rgba_data: Vec<u8>,
+    prerendered_texts: Vec<TextCompositeInfo>,
+    camera_only_opacity: f64,
+    source_time_ms: u64,
+    output_frame_idx: u32,
+}
+
+/// Metadata for a frame whose GPU readback is still in-flight.
+/// Used by the double-buffered staging pipeline: while the GPU copies frame N
+/// into staging buffer A, we can safely read the completed copy of frame N-1
+/// from staging buffer B.
+struct PendingReadback {
+    staging_buf_idx: usize,
     prerendered_texts: Vec<TextCompositeInfo>,
     camera_only_opacity: f64,
     source_time_ms: u64,
@@ -401,8 +414,10 @@ pub async fn export_video_gpu(
 
     // Initialize streaming decoders (ONE FFmpeg process each!)
     // Use decode_range which respects segments (first seg start to last seg end)
+    // Screen decoder uses NV12 to skip CPU swscale and reduce pipe bandwidth by 62%.
     let screen_path = Path::new(&project.sources.screen_video);
-    let mut screen_decoder = StreamDecoder::new(screen_path, decode_start_ms, decode_end_ms)?;
+    let mut screen_decoder = StreamDecoder::new(screen_path, decode_start_ms, decode_end_ms)?
+        .with_pixel_format(PixelFormat::Nv12);
     screen_decoder.start(screen_path)?;
 
     // Webcam decoder if enabled
@@ -538,15 +553,42 @@ pub async fn export_video_gpu(
     emit_progress(&app, 0.08, ExportStage::Encoding, "Rendering frames...");
 
     // Pre-allocate GPU resources reused across all frames (avoids per-frame allocation)
-    // Video texture: initialized with dummy data, updated each frame via write_texture
-    let video_texture = renderer.create_texture_from_rgba(
-        &vec![0u8; (video_w * video_h * 4) as usize],
-        video_w,
-        video_h,
-        "Export Video Frame (reusable)",
+    // Video texture: needs RENDER_ATTACHMENT for NV12 converter writes + COPY_DST for RGBA fallback.
+    // view_formats includes Rgba8Unorm so the NV12 converter can write without double-gamma.
+    let video_texture = renderer.device().create_texture(&wgpu::TextureDescriptor {
+        label: Some("Export Video Frame (reusable)"),
+        size: wgpu::Extent3d {
+            width: video_w,
+            height: video_h,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: wgpu::TextureFormat::Rgba8UnormSrgb,
+        usage: wgpu::TextureUsages::TEXTURE_BINDING
+            | wgpu::TextureUsages::COPY_DST
+            | wgpu::TextureUsages::RENDER_ATTACHMENT,
+        view_formats: &[wgpu::TextureFormat::Rgba8Unorm],
+    });
+    // NV12 converter: converts NV12 frames to RGBA on GPU with optional crop
+    let nv12_converter = Nv12Converter::new(
+        renderer.device(),
+        renderer.queue(),
+        original_width,
+        original_height,
     );
     let output_texture = renderer.create_output_texture(composition_w, composition_h);
-    let staging_buffer = renderer.create_staging_buffer(composition_w, composition_h);
+    // Triple-buffered staging: we read from the buffer submitted 2 iterations
+    // ago, giving the GPU two full frame times (~46ms) to finish render + copy.
+    // This eliminates both the GPU fence wait (~6.5ms) and ensures readback
+    // cost is purely the PCIe data transfer (~7ms).
+    let staging_buffers = [
+        renderer.create_staging_buffer(composition_w, composition_h),
+        renderer.create_staging_buffer(composition_w, composition_h),
+        renderer.create_staging_buffer(composition_w, composition_h),
+    ];
+    let mut buf_idx = 0usize;
 
     // Build constant context for CPU compositing (shared across all frames)
     let cpu_ctx = CpuCompositeCtx {
@@ -568,16 +610,59 @@ pub async fn export_video_gpu(
     // Track output frames separately from decoded frames
     let mut output_frame_count = 0u32;
 
-    // Double-buffer pipeline: GPU renders frame N while CPU processes frame N-1.
-    // `pending` holds the previous frame's readback data awaiting CPU compositing.
-    let mut pending: Option<PendingCpuWork> = None;
+    // Per-frame timing instrumentation (aggregated every 30 frames)
+    let mut timing_decode_us = 0u64;
+    let mut timing_gpu_us = 0u64;
+    let mut timing_cpu_us = 0u64;
+    let mut timing_readback_us = 0u64;
+    let mut timing_encode_us = 0u64;
+    let mut timing_frame_count = 0u32;
+
+    // Pipeline with triple-buffered staging (4-stage depth):
+    //   1. complete_readback for frame N-2  → ~0ms fence (GPU done 2 iters ago) + data copy
+    //   2. GPU render + submit_readback(buf[i]) for frame N
+    //   3. CPU composite + encode frame N-3 → overlaps with GPU render of frame N
+    // The readback queue holds up to 2 entries; we only complete the oldest
+    // (submitted 2 iterations ago, guaranteed complete). This eliminates the
+    // GPU fence wait entirely — readback is pure PCIe data transfer.
+    let mut pending_cpu: Option<PendingCpuWork> = None;
+    // Two-deep readback queue: _old was submitted 2 iters ago, _new was submitted 1 iter ago
+    let mut pending_readback_old: Option<PendingReadback> = None;
+    let mut pending_readback_new: Option<PendingReadback> = None;
 
     // Render frames from decode pipeline, send to encode pipeline
+    let mut t_decode_start = std::time::Instant::now();
     while let Some(bundle) = decode_rx.recv().await {
+        timing_decode_us += t_decode_start.elapsed().as_micros() as u64;
         // Check for cancellation
         if cancel_flag().load(Ordering::Relaxed) {
             log::info!("[EXPORT] Export cancelled by user");
             break;
+        }
+
+        // === Complete readback for frame N-2 (submitted 2 iterations ago) ===
+        // With triple-buffered staging, the oldest entry was submitted ~46ms ago.
+        // The GPU is guaranteed to be done — readback is pure PCIe data transfer
+        // with zero fence wait. Runs BEFORE any new GPU submissions so poll(Wait)
+        // doesn't block on freshly-enqueued work.
+        if let Some(oldest_rb) = pending_readback_old.take() {
+            let t_readback_start = std::time::Instant::now();
+            let rgba_data = renderer
+                .complete_readback(
+                    &staging_buffers[oldest_rb.staging_buf_idx],
+                    composition_w,
+                    composition_h,
+                )
+                .await;
+            timing_readback_us += t_readback_start.elapsed().as_micros() as u64;
+
+            pending_cpu = Some(PendingCpuWork {
+                rgba_data,
+                prerendered_texts: oldest_rb.prerendered_texts,
+                camera_only_opacity: oldest_rb.camera_only_opacity,
+                source_time_ms: oldest_rb.source_time_ms,
+                output_frame_idx: oldest_rb.output_frame_idx,
+            });
         }
 
         let decoded_frame_idx = bundle.frame_idx;
@@ -602,8 +687,10 @@ pub async fn export_video_gpu(
             source_time_ms - decode_start_ms
         };
 
-        // Apply video crop to screen frame BEFORE composition
-        let screen_frame = if crop_enabled {
+        // Apply video crop to screen frame BEFORE composition.
+        // NV12 frames: skip CPU crop — done during GPU NV12→RGBA conversion.
+        // RGBA frames (fallback): keep CPU crop as-is.
+        let screen_frame = if crop_enabled && bundle.screen_frame.format == PixelFormat::Rgba {
             crop_decoded_frame(
                 &bundle.screen_frame,
                 crop.x,
@@ -659,64 +746,84 @@ pub async fn export_video_gpu(
             );
         }
 
-        // Build the frame to render with proper blending
-        // Note: Camera-only blending uses video dimensions (not output dimensions with padding)
-        // because screen_frame comes from decoder at video dimensions. The compositor will
-        // add background/padding around the blended result.
-        let (frame_to_render, webcam_overlay) = if camera_only_opacity > 0.99 {
+        // Build the frame to render with proper blending.
+        // NV12 fast path: for the common case (no camera-only transition), we skip
+        // CPU frame manipulation entirely — the NV12 converter writes directly to GPU.
+        // Camera-only transitions need RGBA for CPU blending (rare, ~1s per transition).
+        let is_nv12 = screen_frame.format == PixelFormat::Nv12;
+
+        // Determine if we need the NV12 GPU path or RGBA fallback.
+        let needs_rgba_blend = camera_only_opacity > 0.01
+            && camera_only_opacity <= 0.99
+            && current_webcam_frame.is_some();
+        let needs_fullscreen_webcam = camera_only_opacity > 0.99 && current_webcam_frame.is_some();
+        let use_nv12_gpu_path = is_nv12 && !needs_rgba_blend && !needs_fullscreen_webcam;
+
+        // Run NV12→RGBA GPU conversion NOW, before screen_frame is moved.
+        // This writes RGBA into video_texture; the compositor reads it later.
+        if use_nv12_gpu_path {
+            let gpu_crop = if crop_enabled {
+                Some(CropRect {
+                    x: crop.x,
+                    y: crop.y,
+                    width: crop.width,
+                    height: crop.height,
+                })
+            } else {
+                None
+            };
+            nv12_converter.convert(&screen_frame.data, &video_texture, gpu_crop);
+        }
+
+        let (frame_to_render, webcam_overlay) = if needs_fullscreen_webcam {
             // Fully in cameraOnly mode - just show fullscreen webcam
-            // Scale to video dimensions since compositor will add padding
-            if let Some(ref webcam_frame) = current_webcam_frame {
-                let scaled_frame = scale_frame_to_fill(webcam_frame, video_w, video_h);
-                (scaled_frame, None)
-            } else {
-                (screen_frame.clone(), None)
-            }
-        } else if camera_only_opacity > 0.01 {
-            // In cameraOnly transition - blend screen and fullscreen webcam
-            if let Some(ref webcam_frame) = current_webcam_frame {
-                // Start with screen frame (apply blur if needed)
-                let mut blended_frame = if interpolated_scene.screen_blur > 0.01 {
-                    // Note: GPU blur would be better, but for now we skip CPU blur
-                    // The screen will still fade out via opacity blending
-                    screen_frame.clone()
+            let webcam_frame = current_webcam_frame.as_ref().unwrap();
+            let scaled_frame = scale_frame_to_fill(webcam_frame, video_w, video_h);
+            (Some(scaled_frame), None)
+        } else if needs_rgba_blend {
+            // In cameraOnly transition - blend screen and fullscreen webcam.
+            // CPU blending requires RGBA, so convert NV12 frames if needed.
+            let webcam_frame = current_webcam_frame.as_ref().unwrap();
+            let rgba_screen = if is_nv12 {
+                let rgba = screen_frame.to_rgba();
+                // NV12 frames skipped CPU crop earlier, apply it now
+                if crop_enabled {
+                    crop_decoded_frame(&rgba, crop.x, crop.y, crop.width, crop.height)
                 } else {
-                    screen_frame.clone()
-                };
+                    rgba
+                }
+            } else {
+                screen_frame.clone()
+            };
+            let mut blended_frame = rgba_screen;
 
-                // Scale webcam to fill video area (matches screen_frame dimensions)
-                let fullscreen_webcam = scale_frame_to_fill(webcam_frame, video_w, video_h);
+            // Scale webcam to fill video area (matches screen dimensions)
+            let fullscreen_webcam = scale_frame_to_fill(webcam_frame, video_w, video_h);
 
-                // Blend fullscreen webcam over screen with camera_only_opacity
-                blend_frames_alpha(
-                    &mut blended_frame,
-                    &fullscreen_webcam,
-                    camera_only_opacity as f32,
+            // Blend fullscreen webcam over screen with camera_only_opacity
+            blend_frames_alpha(
+                &mut blended_frame,
+                &fullscreen_webcam,
+                camera_only_opacity as f32,
+            );
+
+            // Regular webcam overlay during transition (fades at 1.5x speed)
+            let overlay = if regular_camera_opacity > 0.01 && webcam_visible {
+                let mut overlay = build_webcam_overlay(
+                    &project,
+                    webcam_frame.clone(),
+                    composition_w,
+                    composition_h,
                 );
-
-                // Regular webcam overlay during transition (fades at 1.5x speed)
-                let overlay = if regular_camera_opacity > 0.01 && webcam_visible {
-                    let mut overlay = build_webcam_overlay(
-                        &project,
-                        webcam_frame.clone(),
-                        composition_w,
-                        composition_h,
-                    );
-                    // Apply the transition opacity to the overlay
-                    overlay.shadow_opacity *= regular_camera_opacity as f32;
-                    Some(overlay)
-                } else {
-                    None
-                };
-
-                (blended_frame, overlay)
+                overlay.shadow_opacity *= regular_camera_opacity as f32;
+                Some(overlay)
             } else {
-                // No webcam available
-                (screen_frame.clone(), None)
-            }
+                None
+            };
+
+            (Some(blended_frame), overlay)
         } else {
-            // Not in cameraOnly transition - normal rendering
-            // Build webcam overlay first (borrows current_webcam_frame), then consume screen_frame
+            // Not in cameraOnly transition - normal rendering (common path, ~99% of frames)
             let overlay = match interpolated_scene.scene_mode {
                 SceneMode::ScreenOnly => None,
                 _ => {
@@ -734,8 +841,13 @@ pub async fn export_video_gpu(
                     }
                 },
             };
-            // Consume screen_frame by value — avoids ~8MB clone on the common path
-            (screen_frame, overlay)
+            if use_nv12_gpu_path {
+                // NV12 fast path: converter will write directly to video_texture
+                (None, overlay)
+            } else {
+                // RGBA path: compositor uploads the frame
+                (Some(screen_frame), overlay)
+            }
         };
 
         // Convert background config to rendering style
@@ -794,12 +906,16 @@ pub async fn export_video_gpu(
         };
 
         // === GPU submit phase (non-blocking) ===
+        let t_gpu_start = std::time::Instant::now();
+
         // Composite: base frame (background, video, webcam) + captions (glyphon)
+        // NV12 path: video_texture was already populated by nv12_converter above.
+        // RGBA path: compositor uploads frame_to_render into video_texture.
         compositor
             .composite_with_text_into(
                 &renderer,
                 &video_texture,
-                &frame_to_render,
+                frame_to_render.as_ref(),
                 &output_texture,
                 &render_options,
                 relative_time_ms as f32,
@@ -810,20 +926,25 @@ pub async fn export_video_gpu(
         // Submit readback copy command (non-blocking — GPU will execute asynchronously)
         renderer.submit_readback(
             &output_texture,
-            &staging_buffer,
+            &staging_buffers[buf_idx],
             composition_w,
             composition_h,
         );
 
-        // === CPU phase: process PREVIOUS frame while GPU works on current ===
-        // This overlaps GPU render+copy of frame N with CPU compositing of frame N-1.
-        if let Some(mut prev) = pending.take() {
-            apply_cpu_compositing(&mut prev, &cpu_ctx);
+        timing_gpu_us += t_gpu_start.elapsed().as_micros() as u64;
 
+        // === CPU phase: process frame N-2 (pending_cpu) while GPU works on frame N ===
+        if let Some(mut prev) = pending_cpu.take() {
+            let t_cpu_start = std::time::Instant::now();
+            apply_cpu_compositing(&mut prev, &cpu_ctx);
+            timing_cpu_us += t_cpu_start.elapsed().as_micros() as u64;
+
+            let t_encode_start = std::time::Instant::now();
             if encode_tx.send(prev.rgba_data).await.is_err() {
                 log::error!("[EXPORT] Encode channel closed unexpectedly");
                 break;
             }
+            timing_encode_us += t_encode_start.elapsed().as_micros() as u64;
 
             // Progress update (every 10 frames, based on frames sent to encoder)
             let sent_count = prev.output_frame_idx + 1;
@@ -839,33 +960,80 @@ pub async fn export_video_gpu(
             }
         }
 
-        // === GPU wait phase: complete readback for current frame ===
-        let rgba_data = renderer
-            .complete_readback(&staging_buffer, composition_w, composition_h)
-            .await;
-
-        // Store current frame as pending (will be CPU-processed next iteration)
-        pending = Some(PendingCpuWork {
-            rgba_data,
+        // Shift readback queue: new → old, current frame → new
+        pending_readback_old = pending_readback_new.take();
+        pending_readback_new = Some(PendingReadback {
+            staging_buf_idx: buf_idx,
             prerendered_texts,
             camera_only_opacity,
             source_time_ms,
             output_frame_idx: output_frame_count,
         });
+        buf_idx = (buf_idx + 1) % 3;
 
         output_frame_count += 1;
+        timing_frame_count += 1;
+
+        // Log aggregate timing every 30 frames
+        if timing_frame_count >= 30 {
+            let n = timing_frame_count as f64;
+            log::info!(
+                "[EXPORT] Frame timing (avg over {}): decode={:.1}ms gpu={:.1}ms cpu={:.1}ms readback={:.1}ms encode={:.1}ms total={:.1}ms",
+                timing_frame_count,
+                timing_decode_us as f64 / n / 1000.0,
+                timing_gpu_us as f64 / n / 1000.0,
+                timing_cpu_us as f64 / n / 1000.0,
+                timing_readback_us as f64 / n / 1000.0,
+                timing_encode_us as f64 / n / 1000.0,
+                (timing_decode_us + timing_gpu_us + timing_cpu_us + timing_readback_us + timing_encode_us) as f64 / n / 1000.0,
+            );
+            timing_decode_us = 0;
+            timing_gpu_us = 0;
+            timing_cpu_us = 0;
+            timing_readback_us = 0;
+            timing_encode_us = 0;
+            timing_frame_count = 0;
+        }
 
         // Check if we've read back enough frames
         if output_frame_count >= total_output_frames {
             break;
         }
+
+        // Reset decode timer for next iteration's recv() wait
+        t_decode_start = std::time::Instant::now();
     }
 
-    // Process and send the last pending frame
-    if let Some(mut last) = pending.take() {
-        if !cancel_flag().load(Ordering::Relaxed) {
-            apply_cpu_compositing(&mut last, &cpu_ctx);
-            let _ = encode_tx.send(last.rgba_data).await;
+    // Drain pipeline: up to 3 frames may still be in-flight.
+    // pending_cpu: readback done, needs CPU composite + encode
+    // pending_readback_old: needs complete_readback + CPU composite + encode
+    // pending_readback_new: needs complete_readback + CPU composite + encode
+    if !cancel_flag().load(Ordering::Relaxed) {
+        if let Some(mut cpu_work) = pending_cpu.take() {
+            apply_cpu_compositing(&mut cpu_work, &cpu_ctx);
+            let _ = encode_tx.send(cpu_work.rgba_data).await;
+        }
+
+        for rb in [pending_readback_old.take(), pending_readback_new.take()]
+            .into_iter()
+            .flatten()
+        {
+            let rgba_data = renderer
+                .complete_readback(
+                    &staging_buffers[rb.staging_buf_idx],
+                    composition_w,
+                    composition_h,
+                )
+                .await;
+            let mut work = PendingCpuWork {
+                rgba_data,
+                prerendered_texts: rb.prerendered_texts,
+                camera_only_opacity: rb.camera_only_opacity,
+                source_time_ms: rb.source_time_ms,
+                output_frame_idx: rb.output_frame_idx,
+            };
+            apply_cpu_compositing(&mut work, &cpu_ctx);
+            let _ = encode_tx.send(work.rgba_data).await;
         }
     }
 

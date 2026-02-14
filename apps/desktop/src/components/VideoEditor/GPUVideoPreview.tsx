@@ -600,6 +600,7 @@ export function GPUVideoPreview() {
             config={project.webcam}
             containerWidth={compositionSize.width}
             containerHeight={compositionSize.height}
+            renderWidth={compositeWidth}
             sceneOpacity={webcamOverlayOpacity}
           />
         )}

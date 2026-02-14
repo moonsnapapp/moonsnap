@@ -76,6 +76,7 @@ fn make_test_frame() -> DecodedFrame {
         data: vec![0u8; 1280 * 720 * 4],
         width: 1280,
         height: 720,
+        format: super::super::types::PixelFormat::Rgba,
     }
 }
 
@@ -441,6 +442,7 @@ fn make_solid_frame(width: u32, height: u32, r: u8, g: u8, b: u8) -> DecodedFram
         data,
         width,
         height,
+        format: super::super::types::PixelFormat::Rgba,
     }
 }
 

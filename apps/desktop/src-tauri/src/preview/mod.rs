@@ -109,6 +109,7 @@ impl PreviewRenderer {
             data: async_frame.data,
             width: async_frame.width,
             height: async_frame.height,
+            format: crate::rendering::types::PixelFormat::Rgba,
         };
 
         // Build render options from project

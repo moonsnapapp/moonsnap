@@ -14,6 +14,8 @@ interface WebcamOverlayProps {
   config: WebcamConfig;
   containerWidth: number;
   containerHeight: number;
+  /** Actual export composition width — used to scale the 16px margin proportionally */
+  renderWidth: number;
   /** Opacity from scene transitions (0-1). When transitioning to camera-only mode, this fades to 0. */
   sceneOpacity?: number;
 }
@@ -42,9 +44,9 @@ function getPositionStyle(
   containerWidth: number,
   containerHeight: number,
   webcamWidth: number,
-  webcamHeight: number
+  webcamHeight: number,
+  margin: number,
 ): React.CSSProperties {
-  const margin = 16;
 
   switch (position) {
     case 'topLeft':
@@ -257,6 +259,7 @@ export const WebcamOverlay = memo(function WebcamOverlay({
   config,
   containerWidth,
   containerHeight,
+  renderWidth,
   sceneOpacity = 1,
 }: WebcamOverlayProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -391,6 +394,10 @@ export const WebcamOverlay = memo(function WebcamOverlay({
     }
   }, [containerWidth, config.size, config.shape, videoDimensions]);
 
+  // Scale the 16px margin to match export: at export resolution it's 16px,
+  // in the scaled-down preview it must be proportionally the same.
+  const scaledMargin = renderWidth > 0 ? 16 * (containerWidth / renderWidth) : 16;
+
   // Position style
   const positionStyle = useMemo(() =>
     getPositionStyle(
@@ -400,9 +407,10 @@ export const WebcamOverlay = memo(function WebcamOverlay({
       containerWidth,
       containerHeight,
       webcamWidth,
-      webcamHeight
+      webcamHeight,
+      scaledMargin,
     ),
-    [config.position, config.customX, config.customY, containerWidth, containerHeight, webcamWidth, webcamHeight]
+    [config.position, config.customX, config.customY, containerWidth, containerHeight, webcamWidth, webcamHeight, scaledMargin]
   );
 
   // Shape style - calculate shape from rounding percentage and corner style

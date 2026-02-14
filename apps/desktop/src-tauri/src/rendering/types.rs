@@ -10,6 +10,16 @@ use crate::commands::video_recording::video_project::{
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
+/// Pixel format of decoded frame data.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PixelFormat {
+    /// RGBA 8-bit per channel (width * height * 4 bytes).
+    Rgba,
+    /// NV12: Y plane (width * height) followed by interleaved UV plane (width * height / 2).
+    /// Total size: width * height * 3 / 2 bytes.
+    Nv12,
+}
+
 /// A decoded video frame ready for GPU upload.
 #[derive(Debug, Clone)]
 pub struct DecodedFrame {
@@ -17,12 +27,14 @@ pub struct DecodedFrame {
     pub frame_number: u32,
     /// Timestamp in milliseconds.
     pub timestamp_ms: u64,
-    /// RGBA pixel data (width * height * 4 bytes).
+    /// Pixel data (layout depends on `format`).
     pub data: Vec<u8>,
     /// Frame width in pixels.
     pub width: u32,
     /// Frame height in pixels.
     pub height: u32,
+    /// Pixel format of the data.
+    pub format: PixelFormat,
 }
 
 impl DecodedFrame {
@@ -39,6 +51,7 @@ impl DecodedFrame {
             data,
             width,
             height,
+            format: PixelFormat::Rgba,
         }
     }
 
@@ -51,6 +64,60 @@ impl DecodedFrame {
             data,
             width,
             height,
+            format: PixelFormat::Rgba,
+        }
+    }
+
+    /// Convert NV12 frame to RGBA using BT.709 limited range on CPU.
+    ///
+    /// Used only during rare camera-only transitions (~1 second of a multi-minute export)
+    /// where CPU blending requires RGBA data.
+    pub fn to_rgba(&self) -> DecodedFrame {
+        if self.format == PixelFormat::Rgba {
+            return self.clone();
+        }
+
+        let w = self.width as usize;
+        let h = self.height as usize;
+        let y_plane_size = w * h;
+        let mut rgba = vec![0u8; w * h * 4];
+
+        let y_plane = &self.data[..y_plane_size];
+        let uv_plane = &self.data[y_plane_size..];
+
+        for row in 0..h {
+            for col in 0..w {
+                let y_idx = row * w + col;
+                let uv_idx = (row / 2) * w + (col & !1); // UV row is half height, pairs at even col
+
+                let y_raw = y_plane[y_idx] as f32;
+                let cb_raw = uv_plane[uv_idx] as f32;
+                let cr_raw = uv_plane[uv_idx + 1] as f32;
+
+                // BT.709 limited range
+                let y = (y_raw - 16.0) * (255.0 / 219.0);
+                let cb = (cb_raw - 128.0) * (255.0 / 224.0);
+                let cr = (cr_raw - 128.0) * (255.0 / 224.0);
+
+                let r = (y + 1.5748 * cr).clamp(0.0, 255.0) as u8;
+                let g = (y - 0.1873 * cb - 0.4681 * cr).clamp(0.0, 255.0) as u8;
+                let b = (y + 1.8556 * cb).clamp(0.0, 255.0) as u8;
+
+                let out_idx = y_idx * 4;
+                rgba[out_idx] = r;
+                rgba[out_idx + 1] = g;
+                rgba[out_idx + 2] = b;
+                rgba[out_idx + 3] = 255;
+            }
+        }
+
+        DecodedFrame {
+            frame_number: self.frame_number,
+            timestamp_ms: self.timestamp_ms,
+            data: rgba,
+            width: self.width,
+            height: self.height,
+            format: PixelFormat::Rgba,
         }
     }
 }

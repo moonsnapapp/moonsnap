@@ -415,6 +415,7 @@ fn decode_frame_ffmpeg(
         data: output.stdout,
         width,
         height,
+        format: super::types::PixelFormat::Rgba,
     })
 }
 

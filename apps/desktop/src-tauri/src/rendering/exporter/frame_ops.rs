@@ -3,7 +3,7 @@
 //! Includes scaling, blending, cropping, and cursor drawing.
 
 use super::super::cursor::VideoContentBounds;
-use super::super::types::DecodedFrame;
+use super::super::types::{DecodedFrame, PixelFormat};
 use crate::commands::video_recording::video_project::SceneMode;
 
 /// Extract a cropped region from RGBA frame data.
@@ -110,6 +110,7 @@ pub fn crop_decoded_frame(
         data: cropped_data,
         width: crop_width,
         height: crop_height,
+        format: PixelFormat::Rgba,
     }
 }
 
@@ -175,6 +176,7 @@ pub fn scale_frame_to_fill(frame: &DecodedFrame, target_w: u32, target_h: u32) -
         data: output,
         width: target_w,
         height: target_h,
+        format: PixelFormat::Rgba,
     }
 }
 

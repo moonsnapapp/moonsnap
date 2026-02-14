@@ -273,6 +273,11 @@ impl Renderer {
     ///
     /// Pairs with `submit_readback()`. The staging buffer is unmapped after
     /// reading, ready for the next `submit_readback()` call.
+    ///
+    /// Uses non-blocking poll first: `device.poll(Wait)` blocks until ALL
+    /// in-flight submissions complete, including newer work unrelated to this
+    /// buffer. With triple-buffered staging the target buffer's fence is
+    /// already signaled, so `poll(Poll)` resolves it instantly.
     pub async fn complete_readback(
         &self,
         staging_buffer: &wgpu::Buffer,
@@ -283,12 +288,24 @@ impl Renderer {
         let padded_bytes_per_row = (bytes_per_row + 255) & !255;
 
         let buffer_slice = staging_buffer.slice(..);
-        let (tx, rx) = tokio::sync::oneshot::channel();
+        let (tx, mut rx) = tokio::sync::oneshot::channel();
         buffer_slice.map_async(wgpu::MapMode::Read, move |result| {
             let _ = tx.send(result);
         });
-        let _ = self.device.poll(wgpu::PollType::Wait);
-        let _ = rx.await;
+        // Non-blocking poll: process already-completed fences without waiting
+        // for newer in-flight submissions. Falls back to blocking if needed.
+        let _ = self.device.poll(wgpu::PollType::Poll);
+        match rx.try_recv() {
+            Ok(_) => {},
+            Err(tokio::sync::oneshot::error::TryRecvError::Empty) => {
+                // Buffer not ready yet (pipeline not fully primed) — block
+                let _ = self.device.poll(wgpu::PollType::Wait);
+                let _ = rx.await;
+            },
+            Err(tokio::sync::oneshot::error::TryRecvError::Closed) => {
+                let _ = self.device.poll(wgpu::PollType::Wait);
+            },
+        }
 
         let data = buffer_slice.get_mapped_range();
 
