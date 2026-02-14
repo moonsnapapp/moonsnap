@@ -230,6 +230,7 @@ const SceneModeRenderer = memo(function SceneModeRenderer({
             videoElement={videoRef.current}
             videoWidth={videoWidth}
             videoHeight={videoHeight}
+            cropConfig={cropConfig}
           />
         )}
 

@@ -1,5 +1,5 @@
 import { memo, useCallback, useState, useRef, useEffect } from 'react';
-import type { MaskSegment, MaskType } from '../../types';
+import type { MaskSegment, MaskType, CropConfig } from '../../types';
 import { useVideoEditorStore } from '../../stores/videoEditorStore';
 
 interface MaskOverlayProps {
@@ -14,6 +14,8 @@ interface MaskOverlayProps {
   videoHeight: number;
   /** Zoom transform style - masks follow the video zoom */
   zoomStyle?: React.CSSProperties;
+  /** Crop configuration for crop-aware pixelation sampling */
+  cropConfig?: CropConfig;
 }
 
 interface MaskItemProps {
@@ -26,6 +28,7 @@ interface MaskItemProps {
   videoHeight: number;
   onSelect: (id: string) => void;
   onUpdate: (id: string, updates: Partial<MaskSegment>) => void;
+  cropConfig?: CropConfig;
 }
 
 /**
@@ -76,6 +79,51 @@ const getMaskStyle = (maskType: MaskType, intensity: number): React.CSSPropertie
 };
 
 /**
+ * Compute the visible video region in source pixels based on CSS object-fit:cover + object-position.
+ * Replicates what the browser shows so pixelated content matches the visible video.
+ */
+function computeVisibleVideoRegion(
+  videoWidth: number,
+  videoHeight: number,
+  cropConfig?: CropConfig,
+): { x: number; y: number; width: number; height: number } {
+  if (!cropConfig?.enabled || cropConfig.width <= 0 || cropConfig.height <= 0) {
+    return { x: 0, y: 0, width: videoWidth, height: videoHeight };
+  }
+
+  const cropAspect = cropConfig.width / cropConfig.height;
+  const videoAspect = videoWidth / videoHeight;
+
+  let visibleX: number;
+  let visibleY: number;
+  let visibleW: number;
+  let visibleH: number;
+
+  if (videoAspect > cropAspect) {
+    // Video wider than crop → scaled by height, horizontal clipping
+    visibleH = videoHeight;
+    visibleW = videoHeight * cropAspect;
+    const overflowX = videoWidth - visibleW;
+    // Replicate object-position calculation from GPUVideoPreview
+    const overflowXCrop = videoWidth - cropConfig.width;
+    const posXFraction = overflowXCrop > 0 ? cropConfig.x / overflowXCrop : 0.5;
+    visibleX = overflowX * posXFraction;
+    visibleY = 0;
+  } else {
+    // Video taller than crop → scaled by width, vertical clipping
+    visibleW = videoWidth;
+    visibleH = videoWidth / cropAspect;
+    const overflowY = videoHeight - visibleH;
+    const overflowYCrop = videoHeight - cropConfig.height;
+    const posYFraction = overflowYCrop > 0 ? cropConfig.y / overflowYCrop : 0.5;
+    visibleX = 0;
+    visibleY = overflowY * posYFraction;
+  }
+
+  return { x: visibleX, y: visibleY, width: visibleW, height: visibleH };
+}
+
+/**
  * Canvas-based pixelation component that samples from video
  */
 const PixelateCanvas = memo(function PixelateCanvas({
@@ -90,6 +138,7 @@ const PixelateCanvas = memo(function PixelateCanvas({
   previewHeight,
   intensity,
   feather,
+  cropConfig,
 }: {
   videoElement: HTMLVideoElement | null;
   videoWidth: number;
@@ -102,6 +151,7 @@ const PixelateCanvas = memo(function PixelateCanvas({
   previewHeight: number;
   intensity: number;
   feather: number;
+  cropConfig?: CropConfig;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -112,11 +162,12 @@ const PixelateCanvas = memo(function PixelateCanvas({
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    // Calculate source region in video coordinates
-    const srcX = Math.round(segmentX * videoWidth);
-    const srcY = Math.round(segmentY * videoHeight);
-    const srcW = Math.round(segmentWidth * videoWidth);
-    const srcH = Math.round(segmentHeight * videoHeight);
+    // Calculate source region in video coordinates, accounting for CSS crop
+    const visible = computeVisibleVideoRegion(videoWidth, videoHeight, cropConfig);
+    const srcX = Math.round(visible.x + segmentX * visible.width);
+    const srcY = Math.round(visible.y + segmentY * visible.height);
+    const srcW = Math.round(segmentWidth * visible.width);
+    const srcH = Math.round(segmentHeight * visible.height);
 
     if (srcW <= 0 || srcH <= 0) return;
 
@@ -151,7 +202,7 @@ const PixelateCanvas = memo(function PixelateCanvas({
       0, 0, smallW, smallH,      // Source (small)
       0, 0, displayW, displayH   // Destination (full size)
     );
-  }, [videoElement, videoWidth, videoHeight, segmentX, segmentY, segmentWidth, segmentHeight, previewWidth, previewHeight, intensity]);
+  }, [videoElement, videoWidth, videoHeight, segmentX, segmentY, segmentWidth, segmentHeight, previewWidth, previewHeight, intensity, cropConfig]);
 
   // Continuously update canvas when video plays
   useEffect(() => {
@@ -172,11 +223,12 @@ const PixelateCanvas = memo(function PixelateCanvas({
         return;
       }
 
-      // Calculate source region in video coordinates
-      const srcX = Math.round(segmentX * videoWidth);
-      const srcY = Math.round(segmentY * videoHeight);
-      const srcW = Math.round(segmentWidth * videoWidth);
-      const srcH = Math.round(segmentHeight * videoHeight);
+      // Calculate source region in video coordinates, accounting for CSS crop
+      const visible = computeVisibleVideoRegion(videoWidth, videoHeight, cropConfig);
+      const srcX = Math.round(visible.x + segmentX * visible.width);
+      const srcY = Math.round(visible.y + segmentY * visible.height);
+      const srcW = Math.round(segmentWidth * visible.width);
+      const srcH = Math.round(segmentHeight * visible.height);
 
       if (srcW <= 0 || srcH <= 0) {
         animationId = requestAnimationFrame(updateCanvas);
@@ -211,7 +263,7 @@ const PixelateCanvas = memo(function PixelateCanvas({
 
     animationId = requestAnimationFrame(updateCanvas);
     return () => cancelAnimationFrame(animationId);
-  }, [videoElement, videoWidth, videoHeight, segmentX, segmentY, segmentWidth, segmentHeight, intensity]);
+  }, [videoElement, videoWidth, videoHeight, segmentX, segmentY, segmentWidth, segmentHeight, intensity, cropConfig]);
 
   // Calculate display dimensions for feather
   const displayW = Math.round(segmentWidth * previewWidth);
@@ -243,6 +295,7 @@ const MaskItem = memo(function MaskItem({
   videoHeight,
   onSelect,
   onUpdate,
+  cropConfig,
 }: MaskItemProps) {
   const [isDragging, setIsDragging] = useState(false);
   const [dragType, setDragType] = useState<'move' | 'resize-tl' | 'resize-tr' | 'resize-bl' | 'resize-br' | null>(null);
@@ -382,6 +435,7 @@ const MaskItem = memo(function MaskItem({
             previewHeight={previewHeight}
             intensity={segment.intensity}
             feather={segment.feather}
+            cropConfig={cropConfig}
           />
         )}
       </div>
@@ -448,6 +502,7 @@ export const MaskOverlay = memo(function MaskOverlay({
   videoWidth,
   videoHeight,
   zoomStyle,
+  cropConfig,
 }: MaskOverlayProps) {
   const selectedMaskSegmentId = useVideoEditorStore((s) => s.selectedMaskSegmentId);
   const selectMaskSegment = useVideoEditorStore((s) => s.selectMaskSegment);
@@ -485,6 +540,7 @@ export const MaskOverlay = memo(function MaskOverlay({
             videoHeight={videoHeight}
             onSelect={selectMaskSegment}
             onUpdate={updateMaskSegment}
+            cropConfig={cropConfig}
           />
         </div>
       ))}
