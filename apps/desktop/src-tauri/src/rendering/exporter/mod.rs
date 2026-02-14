@@ -39,7 +39,7 @@ pub fn request_cancel_export() {
 use super::caption_layer::prepare_captions;
 use super::compositor::Compositor;
 use super::cursor::{composite_cursor, CursorInterpolator, VideoContentBounds};
-use super::prerendered_text::composite_prerendered_texts;
+use super::prerendered_text::{composite_prerendered_texts, TextCompositeInfo};
 use super::renderer::Renderer;
 use super::scene::SceneInterpolator;
 use super::stream_decoder::StreamDecoder;
@@ -62,6 +62,138 @@ pub use webcam::{build_webcam_overlay, is_webcam_visible_at};
 
 use ffmpeg::start_ffmpeg_encoder;
 use frame_ops::{blend_frames_alpha, crop_decoded_frame, scale_frame_to_fill};
+
+/// Constant context for CPU frame compositing, shared across all export frames.
+struct CpuCompositeCtx<'a> {
+    composition_w: u32,
+    composition_h: u32,
+    crop_enabled: bool,
+    crop_x: u32,
+    crop_y: u32,
+    crop_width: u32,
+    crop_height: u32,
+    original_width: u32,
+    original_height: u32,
+    video_content_bounds: VideoContentBounds,
+    cursor_type: CursorType,
+    cursor_scale: f32,
+    cursor_interpolator: Option<&'a CursorInterpolator>,
+}
+
+/// Per-frame state for deferred CPU compositing (double-buffer pipeline).
+struct PendingCpuWork {
+    rgba_data: Vec<u8>,
+    prerendered_texts: Vec<TextCompositeInfo>,
+    camera_only_opacity: f64,
+    source_time_ms: u64,
+    output_frame_idx: u32,
+}
+
+/// Apply CPU-based compositing (cursor + pre-rendered text overlays) to a pending frame.
+///
+/// Extracted from the render loop to enable double-buffered pipeline overlap:
+/// GPU renders frame N+1 while CPU processes frame N.
+fn apply_cpu_compositing(pending: &mut PendingCpuWork, ctx: &CpuCompositeCtx) {
+    // Composite pre-rendered text overlays (CPU-based, WYSIWYG matching CSS preview)
+    if !pending.prerendered_texts.is_empty() {
+        composite_prerendered_texts(
+            &mut pending.rgba_data,
+            ctx.composition_w,
+            ctx.composition_h,
+            &pending.prerendered_texts,
+        );
+    }
+
+    // Composite cursor onto frame (CPU-based) if cursor is visible and not in cameraOnly mode
+    if let Some(cursor_interp) = ctx.cursor_interpolator {
+        if pending.camera_only_opacity < 0.99 {
+            let mut cursor = cursor_interp.get_cursor_at(pending.source_time_ms);
+
+            // Transform cursor position for crop
+            let mut cursor_visible = true;
+            if ctx.crop_enabled {
+                let orig_w = ctx.original_width as f32;
+                let orig_h = ctx.original_height as f32;
+                let crop_x = ctx.crop_x as f32;
+                let crop_y = ctx.crop_y as f32;
+                let crop_w = ctx.crop_width as f32;
+                let crop_h = ctx.crop_height as f32;
+
+                let cursor_px_x = cursor.x * orig_w;
+                let cursor_px_y = cursor.y * orig_h;
+                cursor.x = (cursor_px_x - crop_x) / crop_w;
+                cursor.y = (cursor_px_y - crop_y) / crop_h;
+
+                if cursor.x < -0.1 || cursor.x > 1.1 || cursor.y < -0.1 || cursor.y > 1.1 {
+                    cursor_visible = false;
+                }
+            }
+
+            if cursor_visible {
+                if ctx.cursor_type == CursorType::Circle {
+                    draw_cursor_circle(
+                        &mut pending.rgba_data,
+                        ctx.composition_w,
+                        ctx.composition_h,
+                        &ctx.video_content_bounds,
+                        cursor.x,
+                        cursor.y,
+                        ctx.cursor_scale,
+                    );
+                } else {
+                    let mut rendered = false;
+
+                    let base_cursor_height = 24.0;
+                    let reference_height = 720.0;
+                    let size_scale = ctx.composition_h as f32 / reference_height;
+                    let final_cursor_height =
+                        (base_cursor_height * size_scale * ctx.cursor_scale).clamp(16.0, 256.0);
+
+                    if let Some(shape) = cursor.cursor_shape {
+                        let target_height = final_cursor_height.round() as u32;
+
+                        if let Some(svg_cursor) = get_svg_cursor(shape, target_height) {
+                            let svg_decoded = super::cursor::DecodedCursorImage {
+                                width: svg_cursor.width,
+                                height: svg_cursor.height,
+                                hotspot_x: svg_cursor.hotspot_x,
+                                hotspot_y: svg_cursor.hotspot_y,
+                                data: svg_cursor.data,
+                            };
+                            composite_cursor(
+                                &mut pending.rgba_data,
+                                ctx.composition_w,
+                                ctx.composition_h,
+                                &ctx.video_content_bounds,
+                                &cursor,
+                                &svg_decoded,
+                                1.0,
+                            );
+                            rendered = true;
+                        }
+                    }
+
+                    if !rendered {
+                        if let Some(ref cursor_id) = cursor.cursor_id {
+                            if let Some(cursor_image) = cursor_interp.get_cursor_image(cursor_id) {
+                                let bitmap_scale = final_cursor_height / cursor_image.height as f32;
+                                composite_cursor(
+                                    &mut pending.rgba_data,
+                                    ctx.composition_w,
+                                    ctx.composition_h,
+                                    &ctx.video_content_bounds,
+                                    &cursor,
+                                    cursor_image,
+                                    bitmap_scale,
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
 
 /// Export a video project using GPU rendering.
 ///
@@ -405,8 +537,40 @@ pub async fn export_video_gpu(
 
     emit_progress(&app, 0.08, ExportStage::Encoding, "Rendering frames...");
 
+    // Pre-allocate GPU resources reused across all frames (avoids per-frame allocation)
+    // Video texture: initialized with dummy data, updated each frame via write_texture
+    let video_texture = renderer.create_texture_from_rgba(
+        &vec![0u8; (video_w * video_h * 4) as usize],
+        video_w,
+        video_h,
+        "Export Video Frame (reusable)",
+    );
+    let output_texture = renderer.create_output_texture(composition_w, composition_h);
+    let staging_buffer = renderer.create_staging_buffer(composition_w, composition_h);
+
+    // Build constant context for CPU compositing (shared across all frames)
+    let cpu_ctx = CpuCompositeCtx {
+        composition_w,
+        composition_h,
+        crop_enabled,
+        crop_x: crop.x,
+        crop_y: crop.y,
+        crop_width: crop.width,
+        crop_height: crop.height,
+        original_width,
+        original_height,
+        video_content_bounds,
+        cursor_type: project.cursor.cursor_type,
+        cursor_scale: project.cursor.scale,
+        cursor_interpolator: cursor_interpolator.as_ref(),
+    };
+
     // Track output frames separately from decoded frames
     let mut output_frame_count = 0u32;
+
+    // Double-buffer pipeline: GPU renders frame N while CPU processes frame N-1.
+    // `pending` holds the previous frame's readback data awaiting CPU compositing.
+    let mut pending: Option<PendingCpuWork> = None;
 
     // Render frames from decode pipeline, send to encode pipeline
     while let Some(bundle) = decode_rx.recv().await {
@@ -552,14 +716,11 @@ pub async fn export_video_gpu(
             }
         } else {
             // Not in cameraOnly transition - normal rendering
-            match interpolated_scene.scene_mode {
-                SceneMode::ScreenOnly => {
-                    // Screen only - no webcam overlay
-                    (screen_frame.clone(), None)
-                },
+            // Build webcam overlay first (borrows current_webcam_frame), then consume screen_frame
+            let overlay = match interpolated_scene.scene_mode {
+                SceneMode::ScreenOnly => None,
                 _ => {
-                    // Default mode - screen with webcam overlay (if visible)
-                    let overlay = if webcam_visible && regular_camera_opacity > 0.01 {
+                    if webcam_visible && regular_camera_opacity > 0.01 {
                         current_webcam_frame.as_ref().map(|frame| {
                             build_webcam_overlay(
                                 &project,
@@ -570,10 +731,11 @@ pub async fn export_video_gpu(
                         })
                     } else {
                         None
-                    };
-                    (screen_frame.clone(), overlay)
+                    }
                 },
-            }
+            };
+            // Consume screen_frame by value — avoids ~8MB clone on the common path
+            (screen_frame, overlay)
         };
 
         // Convert background config to rendering style
@@ -631,172 +793,79 @@ pub async fn export_video_gpu(
             )
         };
 
-        // GPU composite: base frame (background, video, webcam) + captions (glyphon)
-        let output_texture = compositor
-            .composite_with_text(
+        // === GPU submit phase (non-blocking) ===
+        // Composite: base frame (background, video, webcam) + captions (glyphon)
+        compositor
+            .composite_with_text_into(
                 &renderer,
+                &video_texture,
                 &frame_to_render,
+                &output_texture,
                 &render_options,
                 relative_time_ms as f32,
                 &prepared_captions,
             )
             .await;
 
-        // Read rendered frame back to CPU (at composition size, before crop)
-        let mut rgba_data = renderer
-            .read_texture(&output_texture, composition_w, composition_h)
-            .await;
+        // Submit readback copy command (non-blocking — GPU will execute asynchronously)
+        renderer.submit_readback(
+            &output_texture,
+            &staging_buffer,
+            composition_w,
+            composition_h,
+        );
 
-        // Composite pre-rendered text overlays (CPU-based, WYSIWYG matching CSS preview)
-        if !prerendered_texts.is_empty() {
-            composite_prerendered_texts(
-                &mut rgba_data,
-                composition_w,
-                composition_h,
-                &prerendered_texts,
-            );
-        }
+        // === CPU phase: process PREVIOUS frame while GPU works on current ===
+        // This overlaps GPU render+copy of frame N with CPU compositing of frame N-1.
+        if let Some(mut prev) = pending.take() {
+            apply_cpu_compositing(&mut prev, &cpu_ctx);
 
-        // Composite cursor onto frame (CPU-based) if cursor is visible and not in cameraOnly mode
-        if let Some(ref cursor_interp) = cursor_interpolator {
-            // Only show cursor when screen is visible (not in cameraOnly mode)
-            if camera_only_opacity < 0.99 {
-                // Use SOURCE time for cursor lookup (cursor data is recorded in source time)
-                let mut cursor = cursor_interp.get_cursor_at(source_time_ms);
+            if encode_tx.send(prev.rgba_data).await.is_err() {
+                log::error!("[EXPORT] Encode channel closed unexpectedly");
+                break;
+            }
 
-                // Transform cursor position for crop
-                // Cursor coordinates are normalized 0-1 relative to original video
-                // If crop is enabled, transform to cropped region coordinates
-                let mut cursor_visible = true;
-                if crop_enabled {
-                    let orig_w = original_width as f32;
-                    let orig_h = original_height as f32;
-                    let crop_x = crop.x as f32;
-                    let crop_y = crop.y as f32;
-                    let crop_w = crop.width as f32;
-                    let crop_h = crop.height as f32;
-
-                    // Convert cursor from original coords to crop-relative coords
-                    let cursor_px_x = cursor.x * orig_w;
-                    let cursor_px_y = cursor.y * orig_h;
-                    cursor.x = (cursor_px_x - crop_x) / crop_w;
-                    cursor.y = (cursor_px_y - crop_y) / crop_h;
-
-                    // Skip if cursor is outside cropped region
-                    if cursor.x < -0.1 || cursor.x > 1.1 || cursor.y < -0.1 || cursor.y > 1.1 {
-                        cursor_visible = false;
-                    }
-                }
-
-                if cursor_visible {
-                    // Calculate video content bounds within composition
-                    // Cursor coordinates are now relative to cropped video content
-                    // Get cursor image based on cursor type
-                    if project.cursor.cursor_type == CursorType::Circle {
-                        // Draw circle indicator instead of actual cursor
-                        draw_cursor_circle(
-                            &mut rgba_data,
-                            composition_w,
-                            composition_h,
-                            &video_content_bounds,
-                            cursor.x,
-                            cursor.y,
-                            project.cursor.scale,
-                        );
-                    } else {
-                        // Priority: SVG cursor (if shape detected) > Bitmap cursor (fallback)
-                        // This matches Cap's approach for consistent, resolution-independent cursors.
-                        let mut rendered = false;
-
-                        // Calculate cursor scale relative to composition size
-                        // Base cursor is 24px (same as editor DEFAULT_CURSOR_SIZE)
-                        // Scale relative to 720p reference so cursor looks proportional
-                        let base_cursor_height = 24.0;
-                        let reference_height = 720.0;
-                        let size_scale = composition_h as f32 / reference_height;
-                        let final_cursor_height =
-                            base_cursor_height * size_scale * project.cursor.scale;
-                        let final_cursor_height = final_cursor_height.clamp(16.0, 256.0);
-
-                        // Try SVG cursor first (if shape is detected)
-                        if let Some(shape) = cursor.cursor_shape {
-                            // Render SVG at final cursor height (handles any original SVG size)
-                            let target_height = final_cursor_height.round() as u32;
-
-                            if let Some(svg_cursor) = get_svg_cursor(shape, target_height) {
-                                let svg_decoded = super::cursor::DecodedCursorImage {
-                                    width: svg_cursor.width,
-                                    height: svg_cursor.height,
-                                    hotspot_x: svg_cursor.hotspot_x,
-                                    hotspot_y: svg_cursor.hotspot_y,
-                                    data: svg_cursor.data,
-                                };
-                                // Pass 1.0 as base_scale since SVG is already at final size
-                                // cursor.scale (click animation) is applied internally
-                                composite_cursor(
-                                    &mut rgba_data,
-                                    composition_w,
-                                    composition_h,
-                                    &video_content_bounds,
-                                    &cursor,
-                                    &svg_decoded,
-                                    1.0,
-                                );
-                                rendered = true;
-                            }
-                        }
-
-                        // Fall back to bitmap cursor if SVG not available
-                        if !rendered {
-                            if let Some(ref cursor_id) = cursor.cursor_id {
-                                if let Some(cursor_image) =
-                                    cursor_interp.get_cursor_image(cursor_id)
-                                {
-                                    // For bitmap, apply the full scale factor
-                                    let bitmap_scale =
-                                        final_cursor_height / cursor_image.height as f32;
-                                    composite_cursor(
-                                        &mut rgba_data,
-                                        composition_w,
-                                        composition_h,
-                                        &video_content_bounds,
-                                        &cursor,
-                                        cursor_image,
-                                        bitmap_scale,
-                                    );
-                                }
-                            }
-                        }
-                    }
-                }
+            // Progress update (every 10 frames, based on frames sent to encoder)
+            let sent_count = prev.output_frame_idx + 1;
+            if sent_count.is_multiple_of(10) {
+                let progress = sent_count as f32 / total_output_frames as f32;
+                let stage_progress = 0.08 + progress * 0.87;
+                emit_progress(
+                    &app,
+                    stage_progress,
+                    ExportStage::Encoding,
+                    &format!("Rendering: {:.0}%", progress * 100.0),
+                );
             }
         }
 
-        // Send to encode pipeline (async, with backpressure)
-        // Note: Video crop is now applied to input frames, not extracted from output
-        if encode_tx.send(rgba_data).await.is_err() {
-            log::error!("[EXPORT] Encode channel closed unexpectedly");
-            break;
-        }
+        // === GPU wait phase: complete readback for current frame ===
+        let rgba_data = renderer
+            .complete_readback(&staging_buffer, composition_w, composition_h)
+            .await;
 
-        // Increment output frame counter
+        // Store current frame as pending (will be CPU-processed next iteration)
+        pending = Some(PendingCpuWork {
+            rgba_data,
+            prerendered_texts,
+            camera_only_opacity,
+            source_time_ms,
+            output_frame_idx: output_frame_count,
+        });
+
         output_frame_count += 1;
 
-        // Progress update (every 10 frames)
-        if output_frame_count.is_multiple_of(10) {
-            let progress = output_frame_count as f32 / total_output_frames as f32;
-            let stage_progress = 0.08 + progress * 0.87;
-            emit_progress(
-                &app,
-                stage_progress,
-                ExportStage::Encoding,
-                &format!("Rendering: {:.0}%", progress * 100.0),
-            );
-        }
-
-        // Check if we've output enough frames
+        // Check if we've read back enough frames
         if output_frame_count >= total_output_frames {
             break;
+        }
+    }
+
+    // Process and send the last pending frame
+    if let Some(mut last) = pending.take() {
+        if !cancel_flag().load(Ordering::Relaxed) {
+            apply_cpu_compositing(&mut last, &cpu_ctx);
+            let _ = encode_tx.send(last.rgba_data).await;
         }
     }
 

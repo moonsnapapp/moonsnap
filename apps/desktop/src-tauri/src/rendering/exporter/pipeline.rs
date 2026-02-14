@@ -101,7 +101,8 @@ pub fn spawn_decode_task(
 /// Spawns an encode task that writes rendered frames to FFmpeg.
 ///
 /// The task reads RGBA frames from the channel and writes them to FFmpeg's
-/// stdin. Backpressure is automatic via the bounded channel.
+/// stdin. Uses `spawn_blocking` since the entire loop is blocking I/O
+/// (`stdin.write_all`), which would otherwise stall the tokio runtime.
 ///
 /// Returns the sender and task handle for cleanup.
 pub fn spawn_encode_task(
@@ -109,11 +110,10 @@ pub fn spawn_encode_task(
 ) -> (mpsc::Sender<Vec<u8>>, JoinHandle<Result<(), String>>) {
     let (tx, mut rx) = mpsc::channel::<Vec<u8>>(PIPELINE_BUFFER_SIZE);
 
-    let handle = tokio::spawn(async move {
+    let handle = tokio::task::spawn_blocking(move || {
         let mut frame_count = 0u32;
 
-        while let Some(rgba_data) = rx.recv().await {
-            // Write to FFmpeg (blocking but in async context)
+        while let Some(rgba_data) = rx.blocking_recv() {
             if let Err(e) = stdin.write_all(&rgba_data) {
                 log::error!("[PIPELINE] Encode write error: {}", e);
                 return Err(format!("FFmpeg write failed: {}", e));

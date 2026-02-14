@@ -188,7 +188,7 @@ rstest = "0.18"       # Test fixtures and parameterized tests
 
 [profile.release]
 lto = true
-opt-level = "s"
+opt-level = 3
 codegen-units = 1
 panic = "abort" # Higher performance by disabling panic handlers.
 strip = true

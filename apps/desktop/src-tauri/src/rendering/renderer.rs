@@ -135,19 +135,35 @@ impl Renderer {
         })
     }
 
-    /// Read texture data back to CPU.
-    pub async fn read_texture(&self, texture: &wgpu::Texture, width: u32, height: u32) -> Vec<u8> {
+    /// Create a reusable staging buffer for GPU readback.
+    ///
+    /// Call once before the export loop. Pass to `read_texture_into()` each frame
+    /// to avoid per-frame buffer allocation.
+    pub fn create_staging_buffer(&self, width: u32, height: u32) -> wgpu::Buffer {
         let bytes_per_row = 4 * width;
-        // wgpu requires alignment to 256 bytes
         let padded_bytes_per_row = (bytes_per_row + 255) & !255;
         let buffer_size = (padded_bytes_per_row * height) as u64;
 
-        let buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("Texture Read Buffer"),
+        self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Reusable Staging Buffer"),
             size: buffer_size,
             usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
             mapped_at_creation: false,
-        });
+        })
+    }
+
+    /// Read texture data back to CPU using a pre-allocated staging buffer.
+    ///
+    /// The staging buffer is unmapped after reading, ready for the next frame.
+    pub async fn read_texture_into(
+        &self,
+        texture: &wgpu::Texture,
+        staging_buffer: &wgpu::Buffer,
+        width: u32,
+        height: u32,
+    ) -> Vec<u8> {
+        let bytes_per_row = 4 * width;
+        let padded_bytes_per_row = (bytes_per_row + 255) & !255;
 
         let mut encoder = self
             .device
@@ -163,7 +179,7 @@ impl Renderer {
                 aspect: wgpu::TextureAspect::All,
             },
             wgpu::TexelCopyBufferInfo {
-                buffer: &buffer,
+                buffer: staging_buffer,
                 layout: wgpu::TexelCopyBufferLayout {
                     offset: 0,
                     bytes_per_row: Some(padded_bytes_per_row),
@@ -179,7 +195,7 @@ impl Renderer {
 
         self.queue.submit(Some(encoder.finish()));
 
-        let buffer_slice = buffer.slice(..);
+        let buffer_slice = staging_buffer.slice(..);
         let (tx, rx) = tokio::sync::oneshot::channel();
         buffer_slice.map_async(wgpu::MapMode::Read, move |result| {
             let _ = tx.send(result);
@@ -189,8 +205,7 @@ impl Renderer {
 
         let data = buffer_slice.get_mapped_range();
 
-        // Remove padding if present
-        if padded_bytes_per_row != bytes_per_row {
+        let result = if padded_bytes_per_row != bytes_per_row {
             let mut result = Vec::with_capacity((bytes_per_row * height) as usize);
             for row in 0..height {
                 let start = (row * padded_bytes_per_row) as usize;
@@ -200,7 +215,142 @@ impl Renderer {
             result
         } else {
             data.to_vec()
-        }
+        };
+
+        // Drop mapped range view before unmapping (required by wgpu)
+        drop(data);
+        staging_buffer.unmap();
+
+        result
+    }
+
+    /// Submit a texture-to-buffer copy command (non-blocking).
+    ///
+    /// The staging buffer must be unmapped. Call `complete_readback()` later
+    /// to wait for the GPU and read the data. This split allows CPU work to
+    /// overlap with GPU execution.
+    pub fn submit_readback(
+        &self,
+        texture: &wgpu::Texture,
+        staging_buffer: &wgpu::Buffer,
+        width: u32,
+        height: u32,
+    ) {
+        let padded_bytes_per_row = (4 * width + 255) & !255;
+
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("Readback Copy Encoder"),
+            });
+
+        encoder.copy_texture_to_buffer(
+            wgpu::TexelCopyTextureInfo {
+                texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            wgpu::TexelCopyBufferInfo {
+                buffer: staging_buffer,
+                layout: wgpu::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(padded_bytes_per_row),
+                    rows_per_image: Some(height),
+                },
+            },
+            wgpu::Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            },
+        );
+
+        self.queue.submit(Some(encoder.finish()));
+    }
+
+    /// Wait for a previously submitted readback and read the pixel data.
+    ///
+    /// Pairs with `submit_readback()`. The staging buffer is unmapped after
+    /// reading, ready for the next `submit_readback()` call.
+    pub async fn complete_readback(
+        &self,
+        staging_buffer: &wgpu::Buffer,
+        width: u32,
+        height: u32,
+    ) -> Vec<u8> {
+        let bytes_per_row = 4 * width;
+        let padded_bytes_per_row = (bytes_per_row + 255) & !255;
+
+        let buffer_slice = staging_buffer.slice(..);
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        buffer_slice.map_async(wgpu::MapMode::Read, move |result| {
+            let _ = tx.send(result);
+        });
+        let _ = self.device.poll(wgpu::PollType::Wait);
+        let _ = rx.await;
+
+        let data = buffer_slice.get_mapped_range();
+
+        let result = if padded_bytes_per_row != bytes_per_row {
+            let mut result = Vec::with_capacity((bytes_per_row * height) as usize);
+            for row in 0..height {
+                let start = (row * padded_bytes_per_row) as usize;
+                let end = start + bytes_per_row as usize;
+                result.extend_from_slice(&data[start..end]);
+            }
+            result
+        } else {
+            data.to_vec()
+        };
+
+        drop(data);
+        staging_buffer.unmap();
+
+        result
+    }
+
+    /// Read texture data back to CPU (allocates a new buffer each call).
+    ///
+    /// Prefer `read_texture_into()` with a pre-allocated staging buffer for
+    /// repeated reads at the same dimensions (e.g. export loops).
+    pub async fn read_texture(&self, texture: &wgpu::Texture, width: u32, height: u32) -> Vec<u8> {
+        let staging = self.create_staging_buffer(width, height);
+        self.read_texture_into(texture, &staging, width, height)
+            .await
+    }
+
+    /// Update an existing texture with new RGBA data (avoids re-allocation).
+    ///
+    /// The texture must have been created with the same dimensions and
+    /// `COPY_DST` usage. Dimensions are constant during export, so this
+    /// is a simple `queue.write_texture` on the existing allocation.
+    pub fn update_texture_data(
+        &self,
+        texture: &wgpu::Texture,
+        data: &[u8],
+        width: u32,
+        height: u32,
+    ) {
+        self.queue.write_texture(
+            wgpu::TexelCopyTextureInfo {
+                texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            data,
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(4 * width),
+                rows_per_image: Some(height),
+            },
+            wgpu::Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            },
+        );
     }
 
     /// Compile a shader module.
