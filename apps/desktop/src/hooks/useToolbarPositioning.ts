@@ -5,7 +5,7 @@
  * and the content element for width. Uses ResizeObserver to track changes.
  */
 
-import { useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
 import { toolbarLogger } from '@/utils/logger';
@@ -24,6 +24,42 @@ interface UseToolbarPositioningOptions {
 export function useToolbarPositioning({ containerRef, contentRef, selectionConfirmed, mode }: UseToolbarPositioningOptions): void {
   const windowShownRef = useRef(false);
   const lastSizeRef = useRef({ width: 0, height: 0 });
+
+  const measureTargetSize = useCallback(() => {
+    const container = containerRef.current;
+    const content = contentRef.current;
+    if (!container || !content) {
+      return null;
+    }
+
+    const contentRect = content.getBoundingClientRect();
+    const containerRect = container.getBoundingClientRect();
+    const titlebar = container.querySelector<HTMLElement>('.titlebar');
+    let titlebarWidth = 0;
+
+    if (titlebar) {
+      const titlebarLeft = titlebar.querySelector<HTMLElement>('.titlebar-left');
+      const titlebarControls = titlebar.querySelector<HTMLElement>('.titlebar-controls');
+      const titlebarStyle = window.getComputedStyle(titlebar);
+
+      const leftWidth = titlebarLeft?.getBoundingClientRect().width ?? 0;
+      const controlsWidth = titlebarControls?.getBoundingClientRect().width ?? 0;
+      const horizontalChrome =
+        (Number.parseFloat(titlebarStyle.paddingLeft) || 0) +
+        (Number.parseFloat(titlebarStyle.paddingRight) || 0) +
+        (Number.parseFloat(titlebarStyle.borderLeftWidth) || 0) +
+        (Number.parseFloat(titlebarStyle.borderRightWidth) || 0);
+
+      // Intrinsic titlebar width is just left content + controls + horizontal chrome.
+      // The center drag region is flex:1 and can collapse to zero.
+      titlebarWidth = leftWidth + controlsWidth + horizontalChrome;
+    }
+
+    return {
+      width: Math.max(contentRect.width, titlebarWidth),
+      height: containerRect.height,
+    };
+  }, [containerRef, contentRef]);
 
   // Measure content and resize window
   useEffect(() => {
@@ -59,26 +95,24 @@ export function useToolbarPositioning({ containerRef, contentRef, selectionConfi
       }
     };
 
-    // Initial measurement - use content width, container height (includes titlebar)
-    const contentRect = content.getBoundingClientRect();
-    const containerRect = container.getBoundingClientRect();
-    if (contentRect.width > 0 && containerRect.height > 0) {
-      resizeWindow(contentRect.width, containerRect.height);
+    // Initial measurement - width must fit both titlebar controls and toolbar content
+    const initialSize = measureTargetSize();
+    if (initialSize && initialSize.width > 0 && initialSize.height > 0) {
+      resizeWindow(initialSize.width, initialSize.height);
     }
 
     // Watch for size changes on both elements
     const observer = new ResizeObserver(() => {
-      const contentRect = content.getBoundingClientRect();
-      const containerRect = container.getBoundingClientRect();
-      if (contentRect.width > 0 && containerRect.height > 0) {
-        resizeWindow(contentRect.width, containerRect.height);
+      const measuredSize = measureTargetSize();
+      if (measuredSize && measuredSize.width > 0 && measuredSize.height > 0) {
+        resizeWindow(measuredSize.width, measuredSize.height);
       }
     });
 
     observer.observe(container);
     observer.observe(content);
     return () => observer.disconnect();
-  }, [containerRef, contentRef]);
+  }, [containerRef, contentRef, measureTargetSize]);
 
   // Force remeasure when selection state or mode changes (content swaps)
   useEffect(() => {
@@ -92,14 +126,13 @@ export function useToolbarPositioning({ containerRef, contentRef, selectionConfi
     // This ensures we measure the final size, not mid-transition values
     const timeoutId = setTimeout(() => {
       if (cancelled) return;
-      const contentRect = content.getBoundingClientRect();
-      const containerRect = container.getBoundingClientRect();
-      if (contentRect.width > 0 && containerRect.height > 0) {
+      const measuredSize = measureTargetSize();
+      if (measuredSize && measuredSize.width > 0 && measuredSize.height > 0) {
         // Reset last size to force update
         lastSizeRef.current = { width: 0, height: 0 };
         // Trigger resize
-        const windowWidth = Math.ceil(contentRect.width) + 1;
-        const windowHeight = Math.ceil(containerRect.height) + 1;
+        const windowWidth = Math.ceil(measuredSize.width) + 1;
+        const windowHeight = Math.ceil(measuredSize.height) + 1;
         invoke('resize_capture_toolbar', { width: windowWidth, height: windowHeight }).catch((e) => toolbarLogger.error('Failed to resize toolbar:', e));
       }
     }, 220);
@@ -108,5 +141,5 @@ export function useToolbarPositioning({ containerRef, contentRef, selectionConfi
       cancelled = true;
       clearTimeout(timeoutId);
     };
-  }, [selectionConfirmed, mode, containerRef, contentRef]);
+  }, [selectionConfirmed, mode, containerRef, contentRef, measureTargetSize]);
 }
