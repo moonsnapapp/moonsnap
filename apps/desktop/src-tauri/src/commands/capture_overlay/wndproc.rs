@@ -189,7 +189,8 @@ fn handle_mouse_move(state_ptr: *mut OverlayState, lparam: LPARAM) -> LRESULT {
                             state.cursor.clear_hovered(); // Clear window detection when dragging
                         }
                     } else {
-                        // Window detection mode - find window under cursor
+                        // Smart window detection for area mode.
+                        // Clicking a hovered window can use its bounds as an area selection.
                         let screen_x = state.monitor.x + x;
                         let screen_y = state.monitor.y + y;
                         state.cursor.hovered_window =
@@ -244,12 +245,9 @@ fn handle_mouse_up(state_ptr: *mut OverlayState) -> LRESULT {
                             // Region selection completed
                             handle_region_selection_complete(state);
                         } else if let Some(ref win) = state.cursor.hovered_window {
-                            // Window selection - pass hwnd for window capture (isize for 64-bit safety)
-                            let hwnd = win.hwnd.0 as isize;
-                            handle_window_selection(state, win.bounds, hwnd);
-                        } else {
-                            // Click on empty area - select the monitor under cursor
-                            handle_monitor_selection(state);
+                            // Area mode smart-select: adopt hovered window bounds as a region-sized area.
+                            // This keeps sourceType="area" and shows dimensions in the toolbar.
+                            handle_window_sized_area_selection(state, win.bounds);
                         }
                     }
                 },
@@ -284,6 +282,26 @@ fn handle_region_selection_complete(state: &mut OverlayState) {
     }
 
     state.drag.is_dragging = false;
+    let _ = render::render(state);
+}
+
+/// Handle smart area selection from a hovered window.
+/// Uses window bounds as the initial area size without switching to window capture mode.
+fn handle_window_sized_area_selection(state: &mut OverlayState, window_bounds: Rect) {
+    if state.capture_type == CaptureType::Screenshot {
+        // Area screenshot: capture selected rectangle immediately (region capture semantics).
+        state
+            .result
+            .confirm(window_bounds, OverlayAction::CaptureScreenshot);
+        state.should_close = true;
+    } else {
+        // Video/GIF area: enter normal (unlocked) adjustment mode with window-sized bounds.
+        let local_bounds = state.monitor.screen_rect_to_local(window_bounds);
+        state.enter_adjustment_mode(local_bounds);
+        emit_adjustment_ready(state, window_bounds);
+        show_toolbar(state, window_bounds, SourceType::Area);
+    }
+
     let _ = render::render(state);
 }
 
