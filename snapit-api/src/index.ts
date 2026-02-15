@@ -4,19 +4,19 @@
  */
 
 export interface Env {
-  FEEDBACK_KV: KVNamespace;
-  RESEND_API_KEY: string;
-  NOTIFICATION_EMAIL: string;
+  FEEDBACK_KV?: KVNamespace;
+  RESEND_API_KEY?: string;
+  NOTIFICATION_EMAIL?: string;
 }
 
 interface FeedbackPayload {
-  message: string;
+  message?: string;
   logs?: string;
-  systemInfo: {
-    platform: string;
-    userAgent: string;
+  systemInfo?: {
+    platform?: string;
+    userAgent?: string;
   };
-  appVersion: string;
+  appVersion?: string;
 }
 
 // Rate limiting config
@@ -37,6 +37,10 @@ function handleCORS(): Response {
 }
 
 async function checkRateLimit(ip: string, env: Env): Promise<{ allowed: boolean; remaining: number }> {
+  if (!env.FEEDBACK_KV) {
+    return { allowed: true, remaining: MAX_REQUESTS_PER_WINDOW };
+  }
+
   const key = `ratelimit:${ip}`;
   const data = await env.FEEDBACK_KV.get(key);
 
@@ -81,7 +85,11 @@ async function handleFeedback(request: Request, env: Env): Promise<Response> {
     }
 
     const payload: FeedbackPayload = await request.json();
-    const { message, logs, systemInfo, appVersion } = payload;
+    const message = typeof payload.message === 'string' ? payload.message : '';
+    const logs = typeof payload.logs === 'string' ? payload.logs : undefined;
+    const platform = payload.systemInfo?.platform?.trim() || 'unknown';
+    const userAgent = payload.systemInfo?.userAgent?.trim() || 'unknown';
+    const appVersion = payload.appVersion?.trim() || 'unknown';
 
     // Basic validation
     if (message.length > 10000) {
@@ -102,31 +110,40 @@ async function handleFeedback(request: Request, env: Env): Promise<Response> {
     const timestamp = new Date().toISOString();
 
     // Store feedback in KV
-    await env.FEEDBACK_KV.put(
-      id,
-      JSON.stringify({
+    if (env.FEEDBACK_KV) {
+      await env.FEEDBACK_KV.put(
         id,
-        message,
-        logs: logs ? '[LOGS ATTACHED]' : null, // Don't store full logs in KV, just a marker
-        systemInfo,
-        appVersion,
-        timestamp,
-      }),
-      { expirationTtl: 60 * 60 * 24 * 90 } // Keep for 90 days
-    );
+        JSON.stringify({
+          id,
+          message,
+          logs: logs ? '[LOGS ATTACHED]' : null, // Don't store full logs in KV, just a marker
+          systemInfo: {
+            platform,
+            userAgent,
+          },
+          appVersion,
+          timestamp,
+        }),
+        { expirationTtl: 60 * 60 * 24 * 90 } // Keep for 90 days
+      );
+    } else {
+      console.warn('FEEDBACK_KV binding is not configured; skipping KV persistence');
+    }
 
     // Send email notification via Resend
-    const emailResponse = await fetch('https://api.resend.com/emails', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${env.RESEND_API_KEY}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        from: 'SnapIt Feedback <onboarding@resend.dev>',
-        to: env.NOTIFICATION_EMAIL,
-        subject: `[SnapIt] ${message.slice(0, 60)}${message.length > 60 ? '...' : ''}`,
-        html: `
+    if (env.RESEND_API_KEY && env.NOTIFICATION_EMAIL) {
+      try {
+        const emailResponse = await fetch('https://api.resend.com/emails', {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${env.RESEND_API_KEY}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            from: 'SnapIt Feedback <onboarding@resend.dev>',
+            to: env.NOTIFICATION_EMAIL,
+            subject: `[SnapIt] ${message.slice(0, 60)}${message.length > 60 ? '...' : ''}`,
+            html: `
           <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto;">
             <h2 style="color: #f97316; border-bottom: 2px solid #f97316; padding-bottom: 10px;">New Feedback Received</h2>
 
@@ -138,7 +155,7 @@ async function handleFeedback(request: Request, env: Env): Promise<Response> {
             <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
               <tr>
                 <td style="padding: 8px 0; color: #64748b;">Platform</td>
-                <td style="padding: 8px 0;">${escapeHtml(systemInfo.platform)}</td>
+                <td style="padding: 8px 0;">${escapeHtml(platform)}</td>
               </tr>
               <tr>
                 <td style="padding: 8px 0; color: #64748b;">App Version</td>
@@ -146,7 +163,7 @@ async function handleFeedback(request: Request, env: Env): Promise<Response> {
               </tr>
               <tr>
                 <td style="padding: 8px 0; color: #64748b;">User Agent</td>
-                <td style="padding: 8px 0; font-size: 12px;">${escapeHtml(systemInfo.userAgent)}</td>
+                <td style="padding: 8px 0; font-size: 12px;">${escapeHtml(userAgent)}</td>
               </tr>
               <tr>
                 <td style="padding: 8px 0; color: #64748b;">Feedback ID</td>
@@ -167,12 +184,19 @@ async function handleFeedback(request: Request, env: Env): Promise<Response> {
             </p>
           </div>
         `,
-      }),
-    });
+          }),
+        });
 
-    if (!emailResponse.ok) {
-      console.error('Failed to send email:', await emailResponse.text());
-      // Don't fail the request if email fails - feedback is already stored
+        if (!emailResponse.ok) {
+          console.error('Failed to send email:', await emailResponse.text());
+          // Don't fail the request if email fails - feedback is already stored
+        }
+      } catch (emailError) {
+        console.error('Email request threw an exception:', emailError);
+        // Don't fail the request if email fails - feedback is already stored
+      }
+    } else {
+      console.warn('Resend secrets are not configured; skipping email notification');
     }
 
     return new Response(

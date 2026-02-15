@@ -37,6 +37,7 @@ export const FeedbackTab: React.FC = () => {
           logs: attachedLogs,
           systemInfo: {
             platform: 'Windows',
+            userAgent: navigator.userAgent,
           },
           appVersion,
         }),
