@@ -79,6 +79,7 @@ const getInitialPlaybackState = () => ({
   isPlaying: false,
   renderedFrame: null,
   previewTimeMs: null as number | null,
+  lastSeekToken: 0,
 });
 
 describe('playbackSlice', () => {
@@ -117,6 +118,30 @@ describe('playbackSlice', () => {
       useVideoEditorStore.getState().setIsPlaying(true);
       expect(useVideoEditorStore.getState().previewTimeMs).toBeNull();
     });
+
+    it('should restart from beginning when starting playback at end', () => {
+      const project = createTestProject({
+        timeline: {
+          durationMs: 10000,
+          inPoint: 0,
+          outPoint: 10000,
+          speed: 1.0,
+          segments: [],
+        },
+      });
+
+      useVideoEditorStore.setState({
+        project,
+        currentTimeMs: 10000,
+        lastSeekToken: 3,
+      });
+
+      useVideoEditorStore.getState().setIsPlaying(true);
+      const state = useVideoEditorStore.getState();
+      expect(state.isPlaying).toBe(true);
+      expect(state.currentTimeMs).toBe(0);
+      expect(state.lastSeekToken).toBe(4);
+    });
   });
 
   describe('togglePlayback', () => {
@@ -140,6 +165,84 @@ describe('playbackSlice', () => {
       expect(useVideoEditorStore.getState().isPlaying).toBe(!initial);
       useVideoEditorStore.getState().togglePlayback();
       expect(useVideoEditorStore.getState().isPlaying).toBe(initial);
+    });
+
+    it('should restart from beginning when toggling play at timeline end', () => {
+      const project = createTestProject({
+        timeline: {
+          durationMs: 10000,
+          inPoint: 0,
+          outPoint: 10000,
+          speed: 1.0,
+          segments: [],
+        },
+      });
+
+      useVideoEditorStore.setState({
+        project,
+        currentTimeMs: 10000,
+        previewTimeMs: 3300,
+        lastSeekToken: 10,
+      });
+
+      useVideoEditorStore.getState().togglePlayback();
+      const state = useVideoEditorStore.getState();
+      expect(state.isPlaying).toBe(true);
+      expect(state.currentTimeMs).toBe(0);
+      expect(state.previewTimeMs).toBeNull();
+      expect(state.lastSeekToken).toBe(11);
+    });
+
+    it('should restart when toggling play near timeline end (threshold)', () => {
+      const project = createTestProject({
+        timeline: {
+          durationMs: 10000,
+          inPoint: 0,
+          outPoint: 10000,
+          speed: 1.0,
+          segments: [],
+        },
+      });
+
+      useVideoEditorStore.setState({
+        project,
+        currentTimeMs: 9950,
+        lastSeekToken: 7,
+      });
+
+      useVideoEditorStore.getState().togglePlayback();
+      const state = useVideoEditorStore.getState();
+      expect(state.isPlaying).toBe(true);
+      expect(state.currentTimeMs).toBe(0);
+      expect(state.lastSeekToken).toBe(8);
+    });
+
+    it('should restart at end of effective trimmed duration', () => {
+      const project = createTestProject({
+        timeline: {
+          durationMs: 10000,
+          inPoint: 0,
+          outPoint: 10000,
+          speed: 1.0,
+          segments: [
+            { id: 'a', sourceStartMs: 0, sourceEndMs: 2000 },
+            { id: 'b', sourceStartMs: 6000, sourceEndMs: 7000 },
+          ],
+        },
+      });
+
+      // Effective duration = 3000ms
+      useVideoEditorStore.setState({
+        project,
+        currentTimeMs: 3000,
+        lastSeekToken: 1,
+      });
+
+      useVideoEditorStore.getState().togglePlayback();
+      const state = useVideoEditorStore.getState();
+      expect(state.isPlaying).toBe(true);
+      expect(state.currentTimeMs).toBe(0);
+      expect(state.lastSeekToken).toBe(2);
     });
   });
 

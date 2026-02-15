@@ -17,6 +17,9 @@ export const TIMING = {
 
   // UI interaction delays
   SUGGESTION_BLUR_DELAY_MS: 150,
+
+  // Playback behavior
+  PLAYBACK_END_RESTART_THRESHOLD_MS: 150,
 } as const;
 
 export type TimingConstants = typeof TIMING;

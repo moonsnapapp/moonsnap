@@ -1,3 +1,5 @@
+import { TIMING } from '../../constants';
+import { getEffectiveDuration } from './trimSlice';
 import type { SliceCreator, RenderedFrame } from './types';
 
 /**
@@ -16,6 +18,13 @@ export interface PlaybackSlice {
   requestSeek: (timeMs: number) => void;
   togglePlayback: () => void;
   setIsPlaying: (playing: boolean) => void;
+}
+
+function shouldRestartFromStart(currentTimeMs: number, effectiveDurationMs: number): boolean {
+  if (effectiveDurationMs <= 0) {
+    return false;
+  }
+  return currentTimeMs >= (effectiveDurationMs - TIMING.PLAYBACK_END_RESTART_THRESHOLD_MS);
 }
 
 export const createPlaybackSlice: SliceCreator<PlaybackSlice> = (set, get) => ({
@@ -45,14 +54,46 @@ export const createPlaybackSlice: SliceCreator<PlaybackSlice> = (set, get) => ({
 
   togglePlayback: () => set((state) => {
     const nextPlaying = !state.isPlaying;
-    return nextPlaying
-      ? { isPlaying: true, previewTimeMs: null }
-      : { isPlaying: false };
+    if (!nextPlaying) {
+      return { isPlaying: false };
+    }
+
+    const sourceDurationMs = state.project?.timeline.durationMs ?? 0;
+    const segments = state.project?.timeline.segments ?? [];
+    const effectiveDurationMs = getEffectiveDuration(segments, sourceDurationMs);
+    const restartFromStart = shouldRestartFromStart(state.currentTimeMs, effectiveDurationMs);
+
+    if (restartFromStart) {
+      return {
+        isPlaying: true,
+        previewTimeMs: null,
+        currentTimeMs: 0,
+        lastSeekToken: state.lastSeekToken + 1,
+      };
+    }
+
+    return { isPlaying: true, previewTimeMs: null };
   }),
 
-  setIsPlaying: (playing) => set(
-    playing
-      ? { isPlaying: true, previewTimeMs: null }
-      : { isPlaying: false }
-  ),
+  setIsPlaying: (playing) => set((state) => {
+    if (!playing) {
+      return { isPlaying: false };
+    }
+
+    const sourceDurationMs = state.project?.timeline.durationMs ?? 0;
+    const segments = state.project?.timeline.segments ?? [];
+    const effectiveDurationMs = getEffectiveDuration(segments, sourceDurationMs);
+    const restartFromStart = shouldRestartFromStart(state.currentTimeMs, effectiveDurationMs);
+
+    if (restartFromStart) {
+      return {
+        isPlaying: true,
+        previewTimeMs: null,
+        currentTimeMs: 0,
+        lastSeekToken: state.lastSeekToken + 1,
+      };
+    }
+
+    return { isPlaying: true, previewTimeMs: null };
+  }),
 });

@@ -120,7 +120,8 @@ export function usePlaybackSync(options: PlaybackSyncOptions): PlaybackSyncResul
     if (!video) return;
 
     const onEnded = () => {
-      controls.pause();
+      controls.stopRAFLoop();
+      useVideoEditorStore.getState().setIsPlaying(false);
     };
 
     const onError = (e: Event) => {
@@ -158,24 +159,60 @@ export function usePlaybackSync(options: PlaybackSyncOptions): PlaybackSyncResul
     const video = videoRef.current;
     if (!video) return;
 
-    if (isPlaying) {
-      const playheadTime = useVideoEditorStore.getState().currentTimeMs;
-      const sourceTime = getSourceTime(playheadTime);
-      video.currentTime = sourceTime / 1000;
+    let cancelled = false;
+    let seekedHandler: (() => void) | null = null;
+
+    const startPlayback = () => {
+      if (cancelled) return;
       if (video.paused) {
         video.play().catch(e => {
           if (e.name === 'AbortError') return;
           videoEditorLogger.error('Play failed:', e);
-          controls.pause();
+          controls.stopRAFLoop();
+          useVideoEditorStore.getState().setIsPlaying(false);
         });
       }
       controls.startRAFLoop();
+    };
+
+    if (isPlaying) {
+      const playheadTime = useVideoEditorStore.getState().currentTimeMs;
+      const sourceTime = getSourceTime(playheadTime);
+      const targetTimeSec = sourceTime / 1000;
+      const needsSeek = Math.abs(video.currentTime - targetTimeSec) > 0.001;
+
+      if (needsSeek) {
+        seekedHandler = () => {
+          seekedHandler = null;
+          startPlayback();
+        };
+        video.addEventListener('seeked', seekedHandler, { once: true });
+        video.currentTime = targetTimeSec;
+
+        // Some browsers apply currentTime immediately and may not dispatch seeked.
+        if (Math.abs(video.currentTime - targetTimeSec) <= 0.001) {
+          if (seekedHandler) {
+            video.removeEventListener('seeked', seekedHandler);
+            seekedHandler = null;
+          }
+          startPlayback();
+        }
+      } else {
+        startPlayback();
+      }
     } else {
       if (!video.paused) {
         video.pause();
       }
       controls.stopRAFLoop();
     }
+
+    return () => {
+      cancelled = true;
+      if (seekedHandler) {
+        video.removeEventListener('seeked', seekedHandler);
+      }
+    };
   }, [isPlaying, controls, getSourceTime]);
 
   // Apply volume settings to main video element
