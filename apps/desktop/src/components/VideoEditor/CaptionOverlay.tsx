@@ -80,6 +80,80 @@ function hexWithOpacity(hex: string, opacity: number): string {
   return `#${base}${alpha}`;
 }
 
+function hexToRgb(hex: string): [number, number, number] {
+  const normalized = normalizeHexColor(hex);
+  return [
+    Number.parseInt(normalized.slice(0, 2), 16),
+    Number.parseInt(normalized.slice(2, 4), 16),
+    Number.parseInt(normalized.slice(4, 6), 16),
+  ];
+}
+
+function blendRgb(
+  base: [number, number, number],
+  highlight: [number, number, number],
+  factor: number
+): string {
+  const t = Math.max(0, Math.min(1, factor));
+  const mix = (a: number, b: number) => Math.round(a + (b - a) * t);
+  return `rgb(${mix(base[0], highlight[0])}, ${mix(base[1], highlight[1])}, ${mix(base[2], highlight[2])})`;
+}
+
+function calculateWordHighlightFactor(
+  word: { start: number; end: number },
+  currentTimeSecs: number,
+  transitionDuration: number
+): number {
+  const duration = Math.max(0, transitionDuration);
+  if (duration === 0) {
+    return currentTimeSecs >= word.start && currentTimeSecs <= word.end ? 1 : 0;
+  }
+
+  if (currentTimeSecs >= word.start && currentTimeSecs <= word.end) {
+    return 1;
+  }
+
+  if (currentTimeSecs < word.start) {
+    const distance = word.start - currentTimeSecs;
+    return distance < duration ? 1 - distance / duration : 0;
+  }
+
+  const distance = currentTimeSecs - word.end;
+  return distance < duration ? 1 - distance / duration : 0;
+}
+
+function calculateSegmentOpacity(
+  segment: { start: number; end: number },
+  currentTimeSecs: number,
+  fadeDuration: number,
+  lingerDuration: number
+): number {
+  const linger = Math.max(0, lingerDuration);
+  const visibleEnd = segment.end + linger;
+  if (currentTimeSecs < segment.start || currentTimeSecs > visibleEnd) {
+    return 0;
+  }
+
+  const fade = Math.max(0, fadeDuration);
+  if (fade === 0) {
+    return 1;
+  }
+
+  const visibleDuration = visibleEnd - segment.start;
+  const timeSinceStart = currentTimeSecs - segment.start;
+  const timeUntilEnd = visibleEnd - currentTimeSecs;
+
+  if (timeSinceStart < fade) {
+    return Math.max(0, Math.min(1, timeSinceStart / fade));
+  }
+
+  if (timeUntilEnd < fade && visibleDuration > fade * 2) {
+    return Math.max(0, Math.min(1, timeUntilEnd / fade));
+  }
+
+  return 1;
+}
+
 export const CaptionOverlay = memo(function CaptionOverlay({
   containerWidth,
   containerHeight,
@@ -98,21 +172,29 @@ export const CaptionOverlay = memo(function CaptionOverlay({
     if (!captionSettings.enabled || captionSegments.length === 0) {
       return null;
     }
+    const lingerDuration = Math.max(0, captionSettings.lingerDuration || 0);
     return captionSegments.find(
-      (s) => currentTimeSecs >= s.start && currentTimeSecs <= s.end
+      (s) => currentTimeSecs >= s.start && currentTimeSecs <= s.end + lingerDuration
     ) || null;
-  }, [captionSegments, captionSettings.enabled, currentTimeSecs]);
-
-  // Find active word for highlighting
-  const activeWordIndex = useMemo(() => {
-    if (!activeSegment) return -1;
-    return activeSegment.words.findIndex(
-      (w) => currentTimeSecs >= w.start && currentTimeSecs <= w.end
-    );
-  }, [activeSegment, currentTimeSecs]);
+  }, [
+    captionSegments,
+    captionSettings.enabled,
+    captionSettings.lingerDuration,
+    currentTimeSecs,
+  ]);
 
   // Don't render if captions are disabled, no active segment, or layout not loaded
   if (!captionSettings.enabled || !activeSegment || !scaledLayout) {
+    return null;
+  }
+
+  const segmentOpacity = calculateSegmentOpacity(
+    activeSegment,
+    currentTimeSecs,
+    captionSettings.fadeDuration,
+    captionSettings.lingerDuration
+  );
+  if (segmentOpacity <= 0.001) {
     return null;
   }
 
@@ -157,18 +239,31 @@ export const CaptionOverlay = memo(function CaptionOverlay({
 
   // Render words with highlighting
   const renderText = () => {
-    if (activeWordIndex < 0 || captionSettings.color === captionSettings.highlightColor) {
+    if (
+      captionSettings.color === captionSettings.highlightColor ||
+      activeSegment.words.length === 0
+    ) {
       // Match export: use words-joined content when words are present.
       return captionText;
     }
+
+    const baseRgb = hexToRgb(captionSettings.color);
+    const highlightRgb = hexToRgb(captionSettings.highlightColor);
 
     // Render with word highlighting
     return activeSegment.words.map((word, idx) => (
       <span
         key={idx}
         style={{
-          color: idx === activeWordIndex ? captionSettings.highlightColor : captionSettings.color,
-          transition: 'color 0.15s ease',
+          color: blendRgb(
+            baseRgb,
+            highlightRgb,
+            calculateWordHighlightFactor(
+              word,
+              currentTimeSecs,
+              captionSettings.wordTransitionDuration
+            )
+          ),
         }}
       >
         {word.text}
@@ -186,6 +281,7 @@ export const CaptionOverlay = memo(function CaptionOverlay({
       style={{
         ...positionStyle,
         zIndex: 50,
+        opacity: segmentOpacity,
       }}
     >
       <div

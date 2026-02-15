@@ -333,6 +333,7 @@ pub fn run() {
             commands::captions::download_whisper_model,
             commands::captions::delete_whisper_model,
             commands::captions::transcribe_video,
+            commands::captions::transcribe_caption_segment,
             commands::captions::save_caption_data,
             commands::captions::load_caption_data,
             // Parity commands (preview/export CSS sync)

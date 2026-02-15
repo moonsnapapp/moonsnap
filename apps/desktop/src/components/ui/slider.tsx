@@ -15,15 +15,15 @@ interface SliderProps {
 const Slider = React.forwardRef<HTMLDivElement, SliderProps>(
   ({ value, onValueChange, onValueCommit, min = 0, max = 100, step = 1, className }, ref) => {
     // Local state for smooth visual updates during drag
-    const [localValue, setLocalValue] = React.useState(value[0]);
+    const [localValue, setLocalValue] = React.useState<number[]>(value);
     const isDragging = React.useRef(false);
     const rafRef = React.useRef<number | null>(null);
-    const pendingValueRef = React.useRef<number | null>(null);
+    const pendingValueRef = React.useRef<number[] | null>(null);
 
     // Sync local state when external value changes (not during drag)
     React.useEffect(() => {
       if (!isDragging.current) {
-        setLocalValue(value[0]);
+        setLocalValue(value);
       }
     }, [value]);
 
@@ -37,14 +37,14 @@ const Slider = React.forwardRef<HTMLDivElement, SliderProps>(
     }, []);
 
     // RAF-throttled callback for smooth preview updates
-    const scheduleValueChange = React.useCallback((val: number) => {
-      pendingValueRef.current = val;
+    const scheduleValueChange = React.useCallback((values: number[]) => {
+      pendingValueRef.current = values;
 
       if (rafRef.current === null) {
         rafRef.current = requestAnimationFrame(() => {
           rafRef.current = null;
           if (pendingValueRef.current !== null) {
-            onValueChange?.([pendingValueRef.current]);
+            onValueChange?.(pendingValueRef.current);
           }
         });
       }
@@ -53,11 +53,11 @@ const Slider = React.forwardRef<HTMLDivElement, SliderProps>(
     return (
       <SliderPrimitive.Root
         ref={ref}
-        value={[localValue]}
+        value={localValue}
         onValueChange={(values) => {
           isDragging.current = true;
-          setLocalValue(values[0]); // Immediate local update for thumb position
-          scheduleValueChange(values[0]); // RAF-throttled callback
+          setLocalValue(values); // Immediate local update for thumb position
+          scheduleValueChange(values); // RAF-throttled callback
         }}
         onValueCommit={(values) => {
           isDragging.current = false;
@@ -66,6 +66,7 @@ const Slider = React.forwardRef<HTMLDivElement, SliderProps>(
             cancelAnimationFrame(rafRef.current);
             rafRef.current = null;
           }
+          onValueChange?.(values);
           onValueCommit?.(values);
         }}
         min={min}
@@ -76,7 +77,12 @@ const Slider = React.forwardRef<HTMLDivElement, SliderProps>(
         <SliderPrimitive.Track className="relative h-1.5 w-full grow overflow-hidden rounded-full bg-[var(--polar-mist)]">
           <SliderPrimitive.Range className="absolute h-full bg-[var(--coral-400)]" />
         </SliderPrimitive.Track>
-        <SliderPrimitive.Thumb className="block h-4 w-4 rounded-full border-2 border-[var(--coral-400)] bg-white shadow-md ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--coral-glow)] focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 cursor-pointer hover:scale-110" />
+        {localValue.map((_, index) => (
+          <SliderPrimitive.Thumb
+            key={`slider-thumb-${index}`}
+            className="block h-4 w-4 rounded-full border-2 border-[var(--coral-400)] bg-white shadow-md ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--coral-glow)] focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 cursor-pointer hover:scale-110"
+          />
+        ))}
       </SliderPrimitive.Root>
     );
   }

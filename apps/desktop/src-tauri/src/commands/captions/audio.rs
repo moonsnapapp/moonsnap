@@ -161,6 +161,68 @@ pub fn convert_to_whisper_format(input_path: &Path, output_path: &Path) -> Resul
     Ok(())
 }
 
+/// Convert a bounded time range from an input media file to 16kHz mono WAV.
+///
+/// Works for both audio and video inputs (ffmpeg picks the audio stream).
+///
+/// # Arguments
+/// * `input_path` - Source audio/video file
+/// * `output_path` - Output WAV path
+/// * `start_secs` - Start time in seconds (inclusive)
+/// * `end_secs` - End time in seconds (exclusive)
+pub fn convert_range_to_whisper_format(
+    input_path: &Path,
+    output_path: &Path,
+    start_secs: f32,
+    end_secs: f32,
+) -> Result<(), String> {
+    if !start_secs.is_finite() || !end_secs.is_finite() || end_secs <= start_secs {
+        return Err("Invalid segment range".to_string());
+    }
+
+    log::info!(
+        "Converting segment [{:.3}, {:.3}] to Whisper format from {:?}",
+        start_secs,
+        end_secs,
+        input_path
+    );
+
+    let ffmpeg_path = find_ffmpeg().ok_or_else(|| "ffmpeg not found".to_string())?;
+    let start_arg = format!("{:.3}", start_secs.max(0.0));
+    let end_arg = format!("{:.3}", end_secs.max(start_secs + 0.001));
+
+    let output = create_hidden_command(&ffmpeg_path)
+        .args([
+            "-y",
+            "-ss",
+            &start_arg,
+            "-to",
+            &end_arg,
+            "-i",
+            &input_path.to_string_lossy(),
+            "-vn",
+            "-acodec",
+            "pcm_s16le",
+            "-ar",
+            "16000",
+            "-ac",
+            "1",
+            &output_path.to_string_lossy(),
+        ])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .map_err(|e| format!("Failed to run ffmpeg: {}", e))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("Segment audio conversion failed: {}", stderr));
+    }
+
+    log::info!("Segment audio converted to: {:?}", output_path);
+    Ok(())
+}
+
 /// Load WAV audio file as f32 samples for Whisper.
 ///
 /// Reads a 16kHz mono PCM s16le WAV file and converts to normalized f32 samples.

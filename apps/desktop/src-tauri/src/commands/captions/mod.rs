@@ -205,7 +205,12 @@ async fn get_whisper_context(model_path: &str) -> Result<Arc<WhisperContext>, St
 /// Check if a token is a special Whisper token that should be filtered.
 fn is_special_token(text: &str) -> bool {
     let trimmed = text.trim();
+    let is_musical_symbol = !trimmed.is_empty()
+        && trimmed
+            .chars()
+            .all(|ch| matches!(ch, '♪' | '♫' | '♬' | '♩' | '♭' | '♯'));
     trimmed.is_empty()
+        || is_musical_symbol
         || trimmed.contains('[')
         || trimmed.contains(']')
         || trimmed.contains("_TT_")
@@ -231,6 +236,7 @@ fn process_with_whisper(
     params.set_print_progress(false);
     params.set_print_realtime(false);
     params.set_token_timestamps(true);
+    params.set_suppress_non_speech_tokens(true);
     params.set_language(Some(if language == "auto" { "auto" } else { language }));
     params.set_max_len(i32::MAX);
 
@@ -514,6 +520,142 @@ pub async fn transcribe_video(
     Ok(CaptionData {
         segments,
         settings: CaptionSettings::default(),
+    })
+}
+
+/// Re-transcribe a single caption segment time range.
+#[tauri::command]
+pub async fn transcribe_caption_segment(
+    app: AppHandle,
+    video_path: String,
+    model_name: String,
+    language: String,
+    segment_start: f32,
+    segment_end: f32,
+) -> Result<CaptionSegment, String> {
+    if !segment_start.is_finite() || !segment_end.is_finite() || segment_end <= segment_start {
+        return Err("Invalid segment range".to_string());
+    }
+
+    const PRE_CONTEXT_SECS: f32 = 0.75;
+    const POST_CONTEXT_SECS: f32 = 0.75;
+    let window_start = (segment_start - PRE_CONTEXT_SECS).max(0.0);
+    let window_end = segment_end + POST_CONTEXT_SECS;
+
+    log::info!(
+        "Re-transcribing segment [{:.3}, {:.3}] (window [{:.3}, {:.3}]) for {} with model {}",
+        segment_start,
+        segment_end,
+        window_start,
+        window_end,
+        video_path,
+        model_name
+    );
+
+    // Check model exists
+    let model_info = check_whisper_model(app.clone(), model_name.clone()).await?;
+    let model_path = model_info.path.ok_or("Model not downloaded")?;
+
+    let video_path_pb = PathBuf::from(&video_path);
+    let temp_dir = tempfile::tempdir().map_err(|e| format!("Failed to create temp dir: {}", e))?;
+    let temp_audio = temp_dir.path().join("segment.wav");
+
+    let _ = app.emit(
+        "transcription-progress",
+        TranscriptionProgress {
+            stage: "extracting_audio".to_string(),
+            progress: 20.0,
+            message: "Extracting segment audio...".to_string(),
+        },
+    );
+
+    let input_media = find_project_audio(&video_path_pb).unwrap_or(video_path_pb.clone());
+    let input_media_clone = input_media.clone();
+    let temp_audio_clone = temp_audio.clone();
+    tokio::task::spawn_blocking(move || {
+        audio::convert_range_to_whisper_format(
+            &input_media_clone,
+            &temp_audio_clone,
+            window_start,
+            window_end,
+        )
+    })
+    .await
+    .map_err(|e| format!("Task error: {}", e))??;
+
+    let _ = app.emit(
+        "transcription-progress",
+        TranscriptionProgress {
+            stage: "transcribing".to_string(),
+            progress: 60.0,
+            message: "Transcribing segment...".to_string(),
+        },
+    );
+
+    let samples =
+        audio::load_wav_as_f32(&temp_audio).map_err(|e| format!("Failed to load audio: {}", e))?;
+    let context = get_whisper_context(&model_path).await?;
+    let language_clone = language.clone();
+    let segment_groups = tokio::task::spawn_blocking(move || {
+        process_with_whisper(&samples, context, &language_clone)
+    })
+    .await
+    .map_err(|e| format!("Task error: {}", e))??;
+
+    let mut words: Vec<CaptionWord> = segment_groups
+        .into_iter()
+        .flat_map(|segment| segment.words.into_iter())
+        .collect();
+
+    words.sort_by(|left, right| left.start.total_cmp(&right.start));
+    for word in &mut words {
+        word.start += window_start;
+        word.end += window_start;
+    }
+
+    words.retain(|word| {
+        let midpoint = (word.start + word.end) * 0.5;
+        midpoint >= segment_start && midpoint <= segment_end
+    });
+    for word in &mut words {
+        if word.start < segment_start {
+            word.start = segment_start;
+        }
+        if word.end > segment_end {
+            word.end = segment_end;
+        }
+    }
+    words.retain(|word| word.end > word.start);
+
+    if words.is_empty() {
+        return Err("No speech detected in this segment.".to_string());
+    }
+
+    let text = words
+        .iter()
+        .map(|word| word.text.as_str())
+        .collect::<Vec<_>>()
+        .join(" ");
+
+    let _ = app.emit(
+        "transcription-progress",
+        TranscriptionProgress {
+            stage: "complete".to_string(),
+            progress: 100.0,
+            message: "Segment transcription complete".to_string(),
+        },
+    );
+
+    Ok(CaptionSegment {
+        id: format!(
+            "segment-regen-{}-{}",
+            (segment_start * 1000.0).round() as i64,
+            (segment_end * 1000.0).round() as i64
+        ),
+        start: segment_start,
+        end: segment_end,
+        text,
+        words,
     })
 }
 

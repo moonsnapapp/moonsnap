@@ -64,6 +64,13 @@ export interface CaptionSlice {
 
   // Transcription actions
   startTranscription: (videoPath: string) => Promise<void>;
+  transcribeCaptionSegment: (
+    videoPath: string,
+    segmentStart: number,
+    segmentEnd: number,
+    language?: string,
+    modelName?: string
+  ) => Promise<CaptionSegment>;
   setTranscriptionProgress: (progress: number, stage: string) => void;
   setTranscriptionError: (error: string | null) => void;
 
@@ -179,6 +186,32 @@ export const createCaptionSlice: SliceCreator<CaptionSlice> = (set, get) => ({
       });
       throw error;
     }
+  },
+
+  transcribeCaptionSegment: async (
+    videoPath,
+    segmentStart,
+    segmentEnd,
+    language = 'auto',
+    modelName
+  ) => {
+    const { selectedModelName, whisperModels, downloadModel } = get();
+    const requestedModelName = modelName ?? selectedModelName;
+    const selectedModel = whisperModels.find(
+      (model) => model.name === requestedModelName
+    );
+
+    if (!selectedModel?.downloaded) {
+      await downloadModel(requestedModelName);
+    }
+
+    return await invoke<CaptionSegment>('transcribe_caption_segment', {
+      videoPath,
+      modelName: requestedModelName,
+      language,
+      segmentStart,
+      segmentEnd,
+    });
   },
 
   setTranscriptionProgress: (progress, stage) =>
