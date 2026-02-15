@@ -1,7 +1,7 @@
 {
   "name": "@snapit/desktop",
   "private": true,
-  "version": "0.4.30",
+  "version": "0.5.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
