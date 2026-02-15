@@ -38,7 +38,9 @@ pub fn request_cancel_export() {
 
 use super::caption_layer::prepare_captions;
 use super::compositor::Compositor;
-use super::cursor::{composite_cursor, CursorInterpolator, VideoContentBounds};
+use super::cursor::{
+    composite_cursor, composite_cursor_with_motion_blur, CursorInterpolator, VideoContentBounds,
+};
 use super::nv12_converter::{CropRect, Nv12Converter};
 use super::prerendered_text::{composite_prerendered_texts, TextCompositeInfo};
 use super::renderer::Renderer;
@@ -78,6 +80,7 @@ struct CpuCompositeCtx<'a> {
     video_content_bounds: VideoContentBounds,
     cursor_type: CursorType,
     cursor_scale: f32,
+    cursor_motion_blur: f32,
     cursor_interpolator: Option<&'a CursorInterpolator>,
 }
 
@@ -173,15 +176,28 @@ fn apply_cpu_compositing(pending: &mut PendingCpuWork, ctx: &CpuCompositeCtx) {
                                 hotspot_y: svg_cursor.hotspot_y,
                                 data: svg_cursor.data,
                             };
-                            composite_cursor(
-                                &mut pending.rgba_data,
-                                ctx.composition_w,
-                                ctx.composition_h,
-                                &ctx.video_content_bounds,
-                                &cursor,
-                                &svg_decoded,
-                                1.0,
-                            );
+                            if ctx.cursor_motion_blur > 0.0 {
+                                composite_cursor_with_motion_blur(
+                                    &mut pending.rgba_data,
+                                    ctx.composition_w,
+                                    ctx.composition_h,
+                                    &ctx.video_content_bounds,
+                                    &cursor,
+                                    &svg_decoded,
+                                    1.0,
+                                    ctx.cursor_motion_blur,
+                                );
+                            } else {
+                                composite_cursor(
+                                    &mut pending.rgba_data,
+                                    ctx.composition_w,
+                                    ctx.composition_h,
+                                    &ctx.video_content_bounds,
+                                    &cursor,
+                                    &svg_decoded,
+                                    1.0,
+                                );
+                            }
                             rendered = true;
                         }
                     }
@@ -190,15 +206,28 @@ fn apply_cpu_compositing(pending: &mut PendingCpuWork, ctx: &CpuCompositeCtx) {
                         if let Some(ref cursor_id) = cursor.cursor_id {
                             if let Some(cursor_image) = cursor_interp.get_cursor_image(cursor_id) {
                                 let bitmap_scale = final_cursor_height / cursor_image.height as f32;
-                                composite_cursor(
-                                    &mut pending.rgba_data,
-                                    ctx.composition_w,
-                                    ctx.composition_h,
-                                    &ctx.video_content_bounds,
-                                    &cursor,
-                                    cursor_image,
-                                    bitmap_scale,
-                                );
+                                if ctx.cursor_motion_blur > 0.0 {
+                                    composite_cursor_with_motion_blur(
+                                        &mut pending.rgba_data,
+                                        ctx.composition_w,
+                                        ctx.composition_h,
+                                        &ctx.video_content_bounds,
+                                        &cursor,
+                                        cursor_image,
+                                        bitmap_scale,
+                                        ctx.cursor_motion_blur,
+                                    );
+                                } else {
+                                    composite_cursor(
+                                        &mut pending.rgba_data,
+                                        ctx.composition_w,
+                                        ctx.composition_h,
+                                        &ctx.video_content_bounds,
+                                        &cursor,
+                                        cursor_image,
+                                        bitmap_scale,
+                                    );
+                                }
                             }
                         }
                     }
@@ -604,6 +633,7 @@ pub async fn export_video_gpu(
         video_content_bounds,
         cursor_type: project.cursor.cursor_type,
         cursor_scale: project.cursor.scale,
+        cursor_motion_blur: project.cursor.motion_blur.clamp(0.0, 1.0),
         cursor_interpolator: cursor_interpolator.as_ref(),
     };
 

@@ -95,9 +95,15 @@ const MOTION_BLUR_SAMPLES: usize = 20;
 /// Below this threshold, no blur is applied.
 const MOTION_BLUR_MIN_VELOCITY: f32 = 0.005;
 
+/// Velocity where blur reaches full strength ramp (smoothstep end).
+const MOTION_BLUR_VELOCITY_RAMP_END: f32 = 0.03;
+
 /// Maximum trail length as fraction of frame diagonal.
 /// Limits how far back the motion blur trail extends.
 const MOTION_BLUR_MAX_TRAIL: f32 = 0.15;
+
+/// Max effective user blur amount (15%).
+const MOTION_BLUR_MAX_USER_AMOUNT: f32 = 0.15;
 
 /// Velocity multiplier for trail length calculation.
 /// Higher values = longer trails for same velocity.
@@ -1175,6 +1181,7 @@ pub fn composite_cursor(
 /// * `cursor` - Interpolated cursor position with velocity
 /// * `cursor_image` - Decoded cursor image
 /// * `base_scale` - Base cursor scale factor
+/// * `motion_blur_amount` - User-configured blur amount (0.0 = disabled, 1.0 = max)
 pub fn composite_cursor_with_motion_blur(
     frame_data: &mut [u8],
     frame_width: u32,
@@ -1183,7 +1190,22 @@ pub fn composite_cursor_with_motion_blur(
     cursor: &InterpolatedCursor,
     cursor_image: &DecodedCursorImage,
     base_scale: f32,
+    motion_blur_amount: f32,
 ) {
+    let motion_blur_amount = motion_blur_amount.clamp(0.0, MOTION_BLUR_MAX_USER_AMOUNT);
+    if motion_blur_amount <= 0.0 {
+        composite_cursor(
+            frame_data,
+            frame_width,
+            frame_height,
+            video_bounds,
+            cursor,
+            cursor_image,
+            base_scale,
+        );
+        return;
+    }
+
     // Calculate velocity magnitude (in normalized units)
     let velocity_magnitude =
         (cursor.velocity_x * cursor.velocity_x + cursor.velocity_y * cursor.velocity_y).sqrt();
@@ -1202,21 +1224,54 @@ pub fn composite_cursor_with_motion_blur(
         return;
     }
 
+    // Smoothly ramp in blur strength with speed to avoid abrupt/stiff trails.
+    let velocity_factor = smoothstep(
+        MOTION_BLUR_MIN_VELOCITY,
+        MOTION_BLUR_VELOCITY_RAMP_END,
+        velocity_magnitude,
+    );
+    if velocity_factor <= 0.0 {
+        composite_cursor(
+            frame_data,
+            frame_width,
+            frame_height,
+            video_bounds,
+            cursor,
+            cursor_image,
+            base_scale,
+        );
+        return;
+    }
+
     // Calculate motion in pixels and clamp to max (like Cap)
     let frame_diagonal = ((frame_width * frame_width + frame_height * frame_height) as f32).sqrt();
-    let motion_pixels = velocity_magnitude * frame_diagonal;
+    let motion_pixels = velocity_magnitude * frame_diagonal * MOTION_BLUR_VELOCITY_SCALE;
     let clamped_motion = motion_pixels.min(MAX_MOTION_PIXELS);
 
-    // Convert back to normalized trail length
-    let trail_length = (clamped_motion / frame_diagonal).min(MOTION_BLUR_MAX_TRAIL);
+    // Convert back to normalized trail length and apply user intensity.
+    let trail_length = ((clamped_motion / frame_diagonal).min(MOTION_BLUR_MAX_TRAIL))
+        * motion_blur_amount
+        * velocity_factor;
+    if trail_length < MIN_MOTION_THRESHOLD {
+        composite_cursor(
+            frame_data,
+            frame_width,
+            frame_height,
+            video_bounds,
+            cursor,
+            cursor_image,
+            base_scale,
+        );
+        return;
+    }
 
     // Normalize velocity direction
     let dir_x = -cursor.velocity_x / velocity_magnitude;
     let dir_y = -cursor.velocity_y / velocity_magnitude;
 
-    // Render trail samples from back to front (so front cursor is on top)
-    // Using 20 samples like Cap's GPU shader
-    for i in (0..MOTION_BLUR_SAMPLES).rev() {
+    // Render trail samples from back to front (excluding the main cursor sample).
+    // Main cursor is rendered once at full opacity after the trail.
+    for i in (1..MOTION_BLUR_SAMPLES).rev() {
         let t = i as f32 / (MOTION_BLUR_SAMPLES - 1) as f32;
 
         // Use smoothstep easing for smooth deceleration (like Cap's GPU shader)
@@ -1228,7 +1283,10 @@ pub fn composite_cursor_with_motion_blur(
 
         // Weight distribution like Cap: weight = 1.0 - t * 0.75
         // This creates smoother falloff than our previous 0.85
-        let weight = 1.0 - t * 0.75;
+        let weight = (1.0 - t * 0.75) * motion_blur_amount * velocity_factor;
+        if weight <= 0.0 {
+            continue;
+        }
 
         // Create a modified cursor for this trail sample
         let trail_cursor = InterpolatedCursor {
@@ -1252,6 +1310,17 @@ pub fn composite_cursor_with_motion_blur(
             base_scale,
         );
     }
+
+    // Render main cursor on top at full opacity.
+    composite_cursor(
+        frame_data,
+        frame_width,
+        frame_height,
+        video_bounds,
+        cursor,
+        cursor_image,
+        base_scale,
+    );
 }
 
 /// Get an SVG cursor as a DecodedCursorImage if the shape is known.

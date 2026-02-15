@@ -189,8 +189,8 @@ export function CursorConfigPanel({ project, onUpdateCursorConfig }: CursorConfi
           value={[project.cursor.motionBlur * 100]}
           onValueChange={(values) => onUpdateCursorConfig({ motionBlur: values[0] / 100 })}
           min={0}
-          max={100}
-          step={5}
+          max={15}
+          step={1}
         />
       </div>
 

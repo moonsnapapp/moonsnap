@@ -14,7 +14,10 @@ use tauri::{AppHandle, Emitter};
 use tokio::sync::mpsc;
 
 use super::compositor::Compositor;
-use super::cursor::{composite_cursor, CursorInterpolator, DecodedCursorImage, VideoContentBounds};
+use super::cursor::{
+    composite_cursor, composite_cursor_with_motion_blur, CursorInterpolator, DecodedCursorImage,
+    VideoContentBounds,
+};
 use super::decoder::VideoDecoder;
 use super::exporter::{build_webcam_overlay, is_webcam_visible_at};
 use super::renderer::Renderer;
@@ -423,6 +426,7 @@ impl EditorInstance {
                     let final_cursor_height =
                         (base_cursor_height * size_scale * self.project.cursor.scale * zoom_scale)
                             .clamp(16.0, 256.0);
+                    let cursor_motion_blur = self.project.cursor.motion_blur.clamp(0.0, 1.0);
 
                     // Try SVG cursor first (if shape is detected)
                     let mut rendered = false;
@@ -438,15 +442,28 @@ impl EditorInstance {
                                 data: svg_cursor.data,
                             };
                             // Pass 1.0 as base_scale since SVG is already at final size
-                            composite_cursor(
-                                &mut rgba_data,
-                                output_width,
-                                output_height,
-                                &video_bounds,
-                                &cursor,
-                                &svg_decoded,
-                                1.0,
-                            );
+                            if cursor_motion_blur > 0.0 {
+                                composite_cursor_with_motion_blur(
+                                    &mut rgba_data,
+                                    output_width,
+                                    output_height,
+                                    &video_bounds,
+                                    &cursor,
+                                    &svg_decoded,
+                                    1.0,
+                                    cursor_motion_blur,
+                                );
+                            } else {
+                                composite_cursor(
+                                    &mut rgba_data,
+                                    output_width,
+                                    output_height,
+                                    &video_bounds,
+                                    &cursor,
+                                    &svg_decoded,
+                                    1.0,
+                                );
+                            }
                             rendered = true;
                         }
                     }
@@ -457,15 +474,28 @@ impl EditorInstance {
                             if let Some(cursor_image) = cursor_interp.get_cursor_image(cursor_id) {
                                 // For bitmap, calculate scale to reach final_cursor_height
                                 let bitmap_scale = final_cursor_height / cursor_image.height as f32;
-                                composite_cursor(
-                                    &mut rgba_data,
-                                    output_width,
-                                    output_height,
-                                    &video_bounds,
-                                    &cursor,
-                                    cursor_image,
-                                    bitmap_scale,
-                                );
+                                if cursor_motion_blur > 0.0 {
+                                    composite_cursor_with_motion_blur(
+                                        &mut rgba_data,
+                                        output_width,
+                                        output_height,
+                                        &video_bounds,
+                                        &cursor,
+                                        cursor_image,
+                                        bitmap_scale,
+                                        cursor_motion_blur,
+                                    );
+                                } else {
+                                    composite_cursor(
+                                        &mut rgba_data,
+                                        output_width,
+                                        output_height,
+                                        &video_bounds,
+                                        &cursor,
+                                        cursor_image,
+                                        bitmap_scale,
+                                    );
+                                }
                             }
                         }
                     }

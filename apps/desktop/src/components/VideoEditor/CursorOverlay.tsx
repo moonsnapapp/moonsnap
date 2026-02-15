@@ -24,8 +24,23 @@ const DEFAULT_CIRCLE_SIZE = 20; // Circle diameter in pixels at scale 1.0
 const BASE_CURSOR_HEIGHT = 24.0; // Base cursor height in pixels
 const REFERENCE_HEIGHT = 720.0;  // Reference video height for scaling
 
+// Motion blur constants - must stay aligned with Rust compositor logic
+const MOTION_BLUR_SAMPLES = 20;
+const MOTION_BLUR_MIN_VELOCITY = 0.005;
+const MOTION_BLUR_VELOCITY_RAMP_END = 0.03;
+const MOTION_BLUR_MAX_TRAIL = 0.15;
+const MOTION_BLUR_MAX_USER_AMOUNT = 0.15;
+const MOTION_BLUR_VELOCITY_SCALE = 2.0;
+const MAX_MOTION_PIXELS = 320.0;
+const MIN_MOTION_THRESHOLD = 0.01;
+
 // SVG rasterization - now done at exact target size for lossless quality
 // Cache key includes size to avoid re-rasterizing at the same size
+
+function smoothstep(low: number, high: number, value: number): number {
+  const t = Math.min(1, Math.max(0, (value - low) / (high - low)));
+  return t * t * (3 - 2 * t);
+}
 
 
 interface CursorOverlayProps {
@@ -299,6 +314,7 @@ export const CursorOverlay = memo(function CursorOverlay({
   const visible = cursorConfig?.visible ?? true;
   const cursorType = cursorConfig?.cursorType ?? 'auto';
   const scale = cursorConfig?.scale ?? DEFAULT_CURSOR_SCALE;
+  const motionBlur = Math.min(Math.max(cursorConfig?.motionBlur ?? 0, 0), MOTION_BLUR_MAX_USER_AMOUNT);
 
   // Get cursor position at source time (cursor data is in source time coordinates)
   const cursorData = hasCursorData ? getCursorAt(sourceTimeMs) : null;
@@ -388,21 +404,6 @@ export const CursorOverlay = memo(function CursorOverlay({
     const exportCursorHeight = Math.min(Math.max(BASE_CURSOR_HEIGHT * exportSizeScale * scale, 16), 256);
     const finalCursorHeight = exportCursorHeight;
 
-    // Helper to draw circle cursor
-    const drawCircle = () => {
-      ctx.clearRect(0, 0, roundedRenderWidth, roundedRenderHeight);
-      // Circle uses the same resolution-dependent scaling as cursor
-      const exportCircleSize = DEFAULT_CIRCLE_SIZE * exportSizeScale * scale;
-      const radius = exportCircleSize / 2;
-      ctx.beginPath();
-      ctx.arc(pixelX, pixelY, radius, 0, Math.PI * 2);
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
-      ctx.fill();
-      ctx.strokeStyle = 'rgba(255, 255, 255, 0.8)';
-      ctx.lineWidth = 2;
-      ctx.stroke();
-    };
-
     // Get click animation scale from cursor data (0.7-1.0)
     const clickAnimationScale = cursorData.scale ?? 1.0;
 
@@ -410,37 +411,115 @@ export const CursorOverlay = memo(function CursorOverlay({
     // Account for DPR so the SVG is rasterized at screen pixel resolution
     const svgTargetHeight = Math.round(finalCursorHeight * clickAnimationScale * renderScale);
 
+    const velocityX = cursorData.velocityX ?? 0;
+    const velocityY = cursorData.velocityY ?? 0;
+    const velocityMagnitude = Math.sqrt(velocityX * velocityX + velocityY * velocityY);
+    const frameDiagonal = Math.sqrt(
+      roundedRenderWidth * roundedRenderWidth + roundedRenderHeight * roundedRenderHeight
+    );
+    const motionPixels = velocityMagnitude * frameDiagonal * MOTION_BLUR_VELOCITY_SCALE;
+    const clampedMotion = Math.min(motionPixels, MAX_MOTION_PIXELS);
+    const velocityFactor = smoothstep(
+      MOTION_BLUR_MIN_VELOCITY,
+      MOTION_BLUR_VELOCITY_RAMP_END,
+      velocityMagnitude
+    );
+    const trailLength =
+      Math.min(clampedMotion / frameDiagonal, MOTION_BLUR_MAX_TRAIL) * motionBlur * velocityFactor;
+    const shouldDrawMotionBlur =
+      motionBlur > 0 &&
+      velocityMagnitude >= MOTION_BLUR_MIN_VELOCITY &&
+      velocityFactor > 0 &&
+      trailLength >= MIN_MOTION_THRESHOLD;
+    const blurDirX = shouldDrawMotionBlur ? -velocityX / velocityMagnitude : 0;
+    const blurDirY = shouldDrawMotionBlur ? -velocityY / velocityMagnitude : 0;
+
+    // Draw a motion trail (if enabled) and then the main cursor sample.
+    const drawMotionBlurTrail = (drawSample: (x: number, y: number, opacity: number) => void) => {
+      if (shouldDrawMotionBlur) {
+        for (let i = MOTION_BLUR_SAMPLES - 1; i >= 1; i -= 1) {
+          const t = i / (MOTION_BLUR_SAMPLES - 1);
+          const easedT = smoothstep(0, 1, t);
+          const offsetX = blurDirX * trailLength * easedT;
+          const offsetY = blurDirY * trailLength * easedT;
+          const sampleX = pixelX + offsetX * roundedRenderWidth;
+          const sampleY = pixelY + offsetY * roundedRenderHeight;
+          const weight = (1 - t * 0.75) * motionBlur * velocityFactor;
+          if (weight > 0) {
+            drawSample(sampleX, sampleY, weight);
+          }
+        }
+      }
+      drawSample(pixelX, pixelY, 1);
+    };
+
+    const drawCircleAt = (x: number, y: number, opacity: number) => {
+      if (opacity <= 0) return;
+      const previousAlpha = ctx.globalAlpha;
+      ctx.globalAlpha = opacity;
+      // Circle uses the same resolution-dependent scaling as cursor
+      const exportCircleSize = DEFAULT_CIRCLE_SIZE * exportSizeScale * scale;
+      const radius = exportCircleSize / 2;
+      ctx.beginPath();
+      ctx.arc(x, y, radius, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.8)';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      ctx.globalAlpha = previousAlpha;
+    };
+
     // Helper to draw SVG cursor at exact size (lossless - no scaling in drawImage)
     // SVG cursors use fractional hotspot (0-1)
-    const drawSvgCursor = (img: HTMLImageElement, def: CursorDefinition) => {
-      ctx.clearRect(0, 0, roundedRenderWidth, roundedRenderHeight);
-      // Image is already at exact size (svgTargetHeight), draw at 1:1
-      // But we need to account for renderScale in our coordinate system
+    const drawSvgCursorAt = (
+      img: HTMLImageElement,
+      def: CursorDefinition,
+      x: number,
+      y: number,
+      opacity: number
+    ) => {
+      if (opacity <= 0) return;
+      const previousAlpha = ctx.globalAlpha;
+      ctx.globalAlpha = opacity;
+      // Image is already at exact size (svgTargetHeight), draw at 1:1.
+      // But we need to account for renderScale in our coordinate system.
       const drawHeight = finalCursorHeight * clickAnimationScale;
       const drawWidth = (img.width / img.height) * drawHeight;
-      const drawX = pixelX - drawWidth * def.hotspotX;
-      const drawY = pixelY - drawHeight * def.hotspotY;
-      // Draw at exact pixel size (img is already scaled for DPR)
+      const drawX = x - drawWidth * def.hotspotX;
+      const drawY = y - drawHeight * def.hotspotY;
       ctx.drawImage(img, drawX, drawY, drawWidth, drawHeight);
+      ctx.globalAlpha = previousAlpha;
     };
 
     // Helper to draw bitmap cursor with pixel hotspot
     // Bitmap cursors are scaled to match finalCursorHeight (same as export)
-    const drawBitmap = (img: HTMLImageElement, hotspotX: number, hotspotY: number) => {
-      ctx.clearRect(0, 0, roundedRenderWidth, roundedRenderHeight);
+    const drawBitmapAt = (
+      img: HTMLImageElement,
+      hotspotX: number,
+      hotspotY: number,
+      x: number,
+      y: number,
+      opacity: number
+    ) => {
+      if (opacity <= 0) return;
+      const previousAlpha = ctx.globalAlpha;
+      ctx.globalAlpha = opacity;
       // Scale bitmap to finalCursorHeight, matching export formula:
       // bitmap_scale = final_cursor_height / cursor_image.height
       // Apply click animation scale (matches export behavior)
       const bitmapScale = (finalCursorHeight / img.height) * clickAnimationScale;
       const drawWidth = img.width * bitmapScale;
       const drawHeight = img.height * bitmapScale;
-      const drawX = pixelX - hotspotX * bitmapScale;
-      const drawY = pixelY - hotspotY * bitmapScale;
+      const drawX = x - hotspotX * bitmapScale;
+      const drawY = y - hotspotY * bitmapScale;
       ctx.drawImage(img, drawX, drawY, drawWidth, drawHeight);
+      ctx.globalAlpha = previousAlpha;
     };
 
     if (cursorType === 'circle') {
-      drawCircle();
+      ctx.clearRect(0, 0, roundedRenderWidth, roundedRenderHeight);
+      drawMotionBlurTrail(drawCircleAt);
       return;
     }
 
@@ -455,7 +534,8 @@ export const CursorOverlay = memo(function CursorOverlay({
         // Get or trigger rasterization at exact target height
         const svgImage = getSvgCursorAtSize(shape, svgTargetHeight, triggerUpdate);
         if (svgImage) {
-          drawSvgCursor(svgImage, definition);
+          ctx.clearRect(0, 0, roundedRenderWidth, roundedRenderHeight);
+          drawMotionBlurTrail((x, y, opacity) => drawSvgCursorAt(svgImage, definition, x, y, opacity));
           return;
         }
       }
@@ -466,7 +546,10 @@ export const CursorOverlay = memo(function CursorOverlay({
     if (cursorId && cursorImageData) {
       const bitmapImage = cursorImageCache.get(cursorId);
       if (bitmapImage) {
-        drawBitmap(bitmapImage, cursorImageData.hotspotX, cursorImageData.hotspotY);
+        ctx.clearRect(0, 0, roundedRenderWidth, roundedRenderHeight);
+        drawMotionBlurTrail((x, y, opacity) =>
+          drawBitmapAt(bitmapImage, cursorImageData.hotspotX, cursorImageData.hotspotY, x, y, opacity)
+        );
         return;
       }
       // Bitmap not loaded yet - continue to default
@@ -475,7 +558,8 @@ export const CursorOverlay = memo(function CursorOverlay({
     // Priority 3: Default arrow SVG at exact size (final fallback)
     const defaultImage = getSvgCursorAtSize('arrow', svgTargetHeight, triggerUpdate);
     if (defaultImage) {
-      drawSvgCursor(defaultImage, DEFAULT_CURSOR);
+      ctx.clearRect(0, 0, roundedRenderWidth, roundedRenderHeight);
+      drawMotionBlurTrail((x, y, opacity) => drawSvgCursorAt(defaultImage, DEFAULT_CURSOR, x, y, opacity));
       return;
     }
 
@@ -486,6 +570,7 @@ export const CursorOverlay = memo(function CursorOverlay({
     visible,
     cursorType,
     scale,
+    motionBlur,
     roundedRenderWidth,
     roundedRenderHeight,
     compositionRenderHeight,
