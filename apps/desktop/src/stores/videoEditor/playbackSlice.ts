@@ -43,7 +43,16 @@ export const createPlaybackSlice: SliceCreator<PlaybackSlice> = (set, get) => ({
     set({ currentTimeMs: clampedTime, lastSeekToken: lastSeekToken + 1 });
   },
 
-  togglePlayback: () => set((state) => ({ isPlaying: !state.isPlaying })),
+  togglePlayback: () => set((state) => {
+    const nextPlaying = !state.isPlaying;
+    return nextPlaying
+      ? { isPlaying: true, previewTimeMs: null }
+      : { isPlaying: false };
+  }),
 
-  setIsPlaying: (playing) => set({ isPlaying: playing }),
+  setIsPlaying: (playing) => set(
+    playing
+      ? { isPlaying: true, previewTimeMs: null }
+      : { isPlaying: false }
+  ),
 });

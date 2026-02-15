@@ -78,6 +78,7 @@ const getInitialPlaybackState = () => ({
   currentFrame: 0,
   isPlaying: false,
   renderedFrame: null,
+  previewTimeMs: null as number | null,
 });
 
 describe('playbackSlice', () => {
@@ -110,13 +111,21 @@ describe('playbackSlice', () => {
       useVideoEditorStore.getState().setIsPlaying(false);
       expect(useVideoEditorStore.getState().isPlaying).toBe(false);
     });
+
+    it('should clear preview time when set to playing', () => {
+      useVideoEditorStore.setState({ previewTimeMs: 4200 });
+      useVideoEditorStore.getState().setIsPlaying(true);
+      expect(useVideoEditorStore.getState().previewTimeMs).toBeNull();
+    });
   });
 
   describe('togglePlayback', () => {
     it('should toggle from false to true', () => {
       expect(useVideoEditorStore.getState().isPlaying).toBe(false);
+      useVideoEditorStore.setState({ previewTimeMs: 3300 });
       useVideoEditorStore.getState().togglePlayback();
       expect(useVideoEditorStore.getState().isPlaying).toBe(true);
+      expect(useVideoEditorStore.getState().previewTimeMs).toBeNull();
     });
 
     it('should toggle from true to false', () => {

@@ -242,7 +242,7 @@ export function usePlaybackSync(options: PlaybackSyncOptions): PlaybackSyncResul
 
   // Seek audio when preview time or current time changes
   useEffect(() => {
-    const timelineTime = previewTimeMs !== null ? previewTimeMs : currentTimeMs;
+    const timelineTime = !isPlaying && previewTimeMs !== null ? previewTimeMs : currentTimeMs;
     const sourceTime = getSourceTime(timelineTime);
     const seekTokenChanged = lastSeekTokenRef.current !== lastSeekToken;
     if (seekTokenChanged) {
@@ -251,7 +251,7 @@ export function usePlaybackSync(options: PlaybackSyncOptions): PlaybackSyncResul
 
     const syncAudio = (audio: HTMLAudioElement | null) => {
       if (!audio) return;
-      if (!isPlaying || previewTimeMs !== null || seekTokenChanged) {
+      if (!isPlaying || seekTokenChanged) {
         audio.currentTime = sourceTime / 1000;
       }
     };
