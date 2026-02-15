@@ -27,8 +27,8 @@ interface UseMarqueeSelectionProps {
   virtualLayout?: VirtualLayoutInfo; // Optional for virtualized grids
 }
 
-// Check if capture is a video or gif recording
-const isVideoOrGif = (captureType: string) => captureType === 'video' || captureType === 'gif';
+const isProjectVideoPath = (path: string) =>
+  path.split(/[\\/]/).pop()?.toLowerCase() === 'screen.mp4';
 
 interface UseMarqueeSelectionReturn {
   selectedIds: Set<string>;
@@ -343,8 +343,8 @@ export function useMarqueeSelection({
       const capture = captures.find((c) => c.id === id);
       if (!capture || capture.is_missing) return; // Don't open missing captures
       
-      // Videos/GIFs open in system default player
-      if (isVideoOrGif(capture.capture_type)) {
+      // GIFs always open in system default player.
+      if (capture.capture_type === 'gif') {
         try {
           await invoke('open_file_with_default_app', { path: capture.image_path });
         } catch (error) {
@@ -352,8 +352,18 @@ export function useMarqueeSelection({
         }
         return;
       }
-      
-      // Screenshots open in editor
+
+      // Video projects open in editor, quick video recordings open in system player.
+      if (capture.capture_type === 'video' && !isProjectVideoPath(capture.image_path)) {
+        try {
+          await invoke('open_file_with_default_app', { path: capture.image_path });
+        } catch (error) {
+          libraryLogger.error('Failed to open file:', error);
+        }
+        return;
+      }
+
+      // Screenshots and project videos open in editor.
       onOpenProject(id);
     },
     [captures, onOpenProject]

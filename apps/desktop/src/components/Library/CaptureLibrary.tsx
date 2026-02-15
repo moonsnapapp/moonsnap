@@ -188,17 +188,31 @@ export const CaptureLibrary: React.FC = () => {
     }
   }, []);
 
-  // Open project - now uses window-based editor for images
+  const handleEditVideo = useCallback(async (capture: CaptureListItem) => {
+    try {
+      // Open video in a dedicated floating window
+      // If the video is already open, the existing window will be focused
+      await invoke('show_video_editor_window', { projectPath: capture.image_path });
+    } catch (error) {
+      reportError(error, { operation: 'video editor open' });
+      toast.error('Failed to open video editor');
+    }
+  }, []);
+
+  // Open project in editor window
   const handleOpenProject = useCallback(async (id: string) => {
     const capture = captures.find(c => c.id === id);
     if (!capture || capture.is_missing) return;
 
-    // Images open in dedicated window editor
-    if (capture.capture_type !== 'video' && capture.capture_type !== 'gif') {
+    if (capture.capture_type === 'video') {
+      await handleEditVideo(capture);
+      return;
+    }
+
+    if (capture.capture_type !== 'gif') {
       await handleEditImage(capture);
     }
-    // Videos/GIFs are handled separately in useMarqueeSelection
-  }, [captures, handleEditImage]);
+  }, [captures, handleEditImage, handleEditVideo]);
 
   // Selection hook
   const {
@@ -332,17 +346,6 @@ export const CaptureLibrary: React.FC = () => {
       await invoke('open_file_with_default_app', { path: capture.image_path });
     } catch (error) {
       reportError(error, { operation: 'media open' });
-    }
-  }, []);
-
-  const handleEditVideo = useCallback(async (capture: CaptureListItem) => {
-    try {
-      // Open video in a dedicated floating window
-      // If the video is already open, the existing window will be focused
-      await invoke('show_video_editor_window', { projectPath: capture.image_path });
-    } catch (error) {
-      reportError(error, { operation: 'video editor open' });
-      toast.error('Failed to open video editor');
     }
   }, []);
 
