@@ -21,6 +21,7 @@ import { VideoEditorPreview } from './VideoEditorPreview';
 import { VideoEditorTimeline } from './VideoEditorTimeline';
 import { ExportProgressOverlay } from './components/ExportProgressOverlay';
 import type { ExportProgress, CropConfig } from '../../types';
+import { TIMING } from '../../constants';
 import { videoEditorLogger } from '../../utils/logger';
 
 // Lazy load CropDialog - only needed when crop tool is opened (861 lines)
@@ -239,17 +240,21 @@ export const VideoEditorView = forwardRef<VideoEditorViewRef, VideoEditorViewPro
 
   // Auto-save project when it changes (debounced)
   useEffect(() => {
-    if (!project || isSaving || isExporting) return;
+    if (!project || isExporting) return;
 
     const timeoutId = setTimeout(() => {
+      if (useVideoEditorStore.getState().isSaving) {
+        return;
+      }
+
       saveProject().catch((error) => {
         // Silent fail for auto-save - user can manually save with Ctrl+S
         videoEditorLogger.warn('Auto-save failed:', error);
       });
-    }, 2000); // 2 second debounce
+    }, TIMING.PROJECT_AUTOSAVE_DEBOUNCE_MS);
 
     return () => clearTimeout(timeoutId);
-  }, [project, isSaving, isExporting, saveProject]);
+  }, [project, isExporting, saveProject]);
 
   // Navigate back to library
   const handleBack = useCallback(() => {

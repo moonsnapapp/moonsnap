@@ -6,6 +6,7 @@ import type {
   CaptionSettings,
   WhisperModelInfo,
 } from '../../types';
+import { TIMING } from '../../constants';
 import { videoEditorLogger } from '../../utils/logger';
 
 /**
@@ -29,6 +30,48 @@ export const DEFAULT_CAPTION_SETTINGS: CaptionSettings = {
   lingerDuration: 0.4,
   exportWithSubtitles: false,
 };
+
+type CaptionPersistenceState = {
+  project: { sources?: { screenVideo?: string } } | null;
+  captionSegments: CaptionSegment[];
+  captionSettings: CaptionSettings;
+};
+
+let captionSaveTimer: ReturnType<typeof setTimeout> | null = null;
+let lastSavedCaptionSignature: string | null = null;
+
+function buildCaptionSaveSignature(videoPath: string, data: CaptionData): string {
+  return `${videoPath}:${JSON.stringify(data)}`;
+}
+
+function scheduleCaptionSidecarSave(get: () => CaptionPersistenceState): void {
+  const { project, captionSegments, captionSettings } = get();
+  const videoPath = project?.sources?.screenVideo;
+
+  if (!videoPath) return;
+
+  const data: CaptionData = {
+    segments: captionSegments,
+    settings: captionSettings,
+  };
+  const signature = buildCaptionSaveSignature(videoPath, data);
+
+  if (signature === lastSavedCaptionSignature) return;
+
+  if (captionSaveTimer) {
+    clearTimeout(captionSaveTimer);
+  }
+
+  captionSaveTimer = setTimeout(() => {
+    void invoke('save_caption_data', { videoPath, data })
+      .then(() => {
+        lastSavedCaptionSignature = signature;
+      })
+      .catch((error) => {
+        videoEditorLogger.warn('Failed to persist caption sidecar:', error);
+      });
+  }, TIMING.CAPTION_AUTOSAVE_DEBOUNCE_MS);
+}
 
 /**
  * Caption state and actions for managing transcription and captions
@@ -110,9 +153,12 @@ export const createCaptionSlice: SliceCreator<CaptionSlice> = (set, get) => ({
     }),
 
   setCaptionSegments: (segments) =>
-    set({
-      captionSegments: segments,
-    }),
+    {
+      set({
+        captionSegments: segments,
+      });
+      scheduleCaptionSidecarSave(get);
+    },
 
   updateCaptionSegment: (id, updates) => {
     const { captionSegments } = get();
@@ -121,6 +167,7 @@ export const createCaptionSlice: SliceCreator<CaptionSlice> = (set, get) => ({
         s.id === id ? { ...s, ...updates } : s
       ),
     });
+    scheduleCaptionSidecarSave(get);
   },
 
   deleteCaptionSegment: (id) => {
@@ -130,13 +177,16 @@ export const createCaptionSlice: SliceCreator<CaptionSlice> = (set, get) => ({
       selectedCaptionSegmentId:
         selectedCaptionSegmentId === id ? null : selectedCaptionSegmentId,
     });
+    scheduleCaptionSidecarSave(get);
   },
 
-  clearCaptions: () =>
+  clearCaptions: () => {
     set({
       captionSegments: [],
       selectedCaptionSegmentId: null,
-    }),
+    });
+    scheduleCaptionSidecarSave(get);
+  },
 
   // Caption settings actions
   updateCaptionSettings: (updates) => {
@@ -144,6 +194,7 @@ export const createCaptionSlice: SliceCreator<CaptionSlice> = (set, get) => ({
     set({
       captionSettings: { ...captionSettings, ...updates },
     });
+    scheduleCaptionSidecarSave(get);
   },
 
   setCaptionsEnabled: (enabled) => {
@@ -151,6 +202,7 @@ export const createCaptionSlice: SliceCreator<CaptionSlice> = (set, get) => ({
     set({
       captionSettings: { ...captionSettings, enabled },
     });
+    scheduleCaptionSidecarSave(get);
   },
 
   // Transcription actions
@@ -178,6 +230,7 @@ export const createCaptionSlice: SliceCreator<CaptionSlice> = (set, get) => ({
         transcriptionProgress: 100,
         transcriptionStage: 'complete',
       });
+      scheduleCaptionSidecarSave(get);
     } catch (error) {
       set({
         isTranscribing: false,
@@ -288,6 +341,7 @@ export const createCaptionSlice: SliceCreator<CaptionSlice> = (set, get) => ({
     };
 
     await invoke('save_caption_data', { videoPath, data });
+    lastSavedCaptionSignature = buildCaptionSaveSignature(videoPath, data);
   },
 
   loadCaptions: async (videoPath) => {
@@ -301,6 +355,7 @@ export const createCaptionSlice: SliceCreator<CaptionSlice> = (set, get) => ({
           captionSegments: data.segments,
           captionSettings: data.settings,
         });
+        lastSavedCaptionSignature = buildCaptionSaveSignature(videoPath, data);
       }
     } catch (error) {
       videoEditorLogger.error('Failed to load captions:', error);

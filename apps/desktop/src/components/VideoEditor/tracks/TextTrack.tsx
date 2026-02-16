@@ -373,11 +373,9 @@ export const TextTrackContent = memo(function TextTrackContent({
     const fontFamily = 'sans-serif';
     const fontSize = 48;
     const fontWeight = 700;
-    const defaultSizeY = 0.2;
 
     // Measure text to auto-size the gizmo
-    const sizeScale = Math.min(4, Math.max(0.25, defaultSizeY / 0.2));
-    const scaledFontSize = fontSize * sizeScale * (videoHeight / 1080);
+    const scaledFontSize = fontSize * (videoHeight / 1080);
     const maxWidthPx = videoWidth * 0.8;
     const measured = measureTextSize(content, fontFamily, scaledFontSize, fontWeight, maxWidthPx);
 

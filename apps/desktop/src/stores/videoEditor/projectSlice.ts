@@ -172,15 +172,6 @@ export const createProjectSlice: SliceCreator<ProjectSlice> = (set, get) => ({
       const sanitizedProject = sanitizeProjectForSave(projectWithCaptions);
       await invoke('save_video_project', { project: sanitizedProject });
 
-      // Also persist captions as sidecar JSON in the project folder for portability/recovery.
-      await invoke('save_caption_data', {
-        videoPath: project.sources.screenVideo,
-        data: {
-          segments: captionSegments,
-          settings: captionSettings,
-        },
-      });
-
       const savedAt = new Date().toISOString();
       set({ isSaving: false, lastSavedAt: savedAt });
     } catch (error) {

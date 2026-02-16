@@ -9,9 +9,6 @@
 import { invoke } from '@tauri-apps/api/core';
 import type { TextSegment } from '../types';
 
-/** Base text height for size scaling. */
-const BASE_TEXT_HEIGHT = 0.2;
-
 /** Result of pre-rendering a single text segment. */
 export interface PreRenderedSegment {
   segmentIndex: number;
@@ -32,7 +29,6 @@ export interface RenderTextOptions {
   italic: boolean;
   fontSize: number;
   color: string;
-  sizeY: number;
 }
 
 type RenderContext = CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
@@ -130,9 +126,8 @@ export function renderTextOnCanvas(
   canvasHeight: number,
   referenceHeight: number,
 ): void {
-  const sizeScale = Math.min(4, Math.max(0.25, opts.sizeY / BASE_TEXT_HEIGHT));
   const heightScale = referenceHeight / 1080;
-  const fontSize = Math.max(1, opts.fontSize * sizeScale * heightScale);
+  const fontSize = Math.max(1, opts.fontSize * heightScale);
   const lineHeight = fontSize * 1.2;
 
   const fontStyle = opts.italic ? 'italic ' : '';
@@ -206,7 +201,6 @@ function preRenderSegment(
     italic: !!segment.italic,
     fontSize: segment.fontSize,
     color: segment.color || '#ffffff',
-    sizeY: segment.size.y,
   }, contentWidth, contentHeight, exportHeight);
 
   ctx.restore();

@@ -140,7 +140,6 @@ const TextItem = memo(function TextItem({
     centerY: number;
     sizeX: number;
     sizeY: number;
-    fontSize: number;
   } | null>(null);
 
   // Calculate pixel position from center-based normalized coordinates
@@ -178,10 +177,9 @@ const TextItem = memo(function TextItem({
       italic: !!segment.italic,
       fontSize: segment.fontSize,
       color: segment.color || '#ffffff',
-      sizeY: segment.size.y,
     }, width, height, renderSize.height);
   }, [segment.content, segment.fontFamily, segment.fontWeight, segment.fontSize,
-      segment.italic, segment.color, segment.size.y, width, height, renderSize.height]);
+      segment.italic, segment.color, width, height, renderSize.height]);
 
   // Handle drag to move — updates DOM directly during drag for zero-lag interaction,
   // commits final position to store on mouseUp to avoid per-frame re-render cascade.
@@ -200,7 +198,6 @@ const TextItem = memo(function TextItem({
       centerY: segment.center.y,
       sizeX: segment.size.x,
       sizeY: segment.size.y,
-      fontSize: segment.fontSize,
     };
 
     const el = containerRef.current;
@@ -242,7 +239,7 @@ const TextItem = memo(function TextItem({
     document.addEventListener('mouseup', handleMouseUp);
   }, [segment, interactionSize, renderSize, isSelected, segmentId, onSelect, onUpdate]);
 
-  // Handle corner resize (proportional scaling with font size)
+  // Handle corner resize (bounds only, no font size change)
   // Updates DOM directly during drag, commits to store on mouseUp.
   const createCornerResizeHandler = useCallback((dirX: -1 | 1, dirY: -1 | 1) => {
     return (e: React.MouseEvent) => {
@@ -257,7 +254,6 @@ const TextItem = memo(function TextItem({
         centerY: segment.center.y,
         sizeX: segment.size.x,
         sizeY: segment.size.y,
-        fontSize: segment.fontSize,
       };
 
       const minSize = 0.03;
@@ -269,46 +265,39 @@ const TextItem = memo(function TextItem({
       const handleMouseMove = (moveEvent: MouseEvent) => {
         if (!dragStartRef.current) return;
 
+        const dx = (moveEvent.clientX - dragStartRef.current.x) / interactionSize.width;
         const dy = (moveEvent.clientY - dragStartRef.current.y) / interactionSize.height;
 
-        // Calculate scale based on vertical drag
-        const currentHeightPx = dragStartRef.current.sizeY * renderSize.height;
-        const deltaPxY = dy * renderSize.height * dirY;
-        const scale = (currentHeightPx + deltaPxY) / currentHeightPx;
+        const targetWidth = dragStartRef.current.sizeX + dx * dirX;
+        const targetHeight = dragStartRef.current.sizeY + dy * dirY;
+        const newSizeX = Math.max(targetWidth, minSize);
+        const newSizeY = Math.max(targetHeight, minSize);
+        const appliedDeltaX = newSizeX - dragStartRef.current.sizeX;
+        const appliedDeltaY = newSizeY - dragStartRef.current.sizeY;
 
-        if (scale > 0.1 && scale < 10) {
-          const newFontSize = clamp(dragStartRef.current.fontSize * scale, 8, 400);
-          const newSizeX = Math.max(dragStartRef.current.sizeX * scale, minSize);
-          const newSizeY = Math.max(dragStartRef.current.sizeY * scale, minSize);
+        // Allow center anywhere in 0..1 - overflow gets clipped in export
+        const newCenterX = clamp(
+          dragStartRef.current.centerX + (dirX * appliedDeltaX) / 2,
+          0, 1
+        );
+        const newCenterY = clamp(
+          dragStartRef.current.centerY + (dirY * appliedDeltaY) / 2,
+          0, 1
+        );
 
-          const widthDiff = newSizeX - dragStartRef.current.sizeX;
-          const heightDiff = newSizeY - dragStartRef.current.sizeY;
+        finalUpdate = {
+          size: { x: newSizeX, y: newSizeY },
+          center: { x: newCenterX, y: newCenterY },
+        };
 
-          // Allow center anywhere in 0..1 — overflow gets clipped in export
-          const newCenterX = clamp(
-            dragStartRef.current.centerX + (widthDiff * dirX) / 2,
-            0, 1
-          );
-          const newCenterY = clamp(
-            dragStartRef.current.centerY + (heightDiff * dirY) / 2,
-            0, 1
-          );
-
-          finalUpdate = {
-            fontSize: newFontSize,
-            size: { x: newSizeX, y: newSizeY },
-            center: { x: newCenterX, y: newCenterY },
-          };
-
-          // Update DOM directly for visual feedback
-          if (el) {
-            const pxW = Math.max(newSizeX * renderSize.width, 1);
-            const pxH = Math.max(newSizeY * renderSize.height, 1);
-            el.style.width = `${pxW}px`;
-            el.style.height = `${pxH}px`;
-            el.style.left = `${newCenterX * renderSize.width - pxW / 2}px`;
-            el.style.top = `${newCenterY * renderSize.height - pxH / 2}px`;
-          }
+        // Update DOM directly for visual feedback
+        if (el) {
+          const pxW = Math.max(newSizeX * renderSize.width, 1);
+          const pxH = Math.max(newSizeY * renderSize.height, 1);
+          el.style.width = `${pxW}px`;
+          el.style.height = `${pxH}px`;
+          el.style.left = `${newCenterX * renderSize.width - pxW / 2}px`;
+          el.style.top = `${newCenterY * renderSize.height - pxH / 2}px`;
         }
       };
 
@@ -343,7 +332,6 @@ const TextItem = memo(function TextItem({
         centerY: segment.center.y,
         sizeX: segment.size.x,
         sizeY: segment.size.y,
-        fontSize: segment.fontSize,
       };
 
       const minSize = 0.03;
@@ -433,7 +421,7 @@ const TextItem = memo(function TextItem({
       {/* Resize handles (only when selected) */}
       {isSelected && (
         <>
-          {/* Corner handles - proportional resize with font scaling */}
+          {/* Corner handles - resize text bounds without changing font size */}
           <ResizeHandle position="nw" onMouseDown={createCornerResizeHandler(-1, -1)} />
           <ResizeHandle position="ne" onMouseDown={createCornerResizeHandler(1, -1)} />
           <ResizeHandle position="sw" onMouseDown={createCornerResizeHandler(-1, 1)} />
