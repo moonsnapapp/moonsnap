@@ -130,9 +130,15 @@ pub fn calculate_composition_bounds(
             }
         },
         Some((fixed_w, fixed_h)) => {
-            // Manual mode: fit video + padding INTO fixed output
-            let available_w = (fixed_w - requested_padding * 2.0).max(1.0);
-            let available_h = (fixed_h - requested_padding * 2.0).max(1.0);
+            // Manual mode: treat padding as a 1080p-referenced value so same-aspect
+            // output presets keep consistent visual framing across resolutions.
+            let min_dimension = fixed_w.min(fixed_h).max(0.0);
+            let max_padding = ((min_dimension - 1.0) / 2.0).max(0.0);
+            let effective_padding = (requested_padding * scale_factor(fixed_h)).min(max_padding);
+
+            // Fit video + effective padding INTO fixed output
+            let available_w = (fixed_w - effective_padding * 2.0).max(1.0);
+            let available_h = (fixed_h - effective_padding * 2.0).max(1.0);
             let available_aspect = available_w / available_h;
 
             let (frame_w, frame_h) = if video_aspect > available_aspect {
@@ -154,7 +160,7 @@ pub fn calculate_composition_bounds(
                 frame_y,
                 frame_width: frame_w,
                 frame_height: frame_h,
-                effective_padding: requested_padding,
+                effective_padding,
             }
         },
     }
@@ -277,6 +283,17 @@ mod tests {
         // Should be centered
         assert!(bounds.frame_x > 0.0);
         assert!(bounds.frame_y > 0.0);
+    }
+
+    #[test]
+    fn test_composition_bounds_manual_padding_normalized_by_output_height() {
+        let bounds_720 = calculate_composition_bounds(1920.0, 1080.0, 40.0, Some((1280.0, 720.0)));
+        let bounds_2160 =
+            calculate_composition_bounds(1920.0, 1080.0, 40.0, Some((3840.0, 2160.0)));
+
+        // 40px at 1080p reference scales to ~26.67px at 720p and 80px at 2160p.
+        assert!((bounds_720.effective_padding - (40.0 * (720.0 / 1080.0))).abs() < 0.001);
+        assert!((bounds_2160.effective_padding - 80.0).abs() < 0.001);
     }
 
     #[test]

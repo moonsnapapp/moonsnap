@@ -56,8 +56,24 @@ interface PreviewStylesResult {
   croppedFrameSizeInParent: { width: number; height: number } | null;
 }
 
+const REFERENCE_COMPOSITION_HEIGHT = 1080;
+
 function toEven(value: number): number {
   return Math.floor(value / 2) * 2;
+}
+
+function getEffectiveManualPadding(
+  requestedPadding: number,
+  outputWidth: number,
+  outputHeight: number
+): number {
+  if (requestedPadding <= 0 || outputWidth <= 0 || outputHeight <= 0) {
+    return 0;
+  }
+
+  const scaledPadding = requestedPadding * (outputHeight / REFERENCE_COMPOSITION_HEIGHT);
+  const maxPadding = Math.max(0, (Math.min(outputWidth, outputHeight) - 1) / 2);
+  return Math.min(scaledPadding, maxPadding);
 }
 
 function fitCompositionToArea(
@@ -141,8 +157,13 @@ function calculateFrameBounds(
     };
   }
 
-  const availableW = Math.max(1, compositionSize.width - padding * 2);
-  const availableH = Math.max(1, compositionSize.height - padding * 2);
+  const effectivePadding = getEffectiveManualPadding(
+    padding,
+    compositionSize.width,
+    compositionSize.height
+  );
+  const availableW = Math.max(1, compositionSize.width - effectivePadding * 2);
+  const availableH = Math.max(1, compositionSize.height - effectivePadding * 2);
   const videoAspect = videoWidth / videoHeight;
   const availableAspect = availableW / availableH;
 

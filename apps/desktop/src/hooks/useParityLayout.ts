@@ -148,6 +148,7 @@ export function calculateCompositionBoundsSync(
   padding: number,
   manualOutput?: { width: number; height: number }
 ): CompositionBounds {
+  const REFERENCE_COMPOSITION_HEIGHT = 1080;
   const videoAspect = videoWidth / videoHeight;
 
   if (!manualOutput) {
@@ -165,8 +166,11 @@ export function calculateCompositionBoundsSync(
 
   // Manual mode
   const { width: fixedW, height: fixedH } = manualOutput;
-  const availableW = Math.max(1, fixedW - padding * 2);
-  const availableH = Math.max(1, fixedH - padding * 2);
+  const scaledPadding = padding * (fixedH / REFERENCE_COMPOSITION_HEIGHT);
+  const maxPadding = Math.max(0, (Math.min(fixedW, fixedH) - 1) / 2);
+  const effectivePadding = Math.min(scaledPadding, maxPadding);
+  const availableW = Math.max(1, fixedW - effectivePadding * 2);
+  const availableH = Math.max(1, fixedH - effectivePadding * 2);
   const availableAspect = availableW / availableH;
 
   let frameW: number;
@@ -187,6 +191,6 @@ export function calculateCompositionBoundsSync(
     frameY: (fixedH - frameH) / 2,
     frameWidth: frameW,
     frameHeight: frameH,
-    effectivePadding: padding,
+    effectivePadding,
   };
 }

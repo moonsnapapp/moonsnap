@@ -6,8 +6,23 @@ import { clipSegmentsToTimelineRange, getEffectiveDuration } from './trimSlice';
 import { preRenderForExport } from '../../utils/textPreRenderer';
 
 const MIN_FRAME_DIMENSION = 1;
+const REFERENCE_COMPOSITION_HEIGHT = 1080;
 
 const toEven = (value: number): number => Math.floor(value / 2) * 2;
+
+function getEffectiveManualPadding(
+  requestedPadding: number,
+  outputWidth: number,
+  outputHeight: number,
+): number {
+  if (requestedPadding <= 0 || outputWidth <= 0 || outputHeight <= 0) {
+    return 0;
+  }
+
+  const scaledPadding = requestedPadding * (outputHeight / REFERENCE_COMPOSITION_HEIGHT);
+  const maxPadding = Math.max(0, (Math.min(outputWidth, outputHeight) - MIN_FRAME_DIMENSION) / 2);
+  return Math.min(scaledPadding, maxPadding);
+}
 
 function calculateCompositionOutputSize(
   project: VideoProject,
@@ -72,8 +87,13 @@ function calculateTextFrameSizeForExport(project: VideoProject): { width: number
     };
   }
 
-  const availableW = Math.max(MIN_FRAME_DIMENSION, composition.width - padding * 2);
-  const availableH = Math.max(MIN_FRAME_DIMENSION, composition.height - padding * 2);
+  const effectivePadding = getEffectiveManualPadding(
+    padding,
+    composition.width,
+    composition.height,
+  );
+  const availableW = Math.max(MIN_FRAME_DIMENSION, composition.width - effectivePadding * 2);
+  const availableH = Math.max(MIN_FRAME_DIMENSION, composition.height - effectivePadding * 2);
   const videoAspect = videoW / videoH;
   const availableAspect = availableW / availableH;
 
