@@ -8,7 +8,16 @@
  * - Timeline-based editing
  */
 
-import { useCallback, forwardRef, useImperativeHandle, useEffect, useState, lazy, Suspense } from 'react';
+import {
+  useCallback,
+  forwardRef,
+  useImperativeHandle,
+  useEffect,
+  useState,
+  lazy,
+  Suspense,
+  useRef,
+} from 'react';
 import { toast } from 'sonner';
 import { listen } from '@tauri-apps/api/event';
 import { save } from '@tauri-apps/plugin-dialog';
@@ -100,6 +109,7 @@ export const VideoEditorView = forwardRef<VideoEditorViewRef, VideoEditorViewPro
 
   // Crop dialog state
   const [isCropDialogOpen, setIsCropDialogOpen] = useState(false);
+  const lastUserActivityAtRef = useRef(Date.now());
 
   // Skip amount in milliseconds
   const SKIP_AMOUNT_MS = 5000;
@@ -238,12 +248,58 @@ export const VideoEditorView = forwardRef<VideoEditorViewRef, VideoEditorViewPro
     };
   }, [setExportProgress]);
 
+  // Track user activity so autosave only runs for user-driven edits.
+  useEffect(() => {
+    const markUserActivity = () => {
+      lastUserActivityAtRef.current = Date.now();
+    };
+
+    window.addEventListener('pointerdown', markUserActivity, { passive: true });
+    window.addEventListener('keydown', markUserActivity);
+    window.addEventListener('wheel', markUserActivity, { passive: true });
+    window.addEventListener('touchstart', markUserActivity, { passive: true });
+
+    return () => {
+      window.removeEventListener('pointerdown', markUserActivity);
+      window.removeEventListener('keydown', markUserActivity);
+      window.removeEventListener('wheel', markUserActivity);
+      window.removeEventListener('touchstart', markUserActivity);
+    };
+  }, []);
+
   // Auto-save project when it changes (debounced)
   useEffect(() => {
     if (!project || isExporting) return;
+    if (
+      Date.now() - lastUserActivityAtRef.current >
+      TIMING.PROJECT_AUTOSAVE_ACTIVITY_WINDOW_MS
+    ) {
+      return;
+    }
 
-    const timeoutId = setTimeout(() => {
-      if (useVideoEditorStore.getState().isSaving) {
+    let cancelled = false;
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
+
+    const attemptAutoSaveWhenIdle = () => {
+      if (cancelled) return;
+
+      const state = useVideoEditorStore.getState();
+      if (!state.project || state.isExporting) return;
+
+      if (state.isSaving) {
+        timeoutId = setTimeout(
+          attemptAutoSaveWhenIdle,
+          TIMING.PROJECT_AUTOSAVE_ACTIVITY_CHECK_MS
+        );
+        return;
+      }
+
+      const idleMs = Date.now() - lastUserActivityAtRef.current;
+      if (idleMs < TIMING.PROJECT_AUTOSAVE_IDLE_MS) {
+        timeoutId = setTimeout(
+          attemptAutoSaveWhenIdle,
+          TIMING.PROJECT_AUTOSAVE_ACTIVITY_CHECK_MS
+        );
         return;
       }
 
@@ -251,9 +307,19 @@ export const VideoEditorView = forwardRef<VideoEditorViewRef, VideoEditorViewPro
         // Silent fail for auto-save - user can manually save with Ctrl+S
         videoEditorLogger.warn('Auto-save failed:', error);
       });
-    }, TIMING.PROJECT_AUTOSAVE_DEBOUNCE_MS);
+    };
 
-    return () => clearTimeout(timeoutId);
+    timeoutId = setTimeout(
+      attemptAutoSaveWhenIdle,
+      TIMING.PROJECT_AUTOSAVE_DEBOUNCE_MS
+    );
+
+    return () => {
+      cancelled = true;
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
+    };
   }, [project, isExporting, saveProject]);
 
   // Navigate back to library

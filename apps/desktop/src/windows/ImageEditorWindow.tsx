@@ -14,6 +14,7 @@ import { Titlebar } from '@/components/Titlebar/Titlebar';
 import { EditorStoreProvider, createEditorStore, useEditorStore, type EditorStore } from '@/stores/editorStore';
 import { useTheme } from '@/hooks/useTheme';
 import { editorLogger } from '@/utils/logger';
+import { TIMING } from '@/constants';
 
 // Lazy load editor components
 const EditorCanvas = React.lazy(() =>
@@ -244,6 +245,10 @@ const ImageEditorWindow: React.FC = () => {
   const isInitialLoadRef = useRef(true);
   // Flag to prevent auto-save during window close (clearEditor triggers store change)
   const isClosingRef = useRef(false);
+  // Flag to prevent overlapping annotation saves
+  const isSavingAnnotationsRef = useRef(false);
+  // Timestamp of most recent user interaction (used for activity-aware autosave)
+  const lastUserActivityAtRef = useRef(Date.now());
 
   // Create a store instance for this window
   const [store] = useState(() => createEditorStore());
@@ -381,6 +386,25 @@ const ImageEditorWindow: React.FC = () => {
     };
   }, [projectId, capturePath]);
 
+  // Track user activity so autosave is driven by actual editor interactions.
+  useEffect(() => {
+    const markUserActivity = () => {
+      lastUserActivityAtRef.current = Date.now();
+    };
+
+    window.addEventListener('pointerdown', markUserActivity, { passive: true });
+    window.addEventListener('keydown', markUserActivity);
+    window.addEventListener('wheel', markUserActivity, { passive: true });
+    window.addEventListener('touchstart', markUserActivity, { passive: true });
+
+    return () => {
+      window.removeEventListener('pointerdown', markUserActivity);
+      window.removeEventListener('keydown', markUserActivity);
+      window.removeEventListener('wheel', markUserActivity);
+      window.removeEventListener('touchstart', markUserActivity);
+    };
+  }, []);
+
   // Save annotations to the project
   // Uses projectIdRef to avoid dependency on projectId state (prevents race conditions)
   const saveAnnotations = useCallback(async (force = false) => {
@@ -394,7 +418,12 @@ const ImageEditorWindow: React.FC = () => {
       return;
     }
 
+    if (!force && isSavingAnnotationsRef.current) {
+      return;
+    }
+
     try {
+      isSavingAnnotationsRef.current = true;
       const state = store.getState();
       const { shapes, canvasBounds, compositorSettings } = state;
 
@@ -435,6 +464,8 @@ const ImageEditorWindow: React.FC = () => {
     } catch (err) {
       editorLogger.warn('Failed to save annotations:', err);
       // Don't block window close on save failure
+    } finally {
+      isSavingAnnotationsRef.current = false;
     }
   }, [store]);
 
@@ -463,17 +494,50 @@ const ImageEditorWindow: React.FC = () => {
       }
 
       if (shapesChanged || boundsChanged || compositorChanged) {
+        // Ignore non-user/background mutations to avoid write churn while idle.
+        if (
+          Date.now() - lastUserActivityAtRef.current >
+          TIMING.IMAGE_EDITOR_AUTOSAVE_ACTIVITY_WINDOW_MS
+        ) {
+          return;
+        }
+
         // Clear previous timeout
         if (timeoutId) {
           clearTimeout(timeoutId);
         }
 
-        // Schedule auto-save after 1 second of inactivity
-        timeoutId = setTimeout(() => {
+        const attemptAutoSaveWhenIdle = () => {
+          if (isClosingRef.current || isInitialLoadRef.current) {
+            return;
+          }
+
+          if (isSavingAnnotationsRef.current) {
+            timeoutId = setTimeout(
+              attemptAutoSaveWhenIdle,
+              TIMING.IMAGE_EDITOR_AUTOSAVE_ACTIVITY_CHECK_MS
+            );
+            return;
+          }
+
+          const idleMs = Date.now() - lastUserActivityAtRef.current;
+          if (idleMs < TIMING.IMAGE_EDITOR_AUTOSAVE_IDLE_MS) {
+            timeoutId = setTimeout(
+              attemptAutoSaveWhenIdle,
+              TIMING.IMAGE_EDITOR_AUTOSAVE_ACTIVITY_CHECK_MS
+            );
+            return;
+          }
+
           saveAnnotations().catch((error: unknown) => {
             editorLogger.warn('Auto-save failed:', error);
           });
-        }, 1000);
+        };
+
+        timeoutId = setTimeout(
+          attemptAutoSaveWhenIdle,
+          TIMING.IMAGE_EDITOR_AUTOSAVE_DEBOUNCE_MS
+        );
       }
     });
 
