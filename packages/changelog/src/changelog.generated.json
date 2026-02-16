@@ -1,0 +1,211 @@
+{
+  "source": "CHANGELOG.md",
+  "entries": [
+    {
+      "version": "0.3.0",
+      "date": "2025-12-28",
+      "sections": [
+        {
+          "title": "Added",
+          "items": [
+            "**Video Recording** - Screen recording with MP4 output, system audio, and microphone support",
+            "**GIF Recording** - Capture screen as animated GIFs with optimized encoding",
+            "**Webcam Overlay** - Add webcam feed to recordings",
+            "**Countdown Timer** - Configurable countdown before recording starts",
+            "**Cursor Capture** - Include cursor in recordings",
+            "**Line Tool** - Draw straight lines as annotations",
+            "**Tag Support** - Organize captures with custom tags",
+            "**Undo/Redo** - Full history support for editor actions",
+            "**Testing Infrastructure** - Vitest setup with unit and integration tests"
+          ]
+        },
+        {
+          "title": "Changed",
+          "items": [
+            "Migrated UI components to shadcn/ui (from Base UI)",
+            "Refactored capture toolbar to frontend-controlled positioning",
+            "Enhanced overlay with resize handles for region adjustment",
+            "Improved glassmorphism styling throughout UI",
+            "Integrated ts-rs for Rust-to-TypeScript type generation"
+          ]
+        },
+        {
+          "title": "Fixed",
+          "items": [
+            "Windows resize lag with transparency enabled",
+            "Stale closures in marquee selection",
+            "Audio sync issues in recordings",
+            "Save-on-exit race conditions"
+          ]
+        }
+      ]
+    },
+    {
+      "version": "0.2.5",
+      "date": "2025-12-24",
+      "sections": [
+        {
+          "title": "Added",
+          "items": [
+            "Momentum zoom for canvas navigation",
+            "Double-click to open captures in library",
+            "Momentum scroll in capture library",
+            "WebView2 GPU optimization flags for Windows"
+          ]
+        },
+        {
+          "title": "Changed",
+          "items": [
+            "Updated React to v19.2.0",
+            "Instant theme switching (disabled transitions during switch)",
+            "Optimized library grid animations and resize performance",
+            "Memoized date grouping for better performance"
+          ]
+        },
+        {
+          "title": "Fixed",
+          "items": [
+            "Virtual screen bounds calculation",
+            "Duplicate window borders on rapid monitor switching"
+          ]
+        }
+      ]
+    },
+    {
+      "version": "0.2.4",
+      "date": "2025-12-24",
+      "sections": [
+        {
+          "title": "Added",
+          "items": [
+            "Window state persistence (remembers size/position)",
+            "Single-instance enforcement (prevents multiple app windows)"
+          ]
+        },
+        {
+          "title": "Changed",
+          "items": [
+            "Dynamic app version display in settings",
+            "Enhanced startup cleanup with pre-created directories"
+          ]
+        }
+      ]
+    },
+    {
+      "version": "0.2.3",
+      "date": "2025-12-24",
+      "sections": [
+        {
+          "title": "Changed",
+          "items": [
+            "Build configuration cleanup",
+            "Version sync script improvements"
+          ]
+        }
+      ]
+    },
+    {
+      "version": "0.2.2",
+      "date": "2025-12-23",
+      "sections": [
+        {
+          "title": "Added",
+          "items": [
+            "Auto-update checking and installation",
+            "Missing file detection with re-import option",
+            "Delete capture with confirmation dialog",
+            "Text shape with stroke/fill color support",
+            "All monitors capture mode",
+            "Minimize-to-tray option",
+            "User-configurable save directory",
+            "BMP image format support",
+            "Keyboard shortcuts for editor actions"
+          ]
+        },
+        {
+          "title": "Changed",
+          "items": [
+            "Auto-deselect shapes when switching tools",
+            "Reset to select tool on new image load",
+            "Enhanced compositor settings persistence",
+            "Improved blur controls with preset intensity levels"
+          ]
+        },
+        {
+          "title": "Fixed",
+          "items": [
+            "Alert dialog animation classes",
+            "Crop overlay dragging during pan",
+            "Invisible shapes fallback color"
+          ]
+        }
+      ]
+    },
+    {
+      "version": "0.2.1",
+      "date": "2025-12-23",
+      "sections": [
+        {
+          "title": "Changed",
+          "items": [
+            "Minor improvements and bug fixes"
+          ]
+        }
+      ]
+    },
+    {
+      "version": "0.2.0",
+      "date": "2025-12-23",
+      "sections": [
+        {
+          "title": "Added",
+          "items": [
+            "Compositor background effects (solid, gradient, image)",
+            "Color picker in properties panel",
+            "Date grouping in capture library",
+            "Dynamic tray menu with shortcut text",
+            "Arrow shape with improved handles",
+            "Tooltip responsiveness improvements"
+          ]
+        },
+        {
+          "title": "Changed",
+          "items": [
+            "Simplified padding calculation to absolute pixels",
+            "Extracted library components for modularity",
+            "Throttled window detection",
+            "Debounced canvas fit calculations"
+          ]
+        },
+        {
+          "title": "Fixed",
+          "items": [
+            "Pixel alignment in screen capture",
+            "Logical to physical pixel scaling",
+            "Window capture reliability"
+          ]
+        }
+      ]
+    },
+    {
+      "version": "0.1.0",
+      "date": "2025-12-21",
+      "sections": [
+        {
+          "title": "Added",
+          "items": [
+            "Initial release",
+            "Region, fullscreen, and window capture",
+            "Annotation tools: rectangle, ellipse, arrow, text, highlight, blur, pen, steps",
+            "Crop and expand functionality",
+            "Global hotkey support",
+            "Capture library with thumbnails",
+            "Favorites system",
+            "Light/dark theme support",
+            "Auto-updates via GitHub releases"
+          ]
+        }
+      ]
+    }
+  ]
+}

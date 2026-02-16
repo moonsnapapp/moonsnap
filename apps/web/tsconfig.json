@@ -20,6 +20,8 @@
     ],
     "paths": {
       "@/*": ["./src/*"],
+      "@snapit/changelog": ["../../packages/changelog/src"],
+      "@snapit/changelog/*": ["../../packages/changelog/src/*"],
       "@snapit/ui": ["../../packages/ui/src"],
       "@snapit/ui/*": ["../../packages/ui/src/*"]
     }

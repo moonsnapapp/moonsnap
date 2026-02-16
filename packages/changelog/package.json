@@ -1,0 +1,20 @@
+{
+  "name": "@snapit/changelog",
+  "private": true,
+  "version": "0.0.1",
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./data": "./src/changelog.generated.json"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@snapit/config-typescript": "workspace:*",
+    "typescript": "~5.8.3"
+  }
+}
+

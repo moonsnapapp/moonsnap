@@ -34,6 +34,7 @@ export default defineConfig(async () => ({
   resolve: {
     alias: {
       "@": resolve(__dirname, "./src"),
+      "@snapit/changelog": resolve(__dirname, "../../packages/changelog/src"),
       "@snapit/ui": resolve(__dirname, "../../packages/ui/src"),
     },
   },

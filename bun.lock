@@ -30,6 +30,7 @@
         "@radix-ui/react-toggle": "^1.1.10",
         "@radix-ui/react-toggle-group": "^1.1.11",
         "@radix-ui/react-tooltip": "^1.2.8",
+        "@snapit/changelog": "workspace:*",
         "@snapit/ui": "workspace:*",
         "@tanstack/react-virtual": "^3.13.14",
         "@tauri-apps/api": "^2.9.1",
@@ -91,6 +92,7 @@
       "name": "@snapit/web",
       "version": "0.1.0",
       "dependencies": {
+        "@snapit/changelog": "workspace:*",
         "@snapit/ui": "workspace:*",
         "next": "16.1.4",
         "react": "19.2.3",
@@ -132,6 +134,14 @@
     "packages/config-typescript": {
       "name": "@snapit/config-typescript",
       "version": "0.0.1",
+    },
+    "packages/changelog": {
+      "name": "@snapit/changelog",
+      "version": "0.0.1",
+      "devDependencies": {
+        "@snapit/config-typescript": "workspace:*",
+        "typescript": "~5.8.3",
+      },
     },
     "packages/ui": {
       "name": "@snapit/ui",
@@ -554,6 +564,8 @@
     "@rollup/rollup-win32-x64-msvc": ["@rollup/rollup-win32-x64-msvc@4.53.5", "", { "os": "win32", "cpu": "x64" }, "sha512-JRpZUhCfhZ4keB5v0fe02gQJy05GqboPOaxvjugW04RLSYYoB/9t2lx2u/tMs/Na/1NXfY8QYjgRljRpN+MjTQ=="],
 
     "@rtsao/scc": ["@rtsao/scc@1.1.0", "", {}, "sha512-zt6OdqaDoOnJ1ZYsCYGt9YmWzDXl4vQdKTyJev62gFhRGKdx7mcT54V9KIjg+d2wi9EXsPvAPKe7i7WjfVWB8g=="],
+
+    "@snapit/changelog": ["@snapit/changelog@workspace:packages/changelog"],
 
     "@snapit/config-eslint": ["@snapit/config-eslint@workspace:packages/config-eslint"],
 

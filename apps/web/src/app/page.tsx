@@ -1,3 +1,4 @@
+import Link from "next/link";
 import {
   RecordIcon,
   ScreenshotIcon,
@@ -45,6 +46,12 @@ export default function Home() {
             >
               Features
             </a>
+            <Link
+              href="/changelog"
+              className="text-sm text-[var(--muted)] hover:text-white transition-colors"
+            >
+              Changelog
+            </Link>
             <a
               href="#download"
               className="btn-primary text-sm px-4 py-2"

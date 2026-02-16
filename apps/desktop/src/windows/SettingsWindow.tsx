@@ -15,6 +15,7 @@ import { ShortcutsTab } from '@/components/Settings/ShortcutsTab';
 import { GeneralTab } from '@/components/Settings/GeneralTab';
 import { ScreenshotsTab } from '@/components/Settings/ScreenshotsTab';
 import { FeedbackTab } from '@/components/Settings/FeedbackTab';
+import { ChangelogTab } from '@/components/Settings/ChangelogTab';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { useTheme } from '@/hooks/useTheme';
 import { useUpdater } from '@/hooks/useUpdater';
@@ -130,7 +131,7 @@ const SettingsWindow: React.FC = () => {
       case 'feedback':
         return <FeedbackTab />;
       case 'changelog':
-        return <PlaceholderSection title="Changelog" />;
+        return <ChangelogTab />;
       default:
         return <GeneralTab />;
     }
