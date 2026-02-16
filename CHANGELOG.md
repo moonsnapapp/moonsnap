@@ -2,6 +2,24 @@
 
 All notable changes to SnapIt are documented in this file.
 
+## [0.5.3] - 2026-02-16
+
+### Added
+- Click-to-place for the Text tool and crosshair cursor for drawing tools.
+- Changelog viewer in desktop settings and on the web.
+- Show Background toggle for the Style panel.
+
+### Changed
+- Text tool drawing and selection performance significantly improved.
+
+### Fixed
+- Normalize composition padding by output height for consistent framing.
+- Use native file picker for background images and reset toolbar state on save.
+- Disable NV12 fast path for odd source/crop dimensions to prevent frame jitter.
+- Live preview during text box resize drag.
+- Autosave now activity-aware to avoid idle write churn.
+- Decouple text resize from font size scaling.
+
 ## [0.5.2] - 2026-02-16
 
 ### Added

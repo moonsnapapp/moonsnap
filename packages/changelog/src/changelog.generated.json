@@ -2,6 +2,37 @@
   "source": "CHANGELOG.md",
   "entries": [
     {
+      "version": "0.5.3",
+      "date": "2026-02-16",
+      "sections": [
+        {
+          "title": "Added",
+          "items": [
+            "Click-to-place for the Text tool and crosshair cursor for drawing tools.",
+            "Changelog viewer in desktop settings and on the web.",
+            "Show Background toggle for the Style panel."
+          ]
+        },
+        {
+          "title": "Changed",
+          "items": [
+            "Text tool drawing and selection performance significantly improved."
+          ]
+        },
+        {
+          "title": "Fixed",
+          "items": [
+            "Normalize composition padding by output height for consistent framing.",
+            "Use native file picker for background images and reset toolbar state on save.",
+            "Disable NV12 fast path for odd source/crop dimensions to prevent frame jitter.",
+            "Live preview during text box resize drag.",
+            "Autosave now activity-aware to avoid idle write churn.",
+            "Decouple text resize from font size scaling."
+          ]
+        }
+      ]
+    },
+    {
       "version": "0.5.2",
       "date": "2026-02-16",
       "sections": [
