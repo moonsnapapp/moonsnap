@@ -57,20 +57,20 @@ const ImageEditorContent: React.FC<{
   const stageRef = useRef<Konva.Stage>(null);
   const editorCanvasRef = useRef<EditorCanvasRef>(null);
 
-  const {
-    shapes,
-    setShapes,
-    compositorSettings,
-    setCompositorSettings,
-    selectedIds,
-    setSelectedIds,
-    strokeColor,
-    setStrokeColor,
-    fillColor,
-    setFillColor,
-    strokeWidth,
-    setStrokeWidth,
-  } = useEditorStore();
+  // Individual selectors prevent re-renders from unrelated store changes
+  // (e.g. selectedIds changing won't re-render if only EditorCanvas needs it)
+  const shapes = useEditorStore((s) => s.shapes);
+  const setShapes = useEditorStore((s) => s.setShapes);
+  const compositorSettings = useEditorStore((s) => s.compositorSettings);
+  const setCompositorSettings = useEditorStore((s) => s.setCompositorSettings);
+  const selectedIds = useEditorStore((s) => s.selectedIds);
+  const setSelectedIds = useEditorStore((s) => s.setSelectedIds);
+  const strokeColor = useEditorStore((s) => s.strokeColor);
+  const setStrokeColor = useEditorStore((s) => s.setStrokeColor);
+  const fillColor = useEditorStore((s) => s.fillColor);
+  const setFillColor = useEditorStore((s) => s.setFillColor);
+  const strokeWidth = useEditorStore((s) => s.strokeWidth);
+  const setStrokeWidth = useEditorStore((s) => s.setStrokeWidth);
 
   const [selectedTool, setSelectedTool] = useState<Tool>('select');
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);

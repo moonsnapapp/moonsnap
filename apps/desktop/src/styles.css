@@ -3060,6 +3060,11 @@ body.overlay-window #root {
   color: rgba(255, 255, 255, 0.7);
 }
 
+/* Force crosshair cursor for drawing tools (overrides Konva's inline cursor) */
+.drawing-tool-active .konvajs-content {
+  cursor: crosshair !important;
+}
+
 /* ========================================
    CLOUD TOOLBAR - Soft Cloud Effect
    Floating bottom toolbar with gentle blur

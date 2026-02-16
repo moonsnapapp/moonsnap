@@ -64,8 +64,18 @@ export const useTextEditing = ({
   const handleSaveTextEdit = useCallback(() => {
     if (!editingTextId) return;
 
-    const updatedShapes = shapes.map(s =>
-      s.id === editingTextId ? { ...s, text: editingTextValue } : s
+    const currentShape = shapes.find((s) => s.id === editingTextId);
+    const nextText = editingTextValue;
+
+    // Avoid shape-array churn when blur/save doesn't actually change text.
+    if (!currentShape || (currentShape.text || '') === nextText) {
+      setEditingTextId(null);
+      setEditingTextValue('');
+      return;
+    }
+
+    const updatedShapes = shapes.map((s) =>
+      s.id === editingTextId ? { ...s, text: nextText } : s
     );
     onShapesChange(updatedShapes);
     setEditingTextId(null);

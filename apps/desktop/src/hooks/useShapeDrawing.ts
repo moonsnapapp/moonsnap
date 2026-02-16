@@ -59,13 +59,31 @@ export const useShapeDrawing = ({
   history,
 }: UseShapeDrawingProps): UseShapeDrawingReturn => {
   const { takeSnapshot, commitSnapshot, recordAction } = history;
-  const [isDrawing, setIsDrawing] = useState(false);
-  const [drawStart, setDrawStart] = useState({ x: 0, y: 0 });
-  const [shapeSpawned, setShapeSpawned] = useState(false);
+  const [isDrawing, setIsDrawingState] = useState(false);
+  // Mirror isDrawing as a ref so mouseMove sees updates immediately
+  // (setState only takes effect after React re-renders, causing dropped frames)
+  const isDrawingRef = useRef(false);
+  const setIsDrawing = useCallback((v: boolean) => {
+    isDrawingRef.current = v;
+    setIsDrawingState(v);
+  }, []);
+
+  // Use refs for internal draw state (not used for rendering, avoids re-renders)
+  const drawStartRef = useRef({ x: 0, y: 0 });
+  const shapeSpawnedRef = useRef(false);
+  // Tracks a pending mouseDown that hasn't entered drawing mode yet.
+  // Drawing mode is deferred to mouseMove (when drag threshold is exceeded).
+  // If mouseUp fires while still pending, it's a click.
+  const pendingDrawRef = useRef<{ x: number; y: number } | null>(null);
 
   // Refs for live drawing without re-renders
   const liveShapeRef = useRef<CanvasShape | null>(null);
   const shapesBeforeDrawRef = useRef<CanvasShape[]>([]);
+  const liveTextNodesRef = useRef<{
+    shapeId: string;
+    rect: Konva.Rect | null;
+    textNode: Konva.Text | null;
+  } | null>(null);
 
   // Create a new shape based on tool type
   const createShapeAtPosition = useCallback(
@@ -236,13 +254,14 @@ export const useShapeDrawing = ({
       // Crop tool is handled elsewhere
       if (selectedTool === 'crop') return false;
 
-      // For drag-to-draw tools, snapshot before drawing starts
-      takeSnapshot();
+      // For drag-to-draw tools, record position but defer drawing mode to mouseMove.
+      // This avoids re-renders from isDrawing state changes on simple clicks.
+      drawStartRef.current = pos;
       shapesBeforeDrawRef.current = shapes;
+      pendingDrawRef.current = pos;
       liveShapeRef.current = null;
-      setIsDrawing(true);
-      setDrawStart(pos);
-      setShapeSpawned(false);
+      liveTextNodesRef.current = null;
+      shapeSpawnedRef.current = false;
       return true;
     },
     [
@@ -259,28 +278,61 @@ export const useShapeDrawing = ({
   // Handle mouse move during drawing - uses Konva directly to avoid React re-renders
   const handleDrawingMouseMove = useCallback(
     (pos: { x: number; y: number }) => {
-      if (!isDrawing) return;
+      const drawStart = drawStartRef.current;
+
+      // If pending (mouseDown happened, but haven't entered drawing mode yet),
+      // check if drag threshold is exceeded to enter drawing mode.
+      if (pendingDrawRef.current && !isDrawingRef.current) {
+        const distance = Math.sqrt(
+          Math.pow(pos.x - drawStart.x, 2) + Math.pow(pos.y - drawStart.y, 2)
+        );
+        if (distance < MIN_SHAPE_SIZE) return;
+
+        // Threshold exceeded — now enter drawing mode
+        takeSnapshot();
+        pendingDrawRef.current = null;
+        shapeSpawnedRef.current = false;
+        setIsDrawing(true);
+
+        // Spawn the initial shape immediately
+        const newShape = createShapeAtPosition(drawStart, pos);
+        if (newShape) {
+          liveShapeRef.current = newShape;
+          if (newShape.type === 'text') {
+            liveTextNodesRef.current = null;
+          }
+          onShapesChange([...shapesBeforeDrawRef.current, newShape]);
+          if (newShape.type !== 'text') {
+            setSelectedIds([newShape.id]);
+          }
+          shapeSpawnedRef.current = true;
+        }
+        return;
+      }
+
+      if (!isDrawingRef.current) return;
 
       const stage = stageRef.current;
       if (!stage) return;
 
-      // Calculate distance from start
-      const distance = Math.sqrt(
-        Math.pow(pos.x - drawStart.x, 2) + Math.pow(pos.y - drawStart.y, 2)
-      );
+      // If shape not spawned yet (shouldn't normally happen since we spawn above, but safety check)
+      if (!shapeSpawnedRef.current) {
+        const distance = Math.sqrt(
+          Math.pow(pos.x - drawStart.x, 2) + Math.pow(pos.y - drawStart.y, 2)
+        );
+        if (distance < MIN_SHAPE_SIZE) return;
 
-      // If shape not spawned yet, check threshold
-      if (!shapeSpawned) {
-        if (distance < MIN_SHAPE_SIZE) {
-          return;
-        }
-        // Spawn the shape - this requires a React state update
         const newShape = createShapeAtPosition(drawStart, pos);
         if (newShape) {
           liveShapeRef.current = newShape;
+          if (newShape.type === 'text') {
+            liveTextNodesRef.current = null;
+          }
           onShapesChange([...shapesBeforeDrawRef.current, newShape]);
-          setSelectedIds([newShape.id]);
-          setShapeSpawned(true);
+          if (newShape.type !== 'text') {
+            setSelectedIds([newShape.id]);
+          }
+          shapeSpawnedRef.current = true;
         }
         return;
       }
@@ -351,23 +403,30 @@ export const useShapeDrawing = ({
           break;
         }
         case 'text': {
-          // Text uses a Group containing Rect + Text, find the Rect to resize
+          // Cache child-node lookups to avoid repeated findOne calls while dragging.
           const group = node as Konva.Group;
-          const rect = group.findOne('.text-box-border') as Konva.Rect;
-          const textNode = group.findOne('.text-content') as Konva.Text;
+          let cache = liveTextNodesRef.current;
+          if (!cache || cache.shapeId !== liveShape.id) {
+            cache = {
+              shapeId: liveShape.id,
+              rect: group.findOne('.text-box-border') as Konva.Rect | null,
+              textNode: group.findOne('.text-content') as Konva.Text | null,
+            };
+            liveTextNodesRef.current = cache;
+          }
           const width = Math.max(50, Math.abs(pos.x - drawStart.x));
           const height = Math.max(fontSize * 1.5, Math.abs(pos.y - drawStart.y));
           const x = Math.min(drawStart.x, pos.x);
           const y = Math.min(drawStart.y, pos.y);
           group.x(x);
           group.y(y);
-          if (rect) {
-            rect.width(width);
-            rect.height(height);
+          if (cache.rect) {
+            cache.rect.width(width);
+            cache.rect.height(height);
           }
-          if (textNode) {
-            textNode.width(width);
-            textNode.height(height);
+          if (cache.textNode) {
+            cache.textNode.width(width);
+            cache.textNode.height(height);
           }
           liveShapeRef.current = { ...liveShape, x, y, width, height };
           break;
@@ -377,14 +436,53 @@ export const useShapeDrawing = ({
       // Trigger Konva layer redraw (much faster than React re-render)
       node.getLayer()?.batchDraw();
     },
-    [isDrawing, shapeSpawned, drawStart, fontSize, createShapeAtPosition, setSelectedIds, stageRef, onShapesChange]
+    [fontSize, createShapeAtPosition, setSelectedIds, stageRef, onShapesChange, takeSnapshot, setIsDrawing]
   );
 
   // Handle mouse up - finalize drawing and sync React state
   const handleDrawingMouseUp = useCallback(() => {
-    if (!isDrawing) return;
+    // Click (mouseUp before drag threshold was reached — never entered drawing mode)
+    if (pendingDrawRef.current) {
+      const clickPos = pendingDrawRef.current;
+      pendingDrawRef.current = null;
 
-    if (shapeSpawned && liveShapeRef.current) {
+      if (selectedTool === 'text') {
+        // Click-to-place: spawn a default-size text box at the click position
+        const id = `shape_${Date.now()}`;
+        const defaultWidth = 200;
+        const defaultHeight = Math.max(fontSize * 1.5, 30);
+        const newShape: CanvasShape = {
+          id,
+          type: 'text',
+          x: clickPos.x,
+          y: clickPos.y,
+          width: defaultWidth,
+          height: defaultHeight,
+          text: '',
+          fontSize,
+          fontFamily: 'Arial',
+          fontStyle: 'normal',
+          textDecoration: '',
+          align: 'left',
+          wrap: 'word',
+          fill: strokeColor,
+          stroke: undefined,
+          strokeWidth: 0,
+        };
+        recordAction(() => onShapesChange([...shapesBeforeDrawRef.current, newShape]));
+        setSelectedIds([id]);
+        onToolChange('select');
+        if (onTextShapeCreated) {
+          onTextShapeCreated(id);
+        }
+      }
+      // For non-text tools, a click does nothing (same as before)
+      return;
+    }
+
+    if (!isDrawingRef.current) return;
+
+    if (shapeSpawnedRef.current && liveShapeRef.current) {
       // Commit final shape to React state
       const finalShape = liveShapeRef.current;
       onShapesChange([...shapesBeforeDrawRef.current, finalShape]);
@@ -395,6 +493,7 @@ export const useShapeDrawing = ({
       }
       // If text shape was created, trigger editor to open immediately
       if (finalShape.type === 'text' && onTextShapeCreated) {
+        setSelectedIds([finalShape.id]);
         onTextShapeCreated(finalShape.id);
       }
     }
@@ -402,15 +501,16 @@ export const useShapeDrawing = ({
     // Clean up refs
     liveShapeRef.current = null;
     shapesBeforeDrawRef.current = [];
+    liveTextNodesRef.current = null;
     setIsDrawing(false);
-    setShapeSpawned(false);
-  }, [isDrawing, shapeSpawned, selectedTool, onToolChange, onShapesChange, onTextShapeCreated]);
+    shapeSpawnedRef.current = false;
+  }, [selectedTool, onToolChange, onShapesChange, onTextShapeCreated, fontSize, strokeColor, setSelectedIds, recordAction, commitSnapshot, setIsDrawing]);
 
   // Force-finalize any in-progress drawing and return the current shapes
   // This ensures no shapes are lost when exiting edit mode
   const finalizeAndGetShapes = useCallback((): CanvasShape[] => {
     // If there's a shape being drawn, include it in the result
-    if (isDrawing && shapeSpawned && liveShapeRef.current) {
+    if (isDrawingRef.current && shapeSpawnedRef.current && liveShapeRef.current) {
       const finalShape = liveShapeRef.current;
       const finalShapes = [...shapesBeforeDrawRef.current, finalShape];
 
@@ -421,15 +521,16 @@ export const useShapeDrawing = ({
       // Clean up
       liveShapeRef.current = null;
       shapesBeforeDrawRef.current = [];
+      liveTextNodesRef.current = null;
       setIsDrawing(false);
-      setShapeSpawned(false);
+      shapeSpawnedRef.current = false;
 
       return finalShapes;
     }
 
     // No in-progress drawing, return current shapes
     return shapes;
-  }, [isDrawing, shapeSpawned, shapes, onShapesChange]);
+  }, [shapes, onShapesChange, setIsDrawing]);
 
   return {
     isDrawing,

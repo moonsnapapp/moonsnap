@@ -53,7 +53,7 @@ export interface EditorCanvasRef {
   finalizeAndGetShapes: () => CanvasShape[];
 }
 
-export const EditorCanvas = forwardRef<EditorCanvasRef, EditorCanvasProps>(({
+export const EditorCanvas = React.memo(forwardRef<EditorCanvasRef, EditorCanvasProps>(({
   imageData,
   selectedTool,
   onToolChange,
@@ -196,11 +196,8 @@ export const EditorCanvas = forwardRef<EditorCanvasRef, EditorCanvasProps>(({
     stageRef,
     getCanvasPosition: navigation.getCanvasPosition,
     onTextShapeCreated: (shapeId) => {
-      // Open text editor immediately after drawing text box
-      const shape = shapes.find(s => s.id === shapeId);
-      if (shape) {
-        textEditing.startEditing(shapeId, shape.text || '');
-      }
+      // New text shapes always start empty; avoid shape lookup on creation path.
+      textEditing.startEditing(shapeId, '');
     },
     history,
   });
@@ -313,6 +310,13 @@ export const EditorCanvas = forwardRef<EditorCanvasRef, EditorCanvasProps>(({
 
         if (clickedOnEmpty) {
           setSelectedIds([]);
+
+          // While editing text, empty-click should only close editor/deselect.
+          // Skip marquee setup to avoid unnecessary shape intersection work.
+          if (textEditing.editingTextId) {
+            return;
+          }
+
           const stage = stageRef.current;
           if (stage) {
             const screenPos = stage.getPointerPosition();
@@ -324,7 +328,7 @@ export const EditorCanvas = forwardRef<EditorCanvasRef, EditorCanvasProps>(({
         }
       }
     },
-    [drawing, selectedTool, setSelectedIds, marquee, stageRef, navigation]
+    [drawing, selectedTool, setSelectedIds, marquee, stageRef, navigation, textEditing.editingTextId]
   );
 
   const handleMouseMove = React.useCallback(
@@ -337,8 +341,8 @@ export const EditorCanvas = forwardRef<EditorCanvasRef, EditorCanvasProps>(({
 
       const pos = navigation.getCanvasPosition(screenPos);
 
-      // Drawing move
-      if (drawing.isDrawing) {
+      // Drawing move (also handles pending → drawing transition on drag threshold)
+      if (drawing.isDrawing || (selectedTool !== 'select' && selectedTool !== 'crop' && selectedTool !== 'background')) {
         drawing.handleDrawingMouseMove(pos);
         return;
       }
@@ -348,21 +352,22 @@ export const EditorCanvas = forwardRef<EditorCanvasRef, EditorCanvasProps>(({
         marquee.updateMarquee(pos);
       }
     },
-    [drawing, marquee, navigation, stageRef]
+    [drawing, marquee, navigation, stageRef, selectedTool]
   );
 
   const handleMouseUp = React.useCallback(() => {
-    // Finish drawing
-    if (drawing.isDrawing) {
-      drawing.handleDrawingMouseUp();
-      return;
-    }
+    // Finish drawing or click-to-place (always call — it no-ops when idle)
+    drawing.handleDrawingMouseUp();
 
     // Finish marquee
     if (marquee.isMarqueeSelecting) {
       marquee.finishMarquee();
     }
   }, [drawing, marquee]);
+
+  const handleShapeSelect = React.useCallback((id: string) => {
+    setSelectedIds([id]);
+  }, [setSelectedIds]);
 
   // Composition box dimensions (for CSS preview background)
   // Simple calculation: content size + padding on each side, scaled by zoom
@@ -442,10 +447,14 @@ export const EditorCanvas = forwardRef<EditorCanvasRef, EditorCanvasProps>(({
   return (
     <div
       ref={navigation.containerRef}
-      className="h-full w-full overflow-hidden relative"
+      className={`h-full w-full overflow-hidden relative${
+        selectedTool !== 'select' && selectedTool !== 'crop' && selectedTool !== 'background'
+          ? ' drawing-tool-active'
+          : ''
+      }`}
       style={{
         backgroundColor: 'var(--polar-mist)',
-        cursor: pan.isPanning ? 'grabbing' : 'default',
+        cursor: pan.isPanning ? 'grabbing' : undefined,
       }}
       onMouseDown={pan.handleMiddleMouseDown}
       onMouseMove={pan.handleMiddleMouseMove}
@@ -579,7 +588,7 @@ export const EditorCanvas = forwardRef<EditorCanvasRef, EditorCanvasProps>(({
                   isPanning={pan.isPanning}
                   editingTextId={textEditing.editingTextId}
                   onShapeClick={transform.handleShapeClick}
-                  onShapeSelect={(id) => setSelectedIds([id])}
+                  onShapeSelect={handleShapeSelect}
                   onDragStart={transform.handleShapeDragStart}
                   onDragEnd={transform.handleShapeDragEnd}
                   onArrowDragEnd={transform.handleArrowDragEnd}
@@ -917,4 +926,4 @@ export const EditorCanvas = forwardRef<EditorCanvasRef, EditorCanvasProps>(({
       />
     </div>
   );
-});
+}));

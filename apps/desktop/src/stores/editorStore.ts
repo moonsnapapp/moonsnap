@@ -84,6 +84,14 @@ export interface EditorState {
   _clearHistory: () => void;
 }
 
+function areSelectionIdsEqual(a: string[], b: string[]): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i += 1) {
+    if (a[i] !== b[i]) return false;
+  }
+  return true;
+}
+
 // ============================================================================
 // Store Factory
 // ============================================================================
@@ -120,7 +128,11 @@ export const createEditorStore = () => create<EditorState>()(
   canRedo: false,
 
   setShapes: (shapes) => set({ shapes }),
-  setSelectedIds: (ids) => set({ selectedIds: ids }),
+  setSelectedIds: (ids) => set((state) => (
+    areSelectionIdsEqual(state.selectedIds, ids)
+      ? state
+      : { selectedIds: ids }
+  )),
   updateShape: (id, updates) => set((state) => ({
     shapes: state.shapes.map(shape =>
       shape.id === id ? { ...shape, ...updates } : shape
@@ -187,23 +199,16 @@ export const createEditorStore = () => create<EditorState>()(
     const { history, shapes, canvasBounds } = get();
     if (history.pendingSnapshot) return; // Already have a pending snapshot
 
-    // Use structural sharing to reduce memory usage
-    // Get the most recent snapshot's shapes for reference comparison
-    const lastSnapshotShapes = history.undoStack.length > 0
-      ? history.undoStack[history.undoStack.length - 1].shapes
-      : null;
-
-    const snapshot = {
-      shapes: createShapesSnapshot(shapes, lastSnapshotShapes),
-      canvasBounds: canvasBounds ? { ...canvasBounds } : null,
-    };
-
+    // Store lightweight references — shapes are immutable so the current
+    // array reference is a valid snapshot. Expensive structural sharing
+    // and size estimation are deferred to _commitSnapshot (drag end).
     set({
       history: {
         ...history,
         pendingSnapshot: {
-          ...snapshot,
-          estimatedBytes: estimateSnapshotSize(snapshot),
+          shapes,
+          canvasBounds: canvasBounds ? { ...canvasBounds } : null,
+          estimatedBytes: 0,
         },
       },
     });
@@ -218,7 +223,19 @@ export const createEditorStore = () => create<EditorState>()(
     const boundsChanged = haveBoundsChanged(prev.canvasBounds, canvasBounds);
 
     if (shapesChanged || boundsChanged) {
-      const newUndoStack = [...history.undoStack, prev];
+      // Structural sharing deferred from _takeSnapshot for performance.
+      // Compute it now (drag end is not latency-sensitive).
+      const lastSnapshotShapes = history.undoStack.length > 0
+        ? history.undoStack[history.undoStack.length - 1].shapes
+        : null;
+      const sharedShapes = createShapesSnapshot(prev.shapes, lastSnapshotShapes);
+      const committed = {
+        shapes: sharedShapes,
+        canvasBounds: prev.canvasBounds,
+        estimatedBytes: estimateSnapshotSize({ shapes: sharedShapes, canvasBounds: prev.canvasBounds }),
+      };
+
+      const newUndoStack = [...history.undoStack, committed];
 
       // Enforce entry count limit
       while (newUndoStack.length > STORAGE.HISTORY_LIMIT) {

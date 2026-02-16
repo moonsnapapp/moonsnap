@@ -1,4 +1,4 @@
-import { useCallback } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import Konva from 'konva';
 import type { CanvasShape } from '../types';
 import type { EditorHistoryActions } from './useEditorHistory';
@@ -34,6 +34,11 @@ export const useShapeTransform = ({
   history,
 }: UseShapeTransformProps): UseShapeTransformReturn => {
   const { takeSnapshot, commitSnapshot } = history;
+  const selectedIdsRef = useRef(selectedIds);
+
+  useEffect(() => {
+    selectedIdsRef.current = selectedIds;
+  }, [selectedIds]);
 
   // Pause history at drag start to batch all drag updates
   const handleShapeDragStart = useCallback((id: string, e: Konva.KonvaEventObject<DragEvent>) => {
@@ -44,11 +49,11 @@ export const useShapeTransform = ({
     }
 
     // Add to selection if not already selected
-    if (!selectedIds.includes(id)) {
+    if (!selectedIdsRef.current.includes(id)) {
       setSelectedIds([id]);
     }
     takeSnapshot();
-  }, [selectedIds, setSelectedIds]);
+  }, [setSelectedIds, takeSnapshot]);
 
   // Handle shape drag end - supports both single and group movement
   const handleShapeDragEnd = useCallback(
@@ -70,9 +75,10 @@ export const useShapeTransform = ({
       }
 
       // Group drag: move all selected shapes by the same delta
-      if (selectedIds.length > 1 && selectedIds.includes(id)) {
+      const selectedNow = selectedIdsRef.current;
+      if (selectedNow.length > 1 && selectedNow.includes(id)) {
         const updatedShapes = shapes.map((shape) => {
-          if (!selectedIds.includes(shape.id)) return shape;
+          if (!selectedNow.includes(shape.id)) return shape;
 
           if (shape.type === 'pen' && shape.points && shape.points.length >= 2) {
             const newPoints = shape.points.map((val, i) =>
@@ -127,7 +133,7 @@ export const useShapeTransform = ({
       // Resume history tracking
       commitSnapshot();
     },
-    [shapes, onShapesChange, selectedIds]
+    [shapes, onShapesChange, commitSnapshot]
   );
 
   // Handle transform start - pause history
@@ -152,21 +158,22 @@ export const useShapeTransform = ({
       // Ignore middle mouse button (used for panning)
       if (e.evt.button === 1) return;
 
+      const selectedNow = selectedIdsRef.current;
       if (e.evt.shiftKey) {
         // Toggle selection with shift
-        if (selectedIds.includes(shapeId)) {
-          setSelectedIds(selectedIds.filter(id => id !== shapeId));
+        if (selectedNow.includes(shapeId)) {
+          setSelectedIds(selectedNow.filter(id => id !== shapeId));
         } else {
-          setSelectedIds([...selectedIds, shapeId]);
+          setSelectedIds([...selectedNow, shapeId]);
         }
       } else {
         // Keep group selection if clicking already-selected shape
-        if (!selectedIds.includes(shapeId)) {
+        if (!selectedNow.includes(shapeId)) {
           setSelectedIds([shapeId]);
         }
       }
     },
-    [selectedIds, setSelectedIds]
+    [setSelectedIds]
   );
 
   // Handle arrow drag end - updates all points by delta
@@ -178,7 +185,7 @@ export const useShapeTransform = ({
       onShapesChange(updatedShapes);
       commitSnapshot();
     },
-    [shapes, onShapesChange]
+    [shapes, onShapesChange, commitSnapshot]
   );
 
   // Handle arrow endpoint drag end - update state only at the end

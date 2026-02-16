@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import type Konva from 'konva';
 
 /**
@@ -5,7 +6,7 @@ import type Konva from 'konva';
  * Shows 'move' cursor when hovering over draggable shapes
  */
 export function useShapeCursor(isDraggable: boolean) {
-  return {
+  return useMemo(() => ({
     onMouseEnter: (e: Konva.KonvaEventObject<MouseEvent>) => {
       if (isDraggable) {
         const container = e.target.getStage()?.container();
@@ -16,5 +17,5 @@ export function useShapeCursor(isDraggable: boolean) {
       const container = e.target.getStage()?.container();
       if (container) container.style.cursor = 'default';
     },
-  };
+  }), [isDraggable]);
 }

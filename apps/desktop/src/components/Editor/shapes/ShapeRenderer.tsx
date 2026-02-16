@@ -47,7 +47,7 @@ const MemoizedShape = React.memo<{
   isLastShape: boolean;
   zoom: number;
   sourceImage: HTMLImageElement | undefined;
-  editingTextId: string | null;
+  isEditingTextShape: boolean;
   onShapeClick: (shapeId: string, e: Konva.KonvaEventObject<MouseEvent>) => void;
   onShapeSelect: (shapeId: string) => void;
   onDragStart: (shapeId: string, e: Konva.KonvaEventObject<DragEvent>) => void;
@@ -68,7 +68,7 @@ const MemoizedShape = React.memo<{
   isLastShape,
   zoom,
   sourceImage,
-  editingTextId,
+  isEditingTextShape,
   onShapeClick,
   onShapeSelect,
   onDragStart,
@@ -121,7 +121,7 @@ const MemoizedShape = React.memo<{
     onTextStartEdit(shape.id, shape.text || '');
   }, [onTextStartEdit, shape.id, shape.text]);
 
-  const commonProps = {
+  const commonProps = useMemo(() => ({
     shape,
     isSelected,
     isDraggable,
@@ -131,7 +131,7 @@ const MemoizedShape = React.memo<{
     onDragEnd: handleDragEnd,
     onTransformStart,
     onTransformEnd: handleTransformEnd,
-  };
+  }), [shape, isSelected, isDraggable, handleSelect, handleClick, handleDragStart, handleDragEnd, onTransformStart, handleTransformEnd]);
 
   switch (shape.type) {
     case 'arrow':
@@ -181,7 +181,8 @@ const MemoizedShape = React.memo<{
       return (
         <TextShape
           {...commonProps}
-          isEditing={editingTextId === shape.id}
+          isActivelyDrawing={isActivelyDrawing}
+          isEditing={isEditingTextShape}
           zoom={zoom}
           onStartEdit={handleTextStartEdit}
         />
@@ -241,7 +242,7 @@ export const ShapeRenderer: React.FC<ShapeRendererProps> = React.memo(({
           isLastShape={shape.id === lastShapeId}
           zoom={zoom}
           sourceImage={sourceImage}
-          editingTextId={editingTextId}
+          isEditingTextShape={editingTextId === shape.id}
           onShapeClick={onShapeClick}
           onShapeSelect={onShapeSelect}
           onDragStart={onDragStart}

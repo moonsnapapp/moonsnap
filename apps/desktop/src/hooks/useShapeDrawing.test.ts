@@ -109,7 +109,16 @@ describe('useShapeDrawing', () => {
         handled = result.current.handleDrawingMouseDown(event);
       });
 
+      // mouseDown returns true (handled) but defers drawing to mouseMove
       expect(handled).toBe(true);
+      expect(result.current.isDrawing).toBe(false);
+      expect(props.history.takeSnapshot).not.toHaveBeenCalled();
+
+      // Drawing starts after drag threshold is exceeded
+      act(() => {
+        result.current.handleDrawingMouseMove({ x: 110, y: 110 });
+      });
+
       expect(result.current.isDrawing).toBe(true);
       expect(props.history.takeSnapshot).toHaveBeenCalled();
     });
@@ -122,6 +131,12 @@ describe('useShapeDrawing', () => {
 
       act(() => {
         result.current.handleDrawingMouseDown(event);
+      });
+
+      expect(result.current.isDrawing).toBe(false);
+
+      act(() => {
+        result.current.handleDrawingMouseMove({ x: 110, y: 110 });
       });
 
       expect(result.current.isDrawing).toBe(true);
@@ -137,6 +152,12 @@ describe('useShapeDrawing', () => {
         result.current.handleDrawingMouseDown(event);
       });
 
+      expect(result.current.isDrawing).toBe(false);
+
+      act(() => {
+        result.current.handleDrawingMouseMove({ x: 110, y: 110 });
+      });
+
       expect(result.current.isDrawing).toBe(true);
     });
 
@@ -148,6 +169,12 @@ describe('useShapeDrawing', () => {
 
       act(() => {
         result.current.handleDrawingMouseDown(event);
+      });
+
+      expect(result.current.isDrawing).toBe(false);
+
+      act(() => {
+        result.current.handleDrawingMouseMove({ x: 110, y: 110 });
       });
 
       expect(result.current.isDrawing).toBe(true);
@@ -163,6 +190,12 @@ describe('useShapeDrawing', () => {
         result.current.handleDrawingMouseDown(event);
       });
 
+      expect(result.current.isDrawing).toBe(false);
+
+      act(() => {
+        result.current.handleDrawingMouseMove({ x: 110, y: 110 });
+      });
+
       expect(result.current.isDrawing).toBe(true);
     });
 
@@ -174,6 +207,12 @@ describe('useShapeDrawing', () => {
 
       act(() => {
         result.current.handleDrawingMouseDown(event);
+      });
+
+      expect(result.current.isDrawing).toBe(false);
+
+      act(() => {
+        result.current.handleDrawingMouseMove({ x: 110, y: 110 });
       });
 
       expect(result.current.isDrawing).toBe(true);
@@ -189,6 +228,12 @@ describe('useShapeDrawing', () => {
         result.current.handleDrawingMouseDown(event);
       });
 
+      expect(result.current.isDrawing).toBe(false);
+
+      act(() => {
+        result.current.handleDrawingMouseMove({ x: 110, y: 110 });
+      });
+
       expect(result.current.isDrawing).toBe(true);
     });
 
@@ -200,6 +245,12 @@ describe('useShapeDrawing', () => {
 
       act(() => {
         result.current.handleDrawingMouseDown(event);
+      });
+
+      expect(result.current.isDrawing).toBe(false);
+
+      act(() => {
+        result.current.handleDrawingMouseMove({ x: 110, y: 110 });
       });
 
       expect(result.current.isDrawing).toBe(true);
@@ -327,10 +378,15 @@ describe('useShapeDrawing', () => {
       const props = createMockProps({ selectedTool: 'rect' });
       const { result } = renderHook(() => useShapeDrawing(props));
 
-      // Start drawing
+      // Start drawing (deferred)
       const event = createMockKonvaEvent(props.stageRef);
       act(() => {
         result.current.handleDrawingMouseDown(event);
+      });
+
+      // Move to exceed drag threshold and enter drawing mode
+      act(() => {
+        result.current.handleDrawingMouseMove({ x: 150, y: 150 });
       });
 
       expect(result.current.isDrawing).toBe(true);
