@@ -11,7 +11,6 @@ import { TextSegmentConfig } from './TextSegmentConfig';
 import { CaptionPanel } from './CaptionPanel';
 import { SidebarTabBar, type PropertiesTab } from './components/SidebarTabBar';
 import { ProjectInfoPanel } from './panels/ProjectInfoPanel';
-import { AudioControlsPanel } from './panels/AudioControlsPanel';
 import { CursorConfigPanel } from './panels/CursorConfigPanel';
 import { WebcamConfigPanel } from './panels/WebcamConfigPanel';
 import { ExportConfigPanel } from './panels/ExportConfigPanel';
@@ -181,12 +180,6 @@ export function VideoEditorSidebar({ project, onOpenCropDialog }: VideoEditorSid
         {activeTab === 'project' && (
           <div className="p-4 space-y-4">
             <ProjectInfoPanel project={project} />
-            {project && (
-              <AudioControlsPanel
-                project={project}
-                onUpdateAudioConfig={updateAudioConfig}
-              />
-            )}
           </div>
         )}
 
@@ -235,6 +228,7 @@ export function VideoEditorSidebar({ project, onOpenCropDialog }: VideoEditorSid
             <ExportConfigPanel
               project={project}
               onUpdateExportConfig={updateExportConfig}
+              onUpdateAudioConfig={updateAudioConfig}
               onOpenCropDialog={onOpenCropDialog}
             />
           </div>

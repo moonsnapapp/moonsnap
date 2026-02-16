@@ -131,7 +131,16 @@ export function BackgroundSettings({ background, onUpdate }: BackgroundSettingsP
       <div className="flex items-center justify-between">
         <span className="text-xs text-[var(--ink-muted)]">Show BG</span>
         <button
-          onClick={() => onUpdate({ enabled: !background.enabled })}
+          onClick={() => {
+            const turningOn = !background.enabled;
+            const needsPadding = turningOn && background.padding === 0;
+            const needsRounding = needsPadding && background.rounding === 0;
+            onUpdate({
+              enabled: turningOn,
+              ...(needsPadding && { padding: 40 }),
+              ...(needsRounding && { rounding: 12 }),
+            });
+          }}
           className={`relative w-10 h-5 rounded-full transition-colors ${
             background.enabled ? 'bg-[var(--coral-400)]' : 'bg-[var(--polar-frost)]'
           }`}

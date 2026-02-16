@@ -1,17 +1,19 @@
 /**
- * ExportConfigPanel - Format, FPS, resolution, and crop settings.
+ * ExportConfigPanel - Format, FPS, resolution, crop, and audio settings.
  */
 import { Crop } from 'lucide-react';
 import { Button } from '../../../components/ui/button';
-import type { VideoProject, ExportConfig, ExportFormat } from '../../../types';
+import { AudioControlsPanel } from './AudioControlsPanel';
+import type { VideoProject, ExportConfig, ExportFormat, AudioTrackSettings } from '../../../types';
 
 export interface ExportConfigPanelProps {
   project: VideoProject;
   onUpdateExportConfig: (updates: Partial<ExportConfig>) => void;
+  onUpdateAudioConfig: (updates: Partial<AudioTrackSettings>) => void;
   onOpenCropDialog: () => void;
 }
 
-export function ExportConfigPanel({ project, onUpdateExportConfig, onOpenCropDialog }: ExportConfigPanelProps) {
+export function ExportConfigPanel({ project, onUpdateExportConfig, onUpdateAudioConfig, onOpenCropDialog }: ExportConfigPanelProps) {
   return (
     <div className="space-y-4">
       {/* Format */}
@@ -100,12 +102,14 @@ export function ExportConfigPanel({ project, onUpdateExportConfig, onOpenCropDia
           <Crop className="w-4 h-4" />
           {project.export.crop?.enabled ? 'Edit Crop' : 'Add Crop'}
         </Button>
-        {project.export.crop?.enabled && (
-          <p className="text-[10px] text-[var(--ink-subtle)] mt-1.5">
-            Position: {project.export.crop.x}, {project.export.crop.y}
-          </p>
-        )}
+
       </div>
+
+      {/* Audio Controls */}
+      <AudioControlsPanel
+        project={project}
+        onUpdateAudioConfig={onUpdateAudioConfig}
+      />
 
     </div>
   );
