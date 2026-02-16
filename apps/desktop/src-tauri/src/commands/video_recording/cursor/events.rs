@@ -3,7 +3,7 @@
 //! Records mouse positions at 100Hz and click events with timestamps.
 //! This data is used for:
 //! - Auto-zoom generation (zoom to click locations)
-//! - Cursor smooth movement interpolation
+//! - Cursor interpolation data for preview/export rendering
 //! - Click highlight animations
 //! - Cursor rendering in video editor (cursor images stored separately)
 

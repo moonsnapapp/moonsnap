@@ -1,6 +1,6 @@
 //! Cursor event capture for video editor features:
 //! - Auto-zoom generation from click locations
-//! - Cursor smooth movement interpolation
+//! - Cursor interpolation for preview/export rendering
 //! - Click highlight animations
 
 pub mod events;

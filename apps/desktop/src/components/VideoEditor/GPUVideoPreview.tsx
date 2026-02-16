@@ -95,7 +95,12 @@ const SceneModeRenderer = memo(function SceneModeRenderer({
 
   const originalVideoPath = useVideoEditorStore((s) => s.project?.sources.screenVideo ?? null);
 
-  const zoomStyle = useZoomPreview(zoomRegions, currentTimeMs, cursorRecording, { backgroundPadding, rounding, videoWidth, videoHeight });
+  const zoomStyle = useZoomPreview(zoomRegions, currentTimeMs, cursorRecording, {
+    backgroundPadding,
+    rounding,
+    videoWidth,
+    videoHeight,
+  });
 
   const screenStyle: React.CSSProperties = {
     position: 'absolute',

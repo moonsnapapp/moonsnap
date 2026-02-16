@@ -637,7 +637,7 @@ pub fn run_video_capture(
         // NOTE: Cursor is NO LONGER composited onto frames!
         // Cursor events and images are captured separately (CursorEventCapture)
         // and rendered by the video editor/exporter for flexibility.
-        // This allows: cursor type switching, motion blur, physics smoothing, etc.
+        // This allows: cursor type switching, motion blur, and click effects.
 
         // NOTE: Webcam is recorded to a separate file (not composited onto screen)
         // This allows toggling webcam visibility in the video editor

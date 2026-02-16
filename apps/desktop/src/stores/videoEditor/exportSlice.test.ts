@@ -61,11 +61,6 @@ function createTestProject(textSegments: TextSegment[]): VideoProject {
       visible: true,
       cursorType: 'auto',
       scale: 1,
-      smoothMovement: true,
-      animationStyle: 'mellow',
-      tension: 200,
-      mass: 1,
-      friction: 20,
       motionBlur: 0,
       clickHighlight: {
         enabled: true,

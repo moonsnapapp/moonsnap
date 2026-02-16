@@ -1,5 +1,5 @@
 /**
- * CursorConfigPanel - Cursor visibility, size, animation, click highlight settings.
+ * CursorConfigPanel - Cursor visibility, size, motion blur, click highlight settings.
  */
 import { Slider } from '../../../components/ui/slider';
 import { ToggleGroup, ToggleGroupItem } from '../../../components/ui/toggle-group';
@@ -66,116 +66,6 @@ export function CursorConfigPanel({ project, onUpdateCursorConfig }: CursorConfi
           step={10}
         />
       </div>
-
-      {/* Smooth Movement */}
-      <div className="flex items-center justify-between">
-        <span className="text-xs text-[var(--ink-muted)]">Smooth Movement</span>
-        <button
-          onClick={() => onUpdateCursorConfig({ smoothMovement: !project.cursor.smoothMovement })}
-          className={`relative w-10 h-5 rounded-full transition-colors ${
-            project.cursor.smoothMovement ? 'bg-[var(--coral-400)]' : 'bg-[var(--polar-frost)]'
-          }`}
-        >
-          <span
-            className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${
-              project.cursor.smoothMovement ? 'translate-x-5' : 'translate-x-0'
-            }`}
-          />
-        </button>
-      </div>
-
-      {/* Animation Style (only when smoothMovement is enabled) */}
-      {project.cursor.smoothMovement && (
-        <div className="pl-3 border-l border-[var(--glass-border)] space-y-3">
-          <div>
-            <span className="text-[11px] text-[var(--ink-subtle)] block mb-2">Animation Style</span>
-            <ToggleGroup
-              type="single"
-              value={project.cursor.animationStyle}
-              onValueChange={(value) => {
-                if (value) {
-                  const style = value as 'slow' | 'mellow' | 'fast' | 'custom';
-                  // Apply preset values when selecting a non-custom style
-                  const presets: Record<string, { tension: number; mass: number; friction: number }> = {
-                    slow: { tension: 65, mass: 1.8, friction: 16 },
-                    mellow: { tension: 120, mass: 1.1, friction: 18 },
-                    fast: { tension: 200, mass: 0.8, friction: 20 },
-                  };
-                  if (style !== 'custom' && presets[style]) {
-                    onUpdateCursorConfig({ animationStyle: style, ...presets[style] });
-                  } else {
-                    onUpdateCursorConfig({ animationStyle: style });
-                  }
-                }
-              }}
-              className="justify-start flex-wrap gap-1"
-            >
-              <ToggleGroupItem value="slow" className="text-xs h-7 px-2.5 data-[state=on]:bg-[var(--polar-frost)]">
-                Slow
-              </ToggleGroupItem>
-              <ToggleGroupItem value="mellow" className="text-xs h-7 px-2.5 data-[state=on]:bg-[var(--polar-frost)]">
-                Mellow
-              </ToggleGroupItem>
-              <ToggleGroupItem value="fast" className="text-xs h-7 px-2.5 data-[state=on]:bg-[var(--polar-frost)]">
-                Fast
-              </ToggleGroupItem>
-              <ToggleGroupItem value="custom" className="text-xs h-7 px-2.5 data-[state=on]:bg-[var(--polar-frost)]">
-                Custom
-              </ToggleGroupItem>
-            </ToggleGroup>
-          </div>
-
-          {/* Physics Controls (only when Custom style is selected) */}
-          {project.cursor.animationStyle === 'custom' && (
-            <div className="space-y-3 pt-2">
-              {/* Tension */}
-              <div>
-                <div className="flex items-center justify-between mb-1">
-                  <span className="text-[11px] text-[var(--ink-subtle)]">Tension</span>
-                  <span className="text-[11px] text-[var(--ink-muted)] font-mono">{Math.round(project.cursor.tension)}</span>
-                </div>
-                <Slider
-                  value={[project.cursor.tension]}
-                  onValueChange={(values) => onUpdateCursorConfig({ tension: values[0] })}
-                  min={1}
-                  max={500}
-                  step={5}
-                />
-              </div>
-
-              {/* Mass */}
-              <div>
-                <div className="flex items-center justify-between mb-1">
-                  <span className="text-[11px] text-[var(--ink-subtle)]">Mass</span>
-                  <span className="text-[11px] text-[var(--ink-muted)] font-mono">{project.cursor.mass.toFixed(1)}</span>
-                </div>
-                <Slider
-                  value={[project.cursor.mass * 10]}
-                  onValueChange={(values) => onUpdateCursorConfig({ mass: values[0] / 10 })}
-                  min={1}
-                  max={100}
-                  step={1}
-                />
-              </div>
-
-              {/* Friction */}
-              <div>
-                <div className="flex items-center justify-between mb-1">
-                  <span className="text-[11px] text-[var(--ink-subtle)]">Friction</span>
-                  <span className="text-[11px] text-[var(--ink-muted)] font-mono">{Math.round(project.cursor.friction)}</span>
-                </div>
-                <Slider
-                  value={[project.cursor.friction]}
-                  onValueChange={(values) => onUpdateCursorConfig({ friction: values[0] })}
-                  min={0}
-                  max={50}
-                  step={1}
-                />
-              </div>
-            </div>
-          )}
-        </div>
-      )}
 
       {/* Motion Blur */}
       <div>

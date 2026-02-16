@@ -404,9 +404,7 @@ export type {
   ZoomRegionMode,
   ZoomTransition,
   EasingFunction,
-  CursorConfig,
   CursorType,
-  CursorAnimationStyle,
   ClickHighlightConfig,
   ClickHighlightStyle,
   WebcamConfig,
@@ -438,6 +436,15 @@ export type {
   MaskSegment,
   MaskConfig,
 } from './generated';
+
+import type { CursorConfig as GeneratedCursorConfig } from './generated';
+
+// Smooth movement settings were removed. Keep the app-level type aligned even when
+// generated files are temporarily stale before ts-rs regeneration.
+export type CursorConfig = Omit<
+  GeneratedCursorConfig,
+  'smoothMovement' | 'animationStyle' | 'tension' | 'mass' | 'friction'
+>;
 
 // GPU Video Editor types (wgpu-accelerated rendering)
 export type {
@@ -475,7 +482,7 @@ export const DEFAULT_RECORDING_SETTINGS: RecordingSettings = {
   fps: 30,
   maxDurationSecs: null,
   // Disable system cursor in video frames - we render our own cursor overlay
-  // in the video editor with SVG cursors, smoothing, and effects
+  // in the video editor with SVG cursors and effects
   includeCursor: false,
   audio: {
     captureSystemAudio: true,

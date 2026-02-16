@@ -439,8 +439,13 @@ export function useZoomPreview(
   cursorRecording?: CursorRecording | null,
   options: UseZoomPreviewOptions = {}
 ): ZoomTransformStyle {
+  const {
+    backgroundPadding = 0,
+    rounding = 0,
+    videoWidth = 1920,
+    videoHeight = 1080,
+  } = options;
   const { getCursorAt, hasCursorData } = useCursorInterpolation(cursorRecording);
-  const { backgroundPadding = 0, rounding = 0, videoWidth = 1920, videoHeight = 1080 } = options;
 
   return useMemo(() => {
     // Always return an identity transform instead of 'none'

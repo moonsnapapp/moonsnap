@@ -4,7 +4,7 @@
 //! - Source files (screen video, webcam video, cursor data)
 //! - Timeline state (trim points, playback speed)
 //! - Zoom configuration (auto/manual zoom regions)
-//! - Cursor configuration (size, highlighting, smoothing)
+//! - Cursor configuration (size, highlighting, motion blur)
 //! - Webcam configuration (position, size, visibility segments)
 //! - Export settings
 //!
@@ -76,5 +76,32 @@ mod tests {
         let deserialized: AutoZoomConfig = serde_json::from_str(&json).unwrap();
         assert_eq!(deserialized.scale, 2.0);
         assert_eq!(deserialized.hold_duration_ms, 1500);
+    }
+
+    #[test]
+    fn test_cursor_config_deserializes_with_legacy_smooth_fields() {
+        let legacy_cursor_json = serde_json::json!({
+            "visible": true,
+            "cursorType": "auto",
+            "scale": 1.0,
+            "smoothMovement": true,
+            "animationStyle": "mellow",
+            "tension": 120.0,
+            "mass": 1.1,
+            "friction": 18.0,
+            "motionBlur": 0.05,
+            "clickHighlight": {
+                "enabled": true,
+                "color": "#FF6B6B",
+                "radius": 30,
+                "durationMs": 400,
+                "style": "ripple"
+            }
+        });
+
+        let deserialized: CursorConfig = serde_json::from_value(legacy_cursor_json).unwrap();
+        assert!(deserialized.visible);
+        assert_eq!(deserialized.scale, 1.0);
+        assert_eq!(deserialized.motion_blur, 0.05);
     }
 }

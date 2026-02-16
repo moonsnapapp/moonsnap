@@ -560,7 +560,7 @@ pub async fn export_video_gpu(
                                 img.height
                             );
                         }
-                        Some(CursorInterpolator::new(&recording))
+                        Some(CursorInterpolator::new(&recording, &project.cursor))
                     },
                     Err(e) => {
                         log::warn!("[EXPORT] Failed to load cursor recording: {}", e);

@@ -63,7 +63,6 @@ export type { EasingFunction } from './EasingFunction';
 // Video editor - Cursor config types
 export type { CursorConfig } from './CursorConfig';
 export type { CursorType } from './CursorType';
-export type { CursorAnimationStyle } from './CursorAnimationStyle';
 export type { ClickHighlightConfig } from './ClickHighlightConfig';
 export type { ClickHighlightStyle } from './ClickHighlightStyle';
 

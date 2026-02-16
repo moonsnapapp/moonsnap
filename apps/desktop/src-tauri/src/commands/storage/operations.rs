@@ -1373,11 +1373,6 @@ fn create_migration_project_json(
             "visible": true,
             "cursorType": "auto",
             "scale": 1.0,
-            "smoothMovement": true,
-            "animationStyle": "mellow",
-            "tension": 120.0,
-            "mass": 1.1,
-            "friction": 18.0,
             "motionBlur": 0.0,
             "clickHighlight": {
                 "enabled": true,

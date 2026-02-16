@@ -1,9 +1,4 @@
-//! Cursor interpolation with spring physics for smooth cursor rendering.
-//!
-//! Implements cursor smoothing similar to Cap's approach:
-//! 1. Spring-mass-damper physics for natural movement
-//! 2. Different spring profiles (default, snappy near clicks, drag when held)
-//! 3. Cursor movement densification for sparse data
+//! Cursor interpolation utilities for rendering.
 
 // Allow unused fields - kept for potential future use
 #![allow(dead_code)]
@@ -13,6 +8,7 @@ use super::zoom::InterpolatedZoom;
 use crate::commands::video_recording::cursor::events::{
     CursorEvent, CursorEventType, CursorImage, CursorRecording, WindowsCursorShape,
 };
+use crate::commands::video_recording::video_project::CursorConfig;
 use std::collections::HashMap;
 
 // ============================================================================
@@ -35,21 +31,31 @@ const DEFAULT_SPRING: SpringConfig = SpringConfig {
 };
 
 /// Snappy profile - used within 160ms of a click (quick response).
-fn snappy_spring() -> SpringConfig {
+fn snappy_spring(base_spring: SpringConfig) -> SpringConfig {
     SpringConfig {
-        tension: DEFAULT_SPRING.tension * 1.65,
-        mass: (DEFAULT_SPRING.mass * 0.65).max(0.1),
-        friction: DEFAULT_SPRING.friction * 1.25,
+        tension: base_spring.tension * 1.65,
+        mass: (base_spring.mass * 0.65).max(0.1),
+        friction: base_spring.friction * 1.25,
     }
 }
 
 /// Drag profile - used when mouse button is held down (less bouncy).
-fn drag_spring() -> SpringConfig {
+fn drag_spring(base_spring: SpringConfig) -> SpringConfig {
     SpringConfig {
-        tension: DEFAULT_SPRING.tension * 1.25,
-        mass: (DEFAULT_SPRING.mass * 0.85).max(0.1),
-        friction: DEFAULT_SPRING.friction * 1.1,
+        tension: base_spring.tension * 1.25,
+        mass: (base_spring.mass * 0.85).max(0.1),
+        friction: base_spring.friction * 1.1,
     }
+}
+
+fn spring_from_cursor_config(_config: &CursorConfig) -> SpringConfig {
+    DEFAULT_SPRING
+}
+
+/// Maximum allowed lag distance between smoothed and raw cursor positions.
+/// Values are in normalized 0-1 cursor coordinate space.
+fn resolve_max_lag_distance(_config: &CursorConfig) -> f32 {
+    0.022
 }
 
 /// Time window for snappy response after click.
@@ -230,6 +236,7 @@ struct SmoothedCursorEvent {
     target_position: XY,
     position: XY,
     velocity: XY,
+    spring_config: SpringConfig,
 }
 
 /// Interpolated cursor state at a point in time.
@@ -405,10 +412,10 @@ impl SpringSimulation {
 /// Debounce duration for cursor shape changes (matches editor).
 const CURSOR_SHAPE_DEBOUNCE_MS: u64 = 80;
 
-/// Cursor interpolator with pre-computed smoothed positions.
+/// Cursor interpolator for raw cursor movement.
 pub struct CursorInterpolator {
-    /// Pre-computed smoothed events.
-    smoothed_events: Vec<SmoothedCursorEvent>,
+    /// Raw move events from the recording.
+    raw_move_events: Vec<CursorEvent>,
     /// Original events for cursor ID lookup.
     original_events: Vec<CursorEvent>,
     /// Cursor images keyed by ID.
@@ -440,8 +447,13 @@ pub struct DecodedCursorImage {
 
 impl CursorInterpolator {
     /// Create a new cursor interpolator from a recording.
-    pub fn new(recording: &CursorRecording) -> Self {
-        let smoothed_events = compute_smoothed_events(recording);
+    pub fn new(recording: &CursorRecording, _cursor_config: &CursorConfig) -> Self {
+        let raw_move_events: Vec<CursorEvent> = recording
+            .events
+            .iter()
+            .filter(|e| matches!(e.event_type, CursorEventType::Move))
+            .cloned()
+            .collect();
 
         // Decode cursor images from base64 PNG
         let decoded_images = decode_cursor_images(&recording.cursor_images);
@@ -483,7 +495,7 @@ impl CursorInterpolator {
         );
 
         Self {
-            smoothed_events,
+            raw_move_events,
             original_events: recording.events.clone(),
             cursor_images: recording.cursor_images.clone(),
             decoded_images,
@@ -497,12 +509,12 @@ impl CursorInterpolator {
 
     /// Get interpolated cursor position at a specific timestamp.
     ///
-    /// This returns the smoothed cursor position along with:
+    /// This returns the cursor position along with:
     /// - `cursor_id`: Active cursor image ID (with fallback)
     /// - `cursor_shape`: Debounced cursor shape for SVG rendering (prevents flickering)
     pub fn get_cursor_at(&self, time_ms: u64) -> InterpolatedCursor {
         let cursor_id = get_active_cursor_id(&self.original_events, time_ms);
-        let mut cursor = interpolate_at_time(&self.smoothed_events, time_ms, cursor_id);
+        let mut cursor = interpolate_raw_at_time(&self.raw_move_events, time_ms, cursor_id);
 
         // Use fallback cursor_id if none found (prevents cursor from disappearing)
         if cursor.cursor_id.is_none() {
@@ -537,7 +549,7 @@ impl CursorInterpolator {
 
     /// Check if there is any cursor data.
     pub fn has_cursor_data(&self) -> bool {
-        !self.smoothed_events.is_empty()
+        !self.raw_move_events.is_empty()
     }
 
     /// Get region dimensions.
@@ -632,6 +644,7 @@ fn get_spring_profile(
     time_ms: u64,
     clicks: &[&CursorEvent],
     is_primary_button_down: bool,
+    base_spring: SpringConfig,
 ) -> SpringConfig {
     let recent_click = clicks.iter().find(|c| {
         let diff = time_ms.abs_diff(c.timestamp_ms);
@@ -639,18 +652,21 @@ fn get_spring_profile(
     });
 
     if recent_click.is_some() {
-        return snappy_spring();
+        return snappy_spring(base_spring);
     }
 
     if is_primary_button_down {
-        return drag_spring();
+        return drag_spring(base_spring);
     }
 
-    DEFAULT_SPRING
+    base_spring
 }
 
 /// Pre-compute smoothed cursor events for the entire recording.
-fn compute_smoothed_events(recording: &CursorRecording) -> Vec<SmoothedCursorEvent> {
+fn compute_smoothed_events(
+    recording: &CursorRecording,
+    base_spring: SpringConfig,
+) -> Vec<SmoothedCursorEvent> {
     let moves = densify_cursor_moves(&recording.events, recording);
     let clicks: Vec<_> = recording
         .events
@@ -669,7 +685,7 @@ fn compute_smoothed_events(recording: &CursorRecording) -> Vec<SmoothedCursorEve
         return Vec::new();
     }
 
-    let mut sim = SpringSimulation::new(DEFAULT_SPRING);
+    let mut sim = SpringSimulation::new(base_spring);
     let mut events: Vec<SmoothedCursorEvent> = Vec::with_capacity(moves.len() + 1);
 
     let mut primary_button_down = false;
@@ -689,6 +705,7 @@ fn compute_smoothed_events(recording: &CursorRecording) -> Vec<SmoothedCursorEve
             target_position: first_pos,
             position: first_pos,
             velocity: XY::default(),
+            spring_config: base_spring,
         });
     }
 
@@ -714,7 +731,8 @@ fn compute_smoothed_events(recording: &CursorRecording) -> Vec<SmoothedCursorEve
         }
 
         // Get appropriate spring profile
-        let profile = get_spring_profile(mov.timestamp_ms, &clicks, primary_button_down);
+        let profile =
+            get_spring_profile(mov.timestamp_ms, &clicks, primary_button_down, base_spring);
         sim.set_config(profile);
 
         // Run simulation
@@ -727,6 +745,7 @@ fn compute_smoothed_events(recording: &CursorRecording) -> Vec<SmoothedCursorEve
             target_position: next_target,
             position: sim.position,
             velocity: sim.velocity,
+            spring_config: profile,
         });
     }
 
@@ -891,7 +910,7 @@ fn interpolate_at_time(
 
         if time_ms >= curr.time_ms && time_ms < next.time_ms {
             // Continue simulation from curr to exact time
-            let mut sim = SpringSimulation::new(DEFAULT_SPRING);
+            let mut sim = SpringSimulation::new(curr.spring_config);
             sim.set_position(curr.position);
             sim.set_velocity(curr.velocity);
             sim.set_target_position(curr.target_position);
@@ -923,6 +942,123 @@ fn interpolate_at_time(
         opacity: 1.0,
         scale: 1.0,
     }
+}
+
+fn segment_velocity(curr: &CursorEvent, next: &CursorEvent) -> XY {
+    let dt_ms = (next.timestamp_ms.saturating_sub(curr.timestamp_ms)).max(1) as f32;
+    let dt_seconds = dt_ms / 1000.0;
+    XY {
+        x: ((next.x - curr.x) as f32) / dt_seconds,
+        y: ((next.y - curr.y) as f32) / dt_seconds,
+    }
+}
+
+fn interpolate_raw_at_time(
+    move_events: &[CursorEvent],
+    time_ms: u64,
+    cursor_id: Option<String>,
+) -> InterpolatedCursor {
+    if move_events.is_empty() {
+        return InterpolatedCursor {
+            cursor_id,
+            ..Default::default()
+        };
+    }
+
+    // Before first event
+    if time_ms <= move_events[0].timestamp_ms {
+        let first = &move_events[0];
+        let velocity = move_events
+            .get(1)
+            .map(|next| segment_velocity(first, next))
+            .unwrap_or_default();
+        return InterpolatedCursor {
+            x: first.x as f32,
+            y: first.y as f32,
+            velocity_x: velocity.x,
+            velocity_y: velocity.y,
+            cursor_id,
+            cursor_shape: None,
+            opacity: 1.0,
+            scale: 1.0,
+        };
+    }
+
+    // After last event
+    let last = &move_events[move_events.len() - 1];
+    if time_ms >= last.timestamp_ms {
+        let velocity = move_events
+            .get(move_events.len().saturating_sub(2))
+            .map(|prev| segment_velocity(prev, last))
+            .unwrap_or_default();
+        return InterpolatedCursor {
+            x: last.x as f32,
+            y: last.y as f32,
+            velocity_x: velocity.x,
+            velocity_y: velocity.y,
+            cursor_id,
+            cursor_shape: None,
+            opacity: 1.0,
+            scale: 1.0,
+        };
+    }
+
+    // Between two move events: linear interpolation with segment velocity
+    for i in 0..move_events.len() - 1 {
+        let curr = &move_events[i];
+        let next = &move_events[i + 1];
+        if time_ms >= curr.timestamp_ms && time_ms < next.timestamp_ms {
+            let dt_ms = (next.timestamp_ms.saturating_sub(curr.timestamp_ms)).max(1);
+            let t = (time_ms.saturating_sub(curr.timestamp_ms)) as f32 / dt_ms as f32;
+            let velocity = segment_velocity(curr, next);
+            return InterpolatedCursor {
+                x: (curr.x + (next.x - curr.x) * t as f64) as f32,
+                y: (curr.y + (next.y - curr.y) * t as f64) as f32,
+                velocity_x: velocity.x,
+                velocity_y: velocity.y,
+                cursor_id,
+                cursor_shape: None,
+                opacity: 1.0,
+                scale: 1.0,
+            };
+        }
+    }
+
+    InterpolatedCursor {
+        x: last.x as f32,
+        y: last.y as f32,
+        velocity_x: 0.0,
+        velocity_y: 0.0,
+        cursor_id,
+        cursor_shape: None,
+        opacity: 1.0,
+        scale: 1.0,
+    }
+}
+
+fn apply_lag_compensation(
+    mut smoothed: InterpolatedCursor,
+    raw: &InterpolatedCursor,
+    max_lag_distance: f32,
+) -> InterpolatedCursor {
+    if max_lag_distance <= 0.0 {
+        return smoothed;
+    }
+
+    let dx = raw.x - smoothed.x;
+    let dy = raw.y - smoothed.y;
+    let distance = (dx * dx + dy * dy).sqrt();
+
+    if distance <= max_lag_distance || distance == 0.0 {
+        return smoothed;
+    }
+
+    let correction_t = (distance - max_lag_distance) / distance;
+    smoothed.x += dx * correction_t;
+    smoothed.y += dy * correction_t;
+    smoothed.velocity_x += (raw.velocity_x - smoothed.velocity_x) * correction_t;
+    smoothed.velocity_y += (raw.velocity_y - smoothed.velocity_y) * correction_t;
+    smoothed
 }
 
 /// Decode cursor images from base64 PNG to RGBA.
@@ -1353,6 +1489,41 @@ pub fn get_svg_cursor_image(
 mod tests {
     use super::*;
 
+    fn test_recording() -> CursorRecording {
+        CursorRecording {
+            sample_rate: 100,
+            width: 1920,
+            height: 1080,
+            region_x: 0,
+            region_y: 0,
+            video_start_offset_ms: 0,
+            events: vec![
+                CursorEvent {
+                    timestamp_ms: 0,
+                    x: 0.0,
+                    y: 0.5,
+                    event_type: CursorEventType::Move,
+                    cursor_id: None,
+                },
+                CursorEvent {
+                    timestamp_ms: 200,
+                    x: 1.0,
+                    y: 0.5,
+                    event_type: CursorEventType::Move,
+                    cursor_id: None,
+                },
+                CursorEvent {
+                    timestamp_ms: 400,
+                    x: 1.0,
+                    y: 0.5,
+                    event_type: CursorEventType::Move,
+                    cursor_id: None,
+                },
+            ],
+            cursor_images: HashMap::new(),
+        }
+    }
+
     #[test]
     fn test_spring_simulation() {
         let mut sim = SpringSimulation::new(DEFAULT_SPRING);
@@ -1375,5 +1546,28 @@ mod tests {
         assert_eq!(cursor.velocity_x, 0.0);
         assert_eq!(cursor.velocity_y, 0.0);
         assert!(cursor.cursor_id.is_none());
+    }
+
+    #[test]
+    fn test_cursor_interpolator_uses_raw_interpolation() {
+        let recording = test_recording();
+
+        let raw_interp = CursorInterpolator::new(&recording, &CursorConfig::default());
+        let raw_cursor = raw_interp.get_cursor_at(100);
+        assert!((raw_cursor.x - 0.5).abs() < 0.05);
+    }
+
+    #[test]
+    fn test_cursor_interpolator_is_deterministic() {
+        let recording = test_recording();
+
+        let interp = CursorInterpolator::new(&recording, &CursorConfig::default());
+        let a = interp.get_cursor_at(120);
+        let b = interp.get_cursor_at(120);
+
+        assert!((a.x - b.x).abs() < 0.0001);
+        assert!((a.y - b.y).abs() < 0.0001);
+        assert!((a.velocity_x - b.velocity_x).abs() < 0.0001);
+        assert!((a.velocity_y - b.velocity_y).abs() < 0.0001);
     }
 }

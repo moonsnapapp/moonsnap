@@ -235,7 +235,7 @@ impl Default for RecordingSettings {
             fps: 30,
             max_duration_secs: None,
             // Disable system cursor in video frames - we render our own cursor overlay
-            // in the video editor with SVG cursors, smoothing, and effects
+            // in the video editor with SVG cursors and effects
             include_cursor: false,
             audio: AudioSettings::default(),
             quality: 80,

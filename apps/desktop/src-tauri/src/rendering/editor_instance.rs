@@ -132,7 +132,7 @@ impl EditorInstance {
                             recording.events.len(),
                             recording.cursor_images.len()
                         );
-                        Some(CursorInterpolator::new(&recording))
+                        Some(CursorInterpolator::new(&recording, &project.cursor))
                     },
                     Err(e) => {
                         log::warn!("[GPU_EDITOR] Failed to load cursor recording: {}", e);
