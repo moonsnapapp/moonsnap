@@ -1,10 +1,15 @@
 /**
  * ExportConfigPanel - Format, FPS, resolution, crop, and audio settings.
  */
-import { Crop } from 'lucide-react';
+import { useMemo } from 'react';
+import { Crop, X } from 'lucide-react';
 import { Button } from '../../../components/ui/button';
 import { AudioControlsPanel } from './AudioControlsPanel';
 import type { VideoProject, ExportConfig, ExportFormat, AudioTrackSettings } from '../../../types';
+
+function toEven(value: number): number {
+  return Math.floor(value / 2) * 2;
+}
 
 export interface ExportConfigPanelProps {
   project: VideoProject;
@@ -14,6 +19,18 @@ export interface ExportConfigPanelProps {
 }
 
 export function ExportConfigPanel({ project, onUpdateExportConfig, onUpdateAudioConfig, onOpenCropDialog }: ExportConfigPanelProps) {
+  const autoResolution = useMemo(() => {
+    const crop = project.export.crop;
+    const bg = project.export.background;
+    const contentW = crop?.enabled && crop.width > 0 ? crop.width : project.sources.originalWidth;
+    const contentH = crop?.enabled && crop.height > 0 ? crop.height : project.sources.originalHeight;
+    const hasStyling = bg?.enabled && (bg.padding > 0 || bg.rounding > 0 || bg.shadow?.enabled || bg.border?.enabled);
+    const padding = hasStyling ? (bg?.padding ?? 0) : 0;
+    return {
+      width: toEven(contentW + padding * 2),
+      height: toEven(contentH + padding * 2),
+    };
+  }, [project.export.crop, project.export.background, project.sources.originalWidth, project.sources.originalHeight]);
   return (
     <div className="space-y-4">
       {/* Format */}
@@ -76,33 +93,45 @@ export function ExportConfigPanel({ project, onUpdateExportConfig, onUpdateAudio
           <option value="1080x1920">1080p Portrait (1080×1920)</option>
           <option value="1080x1080">Square (1080×1080)</option>
         </select>
-        {project.export.composition?.mode === 'manual' && project.export.composition?.width && (
-          <p className="text-[10px] text-[var(--ink-subtle)] mt-1">
-            Output: {project.export.composition.width}×{project.export.composition.height}
-          </p>
-        )}
+        <div className="flex items-center gap-2 mt-2 px-2.5 py-1.5 rounded-md bg-[var(--polar-mist)] border border-[var(--glass-border)]">
+          <span className="text-[11px] text-[var(--ink-muted)]">Output</span>
+          <span className="text-[11px] text-[var(--ink-dark)] font-mono font-medium">
+            {project.export.composition?.mode === 'manual' && project.export.composition?.width
+              ? `${project.export.composition.width}×${project.export.composition.height}`
+              : `${autoResolution.width}×${autoResolution.height}`}
+          </span>
+        </div>
       </div>
 
       {/* Crop Video */}
       <div className="pt-3 border-t border-[var(--glass-border)]">
         <div className="flex items-center justify-between mb-2">
           <span className="text-xs text-[var(--ink-muted)]">Crop Video</span>
+        </div>
+        <div className="flex gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={onOpenCropDialog}
+            className="flex-1 justify-start gap-2"
+          >
+            <Crop className="w-4 h-4" />
+            {project.export.crop?.enabled ? 'Edit Crop' : 'Add Crop'}
+          </Button>
           {project.export.crop?.enabled && (
-            <span className="text-[10px] text-[var(--coral-400)] font-medium">
-              {project.export.crop.width}x{project.export.crop.height}
-            </span>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => onUpdateExportConfig({
+                crop: { enabled: false, x: 0, y: 0, width: 0, height: 0, lockAspectRatio: false, aspectRatio: null }
+              })}
+              className="px-2 text-[var(--ink-muted)] hover:text-[var(--error)]"
+              title="Reset Crop"
+            >
+              <X className="w-4 h-4" />
+            </Button>
           )}
         </div>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={onOpenCropDialog}
-          className="w-full justify-start gap-2"
-        >
-          <Crop className="w-4 h-4" />
-          {project.export.crop?.enabled ? 'Edit Crop' : 'Add Crop'}
-        </Button>
-
       </div>
 
       {/* Audio Controls */}

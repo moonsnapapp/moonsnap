@@ -76,7 +76,7 @@ describe('CropDialog', () => {
     it('should render action buttons (Lock, Fill, Reset)', () => {
       render(<CropDialog {...defaultProps} />);
 
-      expect(screen.getByRole('button', { name: /unlocked/i })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /lock a\/r/i })).toBeInTheDocument();
       expect(screen.getByRole('button', { name: /fill/i })).toBeInTheDocument();
       expect(screen.getByRole('button', { name: /reset/i })).toBeInTheDocument();
     });
@@ -99,20 +99,17 @@ describe('CropDialog', () => {
   });
 
   describe('initial crop values', () => {
-    it('should use default crop (80% centered) when no initialCrop', () => {
+    it('should use default crop (full video) when no initialCrop', () => {
       render(<CropDialog {...defaultProps} />);
 
-      // Default crop should be 80% of video size, centered
-      const expectedWidth = Math.round(1920 * 0.8); // 1536
-      const expectedHeight = Math.round(1080 * 0.8); // 864
-
+      // Default crop should be full video size
       // Find inputs from the dialog
       const inputs = getNumberInputs();
       expect(inputs.length).toBe(4);
 
       // Width is 3rd input, Height is 4th
-      expect(inputs[2]).toHaveValue(expectedWidth);
-      expect(inputs[3]).toHaveValue(expectedHeight);
+      expect(inputs[2]).toHaveValue(1920);
+      expect(inputs[3]).toHaveValue(1080);
     });
 
     it('should use initialCrop when provided', () => {
@@ -151,9 +148,9 @@ describe('CropDialog', () => {
 
       render(<CropDialog {...defaultProps} initialCrop={invalidCrop} />);
 
-      // Should fall back to default (80% centered)
+      // Should fall back to default (full video)
       const inputs = getNumberInputs();
-      expect(inputs[2]).toHaveValue(Math.round(1920 * 0.8)); // Width
+      expect(inputs[2]).toHaveValue(1920); // Width
     });
 
   });
@@ -257,17 +254,20 @@ describe('CropDialog', () => {
 
   describe('aspect ratio lock toggle', () => {
     it('should toggle aspect ratio lock when clicking lock button', () => {
-      render(<CropDialog {...defaultProps} />);
+      const onApply = vi.fn();
+      render(<CropDialog {...defaultProps} onApply={onApply} />);
 
-      // Initially unlocked
-      const lockButton = screen.getByRole('button', { name: /unlocked/i });
+      // Lock A/R button is always present
+      const lockButton = screen.getByRole('button', { name: /lock a\/r/i });
       expect(lockButton).toBeInTheDocument();
 
       // Click to lock
       fireEvent.click(lockButton);
 
-      // Should now show locked
-      expect(screen.getByRole('button', { name: /locked/i })).toBeInTheDocument();
+      // Apply and verify lock state
+      fireEvent.click(screen.getByRole('button', { name: /apply crop/i }));
+      const [cropArg] = onApply.mock.calls[0];
+      expect(cropArg.lockAspectRatio).toBe(true);
     });
 
     it('should toggle from locked to unlocked', () => {
@@ -281,17 +281,20 @@ describe('CropDialog', () => {
         aspectRatio: 16 / 9,
       };
 
-      render(<CropDialog {...defaultProps} initialCrop={initialCrop} />);
+      const onApply = vi.fn();
+      render(<CropDialog {...defaultProps} onApply={onApply} initialCrop={initialCrop} />);
 
-      // Initially locked
-      const lockButton = screen.getByRole('button', { name: /locked/i });
+      // Lock A/R button is always present
+      const lockButton = screen.getByRole('button', { name: /lock a\/r/i });
       expect(lockButton).toBeInTheDocument();
 
       // Click to unlock
       fireEvent.click(lockButton);
 
-      // Should now show unlocked
-      expect(screen.getByRole('button', { name: /unlocked/i })).toBeInTheDocument();
+      // Apply and verify unlock state
+      fireEvent.click(screen.getByRole('button', { name: /apply crop/i }));
+      const [cropArg] = onApply.mock.calls[0];
+      expect(cropArg.lockAspectRatio).toBe(false);
     });
   });
 

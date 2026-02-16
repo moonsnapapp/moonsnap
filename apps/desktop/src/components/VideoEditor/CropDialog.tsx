@@ -29,7 +29,7 @@ interface CropDialogProps {
 
 // Aspect ratio presets for video crop
 const ASPECT_PRESETS = [
-  { label: 'Free', value: null },
+  { label: 'Free', value: 'free' as const },
   { label: '16:9', value: 16 / 9 },
   { label: '9:16', value: 9 / 16 },
   { label: '1:1', value: 1 },
@@ -61,16 +61,14 @@ export const CropDialog = memo(function CropDialog({
   initialCrop,
   videoPath,
 }: CropDialogProps) {
-  // Compute a sensible default crop (centered, 80% of video size)
+  // Default crop covers the full video
   const defaultCrop = useMemo((): CropConfig => {
-    const cropWidth = Math.round(videoWidth * 0.8);
-    const cropHeight = Math.round(videoHeight * 0.8);
     return {
       enabled: true,
-      x: Math.round((videoWidth - cropWidth) / 2),
-      y: Math.round((videoHeight - cropHeight) / 2),
-      width: cropWidth,
-      height: cropHeight,
+      x: 0,
+      y: 0,
+      width: videoWidth,
+      height: videoHeight,
       lockAspectRatio: false,
       aspectRatio: null,
     };
@@ -158,7 +156,7 @@ export const CropDialog = memo(function CropDialog({
   }, []);
 
   const handleAspectPreset = useCallback((value: string | null) => {
-    if (value === null || value === '') {
+    if (value === null || value === '' || value === 'free') {
       // Free aspect
       const newCrop = {
         ...crop,
@@ -168,36 +166,48 @@ export const CropDialog = memo(function CropDialog({
       handleCropChange(newCrop, true);
 
     } else if (value === 'original') {
-      // Original video aspect
-      const originalAspect = videoWidth / videoHeight;
-      const newHeight = Math.round(crop.width / originalAspect);
-      const newCrop = {
+      // Original video aspect — fill entire video
+      const newCrop: CropConfig = {
         ...crop,
         lockAspectRatio: true,
-        aspectRatio: originalAspect,
-        height: Math.min(newHeight, videoHeight - crop.y),
+        aspectRatio: videoWidth / videoHeight,
+        x: 0,
+        y: 0,
+        width: videoWidth,
+        height: videoHeight,
       };
       handleCropChange(newCrop, true);
 
     } else {
-      // Specific aspect ratio
+      // Specific aspect ratio — fill to maximize crop within video bounds
       const ratio = parseFloat(value);
-      const newHeight = Math.round(crop.width / ratio);
+      const videoAspect = videoWidth / videoHeight;
 
-      // Ensure new height fits within bounds
-      let finalHeight = Math.min(newHeight, videoHeight - crop.y);
-      let finalWidth = Math.round(finalHeight * ratio);
+      let finalWidth: number;
+      let finalHeight: number;
+      let finalX: number;
+      let finalY: number;
 
-      // If width would exceed bounds, constrain by width instead
-      if (crop.x + finalWidth > videoWidth) {
-        finalWidth = videoWidth - crop.x;
-        finalHeight = Math.round(finalWidth / ratio);
+      if (ratio > videoAspect) {
+        // Crop is wider than video — constrain by width
+        finalWidth = videoWidth;
+        finalHeight = Math.round(videoWidth / ratio);
+        finalX = 0;
+        finalY = Math.round((videoHeight - finalHeight) / 2);
+      } else {
+        // Crop is taller than video — constrain by height
+        finalHeight = videoHeight;
+        finalWidth = Math.round(videoHeight * ratio);
+        finalX = Math.round((videoWidth - finalWidth) / 2);
+        finalY = 0;
       }
 
-      const newCrop = {
+      const newCrop: CropConfig = {
         ...crop,
         lockAspectRatio: true,
         aspectRatio: ratio,
+        x: finalX,
+        y: finalY,
         width: finalWidth,
         height: finalHeight,
       };
@@ -319,14 +329,23 @@ export const CropDialog = memo(function CropDialog({
             <Label>Video Crop Aspect Ratio</Label>
             <ToggleGroup
               type="single"
-              value={crop.lockAspectRatio ? (crop.aspectRatio?.toString() || 'original') : ''}
+              value={(() => {
+                const ratio = crop.width > 0 && crop.height > 0 ? crop.width / crop.height : null;
+                if (!ratio) return 'free';
+                const originalAspect = videoWidth / videoHeight;
+                if (Math.abs(ratio - originalAspect) < 0.01) return 'original';
+                const matched = ASPECT_PRESETS.find(
+                  (p) => typeof p.value === 'number' && Math.abs(p.value - ratio) < 0.01
+                );
+                return matched ? matched.value.toString() : 'free';
+              })()}
               onValueChange={handleAspectPreset}
               className="justify-start flex-wrap"
             >
               {ASPECT_PRESETS.map((preset) => (
                 <ToggleGroupItem
                   key={preset.label}
-                  value={preset.value?.toString() || ''}
+                  value={preset.value.toString()}
                   className="text-xs"
                 >
                   {preset.label}
@@ -403,10 +422,10 @@ export const CropDialog = memo(function CropDialog({
               variant="outline"
               size="sm"
               onClick={handleToggleLock}
-              className="gap-1.5"
+              className={`gap-1.5 ${crop.lockAspectRatio ? 'bg-[var(--coral-100)] text-[var(--coral-500)] border-[var(--coral-300)] hover:bg-[var(--coral-200)]' : ''}`}
             >
               {crop.lockAspectRatio ? <Lock className="w-3.5 h-3.5" /> : <Unlock className="w-3.5 h-3.5" />}
-              {crop.lockAspectRatio ? 'Locked' : 'Unlocked'}
+              Lock A/R
             </Button>
             <Button variant="outline" size="sm" onClick={handleFill} className="gap-1.5">
               <Maximize2 className="w-3.5 h-3.5" />
