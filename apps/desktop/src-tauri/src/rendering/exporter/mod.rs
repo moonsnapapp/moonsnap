@@ -311,7 +311,11 @@ pub async fn export_video_gpu(
         composition.height,
         composition.aspect_ratio
     );
-    let padding = project.export.background.padding as u32;
+    let padding = if project.export.background.enabled {
+        project.export.background.padding as u32
+    } else {
+        0
+    };
 
     // Step 1: Determine video dimensions after crop
     let crop_enabled = crop.enabled && crop.width > 0 && crop.height > 0;

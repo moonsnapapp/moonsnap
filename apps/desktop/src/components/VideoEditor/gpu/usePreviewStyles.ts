@@ -192,6 +192,7 @@ export function usePreviewStyles(options: PreviewStylesOptions): PreviewStylesRe
   // Check if frame styling is enabled (has any visual effect)
   const hasFrameStyling = useMemo(() => {
     if (!backgroundConfig) return false;
+    if (!backgroundConfig.enabled) return false;
     return Boolean(
       backgroundConfig.padding > 0 ||
       backgroundConfig.rounding > 0 ||

@@ -271,7 +271,7 @@ impl Default for AudioTrackSettings {
     fn default() -> Self {
         Self {
             system_volume: 1.0,
-            microphone_volume: 0.9,
+            microphone_volume: 1.0,
             music_volume: 0.25,
             music_fade_in_secs: 2.0,
             music_fade_out_secs: 3.0,
@@ -763,6 +763,10 @@ pub struct BackgroundShadowConfig {
     pub shadow: f32,
 }
 
+fn default_true() -> bool {
+    true
+}
+
 fn default_shadow_value() -> f32 {
     50.0 // Sensible default - visible but not overwhelming
 }
@@ -808,6 +812,9 @@ impl Default for BorderConfig {
 #[serde(rename_all = "camelCase")]
 #[ts(export, export_to = "../../src/types/generated/")]
 pub struct BackgroundConfig {
+    /// Whether the background styling is enabled.
+    #[serde(default = "default_true")]
+    pub enabled: bool,
     /// Type of background (Solid, Gradient, Wallpaper, Image).
     pub bg_type: BackgroundType,
     /// Solid color (hex format, e.g., "#000000").
@@ -850,12 +857,13 @@ pub struct BackgroundConfig {
 impl Default for BackgroundConfig {
     fn default() -> Self {
         Self {
-            bg_type: BackgroundType::Solid,
+            enabled: true,
+            bg_type: BackgroundType::Wallpaper,
             solid_color: "#ffffff".to_string(), // Cap's default: white
             gradient_start: "#4785ff".to_string(), // Cap's default: blue [71, 133, 255]
             gradient_end: "#ff4766".to_string(), // Cap's default: red/pink [255, 71, 102]
             gradient_angle: 135.0,
-            wallpaper: None,
+            wallpaper: Some("macOS/sequoia-dark".to_string()),
             image_path: None,
             blur: 0.0,
             padding: 0.0,

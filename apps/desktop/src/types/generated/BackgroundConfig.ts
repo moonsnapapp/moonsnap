@@ -10,6 +10,10 @@ import type { CornerStyle } from "./CornerStyle";
  */
 export type BackgroundConfig = { 
 /**
+ * Whether the background styling is enabled.
+ */
+enabled: boolean, 
+/**
  * Type of background (Solid, Gradient, Wallpaper, Image).
  */
 bgType: BackgroundType, 

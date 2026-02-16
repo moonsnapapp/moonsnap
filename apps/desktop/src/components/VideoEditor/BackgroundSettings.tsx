@@ -117,6 +117,25 @@ export function BackgroundSettings({ background, onUpdate }: BackgroundSettingsP
 
   return (
     <div className="space-y-4">
+      {/* Show/Hide Toggle */}
+      <div className="flex items-center justify-between">
+        <span className="text-xs text-[var(--ink-muted)]">Show BG</span>
+        <button
+          onClick={() => onUpdate({ enabled: !background.enabled })}
+          className={`relative w-10 h-5 rounded-full transition-colors ${
+            background.enabled ? 'bg-[var(--coral-400)]' : 'bg-[var(--polar-frost)]'
+          }`}
+        >
+          <span
+            className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${
+              background.enabled ? 'translate-x-5' : 'translate-x-0'
+            }`}
+          />
+        </button>
+      </div>
+
+      {/* All BG settings - hidden when disabled */}
+      {background.enabled && (<>
       {/* Background Type Tabs */}
       <div>
         <span className="text-xs text-[var(--ink-muted)] block mb-2">Background Type</span>
@@ -516,6 +535,7 @@ export function BackgroundSettings({ background, onUpdate }: BackgroundSettingsP
           </div>
         )}
       </div>
+      </>)}
     </div>
   );
 }
