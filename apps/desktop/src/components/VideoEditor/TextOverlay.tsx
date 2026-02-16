@@ -151,23 +151,24 @@ const TextItem = memo(function TextItem({
   const left = segment.center.x * renderSize.width - halfW;
   const top = segment.center.y * renderSize.height - halfH;
 
-  // Render text on canvas — same code path as export for WYSIWYG
-  useEffect(() => {
+  const drawTextPreview = useCallback((targetWidth: number, targetHeight: number) => {
     const canvas = canvasRef.current;
     if (!canvas) return;
 
+    const safeWidth = Math.max(1, targetWidth);
+    const safeHeight = Math.max(1, targetHeight);
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
-    const pixelWidth = Math.max(1, Math.round(width * dpr));
-    const pixelHeight = Math.max(1, Math.round(height * dpr));
+    const pixelWidth = Math.max(1, Math.round(safeWidth * dpr));
+    const pixelHeight = Math.max(1, Math.round(safeHeight * dpr));
 
-    // Setting canvas dimensions clears it and resets context state
+    // Setting canvas dimensions clears it and resets context state.
     canvas.width = pixelWidth;
     canvas.height = pixelHeight;
 
     const ctx = canvas.getContext('2d', { alpha: true });
     if (!ctx) return;
 
-    // Scale for HiDPI — all drawing uses CSS pixel coordinates
+    // Scale for HiDPI; all drawing uses CSS pixel coordinates.
     ctx.scale(dpr, dpr);
 
     renderTextOnCanvas(ctx, {
@@ -177,9 +178,21 @@ const TextItem = memo(function TextItem({
       italic: !!segment.italic,
       fontSize: segment.fontSize,
       color: segment.color || '#ffffff',
-    }, width, height, renderSize.height);
-  }, [segment.content, segment.fontFamily, segment.fontWeight, segment.fontSize,
-      segment.italic, segment.color, width, height, renderSize.height]);
+    }, safeWidth, safeHeight, renderSize.height);
+  }, [
+    segment.content,
+    segment.fontFamily,
+    segment.fontWeight,
+    segment.italic,
+    segment.fontSize,
+    segment.color,
+    renderSize.height,
+  ]);
+
+  // Render text on canvas — same code path as export for WYSIWYG
+  useEffect(() => {
+    drawTextPreview(width, height);
+  }, [drawTextPreview, width, height]);
 
   // Handle drag to move — updates DOM directly during drag for zero-lag interaction,
   // commits final position to store on mouseUp to avoid per-frame re-render cascade.
@@ -298,6 +311,7 @@ const TextItem = memo(function TextItem({
           el.style.height = `${pxH}px`;
           el.style.left = `${newCenterX * renderSize.width - pxW / 2}px`;
           el.style.top = `${newCenterY * renderSize.height - pxH / 2}px`;
+          drawTextPreview(pxW, pxH);
         }
       };
 
@@ -315,7 +329,7 @@ const TextItem = memo(function TextItem({
       document.addEventListener('mousemove', handleMouseMove);
       document.addEventListener('mouseup', handleMouseUp);
     };
-  }, [segment, interactionSize, renderSize, segmentId, onUpdate]);
+  }, [segment, interactionSize, renderSize, segmentId, onUpdate, drawTextPreview]);
 
   // Handle side resize (width only, no font size change)
   // Updates DOM directly during drag, commits to store on mouseUp.
@@ -363,8 +377,10 @@ const TextItem = memo(function TextItem({
         // Update DOM directly for visual feedback
         if (el) {
           const pxW = Math.max(newSizeX * renderSize.width, 1);
+          const pxH = Math.max(dragStartRef.current.sizeY * renderSize.height, 1);
           el.style.width = `${pxW}px`;
           el.style.left = `${newCenterX * renderSize.width - pxW / 2}px`;
+          drawTextPreview(pxW, pxH);
         }
       };
 
@@ -382,7 +398,7 @@ const TextItem = memo(function TextItem({
       document.addEventListener('mousemove', handleMouseMove);
       document.addEventListener('mouseup', handleMouseUp);
     };
-  }, [segment, interactionSize, renderSize, segmentId, onUpdate]);
+  }, [segment, interactionSize, renderSize, segmentId, onUpdate, drawTextPreview]);
 
   return (
     <div
