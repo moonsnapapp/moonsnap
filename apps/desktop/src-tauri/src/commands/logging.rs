@@ -213,6 +213,11 @@ pub fn write_log(level: String, source: String, message: String) {
         _ => LogLevel::Info,
     };
 
+    // Keep persistent logs focused on operational signals.
+    if log_level == LogLevel::Debug {
+        return;
+    }
+
     log_internal(log_level, &source, &message);
 }
 

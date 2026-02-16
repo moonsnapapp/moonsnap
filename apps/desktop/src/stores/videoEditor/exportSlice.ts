@@ -120,7 +120,13 @@ export const createExportSlice: SliceCreator<ExportSlice> = (set, get) => ({
     const { project } = get();
     if (!project) return;
 
-    videoEditorLogger.info('[updateExportConfig] Updates:', updates);
+    videoEditorLogger.info('[updateExportConfig] Keys:', Object.keys(updates));
+    if (updates.background) {
+      videoEditorLogger.debug(
+        '[updateExportConfig] Background keys:',
+        Object.keys(updates.background as Record<string, unknown>)
+      );
+    }
     if (updates.composition) {
       videoEditorLogger.info('[updateExportConfig] Composition being set:', updates.composition);
     }

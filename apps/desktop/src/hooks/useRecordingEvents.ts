@@ -6,7 +6,7 @@
  */
 
 import { useEffect, useState, useRef, useCallback } from 'react';
-import { listen, type UnlistenFn } from '@tauri-apps/api/event';
+import { emit, listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { invoke } from '@tauri-apps/api/core';
 import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
 import type { RecordingState, RecordingFormat } from '../types';
@@ -180,9 +180,16 @@ export function useRecordingEvents(): UseRecordingEventsReturn {
                 createErrorHandler({ operation: 'close webcam preview', silent: true })
               ),
             ]).finally(() => {
-              currentWindow.close().catch(
-                createErrorHandler({ operation: 'close toolbar window', silent: true })
-              );
+              emit('reset-to-startup', null).catch(
+                createErrorHandler({ operation: 'reset toolbar to startup', silent: true })
+              ).finally(() => {
+                currentWindow.show().catch(
+                  createErrorHandler({ operation: 'show toolbar window', silent: true })
+                );
+                currentWindow.setFocus().catch(
+                  createErrorHandler({ operation: 'focus toolbar window', silent: true })
+                );
+              });
             });
             break;
           case 'idle':

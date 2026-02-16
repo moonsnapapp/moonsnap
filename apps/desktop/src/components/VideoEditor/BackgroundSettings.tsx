@@ -1,6 +1,7 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { resolveResource } from '@tauri-apps/api/path';
 import { convertFileSrc } from '@tauri-apps/api/core';
+import { open } from '@tauri-apps/plugin-dialog';
 import { Slider } from '@/components/ui/slider';
 import { ColorPicker } from '@/components/ui/color-picker';
 import { Check, Upload, X, Loader2 } from 'lucide-react';
@@ -91,18 +92,27 @@ export function BackgroundSettings({ background, onUpdate }: BackgroundSettingsP
     });
   }, [onUpdate]);
 
-  const handleImageUpload = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      // For now, use a data URL - in production, save to app data directory
-      const reader = new FileReader();
-      reader.onload = (ev) => {
-        onUpdate({
-          bgType: 'image',
-          imagePath: ev.target?.result as string,
-        });
-      };
-      reader.readAsDataURL(file);
+  const handleImageSelect = useCallback(async () => {
+    try {
+      const selected = await open({
+        multiple: false,
+        directory: false,
+        filters: [
+          {
+            name: 'Images',
+            extensions: ['png', 'jpg', 'jpeg', 'webp', 'bmp'],
+          },
+        ],
+      });
+
+      if (!selected || Array.isArray(selected)) return;
+
+      onUpdate({
+        bgType: 'image',
+        imagePath: selected,
+      });
+    } catch (err) {
+      videoEditorLogger.error('Failed to select background image:', err);
     }
   }, [onUpdate]);
 
@@ -250,7 +260,9 @@ export function BackgroundSettings({ background, onUpdate }: BackgroundSettingsP
           {background.imagePath ? (
             <div className="relative rounded-lg overflow-hidden border border-[var(--glass-border)]">
               <img
-                src={background.imagePath}
+                src={background.imagePath.startsWith('data:')
+                  ? background.imagePath
+                  : convertFileSrc(background.imagePath)}
                 alt="Custom background"
                 className="w-full h-32 object-cover"
               />
@@ -262,16 +274,14 @@ export function BackgroundSettings({ background, onUpdate }: BackgroundSettingsP
               </button>
             </div>
           ) : (
-            <label className="flex flex-col items-center justify-center h-24 rounded-lg border-2 border-dashed border-[var(--glass-border)] bg-[var(--polar-mist)] cursor-pointer hover:border-[var(--coral-300)] hover:bg-[var(--coral-50)] transition-colors">
+            <button
+              type="button"
+              onClick={handleImageSelect}
+              className="w-full flex flex-col items-center justify-center h-24 rounded-lg border-2 border-dashed border-[var(--glass-border)] bg-[var(--polar-mist)] hover:border-[var(--coral-300)] hover:bg-[var(--coral-50)] transition-colors"
+            >
               <Upload className="w-5 h-5 text-[var(--ink-muted)] mb-1" />
-              <span className="text-xs text-[var(--ink-muted)]">Click to upload</span>
-              <input
-                type="file"
-                accept="image/*"
-                className="hidden"
-                onChange={handleImageUpload}
-              />
-            </label>
+              <span className="text-xs text-[var(--ink-muted)]">Select image</span>
+            </button>
           )}
         </div>
       )}

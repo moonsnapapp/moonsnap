@@ -36,6 +36,11 @@ interface LogEntry {
   timestamp: number;
 }
 
+const MAX_LOG_STRING_LENGTH = 400;
+const MAX_SANITIZE_DEPTH = 5;
+const BASE64_MIN_LENGTH = 120;
+const BASE64_RE = /^[A-Za-z0-9+/]+={0,2}$/;
+
 // Buffer for batching logs
 let logBuffer: LogEntry[] = [];
 let flushTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -77,6 +82,9 @@ function scheduleFlush(): void {
  * Add a log entry to the buffer
  */
 function addLog(level: LogLevel, source: string, message: string): void {
+  // Drop debug logs entirely to keep log files concise.
+  if (level === 'debug') return;
+
   const entry: LogEntry = {
     level,
     source,
@@ -98,13 +106,57 @@ function addLog(level: LogLevel, source: string, message: string): void {
  * Format arguments into a string message
  */
 function formatMessage(...args: unknown[]): string {
+  function sanitizeString(value: string): string {
+    if (value.startsWith('data:image/')) {
+      const headerEnd = value.indexOf(',');
+      const header = headerEnd > 0 ? value.slice(0, headerEnd) : 'data:image';
+      return `[redacted-data-url ${header};len=${value.length}]`;
+    }
+
+    const compact = value.replace(/\s+/g, '');
+    if (
+      compact.length >= BASE64_MIN_LENGTH &&
+      compact.length % 4 === 0 &&
+      BASE64_RE.test(compact)
+    ) {
+      return `[redacted-base64 len=${value.length}]`;
+    }
+
+    if (value.length > MAX_LOG_STRING_LENGTH) {
+      return `${value.slice(0, MAX_LOG_STRING_LENGTH)}...[truncated ${value.length - MAX_LOG_STRING_LENGTH} chars]`;
+    }
+
+    return value;
+  }
+
+  function sanitizeValue(value: unknown, depth = 0): unknown {
+    if (depth > MAX_SANITIZE_DEPTH) return '[max-depth]';
+    if (typeof value === 'string') return sanitizeString(value);
+    if (typeof value === 'number' || typeof value === 'boolean' || value == null) return value;
+    if (value instanceof Error) return `${value.name}: ${value.message}`;
+
+    if (Array.isArray(value)) {
+      return value.map((item) => sanitizeValue(item, depth + 1));
+    }
+
+    if (typeof value === 'object') {
+      const result: Record<string, unknown> = {};
+      for (const [key, val] of Object.entries(value as Record<string, unknown>)) {
+        result[key] = sanitizeValue(val, depth + 1);
+      }
+      return result;
+    }
+
+    return String(value);
+  }
+
   return args.map(arg => {
-    if (typeof arg === 'string') return arg;
+    if (typeof arg === 'string') return sanitizeString(arg);
     if (arg instanceof Error) return `${arg.name}: ${arg.message}`;
     try {
-      return JSON.stringify(arg);
+      return JSON.stringify(sanitizeValue(arg));
     } catch {
-      return String(arg);
+      return String(sanitizeValue(arg));
     }
   }).join(' ');
 }
@@ -117,10 +169,8 @@ function formatMessage(...args: unknown[]): string {
  */
 export function createLogger(source: string) {
   return {
-    debug(...args: unknown[]): void {
-      const message = formatMessage(...args);
-      // Debug logs go to file only, not console
-      addLog('debug', source, message);
+    debug(..._args: unknown[]): void {
+      // Debug logging disabled by design.
     },
 
     info(...args: unknown[]): void {
@@ -147,6 +197,8 @@ export function createLogger(source: string) {
      * Log with explicit level
      */
     log(level: LogLevel, ...args: unknown[]): void {
+      if (level === 'debug') return;
+
       const message = formatMessage(...args);
       // Only warn/error go to console
       if (level === 'warn' || level === 'error') {
@@ -268,7 +320,7 @@ export async function enableDevMode(): Promise<void> {
     const listenerPromises = EVENTS_TO_LOG.map(async (eventName) => {
       try {
         const unlisten = await listen(eventName, (event) => {
-          addLog('debug', 'Event', `${eventName}: ${JSON.stringify(event.payload)}`);
+          addLog('debug', 'Event', `${eventName}: ${formatMessage(event.payload)}`);
         });
         return unlisten;
       } catch (e) {
