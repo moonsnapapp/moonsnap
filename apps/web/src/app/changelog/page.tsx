@@ -1,6 +1,6 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
-import { changelog } from "@snapit/changelog";
+import { getChangelogDocument } from "@/lib/releaseData";
 
 const formatReleaseDate = (value: string): string => {
   const parsedDate = new Date(`${value}T00:00:00`);
@@ -29,7 +29,9 @@ const renderItem = (item: string): ReactNode => {
   );
 };
 
-export default function ChangelogPage() {
+export default async function ChangelogPage() {
+  const changelog = await getChangelogDocument();
+
   return (
     <main className="relative min-h-screen px-6 py-20">
       <div className="fixed inset-0 grid-pattern pointer-events-none" />

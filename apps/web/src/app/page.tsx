@@ -1,4 +1,6 @@
 import Link from "next/link";
+import { latestRelease } from "@snapit/changelog";
+import { getLatestReleaseVersion } from "@/lib/releaseData";
 import {
   RecordIcon,
   ScreenshotIcon,
@@ -12,7 +14,11 @@ import {
   CheckIcon,
 } from "./icons";
 
-export default function Home() {
+export default async function Home() {
+  const latestVersion = await getLatestReleaseVersion();
+  const fallbackVersion = latestRelease?.version ?? null;
+  const displayVersion = latestVersion ?? fallbackVersion;
+
   return (
     <div className="relative min-h-screen">
       {/* Background effects */}
@@ -311,7 +317,7 @@ export default function Home() {
               Download for Windows
             </a>
             <span className="text-sm text-[var(--muted)]">
-              Version 0.4.14 • Windows 10/11
+              {displayVersion ? `Version ${displayVersion} • Windows 10/11` : "Windows 10/11"}
             </span>
           </div>
 
