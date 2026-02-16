@@ -22,12 +22,12 @@
         {
           "title": "Fixed",
           "items": [
-            "Normalize composition padding by output height for consistent framing.",
+            "Consistent composition padding across different output resolutions.",
             "Use native file picker for background images and reset toolbar state on save.",
-            "Disable NV12 fast path for odd source/crop dimensions to prevent frame jitter.",
+            "Fix frame jitter when cropping to odd dimensions.",
             "Live preview during text box resize drag.",
-            "Autosave now activity-aware to avoid idle write churn.",
-            "Decouple text resize from font size scaling."
+            "Autosave only triggers on actual changes, reducing unnecessary disk writes.",
+            "Text box resizing no longer changes font size."
           ]
         }
       ]
@@ -46,7 +46,7 @@
           "title": "Fixed",
           "items": [
             "Restart playback from the beginning when play is pressed at the end of the timeline.",
-            "Hardened feedback worker handling for missing bindings and partial payloads."
+            "Improved reliability of feedback submission."
           ]
         }
       ]
@@ -77,7 +77,7 @@
           "title": "Changed",
           "items": [
             "Faster export pipeline via GPU resource reuse and pipeline overlap.",
-            "NV12 GPU decode path to reduce CPU swscale overhead and pipeline bandwidth."
+            "Faster video decoding with GPU-accelerated path."
           ]
         },
         {
@@ -97,7 +97,6 @@
         {
           "title": "Changed",
           "items": [
-            "Added monorepo `vercel.json` deployment configuration and bumped Turbo to 2.8.3.",
             "Capped preview resolution to source dimensions on high-DPI displays."
           ]
         },
@@ -106,8 +105,7 @@
           "items": [
             "Pixelate canvas now respects visible cropped video region.",
             "Text overlay dragging improved (initial mousedown behavior, edge overflow, preview/export alignment).",
-            "Explicit seek handling now uses seek tokens for more reliable audio sync.",
-            "Updated relative import/path handling for ESLint, tsconfig, and Vercel build path compatibility."
+            "More reliable audio sync when seeking during playback."
           ]
         }
       ]
@@ -132,15 +130,9 @@
         {
           "title": "Added",
           "items": [
-            "Unified preview/export parity for composition layout, captions, and overlays.",
+            "Consistent preview and export rendering for composition layout, captions, and overlays.",
             "WYSIWYG text export via shared Canvas 2D rendering.",
             "Overlay segments are now adjusted automatically when trim segments are deleted."
-          ]
-        },
-        {
-          "title": "Changed",
-          "items": [
-            "Switched overlays to a render/display coordinate split for consistency."
           ]
         },
         {
@@ -223,15 +215,7 @@
           "title": "Fixed",
           "items": [
             "Audio/caption sync issues across pause/resume and segment editing.",
-            "Playback engine stability and multi-instance behavior improvements.",
-            "Removed debug code and panic-prone `unwrap()` paths in critical areas."
-          ]
-        },
-        {
-          "title": "Changed",
-          "items": [
-            "Extracted `CropPreview` and `BlurToolSettings` components.",
-            "Expanded critical editor hook test coverage."
+            "Playback engine stability and multi-instance behavior improvements."
           ]
         }
       ]
@@ -244,14 +228,7 @@
           "title": "Fixed",
           "items": [
             "Pause/resume synchronization across capture subsystems.",
-            "Injected silence during system audio gaps to preserve A/V sync.",
-            "Replaced fragile Rust `unwrap` patterns with safer error handling."
-          ]
-        },
-        {
-          "title": "Changed",
-          "items": [
-            "Dependency/tooling maintenance updates."
+            "Injected silence during system audio gaps to preserve A/V sync."
           ]
         }
       ]
@@ -263,8 +240,7 @@
         {
           "title": "Changed",
           "items": [
-            "Simplified cursor canvas sizing for better runtime performance.",
-            "Refactored hooks/store slices and improved test suite breadth."
+            "Simplified cursor canvas sizing for better runtime performance."
           ]
         },
         {
@@ -282,14 +258,13 @@
         {
           "title": "Changed",
           "items": [
-            "Removed hide-when-idle cursor behavior.",
-            "Version sync now updates `Cargo.lock`."
+            "Removed hide-when-idle cursor behavior."
           ]
         },
         {
           "title": "Fixed",
           "items": [
-            "Release mirroring now rewrites `latest.json` URLs correctly for the public releases repo."
+            "Auto-update downloads now resolve correctly from the public releases mirror."
           ]
         }
       ]
@@ -320,8 +295,7 @@
           "title": "Added",
           "items": [
             "Reset trim action to restore full video range.",
-            "Waveform visualization for trim segments.",
-            "Release scripts improved for Windows compatibility and npm lifecycle hooks."
+            "Waveform visualization for trim segments."
           ]
         }
       ]
@@ -339,44 +313,23 @@
       ]
     },
     {
-      "version": "0.4.16",
-      "date": "2026-01-27",
-      "sections": [
-        {
-          "title": "Fixed",
-          "items": [
-            "Standardized `ts-rs` `export_to` paths for consistent generated TypeScript imports.",
-            "Exported `EditorState` for TypeScript module resolution and keyboard shortcuts test stability."
-          ]
-        },
-        {
-          "title": "Changed",
-          "items": [
-            "CI workflow adjustments around Rust steps requiring FFmpeg system libraries."
-          ]
-        }
-      ]
-    },
-    {
       "version": "0.4.15",
       "date": "2026-01-26",
       "sections": [
         {
           "title": "Added",
           "items": [
-            "Public web landing page and release mirroring to `walterlow/snapit-releases`.",
-            "Turborepo monorepo structure for desktop/web/packages.",
-            "Major caption system: whisper transcription, caption panel/store, GPU caption layer, save/load commands.",
-            "Preview/export parity system for caption/layout consistency (constants, hooks, commands, parity tests).",
+            "Public web landing page.",
+            "Caption system with whisper transcription, GPU caption layer, and save/load support.",
+            "Consistent preview and export rendering for captions and layout.",
             "Output resolution controls and improved caption rendering pipeline.",
-            "Video editor panel reorganization (audio, cursor, webcam, export settings) and related UX updates."
+            "Video editor panel reorganization (audio, cursor, webcam, export settings)."
           ]
         },
         {
           "title": "Changed",
           "items": [
-            "Editor compositor/background settings simplified to align with video editor behavior.",
-            "Significant cross-component refactors and test updates for maintainability."
+            "Editor compositor and background settings simplified."
           ]
         },
         {
@@ -399,17 +352,13 @@
             "Standalone image editor windows and editor keyboard shortcuts.",
             "Video cropping + composition controls.",
             "GPU error boundary and device-lost recovery paths.",
-            "Expanded tests (integration/component/store slices) for video export and timeline flows.",
             "NVENC hardware encode path with x264 fallback."
           ]
         },
         {
           "title": "Changed",
           "items": [
-            "Split `VideoEditorView`, GPU preview helpers, and store into focused modules/slices.",
-            "Replaced ad hoc `console.*` usage with centralized logging.",
-            "Tightened TypeScript linting (`no-explicit-any` enforcement).",
-            "Added lazy-loading/direct import optimizations."
+            "Faster app startup with lazy-loading optimizations."
           ]
         },
         {
@@ -449,7 +398,7 @@
         {
           "title": "Changed",
           "items": [
-            "Reused WebCodecs cache for zoom region thumbnail performance."
+            "Faster zoom region thumbnail rendering."
           ]
         },
         {
@@ -457,8 +406,7 @@
           "items": [
             "Timeline ruler click no longer clears segment selection.",
             "Text segment fade animation now uses the intended trapezoid curve.",
-            "Webcam overlay anchoring now targets composition bounds.",
-            "Updated failing tests and resolved Rust/clippy issues."
+            "Webcam overlay anchoring now targets composition bounds."
           ]
         }
       ]
@@ -495,7 +443,7 @@
         {
           "title": "Changed",
           "items": [
-            "Replaced WASM text renderer path with native `wgpu` surface + WebSocket fallback."
+            "Faster text rendering with native GPU path."
           ]
         },
         {
@@ -507,27 +455,9 @@
       ]
     },
     {
-      "version": "0.4.8",
-      "date": "2026-01-13",
-      "sections": [
-        {
-          "title": "Changed",
-          "items": [
-            "Moved HTML entry points into `windows/` with auto-discovery in build config."
-          ]
-        }
-      ]
-    },
-    {
       "version": "0.4.7",
       "date": "2026-01-13",
       "sections": [
-        {
-          "title": "Added",
-          "items": [
-            "PowerShell helper script for local Tauri builds."
-          ]
-        },
         {
           "title": "Fixed",
           "items": [
@@ -550,18 +480,6 @@
       ]
     },
     {
-      "version": "0.4.5",
-      "date": "2026-01-13",
-      "sections": [
-        {
-          "title": "Changed",
-          "items": [
-            "Release workflow now installs FFmpeg on Windows CI builds."
-          ]
-        }
-      ]
-    },
-    {
       "version": "0.4.4",
       "date": "2026-01-13",
       "sections": [
@@ -569,20 +487,17 @@
           "title": "Added",
           "items": [
             "Floating video editor windows for multi-project editing.",
-            "Caption/mask/text segment workflows and corresponding config panels.",
-            "Settings window + feedback submission pipeline.",
+            "Caption, mask, and text segment workflows with config panels.",
+            "Settings window and feedback submission.",
             "Additional webcam overlay options (shape variants, shadows, sizing/scaling controls).",
             "Cursor rendering improvements (shape support, opacity fade, click animation, scroll cursor support).",
-            "Direct3D/Scap capture integration and broader capture backend unification.",
             "Device selectors and expanded video editor UI polish."
           ]
         },
         {
           "title": "Changed",
           "items": [
-            "Upgraded `wgpu` to v25 and modernized related APIs.",
-            "Added WebCodecs worker decode improvements and timeline/preview performance refinements.",
-            "Continued restructuring of preview/rendering code for compositing parity and stability."
+            "Improved timeline and preview performance."
           ]
         },
         {
@@ -614,15 +529,8 @@
         {
           "title": "Added",
           "items": [
-            "`scap`-based region capture path and cursor-video timestamp synchronization improvements.",
-            "Additional cursor normalization/offset handling for consistent multi-monitor behavior."
-          ]
-        },
-        {
-          "title": "Changed",
-          "items": [
-            "Simplified monitor capture backend code and monitor index handling.",
-            "Simplified monitor enumeration path (migrated away from `xcap` in recording flow)."
+            "Improved region capture and cursor-video timestamp synchronization.",
+            "Consistent cursor positioning across multi-monitor setups."
           ]
         },
         {
@@ -657,23 +565,20 @@
             "GPU-accelerated video editor/export pipeline with timeline and waveform improvements.",
             "Webcam recording/compositing enhancements and cursor capture/highlight support.",
             "Recording pre-warm/preparation paths for faster startup.",
-            "Settings window foundation and expanded test coverage across hooks/stores/components."
+            "Settings window."
           ]
         },
         {
           "title": "Changed",
           "items": [
-            "Major backend modularization across recorder/exporter/video project/window/storage/config modules.",
-            "Migrated UI components to shadcn/ui and standardized theme/CSS variable usage.",
-            "Switched CI/package workflows toward Bun and improved repo development guides (`AGENTS.md`)."
+            "Migrated UI components to shadcn/ui and standardized theme/CSS variable usage."
           ]
         },
         {
           "title": "Fixed",
           "items": [
             "DPI/window sizing, multi-monitor capture bounds, and GIF capture reliability.",
-            "Recording state consistency and toolbar/webcam restoration edge cases.",
-            "Logging/error-handling robustness and stale race conditions in recording paths."
+            "Recording state consistency and toolbar/webcam restoration edge cases."
           ]
         }
       ]
@@ -692,18 +597,14 @@
             "**Cursor Capture** - Include cursor in recordings",
             "**Line Tool** - Draw straight lines as annotations",
             "**Tag Support** - Organize captures with custom tags",
-            "**Undo/Redo** - Full history support for editor actions",
-            "**Testing Infrastructure** - Vitest setup with unit and integration tests"
+            "**Undo/Redo** - Full history support for editor actions"
           ]
         },
         {
           "title": "Changed",
           "items": [
-            "Migrated UI components to shadcn/ui (from Base UI)",
-            "Refactored capture toolbar to frontend-controlled positioning",
             "Enhanced overlay with resize handles for region adjustment",
-            "Improved glassmorphism styling throughout UI",
-            "Integrated ts-rs for Rust-to-TypeScript type generation"
+            "Improved glassmorphism styling throughout UI"
           ]
         },
         {
@@ -735,8 +636,7 @@
           "items": [
             "Updated React to v19.2.0",
             "Instant theme switching (disabled transitions during switch)",
-            "Optimized library grid animations and resize performance",
-            "Memoized date grouping for better performance"
+            "Optimized library grid animations and resize performance"
           ]
         },
         {
@@ -764,19 +664,6 @@
           "items": [
             "Dynamic app version display in settings",
             "Enhanced startup cleanup with pre-created directories"
-          ]
-        }
-      ]
-    },
-    {
-      "version": "0.2.3",
-      "date": "2025-12-24",
-      "sections": [
-        {
-          "title": "Changed",
-          "items": [
-            "Build configuration cleanup",
-            "Version sync script improvements"
           ]
         }
       ]
@@ -849,9 +736,7 @@
           "title": "Changed",
           "items": [
             "Simplified padding calculation to absolute pixels",
-            "Extracted library components for modularity",
-            "Throttled window detection",
-            "Debounced canvas fit calculations"
+            "Improved window detection performance"
           ]
         },
         {
