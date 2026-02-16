@@ -11,6 +11,21 @@ const { execSync } = require('child_process');
 const ROOT = path.resolve(__dirname, '..');
 const version = require(path.join(ROOT, 'package.json')).version;
 
+// ---------------------------------------------------------------------------
+// Pre-flight: ensure CHANGELOG.md has an entry for this version
+// ---------------------------------------------------------------------------
+const changelogPath = path.join(ROOT, 'CHANGELOG.md');
+const changelogMd = fs.readFileSync(changelogPath, 'utf8');
+const versionHeaderRe = new RegExp(`^## \\[${version.replace(/\./g, '\\.')}\\]`, 'm');
+
+if (!versionHeaderRe.test(changelogMd)) {
+  console.error(
+    `\n  ERROR: CHANGELOG.md has no entry for version ${version}.\n` +
+    `  Add a "## [${version}] - YYYY-MM-DD" section before running \`bun run release\`.\n`,
+  );
+  process.exit(1);
+}
+
 // Sync apps/desktop/package.json
 const desktopPkg = path.join(ROOT, 'apps/desktop/package.json');
 const desktopContent = JSON.parse(fs.readFileSync(desktopPkg, 'utf8'));
