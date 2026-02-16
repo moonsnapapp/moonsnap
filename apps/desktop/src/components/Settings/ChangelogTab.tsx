@@ -35,11 +35,6 @@ export const ChangelogTab: React.FC = () => {
         <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--coral-400)] mb-3">
           Release Notes
         </h3>
-        <div className="p-4 rounded-lg bg-[var(--polar-ice)] border border-[var(--polar-frost)]">
-          <p className="text-sm text-[var(--ink-muted)]">
-            Auto-generated from <span className="font-medium text-[var(--ink-black)]">CHANGELOG.md</span>.
-          </p>
-        </div>
       </section>
 
       {changelog.entries.map((entry) => (

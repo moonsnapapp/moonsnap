@@ -52,9 +52,6 @@ export default async function ChangelogPage() {
             {"<-"} Back to home
           </Link>
           <h1 className="text-4xl sm:text-5xl font-bold tracking-tight mb-3 font-display">Changelog</h1>
-          <p className="text-[var(--muted)]">
-            One source of truth from <span className="text-white">CHANGELOG.md</span>, shared by web and desktop.
-          </p>
         </div>
 
         <div className="space-y-6">
