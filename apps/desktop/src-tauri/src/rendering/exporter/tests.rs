@@ -3,7 +3,6 @@
 #![cfg(test)]
 
 use super::super::types::DecodedFrame;
-use super::frame_ops::*;
 use super::webcam::*;
 use crate::commands::captions::{CaptionSegment, CaptionSettings};
 use crate::commands::video_recording::video_project::{
@@ -11,6 +10,36 @@ use crate::commands::video_recording::video_project::{
     ShadowConfig, TextConfig, TimelineState, VideoProject, VideoSources, WebcamBorder,
     WebcamConfig, WebcamOverlayPosition, WebcamOverlayShape, ZoomConfig,
 };
+
+#[test]
+fn test_nv12_fast_path_requires_even_source_dimensions() {
+    assert!(super::can_use_nv12_fast_path(1920, 1080, false, 0, 0, 0, 0));
+    assert!(!super::can_use_nv12_fast_path(
+        2035, 1102, false, 0, 0, 0, 0
+    ));
+    assert!(!super::can_use_nv12_fast_path(
+        2034, 1103, false, 0, 0, 0, 0
+    ));
+}
+
+#[test]
+fn test_nv12_fast_path_requires_even_crop_alignment() {
+    assert!(super::can_use_nv12_fast_path(
+        1920, 1080, true, 100, 200, 1280, 720
+    ));
+    assert!(!super::can_use_nv12_fast_path(
+        1920, 1080, true, 101, 200, 1280, 720
+    ));
+    assert!(!super::can_use_nv12_fast_path(
+        1920, 1080, true, 100, 201, 1280, 720
+    ));
+    assert!(!super::can_use_nv12_fast_path(
+        1920, 1080, true, 100, 200, 1279, 720
+    ));
+    assert!(!super::can_use_nv12_fast_path(
+        1920, 1080, true, 100, 200, 1280, 721
+    ));
+}
 
 /// Create a minimal VideoProject for testing webcam positioning
 fn make_test_project(

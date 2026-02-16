@@ -53,7 +53,6 @@ use crate::commands::captions::types::CaptionSegment;
 use crate::commands::text_prerender::PreRenderedTextState;
 use crate::commands::video_recording::cursor::events::load_cursor_recording;
 use crate::commands::video_recording::video_export::{ExportResult, ExportStage};
-use crate::commands::video_recording::video_project::XY;
 use crate::commands::video_recording::video_project::{
     CompositionMode, CursorType, SceneMode, TimelineState, VideoProject,
 };
@@ -103,6 +102,29 @@ struct PendingReadback {
     camera_only_opacity: f64,
     source_time_ms: u64,
     output_frame_idx: u32,
+}
+
+/// NV12 fast path requires even dimensions for stable chroma sampling/strides.
+/// Also require even crop alignment when crop is active.
+fn can_use_nv12_fast_path(
+    source_width: u32,
+    source_height: u32,
+    crop_enabled: bool,
+    crop_x: u32,
+    crop_y: u32,
+    crop_width: u32,
+    crop_height: u32,
+) -> bool {
+    let even_source = source_width % 2 == 0 && source_height % 2 == 0;
+    if !even_source {
+        return false;
+    }
+
+    if !crop_enabled {
+        return true;
+    }
+
+    crop_x % 2 == 0 && crop_y % 2 == 0 && crop_width % 2 == 0 && crop_height % 2 == 0
 }
 
 /// Apply CPU-based compositing (cursor + pre-rendered text overlays) to a pending frame.
@@ -446,11 +468,34 @@ pub async fn export_video_gpu(
     };
 
     // Initialize streaming decoders (ONE FFmpeg process each!)
-    // Use decode_range which respects segments (first seg start to last seg end)
-    // Screen decoder uses NV12 to skip CPU swscale and reduce pipe bandwidth by 62%.
+    // Use decode_range which respects segments (first seg start to last seg end).
+    // NV12 fast path is disabled for odd source/crop alignment to avoid frame jitter.
     let screen_path = Path::new(&project.sources.screen_video);
-    let mut screen_decoder = StreamDecoder::new(screen_path, decode_start_ms, decode_end_ms)?
-        .with_pixel_format(PixelFormat::Nv12);
+    let use_nv12_decode = can_use_nv12_fast_path(
+        original_width,
+        original_height,
+        crop_enabled,
+        crop.x,
+        crop.y,
+        crop.width,
+        crop.height,
+    );
+    if !use_nv12_decode {
+        log::info!(
+            "[EXPORT] NV12 fast path disabled for source {}x{} crop=({},{} {}x{} enabled={}); using RGBA decode",
+            original_width,
+            original_height,
+            crop.x,
+            crop.y,
+            crop.width,
+            crop.height,
+            crop_enabled
+        );
+    }
+    let mut screen_decoder = StreamDecoder::new(screen_path, decode_start_ms, decode_end_ms)?;
+    if use_nv12_decode {
+        screen_decoder = screen_decoder.with_pixel_format(PixelFormat::Nv12);
+    }
     screen_decoder.start(screen_path)?;
 
     // Webcam decoder if enabled
@@ -640,6 +685,10 @@ pub async fn export_video_gpu(
         cursor_motion_blur: project.cursor.motion_blur.clamp(0.0, 1.0),
         cursor_interpolator: cursor_interpolator.as_ref(),
     };
+    // No-crop area captures can have odd source dimensions. Crop to the export
+    // video size once per frame so RGBA uploads match the pre-allocated texture.
+    let force_even_source_crop =
+        !crop_enabled && (original_width != video_w || original_height != video_h);
 
     // Track output frames separately from decoded frames
     let mut output_frame_count = 0u32;
@@ -721,20 +770,18 @@ pub async fn export_video_gpu(
             source_time_ms - decode_start_ms
         };
 
-        // Apply video crop to screen frame BEFORE composition.
-        // NV12 frames: skip CPU crop — done during GPU NV12→RGBA conversion.
-        // RGBA frames (fallback): keep CPU crop as-is.
-        let screen_frame = if crop_enabled && bundle.screen_frame.format == PixelFormat::Rgba {
-            crop_decoded_frame(
-                &bundle.screen_frame,
-                crop.x,
-                crop.y,
-                crop.width,
-                crop.height,
-            )
-        } else {
-            bundle.screen_frame
-        };
+        // Apply source normalization BEFORE composition:
+        // - With user crop: RGBA path crops on CPU (NV12 crop happens in converter).
+        // - Without user crop: odd-sized RGBA sources are cropped to even export source size.
+        let mut screen_frame = bundle.screen_frame;
+        if screen_frame.format == PixelFormat::Rgba {
+            if crop_enabled {
+                screen_frame =
+                    crop_decoded_frame(&screen_frame, crop.x, crop.y, crop.width, crop.height);
+            } else if force_even_source_crop {
+                screen_frame = crop_decoded_frame(&screen_frame, 0, 0, video_w, video_h);
+            }
+        }
 
         // Use timeline_time_ms for user-defined effects (zoom regions, scene segments, visibility)
         // Use source_time_ms for recorded data (cursor position)
