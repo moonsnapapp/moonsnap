@@ -2,6 +2,18 @@
 
 All notable changes to SnapIt are documented in this file.
 
+## [0.5.4] - 2026-02-17
+
+### Added
+- Quick reset crop button next to Edit Crop in the export panel.
+- Output resolution display for both Auto and manual composition modes.
+
+### Changed
+- Crop dialog opens at full video size and presets fill-to-maximize within video bounds.
+- Crop aspect ratio toggle shows clearer label with visible active state.
+- Audio controls moved from Project tab to Export tab.
+- Background toggle sets sensible default padding and rounding when enabled.
+
 ## [0.5.3] - 2026-02-16
 
 ### Added

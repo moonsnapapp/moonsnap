@@ -2,6 +2,28 @@
   "source": "CHANGELOG.md",
   "entries": [
     {
+      "version": "0.5.4",
+      "date": "2026-02-17",
+      "sections": [
+        {
+          "title": "Added",
+          "items": [
+            "Quick reset crop button next to Edit Crop in the export panel.",
+            "Output resolution display for both Auto and manual composition modes."
+          ]
+        },
+        {
+          "title": "Changed",
+          "items": [
+            "Crop dialog opens at full video size and presets fill-to-maximize within video bounds.",
+            "Crop aspect ratio toggle shows clearer label with visible active state.",
+            "Audio controls moved from Project tab to Export tab.",
+            "Background toggle sets sensible default padding and rounding when enabled."
+          ]
+        }
+      ]
+    },
+    {
       "version": "0.5.3",
       "date": "2026-02-16",
       "sections": [
