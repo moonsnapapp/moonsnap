@@ -133,6 +133,7 @@ interface CaptureState {
   searchQuery: string;
   filterFavorites: boolean;
   filterTags: string[];
+  filterMediaTypes: string[];
 
   // View state
   view: 'library' | 'editor' | 'videoEditor';
@@ -169,6 +170,7 @@ interface CaptureState {
   setSearchQuery: (query: string) => void;
   setFilterFavorites: (value: boolean) => void;
   setFilterTags: (tags: string[]) => void;
+  setFilterMediaTypes: (types: string[]) => void;
   setSkipStagger: (value: boolean) => void;
   clearCurrentProject: () => void;
   setHasUnsavedChanges: (value: boolean) => void;
@@ -254,6 +256,7 @@ export const useCaptureStore = create<CaptureState>()(
   searchQuery: '',
   filterFavorites: false,
   filterTags: [],
+  filterMediaTypes: [],
   view: 'library',
 
   loadCaptures: async () => {
@@ -619,6 +622,7 @@ export const useCaptureStore = create<CaptureState>()(
   setSearchQuery: (query: string) => set({ searchQuery: query }),
   setFilterFavorites: (value: boolean) => set({ filterFavorites: value }),
   setFilterTags: (tags: string[]) => set({ filterTags: tags }),
+  setFilterMediaTypes: (types: string[]) => set({ filterMediaTypes: types }),
   setSkipStagger: (value: boolean) => set({ skipStagger: value }),
   clearCurrentProject: () => {
     clearEditorSession();
@@ -701,20 +705,32 @@ export const useFilteredCaptures = () => {
   const searchQuery = useCaptureStore((state) => state.searchQuery);
   const filterFavorites = useCaptureStore((state) => state.filterFavorites);
   const filterTags = useCaptureStore((state) => state.filterTags);
+  const filterMediaTypes = useCaptureStore((state) => state.filterMediaTypes);
 
   return useMemo(() => {
     // Early exit if no filters active - return original array reference
-    if (!filterFavorites && filterTags.length === 0 && !searchQuery) {
+    if (!filterFavorites && filterTags.length === 0 && filterMediaTypes.length === 0 && !searchQuery) {
       return captures;
     }
 
-    // Pre-compute filter tag set for O(1) lookups instead of O(n) array.includes
+    // Pre-compute filter sets for O(1) lookups instead of O(n) array.includes
     const filterTagSet = filterTags.length > 0 ? new Set(filterTags) : null;
+    const hasMediaFilter = filterMediaTypes.length > 0;
+    const filterMediaTypeSet = hasMediaFilter ? new Set(filterMediaTypes) : null;
+    // 'image' is a virtual group covering all screenshot capture types
+    const imageTypes = new Set(['region', 'fullscreen', 'window']);
+    const filterIncludesImage = filterMediaTypeSet?.has('image') ?? false;
     const queryLower = searchQuery ? searchQuery.toLowerCase() : null;
 
     return captures.filter((capture) => {
       // Check favorites filter first (fastest check)
       if (filterFavorites && !capture.favorite) return false;
+
+      // Check media type filter — 'image' matches region/fullscreen/window
+      if (filterMediaTypeSet) {
+        const isImage = imageTypes.has(capture.capture_type);
+        if (!(filterMediaTypeSet.has(capture.capture_type) || (isImage && filterIncludesImage))) return false;
+      }
 
       // Check tags with Set lookup (O(1) per tag instead of O(n))
       if (filterTagSet) {
@@ -735,7 +751,7 @@ export const useFilteredCaptures = () => {
 
       return true;
     });
-  }, [captures, searchQuery, filterFavorites, filterTags]);
+  }, [captures, searchQuery, filterFavorites, filterTags, filterMediaTypes]);
 };
 
 /**

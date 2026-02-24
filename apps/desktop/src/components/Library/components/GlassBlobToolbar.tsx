@@ -7,6 +7,9 @@ import {
   Search,
   X,
   Trash2,
+  Image,
+  Video,
+  Film,
 } from 'lucide-react';
 import {
   Tooltip,
@@ -23,6 +26,8 @@ interface GlassBlobToolbarProps {
   filterTags: string[];
   onFilterTagsChange: (tags: string[]) => void;
   allTags: string[];
+  filterMediaTypes: string[];
+  onFilterMediaTypesChange: (types: string[]) => void;
   viewMode: 'grid' | 'list';
   onViewModeChange: (mode: 'grid' | 'list') => void;
   selectedCount: number;
@@ -39,6 +44,8 @@ export const GlassBlobToolbar: React.FC<GlassBlobToolbarProps> = ({
   filterTags,
   onFilterTagsChange,
   allTags,
+  filterMediaTypes,
+  onFilterMediaTypesChange,
   viewMode,
   onViewModeChange,
   selectedCount,
@@ -65,6 +72,14 @@ export const GlassBlobToolbar: React.FC<GlassBlobToolbarProps> = ({
   const handleSearchBlur = () => {
     if (!searchQuery) {
       setSearchExpanded(false);
+    }
+  };
+
+  const toggleMediaType = (type: string) => {
+    if (filterMediaTypes.includes(type)) {
+      onFilterMediaTypesChange(filterMediaTypes.filter((t) => t !== type));
+    } else {
+      onFilterMediaTypesChange([...filterMediaTypes, type]);
     }
   };
 
@@ -143,6 +158,48 @@ export const GlassBlobToolbar: React.FC<GlassBlobToolbarProps> = ({
           selectedTags={filterTags}
           onSelectionChange={onFilterTagsChange}
         />
+
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              onClick={() => toggleMediaType('image')}
+              className={`cloud-btn cloud-btn--small ${filterMediaTypes.includes('image') ? 'cloud-btn--active' : ''}`}
+            >
+              <Image className="w-[15px] h-[15px]" />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="top">
+            <p className="text-xs">Images</p>
+          </TooltipContent>
+        </Tooltip>
+
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              onClick={() => toggleMediaType('video')}
+              className={`cloud-btn cloud-btn--small ${filterMediaTypes.includes('video') ? 'cloud-btn--active' : ''}`}
+            >
+              <Video className="w-[15px] h-[15px]" />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="top">
+            <p className="text-xs">Videos</p>
+          </TooltipContent>
+        </Tooltip>
+
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              onClick={() => toggleMediaType('gif')}
+              className={`cloud-btn cloud-btn--small ${filterMediaTypes.includes('gif') ? 'cloud-btn--active' : ''}`}
+            >
+              <Film className="w-[15px] h-[15px]" />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="top">
+            <p className="text-xs">GIFs</p>
+          </TooltipContent>
+        </Tooltip>
 
         <div className="cloud-divider" />
 

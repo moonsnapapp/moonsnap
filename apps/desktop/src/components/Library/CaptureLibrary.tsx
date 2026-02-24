@@ -95,6 +95,8 @@ export const CaptureLibrary: React.FC = () => {
     setFilterFavorites,
     filterTags,
     setFilterTags,
+    filterMediaTypes,
+    setFilterMediaTypes,
   } = useCaptureStore();
 
   const { settings } = useSettingsStore();
@@ -507,6 +509,8 @@ export const CaptureLibrary: React.FC = () => {
           filterTags={filterTags}
           onFilterTagsChange={setFilterTags}
           allTags={allTags}
+          filterMediaTypes={filterMediaTypes}
+          onFilterMediaTypesChange={setFilterMediaTypes}
           viewMode={viewMode}
           onViewModeChange={setViewMode}
           selectedCount={selectedIds.size}

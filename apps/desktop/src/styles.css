@@ -3168,6 +3168,11 @@ body.overlay-window #root {
 
 .cloud-btn--active {
   color: var(--coral-400);
+  background: rgba(249, 112, 102, 0.15);
+}
+
+.cloud-btn--active svg {
+  transform: scale(1.15);
 }
 
 /* Cloud toolbar divider */
@@ -3261,6 +3266,7 @@ body.overlay-window #root {
 
 .light .cloud-btn--active {
   color: var(--coral-500);
+  background: rgba(249, 112, 102, 0.12);
 }
 
 .light .cloud-btn--coral {
