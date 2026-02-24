@@ -19,6 +19,7 @@ import { type Tool } from '../../types';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Separator } from '@/components/ui/separator';
+import { Slider } from '@/components/ui/slider';
 import { ColorPicker } from '@/components/ui/color-picker';
 import { BackgroundSettings, BlurToolSettings, TextToolSettings } from './properties';
 
@@ -27,9 +28,6 @@ const COLOR_PRESETS = [
   '#EF4444', '#F97316', '#F97066', '#22C55E',
   '#3B82F6', '#8B5CF6', '#EC4899', '#FFFFFF', '#1A1A1A',
 ];
-
-// Stroke width presets
-const STROKE_PRESETS = [1, 2, 3, 4, 6, 8];
 
 // Quick style presets per tool type
 const STROKE_PRESETS_DATA = [
@@ -601,28 +599,14 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
                 </Label>
                 <span className="text-xs text-[var(--ink-dark)] font-mono">{strokeWidth}px</span>
               </div>
-              <div className="flex gap-2">
-                {STROKE_PRESETS.map((width) => (
-                  <button
-                    key={width}
-                    onClick={() => handleStrokeWidthChange(width)}
-                    className={`flex-1 h-8 rounded-lg flex items-center justify-center transition-all ${
-                      strokeWidth === width
-                        ? 'bg-[var(--coral-50)] text-[var(--coral-500)] border border-[var(--coral-200)]'
-                        : 'bg-[var(--card)] text-[var(--ink-muted)] border border-[var(--polar-frost)] hover:bg-[var(--polar-ice)]'
-                    }`}
-                  >
-                    <div
-                      className="rounded-full"
-                      style={{
-                        width: Math.min(width * 2, 12),
-                        height: Math.min(width * 2, 12),
-                        backgroundColor: strokeWidth === width ? 'var(--coral-400)' : 'var(--ink-muted)'
-                      }}
-                    />
-                  </button>
-                ))}
-              </div>
+              <Slider
+                value={[strokeWidth]}
+                onValueChange={([value]) => handleStrokeWidthChange(value)}
+                min={1}
+                max={20}
+                step={1}
+                className="w-full"
+              />
             </div>
           </>
         )}

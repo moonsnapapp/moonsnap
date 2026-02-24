@@ -154,6 +154,7 @@ export const ArrowShape: React.FC<ArrowShapeProps> = React.memo(({
         points={arrowPoints}
         stroke={shape.stroke}
         strokeWidth={shape.strokeWidth}
+        strokeScaleEnabled={false}
         fill={shape.fill}
         pointerLength={10}
         pointerWidth={10}
