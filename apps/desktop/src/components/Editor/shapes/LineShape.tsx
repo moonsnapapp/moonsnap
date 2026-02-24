@@ -130,6 +130,7 @@ export const LineShape: React.FC<LineShapeProps> = React.memo(({
         <>
           <Circle
             ref={startHandleRef}
+            name="editor-gizmo"
             x={points[0]}
             y={points[1]}
             radius={handleSize}
@@ -151,6 +152,7 @@ export const LineShape: React.FC<LineShapeProps> = React.memo(({
           />
           <Circle
             ref={endHandleRef}
+            name="editor-gizmo"
             x={points[2]}
             y={points[3]}
             radius={handleSize}

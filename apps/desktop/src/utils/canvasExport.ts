@@ -79,6 +79,10 @@ export function exportCanvas(
   if (editorShadow) editorShadow.hide();
   if (transformer) transformer.hide();
 
+  // Hide all gizmo elements (selection handles, crop overlay, text borders, etc.)
+  const gizmos = stage.find('.editor-gizmo').filter((node) => node.visible());
+  gizmos.forEach((node) => node.hide());
+
   // Export from Konva
   const outputCanvas = layer.toCanvas({
     x: bounds.x,
@@ -94,6 +98,7 @@ export function exportCanvas(
   if (checkerboard) checkerboard.show();
   if (editorShadow) editorShadow.show();
   if (transformer) transformer.show();
+  gizmos.forEach((node) => node.show());
 
   return outputCanvas;
 }

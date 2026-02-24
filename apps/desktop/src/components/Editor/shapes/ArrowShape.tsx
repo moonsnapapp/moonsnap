@@ -170,6 +170,7 @@ export const ArrowShape: React.FC<ArrowShapeProps> = React.memo(({
         <>
           <Circle
             ref={startHandleRef}
+            name="editor-gizmo"
             x={anchors[0]}
             y={anchors[1]}
             radius={handleSize}
@@ -191,6 +192,7 @@ export const ArrowShape: React.FC<ArrowShapeProps> = React.memo(({
           />
           <Circle
             ref={endHandleRef}
+            name="editor-gizmo"
             x={anchors[2]}
             y={anchors[3]}
             radius={handleSize}

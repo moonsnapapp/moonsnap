@@ -1,5 +1,5 @@
 import React from 'react';
-import { Rect, Circle, Line } from 'react-konva';
+import { Rect, Circle, Line, Group } from 'react-konva';
 import type { SnapGuide } from '../../../hooks/useCropTool';
 
 interface CropBounds {
@@ -74,7 +74,7 @@ export const CropOverlay: React.FC<CropOverlayProps> = ({
   ];
 
   return (
-    <>
+    <Group name="editor-gizmo">
       {/* Dim area outside crop (Photoshop-style) */}
       <Rect x={-10000} y={-10000} width={20000} height={displayBounds.y + 10000} fill="rgba(0,0,0,0.5)" listening={false} />
       <Rect x={-10000} y={displayBounds.y + displayBounds.height} width={20000} height={10000} fill="rgba(0,0,0,0.5)" listening={false} />
@@ -235,6 +235,6 @@ export const CropOverlay: React.FC<CropOverlayProps> = ({
           );
         }
       })}
-    </>
+    </Group>
   );
 };
