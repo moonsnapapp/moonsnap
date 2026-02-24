@@ -1,4 +1,5 @@
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useRef } from 'react';
+import { flushSync } from 'react-dom';
 import type { EditorHistoryActions } from './useEditorHistory';
 
 interface CropBounds {
@@ -30,6 +31,7 @@ interface UseCropToolProps {
   canvasBounds: CanvasBounds | null;
   setCanvasBounds: (bounds: CanvasBounds) => void;
   isShiftHeld: boolean;
+  zoom: number;
   originalImageSize: ImageSize | null;
   /** Context-aware history actions for undo/redo support */
   history: EditorHistoryActions;
@@ -81,6 +83,7 @@ export const useCropTool = ({
   canvasBounds,
   setCanvasBounds,
   isShiftHeld,
+  zoom,
   originalImageSize,
   history,
 }: UseCropToolProps): UseCropToolReturn => {
@@ -89,6 +92,7 @@ export const useCropTool = ({
   const [cropDragStart, setCropDragStart] = useState<{ x: number; y: number } | null>(null);
   const [cropLockedAxis, setCropLockedAxis] = useState<'x' | 'y' | null>(null);
   const [activeHandle, setActiveHandle] = useState<string | null>(null); // Track which handle is being dragged
+  const dragStartBoundsRef = useRef<CropBounds | null>(null); // Stable bounds captured at drag start
 
   // Get base bounds from canvas bounds (without preview)
   const getBaseBounds = useCallback((): CropBounds => {
@@ -108,22 +112,24 @@ export const useCropTool = ({
     return cropPreview || getBaseBounds();
   }, [cropPreview, getBaseBounds]);
 
-  // Calculate preview from handle drag position
+  // Calculate preview from handle drag position using stable drag-start bounds
   const calcPreviewFromDrag = useCallback(
     (handleId: string, nodeX: number, nodeY: number): CropBounds => {
-      const displayBounds = getDisplayBounds();
-      const left = displayBounds.x;
-      const top = displayBounds.y;
-      const right = left + displayBounds.width;
-      const bottom = top + displayBounds.height;
+      const base = dragStartBoundsRef.current || getDisplayBounds();
+      const left = base.x;
+      const top = base.y;
+      const right = left + base.width;
+      const bottom = top + base.height;
 
       let newLeft = left, newTop = top, newRight = right, newBottom = bottom;
 
-      // Edge handles (account for handle thickness offset)
-      if (handleId === 't') newTop = nodeY + HANDLE_THICKNESS / 2;
-      else if (handleId === 'b') newBottom = nodeY + HANDLE_THICKNESS / 2;
-      else if (handleId === 'l') newLeft = nodeX + HANDLE_THICKNESS / 2;
-      else if (handleId === 'r') newRight = nodeX + HANDLE_THICKNESS / 2;
+      // Edge handles: offset from node position to crop edge
+      // Handle visual size is HANDLE_THICKNESS / zoom, so center offset is HANDLE_THICKNESS / (2 * zoom)
+      const halfHandle = HANDLE_THICKNESS / (2 * zoom);
+      if (handleId === 't') newTop = nodeY + halfHandle;
+      else if (handleId === 'b') newBottom = nodeY + halfHandle;
+      else if (handleId === 'l') newLeft = nodeX + halfHandle;
+      else if (handleId === 'r') newRight = nodeX + halfHandle;
       // Corner handles (direct position)
       else {
         if (handleId.includes('l')) newLeft = nodeX;
@@ -149,7 +155,7 @@ export const useCropTool = ({
         height: newBottom - newTop,
       };
     },
-    [getDisplayBounds]
+    [getDisplayBounds, zoom]
   );
 
   // Apply snapping to bounds based on active handle
@@ -263,16 +269,16 @@ export const useCropTool = ({
   // Commit preview to actual bounds
   const commitBounds = useCallback(
     (preview: CropBounds, handle: string | null = null) => {
-      const snappedBounds = applySnapping(preview, handle);
+      const finalBounds = isShiftHeld ? applySnapping(preview, handle) : preview;
       setCanvasBounds({
-        width: Math.round(snappedBounds.width),
-        height: Math.round(snappedBounds.height),
-        imageOffsetX: Math.round(-snappedBounds.x),
-        imageOffsetY: Math.round(-snappedBounds.y),
+        width: Math.round(finalBounds.width),
+        height: Math.round(finalBounds.height),
+        imageOffsetX: Math.round(-finalBounds.x),
+        imageOffsetY: Math.round(-finalBounds.y),
       });
       setCropPreview(null);
     },
-    [setCanvasBounds, applySnapping]
+    [setCanvasBounds, applySnapping, isShiftHeld]
   );
 
   // Center drag handlers (with Shift axis locking)
@@ -307,11 +313,13 @@ export const useCropTool = ({
       }
 
       const baseBounds = getBaseBounds();
-      setCropPreview({
-        x,
-        y,
-        width: baseBounds.width,
-        height: baseBounds.height,
+      flushSync(() => {
+        setCropPreview({
+          x,
+          y,
+          width: baseBounds.width,
+          height: baseBounds.height,
+        });
       });
 
       return { x, y }; // Return constrained values for caller
@@ -350,13 +358,16 @@ export const useCropTool = ({
 
   // Edge drag handlers
   const handleEdgeDragStart = useCallback((handleId: string) => {
+    dragStartBoundsRef.current = getDisplayBounds();
     setActiveHandle(handleId);
     takeSnapshot();
-  }, []);
+  }, [getDisplayBounds]);
 
   const handleEdgeDragMove = useCallback(
     (handleId: string, nodeX: number, nodeY: number) => {
-      setCropPreview(calcPreviewFromDrag(handleId, nodeX, nodeY));
+      flushSync(() => {
+        setCropPreview(calcPreviewFromDrag(handleId, nodeX, nodeY));
+      });
     },
     [calcPreviewFromDrag]
   );
@@ -365,6 +376,7 @@ export const useCropTool = ({
     (handleId: string, nodeX: number, nodeY: number) => {
       const preview = calcPreviewFromDrag(handleId, nodeX, nodeY);
       commitBounds(preview, handleId);
+      dragStartBoundsRef.current = null;
       setActiveHandle(null);
       commitSnapshot();
     },
@@ -373,13 +385,16 @@ export const useCropTool = ({
 
   // Corner drag handlers
   const handleCornerDragStart = useCallback((handleId: string) => {
+    dragStartBoundsRef.current = getDisplayBounds();
     setActiveHandle(handleId);
     takeSnapshot();
-  }, []);
+  }, [getDisplayBounds]);
 
   const handleCornerDragMove = useCallback(
     (handleId: string, nodeX: number, nodeY: number) => {
-      setCropPreview(calcPreviewFromDrag(handleId, nodeX, nodeY));
+      flushSync(() => {
+        setCropPreview(calcPreviewFromDrag(handleId, nodeX, nodeY));
+      });
     },
     [calcPreviewFromDrag]
   );
@@ -388,6 +403,7 @@ export const useCropTool = ({
     (handleId: string, nodeX: number, nodeY: number) => {
       const preview = calcPreviewFromDrag(handleId, nodeX, nodeY);
       commitBounds(preview, handleId);
+      dragStartBoundsRef.current = null;
       setActiveHandle(null);
       commitSnapshot();
     },
@@ -397,7 +413,7 @@ export const useCropTool = ({
   // Calculate active snap guides based on crop bounds alignment with image bounds
   // Only shows guides relevant to the handle being dragged
   const snapGuides = useMemo((): SnapGuide[] => {
-    if (!originalImageSize || !cropPreview || !activeHandle) return [];
+    if (!isShiftHeld || !originalImageSize || !cropPreview || !activeHandle) return [];
 
     const guides: SnapGuide[] = [];
     const bounds = cropPreview;
@@ -467,7 +483,7 @@ export const useCropTool = ({
     return guides.filter((guide, index, self) =>
       index === self.findIndex(g => g.type === guide.type && g.position === guide.position)
     );
-  }, [originalImageSize, cropPreview, activeHandle]);
+  }, [isShiftHeld, originalImageSize, cropPreview, activeHandle]);
 
   return {
     cropPreview,

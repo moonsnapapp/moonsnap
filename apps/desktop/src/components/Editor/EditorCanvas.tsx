@@ -218,6 +218,7 @@ export const EditorCanvas = React.memo(forwardRef<EditorCanvasRef, EditorCanvasP
     canvasBounds,
     setCanvasBounds,
     isShiftHeld,
+    zoom: navigation.zoom,
     originalImageSize,
     history,
   });
