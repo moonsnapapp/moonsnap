@@ -64,12 +64,26 @@ export interface CompositorSettingsAnnotation {
   aspectRatio: CompositorSettings['aspectRatio'];
 }
 
+// Special annotation for crop region (export-only bounds, replaces CropBoundsAnnotation)
+export interface CropRegionAnnotation {
+  id: '__crop_region__';
+  type: '__crop_region__';
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
 // Union type for all annotation types
-export type Annotation = ShapeAnnotation | CropBoundsAnnotation | CompositorSettingsAnnotation;
+export type Annotation = ShapeAnnotation | CropBoundsAnnotation | CropRegionAnnotation | CompositorSettingsAnnotation;
 
 // Type guards for annotation types
 export function isCropBoundsAnnotation(ann: Annotation): ann is CropBoundsAnnotation {
   return ann.type === '__crop_bounds__';
+}
+
+export function isCropRegionAnnotation(ann: Annotation): ann is CropRegionAnnotation {
+  return ann.type === '__crop_region__';
 }
 
 export function isCompositorSettingsAnnotation(ann: Annotation): ann is CompositorSettingsAnnotation {
@@ -184,6 +198,8 @@ export interface CanvasShape {
   pixelSize?: number;
   blurType?: BlurType;
   blurAmount?: number;
+  imageSrc?: string; // base64 data URL for pasted images
+  isBackground?: boolean; // true for the original screenshot background shape
   rotation?: number;
   scaleX?: number;
   scaleY?: number;

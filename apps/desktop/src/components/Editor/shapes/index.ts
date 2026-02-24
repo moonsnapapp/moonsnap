@@ -8,3 +8,4 @@ export { StepShape } from './StepShape';
 export { ArrowShape } from './ArrowShape';
 export { LineShape } from './LineShape';
 export { BlurShape } from './BlurShape';
+export { ImageShape } from './ImageShape';

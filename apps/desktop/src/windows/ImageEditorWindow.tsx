@@ -30,7 +30,8 @@ const PropertiesPanel = React.lazy(() =>
 import type Konva from 'konva';
 import type { EditorCanvasRef } from '@/components/Editor/EditorCanvas';
 import type { Tool, CanvasShape, Annotation, CropBoundsAnnotation, CompositorSettingsAnnotation } from '@/types';
-import { isCropBoundsAnnotation, isCompositorSettingsAnnotation, DEFAULT_COMPOSITOR_SETTINGS } from '@/types';
+import { isCropBoundsAnnotation, isCropRegionAnnotation, isCompositorSettingsAnnotation, DEFAULT_COMPOSITOR_SETTINGS } from '@/types';
+import { ensureBackgroundShape } from '@/utils/canvasGeometry';
 import { toast } from 'sonner';
 import { reportError } from '@/utils/errorReporting';
 import { useEditorActions } from '@/hooks/useEditorActions';
@@ -295,12 +296,38 @@ const ImageEditorWindow: React.FC = () => {
           if (project.annotations && project.annotations.length > 0) {
             // Separate special annotations from shape annotations
             const cropBoundsAnn = project.annotations.find(isCropBoundsAnnotation);
+            const cropRegionAnn = project.annotations.find(isCropRegionAnnotation);
             const compositorAnn = project.annotations.find(isCompositorSettingsAnnotation);
             const shapeAnnotations = project.annotations.filter(
-              (ann: Annotation) => !isCropBoundsAnnotation(ann) && !isCompositorSettingsAnnotation(ann)
+              (ann: Annotation) => !isCropBoundsAnnotation(ann) && !isCropRegionAnnotation(ann) && !isCompositorSettingsAnnotation(ann)
             );
 
-            // Load crop bounds if present
+            // Load crop region: prefer new CropRegionAnnotation, fall back to legacy
+            if (cropRegionAnn) {
+              store.getState().setCropRegion({
+                x: cropRegionAnn.x,
+                y: cropRegionAnn.y,
+                width: cropRegionAnn.width,
+                height: cropRegionAnn.height,
+              });
+            } else if (cropBoundsAnn) {
+              store.getState().setCropRegion({
+                x: -cropBoundsAnn.imageOffsetX,
+                y: -cropBoundsAnn.imageOffsetY,
+                width: cropBoundsAnn.width,
+                height: cropBoundsAnn.height,
+              });
+            } else if (project.dimensions) {
+              // Default artboard = full image dimensions
+              store.getState().setCropRegion({
+                x: 0,
+                y: 0,
+                width: project.dimensions.width,
+                height: project.dimensions.height,
+              });
+            }
+
+            // Load crop bounds if present (legacy, for canvas display)
             if (cropBoundsAnn) {
               store.getState().setCanvasBounds({
                 width: cropBoundsAnn.width,
@@ -326,13 +353,25 @@ const ImageEditorWindow: React.FC = () => {
               });
             }
 
-            // Load shapes
+            // Load shapes and ensure background shape exists
             const projectShapes: CanvasShape[] = shapeAnnotations.map((ann: Annotation) => ({
               ...ann,
               id: ann.id,
               type: ann.type,
             } as CanvasShape));
-            store.getState().setShapes(projectShapes);
+            const dims = project.dimensions;
+            if (dims) {
+              store.getState().setShapes(ensureBackgroundShape(projectShapes, dims.width, dims.height));
+            } else {
+              store.getState().setShapes(projectShapes);
+            }
+          } else if (project.dimensions) {
+            // No annotations, but we have dimensions — create background shape
+            store.getState().setOriginalImageSize({
+              width: project.dimensions.width,
+              height: project.dimensions.height,
+            });
+            store.getState().setShapes(ensureBackgroundShape([], project.dimensions.width, project.dimensions.height));
           }
         } catch (err) {
           editorLogger.warn('Failed to load project annotations:', err);
@@ -425,21 +464,23 @@ const ImageEditorWindow: React.FC = () => {
     try {
       isSavingAnnotationsRef.current = true;
       const state = store.getState();
-      const { shapes, canvasBounds, compositorSettings } = state;
+      const { shapes, canvasBounds, cropRegion, compositorSettings } = state;
 
       // Build annotations array
       const annotations: Annotation[] = [];
 
-      // Add shape annotations
+      // Add shape annotations (exclude imageSrc for background shapes — it's loaded from the project image)
       shapes.forEach((shape: CanvasShape) => {
-        annotations.push({
-          ...shape,
-          id: shape.id,
-          type: shape.type,
-        });
+        if (shape.isBackground) {
+          const { imageSrc: _unused, ...rest } = shape;
+          void _unused;
+          annotations.push({ ...rest, id: shape.id, type: shape.type });
+        } else {
+          annotations.push({ ...shape, id: shape.id, type: shape.type });
+        }
       });
 
-      // Add crop bounds annotation if canvas has been modified
+      // Add crop bounds annotation if canvas has been modified (legacy compat)
       if (canvasBounds) {
         const cropBoundsAnn: CropBoundsAnnotation = {
           id: '__crop_bounds__',
@@ -450,6 +491,18 @@ const ImageEditorWindow: React.FC = () => {
           imageOffsetY: canvasBounds.imageOffsetY,
         };
         annotations.push(cropBoundsAnn);
+      }
+
+      // Add crop region annotation if set
+      if (cropRegion) {
+        annotations.push({
+          id: '__crop_region__',
+          type: '__crop_region__',
+          x: cropRegion.x,
+          y: cropRegion.y,
+          width: cropRegion.width,
+          height: cropRegion.height,
+        });
       }
 
       // Add compositor settings annotation (always save to preserve state)
@@ -486,6 +539,7 @@ const ImageEditorWindow: React.FC = () => {
       // Check if any saveable state changed
       const shapesChanged = state.shapes !== prevState.shapes;
       const boundsChanged = state.canvasBounds !== prevState.canvasBounds;
+      const cropRegionChanged = state.cropRegion !== prevState.cropRegion;
       const compositorChanged = state.compositorSettings !== prevState.compositorSettings;
 
       // Don't auto-save if shapes went from some to zero (this is a clear operation, not a user edit)
@@ -493,7 +547,7 @@ const ImageEditorWindow: React.FC = () => {
         return;
       }
 
-      if (shapesChanged || boundsChanged || compositorChanged) {
+      if (shapesChanged || boundsChanged || cropRegionChanged || compositorChanged) {
         // Ignore non-user/background mutations to avoid write churn while idle.
         if (
           Date.now() - lastUserActivityAtRef.current >

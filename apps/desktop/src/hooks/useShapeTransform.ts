@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef } from 'react';
 import Konva from 'konva';
-import type { CanvasShape } from '../types';
+import type { CanvasShape, CanvasBounds } from '../types';
 import type { EditorHistoryActions } from './useEditorHistory';
+import { expandBoundsForShapes } from '../utils/canvasGeometry';
 
 interface UseShapeTransformProps {
   shapes: CanvasShape[];
@@ -10,6 +11,12 @@ interface UseShapeTransformProps {
   setSelectedIds: (ids: string[]) => void;
   /** Context-aware history actions for undo/redo support */
   history: EditorHistoryActions;
+  /** Current canvas bounds for auto-extend */
+  canvasBounds: CanvasBounds | null;
+  /** Setter for canvas bounds */
+  setCanvasBounds: (bounds: CanvasBounds | null) => void;
+  /** Original image dimensions */
+  originalImageSize: { width: number; height: number } | null;
 }
 
 interface UseShapeTransformReturn {
@@ -32,6 +39,9 @@ export const useShapeTransform = ({
   selectedIds,
   setSelectedIds,
   history,
+  canvasBounds,
+  setCanvasBounds,
+  originalImageSize,
 }: UseShapeTransformProps): UseShapeTransformReturn => {
   const { takeSnapshot, commitSnapshot } = history;
   const selectedIdsRef = useRef(selectedIds);
@@ -39,6 +49,18 @@ export const useShapeTransform = ({
   useEffect(() => {
     selectedIdsRef.current = selectedIds;
   }, [selectedIds]);
+
+  /** Try to expand canvas bounds to fit all shapes after a drag/transform */
+  const maybeExpandBounds = useCallback(
+    (updatedShapes: CanvasShape[]) => {
+      if (!canvasBounds || !originalImageSize) return;
+      const expanded = expandBoundsForShapes(canvasBounds, updatedShapes, originalImageSize);
+      if (expanded) {
+        setCanvasBounds(expanded);
+      }
+    },
+    [canvasBounds, originalImageSize, setCanvasBounds]
+  );
 
   // Pause history at drag start to batch all drag updates
   const handleShapeDragStart = useCallback((id: string, e: Konva.KonvaEventObject<DragEvent>) => {
@@ -74,10 +96,12 @@ export const useShapeTransform = ({
         e.target.position({ x: 0, y: 0 });
       }
 
+      let updatedShapes: CanvasShape[];
+
       // Group drag: move all selected shapes by the same delta
       const selectedNow = selectedIdsRef.current;
       if (selectedNow.length > 1 && selectedNow.includes(id)) {
-        const updatedShapes = shapes.map((shape) => {
+        updatedShapes = shapes.map((shape) => {
           if (!selectedNow.includes(shape.id)) return shape;
 
           if (shape.type === 'pen' && shape.points && shape.points.length >= 2) {
@@ -93,17 +117,15 @@ export const useShapeTransform = ({
             y: (shape.y ?? 0) + dy,
           };
         });
-        onShapesChange(updatedShapes);
       } else {
         // Single shape drag
         if (isPen) {
           const newPoints = draggedShape.points!.map((val, i) =>
             i % 2 === 0 ? val + dx : val + dy
           );
-          const updatedShapes = shapes.map((shape) =>
+          updatedShapes = shapes.map((shape) =>
             shape.id === id ? { ...shape, points: newPoints } : shape
           );
-          onShapesChange(updatedShapes);
         } else if (draggedShape.type === 'blur') {
           // Blur uses normalized position
           const normalizedX = (draggedShape.width ?? 0) < 0
@@ -114,26 +136,27 @@ export const useShapeTransform = ({
             : (draggedShape.y ?? 0);
           const blurDx = e.target.x() - normalizedX;
           const blurDy = e.target.y() - normalizedY;
-          const updatedShapes = shapes.map((shape) =>
+          updatedShapes = shapes.map((shape) =>
             shape.id === id
               ? { ...shape, x: (shape.x ?? 0) + blurDx, y: (shape.y ?? 0) + blurDy }
               : shape
           );
-          onShapesChange(updatedShapes);
         } else {
-          const updatedShapes = shapes.map((shape) =>
+          updatedShapes = shapes.map((shape) =>
             shape.id === id
               ? { ...shape, x: e.target.x(), y: e.target.y() }
               : shape
           );
-          onShapesChange(updatedShapes);
         }
       }
+
+      onShapesChange(updatedShapes);
+      maybeExpandBounds(updatedShapes);
 
       // Resume history tracking
       commitSnapshot();
     },
-    [shapes, onShapesChange, commitSnapshot]
+    [shapes, onShapesChange, commitSnapshot, maybeExpandBounds]
   );
 
   // Handle transform start - pause history
@@ -183,9 +206,10 @@ export const useShapeTransform = ({
         s.id === id ? { ...s, points: newPoints } : s
       );
       onShapesChange(updatedShapes);
+      maybeExpandBounds(updatedShapes);
       commitSnapshot();
     },
-    [shapes, onShapesChange, commitSnapshot]
+    [shapes, onShapesChange, commitSnapshot, maybeExpandBounds]
   );
 
   // Handle arrow endpoint drag end - update state only at the end

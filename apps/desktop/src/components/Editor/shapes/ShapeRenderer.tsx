@@ -10,6 +10,7 @@ import { StepShape } from './StepShape';
 import { ArrowShape } from './ArrowShape';
 import { LineShape } from './LineShape';
 import { BlurShape } from './BlurShape';
+import { ImageShape } from './ImageShape';
 
 interface ShapeRendererProps {
   shapes: CanvasShape[];
@@ -191,6 +192,8 @@ const MemoizedShape = React.memo<{
       return <StepShape {...commonProps} />;
     case 'pen':
       return <PenShape {...commonProps} />;
+    case 'image':
+      return <ImageShape {...commonProps} sourceImage={shape.isBackground ? sourceImage : undefined} />;
     default:
       return null;
   }

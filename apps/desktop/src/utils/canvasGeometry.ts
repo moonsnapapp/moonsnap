@@ -2,13 +2,13 @@
  * Canvas geometry utilities for coordinate transformations and bounds calculations
  */
 
-import type { CanvasShape } from '../types';
+import type { CanvasShape, CanvasBounds } from '../types';
 import { editorLogger } from './logger';
 
 // Checkerboard pattern constants for transparency indication
-const CHECKER_SIZE = 10;
-const CHECKER_LIGHT = '#f5f5f5';
-const CHECKER_DARK = '#e8e8e8';
+const CHECKER_SIZE = 8;
+const CHECKER_LIGHT = '#ffffff';
+const CHECKER_DARK = '#d5d5d5';
 
 /**
  * Create a checkerboard pattern image for transparency indication.
@@ -461,4 +461,109 @@ export const shapeIntersectsRect = (
   // For all other shapes, use bounding box intersection
   const shapeBounds = getShapeBounds(shape);
   return rectsIntersect(rect, shapeBounds);
+};
+
+/** Well-known ID for the background shape */
+export const BACKGROUND_SHAPE_ID = '__background__';
+
+/**
+ * Create a background shape from image dimensions.
+ */
+export function createBackgroundShape(width: number, height: number): CanvasShape {
+  return {
+    id: BACKGROUND_SHAPE_ID,
+    type: 'image',
+    x: 0,
+    y: 0,
+    width,
+    height,
+    isBackground: true,
+  };
+}
+
+/**
+ * Ensure the shapes array contains a background shape at index 0.
+ * If one already exists, returns the array unchanged.
+ * Otherwise, inserts a new background shape at the beginning.
+ */
+export function ensureBackgroundShape(
+  shapes: CanvasShape[],
+  width: number,
+  height: number,
+): CanvasShape[] {
+  const hasBackground = shapes.some(s => s.id === BACKGROUND_SHAPE_ID);
+  if (hasBackground) return shapes;
+  return [createBackgroundShape(width, height), ...shapes];
+}
+
+/**
+ * Compute the minimum canvas bounds that encompass all shapes and the original
+ * image region. Returns new bounds if they differ from current, or null if
+ * unchanged.
+ *
+ * This both grows AND shrinks the canvas: when a shape is dragged outward the
+ * canvas expands, and when it's dragged back inward the extra space contracts
+ * to the tight bounding box.
+ *
+ * Uses the background shape's position/size as the base region if present,
+ * otherwise falls back to originalImageSize at (0,0).
+ *
+ * @param currentBounds - Current canvas bounds
+ * @param shapes - All shapes on the canvas
+ * @param originalImageSize - Original image dimensions (fallback)
+ * @returns Updated bounds, or null if no change needed
+ */
+export const expandBoundsForShapes = (
+  currentBounds: CanvasBounds,
+  shapes: CanvasShape[],
+  originalImageSize: { width: number; height: number },
+): CanvasBounds | null => {
+  // Find background shape to use as base region
+  const bgShape = shapes.find(s => s.id === BACKGROUND_SHAPE_ID);
+
+  // Start with the base region (background shape or original image at 0,0)
+  let minX: number, minY: number, maxX: number, maxY: number;
+  if (bgShape) {
+    minX = bgShape.x ?? 0;
+    minY = bgShape.y ?? 0;
+    maxX = minX + (bgShape.width ?? originalImageSize.width);
+    maxY = minY + (bgShape.height ?? originalImageSize.height);
+  } else {
+    minX = 0;
+    minY = 0;
+    maxX = originalImageSize.width;
+    maxY = originalImageSize.height;
+  }
+
+  // Union with all shape bounding boxes
+  for (const shape of shapes) {
+    const bounds = getShapeBounds(shape);
+    minX = Math.min(minX, bounds.x);
+    minY = Math.min(minY, bounds.y);
+    maxX = Math.max(maxX, bounds.x + bounds.width);
+    maxY = Math.max(maxY, bounds.y + bounds.height);
+  }
+
+  const newWidth = Math.ceil(maxX - minX);
+  const newHeight = Math.ceil(maxY - minY);
+  // imageOffset is the negated canvas origin in image space
+  const newOffsetX = Math.round(minX);
+  const newOffsetY = Math.round(minY);
+
+  // Check if anything changed
+  if (
+    newWidth === currentBounds.width &&
+    newHeight === currentBounds.height &&
+    -newOffsetX === currentBounds.imageOffsetX &&
+    -newOffsetY === currentBounds.imageOffsetY
+  ) {
+    return null;
+  }
+
+  return {
+    width: newWidth,
+    height: newHeight,
+    imageOffsetX: -newOffsetX,
+    imageOffsetY: -newOffsetY,
+  };
 };

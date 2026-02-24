@@ -1,5 +1,5 @@
 import React, { useRef, useMemo, useEffect, useState, forwardRef, useImperativeHandle } from 'react';
-import { Stage, Layer, Image, Rect, Group, Transformer } from 'react-konva';
+import { Stage, Layer, Rect, Group, Transformer } from 'react-konva';
 import Konva from 'konva';
 import useImage from 'use-image';
 import { Loader2 } from 'lucide-react';
@@ -30,9 +30,10 @@ import { ZoomControls } from './overlays/ZoomControls';
 import { CropControls } from './overlays/CropControls';
 import { TextEditorOverlay } from './overlays/TextEditorOverlay';
 import { CropOverlay } from './overlays/CropOverlay';
+import { ArtboardOverlay } from './overlays/ArtboardOverlay';
 
 // Utility functions
-import { getSelectionBounds, getVisibleBounds, createCheckerPattern } from '../../utils/canvasGeometry';
+import { getSelectionBounds, expandBoundsForShapes, ensureBackgroundShape, BACKGROUND_SHAPE_ID, createCheckerPattern } from '../../utils/canvasGeometry';
 
 interface EditorCanvasProps {
   imageData: string;
@@ -100,8 +101,9 @@ export const EditorCanvas = React.memo(forwardRef<EditorCanvasRef, EditorCanvasP
   const canvasBounds = useEditorStore((state) => state.canvasBounds);
   const setCanvasBounds = useEditorStore((state) => state.setCanvasBounds);
   const setOriginalImageSize = useEditorStore((state) => state.setOriginalImageSize);
-  const resetCanvasBounds = useEditorStore((state) => state.resetCanvasBounds);
   const originalImageSize = useEditorStore((state) => state.originalImageSize);
+  const cropRegion = useEditorStore((state) => state.cropRegion);
+  const setCropRegion = useEditorStore((state) => state.setCropRegion);
 
   // Context-aware history actions for undo/redo
   const history = useEditorHistory();
@@ -121,8 +123,26 @@ export const EditorCanvas = React.memo(forwardRef<EditorCanvasRef, EditorCanvasP
   const imageStatus = isRgbaFile ? fastImageStatus : standardImageStatus;
   const isImageLoading = imageStatus === 'loading';
 
-  // Checkerboard pattern for transparency
-  const [checkerPatternImage] = React.useState(() => createCheckerPattern());
+  // Checkerboard pattern for transparency indication (created once, cached)
+  const [checkerPatternImage] = useState(() => createCheckerPattern());
+
+  // Ensure background shape and artboard exist when image loads (for fresh captures).
+  // Intentionally depends only on `image` — we only want this to run once when the
+  // image first becomes available, not on every shapes/cropRegion change.
+  const imageInitRef = useRef(false);
+  React.useEffect(() => {
+    if (!image || imageInitRef.current) return;
+    imageInitRef.current = true;
+
+    const hasBackground = shapes.some(s => s.id === BACKGROUND_SHAPE_ID);
+    if (!hasBackground) {
+      onShapesChange(ensureBackgroundShape(shapes, image.width, image.height));
+    }
+    // Initialize artboard (cropRegion) to image dimensions if not set
+    if (!cropRegion) {
+      setCropRegion({ x: 0, y: 0, width: image.width, height: image.height });
+    }
+  }, [image, shapes, cropRegion, onShapesChange, setCropRegion]);
 
   // Navigation hook
   const navigation = useCanvasNavigation({
@@ -144,6 +164,9 @@ export const EditorCanvas = React.memo(forwardRef<EditorCanvasRef, EditorCanvasP
     onShapesChange,
     setSelectedIds,
     recordAction: history.recordAction,
+    getCanvasPosition: navigation.getCanvasPosition,
+    containerSize: navigation.containerSize,
+    setSelectedTool: onToolChange,
   });
 
   // Middle mouse panning hook
@@ -175,6 +198,9 @@ export const EditorCanvas = React.memo(forwardRef<EditorCanvasRef, EditorCanvasP
     selectedIds,
     setSelectedIds,
     history,
+    canvasBounds,
+    setCanvasBounds,
+    originalImageSize,
   });
 
   // Font size state for text tool
@@ -213,25 +239,48 @@ export const EditorCanvas = React.memo(forwardRef<EditorCanvasRef, EditorCanvasP
     setSelectedIds,
   });
 
-  // Crop tool hook
+  // Find the background shape for crop snap targets
+  const backgroundShape = React.useMemo(
+    () => shapes.find(s => s.id === BACKGROUND_SHAPE_ID),
+    [shapes]
+  );
+
+  // Crop tool hook — now sets cropRegion (export bounds) instead of canvasBounds
   const crop = useCropTool({
     canvasBounds,
-    setCanvasBounds,
+    setCropRegion,
+    cropRegion,
     isShiftHeld,
     zoom: navigation.zoom,
+    backgroundShape,
     originalImageSize,
     history,
   });
 
-  // Visible bounds for clipping
+  // Visible bounds for clipping — artboard (cropRegion) defines the visible canvas area.
+  // In crop mode, show everything so the crop overlay can dim outside areas.
   const visibleBounds = useMemo(() => {
     if (!image) return null;
-    return getVisibleBounds(
-      image,
-      canvasBounds,
-      selectedTool === 'crop'
-    );
-  }, [canvasBounds, image, selectedTool]);
+    if (selectedTool === 'crop') {
+      // Show full extent so crop overlay can render dim regions
+      const bgShape = shapes.find(s => s.id === BACKGROUND_SHAPE_ID);
+      const imgX = bgShape?.x ?? 0;
+      const imgY = bgShape?.y ?? 0;
+      const imgW = bgShape?.width ?? image.width;
+      const imgH = bgShape?.height ?? image.height;
+      if (cropRegion) {
+        return {
+          x: Math.min(imgX, cropRegion.x),
+          y: Math.min(imgY, cropRegion.y),
+          width: Math.max(imgX + imgW, cropRegion.x + cropRegion.width) - Math.min(imgX, cropRegion.x),
+          height: Math.max(imgY + imgH, cropRegion.y + cropRegion.height) - Math.min(imgY, cropRegion.y),
+        };
+      }
+      return { x: imgX, y: imgY, width: imgW, height: imgH };
+    }
+    if (cropRegion) return cropRegion;
+    return { x: 0, y: 0, width: image.width, height: image.height };
+  }, [cropRegion, image, selectedTool, shapes]);
 
   // Selection bounds for group drag
   const selectionBounds = useMemo(() => {
@@ -304,14 +353,12 @@ export const EditorCanvas = React.memo(forwardRef<EditorCanvasRef, EditorCanvasP
       // Handle crop tool
       if (selectedTool === 'crop') return;
 
-      // Handle select tool - start marquee or click on stage/image
+      // Handle select tool - start marquee or click on stage
       if (selectedTool === 'select') {
-        // Consider clicking on stage or background image as "empty"
+        // Only the stage itself counts as empty space (background is now a selectable shape)
         const clickedOnStage = e.target === e.target.getStage();
-        const clickedOnBackground = e.target.name() === 'background';
-        const clickedOnEmpty = clickedOnStage || clickedOnBackground;
 
-        if (clickedOnEmpty) {
+        if (clickedOnStage) {
           setSelectedIds([]);
 
           // While editing text, empty-click should only close editor/deselect.
@@ -493,6 +540,7 @@ export const EditorCanvas = React.memo(forwardRef<EditorCanvasRef, EditorCanvasP
         />
       )}
 
+
       {/* Canvas Stage */}
       <Stage
         ref={stageRef}
@@ -545,13 +593,8 @@ export const EditorCanvas = React.memo(forwardRef<EditorCanvasRef, EditorCanvasP
                   }
                 }}
               >
-                {/* Checkerboard pattern - only when canvas extends beyond image (shows transparent areas) */}
-                {checkerPatternImage && !compositorSettings.enabled && canvasBounds && originalImageSize && (
-                  canvasBounds.imageOffsetX !== 0 || 
-                  canvasBounds.imageOffsetY !== 0 ||
-                  canvasBounds.width > originalImageSize.width ||
-                  canvasBounds.height > originalImageSize.height
-                ) && (
+                {/* Checkerboard pattern — shows transparent areas, hidden during export by name */}
+                {checkerPatternImage && !compositorSettings.enabled && (
                   <Rect
                     name="checkerboard"
                     x={clipX}
@@ -571,16 +614,7 @@ export const EditorCanvas = React.memo(forwardRef<EditorCanvasRef, EditorCanvasP
                     borderRadius={0}
                   />
                 )}
-                <Image
-                  image={image}
-                  x={0}
-                  y={0}
-                  width={navigation.canvasSize.width}
-                  height={navigation.canvasSize.height}
-                  name="background"
-                />
-
-                {/* Render shapes */}
+                {/* Render shapes (background image is now the first shape) */}
                 <ShapeRenderer
                   shapes={shapes}
                   selectedIds={selectedIds}
@@ -623,6 +657,17 @@ export const EditorCanvas = React.memo(forwardRef<EditorCanvasRef, EditorCanvasP
               />
             );
           })()}
+
+          {/* Artboard indicator with resize handles (hidden in crop mode and on export) */}
+          {cropRegion && selectedTool !== 'crop' && (
+            <ArtboardOverlay
+              bounds={cropRegion}
+              zoom={navigation.zoom}
+              onResizeStart={() => history.takeSnapshot()}
+              onResize={(newBounds) => setCropRegion(newBounds)}
+              onResizeEnd={() => history.commitSnapshot()}
+            />
+          )}
 
           {/* Marquee selection rectangle */}
           <MarqueeSelection
@@ -681,6 +726,15 @@ export const EditorCanvas = React.memo(forwardRef<EditorCanvasRef, EditorCanvasP
                   };
                 });
                 onShapesChange(updatedShapes);
+
+                // Auto-extend canvas if shapes moved beyond bounds
+                if (canvasBounds && originalImageSize) {
+                  const expanded = expandBoundsForShapes(canvasBounds, updatedShapes, originalImageSize);
+                  if (expanded) {
+                    setCanvasBounds(expanded);
+                  }
+                }
+
                 history.commitSnapshot();
               }}
             />
@@ -877,6 +931,14 @@ export const EditorCanvas = React.memo(forwardRef<EditorCanvasRef, EditorCanvasP
                   return updates ? { ...s, ...updates } : s;
                 });
                 onShapesChange(updatedShapes);
+
+                // Auto-extend canvas if shapes moved beyond bounds
+                if (canvasBounds && originalImageSize) {
+                  const expanded = expandBoundsForShapes(canvasBounds, updatedShapes, originalImageSize);
+                  if (expanded) {
+                    setCanvasBounds(expanded);
+                  }
+                }
               }
 
               history.commitSnapshot();
@@ -889,23 +951,30 @@ export const EditorCanvas = React.memo(forwardRef<EditorCanvasRef, EditorCanvasP
       {/* Crop Controls */}
       {selectedTool === 'crop' && canvasBounds && (() => {
         const displayBounds = crop.getDisplayBounds();
+        // Artboard is "modified" if it differs from the original image dimensions
+        const artboardModified = cropRegion !== null && originalImageSize !== null && (
+          cropRegion.x !== 0 ||
+          cropRegion.y !== 0 ||
+          cropRegion.width !== originalImageSize.width ||
+          cropRegion.height !== originalImageSize.height
+        );
         return (
           <CropControls
             width={displayBounds.width}
             height={displayBounds.height}
-            isModified={
-              originalImageSize !== null && (
-                canvasBounds.width !== originalImageSize.width ||
-                canvasBounds.height !== originalImageSize.height ||
-                canvasBounds.imageOffsetX !== 0 ||
-                canvasBounds.imageOffsetY !== 0
-              )
-            }
+            isModified={artboardModified}
             onCancel={() => {
-              resetCanvasBounds();
+              // Reset artboard to original image dimensions
+              if (originalImageSize) {
+                setCropRegion({ x: 0, y: 0, width: originalImageSize.width, height: originalImageSize.height });
+              }
               onToolChange('select');
             }}
-            onReset={resetCanvasBounds}
+            onReset={() => {
+              if (originalImageSize) {
+                setCropRegion({ x: 0, y: 0, width: originalImageSize.width, height: originalImageSize.height });
+              }
+            }}
             onCommit={() => onToolChange('select')}
           />
         );
