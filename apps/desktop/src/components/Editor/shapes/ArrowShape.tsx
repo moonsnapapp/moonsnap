@@ -1,5 +1,5 @@
 import React, { useRef, useCallback, useMemo, useEffect } from 'react';
-import { Arrow, Circle } from 'react-konva';
+import { Arrow, Circle, Group } from 'react-konva';
 import Konva from 'konva';
 import type { CanvasShape } from '../../../types';
 import { useShapeCursor } from '../../../hooks/useShapeCursor';
@@ -90,6 +90,7 @@ export const ArrowShape: React.FC<ArrowShapeProps> = React.memo(({
     onDragStart(e);
   }, [onDragStart]);
 
+  // Sync endpoint handles with arrow body during drag
   const handleArrowDragMove = useCallback((e: Konva.KonvaEventObject<DragEvent>) => {
     const moveDx = e.target.x();
     const moveDy = e.target.y();
@@ -147,10 +148,9 @@ export const ArrowShape: React.FC<ArrowShapeProps> = React.memo(({
   const hitStrokeWidth = Math.max((shape.strokeWidth || 2) * 3, 12);
 
   return (
-    <>
+    <Group id={shape.id}>
       <Arrow
         ref={arrowRef}
-        id={shape.id}
         points={arrowPoints}
         stroke={shape.stroke}
         strokeWidth={shape.strokeWidth}
@@ -215,7 +215,7 @@ export const ArrowShape: React.FC<ArrowShapeProps> = React.memo(({
           />
         </>
       )}
-    </>
+    </Group>
   );
 });
 

@@ -665,7 +665,10 @@ export const EditorCanvas = React.memo(forwardRef<EditorCanvasRef, EditorCanvasP
               onDragEnd={(dx, dy) => {
                 const updatedShapes = shapes.map((shape) => {
                   if (!selectedIds.includes(shape.id)) return shape;
-                  if (shape.type === 'pen' && shape.points && shape.points.length >= 2) {
+                  if (['pen', 'arrow', 'line'].includes(shape.type) && shape.points && shape.points.length >= 2) {
+                    // Reset node position (was moved imperatively during drag)
+                    const node = layerRef.current?.findOne(`#${shape.id}`);
+                    if (node) node.position({ x: 0, y: 0 });
                     const newPoints = shape.points.map((val, i) =>
                       i % 2 === 0 ? val + dx : val + dy
                     );

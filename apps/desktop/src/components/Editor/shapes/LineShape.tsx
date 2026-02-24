@@ -1,5 +1,5 @@
 import React, { useRef, useCallback, useEffect, useMemo } from 'react';
-import { Line, Circle } from 'react-konva';
+import { Line, Circle, Group } from 'react-konva';
 import Konva from 'konva';
 import type { CanvasShape } from '../../../types';
 import { useShapeCursor } from '../../../hooks/useShapeCursor';
@@ -61,6 +61,7 @@ export const LineShape: React.FC<LineShapeProps> = React.memo(({
     onDragStart(e);
   }, [onDragStart]);
 
+  // Sync endpoint handles with line body during drag
   const handleLineDragMove = useCallback((e: Konva.KonvaEventObject<DragEvent>) => {
     const moveDx = e.target.x();
     const moveDy = e.target.y();
@@ -108,10 +109,9 @@ export const LineShape: React.FC<LineShapeProps> = React.memo(({
   const hitStrokeWidth = Math.max((shape.strokeWidth || 2) * 3, 12);
 
   return (
-    <>
+    <Group id={shape.id}>
       <Line
         ref={lineRef}
-        id={shape.id}
         points={points}
         stroke={shape.stroke}
         strokeWidth={shape.strokeWidth}
@@ -175,7 +175,7 @@ export const LineShape: React.FC<LineShapeProps> = React.memo(({
           />
         </>
       )}
-    </>
+    </Group>
   );
 });
 
