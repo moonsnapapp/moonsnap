@@ -282,6 +282,58 @@ export const EditorCanvas = React.memo(forwardRef<EditorCanvasRef, EditorCanvasP
     return { x: 0, y: 0, width: image.width, height: image.height };
   }, [cropRegion, image, selectedTool, shapes]);
 
+  // Detect if the content has ANY transparency (edges or interior).
+  // When true, skip shadow/border-radius to avoid the floaty look.
+  // Checks both preview bounds (visibleBounds) and export bounds (canvasBounds).
+  const hasTransparency = useMemo(() => {
+    const bgX = backgroundShape?.x ?? 0;
+    const bgY = backgroundShape?.y ?? 0;
+    const bgW = backgroundShape?.width ?? (image?.width ?? 0);
+    const bgH = backgroundShape?.height ?? (image?.height ?? 0);
+
+
+    // Helper: do given bounds extend beyond the background shape?
+    const extendsBeyondBg = (bx: number, by: number, bw: number, bh: number) =>
+      bx < bgX - 0.5 || by < bgY - 0.5 ||
+      bx + bw > bgX + bgW + 0.5 || by + bh > bgY + bgH + 0.5;
+
+    // Check 1: preview clip extends beyond background (user sees transparent areas)
+    if (visibleBounds && extendsBeyondBg(visibleBounds.x, visibleBounds.y, visibleBounds.width, visibleBounds.height)) {
+      return true;
+    }
+
+    // Check 2: export bounds extend beyond background (export would have transparency).
+    // Must match getContentBounds() in canvasExport.ts for preview/export consistency.
+    if (cropRegion && extendsBeyondBg(cropRegion.x, cropRegion.y, cropRegion.width, cropRegion.height)) {
+      return true;
+    }
+    if (!cropRegion && canvasBounds) {
+      const ex = -canvasBounds.imageOffsetX;
+      const ey = -canvasBounds.imageOffsetY;
+      if (extendsBeyondBg(ex, ey, canvasBounds.width, canvasBounds.height)) {
+        return true;
+      }
+    }
+
+    // Check 3: source image itself has transparent pixels
+    if (image) {
+      const size = 20;
+      const c = document.createElement('canvas');
+      c.width = size;
+      c.height = size;
+      const ctx = c.getContext('2d');
+      if (ctx) {
+        ctx.drawImage(image, 0, 0, size, size);
+        const data = ctx.getImageData(0, 0, size, size).data;
+        for (let i = 3; i < data.length; i += 4) {
+          if (data[i] < 255) return true;
+        }
+      }
+    }
+
+    return false;
+  }, [visibleBounds, cropRegion, canvasBounds, backgroundShape, image]);
+
   // Selection bounds for group drag
   const selectionBounds = useMemo(() => {
     if (selectedIds.length <= 1) return null;
@@ -537,6 +589,7 @@ export const EditorCanvas = React.memo(forwardRef<EditorCanvasRef, EditorCanvasP
           compositionBox={compositionBox}
           zoom={navigation.zoom}
           backgroundStyle={compositionBackgroundStyle}
+          hasTransparency={hasTransparency}
         />
       )}
 
@@ -558,8 +611,8 @@ export const EditorCanvas = React.memo(forwardRef<EditorCanvasRef, EditorCanvasP
         style={{ backgroundColor: 'transparent' }}
       >
         <Layer ref={layerRef}>
-          {/* Background layer: only render shadow when compositor disabled */}
-          {!compositorSettings.enabled && (
+          {/* Background layer: editor shadow when compositor disabled (skip shadow if transparent) */}
+          {!compositorSettings.enabled && !hasTransparency && (
             <KonvaBackgroundLayer
               settings={compositorSettings}
               visibleBounds={visibleBounds}
@@ -573,7 +626,7 @@ export const EditorCanvas = React.memo(forwardRef<EditorCanvasRef, EditorCanvasP
             const clipY = Math.round(visibleBounds.y);
             const clipW = Math.round(visibleBounds.width);
             const clipH = Math.round(visibleBounds.height);
-            const radius = compositorSettings.enabled ? compositorSettings.borderRadius : 0;
+            const radius = (compositorSettings.enabled && !hasTransparency) ? compositorSettings.borderRadius : 0;
 
             return (
               <Group
@@ -606,9 +659,10 @@ export const EditorCanvas = React.memo(forwardRef<EditorCanvasRef, EditorCanvasP
                     listening={false}
                   />
                 )}
-                {/* Inner clip background */}
+                {/* Inner clip background — named for export removal so compositor.ts can detect transparency */}
                 {compositorSettings.enabled && (
                   <CompositorBackground
+                    name="compositor-bg"
                     settings={compositorSettings}
                     bounds={{ x: clipX, y: clipY, width: clipW, height: clipH }}
                     borderRadius={0}
@@ -649,7 +703,7 @@ export const EditorCanvas = React.memo(forwardRef<EditorCanvasRef, EditorCanvasP
                 y={Math.round(visibleBounds.y) - halfStroke}
                 width={Math.round(visibleBounds.width) + compositorSettings.borderWidth}
                 height={Math.round(visibleBounds.height) + compositorSettings.borderWidth}
-                cornerRadius={compositorSettings.borderRadius + halfStroke}
+                cornerRadius={hasTransparency ? 0 : compositorSettings.borderRadius + halfStroke}
                 stroke={compositorSettings.borderColor}
                 strokeWidth={compositorSettings.borderWidth}
                 opacity={compositorSettings.borderOpacity / 100}

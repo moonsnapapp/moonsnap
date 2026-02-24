@@ -99,6 +99,7 @@ export function exportCanvas(
   // Search from layer (not stage) using .name selector — works inside clip groups
   removeForExport(layer.findOne('.checkerboard'));
   removeForExport(layer.findOne('.editor-shadow'));
+  removeForExport(layer.findOne('.compositor-bg'));
   removeForExport(layer.findOne('.transformer'));
 
   // Remove all gizmo elements (selection handles, crop overlay, artboard, etc.)

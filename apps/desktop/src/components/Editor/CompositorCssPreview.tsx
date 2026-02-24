@@ -19,6 +19,8 @@ interface CompositorCssPreviewProps {
   zoom: number;
   /** Background style computed from settings */
   backgroundStyle: React.CSSProperties;
+  /** When true, artboard has transparent areas — skip shadow and border-radius */
+  hasTransparency?: boolean;
 }
 
 /**
@@ -32,6 +34,7 @@ export const CompositorCssPreview: React.FC<CompositorCssPreviewProps> = ({
   compositionBox,
   zoom,
   backgroundStyle,
+  hasTransparency = false,
 }) => {
   if (!settings.enabled) return null;
 
@@ -57,7 +60,7 @@ export const CompositorCssPreview: React.FC<CompositorCssPreviewProps> = ({
         ...backgroundStyle,
       }}
     >
-      {settings.shadowIntensity > 0 && (
+      {settings.shadowIntensity > 0 && !hasTransparency && (
         <div
           style={{
             position: 'absolute',
