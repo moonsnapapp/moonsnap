@@ -275,9 +275,11 @@ export const EditorCanvas = React.memo(forwardRef<EditorCanvasRef, EditorCanvasP
       return;
     }
 
-    // Exclude arrows and lines (they use custom endpoint handles)
+    // For single selection, exclude arrows/lines so their custom endpoint handles stay usable
+    const isMultiSelect = selectedIds.length > 1;
     const nodes = selectedIds
       .filter((id) => {
+        if (isMultiSelect) return true;
         const shape = shapes.find((s) => s.id === id);
         return shape && shape.type !== 'arrow' && shape.type !== 'line';
       })
@@ -763,8 +765,8 @@ export const EditorCanvas = React.memo(forwardRef<EditorCanvasRef, EditorCanvasP
 
                 let updates: Partial<CanvasShape>;
 
-                if (shape.type === 'pen' && shape.points && shape.points.length >= 2) {
-                  // Pen: convert scale to points
+                if ((shape.type === 'pen' || shape.type === 'arrow' || shape.type === 'line') && shape.points && shape.points.length >= 2) {
+                  // Points-based shapes: convert scale to points
                   const nodeX = node.x();
                   const nodeY = node.y();
                   const newPoints = shape.points.map((val, i) =>
