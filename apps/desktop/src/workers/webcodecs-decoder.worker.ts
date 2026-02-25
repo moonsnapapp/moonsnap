@@ -23,6 +23,7 @@ let isDisposed = false; // Prevents race conditions during async init
 // Decode queue - prioritizes immediate requests over prefetch
 const pendingDecodes = new Map<number, DecodeFrameMessage>();
 let isDecoding = false;
+let latestImmediateRequestId = 0;
 
 // Worker-side cache to avoid re-decoding recently accessed frames
 const workerFrameCache = new Map<number, ImageBitmap>();
@@ -201,19 +202,42 @@ async function processQueue(): Promise<void> {
   isDecoding = true;
 
   try {
-    // Process immediate requests first, then prefetch
+    // Process immediate requests first, prioritizing the most recent scrub request.
     const immediate = [...pendingDecodes.values()]
       .filter((m) => m.priority === 'immediate')
-      .sort((a, b) => a.requestId - b.requestId);
+      .sort((a, b) => b.requestId - a.requestId);
 
+    const newestImmediate = immediate[0] ?? null;
+
+    // Keep only the newest immediate request, drop stale scrub positions.
+    for (const msg of immediate) {
+      pendingDecodes.delete(msg.requestId);
+      if (!newestImmediate || msg.requestId !== newestImmediate.requestId) {
+        continue;
+      }
+      await decodeFrame(msg);
+    }
+
+    // Process prefetch only when there is no newer immediate request waiting.
     const prefetch = [...pendingDecodes.values()]
       .filter((m) => m.priority === 'prefetch')
-      .sort((a, b) => a.requestId - b.requestId);
+      .sort((a, b) => b.requestId - a.requestId);
 
-    const queue = [...immediate, ...prefetch];
-
-    for (const msg of queue) {
+    for (const msg of prefetch) {
       pendingDecodes.delete(msg.requestId);
+      if (msg.requestId < latestImmediateRequestId) {
+        // Stale prefetch from an older scrub position.
+        continue;
+      }
+
+      // New immediate work arrived while we were decoding; defer prefetch.
+      const hasPendingImmediate = [...pendingDecodes.values()].some(
+        (pending) => pending.priority === 'immediate'
+      );
+      if (hasPendingImmediate) {
+        continue;
+      }
+
       await decodeFrame(msg);
     }
   } finally {
@@ -267,6 +291,15 @@ self.onmessage = (event: MessageEvent<MainToWorkerMessage>) => {
       break;
 
     case 'decode-frame':
+      if (msg.priority === 'immediate') {
+        latestImmediateRequestId = Math.max(latestImmediateRequestId, msg.requestId);
+        // Prefetch queued for older positions is stale once user scrubs to a new target.
+        for (const [requestId, pending] of pendingDecodes.entries()) {
+          if (pending.priority === 'prefetch') {
+            pendingDecodes.delete(requestId);
+          }
+        }
+      }
       pendingDecodes.set(msg.requestId, msg);
       processQueue();
       break;

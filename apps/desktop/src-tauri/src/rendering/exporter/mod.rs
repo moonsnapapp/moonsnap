@@ -948,6 +948,7 @@ pub async fn export_video_gpu(
         let render_options = RenderOptions {
             output_width: composition_w,
             output_height: composition_h,
+            use_manual_composition: matches!(composition.mode, CompositionMode::Manual),
             zoom: zoom_state,
             webcam: webcam_overlay,
             cursor: None,

@@ -28,6 +28,11 @@ const ZOOM_COLORS = {
 
 // Selectors for atomic subscriptions
 const selectSelectedZoomRegionId = (s: ReturnType<typeof useVideoEditorStore.getState>) => s.selectedZoomRegionId;
+const selectSelectZoomRegion = (s: ReturnType<typeof useVideoEditorStore.getState>) => s.selectZoomRegion;
+const selectUpdateZoomRegion = (s: ReturnType<typeof useVideoEditorStore.getState>) => s.updateZoomRegion;
+const selectDeleteZoomRegion = (s: ReturnType<typeof useVideoEditorStore.getState>) => s.deleteZoomRegion;
+const selectAddZoomRegion = (s: ReturnType<typeof useVideoEditorStore.getState>) => s.addZoomRegion;
+const selectSetDraggingZoomRegion = (s: ReturnType<typeof useVideoEditorStore.getState>) => s.setDraggingZoomRegion;
 
 /**
  * Preview region shown when hovering over empty track space.
@@ -98,14 +103,11 @@ export const ZoomTrackContent = memo(function ZoomTrackContent({
   const hoveredTrack = useVideoEditorStore((s) => s.hoveredTrack);
   const setHoveredTrack = useVideoEditorStore((s) => s.setHoveredTrack);
   const isPlaying = useVideoEditorStore((s) => s.isPlaying);
-
-  const {
-    selectZoomRegion,
-    updateZoomRegion,
-    deleteZoomRegion,
-    addZoomRegion,
-    setDraggingZoomRegion,
-  } = useVideoEditorStore();
+  const selectZoomRegion = useVideoEditorStore(selectSelectZoomRegion);
+  const updateZoomRegion = useVideoEditorStore(selectUpdateZoomRegion);
+  const deleteZoomRegion = useVideoEditorStore(selectDeleteZoomRegion);
+  const addZoomRegion = useVideoEditorStore(selectAddZoomRegion);
+  const setDraggingZoomRegion = useVideoEditorStore(selectSetDraggingZoomRegion);
 
   // Check if any segment is being dragged
   const isDraggingAny = useVideoEditorStore((s) =>

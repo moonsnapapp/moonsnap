@@ -433,6 +433,9 @@ pub struct CursorInterpolator {
     /// Region dimensions (for reference).
     width: u32,
     height: u32,
+    /// Offset between recording start and first video frame.
+    /// Cursor event lookups must apply this to match frontend preview timing.
+    video_start_offset_ms: u64,
 }
 
 /// Decoded cursor image ready for compositing.
@@ -504,6 +507,7 @@ impl CursorInterpolator {
             stable_cursor_timeline,
             width: recording.width,
             height: recording.height,
+            video_start_offset_ms: recording.video_start_offset_ms,
         }
     }
 
@@ -513,8 +517,12 @@ impl CursorInterpolator {
     /// - `cursor_id`: Active cursor image ID (with fallback)
     /// - `cursor_shape`: Debounced cursor shape for SVG rendering (prevents flickering)
     pub fn get_cursor_at(&self, time_ms: u64) -> InterpolatedCursor {
-        let cursor_id = get_active_cursor_id(&self.original_events, time_ms);
-        let mut cursor = interpolate_raw_at_time(&self.raw_move_events, time_ms, cursor_id);
+        // Apply video start offset to align cursor timestamps with video frame timestamps.
+        let adjusted_time_ms = time_ms.saturating_add(self.video_start_offset_ms);
+
+        let cursor_id = get_active_cursor_id(&self.original_events, adjusted_time_ms);
+        let mut cursor =
+            interpolate_raw_at_time(&self.raw_move_events, adjusted_time_ms, cursor_id);
 
         // Use fallback cursor_id if none found (prevents cursor from disappearing)
         if cursor.cursor_id.is_none() {
@@ -523,7 +531,8 @@ impl CursorInterpolator {
 
         // Use pre-computed stable cursor shape (with debouncing applied)
         // This prevents rapid flickering between cursor shapes
-        cursor.cursor_shape = get_stable_cursor_shape(&self.stable_cursor_timeline, time_ms);
+        cursor.cursor_shape =
+            get_stable_cursor_shape(&self.stable_cursor_timeline, adjusted_time_ms);
 
         // Use fallback cursor_shape if stable timeline didn't have a shape
         if cursor.cursor_shape.is_none() {
@@ -1569,5 +1578,17 @@ mod tests {
         assert!((a.y - b.y).abs() < 0.0001);
         assert!((a.velocity_x - b.velocity_x).abs() < 0.0001);
         assert!((a.velocity_y - b.velocity_y).abs() < 0.0001);
+    }
+
+    #[test]
+    fn test_cursor_interpolator_applies_video_start_offset() {
+        let mut recording = test_recording();
+        recording.video_start_offset_ms = 100;
+
+        let interp = CursorInterpolator::new(&recording, &CursorConfig::default());
+
+        // With 100ms offset applied, querying at t=0 should match raw event stream at t=100.
+        let cursor = interp.get_cursor_at(0);
+        assert!((cursor.x - 0.5).abs() < 0.05);
     }
 }

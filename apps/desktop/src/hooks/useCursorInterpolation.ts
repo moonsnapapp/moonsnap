@@ -30,17 +30,34 @@ function getCursorClickScale(_events: CursorEvent[], _timeMs: number): number {
   return 1.0;
 }
 
-function getActiveCursorId(events: CursorEvent[], timeMs: number): string | null {
-  let activeCursorId: string | null = null;
+function findLastEventAtOrBefore(events: CursorEvent[], timeMs: number): number {
+  let low = 0;
+  let high = events.length - 1;
+  let result = -1;
 
-  for (const event of events) {
-    if (event.timestampMs > timeMs) break;
-    if (event.cursorId !== null) {
-      activeCursorId = event.cursorId;
+  while (low <= high) {
+    const mid = (low + high) >> 1;
+    const eventTime = events[mid].timestampMs;
+    if (eventTime <= timeMs) {
+      result = mid;
+      low = mid + 1;
+    } else {
+      high = mid - 1;
     }
   }
 
-  return activeCursorId;
+  return result;
+}
+
+function getActiveCursorId(cursorIdEvents: CursorEvent[], timeMs: number): string | null {
+  if (cursorIdEvents.length === 0) {
+    return null;
+  }
+  const idx = findLastEventAtOrBefore(cursorIdEvents, timeMs);
+  if (idx < 0) {
+    return null;
+  }
+  return cursorIdEvents[idx].cursorId ?? null;
 }
 
 function getSegmentVelocity(curr: CursorEvent, next: CursorEvent): XY {
@@ -91,22 +108,21 @@ function interpolateRawAtTime(
     };
   }
 
-  for (let i = 0; i < moveEvents.length - 1; i++) {
-    const curr = moveEvents[i];
-    const next = moveEvents[i + 1];
-    if (timeMs >= curr.timestampMs && timeMs < next.timestampMs) {
-      const dtMs = Math.max(next.timestampMs - curr.timestampMs, 1);
-      const t = (timeMs - curr.timestampMs) / dtMs;
-      const velocity = getSegmentVelocity(curr, next);
-      return {
-        x: curr.x + (next.x - curr.x) * t,
-        y: curr.y + (next.y - curr.y) * t,
-        velocityX: velocity.x,
-        velocityY: velocity.y,
-        cursorId,
-        scale,
-      };
-    }
+  const idx = findLastEventAtOrBefore(moveEvents, timeMs);
+  if (idx >= 0 && idx < moveEvents.length - 1) {
+    const curr = moveEvents[idx];
+    const next = moveEvents[idx + 1];
+    const dtMs = Math.max(next.timestampMs - curr.timestampMs, 1);
+    const t = (timeMs - curr.timestampMs) / dtMs;
+    const velocity = getSegmentVelocity(curr, next);
+    return {
+      x: curr.x + (next.x - curr.x) * t,
+      y: curr.y + (next.y - curr.y) * t,
+      velocityX: velocity.x,
+      velocityY: velocity.y,
+      cursorId,
+      scale,
+    };
   }
 
   return {
@@ -139,14 +155,22 @@ function getFallbackCursorId(cursorRecording: CursorRecording | null | undefined
 export function useCursorInterpolation(
   cursorRecording: CursorRecording | null | undefined
 ) {
-  const rawMoveEvents = useMemo(() => {
-    if (!cursorRecording) {
-      return [];
+  const originalEvents = useMemo(() => {
+    const events = cursorRecording?.events ?? [];
+    if (events.length < 2) {
+      return events;
     }
-    return cursorRecording.events.filter((e) => e.eventType.type === 'move');
+    return [...events].sort((a, b) => a.timestampMs - b.timestampMs);
   }, [cursorRecording]);
 
-  const originalEvents = useMemo(() => cursorRecording?.events ?? [], [cursorRecording]);
+  const rawMoveEvents = useMemo(() => {
+    return originalEvents.filter((e) => e.eventType.type === 'move');
+  }, [originalEvents]);
+
+  const cursorIdEvents = useMemo(
+    () => originalEvents.filter((e) => e.cursorId !== null),
+    [originalEvents]
+  );
   const fallbackCursorId = useMemo(
     () => getFallbackCursorId(cursorRecording),
     [cursorRecording]
@@ -156,10 +180,10 @@ export function useCursorInterpolation(
   const getCursorAt = useCallback(
     (timeMs: number): InterpolatedCursor => {
       const adjustedTimeMs = timeMs + videoStartOffsetMs;
-      const cursorId = getActiveCursorId(originalEvents, adjustedTimeMs) ?? fallbackCursorId;
+      const cursorId = getActiveCursorId(cursorIdEvents, adjustedTimeMs) ?? fallbackCursorId;
       return interpolateRawAtTime(rawMoveEvents, originalEvents, adjustedTimeMs, cursorId);
     },
-    [rawMoveEvents, originalEvents, fallbackCursorId, videoStartOffsetMs]
+    [rawMoveEvents, originalEvents, cursorIdEvents, fallbackCursorId, videoStartOffsetMs]
   );
 
   return {
@@ -181,8 +205,12 @@ export function getRawCursorAt(
   }
 
   const adjustedTimeMs = timeMs + (recording.videoStartOffsetMs ?? 0);
-  const moveEvents = recording.events.filter((e: CursorEvent) => e.eventType.type === 'move');
-  const cursorId = getActiveCursorId(recording.events, adjustedTimeMs) ?? getFallbackCursorId(recording);
+  const originalEvents = recording.events.length < 2
+    ? recording.events
+    : [...recording.events].sort((a, b) => a.timestampMs - b.timestampMs);
+  const moveEvents = originalEvents.filter((e: CursorEvent) => e.eventType.type === 'move');
+  const cursorIdEvents = originalEvents.filter((e) => e.cursorId !== null);
+  const cursorId = getActiveCursorId(cursorIdEvents, adjustedTimeMs) ?? getFallbackCursorId(recording);
 
-  return interpolateRawAtTime(moveEvents, recording.events, adjustedTimeMs, cursorId);
+  return interpolateRawAtTime(moveEvents, originalEvents, adjustedTimeMs, cursorId);
 }

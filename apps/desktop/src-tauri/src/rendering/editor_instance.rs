@@ -322,6 +322,8 @@ impl EditorInstance {
         let options = RenderOptions {
             output_width,
             output_height,
+            // Editor preview renders into fixed source dimensions, so use manual-fit bounds.
+            use_manual_composition: true,
             zoom: zoom_state,
             webcam: webcam_overlay,
             cursor: None, // Cursor is composited on CPU below

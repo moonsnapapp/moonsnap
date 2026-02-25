@@ -22,32 +22,26 @@ export interface VideoEditorSidebarProps {
 }
 
 export function VideoEditorSidebar({ project, onOpenCropDialog }: VideoEditorSidebarProps) {
-  const {
-    updateWebcamConfig,
-    updateExportConfig,
-    updateCursorConfig,
-    updateAudioConfig,
-    // Zoom region
-    selectedZoomRegionId,
-    selectZoomRegion,
-    updateZoomRegion,
-    deleteZoomRegion,
-    // Scene segment
-    selectedSceneSegmentId,
-    selectSceneSegment,
-    updateSceneSegment,
-    deleteSceneSegment,
-    // Mask segment
-    selectedMaskSegmentId,
-    selectMaskSegment,
-    updateMaskSegment,
-    deleteMaskSegment,
-    // Text segment
-    selectedTextSegmentId,
-    selectTextSegment,
-    updateTextSegment,
-    deleteTextSegment,
-  } = useVideoEditorStore();
+  const updateWebcamConfig = useVideoEditorStore((s) => s.updateWebcamConfig);
+  const updateExportConfig = useVideoEditorStore((s) => s.updateExportConfig);
+  const updateCursorConfig = useVideoEditorStore((s) => s.updateCursorConfig);
+  const updateAudioConfig = useVideoEditorStore((s) => s.updateAudioConfig);
+  const selectedZoomRegionId = useVideoEditorStore((s) => s.selectedZoomRegionId);
+  const selectZoomRegion = useVideoEditorStore((s) => s.selectZoomRegion);
+  const updateZoomRegion = useVideoEditorStore((s) => s.updateZoomRegion);
+  const deleteZoomRegion = useVideoEditorStore((s) => s.deleteZoomRegion);
+  const selectedSceneSegmentId = useVideoEditorStore((s) => s.selectedSceneSegmentId);
+  const selectSceneSegment = useVideoEditorStore((s) => s.selectSceneSegment);
+  const updateSceneSegment = useVideoEditorStore((s) => s.updateSceneSegment);
+  const deleteSceneSegment = useVideoEditorStore((s) => s.deleteSceneSegment);
+  const selectedMaskSegmentId = useVideoEditorStore((s) => s.selectedMaskSegmentId);
+  const selectMaskSegment = useVideoEditorStore((s) => s.selectMaskSegment);
+  const updateMaskSegment = useVideoEditorStore((s) => s.updateMaskSegment);
+  const deleteMaskSegment = useVideoEditorStore((s) => s.deleteMaskSegment);
+  const selectedTextSegmentId = useVideoEditorStore((s) => s.selectedTextSegmentId);
+  const selectTextSegment = useVideoEditorStore((s) => s.selectTextSegment);
+  const updateTextSegment = useVideoEditorStore((s) => s.updateTextSegment);
+  const deleteTextSegment = useVideoEditorStore((s) => s.deleteTextSegment);
 
   // Properties panel tab state
   const [activeTab, setActiveTab] = useState<PropertiesTab>('project');

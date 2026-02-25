@@ -61,51 +61,42 @@ export const VideoEditorView = forwardRef<VideoEditorViewRef, VideoEditorViewPro
   ref
 ) {
   const { setView } = useCaptureStore();
-  const {
-    project,
-    togglePlayback,
-    requestSeek,
-    clearEditor,
-    isExporting,
-    exportProgress,
-    exportVideo,
-    setExportProgress,
-    cancelExport,
-    updateExportConfig,
-    selectZoomRegion,
-    timelineZoom,
-    setTimelineZoom,
-    // Zoom region
-    selectedZoomRegionId,
-    deleteZoomRegion,
-    // Scene segment
-    selectedSceneSegmentId,
-    selectSceneSegment,
-    deleteSceneSegment,
-    // Mask segment
-    selectedMaskSegmentId,
-    selectMaskSegment,
-    deleteMaskSegment,
-    // Text segment
-    selectedTextSegmentId,
-    selectTextSegment,
-    deleteTextSegment,
-    // Trim segment
-    selectedTrimSegmentId,
-    selectTrimSegment,
-    deleteTrimSegment,
-    splitAtPlayhead,
-    resetTrimSegments,
-    undoTrim,
-    redoTrim,
-    // Save
-    saveProject,
-    isSaving,
-    // IO markers
-    setExportInPoint,
-    setExportOutPoint,
-    clearExportRange,
-  } = useVideoEditorStore();
+  const project = useVideoEditorStore((s) => s.project);
+  const togglePlayback = useVideoEditorStore((s) => s.togglePlayback);
+  const requestSeek = useVideoEditorStore((s) => s.requestSeek);
+  const clearEditor = useVideoEditorStore((s) => s.clearEditor);
+  const isExporting = useVideoEditorStore((s) => s.isExporting);
+  const exportProgress = useVideoEditorStore((s) => s.exportProgress);
+  const exportVideo = useVideoEditorStore((s) => s.exportVideo);
+  const setExportProgress = useVideoEditorStore((s) => s.setExportProgress);
+  const cancelExport = useVideoEditorStore((s) => s.cancelExport);
+  const updateExportConfig = useVideoEditorStore((s) => s.updateExportConfig);
+  const selectZoomRegion = useVideoEditorStore((s) => s.selectZoomRegion);
+  const timelineZoom = useVideoEditorStore((s) => s.timelineZoom);
+  const setTimelineZoom = useVideoEditorStore((s) => s.setTimelineZoom);
+  const selectedZoomRegionId = useVideoEditorStore((s) => s.selectedZoomRegionId);
+  const deleteZoomRegion = useVideoEditorStore((s) => s.deleteZoomRegion);
+  const selectedSceneSegmentId = useVideoEditorStore((s) => s.selectedSceneSegmentId);
+  const selectSceneSegment = useVideoEditorStore((s) => s.selectSceneSegment);
+  const deleteSceneSegment = useVideoEditorStore((s) => s.deleteSceneSegment);
+  const selectedMaskSegmentId = useVideoEditorStore((s) => s.selectedMaskSegmentId);
+  const selectMaskSegment = useVideoEditorStore((s) => s.selectMaskSegment);
+  const deleteMaskSegment = useVideoEditorStore((s) => s.deleteMaskSegment);
+  const selectedTextSegmentId = useVideoEditorStore((s) => s.selectedTextSegmentId);
+  const selectTextSegment = useVideoEditorStore((s) => s.selectTextSegment);
+  const deleteTextSegment = useVideoEditorStore((s) => s.deleteTextSegment);
+  const selectedTrimSegmentId = useVideoEditorStore((s) => s.selectedTrimSegmentId);
+  const selectTrimSegment = useVideoEditorStore((s) => s.selectTrimSegment);
+  const deleteTrimSegment = useVideoEditorStore((s) => s.deleteTrimSegment);
+  const splitAtPlayhead = useVideoEditorStore((s) => s.splitAtPlayhead);
+  const resetTrimSegments = useVideoEditorStore((s) => s.resetTrimSegments);
+  const undoTrim = useVideoEditorStore((s) => s.undoTrim);
+  const redoTrim = useVideoEditorStore((s) => s.redoTrim);
+  const saveProject = useVideoEditorStore((s) => s.saveProject);
+  const isSaving = useVideoEditorStore((s) => s.isSaving);
+  const setExportInPoint = useVideoEditorStore((s) => s.setExportInPoint);
+  const setExportOutPoint = useVideoEditorStore((s) => s.setExportOutPoint);
+  const clearExportRange = useVideoEditorStore((s) => s.clearExportRange);
 
   // Crop dialog state
   const [isCropDialogOpen, setIsCropDialogOpen] = useState(false);

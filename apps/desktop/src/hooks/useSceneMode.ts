@@ -91,41 +91,87 @@ interface SceneSegmentsCursor {
   segments: SceneSegment[];
 }
 
-function createSceneCursor(timeS: number, segments: SceneSegment[]): SceneSegmentsCursor {
-  const timeMs = timeS * 1000;
-  
-  // Find active segment
-  const activeIdx = segments.findIndex(s => timeMs >= s.startMs && timeMs < s.endMs);
-  
-  if (activeIdx >= 0) {
-    return {
-      timeS,
-      segment: segments[activeIdx],
-      prevSegment: activeIdx > 0 ? segments[activeIdx - 1] : null,
-      segments,
-    };
+function sortSceneSegmentsByStart(segments: SceneSegment[]): SceneSegment[] {
+  if (segments.length < 2) {
+    return segments;
   }
 
-  // Not in a segment - find previous segment
-  let prevSegment: SceneSegment | null = null;
-  for (let i = segments.length - 1; i >= 0; i--) {
-    if (segments[i].endMs / 1000 <= timeS) {
-      prevSegment = segments[i];
+  let alreadySorted = true;
+  for (let i = 1; i < segments.length; i++) {
+    if (segments[i - 1].startMs > segments[i].startMs) {
+      alreadySorted = false;
       break;
     }
+  }
+
+  if (alreadySorted) {
+    return segments;
+  }
+
+  return [...segments].sort((a, b) => a.startMs - b.startMs);
+}
+
+function findLastSegmentStartingAtOrBefore(segments: SceneSegment[], timeMs: number): number {
+  let low = 0;
+  let high = segments.length - 1;
+  let result = -1;
+
+  while (low <= high) {
+    const mid = (low + high) >> 1;
+    if (segments[mid].startMs <= timeMs) {
+      result = mid;
+      low = mid + 1;
+    } else {
+      high = mid - 1;
+    }
+  }
+
+  return result;
+}
+
+function findFirstSegmentStartingAfter(segments: SceneSegment[], timeMs: number): number {
+  let low = 0;
+  let high = segments.length - 1;
+  let result = -1;
+
+  while (low <= high) {
+    const mid = (low + high) >> 1;
+    if (segments[mid].startMs > timeMs) {
+      result = mid;
+      high = mid - 1;
+    } else {
+      low = mid + 1;
+    }
+  }
+
+  return result;
+}
+
+function createSceneCursor(timeS: number, segments: SceneSegment[]): SceneSegmentsCursor {
+  const timeMs = timeS * 1000;
+
+  const candidateIdx = findLastSegmentStartingAtOrBefore(segments, timeMs);
+  if (candidateIdx >= 0 && timeMs < segments[candidateIdx].endMs) {
+    return {
+      timeS,
+      segment: segments[candidateIdx],
+      prevSegment: candidateIdx > 0 ? segments[candidateIdx - 1] : null,
+      segments,
+    };
   }
 
   return {
     timeS,
     segment: null,
-    prevSegment,
+    prevSegment: candidateIdx >= 0 ? segments[candidateIdx] : null,
     segments,
   };
 }
 
 function getNextSegment(cursor: SceneSegmentsCursor): SceneSegment | null {
   const timeMs = cursor.timeS * 1000;
-  return cursor.segments.find(s => s.startMs > timeMs) ?? null;
+  const idx = findFirstSegmentStartingAfter(cursor.segments, timeMs);
+  return idx >= 0 ? cursor.segments[idx] : null;
 }
 
 // ============================================================================
@@ -344,20 +390,34 @@ function interpolateScene(cursor: SceneSegmentsCursor): InterpolatedScene {
 /**
  * Get interpolated scene state at a specific timestamp.
  */
+function getInterpolatedSceneAtSorted(
+  sortedSegments: SceneSegment[],
+  _defaultMode: SceneMode,
+  timestampMs: number
+): InterpolatedScene {
+  if (!sortedSegments || sortedSegments.length === 0) {
+    return fromSingleMode('default');
+  }
+
+  const timeS = timestampMs / 1000;
+  const cursor = createSceneCursor(timeS, sortedSegments);
+
+  return interpolateScene(cursor);
+}
+
 export function getInterpolatedSceneAt(
   segments: SceneSegment[],
-  _defaultMode: SceneMode,
+  defaultMode: SceneMode,
   timestampMs: number
 ): InterpolatedScene {
   if (!segments || segments.length === 0) {
     return fromSingleMode('default');
   }
-
-  const sorted = [...segments].sort((a, b) => a.startMs - b.startMs);
-  const timeS = timestampMs / 1000;
-  const cursor = createSceneCursor(timeS, sorted);
-
-  return interpolateScene(cursor);
+  return getInterpolatedSceneAtSorted(
+    sortSceneSegmentsByStart(segments),
+    defaultMode,
+    timestampMs
+  );
 }
 
 /**
@@ -373,7 +433,10 @@ export function getSceneModeAt(
     return defaultMode;
   }
 
-  for (const segment of segments) {
+  const sortedSegments = sortSceneSegmentsByStart(segments);
+  const idx = findLastSegmentStartingAtOrBefore(sortedSegments, timestampMs);
+  if (idx >= 0) {
+    const segment = sortedSegments[idx];
     if (timestampMs >= segment.startMs && timestampMs <= segment.endMs) {
       return segment.mode;
     }
@@ -390,13 +453,25 @@ export function useSceneMode(
   defaultMode: SceneMode | undefined,
   currentTimeMs: number
 ): SceneMode {
+  const sortedSegments = useMemo(
+    () => (segments && segments.length > 0 ? sortSceneSegmentsByStart(segments) : []),
+    [segments]
+  );
+
   return useMemo(() => {
     const mode = defaultMode ?? 'default';
-    if (!segments || segments.length === 0) {
+    if (sortedSegments.length === 0) {
       return mode;
     }
-    return getSceneModeAt(segments, mode, currentTimeMs);
-  }, [segments, defaultMode, currentTimeMs]);
+    const idx = findLastSegmentStartingAtOrBefore(sortedSegments, currentTimeMs);
+    if (idx >= 0) {
+      const segment = sortedSegments[idx];
+      if (currentTimeMs >= segment.startMs && currentTimeMs <= segment.endMs) {
+        return segment.mode;
+      }
+    }
+    return mode;
+  }, [sortedSegments, defaultMode, currentTimeMs]);
 }
 
 /**
@@ -407,13 +482,18 @@ export function useInterpolatedScene(
   defaultMode: SceneMode | undefined,
   currentTimeMs: number
 ): InterpolatedScene {
+  const sortedSegments = useMemo(
+    () => (segments && segments.length > 0 ? sortSceneSegmentsByStart(segments) : []),
+    [segments]
+  );
+
   return useMemo(() => {
     const mode = defaultMode ?? 'default';
-    if (!segments || segments.length === 0) {
+    if (sortedSegments.length === 0) {
       return fromSingleMode(mode);
     }
-    return getInterpolatedSceneAt(segments, mode, currentTimeMs);
-  }, [segments, defaultMode, currentTimeMs]);
+    return getInterpolatedSceneAtSorted(sortedSegments, mode, currentTimeMs);
+  }, [sortedSegments, defaultMode, currentTimeMs]);
 }
 
 // ============================================================================

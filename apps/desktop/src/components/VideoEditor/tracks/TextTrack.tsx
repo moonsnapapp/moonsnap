@@ -41,6 +41,11 @@ const TEXT_COLORS = {
 
 // Selectors for atomic subscriptions
 const selectSelectedTextSegmentId = (s: ReturnType<typeof useVideoEditorStore.getState>) => s.selectedTextSegmentId;
+const selectSelectTextSegment = (s: ReturnType<typeof useVideoEditorStore.getState>) => s.selectTextSegment;
+const selectUpdateTextSegment = (s: ReturnType<typeof useVideoEditorStore.getState>) => s.updateTextSegment;
+const selectDeleteTextSegment = (s: ReturnType<typeof useVideoEditorStore.getState>) => s.deleteTextSegment;
+const selectAddTextSegment = (s: ReturnType<typeof useVideoEditorStore.getState>) => s.addTextSegment;
+const selectSetDraggingTextSegment = (s: ReturnType<typeof useVideoEditorStore.getState>) => s.setDraggingTextSegment;
 
 /**
  * Preview segment shown when hovering over empty track space.
@@ -293,14 +298,11 @@ export const TextTrackContent = memo(function TextTrackContent({
   const hoveredTrack = useVideoEditorStore((s) => s.hoveredTrack);
   const setHoveredTrack = useVideoEditorStore((s) => s.setHoveredTrack);
   const isPlaying = useVideoEditorStore((s) => s.isPlaying);
-
-  const {
-    selectTextSegment,
-    updateTextSegment,
-    deleteTextSegment,
-    addTextSegment,
-    setDraggingTextSegment,
-  } = useVideoEditorStore();
+  const selectTextSegment = useVideoEditorStore(selectSelectTextSegment);
+  const updateTextSegment = useVideoEditorStore(selectUpdateTextSegment);
+  const deleteTextSegment = useVideoEditorStore(selectDeleteTextSegment);
+  const addTextSegment = useVideoEditorStore(selectAddTextSegment);
+  const setDraggingTextSegment = useVideoEditorStore(selectSetDraggingTextSegment);
 
   // Duration in seconds
   const durationSec = durationMs / 1000;

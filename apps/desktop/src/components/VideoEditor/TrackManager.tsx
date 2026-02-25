@@ -56,6 +56,7 @@ const trackDefinitions: TrackDefinition[] = [
 
 const selectTrackVisibility = (s: ReturnType<typeof useVideoEditorStore.getState>) => s.trackVisibility;
 const selectHasWebcam = (s: ReturnType<typeof useVideoEditorStore.getState>) => !!s.project?.sources.webcamVideo;
+const selectToggleTrackVisibility = (s: ReturnType<typeof useVideoEditorStore.getState>) => s.toggleTrackVisibility;
 
 /**
  * TrackManager - Dropdown menu to toggle track visibility
@@ -63,7 +64,7 @@ const selectHasWebcam = (s: ReturnType<typeof useVideoEditorStore.getState>) => 
 export const TrackManager = memo(function TrackManager() {
   const trackVisibility = useVideoEditorStore(selectTrackVisibility);
   const hasWebcam = useVideoEditorStore(selectHasWebcam);
-  const { toggleTrackVisibility } = useVideoEditorStore();
+  const toggleTrackVisibility = useVideoEditorStore(selectToggleTrackVisibility);
 
   return (
     <DropdownMenu>

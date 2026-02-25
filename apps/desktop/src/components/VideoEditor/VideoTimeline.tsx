@@ -40,6 +40,20 @@ const selectIsDraggingPlayhead = (s: ReturnType<typeof useVideoEditorStore.getSt
 const selectIsPlaying = (s: ReturnType<typeof useVideoEditorStore.getState>) => s.isPlaying;
 const selectPreviewTimeMs = (s: ReturnType<typeof useVideoEditorStore.getState>) => s.previewTimeMs;
 const selectTrackVisibility = (s: ReturnType<typeof useVideoEditorStore.getState>) => s.trackVisibility;
+const selectSetTimelineScrollLeft = (s: ReturnType<typeof useVideoEditorStore.getState>) => s.setTimelineScrollLeft;
+const selectSetTimelineContainerWidth = (s: ReturnType<typeof useVideoEditorStore.getState>) => s.setTimelineContainerWidth;
+const selectSetDraggingPlayhead = (s: ReturnType<typeof useVideoEditorStore.getState>) => s.setDraggingPlayhead;
+const selectSetTimelineZoom = (s: ReturnType<typeof useVideoEditorStore.getState>) => s.setTimelineZoom;
+const selectSetPreviewTime = (s: ReturnType<typeof useVideoEditorStore.getState>) => s.setPreviewTime;
+const selectTogglePlayback = (s: ReturnType<typeof useVideoEditorStore.getState>) => s.togglePlayback;
+const selectFitTimelineToWindow = (s: ReturnType<typeof useVideoEditorStore.getState>) => s.fitTimelineToWindow;
+const selectSetExportInPoint = (s: ReturnType<typeof useVideoEditorStore.getState>) => s.setExportInPoint;
+const selectSetExportOutPoint = (s: ReturnType<typeof useVideoEditorStore.getState>) => s.setExportOutPoint;
+
+function quantizeTimeMs(timeMs: number, stepMs: number): number {
+  if (stepMs <= 1) return timeMs;
+  return Math.round(timeMs / stepMs) * stepMs;
+}
 
 /**
  * Preview scrubber - ghost playhead that follows mouse when not playing.
@@ -287,18 +301,15 @@ export function VideoTimeline({ onExport, onSplitAtPlayhead, onResetTrimSegments
   const trackVisibility = useVideoEditorStore(selectTrackVisibility);
   const exportInPointMs = useVideoEditorStore(selectExportInPointMs);
   const exportOutPointMs = useVideoEditorStore(selectExportOutPointMs);
-
-  const {
-    setTimelineScrollLeft,
-    setTimelineContainerWidth,
-    setDraggingPlayhead,
-    setTimelineZoom,
-    setPreviewTime,
-    togglePlayback,
-    fitTimelineToWindow,
-    setExportInPoint,
-    setExportOutPoint,
-  } = useVideoEditorStore();
+  const setTimelineScrollLeft = useVideoEditorStore(selectSetTimelineScrollLeft);
+  const setTimelineContainerWidth = useVideoEditorStore(selectSetTimelineContainerWidth);
+  const setDraggingPlayhead = useVideoEditorStore(selectSetDraggingPlayhead);
+  const setTimelineZoom = useVideoEditorStore(selectSetTimelineZoom);
+  const setPreviewTime = useVideoEditorStore(selectSetPreviewTime);
+  const togglePlayback = useVideoEditorStore(selectTogglePlayback);
+  const fitTimelineToWindow = useVideoEditorStore(selectFitTimelineToWindow);
+  const setExportInPoint = useVideoEditorStore(selectSetExportInPoint);
+  const setExportOutPoint = useVideoEditorStore(selectSetExportOutPoint);
 
   const [draggingIOMarker, setDraggingIOMarker] = useState<'in' | 'out' | null>(null);
 
@@ -306,6 +317,9 @@ export function VideoTimeline({ onExport, onSplitAtPlayhead, onResetTrimSegments
   const containerRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const suppressNextClickRef = useRef(false);
+  const previewRafRef = useRef<number | null>(null);
+  const pendingPreviewTimeRef = useRef<number | null>(null);
+  const lastPreviewTimeRef = useRef<number | null>(null);
   const [containerWidth, setContainerWidth] = useState(0);
 
   // Measure container width and sync to store (debounced to avoid resize lag)
@@ -351,9 +365,23 @@ export function VideoTimeline({ onExport, onSplitAtPlayhead, onResetTrimSegments
   // Clear preview time when playback starts
   useEffect(() => {
     if (isPlaying) {
+      if (previewRafRef.current !== null) {
+        cancelAnimationFrame(previewRafRef.current);
+        previewRafRef.current = null;
+      }
+      pendingPreviewTimeRef.current = null;
+      lastPreviewTimeRef.current = null;
       setPreviewTime(null);
     }
   }, [isPlaying, setPreviewTime]);
+
+  useEffect(() => {
+    return () => {
+      if (previewRafRef.current !== null) {
+        cancelAnimationFrame(previewRafRef.current);
+      }
+    };
+  }, []);
 
   // Calculate timeline dimensions - extend to fill container width at minimum
   // sourceDurationMs is the original video duration (needed for TrimTrack segment boundaries)
@@ -376,14 +404,19 @@ export function VideoTimeline({ onExport, onSplitAtPlayhead, onResetTrimSegments
     const rect = e.currentTarget.getBoundingClientRect();
     // No scroll offset needed - event target already accounts for scroll position
     const x = e.clientX - rect.left;
-    const newTimeMs = Math.max(0, Math.min(effectiveDurationMs, x / timelineZoom));
+    const newTimeMs = quantizeTimeMs(
+      Math.max(0, Math.min(effectiveDurationMs, x / timelineZoom)),
+      TIMING.SCRUB_SEEK_STEP_MS
+    );
     controls.seek(newTimeMs);
   }, [effectiveDurationMs, timelineZoom, controls]);
 
   // Handle mouse move for preview scrubber (on scroll container to catch moves outside content)
   const handleTimelineMouseMove = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
     if (isPlaying) {
-      setPreviewTime(null);
+      if (useVideoEditorStore.getState().previewTimeMs !== null) {
+        setPreviewTime(null);
+      }
       return;
     }
     const scrollContainer = scrollRef.current;
@@ -394,12 +427,33 @@ export function VideoTimeline({ onExport, onSplitAtPlayhead, onResetTrimSegments
     // Calculate x position relative to timeline content (account for scroll)
     const x = e.clientX - rect.left + scrollLeft;
     // Clamp to valid range (0 to effectiveDurationMs) - don't hide when outside bounds
-    const timeMs = Math.max(0, Math.min(effectiveDurationMs, x / timelineZoom));
-    setPreviewTime(timeMs);
+    const timeMs = quantizeTimeMs(
+      Math.max(0, Math.min(effectiveDurationMs, x / timelineZoom)),
+      TIMING.SCRUB_PREVIEW_STEP_MS
+    );
+    pendingPreviewTimeRef.current = timeMs;
+
+    if (previewRafRef.current === null) {
+      previewRafRef.current = requestAnimationFrame(() => {
+        previewRafRef.current = null;
+        const nextPreviewTimeMs = pendingPreviewTimeRef.current;
+        if (nextPreviewTimeMs === null || nextPreviewTimeMs === lastPreviewTimeRef.current) {
+          return;
+        }
+        lastPreviewTimeRef.current = nextPreviewTimeMs;
+        setPreviewTime(nextPreviewTimeMs);
+      });
+    }
   }, [isPlaying, effectiveDurationMs, timelineZoom, setPreviewTime]);
 
   // Clear preview on mouse leave (only when leaving the scroll container entirely)
   const handleTimelineMouseLeave = useCallback(() => {
+    if (previewRafRef.current !== null) {
+      cancelAnimationFrame(previewRafRef.current);
+      previewRafRef.current = null;
+    }
+    pendingPreviewTimeRef.current = null;
+    lastPreviewTimeRef.current = null;
     setPreviewTime(null);
   }, [setPreviewTime]);
 
@@ -408,6 +462,17 @@ export function VideoTimeline({ onExport, onSplitAtPlayhead, onResetTrimSegments
     e.preventDefault();
     e.stopPropagation();
     setDraggingPlayhead(true);
+    let dragRafId: number | null = null;
+    let pendingSeekTime: number | null = null;
+    let lastSeekTime: number | null = null;
+
+    const flushSeek = () => {
+      if (pendingSeekTime === null || pendingSeekTime === lastSeekTime) {
+        return;
+      }
+      lastSeekTime = pendingSeekTime;
+      controls.seek(pendingSeekTime);
+    };
 
     const handleMouseMove = (moveEvent: MouseEvent) => {
       const scrollContainer = scrollRef.current;
@@ -416,11 +481,25 @@ export function VideoTimeline({ onExport, onSplitAtPlayhead, onResetTrimSegments
       const rect = scrollContainer.getBoundingClientRect();
       const scrollLeft = scrollContainer.scrollLeft;
       const x = moveEvent.clientX - rect.left + scrollLeft;
-      const newTimeMs = Math.max(0, Math.min(effectiveDurationMs, x / timelineZoom));
-      controls.seek(newTimeMs);
+      pendingSeekTime = quantizeTimeMs(
+        Math.max(0, Math.min(effectiveDurationMs, x / timelineZoom)),
+        TIMING.SCRUB_SEEK_STEP_MS
+      );
+
+      if (dragRafId === null) {
+        dragRafId = requestAnimationFrame(() => {
+          dragRafId = null;
+          flushSeek();
+        });
+      }
     };
 
     const handleMouseUp = () => {
+      if (dragRafId !== null) {
+        cancelAnimationFrame(dragRafId);
+        dragRafId = null;
+      }
+      flushSeek();
       setDraggingPlayhead(false);
       document.removeEventListener('mousemove', handleMouseMove);
       document.removeEventListener('mouseup', handleMouseUp);

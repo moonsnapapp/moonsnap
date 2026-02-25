@@ -53,7 +53,9 @@ export interface WebCodecsPreviewResult {
  */
 export function useWebCodecsPreview(videoPath: string | null): WebCodecsPreviewResult {
   const frameCache = useRef<FrameCache>({});
-  const pendingRequests = useRef<Set<number>>(new Set());
+  // Track pending decodes by both request id and timestamp to avoid duplicate requests.
+  const pendingRequestsById = useRef<Map<number, number>>(new Map());
+  const pendingTimestamps = useRef<Set<number>>(new Set());
   const lastPrefetchTimeRef = useRef<number>(0);
   const lastPrefetchPositionRef = useRef<number>(0);
   const lastReceivedTimestampRef = useRef<number>(0);
@@ -64,7 +66,11 @@ export function useWebCodecsPreview(videoPath: string | null): WebCodecsPreviewR
   // Handle frame received from worker - receives ownership of transferred ImageBitmap
   const handleFrameDecoded = useCallback((msg: FrameDecodedMessage) => {
     const cacheKey = Math.round(msg.timestampMs);
-    pendingRequests.current.delete(msg.requestId);
+    const pendingTs = pendingRequestsById.current.get(msg.requestId);
+    if (pendingTs !== undefined) {
+      pendingRequestsById.current.delete(msg.requestId);
+      pendingTimestamps.current.delete(pendingTs);
+    }
     lastReceivedTimestampRef.current = msg.timestampMs;
 
     // Store in cache - we now own this ImageBitmap
@@ -87,7 +93,11 @@ export function useWebCodecsPreview(videoPath: string | null): WebCodecsPreviewR
   // Handle frame decode error
   const handleFrameError = useCallback(
     (requestId: number, _timestampMs: number, error: string) => {
-      pendingRequests.current.delete(requestId);
+      const pendingTs = pendingRequestsById.current.get(requestId);
+      if (pendingTs !== undefined) {
+        pendingRequestsById.current.delete(requestId);
+        pendingTimestamps.current.delete(pendingTs);
+      }
       // Only log unexpected errors, not "no sample" which is normal at boundaries
       if (!error.includes('No sample')) {
         videoEditorLogger.warn('[WebCodecsPreview] Frame error:', error);
@@ -115,7 +125,8 @@ export function useWebCodecsPreview(videoPath: string | null): WebCodecsPreviewR
         bitmap.close();
       }
       frameCache.current = {};
-      pendingRequests.current.clear();
+      pendingRequestsById.current.clear();
+      pendingTimestamps.current.clear();
     };
   }, [videoUrl]);
 
@@ -165,7 +176,8 @@ export function useWebCodecsPreview(videoPath: string | null): WebCodecsPreviewR
         lastPrefetchTimeRef.current = now;
         lastPrefetchPositionRef.current = timestampMs;
         // Clear pending requests since user moved far away
-        pendingRequests.current.clear();
+        pendingRequestsById.current.clear();
+        pendingTimestamps.current.clear();
         worker.clearCache();
         return;
       }
@@ -179,10 +191,13 @@ export function useWebCodecsPreview(videoPath: string | null): WebCodecsPreviewR
       // Request current position with immediate priority
       if (
         !frameCache.current[rounded] &&
-        !pendingRequests.current.has(rounded)
+        !pendingTimestamps.current.has(rounded)
       ) {
         const reqId = worker.requestFrame(timestampMs, 'immediate');
-        if (reqId >= 0) pendingRequests.current.add(reqId);
+        if (reqId >= 0) {
+          pendingRequestsById.current.set(reqId, rounded);
+          pendingTimestamps.current.add(rounded);
+        }
       }
 
       // Request nearby positions with prefetch priority
@@ -197,18 +212,24 @@ export function useWebCodecsPreview(videoPath: string | null): WebCodecsPreviewR
         if (
           before >= 0 &&
           !frameCache.current[before] &&
-          !pendingRequests.current.has(before)
+          !pendingTimestamps.current.has(before)
         ) {
           const reqId = worker.requestFrame(before, 'prefetch');
-          if (reqId >= 0) pendingRequests.current.add(reqId);
+          if (reqId >= 0) {
+            pendingRequestsById.current.set(reqId, before);
+            pendingTimestamps.current.add(before);
+          }
         }
         if (
           after <= duration &&
           !frameCache.current[after] &&
-          !pendingRequests.current.has(after)
+          !pendingTimestamps.current.has(after)
         ) {
           const reqId = worker.requestFrame(after, 'prefetch');
-          if (reqId >= 0) pendingRequests.current.add(reqId);
+          if (reqId >= 0) {
+            pendingRequestsById.current.set(reqId, after);
+            pendingTimestamps.current.add(after);
+          }
         }
       }
     },

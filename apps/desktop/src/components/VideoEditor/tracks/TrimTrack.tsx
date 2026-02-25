@@ -79,6 +79,10 @@ const TRIM_COLORS = {
 // Selectors for atomic subscriptions
 const selectSelectedTrimSegmentId = (s: ReturnType<typeof useVideoEditorStore.getState>) =>
   s.selectedTrimSegmentId;
+const selectSelectTrimSegment = (s: ReturnType<typeof useVideoEditorStore.getState>) => s.selectTrimSegment;
+const selectUpdateTrimSegment = (s: ReturnType<typeof useVideoEditorStore.getState>) => s.updateTrimSegment;
+const selectDeleteTrimSegment = (s: ReturnType<typeof useVideoEditorStore.getState>) => s.deleteTrimSegment;
+const selectSetDraggingZoomRegion = (s: ReturnType<typeof useVideoEditorStore.getState>) => s.setDraggingZoomRegion;
 
 /**
  * Individual trim segment component with drag handles.
@@ -394,13 +398,10 @@ export const TrimTrackContent = memo(function TrimTrackContent({
 }: TrimTrackProps) {
   const selectedTrimSegmentId = useVideoEditorStore(selectSelectedTrimSegmentId);
   const { waveform, visualGain } = useWaveform(audioPath);
-
-  const {
-    selectTrimSegment,
-    updateTrimSegment,
-    deleteTrimSegment,
-    setDraggingZoomRegion,
-  } = useVideoEditorStore();
+  const selectTrimSegment = useVideoEditorStore(selectSelectTrimSegment);
+  const updateTrimSegment = useVideoEditorStore(selectUpdateTrimSegment);
+  const deleteTrimSegment = useVideoEditorStore(selectDeleteTrimSegment);
+  const setDraggingZoomRegion = useVideoEditorStore(selectSetDraggingZoomRegion);
 
   // Calculate effective duration (total of all segments)
   const effectiveDuration = useMemo(() => {

@@ -31,6 +31,11 @@ const MASK_COLORS = {
 
 // Selectors for atomic subscriptions
 const selectSelectedMaskSegmentId = (s: ReturnType<typeof useVideoEditorStore.getState>) => s.selectedMaskSegmentId;
+const selectSelectMaskSegment = (s: ReturnType<typeof useVideoEditorStore.getState>) => s.selectMaskSegment;
+const selectUpdateMaskSegment = (s: ReturnType<typeof useVideoEditorStore.getState>) => s.updateMaskSegment;
+const selectDeleteMaskSegment = (s: ReturnType<typeof useVideoEditorStore.getState>) => s.deleteMaskSegment;
+const selectAddMaskSegment = (s: ReturnType<typeof useVideoEditorStore.getState>) => s.addMaskSegment;
+const selectSetDraggingMaskSegment = (s: ReturnType<typeof useVideoEditorStore.getState>) => s.setDraggingMaskSegment;
 
 /**
  * Get label for mask type
@@ -116,14 +121,11 @@ export const MaskTrackContent = memo(function MaskTrackContent({
   const hoveredTrack = useVideoEditorStore((s) => s.hoveredTrack);
   const setHoveredTrack = useVideoEditorStore((s) => s.setHoveredTrack);
   const isPlaying = useVideoEditorStore((s) => s.isPlaying);
-
-  const {
-    selectMaskSegment,
-    updateMaskSegment,
-    deleteMaskSegment,
-    addMaskSegment,
-    setDraggingMaskSegment,
-  } = useVideoEditorStore();
+  const selectMaskSegment = useVideoEditorStore(selectSelectMaskSegment);
+  const updateMaskSegment = useVideoEditorStore(selectUpdateMaskSegment);
+  const deleteMaskSegment = useVideoEditorStore(selectDeleteMaskSegment);
+  const addMaskSegment = useVideoEditorStore(selectAddMaskSegment);
+  const setDraggingMaskSegment = useVideoEditorStore(selectSetDraggingMaskSegment);
 
   // Check if any segment is being dragged
   const isDraggingAny = useVideoEditorStore((s) =>

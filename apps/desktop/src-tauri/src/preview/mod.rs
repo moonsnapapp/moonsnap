@@ -232,6 +232,7 @@ impl PreviewRenderer {
         RenderOptions {
             output_width,
             output_height,
+            use_manual_composition: false,
             zoom: ZoomState::default(),
             webcam: None,
             cursor: None,

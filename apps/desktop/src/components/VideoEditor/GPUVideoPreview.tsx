@@ -1,7 +1,7 @@
 import { memo, useCallback, useRef, useEffect, useState, useMemo } from 'react';
 import { convertFileSrc } from '@tauri-apps/api/core';
 import { resolveResource } from '@tauri-apps/api/path';
-import { useVideoEditorStore } from '../../stores/videoEditorStore';
+import { useVideoEditorStore, timelineToSource } from '../../stores/videoEditorStore';
 import { videoEditorLogger } from '../../utils/logger';
 import { usePreviewOrPlaybackTime } from '../../hooks/usePlaybackEngine';
 import { useZoomPreview } from '../../hooks/useZoomPreview';
@@ -29,6 +29,7 @@ const selectPreviewTimeMs = (s: ReturnType<typeof useVideoEditorStore.getState>)
 const selectCurrentTimeMs = (s: ReturnType<typeof useVideoEditorStore.getState>) => s.currentTimeMs;
 const selectCursorRecording = (s: ReturnType<typeof useVideoEditorStore.getState>) => s.cursorRecording;
 const selectAudioConfig = (s: ReturnType<typeof useVideoEditorStore.getState>) => s.project?.audio;
+const selectSegments = (s: ReturnType<typeof useVideoEditorStore.getState>) => s.project?.timeline.segments;
 
 /**
  * Scene mode aware renderer that shows/hides content based on current scene mode.
@@ -87,7 +88,13 @@ const SceneModeRenderer = memo(function SceneModeRenderer({
   cropConfig?: CropConfig;
 }) {
   const currentTimeMs = usePreviewOrPlaybackTime();
+  const segments = useVideoEditorStore(selectSegments);
   const scene = useInterpolatedScene(sceneSegments, defaultSceneMode, currentTimeMs);
+
+  const sourceTimeMs = useMemo(
+    () => timelineToSource(currentTimeMs, segments ?? []),
+    [currentTimeMs, segments]
+  );
 
   const showScreen = shouldRenderScreen(scene);
   const showCursor = shouldRenderCursor(scene);
@@ -100,6 +107,7 @@ const SceneModeRenderer = memo(function SceneModeRenderer({
     rounding,
     videoWidth,
     videoHeight,
+    cursorTimeMs: sourceTimeMs,
   });
 
   const screenStyle: React.CSSProperties = {

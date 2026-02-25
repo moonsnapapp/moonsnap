@@ -129,6 +129,9 @@ pub struct RenderOptions {
     pub output_width: u32,
     /// Output height.
     pub output_height: u32,
+    /// Whether composition bounds should use manual fixed-output behavior.
+    /// `false` means auto mode (frame starts at padding, output grows with content).
+    pub use_manual_composition: bool,
     /// Current zoom state.
     pub zoom: ZoomState,
     /// Webcam overlay options (if enabled).
@@ -144,6 +147,7 @@ impl Default for RenderOptions {
         Self {
             output_width: 1920,
             output_height: 1080,
+            use_manual_composition: false,
             zoom: ZoomState::default(),
             webcam: None,
             cursor: None,
