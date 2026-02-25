@@ -15,6 +15,9 @@ interface UseCanvasNavigationProps {
   image: HTMLImageElement | undefined;
   imageData: string;
   compositorSettings: CompositorSettings;
+  // Visible content origin used by the compositor CSS preview (same source as compositionBox).
+  // Keeping this in sync avoids drift between Stage and CSS background during imperative zoom/pan.
+  compositorVisibleOrigin?: { x: number; y: number } | null;
   canvasBounds: CanvasBounds | null;
   setCanvasBounds: (bounds: CanvasBounds) => void;
   setOriginalImageSize: (size: { width: number; height: number }) => void;
@@ -51,6 +54,7 @@ export const useCanvasNavigation = ({
   image,
   imageData,
   compositorSettings,
+  compositorVisibleOrigin,
   canvasBounds,
   setCanvasBounds,
   setOriginalImageSize,
@@ -92,24 +96,21 @@ export const useCanvasNavigation = ({
   }, [imageData]);
 
   // Calculate transform coefficients when compositor settings or bounds change
-  // Formula: compositor left = position.x + Kx * zoom, where Kx = visibleBounds.x - padding
+  // Formula: compositor left = position.x + Kx * zoom, where Kx = visibleOrigin.x - padding
   useEffect(() => {
-    if (!image || !canvasBounds || !compositorSettings.enabled) {
+    if (!compositorSettings.enabled) {
       transformCoeffsRef.current = { kx: 0, ky: 0 };
       return;
     }
 
-    // Calculate visible bounds (same logic as getVisibleBounds)
-    const isCropMode = selectedTool === 'crop';
-    let visibleX: number, visibleY: number;
-
-    if (isCropMode) {
-      visibleX = 0;
-      visibleY = 0;
-    } else {
-      visibleX = -canvasBounds.imageOffsetX;
-      visibleY = -canvasBounds.imageOffsetY;
-    }
+    // Prefer explicit visible origin from EditorCanvas (true source of compositionBox positioning).
+    // Fallback to legacy derivation if not provided.
+    const visibleX = compositorVisibleOrigin?.x ?? (
+      selectedTool === 'crop' ? 0 : -(canvasBounds?.imageOffsetX ?? 0)
+    );
+    const visibleY = compositorVisibleOrigin?.y ?? (
+      selectedTool === 'crop' ? 0 : -(canvasBounds?.imageOffsetY ?? 0)
+    );
 
     // Padding is now in pixels
     const padding = compositorSettings.padding;
@@ -119,7 +120,15 @@ export const useCanvasNavigation = ({
       kx: visibleX - padding,
       ky: visibleY - padding,
     };
-  }, [image, canvasBounds, compositorSettings.enabled, compositorSettings.padding, selectedTool]);
+  }, [
+    compositorSettings.enabled,
+    compositorSettings.padding,
+    compositorVisibleOrigin?.x,
+    compositorVisibleOrigin?.y,
+    canvasBounds?.imageOffsetX,
+    canvasBounds?.imageOffsetY,
+    selectedTool,
+  ]);
 
   // Clear CSS transform AFTER React has rendered the new position
   // useLayoutEffect runs synchronously after DOM mutations but before paint

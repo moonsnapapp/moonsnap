@@ -144,11 +144,41 @@ export const EditorCanvas = React.memo(forwardRef<EditorCanvasRef, EditorCanvasP
     }
   }, [image, shapes, cropRegion, onShapesChange, setCropRegion]);
 
+  // Find the background shape for crop snap targets and visible-bound calculations
+  const backgroundShape = React.useMemo(
+    () => shapes.find(s => s.id === BACKGROUND_SHAPE_ID),
+    [shapes]
+  );
+
+  // Visible bounds for clipping and compositor preview positioning.
+  // In crop mode, show full extent so the crop overlay can dim outside areas.
+  const visibleBounds = useMemo(() => {
+    if (!image) return null;
+    if (selectedTool === 'crop') {
+      const imgX = backgroundShape?.x ?? 0;
+      const imgY = backgroundShape?.y ?? 0;
+      const imgW = backgroundShape?.width ?? image.width;
+      const imgH = backgroundShape?.height ?? image.height;
+      if (cropRegion) {
+        return {
+          x: Math.min(imgX, cropRegion.x),
+          y: Math.min(imgY, cropRegion.y),
+          width: Math.max(imgX + imgW, cropRegion.x + cropRegion.width) - Math.min(imgX, cropRegion.x),
+          height: Math.max(imgY + imgH, cropRegion.y + cropRegion.height) - Math.min(imgY, cropRegion.y),
+        };
+      }
+      return { x: imgX, y: imgY, width: imgW, height: imgH };
+    }
+    if (cropRegion) return cropRegion;
+    return { x: 0, y: 0, width: image.width, height: image.height };
+  }, [backgroundShape, cropRegion, image, selectedTool]);
+
   // Navigation hook
   const navigation = useCanvasNavigation({
     image,
     imageData,
     compositorSettings,
+    compositorVisibleOrigin: visibleBounds ? { x: visibleBounds.x, y: visibleBounds.y } : null,
     canvasBounds,
     setCanvasBounds,
     setOriginalImageSize,
@@ -239,12 +269,6 @@ export const EditorCanvas = React.memo(forwardRef<EditorCanvasRef, EditorCanvasP
     setSelectedIds,
   });
 
-  // Find the background shape for crop snap targets
-  const backgroundShape = React.useMemo(
-    () => shapes.find(s => s.id === BACKGROUND_SHAPE_ID),
-    [shapes]
-  );
-
   // Crop tool hook — now sets cropRegion (export bounds) instead of canvasBounds
   const crop = useCropTool({
     canvasBounds,
@@ -257,30 +281,6 @@ export const EditorCanvas = React.memo(forwardRef<EditorCanvasRef, EditorCanvasP
     history,
   });
 
-  // Visible bounds for clipping — artboard (cropRegion) defines the visible canvas area.
-  // In crop mode, show everything so the crop overlay can dim outside areas.
-  const visibleBounds = useMemo(() => {
-    if (!image) return null;
-    if (selectedTool === 'crop') {
-      // Show full extent so crop overlay can render dim regions
-      const bgShape = shapes.find(s => s.id === BACKGROUND_SHAPE_ID);
-      const imgX = bgShape?.x ?? 0;
-      const imgY = bgShape?.y ?? 0;
-      const imgW = bgShape?.width ?? image.width;
-      const imgH = bgShape?.height ?? image.height;
-      if (cropRegion) {
-        return {
-          x: Math.min(imgX, cropRegion.x),
-          y: Math.min(imgY, cropRegion.y),
-          width: Math.max(imgX + imgW, cropRegion.x + cropRegion.width) - Math.min(imgX, cropRegion.x),
-          height: Math.max(imgY + imgH, cropRegion.y + cropRegion.height) - Math.min(imgY, cropRegion.y),
-        };
-      }
-      return { x: imgX, y: imgY, width: imgW, height: imgH };
-    }
-    if (cropRegion) return cropRegion;
-    return { x: 0, y: 0, width: image.width, height: image.height };
-  }, [cropRegion, image, selectedTool, shapes]);
 
   // Detect if the content has ANY transparency (edges or interior).
   // When true, skip shadow/border-radius to avoid the floaty look.
