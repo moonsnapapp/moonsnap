@@ -34,8 +34,6 @@ const VideoEditorWindow: React.FC = () => {
     setProject,
     clearEditor,
     setExportProgress,
-    destroyGPUEditor,
-    initializeGPUEditor,
   } = useVideoEditorStore();
 
   // Apply theme
@@ -68,16 +66,13 @@ const VideoEditorWindow: React.FC = () => {
 
       setProject(videoProject);
 
-      // Initialize GPU editor
-      await initializeGPUEditor(videoProject);
-
       setIsLoading(false);
     } catch (err) {
       videoEditorLogger.error('Failed to load video project:', err);
       setError(err instanceof Error ? err.message : 'Failed to load video project');
       setIsLoading(false);
     }
-  }, [setProject, initializeGPUEditor]);
+  }, [setProject]);
 
   // Load project from URL params on mount
   useEffect(() => {
@@ -119,10 +114,9 @@ const VideoEditorWindow: React.FC = () => {
     isClosingRef.current = true;
 
     await flushSaveBeforeClose();
-    await destroyGPUEditor();
     clearEditor();
     await getCurrentWebviewWindow().destroy();
-  }, [flushSaveBeforeClose, destroyGPUEditor, clearEditor]);
+  }, [flushSaveBeforeClose, clearEditor]);
 
   // Cleanup on window close
   useEffect(() => {

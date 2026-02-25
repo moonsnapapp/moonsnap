@@ -61,7 +61,6 @@ export function usePlaybackSync(options: PlaybackSyncOptions): PlaybackSyncResul
     videoRef,
     systemAudioRef,
     micAudioRef,
-    videoSrc,
     systemAudioSrc,
     micAudioSrc,
     audioConfig,
@@ -86,19 +85,14 @@ export function usePlaybackSync(options: PlaybackSyncOptions): PlaybackSyncResul
     }
   }, [durationMs]);
 
-  // Register video element with playback engine
+  // Keep playback engine video element in sync with the actual mounted <video>.
+  // This must update on mount/unmount transitions (for example when editor view is inactive).
   useEffect(() => {
-    if (videoRef.current) {
-      controls.setVideoElement(videoRef.current);
-      return;
-    }
-    const id = requestAnimationFrame(() => {
-      if (videoRef.current) {
-        controls.setVideoElement(videoRef.current);
-      }
-    });
-    return () => cancelAnimationFrame(id);
-  }, [controls, videoRef, videoSrc]);
+    controls.setVideoElement(videoRef.current);
+    return () => {
+      controls.setVideoElement(null);
+    };
+  });
 
   // Set duration when project loads
   useEffect(() => {

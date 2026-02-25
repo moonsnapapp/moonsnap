@@ -289,7 +289,11 @@ const SceneModeRenderer = memo(function SceneModeRenderer({
  * Main video preview component.
  * Optimized to minimize re-renders during playback.
  */
-export function GPUVideoPreview() {
+interface GPUVideoPreviewProps {
+  isActive?: boolean;
+}
+
+export function GPUVideoPreview({ isActive = true }: GPUVideoPreviewProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const previewAreaRef = useRef<HTMLDivElement>(null);
@@ -308,6 +312,7 @@ export function GPUVideoPreview() {
   const currentTimeMs = useVideoEditorStore(selectCurrentTimeMs);
   const cursorRecording = useVideoEditorStore(selectCursorRecording);
   const audioConfig = useVideoEditorStore(selectAudioConfig);
+  const effectiveIsPlaying = isPlaying && isActive;
 
   // Get effective time for scene interpolation
   const effectiveTimeMs = previewTimeMs !== null ? previewTimeMs : currentTimeMs;
@@ -458,7 +463,7 @@ export function GPUVideoPreview() {
     micAudioSrc,
     audioConfig,
     durationMs: project?.timeline.durationMs,
-    isPlaying,
+    isPlaying: effectiveIsPlaying,
     previewTimeMs,
     currentTimeMs,
     onVideoError: useCallback((msg: string) => setVideoError(msg || null), []),
@@ -467,7 +472,7 @@ export function GPUVideoPreview() {
   return (
     <div ref={previewAreaRef} className="flex items-center justify-center h-full bg-[var(--polar-snow)] overflow-hidden">
       {/* Hidden audio elements */}
-      {systemAudioSrc && (
+      {isActive && systemAudioSrc && (
         <audio
           ref={systemAudioRef}
           src={systemAudioSrc}
@@ -481,7 +486,7 @@ export function GPUVideoPreview() {
           }}
         />
       )}
-      {micAudioSrc && (
+      {isActive && micAudioSrc && (
         <audio
           ref={micAudioRef}
           src={micAudioSrc}
@@ -561,7 +566,7 @@ export function GPUVideoPreview() {
             }),
           }}
         >
-          {videoSrc || project?.sources.webcamVideo ? (
+          {isActive && (videoSrc || project?.sources.webcamVideo) ? (
             <SceneModeRenderer
               videoRef={videoRef}
               videoSrc={videoSrc ?? undefined}
@@ -582,7 +587,7 @@ export function GPUVideoPreview() {
               videoHeight={project?.sources.originalHeight ?? 1080}
               maskSegments={project?.mask?.segments}
               textSegments={project?.text?.segments}
-              isPlaying={isPlaying}
+              isPlaying={effectiveIsPlaying}
               onVideoClick={handleVideoClick}
               backgroundPadding={backgroundConfig?.padding ?? 0}
               rounding={backgroundConfig?.rounding ?? 0}
@@ -591,7 +596,9 @@ export function GPUVideoPreview() {
             />
           ) : (
             <div className="absolute inset-0 flex items-center justify-center">
-              <span className="text-[var(--ink-subtle)]">No video loaded</span>
+              <span className="text-[var(--ink-subtle)]">
+                {isActive ? 'No video loaded' : 'Preview paused while inactive'}
+              </span>
             </div>
           )}
 
@@ -609,7 +616,7 @@ export function GPUVideoPreview() {
         </div>
 
         {/* Webcam overlay */}
-        {project?.sources.webcamVideo && project?.webcam && compositionSize.width > 0 && (
+        {isActive && project?.sources.webcamVideo && project?.webcam && compositionSize.width > 0 && (
           <WebcamOverlay
             webcamVideoPath={project.sources.webcamVideo}
             config={project.webcam}
@@ -621,7 +628,7 @@ export function GPUVideoPreview() {
         )}
 
         {/* Caption overlay - positioned relative to composition (video + padding) to match export */}
-        {compositionSize.width > 0 && compositionSize.height > 0 && (
+        {isActive && compositionSize.width > 0 && compositionSize.height > 0 && (
           <UnifiedCaptionOverlay
             renderWidth={compositeWidth}
             renderHeight={compositeHeight}

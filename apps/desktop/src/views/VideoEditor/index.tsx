@@ -24,6 +24,7 @@ import { save } from '@tauri-apps/plugin-dialog';
 import { useCaptureStore } from '../../stores/captureStore';
 import { useVideoEditorStore } from '../../stores/videoEditorStore';
 import {
+  selectIsPlaying,
   selectCancelExport,
   selectClearEditor,
   selectClearExportRange,
@@ -53,6 +54,8 @@ import {
   selectSelectedZoomRegionId,
   selectSetExportInPoint,
   selectSetExportOutPoint,
+  selectSetIsPlaying,
+  selectSetPreviewTime,
   selectSetSplitMode,
   selectSetExportProgress,
   selectSetTimelineZoom,
@@ -90,17 +93,22 @@ export interface VideoEditorViewProps {
   onBack?: () => void;
   /** Hide the top bar entirely (useful when embedded in a window with its own titlebar) */
   hideTopBar?: boolean;
+  /** Whether this editor view is currently active/interactive. */
+  isActive?: boolean;
 }
 
 /**
  * VideoEditorView - Main video editor component with preview, timeline, and controls.
  */
 export const VideoEditorView = forwardRef<VideoEditorViewRef, VideoEditorViewProps>(function VideoEditorView(
-  { onBack, hideTopBar },
+  { onBack, hideTopBar, isActive = true },
   ref
 ) {
   const { setView } = useCaptureStore();
   const project = useVideoEditorStore(selectProject);
+  const isPlaying = useVideoEditorStore(selectIsPlaying);
+  const setIsPlaying = useVideoEditorStore(selectSetIsPlaying);
+  const setPreviewTime = useVideoEditorStore(selectSetPreviewTime);
   const togglePlayback = useVideoEditorStore(selectTogglePlayback);
   const requestSeek = useVideoEditorStore(selectRequestSeek);
   const clearEditor = useVideoEditorStore(selectClearEditor);
@@ -355,6 +363,15 @@ export const VideoEditorView = forwardRef<VideoEditorViewRef, VideoEditorViewPro
     };
   }, [project, isExporting, saveProject]);
 
+  // Suspend playback/scrub activity when the editor is not active.
+  useEffect(() => {
+    if (isActive) return;
+    if (isPlaying) {
+      setIsPlaying(false);
+    }
+    setPreviewTime(null);
+  }, [isActive, isPlaying, setIsPlaying, setPreviewTime]);
+
   // Best-effort save when the tab/window is closed before autosave debounce fires.
   useEffect(() => {
     const handleBeforeUnload = () => {
@@ -484,7 +501,7 @@ export const VideoEditorView = forwardRef<VideoEditorViewRef, VideoEditorViewPro
           )}
 
           {/* Video Preview */}
-          <VideoEditorPreview />
+          <VideoEditorPreview isActive={isActive} />
         </div>
 
         {/* Right sidebar with tabbed properties panel */}

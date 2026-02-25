@@ -4,12 +4,17 @@
  */
 import { GPUVideoPreview } from '../../components/VideoEditor/GPUVideoPreview';
 import { GPUErrorBoundary } from '../../components/VideoEditor/GPUErrorBoundary';
-export function VideoEditorPreview() {
+
+interface VideoEditorPreviewProps {
+  isActive?: boolean;
+}
+
+export function VideoEditorPreview({ isActive = true }: VideoEditorPreviewProps) {
 
   return (
     <div className="flex-1 min-h-0 p-4">
       <GPUErrorBoundary>
-        <GPUVideoPreview />
+        <GPUVideoPreview isActive={isActive} />
       </GPUErrorBoundary>
     </div>
   );
