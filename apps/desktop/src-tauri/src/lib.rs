@@ -296,6 +296,8 @@ pub fn run() {
             commands::preview::get_preview_ws_port,
             // Caption preview commands (GPU-rendered via WebSocket)
             commands::preview::render_caption_overlay,
+            commands::preview::set_caption_overlay_data,
+            commands::preview::render_caption_overlay_frame,
             // Native caption preview commands (zero-latency surface rendering)
             commands::preview::init_native_caption_preview,
             commands::preview::resize_native_caption_preview,

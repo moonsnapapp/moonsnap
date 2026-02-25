@@ -156,8 +156,44 @@ pub async fn render_caption_overlay(
         .as_ref()
         .ok_or_else(|| "Preview not initialized".to_string())?;
 
+    renderer.set_caption_overlay_data(segments, settings).await;
     renderer
-        .render_captions_with_data(time_ms, width, height, &segments, &settings)
+        .render_caption_overlay_frame(time_ms, width, height)
+        .await
+}
+
+/// Update cached caption overlay data.
+/// Call this only when segments/settings change to avoid per-frame IPC payload churn.
+#[command]
+pub async fn set_caption_overlay_data(
+    state: State<'_, PreviewState>,
+    segments: Vec<CaptionSegment>,
+    settings: CaptionSettings,
+) -> Result<(), String> {
+    let renderer = state.renderer.read().await;
+    let renderer = renderer
+        .as_ref()
+        .ok_or_else(|| "Preview not initialized".to_string())?;
+
+    renderer.set_caption_overlay_data(segments, settings).await;
+    Ok(())
+}
+
+/// Render caption overlay using cached caption payload and per-frame timestamp/dimensions.
+#[command]
+pub async fn render_caption_overlay_frame(
+    state: State<'_, PreviewState>,
+    time_ms: u64,
+    width: u32,
+    height: u32,
+) -> Result<(), String> {
+    let renderer = state.renderer.read().await;
+    let renderer = renderer
+        .as_ref()
+        .ok_or_else(|| "Preview not initialized".to_string())?;
+
+    renderer
+        .render_caption_overlay_frame(time_ms, width, height)
         .await
 }
 

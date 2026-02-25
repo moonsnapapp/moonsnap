@@ -28,7 +28,13 @@ use log::info;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Instant;
-use tokio::sync::{watch, Mutex};
+use tokio::sync::{watch, Mutex, RwLock};
+
+/// Cached caption payload for fast frame-only scrub commands.
+struct CaptionOverlayData {
+    segments: Vec<CaptionSegment>,
+    settings: CaptionSettings,
+}
 
 /// Preview renderer state.
 pub struct PreviewRenderer {
@@ -44,6 +50,8 @@ pub struct PreviewRenderer {
     decoder: Mutex<Option<AsyncVideoDecoderHandle>>,
     /// Current frame number.
     frame_number: Mutex<u32>,
+    /// Cached caption overlay data updated only when content changes.
+    caption_overlay_data: RwLock<Option<Arc<CaptionOverlayData>>>,
 }
 
 impl PreviewRenderer {
@@ -60,6 +68,7 @@ impl PreviewRenderer {
             project: Mutex::new(None),
             decoder: Mutex::new(None),
             frame_number: Mutex::new(0),
+            caption_overlay_data: RwLock::new(None),
         }
     }
 
@@ -80,6 +89,8 @@ impl PreviewRenderer {
 
         *self.decoder.lock().await = Some(decoder_handle);
         *self.project.lock().await = Some(project);
+        // Project swap invalidates cached caption data from the previous file.
+        *self.caption_overlay_data.write().await = None;
         Ok(())
     }
 
@@ -167,10 +178,46 @@ impl PreviewRenderer {
         segments: &[CaptionSegment],
         settings: &CaptionSettings,
     ) -> Result<(), String> {
+        self.set_caption_overlay_data(segments.to_vec(), settings.clone())
+            .await;
+        self.render_caption_overlay_frame(time_ms, width, height)
+            .await
+    }
+
+    /// Cache caption overlay data so scrub commands only send timestamp and dimensions.
+    pub async fn set_caption_overlay_data(
+        &self,
+        segments: Vec<CaptionSegment>,
+        settings: CaptionSettings,
+    ) {
+        *self.caption_overlay_data.write().await =
+            Some(Arc::new(CaptionOverlayData { segments, settings }));
+    }
+
+    /// Render caption overlay frame using cached caption data.
+    pub async fn render_caption_overlay_frame(
+        &self,
+        time_ms: u64,
+        width: u32,
+        height: u32,
+    ) -> Result<(), String> {
+        let caption_data = self
+            .caption_overlay_data
+            .read()
+            .await
+            .as_ref()
+            .cloned()
+            .ok_or_else(|| "Caption overlay data not set".to_string())?;
+
         // Prepare captions using the caption_layer module (same as export)
         let time_secs = time_ms as f32 / 1000.0;
-        let prepared_captions =
-            prepare_captions(segments, settings, time_secs, width as f32, height as f32);
+        let prepared_captions = prepare_captions(
+            &caption_data.segments,
+            &caption_data.settings,
+            time_secs,
+            width as f32,
+            height as f32,
+        );
 
         // Render captions as text-only (transparent background)
         let mut compositor = self.compositor.lock().await;
