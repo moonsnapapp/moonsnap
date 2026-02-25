@@ -15,6 +15,8 @@ export const selectTimelineZoom = (state: VideoEditorState) => state.timelineZoo
 export const selectIsDraggingPlayhead = (state: VideoEditorState) => state.isDraggingPlayhead;
 export const selectHoveredTrack = (state: VideoEditorState) => state.hoveredTrack;
 export const selectSetHoveredTrack = (state: VideoEditorState) => state.setHoveredTrack;
+export const selectSplitMode = (state: VideoEditorState) => state.splitMode;
+export const selectSetSplitMode = (state: VideoEditorState) => state.setSplitMode;
 export const selectTrackVisibility = (state: VideoEditorState) => state.trackVisibility;
 export const selectToggleTrackVisibility = (state: VideoEditorState) => state.toggleTrackVisibility;
 export const selectHasWebcam = (state: VideoEditorState) => !!state.project?.sources.webcamVideo;
@@ -40,6 +42,7 @@ export const selectUpdateExportConfig = (state: VideoEditorState) => state.updat
 export const selectUpdateWebcamConfig = (state: VideoEditorState) => state.updateWebcamConfig;
 export const selectUpdateCursorConfig = (state: VideoEditorState) => state.updateCursorConfig;
 export const selectUpdateAudioConfig = (state: VideoEditorState) => state.updateAudioConfig;
+export const selectSplitAtTimelineTime = (state: VideoEditorState) => state.splitAtTimelineTime;
 export const selectSplitAtPlayhead = (state: VideoEditorState) => state.splitAtPlayhead;
 export const selectResetTrimSegments = (state: VideoEditorState) => state.resetTrimSegments;
 export const selectUndoTrim = (state: VideoEditorState) => state.undoTrim;

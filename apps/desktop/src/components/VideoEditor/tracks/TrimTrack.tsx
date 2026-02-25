@@ -419,6 +419,7 @@ export const TrimTrackContent = memo(function TrimTrackContent({
   if (!segments || segments.length === 0) {
     return (
       <div
+        data-trim-track
         className="relative h-12 bg-[var(--polar-mist)]/60 border-b border-[var(--glass-border)]"
         style={{ width: `${width}px` }}
       >
@@ -451,6 +452,7 @@ export const TrimTrackContent = memo(function TrimTrackContent({
 
   return (
     <div
+      data-trim-track
       className="relative h-12 bg-[var(--polar-mist)]/60 border-b border-[var(--glass-border)]"
       style={{ width: `${width}px` }}
     >

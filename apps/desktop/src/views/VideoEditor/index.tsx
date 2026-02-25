@@ -53,9 +53,10 @@ import {
   selectSelectedZoomRegionId,
   selectSetExportInPoint,
   selectSetExportOutPoint,
+  selectSetSplitMode,
   selectSetExportProgress,
   selectSetTimelineZoom,
-  selectSplitAtPlayhead,
+  selectSplitMode,
   selectTimelineZoom,
   selectTogglePlayback,
   selectUndoTrim,
@@ -126,7 +127,8 @@ export const VideoEditorView = forwardRef<VideoEditorViewRef, VideoEditorViewPro
   const selectedTrimSegmentId = useVideoEditorStore(selectSelectedTrimSegmentId);
   const selectTrimSegment = useVideoEditorStore(selectSelectTrimSegment);
   const deleteTrimSegment = useVideoEditorStore(selectDeleteTrimSegment);
-  const splitAtPlayhead = useVideoEditorStore(selectSplitAtPlayhead);
+  const splitMode = useVideoEditorStore(selectSplitMode);
+  const setSplitMode = useVideoEditorStore(selectSetSplitMode);
   const resetTrimSegments = useVideoEditorStore(selectResetTrimSegments);
   const undoTrim = useVideoEditorStore(selectUndoTrim);
   const redoTrim = useVideoEditorStore(selectRedoTrim);
@@ -213,10 +215,10 @@ export const VideoEditorView = forwardRef<VideoEditorViewRef, VideoEditorViewPro
     }
   }, [project, isSaving, saveProject]);
 
-  // Handle split at playhead - splits video trim segments
-  const handleSplitAtPlayhead = useCallback(() => {
-    splitAtPlayhead();
-  }, [splitAtPlayhead]);
+  // Toggle cut mode for click-to-cut on the timeline
+  const handleToggleCutMode = useCallback(() => {
+    setSplitMode(!splitMode);
+  }, [setSplitMode, splitMode]);
 
   // Handle reset trim segments - restore full video
   const handleResetTrimSegments = useCallback(() => {
@@ -255,7 +257,7 @@ export const VideoEditorView = forwardRef<VideoEditorViewRef, VideoEditorViewPro
     onSeekToEnd: () => project && requestSeek(project.timeline.durationMs),
     onSkipBack: handleSkipBack,
     onSkipForward: handleSkipForward,
-    onSplitAtPlayhead: handleSplitAtPlayhead,
+    onToggleCutMode: handleToggleCutMode,
     onDeleteSelected: handleDeleteSelected,
     onTimelineZoomIn: handleTimelineZoomIn,
     onTimelineZoomOut: handleTimelineZoomOut,
@@ -495,7 +497,6 @@ export const VideoEditorView = forwardRef<VideoEditorViewRef, VideoEditorViewPro
       {/* Timeline with integrated controls */}
       <VideoEditorTimeline
         onExport={handleExport}
-        onSplitAtPlayhead={handleSplitAtPlayhead}
         onResetTrimSegments={handleResetTrimSegments}
         onSetInPoint={handleSetInPoint}
         onSetOutPoint={handleSetOutPoint}

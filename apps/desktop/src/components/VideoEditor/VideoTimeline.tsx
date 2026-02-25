@@ -33,10 +33,13 @@ import {
   selectIsPlaying,
   selectPreviewTimeMs,
   selectProject,
+  selectSplitAtTimelineTime,
+  selectSplitMode,
   selectSetDraggingPlayhead,
   selectSetExportInPoint,
   selectSetExportOutPoint,
   selectSetPreviewTime,
+  selectSetSplitMode,
   selectSetTimelineContainerWidth,
   selectSetTimelineScrollLeft,
   selectSetTimelineZoom,
@@ -61,23 +64,29 @@ const PreviewScrubber = memo(function PreviewScrubber({
   previewTimeMs,
   timelineZoom,
   trackLabelWidth,
+  isCutMode,
 }: {
   previewTimeMs: number;
   timelineZoom: number;
   trackLabelWidth: number;
+  isCutMode: boolean;
 }) {
   const position = previewTimeMs * timelineZoom + trackLabelWidth;
+  const scrubberColor = isCutMode ? 'var(--coral-400)' : 'var(--ink-muted)';
 
   return (
     <div
-      className="absolute top-0 bottom-0 w-0.5 z-20 pointer-events-none bg-[var(--ink-muted)]"
-      style={{ left: `${position}px` }}
+      data-preview-scrubber
+      data-cut-mode={isCutMode}
+      className="absolute top-0 bottom-0 w-0.5 z-20 pointer-events-none"
+      style={{ left: `${position}px`, backgroundColor: scrubberColor }}
     >
       {/* Scrubber handle */}
       <div
-        className="absolute -top-1 left-1/2 -translate-x-1/2 w-3 h-4 rounded-b-sm bg-[var(--ink-muted)]"
+        className="absolute -top-1 left-1/2 -translate-x-1/2 w-3 h-4 rounded-b-sm"
         style={{
           clipPath: 'polygon(0 0, 100% 0, 100% 60%, 50% 100%, 0 60%)',
+          backgroundColor: scrubberColor,
         }}
       />
       {/* Time tooltip */}
@@ -92,7 +101,6 @@ const PreviewScrubber = memo(function PreviewScrubber({
 
 interface VideoTimelineProps {
   onExport: () => void;
-  onSplitAtPlayhead?: () => void;
   onResetTrimSegments?: () => void;
   onSetInPoint?: () => void;
   onSetOutPoint?: () => void;
@@ -134,6 +142,7 @@ const Playhead = memo(function Playhead({
 
   return (
     <div
+      data-timeline-control
       className={`
         absolute top-0 bottom-0 w-0.5 z-30 pointer-events-auto
         ${isDragging ? 'cursor-grabbing' : 'cursor-grab'}
@@ -216,6 +225,7 @@ const IOMarker = memo(function IOMarker({
     >
       {/* Draggable label handle */}
       <div
+        data-timeline-control
         className={`absolute top-0 left-1/2 -translate-x-1/2 w-4 h-4 rounded-b-sm flex items-center justify-center text-[9px] font-bold text-white pointer-events-auto ${isDragging ? 'cursor-grabbing scale-110' : 'cursor-grab hover:scale-105'} transition-transform`}
         style={{ backgroundColor: 'var(--teal-400, #2dd4bf)' }}
         onMouseDown={onMouseDown}
@@ -291,20 +301,23 @@ const IORegionOverlay = memo(function IORegionOverlay({
  * VideoTimeline - Main timeline component with ruler, tracks, and playhead.
  * Optimized to prevent re-renders during playback.
  */
-export function VideoTimeline({ onExport, onSplitAtPlayhead, onResetTrimSegments, onSetInPoint, onSetOutPoint, onClearExportRange }: VideoTimelineProps) {
+export function VideoTimeline({ onExport, onResetTrimSegments, onSetInPoint, onSetOutPoint, onClearExportRange }: VideoTimelineProps) {
   const project = useVideoEditorStore(selectProject);
   const timelineZoom = useVideoEditorStore(selectTimelineZoom);
   const isDraggingPlayhead = useVideoEditorStore(selectIsDraggingPlayhead);
   const isPlaying = useVideoEditorStore(selectIsPlaying);
+  const splitMode = useVideoEditorStore(selectSplitMode);
   const previewTimeMs = useVideoEditorStore(selectPreviewTimeMs);
   const trackVisibility = useVideoEditorStore(selectTrackVisibility);
   const exportInPointMs = useVideoEditorStore(selectExportInPointMs);
   const exportOutPointMs = useVideoEditorStore(selectExportOutPointMs);
+  const splitAtTimelineTime = useVideoEditorStore(selectSplitAtTimelineTime);
   const setTimelineScrollLeft = useVideoEditorStore(selectSetTimelineScrollLeft);
   const setTimelineContainerWidth = useVideoEditorStore(selectSetTimelineContainerWidth);
   const setDraggingPlayhead = useVideoEditorStore(selectSetDraggingPlayhead);
   const setTimelineZoom = useVideoEditorStore(selectSetTimelineZoom);
   const setPreviewTime = useVideoEditorStore(selectSetPreviewTime);
+  const setSplitMode = useVideoEditorStore(selectSetSplitMode);
   const togglePlayback = useVideoEditorStore(selectTogglePlayback);
   const fitTimelineToWindow = useVideoEditorStore(selectFitTimelineToWindow);
   const setExportInPoint = useVideoEditorStore(selectSetExportInPoint);
@@ -392,6 +405,41 @@ export function VideoTimeline({ onExport, onSplitAtPlayhead, onResetTrimSegments
   const durationWidth = effectiveDurationMs * timelineZoom;
   const timelineWidth = Math.max(durationWidth, containerWidth - trackLabelWidth);
 
+  const getTimelineClickTimeMs = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    return quantizeTimeMs(
+      Math.max(0, Math.min(effectiveDurationMs, x / timelineZoom)),
+      TIMING.SCRUB_SEEK_STEP_MS
+    );
+  }, [effectiveDurationMs, timelineZoom]);
+
+  // Capture clicks first in cut mode so segment click handlers do not swallow them.
+  const handleTimelineCutClickCapture = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    if (!splitMode) return;
+
+    // Skip cut if an IO marker drag just finished (mouseup fires click)
+    if (suppressNextClickRef.current) {
+      suppressNextClickRef.current = false;
+      e.stopPropagation();
+      return;
+    }
+
+    const target = e.target as HTMLElement;
+    if (target.closest('[data-timeline-control]')) {
+      return;
+    }
+
+    // Only cut when clicking in the trim track/segments.
+    if (!target.closest('[data-trim-track]') && !target.closest('[data-trim-segment]')) {
+      return;
+    }
+
+    e.preventDefault();
+    e.stopPropagation();
+    splitAtTimelineTime(getTimelineClickTimeMs(e));
+  }, [getTimelineClickTimeMs, splitAtTimelineTime, splitMode]);
+
   // Handle clicking on timeline to seek (event is on content div which moves with scroll)
   // Keep any selected segments - user can click empty track area to deselect
   const handleTimelineClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
@@ -400,15 +448,11 @@ export function VideoTimeline({ onExport, onSplitAtPlayhead, onResetTrimSegments
       suppressNextClickRef.current = false;
       return;
     }
-    const rect = e.currentTarget.getBoundingClientRect();
-    // No scroll offset needed - event target already accounts for scroll position
-    const x = e.clientX - rect.left;
-    const newTimeMs = quantizeTimeMs(
-      Math.max(0, Math.min(effectiveDurationMs, x / timelineZoom)),
-      TIMING.SCRUB_SEEK_STEP_MS
-    );
-    controls.seek(newTimeMs);
-  }, [effectiveDurationMs, timelineZoom, controls]);
+    if (splitMode) {
+      return;
+    }
+    controls.seek(getTimelineClickTimeMs(e));
+  }, [controls, getTimelineClickTimeMs, splitMode]);
 
   // Handle mouse move for preview scrubber (on scroll container to catch moves outside content)
   const handleTimelineMouseMove = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
@@ -602,6 +646,10 @@ export function VideoTimeline({ onExport, onSplitAtPlayhead, onResetTrimSegments
     }
   }, [timelineZoom, setTimelineZoom]);
 
+  const handleToggleCutMode = useCallback(() => {
+    setSplitMode(!splitMode);
+  }, [setSplitMode, splitMode]);
+
   return (
     <div
       ref={containerRef}
@@ -615,28 +663,26 @@ export function VideoTimeline({ onExport, onSplitAtPlayhead, onResetTrimSegments
             {/* Track Manager */}
             <TrackManager />
 
-            {/* Scissors button - split at playhead */}
-            {onSplitAtPlayhead && (
-              <>
-                <div className="w-px h-5 bg-[var(--glass-border)]" />
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <button
-                      onClick={onSplitAtPlayhead}
-                      className="glass-btn h-8 w-8"
-                    >
-                      <Scissors className="w-4 h-4" />
-                    </button>
-                  </TooltipTrigger>
-                  <TooltipContent side="bottom">
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs">Split at Playhead</span>
-                      <kbd className="kbd text-[10px] px-1.5 py-0.5">S</kbd>
-                    </div>
-                  </TooltipContent>
-                </Tooltip>
-              </>
-            )}
+            {/* Scissors button - toggle cut mode */}
+            <div className="w-px h-5 bg-[var(--glass-border)]" />
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  data-cut-mode-toggle
+                  onClick={handleToggleCutMode}
+                  className={splitMode ? 'tool-button h-8 w-8 active' : 'glass-btn h-8 w-8'}
+                  style={splitMode ? { color: 'var(--coral-400)' } : undefined}
+                >
+                  <Scissors className="w-4 h-4" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs">Cut Mode</span>
+                  <kbd className="kbd text-[10px] px-1.5 py-0.5">S</kbd>
+                </div>
+              </TooltipContent>
+            </Tooltip>
 
             {/* Reset button - restore full video */}
             {onResetTrimSegments && (
@@ -929,7 +975,7 @@ export function VideoTimeline({ onExport, onSplitAtPlayhead, onResetTrimSegments
         {/* Scrollable Timeline Content */}
         <div
           ref={scrollRef}
-          className="flex-1 min-w-0 overflow-x-auto overflow-y-auto"
+          className={`flex-1 min-w-0 overflow-x-auto overflow-y-auto ${splitMode ? 'cursor-crosshair' : ''}`}
           onScroll={handleScroll}
           onWheel={handleWheel}
           onMouseMove={handleTimelineMouseMove}
@@ -938,6 +984,7 @@ export function VideoTimeline({ onExport, onSplitAtPlayhead, onResetTrimSegments
           <div
             className="relative"
             style={{ width: `${timelineWidth}px` }}
+            onClickCapture={handleTimelineCutClickCapture}
             onClick={handleTimelineClick}
           >
             {/* Time Ruler */}
@@ -1035,6 +1082,7 @@ export function VideoTimeline({ onExport, onSplitAtPlayhead, onResetTrimSegments
                 previewTimeMs={previewTimeMs}
                 timelineZoom={timelineZoom}
                 trackLabelWidth={0}
+                isCutMode={splitMode}
               />
             )}
 
