@@ -15,7 +15,12 @@
 import { useEffect } from 'react';
 import { useCaptureStore } from '../stores/captureStore';
 import { useEditorStore } from '../stores/editorStore';
-import { isCropBoundsAnnotation, isCropRegionAnnotation, isCompositorSettingsAnnotation } from '../types';
+import {
+  isCropBoundsAnnotation,
+  isCropRegionAnnotation,
+  isCompositorSettingsAnnotation,
+  DEFAULT_COMPOSITOR_SETTINGS,
+} from '../types';
 import type { CanvasShape } from '../types';
 import { ensureBackgroundShape } from '../utils/canvasGeometry';
 
@@ -79,22 +84,22 @@ export function useProjectAnnotations() {
       // Load compositor settings if present (type is narrowed by type guard)
       if (compositorAnn) {
         setCompositorSettings({
-          enabled: compositorAnn.enabled,
-          backgroundType: compositorAnn.backgroundType ?? 'gradient',
-          backgroundColor: compositorAnn.backgroundColor ?? '#6366f1',
-          gradientStart: compositorAnn.gradientStart ?? '#667eea',
-          gradientEnd: compositorAnn.gradientEnd ?? '#764ba2',
-          gradientAngle: compositorAnn.gradientAngle ?? 135,
-          wallpaper: compositorAnn.wallpaper ?? null,
-          backgroundImage: compositorAnn.backgroundImage ?? null,
-          padding: compositorAnn.padding ?? 64,
-          borderRadius: compositorAnn.borderRadius ?? 12,
-          borderRadiusType: compositorAnn.borderRadiusType ?? 'squircle',
-          shadowIntensity: compositorAnn.shadowIntensity ?? 0.5,
-          borderWidth: compositorAnn.borderWidth ?? 2,
-          borderColor: compositorAnn.borderColor ?? '#ffffff',
-          borderOpacity: compositorAnn.borderOpacity ?? 0,
-          aspectRatio: compositorAnn.aspectRatio ?? 'auto',
+          enabled: compositorAnn.enabled ?? DEFAULT_COMPOSITOR_SETTINGS.enabled,
+          backgroundType: compositorAnn.backgroundType ?? DEFAULT_COMPOSITOR_SETTINGS.backgroundType,
+          backgroundColor: compositorAnn.backgroundColor ?? DEFAULT_COMPOSITOR_SETTINGS.backgroundColor,
+          gradientStart: compositorAnn.gradientStart ?? DEFAULT_COMPOSITOR_SETTINGS.gradientStart,
+          gradientEnd: compositorAnn.gradientEnd ?? DEFAULT_COMPOSITOR_SETTINGS.gradientEnd,
+          gradientAngle: compositorAnn.gradientAngle ?? DEFAULT_COMPOSITOR_SETTINGS.gradientAngle,
+          wallpaper: compositorAnn.wallpaper ?? DEFAULT_COMPOSITOR_SETTINGS.wallpaper,
+          backgroundImage: compositorAnn.backgroundImage ?? DEFAULT_COMPOSITOR_SETTINGS.backgroundImage,
+          padding: compositorAnn.padding ?? DEFAULT_COMPOSITOR_SETTINGS.padding,
+          borderRadius: compositorAnn.borderRadius ?? DEFAULT_COMPOSITOR_SETTINGS.borderRadius,
+          borderRadiusType: compositorAnn.borderRadiusType ?? DEFAULT_COMPOSITOR_SETTINGS.borderRadiusType,
+          shadowIntensity: compositorAnn.shadowIntensity ?? DEFAULT_COMPOSITOR_SETTINGS.shadowIntensity,
+          borderWidth: compositorAnn.borderWidth ?? DEFAULT_COMPOSITOR_SETTINGS.borderWidth,
+          borderColor: compositorAnn.borderColor ?? DEFAULT_COMPOSITOR_SETTINGS.borderColor,
+          borderOpacity: compositorAnn.borderOpacity ?? DEFAULT_COMPOSITOR_SETTINGS.borderOpacity,
+          aspectRatio: compositorAnn.aspectRatio ?? DEFAULT_COMPOSITOR_SETTINGS.aspectRatio,
         });
       }
 

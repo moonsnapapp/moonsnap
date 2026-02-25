@@ -2,6 +2,8 @@ import React, { useRef, useMemo, useEffect, useState, forwardRef, useImperativeH
 import { Stage, Layer, Rect, Group, Transformer } from 'react-konva';
 import Konva from 'konva';
 import useImage from 'use-image';
+import { convertFileSrc } from '@tauri-apps/api/core';
+import { resolveResource } from '@tauri-apps/api/path';
 import { Loader2 } from 'lucide-react';
 import { useFastImage } from '../../hooks/useFastImage';
 import type { Tool, CanvasShape } from '../../types';
@@ -96,6 +98,7 @@ export const EditorCanvas = React.memo(forwardRef<EditorCanvasRef, EditorCanvasP
   const selectedIds = useEditorStore((state) => state.selectedIds);
   const setSelectedIds = useEditorStore((state) => state.setSelectedIds);
   const compositorSettings = useEditorStore((state) => state.compositorSettings);
+  const setCompositorSettings = useEditorStore((state) => state.setCompositorSettings);
   const blurType = useEditorStore((state) => state.blurType);
   const blurAmount = useEditorStore((state) => state.blurAmount);
   const canvasBounds = useEditorStore((state) => state.canvasBounds);
@@ -122,6 +125,44 @@ export const EditorCanvas = React.memo(forwardRef<EditorCanvasRef, EditorCanvasP
   const image = (isRgbaFile ? fastImage : standardImage) as HTMLImageElement | undefined;
   const imageStatus = isRgbaFile ? fastImageStatus : standardImageStatus;
   const isImageLoading = imageStatus === 'loading';
+  const failedWallpaperResolveRef = useRef<string | null>(null);
+
+  // Auto-resolve wallpaper URL so default/loaded wallpaper backgrounds initialize
+  // without requiring a manual wallpaper click in the Style tab.
+  useEffect(() => {
+    if (compositorSettings.backgroundType !== 'wallpaper') return;
+    if (!compositorSettings.wallpaper) return;
+    if (compositorSettings.backgroundImage) {
+      failedWallpaperResolveRef.current = null;
+      return;
+    }
+    if (failedWallpaperResolveRef.current === compositorSettings.wallpaper) return;
+
+    let isCancelled = false;
+    const [theme, name] = compositorSettings.wallpaper.split('/');
+    if (!theme || !name) return;
+
+    void resolveResource(`assets/backgrounds/${theme}/${name}.jpg`)
+      .then((resolvedPath) => {
+        if (isCancelled) return;
+        failedWallpaperResolveRef.current = null;
+        setCompositorSettings({ backgroundImage: convertFileSrc(resolvedPath) });
+      })
+      .catch(() => {
+        if (!isCancelled) {
+          failedWallpaperResolveRef.current = compositorSettings.wallpaper;
+        }
+      });
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [
+    compositorSettings.backgroundType,
+    compositorSettings.wallpaper,
+    compositorSettings.backgroundImage,
+    setCompositorSettings,
+  ]);
 
   // Checkerboard pattern for transparency indication (created once, cached)
   const [checkerPatternImage] = useState(() => createCheckerPattern());

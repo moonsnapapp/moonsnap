@@ -246,14 +246,16 @@ export interface CompositorSettings {
   aspectRatio: 'auto' | '16:9' | '4:3' | '1:1' | 'twitter' | 'instagram';
 }
 
+export const DEFAULT_COMPOSITOR_WALLPAPER_ID = 'macOS/sequoia-dark';
+
 export const DEFAULT_COMPOSITOR_SETTINGS: CompositorSettings = {
   enabled: false,
-  backgroundType: 'gradient',
+  backgroundType: 'wallpaper',
   backgroundColor: '#6366f1',
   gradientStart: '#667eea',
   gradientEnd: '#764ba2',
   gradientAngle: 135,
-  wallpaper: null,
+  wallpaper: DEFAULT_COMPOSITOR_WALLPAPER_ID,
   backgroundImage: null,
   padding: 64,
   borderRadius: 12,

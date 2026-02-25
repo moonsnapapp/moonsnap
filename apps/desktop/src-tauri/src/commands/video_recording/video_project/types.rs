@@ -857,7 +857,7 @@ pub struct BackgroundConfig {
 impl Default for BackgroundConfig {
     fn default() -> Self {
         Self {
-            enabled: true,
+            enabled: false,
             bg_type: BackgroundType::Wallpaper,
             solid_color: "#ffffff".to_string(), // Cap's default: white
             gradient_start: "#4785ff".to_string(), // Cap's default: blue [71, 133, 255]
