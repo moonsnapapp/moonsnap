@@ -11,9 +11,9 @@ import { useCaptureSettingsStore } from '../../stores/captureSettingsStore';
 import { CaptureService } from '../../services/captureService';
 import type { CaptureListItem } from '../../types';
 import { LAYOUT, TIMING } from '../../constants';
+import { isTextInputTarget } from '../../utils/keyboard';
 
 import { useMarqueeSelection, useDragDropImport, useMomentumScroll, useResizeTransitionLock, type VirtualLayoutInfo } from './hooks';
-import { isTextInputTarget } from '../../hooks/useKeyboardShortcuts';
 // Direct imports avoid barrel file bundling overhead
 import { DateHeader } from './components/DateHeader';
 import { EmptyState } from './components/EmptyState';
@@ -285,7 +285,7 @@ export const CaptureLibrary: React.FC = () => {
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       // Don't trigger if typing in an input field
-      if (isTextInputTarget(e)) {
+      if (isTextInputTarget(e.target)) {
         return;
       }
 

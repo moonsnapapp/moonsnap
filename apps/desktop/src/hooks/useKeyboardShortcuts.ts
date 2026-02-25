@@ -1,16 +1,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { nanoid } from 'nanoid';
 import type { CanvasShape, Tool } from '../types';
-
-/** Check if keyboard event target is a text input (should ignore shortcuts) */
-export function isTextInputTarget(e: KeyboardEvent): boolean {
-  return e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement;
-}
-
-/** Check if a ClipboardEvent target is a text input */
-function isTextInputClipboardTarget(e: ClipboardEvent): boolean {
-  return e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement;
-}
+import { isTextInputTarget } from '../utils/keyboard';
 
 interface UseKeyboardShortcutsProps {
   selectedIds: string[];
@@ -107,11 +98,11 @@ export const useKeyboardShortcuts = ({
       onShapesChange([...shapes, ...duplicatedShapes]);
       setSelectedIds(newSelectedIds);
     });
-  }, [selectedIds, shapes, onShapesChange, setSelectedIds]);
+  }, [selectedIds, shapes, onShapesChange, setSelectedIds, recordAction]);
 
   // Paste image from clipboard handler
   const handlePaste = useCallback((e: ClipboardEvent) => {
-    if (isTextInputClipboardTarget(e)) return;
+    if (isTextInputTarget(e.target)) return;
 
     const items = e.clipboardData?.items;
     if (!items) return;
@@ -181,7 +172,7 @@ export const useKeyboardShortcuts = ({
       }
 
       // Don't handle shortcuts if user is typing in an input
-      if (isTextInputTarget(e)) return;
+      if (isTextInputTarget(e.target)) return;
 
       // Delete selected shapes
       if ((e.key === 'Delete' || e.key === 'Backspace') && selectedIds.length > 0) {

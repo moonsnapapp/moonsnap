@@ -1,35 +1,13 @@
-import { create } from 'zustand';
-import { invoke } from '@tauri-apps/api/core';
 import { audioLogger } from '../utils/logger';
 import type { AudioInputDevice } from '../types/generated';
+import { createDeviceStore } from './createDeviceStore';
 
-interface AudioInputState {
-  // State
-  devices: AudioInputDevice[];
-  isLoadingDevices: boolean;
-  devicesError: string | null;
-
-  // Actions
-  loadDevices: () => Promise<void>;
-}
-
-export const useAudioInputStore = create<AudioInputState>((set) => ({
-  devices: [],
-  isLoadingDevices: false,
-  devicesError: null,
-
-  loadDevices: async () => {
-    set({ isLoadingDevices: true, devicesError: null });
-    try {
-      const devices = await invoke<AudioInputDevice[]>('list_audio_input_devices');
-      set({ devices, isLoadingDevices: false });
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      set({ devicesError: message, isLoadingDevices: false });
-      audioLogger.error('Failed to load audio input devices:', error);
-    }
+export const useAudioInputStore = createDeviceStore<AudioInputDevice>({
+  command: 'list_audio_input_devices',
+  onError: (error) => {
+    audioLogger.error('Failed to load audio input devices:', error);
   },
-}));
+});
 
 // Selectors
 export const useAudioInputDevices = () =>

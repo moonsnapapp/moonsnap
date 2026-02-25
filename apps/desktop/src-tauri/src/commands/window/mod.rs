@@ -11,6 +11,7 @@
 //! ```
 
 pub mod capture;
+pub(crate) mod editor_windows;
 pub mod image_editor;
 pub mod recording;
 pub mod settings;

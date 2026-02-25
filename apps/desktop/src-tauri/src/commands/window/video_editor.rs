@@ -7,6 +7,10 @@ use std::collections::HashMap;
 use std::sync::Mutex;
 use tauri::{command, AppHandle, Manager, WebviewUrl, WebviewWindowBuilder};
 
+use super::editor_windows::{
+    find_path_by_label, focus_or_remove_stale_window, generate_window_label, remove_path_by_label,
+};
+
 /// Video editor window label prefix
 const VIDEO_EDITOR_LABEL_PREFIX: &str = "video-editor-";
 
@@ -24,15 +28,6 @@ fn get_editors() -> std::sync::MutexGuard<'static, Option<HashMap<String, String
     guard
 }
 
-/// Generate a unique window label for a new video editor
-fn generate_window_label() -> String {
-    let timestamp = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .expect("system time before unix epoch")
-        .as_millis();
-    format!("{}{}", VIDEO_EDITOR_LABEL_PREFIX, timestamp)
-}
-
 /// Show or create a video editor window for the given project path.
 /// If a window for this project already exists, focus it instead.
 #[command]
@@ -47,24 +42,12 @@ pub async fn show_video_editor_window(
         .expect("editors initialized by get_editors");
 
     // Check if a window for this project already exists
-    if let Some(existing_label) = editors_map.get(&project_path) {
-        if let Some(window) = app.get_webview_window(existing_label) {
-            // Window exists - focus it
-            window
-                .show()
-                .map_err(|e| format!("Failed to show window: {}", e))?;
-            window
-                .set_focus()
-                .map_err(|e| format!("Failed to focus window: {}", e))?;
-            return Ok(existing_label.clone());
-        } else {
-            // Window was closed but not cleaned up - remove from tracking
-            editors_map.remove(&project_path);
-        }
+    if let Some(existing_label) = focus_or_remove_stale_window(&app, editors_map, &project_path)? {
+        return Ok(existing_label);
     }
 
     // Create new window
-    let label = generate_window_label();
+    let label = generate_window_label(VIDEO_EDITOR_LABEL_PREFIX);
 
     // Pass project path via URL query parameter for immediate availability
     let encoded_path = urlencoding::encode(&project_path);
@@ -112,15 +95,7 @@ pub async fn close_video_editor_window(app: AppHandle, label: String) -> Result<
         .as_mut()
         .expect("editors initialized by get_editors");
 
-    // Find and remove by label
-    let project_path = editors_map
-        .iter()
-        .find(|(_, v)| **v == label)
-        .map(|(k, _)| k.clone());
-
-    if let Some(path) = project_path {
-        editors_map.remove(&path);
-    }
+    remove_path_by_label(editors_map, &label);
 
     // Close the window
     if let Some(window) = app.get_webview_window(&label) {
@@ -141,10 +116,7 @@ pub fn get_video_editor_project_path(label: String) -> Option<String> {
         .as_ref()
         .expect("editors initialized by get_editors");
 
-    editors_map
-        .iter()
-        .find(|(_, v)| **v == label)
-        .map(|(k, _)| k.clone())
+    find_path_by_label(editors_map, &label)
 }
 
 /// Clean up tracking when a video editor window is closed.
@@ -160,14 +132,7 @@ pub fn on_video_editor_closed(label: &str) {
         .as_mut()
         .expect("editors initialized by get_editors");
 
-    // Find and remove by label
-    let project_path = editors_map
-        .iter()
-        .find(|(_, v)| v.as_str() == label)
-        .map(|(k, _)| k.clone());
-
-    if let Some(path) = project_path {
-        editors_map.remove(&path);
+    if let Some(path) = remove_path_by_label(editors_map, label) {
         log::info!("Cleaned up video editor window: {} ({})", label, path);
     }
 }

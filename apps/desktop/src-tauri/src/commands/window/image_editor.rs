@@ -7,6 +7,10 @@ use std::collections::HashMap;
 use std::sync::Mutex;
 use tauri::{command, AppHandle, Manager, WebviewUrl, WebviewWindowBuilder};
 
+use super::editor_windows::{
+    find_path_by_label, focus_or_remove_stale_window, generate_window_label, remove_path_by_label,
+};
+
 /// Image editor window label prefix
 const IMAGE_EDITOR_LABEL_PREFIX: &str = "image-editor-";
 
@@ -24,15 +28,6 @@ fn get_editors() -> std::sync::MutexGuard<'static, Option<HashMap<String, String
     guard
 }
 
-/// Generate a unique window label for a new image editor
-fn generate_window_label() -> String {
-    let timestamp = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .expect("system time before unix epoch")
-        .as_millis();
-    format!("{}{}", IMAGE_EDITOR_LABEL_PREFIX, timestamp)
-}
-
 /// Show or create an image editor window for the given capture path.
 /// If a window for this capture already exists, focus it instead.
 #[command]
@@ -47,24 +42,12 @@ pub async fn show_image_editor_window(
         .expect("editors initialized by get_editors");
 
     // Check if a window for this capture already exists
-    if let Some(existing_label) = editors_map.get(&capture_path) {
-        if let Some(window) = app.get_webview_window(existing_label) {
-            // Window exists - focus it
-            window
-                .show()
-                .map_err(|e| format!("Failed to show window: {}", e))?;
-            window
-                .set_focus()
-                .map_err(|e| format!("Failed to focus window: {}", e))?;
-            return Ok(existing_label.clone());
-        } else {
-            // Window was closed but not cleaned up - remove from tracking
-            editors_map.remove(&capture_path);
-        }
+    if let Some(existing_label) = focus_or_remove_stale_window(&app, editors_map, &capture_path)? {
+        return Ok(existing_label);
     }
 
     // Create new window
-    let label = generate_window_label();
+    let label = generate_window_label(IMAGE_EDITOR_LABEL_PREFIX);
 
     // Pass capture path via URL query parameter for immediate availability
     let encoded_path = urlencoding::encode(&capture_path);
@@ -112,15 +95,7 @@ pub async fn close_image_editor_window(app: AppHandle, label: String) -> Result<
         .as_mut()
         .expect("editors initialized by get_editors");
 
-    // Find and remove by label
-    let capture_path = editors_map
-        .iter()
-        .find(|(_, v)| **v == label)
-        .map(|(k, _)| k.clone());
-
-    if let Some(path) = capture_path {
-        editors_map.remove(&path);
-    }
+    remove_path_by_label(editors_map, &label);
 
     // Close the window
     if let Some(window) = app.get_webview_window(&label) {
@@ -141,10 +116,7 @@ pub fn get_image_editor_capture_path(label: String) -> Option<String> {
         .as_ref()
         .expect("editors initialized by get_editors");
 
-    editors_map
-        .iter()
-        .find(|(_, v)| **v == label)
-        .map(|(k, _)| k.clone())
+    find_path_by_label(editors_map, &label)
 }
 
 /// Clean up tracking when an image editor window is closed.
@@ -160,14 +132,7 @@ pub fn on_image_editor_closed(label: &str) {
         .as_mut()
         .expect("editors initialized by get_editors");
 
-    // Find and remove by label
-    let capture_path = editors_map
-        .iter()
-        .find(|(_, v)| v.as_str() == label)
-        .map(|(k, _)| k.clone());
-
-    if let Some(path) = capture_path {
-        editors_map.remove(&path);
+    if let Some(path) = remove_path_by_label(editors_map, label) {
         log::info!("Cleaned up image editor window: {} ({})", label, path);
     }
 }

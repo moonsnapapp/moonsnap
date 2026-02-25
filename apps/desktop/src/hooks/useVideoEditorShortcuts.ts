@@ -1,4 +1,5 @@
-import { useEffect, useCallback } from 'react';
+import { useEffect } from 'react';
+import { isTextInputTarget } from '../utils/keyboard';
 
 /**
  * Keyboard shortcuts for the video editor.
@@ -63,17 +64,12 @@ export function useVideoEditorShortcuts({
   onSetInPoint,
   onSetOutPoint,
 }: UseVideoEditorShortcutsProps) {
-  // Check if event target is an input field
-  const isInputTarget = useCallback((e: KeyboardEvent): boolean => {
-    return e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement;
-  }, []);
-
   useEffect(() => {
     if (!enabled) return;
 
     const handleKeyDown = (e: KeyboardEvent) => {
       // Don't handle shortcuts when typing in an input
-      if (isInputTarget(e)) return;
+      if (isTextInputTarget(e.target)) return;
 
       const isMod = e.ctrlKey || e.metaKey;
 
@@ -166,7 +162,6 @@ export function useVideoEditorShortcuts({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [
     enabled,
-    isInputTarget,
     onTogglePlayback,
     onSeekToStart,
     onSeekToEnd,
