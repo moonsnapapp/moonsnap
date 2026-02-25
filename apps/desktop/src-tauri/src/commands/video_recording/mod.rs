@@ -548,14 +548,9 @@ pub fn list_audio_input_devices() -> Result<Vec<AudioInputDevice>, String> {
 /// Close the webcam preview window.
 #[command]
 pub async fn close_webcam_preview(app: tauri::AppHandle) -> Result<(), String> {
-    // IMPORTANT: Stop GPU preview FIRST before destroying the window
-    // This ensures the render thread exits cleanly
-    webcam::stop_gpu_preview();
-
-    if let Some(window) = app.get_webview_window("webcam-preview") {
-        window.destroy().map_err(|e| e.to_string())?;
-        log::debug!("[WEBCAM] Preview window closed");
-    }
+    // Route through preview manager to keep internal state synchronized.
+    webcam::hide_camera_preview(&app);
+    log::debug!("[WEBCAM] Preview window closed");
     Ok(())
 }
 

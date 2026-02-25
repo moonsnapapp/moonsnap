@@ -26,7 +26,8 @@ const BASE_CURSOR_HEIGHT = 24.0; // Base cursor height in pixels
 const REFERENCE_HEIGHT = 720.0;  // Reference video height for scaling
 
 // Motion blur constants - must stay aligned with Rust compositor logic
-const MOTION_BLUR_SAMPLES = 20;
+const MOTION_BLUR_SAMPLES = 32;
+const MOTION_BLUR_BASE_TRAIL_SAMPLES = 19; // Equivalent to prior 20-sample implementation.
 const MOTION_BLUR_MIN_VELOCITY = 0.005;
 const MOTION_BLUR_VELOCITY_RAMP_END = 0.03;
 const MOTION_BLUR_MAX_TRAIL = 0.15;
@@ -433,6 +434,8 @@ export const CursorOverlay = memo(function CursorOverlay({
     // Draw a motion trail (if enabled) and then the main cursor sample.
     const drawMotionBlurTrail = (drawSample: (x: number, y: number, opacity: number) => void) => {
       if (shouldDrawMotionBlur) {
+        const trailSampleCount = Math.max(1, MOTION_BLUR_SAMPLES - 1);
+        const weightNormalization = MOTION_BLUR_BASE_TRAIL_SAMPLES / trailSampleCount;
         for (let i = MOTION_BLUR_SAMPLES - 1; i >= 1; i -= 1) {
           const t = i / (MOTION_BLUR_SAMPLES - 1);
           const easedT = smoothstep(0, 1, t);
@@ -440,7 +443,7 @@ export const CursorOverlay = memo(function CursorOverlay({
           const offsetY = blurDirY * trailLength * easedT;
           const sampleX = pixelX + offsetX * roundedRenderWidth;
           const sampleY = pixelY + offsetY * roundedRenderHeight;
-          const weight = (1 - t * 0.75) * motionBlur * velocityFactor;
+          const weight = (1 - t * 0.75) * motionBlur * velocityFactor * weightNormalization;
           if (weight > 0) {
             drawSample(sampleX, sampleY, weight);
           }

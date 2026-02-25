@@ -94,8 +94,13 @@ const CLICK_SHRINK_SIZE: f32 = 0.7;
 // Motion Blur Configuration (aligned with Cap)
 // ============================================================================
 
-/// Number of samples for motion blur effect (Cap uses 20 for GPU shader).
-const MOTION_BLUR_SAMPLES: usize = 20;
+/// Number of samples for motion blur effect.
+/// Higher sample count improves trail smoothness.
+const MOTION_BLUR_SAMPLES: usize = 32;
+
+/// Baseline trail sample count from the previous 20-sample implementation.
+/// Used to normalize trail brightness as sample count changes.
+const MOTION_BLUR_BASE_TRAIL_SAMPLES: f32 = 19.0;
 
 /// Minimum velocity (normalized units/frame) to trigger motion blur.
 /// Below this threshold, no blur is applied.
@@ -1213,6 +1218,54 @@ impl VideoContentBounds {
     }
 }
 
+/// Sample a cursor texture with bilinear filtering.
+fn sample_cursor_bilinear(cursor_image: &DecodedCursorImage, src_x: f32, src_y: f32) -> [f32; 4] {
+    let width = cursor_image.width as i32;
+    let height = cursor_image.height as i32;
+
+    if width <= 0 || height <= 0 {
+        return [0.0, 0.0, 0.0, 0.0];
+    }
+
+    let clamped_x = src_x.clamp(0.0, (width - 1) as f32);
+    let clamped_y = src_y.clamp(0.0, (height - 1) as f32);
+
+    let x0 = clamped_x.floor() as i32;
+    let y0 = clamped_y.floor() as i32;
+    let x1 = (x0 + 1).min(width - 1);
+    let y1 = (y0 + 1).min(height - 1);
+
+    let tx = clamped_x - x0 as f32;
+    let ty = clamped_y - y0 as f32;
+
+    let sample = |x: i32, y: i32| -> [f32; 4] {
+        let idx = ((y as u32 * cursor_image.width + x as u32) * 4) as usize;
+        if idx + 3 >= cursor_image.data.len() {
+            return [0.0, 0.0, 0.0, 0.0];
+        }
+        [
+            cursor_image.data[idx] as f32,
+            cursor_image.data[idx + 1] as f32,
+            cursor_image.data[idx + 2] as f32,
+            cursor_image.data[idx + 3] as f32,
+        ]
+    };
+
+    let p00 = sample(x0, y0);
+    let p10 = sample(x1, y0);
+    let p01 = sample(x0, y1);
+    let p11 = sample(x1, y1);
+
+    let mut out = [0.0_f32; 4];
+    for channel in 0..4 {
+        let top = p00[channel] * (1.0 - tx) + p10[channel] * tx;
+        let bottom = p01[channel] * (1.0 - tx) + p11[channel] * tx;
+        out[channel] = top * (1.0 - ty) + bottom * ty;
+    }
+
+    out
+}
+
 /// Composite cursor image onto frame (CPU-based).
 ///
 /// Uses the cursor's opacity and scale properties for idle fade-out and click animation.
@@ -1243,6 +1296,9 @@ pub fn composite_cursor(
 
     // Combine base scale with click animation scale
     let scale = base_scale * cursor.scale;
+    if scale <= 0.0 {
+        return;
+    }
 
     // Convert normalized position to pixel position within video content area,
     // then offset by video bounds to position correctly within composition
@@ -1253,51 +1309,54 @@ pub fn composite_cursor(
     let draw_x = pixel_x - (cursor_image.hotspot_x as f32 * scale);
     let draw_y = pixel_y - (cursor_image.hotspot_y as f32 * scale);
 
-    let scaled_width = (cursor_image.width as f32 * scale).round() as i32;
-    let scaled_height = (cursor_image.height as f32 * scale).round() as i32;
+    let scaled_width = cursor_image.width as f32 * scale;
+    let scaled_height = cursor_image.height as f32 * scale;
+    if scaled_width <= 0.0 || scaled_height <= 0.0 {
+        return;
+    }
 
-    // Alpha blending with premultiplied alpha support (like Cap)
-    for sy in 0..scaled_height {
-        for sx in 0..scaled_width {
-            // Calculate destination pixel
-            let dst_x = (draw_x + sx as f32).round() as i32;
-            let dst_y = (draw_y + sy as f32).round() as i32;
+    let min_x = draw_x.floor().max(0.0) as i32;
+    let min_y = draw_y.floor().max(0.0) as i32;
+    let max_x = (draw_x + scaled_width).ceil().min(frame_width as f32) as i32;
+    let max_y = (draw_y + scaled_height).ceil().min(frame_height as f32) as i32;
 
-            // Bounds check
-            if dst_x < 0 || dst_y < 0 || dst_x >= frame_width as i32 || dst_y >= frame_height as i32
+    if min_x >= max_x || min_y >= max_y {
+        return;
+    }
+
+    // Alpha blending with premultiplied alpha support.
+    // Use bilinear filtering for smoother cursor edges during scale and motion blur trails.
+    for dst_y in min_y..max_y {
+        for dst_x in min_x..max_x {
+            let src_x = ((dst_x as f32 + 0.5) - draw_x) / scale - 0.5;
+            let src_y = ((dst_y as f32 + 0.5) - draw_y) / scale - 0.5;
+
+            if src_x < 0.0
+                || src_y < 0.0
+                || src_x > (cursor_image.width as f32 - 1.0)
+                || src_y > (cursor_image.height as f32 - 1.0)
             {
                 continue;
             }
 
-            // Calculate source pixel (nearest-neighbor scaling)
-            let src_x = ((sx as f32 / scale).floor() as u32).min(cursor_image.width - 1);
-            let src_y = ((sy as f32 / scale).floor() as u32).min(cursor_image.height - 1);
+            let [src_r, src_g, src_b, src_a] = sample_cursor_bilinear(cursor_image, src_x, src_y);
 
-            let src_idx = ((src_y * cursor_image.width + src_x) * 4) as usize;
-            let dst_idx = ((dst_y as u32 * frame_width + dst_x as u32) * 4) as usize;
-
-            if src_idx + 3 >= cursor_image.data.len() || dst_idx + 3 >= frame_data.len() {
+            if src_a <= 0.0 {
                 continue;
             }
 
-            // Get source pixel (cursor) - premultiplied alpha
-            let src_r = cursor_image.data[src_idx] as f32;
-            let src_g = cursor_image.data[src_idx + 1] as f32;
-            let src_b = cursor_image.data[src_idx + 2] as f32;
-            let src_a = cursor_image.data[src_idx + 3] as f32;
-
-            // Skip fully transparent pixels
-            if src_a == 0.0 {
+            let dst_idx = ((dst_y as u32 * frame_width + dst_x as u32) * 4) as usize;
+            if dst_idx + 3 >= frame_data.len() {
                 continue;
             }
 
             // For premultiplied alpha blending:
             // result = src + dst * (1 - src_alpha)
-            // Where src is already premultiplied by its alpha
+            // Where src is already premultiplied by its alpha.
             let alpha = (src_a / 255.0) * cursor.opacity;
             let inv_alpha = 1.0 - alpha;
 
-            // Source is premultiplied, so we multiply by opacity, not full alpha
+            // Source is premultiplied, so we multiply by opacity, not full alpha.
             frame_data[dst_idx] = ((src_r * cursor.opacity)
                 + (frame_data[dst_idx] as f32 * inv_alpha))
                 .min(255.0) as u8;
@@ -1307,7 +1366,7 @@ pub fn composite_cursor(
             frame_data[dst_idx + 2] = ((src_b * cursor.opacity)
                 + (frame_data[dst_idx + 2] as f32 * inv_alpha))
                 .min(255.0) as u8;
-            // Keep destination alpha (frame_data[dst_idx + 3])
+            // Keep destination alpha (frame_data[dst_idx + 3]).
         }
     }
 }
@@ -1413,6 +1472,12 @@ pub fn composite_cursor_with_motion_blur(
     // Normalize velocity direction
     let dir_x = -cursor.velocity_x / velocity_magnitude;
     let dir_y = -cursor.velocity_y / velocity_magnitude;
+    let trail_sample_count = (MOTION_BLUR_SAMPLES.saturating_sub(1)) as f32;
+    let weight_normalization = if trail_sample_count > 0.0 {
+        MOTION_BLUR_BASE_TRAIL_SAMPLES / trail_sample_count
+    } else {
+        1.0
+    };
 
     // Render trail samples from back to front (excluding the main cursor sample).
     // Main cursor is rendered once at full opacity after the trail.
@@ -1428,7 +1493,7 @@ pub fn composite_cursor_with_motion_blur(
 
         // Weight distribution like Cap: weight = 1.0 - t * 0.75
         // This creates smoother falloff than our previous 0.85
-        let weight = (1.0 - t * 0.75) * motion_blur_amount * velocity_factor;
+        let weight = (1.0 - t * 0.75) * motion_blur_amount * velocity_factor * weight_normalization;
         if weight <= 0.0 {
             continue;
         }
