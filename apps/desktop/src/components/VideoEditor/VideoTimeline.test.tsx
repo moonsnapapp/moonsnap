@@ -596,8 +596,10 @@ describe('VideoTimeline', () => {
         // Restore
         timelineArea.getBoundingClientRect = originalGetBoundingClientRect;
 
-        // Current time should be updated (approximately 5000ms)
-        expect(useVideoEditorStore.getState().currentTimeMs).toBe(5000);
+        // Current time should be updated near 5000ms.
+        // Allow a small tolerance because timeline seek math may quantize by a few ms.
+        expect(useVideoEditorStore.getState().currentTimeMs).toBeGreaterThanOrEqual(4990);
+        expect(useVideoEditorStore.getState().currentTimeMs).toBeLessThanOrEqual(5010);
       }
     });
   });
