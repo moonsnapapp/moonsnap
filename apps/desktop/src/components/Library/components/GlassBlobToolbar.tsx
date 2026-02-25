@@ -1,8 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import {
   Star,
-  LayoutGrid,
-  List,
   FolderOpen,
   Search,
   X,
@@ -28,8 +26,6 @@ interface GlassBlobToolbarProps {
   allTags: string[];
   filterMediaTypes: string[];
   onFilterMediaTypesChange: (types: string[]) => void;
-  viewMode: 'grid' | 'list';
-  onViewModeChange: (mode: 'grid' | 'list') => void;
   selectedCount: number;
   onDeleteSelected: () => void;
   onClearSelection: () => void;
@@ -46,8 +42,6 @@ export const GlassBlobToolbar: React.FC<GlassBlobToolbarProps> = ({
   allTags,
   filterMediaTypes,
   onFilterMediaTypesChange,
-  viewMode,
-  onViewModeChange,
   selectedCount,
   onDeleteSelected,
   onClearSelection,
@@ -198,37 +192,6 @@ export const GlassBlobToolbar: React.FC<GlassBlobToolbarProps> = ({
           </TooltipTrigger>
           <TooltipContent side="top">
             <p className="text-xs">GIFs</p>
-          </TooltipContent>
-        </Tooltip>
-
-        <div className="cloud-divider" />
-
-        {/* View modes */}
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <button
-              onClick={() => onViewModeChange('grid')}
-              className={`cloud-btn cloud-btn--small ${viewMode === 'grid' ? 'cloud-btn--active' : ''}`}
-            >
-              <LayoutGrid className="w-[15px] h-[15px]" />
-            </button>
-          </TooltipTrigger>
-          <TooltipContent side="top">
-            <p className="text-xs">Grid View</p>
-          </TooltipContent>
-        </Tooltip>
-
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <button
-              onClick={() => onViewModeChange('list')}
-              className={`cloud-btn cloud-btn--small ${viewMode === 'list' ? 'cloud-btn--active' : ''}`}
-            >
-              <List className="w-[15px] h-[15px]" />
-            </button>
-          </TooltipTrigger>
-          <TooltipContent side="top">
-            <p className="text-xs">List View</p>
           </TooltipContent>
         </Tooltip>
 

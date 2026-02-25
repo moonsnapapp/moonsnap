@@ -4,7 +4,6 @@ import type { CaptureListItem } from '../../types';
 // Direct imports avoid barrel file bundling overhead
 import { DateHeader } from './components/DateHeader';
 import { CaptureCard } from './components/CaptureCard';
-import { CaptureRow } from './components/CaptureRow';
 import { useThumbnailPrefetch } from './hooks';
 import { LAYOUT, TIMING } from '../../constants';
 
@@ -20,7 +19,6 @@ type VirtualRow =
 
 interface VirtualizedGridProps {
   dateGroups: DateGroup[];
-  viewMode: 'grid' | 'list';
   selectedIds: Set<string>;
   loadingProjectId: string | null;
   allTags: string[];
@@ -88,7 +86,6 @@ export function getGridWidth(containerWidth: number, columns: number): number {
 
 export function VirtualizedGrid({
   dateGroups,
-  viewMode,
   selectedIds,
   loadingProjectId,
   allTags,
@@ -124,7 +121,7 @@ export function VirtualizedGrid({
   // Track container width for responsive layout (breakpoint-based)
   useEffect(() => {
     const container = scrollContainerRef.current;
-    if (!container || viewMode === 'list') return;
+    if (!container) return;
 
     let debounceTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -150,12 +147,12 @@ export function VirtualizedGrid({
       if (debounceTimer) clearTimeout(debounceTimer);
       observer.disconnect();
     };
-  }, [viewMode]);
+  }, []);
 
   // Build rows: headers + card/list rows
   const rows = useMemo<VirtualRow[]>(() => {
     const result: VirtualRow[] = [];
-    const itemsPerRow = viewMode === 'list' ? 1 : cardsPerRow;
+    const itemsPerRow = cardsPerRow;
 
     dateGroups.forEach((group, groupIndex) => {
       result.push({
@@ -174,7 +171,7 @@ export function VirtualizedGrid({
     });
 
     return result;
-  }, [dateGroups, cardsPerRow, viewMode]);
+  }, [dateGroups, cardsPerRow]);
 
   // Calculate dynamic row height based on actual card dimensions
   const gridRowHeight = useMemo(
@@ -191,7 +188,7 @@ export function VirtualizedGrid({
       const row = rows[index];
       if (!row) return gridRowHeight;
       if (row.type === 'header') return LAYOUT.HEADER_HEIGHT;
-      return viewMode === 'list' ? LAYOUT.LIST_ROW_HEIGHT : gridRowHeight;
+      return gridRowHeight;
     },
     overscan: 5,
   });
@@ -231,32 +228,6 @@ export function VirtualizedGrid({
         );
       }
 
-      if (viewMode === 'list') {
-        // List view: single row per virtual item with proper spacing
-        const capture = row.captures[0];
-        if (!capture) return null;
-        return (
-          <div className="pb-2">
-            <CaptureRow
-              capture={capture}
-              selected={selectedIds.has(capture.id)}
-              isLoading={loadingProjectId === capture.id}
-              allTags={allTags}
-              onSelect={onSelect}
-              onOpen={onOpen}
-              onToggleFavorite={() => onToggleFavorite(capture.id)}
-              onUpdateTags={(tags) => onUpdateTags(capture.id, tags)}
-              onDelete={() => onDelete(capture.id)}
-              onOpenInFolder={() => onOpenInFolder(capture)}
-              onCopyToClipboard={() => onCopyToClipboard(capture)}
-              onPlayMedia={() => onPlayMedia(capture)}
-              onEditVideo={capture.capture_type === 'video' && onEditVideo ? () => onEditVideo(capture) : undefined}
-              formatDate={formatDate}
-            />
-          </div>
-        );
-      }
-
       const cardWidth = getCardWidth(containerWidth, cardsPerRow);
 
       return (
@@ -285,7 +256,6 @@ export function VirtualizedGrid({
       );
     },
     [
-      viewMode,
       cardsPerRow,
       containerWidth,
       gridWidth,

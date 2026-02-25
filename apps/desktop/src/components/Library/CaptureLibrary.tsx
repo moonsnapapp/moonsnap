@@ -19,12 +19,9 @@ import { DateHeader } from './components/DateHeader';
 import { EmptyState } from './components/EmptyState';
 import { DropZoneOverlay } from './components/DropZoneOverlay';
 import { CaptureCard } from './components/CaptureCard';
-import { CaptureRow } from './components/CaptureRow';
 import { GlassBlobToolbar } from './components/GlassBlobToolbar';
 import { DeleteDialog } from './components/DeleteDialog';
 import { VirtualizedGrid, getColumnsForWidth, calculateRowHeight, getCardWidth, getGridWidth } from './VirtualizedGrid';
-
-type ViewMode = 'grid' | 'list';
 
 // VirtualizedGrid positioning offsets (from `top: virtualRow.start + 32` and `px-8`)
 const CONTENT_OFFSET_Y = 32; // vertical offset from inline positioning style
@@ -103,7 +100,6 @@ export const CaptureLibrary: React.FC = () => {
 
   const captures = useFilteredCaptures();
   const allTags = useAllTags();
-  const [viewMode, setViewMode] = useState<ViewMode>('grid');
   const containerRef = useRef<HTMLDivElement>(null);
   const [containerWidth, setContainerWidth] = useState(0);
 
@@ -140,29 +136,20 @@ export const CaptureLibrary: React.FC = () => {
     if (!useVirtualization || containerWidth === 0) return undefined;
 
     // Use the same breakpoint-based column calculation as VirtualizedGrid
-    const cardsPerRow = viewMode === 'grid' ? getColumnsForWidth(containerWidth) : 1;
-    const availableWidth = containerWidth - LAYOUT.CONTAINER_PADDING;
+    const cardsPerRow = getColumnsForWidth(containerWidth);
 
     // Use the same card width calculation as VirtualizedGrid (capped at MAX_CARD_WIDTH)
-    const cardWidth = viewMode === 'grid'
-      ? getCardWidth(containerWidth, cardsPerRow)
-      : availableWidth;
+    const cardWidth = getCardWidth(containerWidth, cardsPerRow);
 
     // Use dynamic row height calculation matching VirtualizedGrid
-    const gridRowHeight = viewMode === 'grid'
-      ? calculateRowHeight(containerWidth, cardsPerRow)
-      : LAYOUT.LIST_ROW_HEIGHT;
+    const gridRowHeight = calculateRowHeight(containerWidth, cardsPerRow);
 
     // Calculate grid width for centering calculations
-    const gridWidth = viewMode === 'grid'
-      ? getGridWidth(containerWidth, cardsPerRow)
-      : availableWidth;
+    const gridWidth = getGridWidth(containerWidth, cardsPerRow);
 
     return {
-      viewMode,
       cardsPerRow,
       gridRowHeight,
-      listRowHeight: LAYOUT.LIST_ROW_HEIGHT,
       cardWidth,
       headerHeight: LAYOUT.HEADER_HEIGHT,
       gridGap: LAYOUT.GRID_GAP,
@@ -172,7 +159,7 @@ export const CaptureLibrary: React.FC = () => {
       containerWidth,
       dateGroups,
     };
-  }, [useVirtualization, containerWidth, dateGroups, viewMode]);
+  }, [useVirtualization, containerWidth, dateGroups]);
 
   // Delete confirmation state - consolidated into single object
   type DeleteDialogState = { type: 'single'; id: string } | { type: 'bulk' } | null;
@@ -395,37 +382,6 @@ export const CaptureLibrary: React.FC = () => {
     </div>
   );
 
-  const renderCaptureList = () => (
-    <div className="space-y-0">
-      {dateGroups.map((group, groupIndex) => (
-        <div key={group.label}>
-          <DateHeader label={group.label} count={group.captures.length} isFirst={groupIndex === 0} />
-          <div className="flex flex-col gap-2">
-            {group.captures.map((capture) => (
-              <CaptureRow
-                key={capture.id}
-                capture={capture}
-                selected={selectedIds.has(capture.id)}
-                isLoading={loadingProjectId === capture.id}
-                allTags={allTags}
-                onSelect={handleSelect}
-                onOpen={handleOpen}
-                onToggleFavorite={() => toggleFavorite(capture.id)}
-                onUpdateTags={(tags) => updateTags(capture.id, tags)}
-                onDelete={() => handleRequestDeleteSingle(capture.id)}
-                onOpenInFolder={() => handleOpenInFolder(capture)}
-                onCopyToClipboard={() => handleCopyToClipboard(capture)}
-                onPlayMedia={() => handlePlayMedia(capture)}
-                onEditVideo={capture.capture_type === 'video' ? () => handleEditVideo(capture) : undefined}
-                formatDate={formatDate}
-              />
-            ))}
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-
   return (
     <TooltipProvider delayDuration={300} skipDelayDuration={300}>
       <div className="flex flex-col h-full bg-[var(--polar-snow)] relative">
@@ -445,7 +401,6 @@ export const CaptureLibrary: React.FC = () => {
           /* Virtualized rendering for large libraries (100+ captures) */
           <VirtualizedGrid
             dateGroups={dateGroups}
-            viewMode={viewMode}
             selectedIds={selectedIds}
             loadingProjectId={loadingProjectId}
             allTags={allTags}
@@ -487,7 +442,7 @@ export const CaptureLibrary: React.FC = () => {
                 }}
               />
             )}
-            {viewMode === 'grid' ? renderCaptureGrid() : renderCaptureList()}
+            {renderCaptureGrid()}
           </div>
         )}
 
@@ -511,8 +466,6 @@ export const CaptureLibrary: React.FC = () => {
           allTags={allTags}
           filterMediaTypes={filterMediaTypes}
           onFilterMediaTypesChange={setFilterMediaTypes}
-          viewMode={viewMode}
-          onViewModeChange={setViewMode}
           selectedCount={selectedIds.size}
           onDeleteSelected={handleRequestDeleteSelected}
           onClearSelection={clearSelection}
