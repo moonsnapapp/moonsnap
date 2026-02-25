@@ -13,6 +13,65 @@ interface LoadedWallpaper {
   url: string;
 }
 
+const WALLPAPER_THEME_KEYS = Object.keys(WALLPAPER_THEMES) as WallpaperTheme[];
+const wallpaperCache = new Map<WallpaperTheme, LoadedWallpaper[]>();
+const wallpaperLoadPromises = new Map<WallpaperTheme, Promise<LoadedWallpaper[]>>();
+
+function isWallpaperTheme(value: string): value is WallpaperTheme {
+  return WALLPAPER_THEME_KEYS.includes(value as WallpaperTheme);
+}
+
+function getThemeFromWallpaperId(wallpaperId?: string | null): WallpaperTheme | null {
+  if (!wallpaperId) return null;
+  const [theme] = wallpaperId.split('/');
+  return theme && isWallpaperTheme(theme) ? theme : null;
+}
+
+async function loadWallpapersForTheme(theme: WallpaperTheme): Promise<LoadedWallpaper[]> {
+  const cached = wallpaperCache.get(theme);
+  if (cached) {
+    return cached;
+  }
+
+  const inFlight = wallpaperLoadPromises.get(theme);
+  if (inFlight) {
+    return inFlight;
+  }
+
+  const loadPromise = (async () => {
+    const wallpaperIds = WALLPAPERS_BY_THEME[theme];
+    const loaded: LoadedWallpaper[] = [];
+
+    for (const id of wallpaperIds) {
+      try {
+        const [wallpaperTheme, wallpaperName] = id.split('/');
+        let resolvedPath: string;
+
+        try {
+          resolvedPath = await resolveResource(`assets/backgrounds/${wallpaperTheme}/thumbs/${wallpaperName}.jpg`);
+        } catch {
+          resolvedPath = await resolveResource(`assets/backgrounds/${id}.jpg`);
+        }
+
+        loaded.push({ id, url: convertFileSrc(resolvedPath) });
+      } catch {
+        // Skip wallpapers that fail to resolve.
+      }
+    }
+
+    wallpaperCache.set(theme, loaded);
+    return loaded;
+  })();
+
+  wallpaperLoadPromises.set(theme, loadPromise);
+
+  try {
+    return await loadPromise;
+  } finally {
+    wallpaperLoadPromises.delete(theme);
+  }
+}
+
 interface WallpaperSelectorProps {
   selectedWallpaperId?: string | null;
   onSelect: (wallpaperId: string) => void | Promise<void>;
@@ -28,9 +87,14 @@ export function WallpaperSelector({
   onLoadError,
   initialTheme = 'macOS',
 }: WallpaperSelectorProps) {
-  const [wallpaperTheme, setWallpaperTheme] = useState<WallpaperTheme>(initialTheme);
-  const [loadedWallpapers, setLoadedWallpapers] = useState<LoadedWallpaper[]>([]);
-  const [isLoadingWallpapers, setIsLoadingWallpapers] = useState(false);
+  const initialSelectedTheme = getThemeFromWallpaperId(selectedWallpaperId) ?? initialTheme;
+  const [wallpaperTheme, setWallpaperTheme] = useState<WallpaperTheme>(initialSelectedTheme);
+  const [loadedWallpapers, setLoadedWallpapers] = useState<LoadedWallpaper[]>(
+    () => wallpaperCache.get(initialSelectedTheme) ?? []
+  );
+  const [isLoadingWallpapers, setIsLoadingWallpapers] = useState<boolean>(
+    () => !wallpaperCache.has(initialSelectedTheme)
+  );
   const onLoadErrorRef = useRef(onLoadError);
 
   useEffect(() => {
@@ -38,41 +102,47 @@ export function WallpaperSelector({
   }, [onLoadError]);
 
   useEffect(() => {
-    async function loadWallpapers() {
-      setIsLoadingWallpapers(true);
-      try {
-        const wallpaperIds = WALLPAPERS_BY_THEME[wallpaperTheme];
-        const loaded: LoadedWallpaper[] = [];
+    const selectedTheme = getThemeFromWallpaperId(selectedWallpaperId);
+    if (!selectedTheme) return;
+    setWallpaperTheme((currentTheme) =>
+      currentTheme === selectedTheme ? currentTheme : selectedTheme
+    );
+  }, [selectedWallpaperId]);
 
-        for (const id of wallpaperIds) {
-          try {
-            const parts = id.split('/');
-            const theme = parts[0];
-            const name = parts[1];
-            let url: string;
-            let resolvedPath: string;
-            try {
-              resolvedPath = await resolveResource(`assets/backgrounds/${theme}/thumbs/${name}.jpg`);
-              url = convertFileSrc(resolvedPath);
-            } catch {
-              resolvedPath = await resolveResource(`assets/backgrounds/${id}.jpg`);
-              url = convertFileSrc(resolvedPath);
-            }
-            loaded.push({ id, url });
-          } catch {
-            // Silently skip wallpapers that fail to load
-          }
-        }
+  useEffect(() => {
+    let isCancelled = false;
+    const cached = wallpaperCache.get(wallpaperTheme);
 
-        setLoadedWallpapers(loaded);
-      } catch (error) {
-        onLoadErrorRef.current?.(error);
-      } finally {
-        setIsLoadingWallpapers(false);
-      }
+    if (cached) {
+      setLoadedWallpapers(cached);
+      setIsLoadingWallpapers(false);
+      return () => {
+        isCancelled = true;
+      };
     }
 
-    void loadWallpapers();
+    setIsLoadingWallpapers(true);
+
+    void loadWallpapersForTheme(wallpaperTheme)
+      .then((loaded) => {
+        if (!isCancelled) {
+          setLoadedWallpapers(loaded);
+        }
+      })
+      .catch((error) => {
+        if (!isCancelled) {
+          onLoadErrorRef.current?.(error);
+        }
+      })
+      .finally(() => {
+        if (!isCancelled) {
+          setIsLoadingWallpapers(false);
+        }
+      });
+
+    return () => {
+      isCancelled = true;
+    };
   }, [wallpaperTheme]);
 
   const isWallpaperSelected = useMemo(() => {
@@ -85,7 +155,7 @@ export function WallpaperSelector({
   return (
     <div className="space-y-3">
       <div className="flex gap-1.5 overflow-x-auto pb-1 -mx-1 px-1">
-        {(Object.keys(WALLPAPER_THEMES) as WallpaperTheme[]).map((theme) => (
+        {WALLPAPER_THEME_KEYS.map((theme) => (
           <button
             key={theme}
             onClick={() => setWallpaperTheme(theme)}
