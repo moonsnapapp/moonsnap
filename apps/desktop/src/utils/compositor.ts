@@ -11,6 +11,7 @@ import {
   calculateCoverSize,
   calculateCompositorDimensions,
 } from '../hooks/useCompositorBackground';
+import { getEditorShadowLayers } from './frameEffects';
 
 interface CompositeOptions {
   settings: CompositorSettings;
@@ -124,16 +125,11 @@ function drawShadow(
 ) {
   ctx.save();
 
-  // Multiple shadow layers for realistic effect
-  const shadowLayers = [
-    { blur: 10, opacity: 0.15 * intensity, offsetY: 2 },
-    { blur: 30, opacity: 0.25 * intensity, offsetY: 8 },
-    { blur: 60, opacity: 0.35 * intensity, offsetY: 16 },
-  ];
+  const shadowLayers = getEditorShadowLayers(intensity);
 
   shadowLayers.forEach((layer) => {
     ctx.shadowColor = `rgba(0, 0, 0, ${layer.opacity})`;
-    ctx.shadowBlur = layer.blur;
+    ctx.shadowBlur = layer.blurPx;
     ctx.shadowOffsetX = 0;
     ctx.shadowOffsetY = layer.offsetY;
 
@@ -339,4 +335,3 @@ export async function compositeImage(
     cleanupImage(backgroundImage);
   }
 }
-

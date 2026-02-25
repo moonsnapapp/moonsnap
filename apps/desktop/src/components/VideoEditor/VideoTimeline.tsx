@@ -25,30 +25,29 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { useVideoEditorStore, formatTimeSimple, getEffectiveDuration } from '../../stores/videoEditorStore';
+import {
+  selectExportInPointMs,
+  selectExportOutPointMs,
+  selectFitTimelineToWindow,
+  selectIsDraggingPlayhead,
+  selectIsPlaying,
+  selectPreviewTimeMs,
+  selectProject,
+  selectSetDraggingPlayhead,
+  selectSetExportInPoint,
+  selectSetExportOutPoint,
+  selectSetPreviewTime,
+  selectSetTimelineContainerWidth,
+  selectSetTimelineScrollLeft,
+  selectSetTimelineZoom,
+  selectTimelineZoom,
+  selectTogglePlayback,
+  selectTrackVisibility,
+} from '../../stores/videoEditor/selectors';
 import { usePlaybackTime, usePlaybackControls, getPlaybackState } from '../../hooks/usePlaybackEngine';
 import { TimelineRuler } from './TimelineRuler';
 import { ZoomTrackContent, SceneTrackContent, MaskTrackContent, TextTrackContent, TrimTrackContent } from './tracks';
 import { TrackManager } from './TrackManager';
-
-const selectExportInPointMs = (s: ReturnType<typeof useVideoEditorStore.getState>) => s.exportInPointMs;
-const selectExportOutPointMs = (s: ReturnType<typeof useVideoEditorStore.getState>) => s.exportOutPointMs;
-
-// Selectors to prevent re-renders from unrelated store changes
-const selectProject = (s: ReturnType<typeof useVideoEditorStore.getState>) => s.project;
-const selectTimelineZoom = (s: ReturnType<typeof useVideoEditorStore.getState>) => s.timelineZoom;
-const selectIsDraggingPlayhead = (s: ReturnType<typeof useVideoEditorStore.getState>) => s.isDraggingPlayhead;
-const selectIsPlaying = (s: ReturnType<typeof useVideoEditorStore.getState>) => s.isPlaying;
-const selectPreviewTimeMs = (s: ReturnType<typeof useVideoEditorStore.getState>) => s.previewTimeMs;
-const selectTrackVisibility = (s: ReturnType<typeof useVideoEditorStore.getState>) => s.trackVisibility;
-const selectSetTimelineScrollLeft = (s: ReturnType<typeof useVideoEditorStore.getState>) => s.setTimelineScrollLeft;
-const selectSetTimelineContainerWidth = (s: ReturnType<typeof useVideoEditorStore.getState>) => s.setTimelineContainerWidth;
-const selectSetDraggingPlayhead = (s: ReturnType<typeof useVideoEditorStore.getState>) => s.setDraggingPlayhead;
-const selectSetTimelineZoom = (s: ReturnType<typeof useVideoEditorStore.getState>) => s.setTimelineZoom;
-const selectSetPreviewTime = (s: ReturnType<typeof useVideoEditorStore.getState>) => s.setPreviewTime;
-const selectTogglePlayback = (s: ReturnType<typeof useVideoEditorStore.getState>) => s.togglePlayback;
-const selectFitTimelineToWindow = (s: ReturnType<typeof useVideoEditorStore.getState>) => s.fitTimelineToWindow;
-const selectSetExportInPoint = (s: ReturnType<typeof useVideoEditorStore.getState>) => s.setExportInPoint;
-const selectSetExportOutPoint = (s: ReturnType<typeof useVideoEditorStore.getState>) => s.setExportOutPoint;
 
 function quantizeTimeMs(timeMs: number, stepMs: number): number {
   if (stepMs <= 1) return timeMs;

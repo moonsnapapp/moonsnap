@@ -23,6 +23,44 @@ import { listen } from '@tauri-apps/api/event';
 import { save } from '@tauri-apps/plugin-dialog';
 import { useCaptureStore } from '../../stores/captureStore';
 import { useVideoEditorStore } from '../../stores/videoEditorStore';
+import {
+  selectCancelExport,
+  selectClearEditor,
+  selectClearExportRange,
+  selectDeleteMaskSegment,
+  selectDeleteSceneSegment,
+  selectDeleteTextSegment,
+  selectDeleteTrimSegment,
+  selectDeleteZoomRegion,
+  selectExportProgress,
+  selectExportVideo,
+  selectIsExporting,
+  selectIsSaving,
+  selectProject,
+  selectRedoTrim,
+  selectRequestSeek,
+  selectResetTrimSegments,
+  selectSaveProject,
+  selectSelectMaskSegment,
+  selectSelectSceneSegment,
+  selectSelectTextSegment,
+  selectSelectTrimSegment,
+  selectSelectZoomRegion,
+  selectSelectedMaskSegmentId,
+  selectSelectedSceneSegmentId,
+  selectSelectedTextSegmentId,
+  selectSelectedTrimSegmentId,
+  selectSelectedZoomRegionId,
+  selectSetExportInPoint,
+  selectSetExportOutPoint,
+  selectSetExportProgress,
+  selectSetTimelineZoom,
+  selectSplitAtPlayhead,
+  selectTimelineZoom,
+  selectTogglePlayback,
+  selectUndoTrim,
+  selectUpdateExportConfig,
+} from '../../stores/videoEditor/selectors';
 import { useVideoEditorShortcuts } from '../../hooks/useVideoEditorShortcuts';
 import { VideoEditorToolbar } from './VideoEditorToolbar';
 import { VideoEditorSidebar } from './VideoEditorSidebar';
@@ -61,42 +99,42 @@ export const VideoEditorView = forwardRef<VideoEditorViewRef, VideoEditorViewPro
   ref
 ) {
   const { setView } = useCaptureStore();
-  const project = useVideoEditorStore((s) => s.project);
-  const togglePlayback = useVideoEditorStore((s) => s.togglePlayback);
-  const requestSeek = useVideoEditorStore((s) => s.requestSeek);
-  const clearEditor = useVideoEditorStore((s) => s.clearEditor);
-  const isExporting = useVideoEditorStore((s) => s.isExporting);
-  const exportProgress = useVideoEditorStore((s) => s.exportProgress);
-  const exportVideo = useVideoEditorStore((s) => s.exportVideo);
-  const setExportProgress = useVideoEditorStore((s) => s.setExportProgress);
-  const cancelExport = useVideoEditorStore((s) => s.cancelExport);
-  const updateExportConfig = useVideoEditorStore((s) => s.updateExportConfig);
-  const selectZoomRegion = useVideoEditorStore((s) => s.selectZoomRegion);
-  const timelineZoom = useVideoEditorStore((s) => s.timelineZoom);
-  const setTimelineZoom = useVideoEditorStore((s) => s.setTimelineZoom);
-  const selectedZoomRegionId = useVideoEditorStore((s) => s.selectedZoomRegionId);
-  const deleteZoomRegion = useVideoEditorStore((s) => s.deleteZoomRegion);
-  const selectedSceneSegmentId = useVideoEditorStore((s) => s.selectedSceneSegmentId);
-  const selectSceneSegment = useVideoEditorStore((s) => s.selectSceneSegment);
-  const deleteSceneSegment = useVideoEditorStore((s) => s.deleteSceneSegment);
-  const selectedMaskSegmentId = useVideoEditorStore((s) => s.selectedMaskSegmentId);
-  const selectMaskSegment = useVideoEditorStore((s) => s.selectMaskSegment);
-  const deleteMaskSegment = useVideoEditorStore((s) => s.deleteMaskSegment);
-  const selectedTextSegmentId = useVideoEditorStore((s) => s.selectedTextSegmentId);
-  const selectTextSegment = useVideoEditorStore((s) => s.selectTextSegment);
-  const deleteTextSegment = useVideoEditorStore((s) => s.deleteTextSegment);
-  const selectedTrimSegmentId = useVideoEditorStore((s) => s.selectedTrimSegmentId);
-  const selectTrimSegment = useVideoEditorStore((s) => s.selectTrimSegment);
-  const deleteTrimSegment = useVideoEditorStore((s) => s.deleteTrimSegment);
-  const splitAtPlayhead = useVideoEditorStore((s) => s.splitAtPlayhead);
-  const resetTrimSegments = useVideoEditorStore((s) => s.resetTrimSegments);
-  const undoTrim = useVideoEditorStore((s) => s.undoTrim);
-  const redoTrim = useVideoEditorStore((s) => s.redoTrim);
-  const saveProject = useVideoEditorStore((s) => s.saveProject);
-  const isSaving = useVideoEditorStore((s) => s.isSaving);
-  const setExportInPoint = useVideoEditorStore((s) => s.setExportInPoint);
-  const setExportOutPoint = useVideoEditorStore((s) => s.setExportOutPoint);
-  const clearExportRange = useVideoEditorStore((s) => s.clearExportRange);
+  const project = useVideoEditorStore(selectProject);
+  const togglePlayback = useVideoEditorStore(selectTogglePlayback);
+  const requestSeek = useVideoEditorStore(selectRequestSeek);
+  const clearEditor = useVideoEditorStore(selectClearEditor);
+  const isExporting = useVideoEditorStore(selectIsExporting);
+  const exportProgress = useVideoEditorStore(selectExportProgress);
+  const exportVideo = useVideoEditorStore(selectExportVideo);
+  const setExportProgress = useVideoEditorStore(selectSetExportProgress);
+  const cancelExport = useVideoEditorStore(selectCancelExport);
+  const updateExportConfig = useVideoEditorStore(selectUpdateExportConfig);
+  const selectZoomRegion = useVideoEditorStore(selectSelectZoomRegion);
+  const timelineZoom = useVideoEditorStore(selectTimelineZoom);
+  const setTimelineZoom = useVideoEditorStore(selectSetTimelineZoom);
+  const selectedZoomRegionId = useVideoEditorStore(selectSelectedZoomRegionId);
+  const deleteZoomRegion = useVideoEditorStore(selectDeleteZoomRegion);
+  const selectedSceneSegmentId = useVideoEditorStore(selectSelectedSceneSegmentId);
+  const selectSceneSegment = useVideoEditorStore(selectSelectSceneSegment);
+  const deleteSceneSegment = useVideoEditorStore(selectDeleteSceneSegment);
+  const selectedMaskSegmentId = useVideoEditorStore(selectSelectedMaskSegmentId);
+  const selectMaskSegment = useVideoEditorStore(selectSelectMaskSegment);
+  const deleteMaskSegment = useVideoEditorStore(selectDeleteMaskSegment);
+  const selectedTextSegmentId = useVideoEditorStore(selectSelectedTextSegmentId);
+  const selectTextSegment = useVideoEditorStore(selectSelectTextSegment);
+  const deleteTextSegment = useVideoEditorStore(selectDeleteTextSegment);
+  const selectedTrimSegmentId = useVideoEditorStore(selectSelectedTrimSegmentId);
+  const selectTrimSegment = useVideoEditorStore(selectSelectTrimSegment);
+  const deleteTrimSegment = useVideoEditorStore(selectDeleteTrimSegment);
+  const splitAtPlayhead = useVideoEditorStore(selectSplitAtPlayhead);
+  const resetTrimSegments = useVideoEditorStore(selectResetTrimSegments);
+  const undoTrim = useVideoEditorStore(selectUndoTrim);
+  const redoTrim = useVideoEditorStore(selectRedoTrim);
+  const saveProject = useVideoEditorStore(selectSaveProject);
+  const isSaving = useVideoEditorStore(selectIsSaving);
+  const setExportInPoint = useVideoEditorStore(selectSetExportInPoint);
+  const setExportOutPoint = useVideoEditorStore(selectSetExportOutPoint);
+  const clearExportRange = useVideoEditorStore(selectClearExportRange);
 
   // Crop dialog state
   const [isCropDialogOpen, setIsCropDialogOpen] = useState(false);
@@ -104,6 +142,8 @@ export const VideoEditorView = forwardRef<VideoEditorViewRef, VideoEditorViewPro
 
   // Skip amount in milliseconds
   const SKIP_AMOUNT_MS = 5000;
+  const SAVE_WAIT_TIMEOUT_MS = 5000;
+  const SAVE_WAIT_POLL_MS = 50;
 
   // Keyboard shortcut handlers
   const handleSkipBack = useCallback(() => {
@@ -313,15 +353,57 @@ export const VideoEditorView = forwardRef<VideoEditorViewRef, VideoEditorViewPro
     };
   }, [project, isExporting, saveProject]);
 
+  // Best-effort save when the tab/window is closed before autosave debounce fires.
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      const state = useVideoEditorStore.getState();
+      if (!state.project || state.isExporting) return;
+      void state.saveProject().catch((error) => {
+        videoEditorLogger.warn('Save on window close failed:', error);
+      });
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
+  }, []);
+
   // Navigate back to library
-  const handleBack = useCallback(() => {
-    clearEditor();
+  const flushSaveBeforeClose = useCallback(async () => {
+    const waitForSavingToSettle = async () => {
+      const startedAt = Date.now();
+      while (useVideoEditorStore.getState().isSaving) {
+        if (Date.now() - startedAt > SAVE_WAIT_TIMEOUT_MS) {
+          return;
+        }
+        await new Promise((resolve) => setTimeout(resolve, SAVE_WAIT_POLL_MS));
+      }
+    };
+
+    const state = useVideoEditorStore.getState();
+    if (!state.project || state.isExporting) return;
+
+    try {
+      // If an autosave is running, wait and then force one final save with latest state.
+      await waitForSavingToSettle();
+      await useVideoEditorStore.getState().saveProject();
+      await waitForSavingToSettle();
+    } catch (error) {
+      videoEditorLogger.warn('Save on close failed:', error);
+    }
+  }, [SAVE_WAIT_POLL_MS, SAVE_WAIT_TIMEOUT_MS]);
+
+  // Navigate back to library
+  const handleBack = useCallback(async () => {
+    await flushSaveBeforeClose();
     if (onBack) {
       onBack();
     } else {
+      clearEditor();
       setView('library');
     }
-  }, [clearEditor, setView, onBack]);
+  }, [clearEditor, flushSaveBeforeClose, setView, onBack]);
 
   // Export video with zoom effects applied
   const handleExport = useCallback(async () => {

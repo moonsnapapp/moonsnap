@@ -16,6 +16,34 @@ import {
 } from 'lucide-react';
 import { listen } from '@tauri-apps/api/event';
 import { useVideoEditorStore } from '../../stores/videoEditorStore';
+import {
+  selectCaptionSegments,
+  selectCaptionSettings,
+  selectCurrentTimeMs,
+  selectDownloadModel,
+  selectDownloadProgress,
+  selectIsDownloadingModel,
+  selectIsPlaying,
+  selectIsTranscribing,
+  selectLoadWhisperModels,
+  selectProject,
+  selectRequestSeek,
+  selectSelectedModelName,
+  selectSetCaptionSegments,
+  selectSetCaptionsEnabled,
+  selectSetIsPlaying,
+  selectSetSelectedModel,
+  selectSetTranscriptionProgress,
+  selectStartTranscription,
+  selectTogglePlayback,
+  selectTranscribeCaptionSegment,
+  selectTranscriptionError,
+  selectTranscriptionProgress,
+  selectTranscriptionStage,
+  selectUpdateCaptionSegment,
+  selectUpdateCaptionSettings,
+  selectWhisperModels,
+} from '../../stores/videoEditor/selectors';
 import { Button } from '../../components/ui/button';
 import {
   Dialog,
@@ -35,6 +63,23 @@ import type {
   DownloadProgress,
 } from '../../types';
 import { videoEditorLogger } from '../../utils/logger';
+import {
+  buildEditableWordsForSegment,
+  buildUpdatedWords,
+  buildWordsFromEditor,
+  clamp,
+  cloneCaptionSegment,
+  cloneCaptionSegments,
+  distributeCaptionWordTiming,
+  formatTime,
+  MIN_SEGMENT_DURATION_SECONDS,
+  MIN_WORD_DURATION_SECONDS,
+  parseEditableWords,
+  segmentMatchesUpdate,
+  splitCaptionWords,
+  toEditableCaptionWords,
+  type EditableCaptionWord,
+} from '../../utils/captionTiming';
 
 interface CaptionPanelProps {
   videoPath: string | null;
@@ -49,14 +94,6 @@ const MODEL_SIZES: Record<string, string> = {
 };
 
 const DEFAULT_VISIBLE_SEGMENTS = 20;
-const MIN_SEGMENT_DURATION_SECONDS = 0.05;
-const MIN_WORD_DURATION_SECONDS = 0.01;
-
-interface EditableCaptionWord {
-  text: string;
-  start: string;
-  end: string;
-}
 
 type WordDragMode = 'start' | 'end' | 'move';
 
@@ -79,217 +116,9 @@ interface SegmentAuditionState {
   endMs: number;
 }
 
-function clamp(value: number, min: number, max: number): number {
-  if (max <= min) return min;
-  return Math.max(min, Math.min(max, value));
-}
-
-function formatTime(seconds: number): string {
-  const mins = Math.floor(seconds / 60);
-  const secs = Math.floor(seconds % 60);
-  return `${mins}:${secs.toString().padStart(2, '0')}`;
-}
-
-function parseEditableWords(words: EditableCaptionWord[]) {
-  return words.map((word) => ({
-    text: word.text,
-    start: Number.parseFloat(word.start),
-    end: Number.parseFloat(word.end),
-  }));
-}
-
-function splitCaptionWords(text: string): string[] {
-  return text.trim().split(/\s+/).filter(Boolean);
-}
-
-function remapWordsToSegmentTiming(
-  words: CaptionWord[],
-  oldStart: number,
-  oldEnd: number,
-  newStart: number,
-  newEnd: number
-): CaptionWord[] {
-  if (words.length === 0) return [];
-
-  const oldDuration = Math.max(oldEnd - oldStart, MIN_SEGMENT_DURATION_SECONDS);
-  const newDuration = Math.max(newEnd - newStart, MIN_SEGMENT_DURATION_SECONDS);
-
-  return words.map((word) => {
-    const relStart = Math.max(0, Math.min(1, (word.start - oldStart) / oldDuration));
-    const relEnd = Math.max(0, Math.min(1, (word.end - oldStart) / oldDuration));
-
-    return {
-      ...word,
-      start: newStart + relStart * newDuration,
-      end: newStart + relEnd * newDuration,
-    };
-  });
-}
-
-function distributeCaptionWordTiming(
-  wordTexts: string[],
-  start: number,
-  end: number
-): CaptionWord[] {
-  if (wordTexts.length === 0) return [];
-
-  const duration = Math.max(0, end - start);
-  if (duration === 0) {
-    return wordTexts.map((text) => ({ text, start, end }));
-  }
-
-  const step = duration / wordTexts.length;
-  return wordTexts.map((text, index) => ({
-    text,
-    start: start + step * index,
-    end: index === wordTexts.length - 1 ? end : start + step * (index + 1),
-  }));
-}
-
-function buildUpdatedWords(
-  segment: CaptionSegment,
-  text: string,
-  nextStart: number,
-  nextEnd: number
-): CaptionWord[] {
-  const wordTexts = splitCaptionWords(text);
-  if (wordTexts.length === 0) return [];
-
-  if (segment.words.length === wordTexts.length && segment.words.length > 0) {
-    const remapped = remapWordsToSegmentTiming(
-      segment.words,
-      segment.start,
-      segment.end,
-      nextStart,
-      nextEnd
-    );
-    return remapped.map((word, index) => ({
-      ...word,
-      text: wordTexts[index],
-    }));
-  }
-
-  return distributeCaptionWordTiming(wordTexts, nextStart, nextEnd);
-}
-
-function toEditableCaptionWords(words: CaptionWord[]): EditableCaptionWord[] {
-  return words.map((word) => ({
-    text: word.text,
-    start: word.start.toFixed(2),
-    end: word.end.toFixed(2),
-  }));
-}
-
-function buildEditableWordsForSegment(segment: CaptionSegment): EditableCaptionWord[] {
-  const words =
-    segment.words.length > 0
-      ? segment.words
-      : distributeCaptionWordTiming(
-          splitCaptionWords(segment.text),
-          segment.start,
-          segment.end
-        );
-  return toEditableCaptionWords(words);
-}
-
-function buildWordsFromEditor(
-  editorWords: EditableCaptionWord[],
-  text: string,
-  segmentStart: number,
-  segmentEnd: number
-): CaptionWord[] | null {
-  const wordTexts = splitCaptionWords(text);
-  if (wordTexts.length === 0) return [];
-
-  if (editorWords.length !== wordTexts.length) {
-    return distributeCaptionWordTiming(wordTexts, segmentStart, segmentEnd);
-  }
-
-  const parsedWords = editorWords.map((word) => ({
-    text: word.text,
-    start: Number.parseFloat(word.start),
-    end: Number.parseFloat(word.end),
-  }));
-
-  if (parsedWords.some((word) => !Number.isFinite(word.start) || !Number.isFinite(word.end))) {
-    return null;
-  }
-
-  let previousEnd = segmentStart;
-  const mapped: CaptionWord[] = [];
-
-  for (let index = 0; index < parsedWords.length; index += 1) {
-    const parsed = parsedWords[index];
-    const start = Math.max(segmentStart, parsed.start);
-    const end = Math.min(segmentEnd, parsed.end);
-
-    if (end - start < MIN_WORD_DURATION_SECONDS) {
-      return null;
-    }
-
-    if (start < previousEnd) {
-      return null;
-    }
-
-    mapped.push({
-      text: wordTexts[index],
-      start,
-      end,
-    });
-    previousEnd = end;
-  }
-
-  return mapped;
-}
-
-function cloneCaptionSegment(segment: CaptionSegment): CaptionSegment {
-  return {
-    ...segment,
-    words: segment.words.map((word) => ({ ...word })),
-  };
-}
-
-function cloneCaptionSegments(segments: CaptionSegment[]): CaptionSegment[] {
-  return segments.map((segment) => cloneCaptionSegment(segment));
-}
-
 interface CaptionSnapshot {
   segments: CaptionSegment[];
   settings: CaptionSettings;
-}
-
-function numbersApproxEqual(left: number, right: number): boolean {
-  return Math.abs(left - right) < 0.0005;
-}
-
-function wordsEqual(left: CaptionWord[], right: CaptionWord[]): boolean {
-  if (left.length !== right.length) return false;
-
-  for (let index = 0; index < left.length; index += 1) {
-    const leftWord = left[index];
-    const rightWord = right[index];
-    if (
-      leftWord.text !== rightWord.text ||
-      !numbersApproxEqual(leftWord.start, rightWord.start) ||
-      !numbersApproxEqual(leftWord.end, rightWord.end)
-    ) {
-      return false;
-    }
-  }
-
-  return true;
-}
-
-function segmentMatchesUpdate(
-  segment: CaptionSegment,
-  update: { start: number; end: number; text: string; words: CaptionWord[] }
-): boolean {
-  return (
-    segment.text === update.text &&
-    numbersApproxEqual(segment.start, update.start) &&
-    numbersApproxEqual(segment.end, update.end) &&
-    wordsEqual(segment.words, update.words)
-  );
 }
 
 interface CaptionAuditionWatcherProps {
@@ -305,8 +134,8 @@ function CaptionAuditionWatcher({
   setIsPlaying,
   clearSegmentAuditionState,
 }: CaptionAuditionWatcherProps) {
-  const currentTimeMs = useVideoEditorStore((s) => s.currentTimeMs);
-  const isPlaying = useVideoEditorStore((s) => s.isPlaying);
+  const currentTimeMs = useVideoEditorStore(selectCurrentTimeMs);
+  const isPlaying = useVideoEditorStore(selectIsPlaying);
 
   useEffect(() => {
     if (!segmentAuditionState || !isPlaying) return;
@@ -342,8 +171,8 @@ function CaptionPlaybackTransport({
   onBeginPlaybackScrub,
   playbackTimelineRef,
 }: CaptionPlaybackTransportProps) {
-  const currentTimeMs = useVideoEditorStore((s) => s.currentTimeMs);
-  const isPlaying = useVideoEditorStore((s) => s.isPlaying);
+  const currentTimeMs = useVideoEditorStore(selectCurrentTimeMs);
+  const isPlaying = useVideoEditorStore(selectIsPlaying);
   const playbackPositionPercent = clamp(
     ((currentTimeMs / 1000) / projectDurationSeconds) * 100,
     0,
@@ -449,7 +278,7 @@ function WordTimingEditor({
   syncWordsFromText,
   hasInvalidWordTiming,
 }: WordTimingEditorProps) {
-  const currentTimeMs = useVideoEditorStore((s) => s.currentTimeMs);
+  const currentTimeMs = useVideoEditorStore(selectCurrentTimeMs);
   const segmentCurrentTimeSeconds = currentTimeMs / 1000;
   const localPlayheadSeconds = clamp(
     segmentCurrentTimeSeconds - timelineSegmentStart,
@@ -650,30 +479,30 @@ function WordTimingEditor({
 }
 
 export function CaptionPanel({ videoPath }: CaptionPanelProps) {
-  const project = useVideoEditorStore((s) => s.project);
-  const captionSegments = useVideoEditorStore((s) => s.captionSegments);
-  const captionSettings = useVideoEditorStore((s) => s.captionSettings);
-  const isTranscribing = useVideoEditorStore((s) => s.isTranscribing);
-  const transcriptionProgress = useVideoEditorStore((s) => s.transcriptionProgress);
-  const transcriptionStage = useVideoEditorStore((s) => s.transcriptionStage);
-  const transcriptionError = useVideoEditorStore((s) => s.transcriptionError);
-  const whisperModels = useVideoEditorStore((s) => s.whisperModels);
-  const selectedModelName = useVideoEditorStore((s) => s.selectedModelName);
-  const isDownloadingModel = useVideoEditorStore((s) => s.isDownloadingModel);
-  const downloadProgress = useVideoEditorStore((s) => s.downloadProgress);
-  const loadWhisperModels = useVideoEditorStore((s) => s.loadWhisperModels);
-  const setSelectedModel = useVideoEditorStore((s) => s.setSelectedModel);
-  const downloadModel = useVideoEditorStore((s) => s.downloadModel);
-  const startTranscription = useVideoEditorStore((s) => s.startTranscription);
-  const transcribeCaptionSegment = useVideoEditorStore((s) => s.transcribeCaptionSegment);
-  const updateCaptionSettings = useVideoEditorStore((s) => s.updateCaptionSettings);
-  const updateCaptionSegment = useVideoEditorStore((s) => s.updateCaptionSegment);
-  const setCaptionSegments = useVideoEditorStore((s) => s.setCaptionSegments);
-  const setCaptionsEnabled = useVideoEditorStore((s) => s.setCaptionsEnabled);
-  const setTranscriptionProgress = useVideoEditorStore((s) => s.setTranscriptionProgress);
-  const requestSeek = useVideoEditorStore((s) => s.requestSeek);
-  const setIsPlaying = useVideoEditorStore((s) => s.setIsPlaying);
-  const togglePlayback = useVideoEditorStore((s) => s.togglePlayback);
+  const project = useVideoEditorStore(selectProject);
+  const captionSegments = useVideoEditorStore(selectCaptionSegments);
+  const captionSettings = useVideoEditorStore(selectCaptionSettings);
+  const isTranscribing = useVideoEditorStore(selectIsTranscribing);
+  const transcriptionProgress = useVideoEditorStore(selectTranscriptionProgress);
+  const transcriptionStage = useVideoEditorStore(selectTranscriptionStage);
+  const transcriptionError = useVideoEditorStore(selectTranscriptionError);
+  const whisperModels = useVideoEditorStore(selectWhisperModels);
+  const selectedModelName = useVideoEditorStore(selectSelectedModelName);
+  const isDownloadingModel = useVideoEditorStore(selectIsDownloadingModel);
+  const downloadProgress = useVideoEditorStore(selectDownloadProgress);
+  const loadWhisperModels = useVideoEditorStore(selectLoadWhisperModels);
+  const setSelectedModel = useVideoEditorStore(selectSetSelectedModel);
+  const downloadModel = useVideoEditorStore(selectDownloadModel);
+  const startTranscription = useVideoEditorStore(selectStartTranscription);
+  const transcribeCaptionSegment = useVideoEditorStore(selectTranscribeCaptionSegment);
+  const updateCaptionSettings = useVideoEditorStore(selectUpdateCaptionSettings);
+  const updateCaptionSegment = useVideoEditorStore(selectUpdateCaptionSegment);
+  const setCaptionSegments = useVideoEditorStore(selectSetCaptionSegments);
+  const setCaptionsEnabled = useVideoEditorStore(selectSetCaptionsEnabled);
+  const setTranscriptionProgress = useVideoEditorStore(selectSetTranscriptionProgress);
+  const requestSeek = useVideoEditorStore(selectRequestSeek);
+  const setIsPlaying = useVideoEditorStore(selectSetIsPlaying);
+  const togglePlayback = useVideoEditorStore(selectTogglePlayback);
 
   const [showModelSelector, setShowModelSelector] = useState(false);
   const [showAllSegments, setShowAllSegments] = useState(true);
@@ -2193,4 +2022,3 @@ export function CaptionPanel({ videoPath }: CaptionPanelProps) {
     </div>
   );
 }
-

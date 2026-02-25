@@ -2,8 +2,24 @@ import { memo, useCallback, useMemo, useRef } from 'react';
 import { Type, GripVertical, Plus } from 'lucide-react';
 import type { TextSegment } from '../../../types';
 import { useVideoEditorStore, formatTimeSimple } from '../../../stores/videoEditorStore';
+import {
+  selectAddTextSegment,
+  selectDeleteTextSegment,
+  selectHoveredTrack,
+  selectIsDraggingAnySegment,
+  selectIsPlaying,
+  selectOriginalVideoHeight,
+  selectOriginalVideoWidth,
+  selectPreviewTimeMs,
+  selectSelectTextSegment,
+  selectSelectedTextSegmentId,
+  selectSetDraggingTextSegment,
+  selectSetHoveredTrack,
+  selectUpdateTextSegment,
+} from '../../../stores/videoEditor/selectors';
+import { createTextSegmentId } from '../../../utils/textSegmentId';
+import { measureTextSize } from '../../../utils/textMeasure';
 import type { DragEdge } from './BaseTrack';
-import { measureTextSize } from '../TextOverlay';
 
 /**
  * TextTrack uses seconds for time values (matching Cap's model),
@@ -38,14 +54,6 @@ const TEXT_COLORS = {
   hover: 'var(--track-text-hover)',
   text: 'var(--track-text-text)',
 };
-
-// Selectors for atomic subscriptions
-const selectSelectedTextSegmentId = (s: ReturnType<typeof useVideoEditorStore.getState>) => s.selectedTextSegmentId;
-const selectSelectTextSegment = (s: ReturnType<typeof useVideoEditorStore.getState>) => s.selectTextSegment;
-const selectUpdateTextSegment = (s: ReturnType<typeof useVideoEditorStore.getState>) => s.updateTextSegment;
-const selectDeleteTextSegment = (s: ReturnType<typeof useVideoEditorStore.getState>) => s.deleteTextSegment;
-const selectAddTextSegment = (s: ReturnType<typeof useVideoEditorStore.getState>) => s.addTextSegment;
-const selectSetDraggingTextSegment = (s: ReturnType<typeof useVideoEditorStore.getState>) => s.setDraggingTextSegment;
 
 /**
  * Preview segment shown when hovering over empty track space.
@@ -294,10 +302,10 @@ export const TextTrackContent = memo(function TextTrackContent({
   width,
 }: TextTrackProps) {
   const selectedTextSegmentId = useVideoEditorStore(selectSelectedTextSegmentId);
-  const previewTimeMs = useVideoEditorStore((s) => s.previewTimeMs);
-  const hoveredTrack = useVideoEditorStore((s) => s.hoveredTrack);
-  const setHoveredTrack = useVideoEditorStore((s) => s.setHoveredTrack);
-  const isPlaying = useVideoEditorStore((s) => s.isPlaying);
+  const previewTimeMs = useVideoEditorStore(selectPreviewTimeMs);
+  const hoveredTrack = useVideoEditorStore(selectHoveredTrack);
+  const setHoveredTrack = useVideoEditorStore(selectSetHoveredTrack);
+  const isPlaying = useVideoEditorStore(selectIsPlaying);
   const selectTextSegment = useVideoEditorStore(selectSelectTextSegment);
   const updateTextSegment = useVideoEditorStore(selectUpdateTextSegment);
   const deleteTextSegment = useVideoEditorStore(selectDeleteTextSegment);
@@ -308,9 +316,7 @@ export const TextTrackContent = memo(function TextTrackContent({
   const durationSec = durationMs / 1000;
 
   // Check if any segment is being dragged
-  const isDraggingAny = useVideoEditorStore((s) =>
-    s.isDraggingZoomRegion || s.isDraggingSceneSegment || s.isDraggingMaskSegment || s.isDraggingTextSegment
-  );
+  const isDraggingAny = useVideoEditorStore(selectIsDraggingAnySegment);
 
   // Calculate preview segment details when hovering
   const previewSegmentDetails = useMemo(() => {
@@ -359,8 +365,8 @@ export const TextTrackContent = memo(function TextTrackContent({
   }, [setHoveredTrack]);
 
   // Get video dimensions for text measurement
-  const videoWidth = useVideoEditorStore((s) => s.project?.sources.originalWidth ?? 1920);
-  const videoHeight = useVideoEditorStore((s) => s.project?.sources.originalHeight ?? 1080);
+  const videoWidth = useVideoEditorStore(selectOriginalVideoWidth);
+  const videoHeight = useVideoEditorStore(selectOriginalVideoHeight);
 
   // Handle click to add segment
   const handleTrackClick = useCallback((e: React.MouseEvent) => {
@@ -406,12 +412,6 @@ export const TextTrackContent = memo(function TextTrackContent({
     addTextSegment(newSegment);
   }, [previewSegmentDetails, addTextSegment, videoWidth, videoHeight]);
 
-  // Generate IDs for segments - must match TextOverlay's ID generation
-  // Uses start time + index for selection matching, but key uses just index for stability during drag
-  const getSegmentId = useCallback((segment: TextSegment, index: number) => {
-    return `text_${segment.start.toFixed(3)}_${index}`;
-  }, []);
-
   return (
     <div
       className={`relative h-12 bg-[var(--polar-mist)]/60 border-b border-[var(--glass-border)] ${
@@ -423,7 +423,7 @@ export const TextTrackContent = memo(function TextTrackContent({
       onClick={handleTrackClick}
     >
       {segments.map((segment, index) => {
-        const segmentId = getSegmentId(segment, index);
+        const segmentId = createTextSegmentId(segment.start, index);
         return (
           <TextSegmentItem
             key={`text_segment_${index}`}

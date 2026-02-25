@@ -9,6 +9,13 @@ import {
   getSegmentTimelinePosition,
   getEffectiveDuration,
 } from '../../../stores/videoEditorStore';
+import {
+  selectDeleteTrimSegment,
+  selectSelectTrimSegment,
+  selectSelectedTrimSegmentId,
+  selectSetDraggingZoomRegion,
+  selectUpdateTrimSegment,
+} from '../../../stores/videoEditor/selectors';
 import { audioLogger } from '../../../utils/logger';
 
 interface TrimTrackProps {
@@ -75,14 +82,6 @@ const TRIM_COLORS = {
   hover: 'var(--coral-300)',
   text: 'var(--coral-400)',
 };
-
-// Selectors for atomic subscriptions
-const selectSelectedTrimSegmentId = (s: ReturnType<typeof useVideoEditorStore.getState>) =>
-  s.selectedTrimSegmentId;
-const selectSelectTrimSegment = (s: ReturnType<typeof useVideoEditorStore.getState>) => s.selectTrimSegment;
-const selectUpdateTrimSegment = (s: ReturnType<typeof useVideoEditorStore.getState>) => s.updateTrimSegment;
-const selectDeleteTrimSegment = (s: ReturnType<typeof useVideoEditorStore.getState>) => s.deleteTrimSegment;
-const selectSetDraggingZoomRegion = (s: ReturnType<typeof useVideoEditorStore.getState>) => s.setDraggingZoomRegion;
 
 /**
  * Individual trim segment component with drag handles.

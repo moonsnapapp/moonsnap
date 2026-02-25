@@ -1,9 +1,20 @@
 import { memo, useCallback, useRef, useEffect, useState, useMemo } from 'react';
 import { convertFileSrc } from '@tauri-apps/api/core';
 import { resolveResource } from '@tauri-apps/api/path';
-import { useVideoEditorStore, timelineToSource } from '../../stores/videoEditorStore';
+import { useVideoEditorStore } from '../../stores/videoEditorStore';
+import {
+  selectProject,
+  selectIsPlaying,
+  selectPreviewTimeMs,
+  selectCurrentTimeMs,
+  selectCursorRecording,
+  selectAudioConfig,
+  selectScreenVideoPath,
+} from '../../stores/videoEditor/selectors';
 import { videoEditorLogger } from '../../utils/logger';
+import { hasEnabledCrop } from '../../utils/videoContentDimensions';
 import { usePreviewOrPlaybackTime } from '../../hooks/usePlaybackEngine';
+import { useTimelineToSourceTime } from '../../hooks/useTimelineSourceTime';
 import { useZoomPreview } from '../../hooks/useZoomPreview';
 import { useInterpolatedScene, shouldRenderScreen, shouldRenderCursor, getCameraOnlyTransitionOpacity, getRegularCameraTransitionOpacity } from '../../hooks/useSceneMode';
 import { WebcamOverlay } from './WebcamOverlay';
@@ -21,15 +32,6 @@ import {
   usePlaybackSync,
 } from './gpu';
 import type { SceneSegment, SceneMode, WebcamConfig, ZoomRegion, CursorRecording, CursorConfig, MaskSegment, TextSegment, CropConfig } from '../../types';
-
-// Selectors to prevent re-renders from unrelated store changes
-const selectProject = (s: ReturnType<typeof useVideoEditorStore.getState>) => s.project;
-const selectIsPlaying = (s: ReturnType<typeof useVideoEditorStore.getState>) => s.isPlaying;
-const selectPreviewTimeMs = (s: ReturnType<typeof useVideoEditorStore.getState>) => s.previewTimeMs;
-const selectCurrentTimeMs = (s: ReturnType<typeof useVideoEditorStore.getState>) => s.currentTimeMs;
-const selectCursorRecording = (s: ReturnType<typeof useVideoEditorStore.getState>) => s.cursorRecording;
-const selectAudioConfig = (s: ReturnType<typeof useVideoEditorStore.getState>) => s.project?.audio;
-const selectSegments = (s: ReturnType<typeof useVideoEditorStore.getState>) => s.project?.timeline.segments;
 
 /**
  * Scene mode aware renderer that shows/hides content based on current scene mode.
@@ -88,19 +90,19 @@ const SceneModeRenderer = memo(function SceneModeRenderer({
   cropConfig?: CropConfig;
 }) {
   const currentTimeMs = usePreviewOrPlaybackTime();
-  const segments = useVideoEditorStore(selectSegments);
+  const toSourceTime = useTimelineToSourceTime();
   const scene = useInterpolatedScene(sceneSegments, defaultSceneMode, currentTimeMs);
 
   const sourceTimeMs = useMemo(
-    () => timelineToSource(currentTimeMs, segments ?? []),
-    [currentTimeMs, segments]
+    () => toSourceTime(currentTimeMs),
+    [currentTimeMs, toSourceTime]
   );
 
   const showScreen = shouldRenderScreen(scene);
   const showCursor = shouldRenderCursor(scene);
   const cameraOnlyOpacity = getCameraOnlyTransitionOpacity(scene);
 
-  const originalVideoPath = useVideoEditorStore((s) => s.project?.sources.screenVideo ?? null);
+  const originalVideoPath = useVideoEditorStore(selectScreenVideoPath);
 
   const zoomStyle = useZoomPreview(zoomRegions, currentTimeMs, cursorRecording, {
     backgroundPadding,
@@ -119,7 +121,7 @@ const SceneModeRenderer = memo(function SceneModeRenderer({
 
   const frameOpacity = 1 - cameraOnlyOpacity;
 
-  const cropEnabled = cropConfig?.enabled && cropConfig.width > 0 && cropConfig.height > 0;
+  const cropEnabled = hasEnabledCrop(cropConfig);
 
   const fullscreenWebcamStyle: React.CSSProperties = {
     position: 'absolute',
@@ -390,7 +392,7 @@ export function GPUVideoPreview() {
   // Calculate crop aspect ratio
   const cropAspectRatio = useMemo(() => {
     const crop = project?.export?.crop;
-    if (crop?.enabled && crop.width > 0 && crop.height > 0) {
+    if (hasEnabledCrop(crop)) {
       return crop.width / crop.height;
     }
     return null;

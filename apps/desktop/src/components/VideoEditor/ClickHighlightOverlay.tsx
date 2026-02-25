@@ -8,8 +8,9 @@
 
 import { memo, useRef, useEffect, useCallback, useMemo } from 'react';
 import { usePreviewOrPlaybackTime } from '../../hooks/usePlaybackEngine';
-import { useVideoEditorStore } from '../../stores/videoEditorStore';
-import { timelineToSource } from '../../stores/videoEditor/trimSlice';
+import { useTimelineToSourceTime } from '../../hooks/useTimelineSourceTime';
+import { remapNormalizedPointThroughCrop } from '../../utils/cropCoordinateMapping';
+import { resolveRecordingDimensions } from '../../utils/recordingDimensions';
 import type { CursorRecording, ClickHighlightConfig, CursorEvent, ZoomRegion, CropConfig } from '../../types';
 
 interface ClickHighlightOverlayProps {
@@ -223,10 +224,6 @@ function renderRing(
   ctx.stroke();
 }
 
-// Selector for trim segments
-const selectSegments = (s: ReturnType<typeof useVideoEditorStore.getState>) =>
-  s.project?.timeline.segments;
-
 /**
  * ClickHighlightOverlay component - renders click highlight animations on video.
  */
@@ -248,13 +245,13 @@ export const ClickHighlightOverlay = memo(function ClickHighlightOverlay({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const currentTimeMs = usePreviewOrPlaybackTime();
   const lastRenderTimeRef = useRef<number>(-1);
-  const segments = useVideoEditorStore(selectSegments);
+  const toSourceTime = useTimelineToSourceTime();
 
   // Convert timeline time to source time for cursor lookup
   // Click events are recorded in source time (original video), but currentTimeMs is in timeline time (after cuts)
   const sourceTimeMs = useMemo(
-    () => timelineToSource(currentTimeMs, segments ?? []),
-    [currentTimeMs, segments]
+    () => toSourceTime(currentTimeMs),
+    [currentTimeMs, toSourceTime]
   );
 
   // NOTE: Zoom transform is applied by parent container (GPUVideoPreview's frameZoomStyle)
@@ -305,24 +302,22 @@ export const ClickHighlightOverlay = memo(function ClickHighlightOverlay({
     // Render each active click highlight
     // Use cursor recording's aspect ratio for positioning (not video dimensions)
     // Cursor coordinates are normalized to the capture region, not the video file
-    const cropEnabled = Boolean(cropConfig?.enabled && cropConfig.width > 0 && cropConfig.height > 0);
-    const recordingWidth = cursorRecording.width || _videoWidth;
-    const recordingHeight = cursorRecording.height || _videoHeight;
+    const { width: recordingWidth, height: recordingHeight } = resolveRecordingDimensions(
+      cursorRecording,
+      _videoWidth,
+      _videoHeight
+    );
 
     for (const click of activeClicks) {
-      let clickX = click.x;
-      let clickY = click.y;
-
-      if (cropEnabled && cropConfig) {
-        const clickPxX = clickX * recordingWidth;
-        const clickPxY = clickY * recordingHeight;
-        clickX = (clickPxX - cropConfig.x) / cropConfig.width;
-        clickY = (clickPxY - cropConfig.y) / cropConfig.height;
-
-        if (clickX < -0.1 || clickX > 1.1 || clickY < -0.1 || clickY > 1.1) {
-          continue;
-        }
-      }
+      const remappedClick = remapNormalizedPointThroughCrop(
+        { x: click.x, y: click.y },
+        recordingWidth,
+        recordingHeight,
+        cropConfig
+      );
+      if (!remappedClick.inVisibleBounds) continue;
+      const clickX = remappedClick.point.x;
+      const clickY = remappedClick.point.y;
 
       // Convert normalized coordinates to render-space pixels.
       const pixelX = clickX * roundedRenderWidth;

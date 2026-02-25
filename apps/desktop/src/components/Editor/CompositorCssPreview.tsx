@@ -1,5 +1,6 @@
 import React from 'react';
 import type { CompositorSettings } from '../../types';
+import { getEditorShadowCss, getEditorShadowLayers } from '@/utils/frameEffects';
 
 interface CompositionBox {
   left: number;
@@ -43,7 +44,7 @@ export const CompositorCssPreview: React.FC<CompositorCssPreviewProps> = ({
   const scaledPadding = settings.padding * zoom;
   const contentWidth = compositionBox.width - scaledPadding * 2;
   const contentHeight = compositionBox.height - scaledPadding * 2;
-  const intensity = settings.shadowIntensity;
+  const shadowLayers = getEditorShadowLayers(settings.shadowIntensity);
 
   return (
     <div
@@ -60,7 +61,7 @@ export const CompositorCssPreview: React.FC<CompositorCssPreviewProps> = ({
         ...backgroundStyle,
       }}
     >
-      {settings.shadowIntensity > 0 && !hasTransparency && (
+      {shadowLayers.length > 0 && !hasTransparency && (
         <div
           style={{
             position: 'absolute',
@@ -69,11 +70,7 @@ export const CompositorCssPreview: React.FC<CompositorCssPreviewProps> = ({
             width: contentWidth,
             height: contentHeight,
             borderRadius: settings.borderRadius * zoom,
-            boxShadow: [
-              `0 ${2 * intensity}px ${10 * intensity}px rgba(0,0,0,${0.15 * intensity})`,
-              `0 ${8 * intensity}px ${30 * intensity}px rgba(0,0,0,${0.25 * intensity})`,
-              `0 ${16 * intensity}px ${60 * intensity}px rgba(0,0,0,${0.35 * intensity})`,
-            ].join(', '),
+            boxShadow: getEditorShadowCss(shadowLayers),
           }}
         />
       )}

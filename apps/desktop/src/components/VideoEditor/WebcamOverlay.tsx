@@ -2,12 +2,13 @@ import { memo, useMemo, useRef, useEffect, useState, useCallback } from 'react';
 import { convertFileSrc } from '@tauri-apps/api/core';
 import { usePreviewOrPlaybackTime } from '../../hooks/usePlaybackEngine';
 import { useVideoEditorStore } from '../../stores/videoEditorStore';
+import {
+  selectIsPlaying,
+  selectPreviewTimeMs,
+} from '../../stores/videoEditor/selectors';
 import { useWebCodecsPreview } from '../../hooks/useWebCodecsPreview';
 import { webcamLogger } from '../../utils/logger';
 import type { WebcamConfig, VisibilitySegment, CornerStyle } from '../../types';
-
-const selectIsPlaying = (s: ReturnType<typeof useVideoEditorStore.getState>) => s.isPlaying;
-const selectPreviewTimeMs = (s: ReturnType<typeof useVideoEditorStore.getState>) => s.previewTimeMs;
 
 interface WebcamOverlayProps {
   webcamVideoPath: string;

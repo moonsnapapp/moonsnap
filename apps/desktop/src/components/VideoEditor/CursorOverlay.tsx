@@ -10,10 +10,11 @@
 import { memo, useRef, useEffect, useState, useCallback, useMemo } from 'react';
 import { useCursorInterpolation } from '../../hooks/useCursorInterpolation';
 import { usePreviewOrPlaybackTime } from '../../hooks/usePlaybackEngine';
+import { useTimelineToSourceTime } from '../../hooks/useTimelineSourceTime';
 import { WINDOWS_CURSORS, DEFAULT_CURSOR, type CursorDefinition } from '../../constants/cursors';
 import { editorLogger } from '../../utils/logger';
-import { useVideoEditorStore } from '../../stores/videoEditorStore';
-import { timelineToSource } from '../../stores/videoEditor/trimSlice';
+import { remapNormalizedPointThroughCrop } from '../../utils/cropCoordinateMapping';
+import { resolveRecordingDimensions } from '../../utils/recordingDimensions';
 import type { CursorRecording, CursorConfig, CursorImage, WindowsCursorShape, ZoomRegion, CropConfig } from '../../types';
 
 // Default cursor config values
@@ -227,10 +228,6 @@ function loadBitmapCursor(
  * 2. Bitmap cursor (fallback for custom cursors)
  * 3. Default arrow SVG (fallback when nothing else available)
  */
-// Selector for trim segments
-const selectSegments = (s: ReturnType<typeof useVideoEditorStore.getState>) =>
-  s.project?.timeline.segments;
-
 export const CursorOverlay = memo(function CursorOverlay({
   cursorRecording,
   cursorConfig,
@@ -248,13 +245,13 @@ export const CursorOverlay = memo(function CursorOverlay({
 }: CursorOverlayProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const currentTimeMs = usePreviewOrPlaybackTime();
-  const segments = useVideoEditorStore(selectSegments);
+  const toSourceTime = useTimelineToSourceTime();
 
   // Convert timeline time to source time for cursor lookup
   // Cursor data is recorded in source time (original video), but currentTimeMs is in timeline time (after cuts)
   const sourceTimeMs = useMemo(
-    () => timelineToSource(currentTimeMs, segments ?? []),
-    [currentTimeMs, segments]
+    () => toSourceTime(currentTimeMs),
+    [currentTimeMs, toSourceTime]
   );
 
   // NOTE: Zoom transform is applied by parent container (GPUVideoPreview's frameZoomStyle)
@@ -372,25 +369,24 @@ export const CursorOverlay = memo(function CursorOverlay({
     // Cursor coords are 0-1 relative to original video, need to transform to cropped space
     let cursorX = cursorData.x;
     let cursorY = cursorData.y;
-    const cropEnabled = cropConfig?.enabled && cropConfig.width > 0 && cropConfig.height > 0;
+    const { width: recordingWidth, height: recordingHeight } = resolveRecordingDimensions(
+      cursorRecording,
+      videoWidth,
+      actualVideoHeight
+    );
+    const remappedCursor = remapNormalizedPointThroughCrop(
+      { x: cursorX, y: cursorY },
+      recordingWidth,
+      recordingHeight,
+      cropConfig
+    );
+    cursorX = remappedCursor.point.x;
+    cursorY = remappedCursor.point.y;
 
-    if (cropEnabled && cropConfig) {
-      // Match export exactly:
-      // cursor coordinates are normalized to uncropped source dimensions,
-      // then remapped directly into crop-relative coordinates.
-      const recordingWidth = cursorRecording?.width ?? videoWidth;
-      const recordingHeight = cursorRecording?.height ?? actualVideoHeight;
-
-      const cursorPxX = cursorX * recordingWidth;
-      const cursorPxY = cursorY * recordingHeight;
-      cursorX = (cursorPxX - cropConfig.x) / cropConfig.width;
-      cursorY = (cursorPxY - cropConfig.y) / cropConfig.height;
-
-      // Hide cursor if outside visible region
-      if (cursorX < -0.1 || cursorX > 1.1 || cursorY < -0.1 || cursorY > 1.1) {
-        ctx.clearRect(0, 0, roundedRenderWidth, roundedRenderHeight);
-        return;
-      }
+    // Hide cursor if outside visible region after crop remap.
+    if (!remappedCursor.inVisibleBounds) {
+      ctx.clearRect(0, 0, roundedRenderWidth, roundedRenderHeight);
+      return;
     }
 
     // Cursor coordinates are normalized (0-1) in source-space.

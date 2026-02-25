@@ -14,6 +14,11 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { useVideoEditorStore } from '../../stores/videoEditorStore';
+import {
+  selectHasWebcam,
+  selectToggleTrackVisibility,
+  selectTrackVisibility,
+} from '../../stores/videoEditor/selectors';
 
 type TrackType = 'video' | 'text' | 'mask' | 'zoom' | 'scene';
 
@@ -53,10 +58,6 @@ const trackDefinitions: TrackDefinition[] = [
     icon: <Video className="w-4 h-4" />,
   },
 ];
-
-const selectTrackVisibility = (s: ReturnType<typeof useVideoEditorStore.getState>) => s.trackVisibility;
-const selectHasWebcam = (s: ReturnType<typeof useVideoEditorStore.getState>) => !!s.project?.sources.webcamVideo;
-const selectToggleTrackVisibility = (s: ReturnType<typeof useVideoEditorStore.getState>) => s.toggleTrackVisibility;
 
 /**
  * TrackManager - Dropdown menu to toggle track visibility

@@ -2,6 +2,19 @@ import { memo, useCallback, useMemo } from 'react';
 import { GripVertical, Plus } from 'lucide-react';
 import type { MaskSegment, MaskType } from '../../../types';
 import { useVideoEditorStore } from '../../../stores/videoEditorStore';
+import {
+  selectAddMaskSegment,
+  selectDeleteMaskSegment,
+  selectHoveredTrack,
+  selectIsDraggingAnySegment,
+  selectIsPlaying,
+  selectPreviewTimeMs,
+  selectSelectMaskSegment,
+  selectSelectedMaskSegmentId,
+  selectSetDraggingMaskSegment,
+  selectSetHoveredTrack,
+  selectUpdateMaskSegment,
+} from '../../../stores/videoEditor/selectors';
 import { BaseSegmentItem, type BaseSegment } from './BaseTrack';
 
 interface MaskTrackProps {
@@ -28,14 +41,6 @@ const MASK_COLORS = {
   hover: 'var(--track-mask-hover)',
   text: 'var(--track-mask-text)',
 };
-
-// Selectors for atomic subscriptions
-const selectSelectedMaskSegmentId = (s: ReturnType<typeof useVideoEditorStore.getState>) => s.selectedMaskSegmentId;
-const selectSelectMaskSegment = (s: ReturnType<typeof useVideoEditorStore.getState>) => s.selectMaskSegment;
-const selectUpdateMaskSegment = (s: ReturnType<typeof useVideoEditorStore.getState>) => s.updateMaskSegment;
-const selectDeleteMaskSegment = (s: ReturnType<typeof useVideoEditorStore.getState>) => s.deleteMaskSegment;
-const selectAddMaskSegment = (s: ReturnType<typeof useVideoEditorStore.getState>) => s.addMaskSegment;
-const selectSetDraggingMaskSegment = (s: ReturnType<typeof useVideoEditorStore.getState>) => s.setDraggingMaskSegment;
 
 /**
  * Get label for mask type
@@ -117,10 +122,10 @@ export const MaskTrackContent = memo(function MaskTrackContent({
   width
 }: MaskTrackProps) {
   const selectedMaskSegmentId = useVideoEditorStore(selectSelectedMaskSegmentId);
-  const previewTimeMs = useVideoEditorStore((s) => s.previewTimeMs);
-  const hoveredTrack = useVideoEditorStore((s) => s.hoveredTrack);
-  const setHoveredTrack = useVideoEditorStore((s) => s.setHoveredTrack);
-  const isPlaying = useVideoEditorStore((s) => s.isPlaying);
+  const previewTimeMs = useVideoEditorStore(selectPreviewTimeMs);
+  const hoveredTrack = useVideoEditorStore(selectHoveredTrack);
+  const setHoveredTrack = useVideoEditorStore(selectSetHoveredTrack);
+  const isPlaying = useVideoEditorStore(selectIsPlaying);
   const selectMaskSegment = useVideoEditorStore(selectSelectMaskSegment);
   const updateMaskSegment = useVideoEditorStore(selectUpdateMaskSegment);
   const deleteMaskSegment = useVideoEditorStore(selectDeleteMaskSegment);
@@ -128,9 +133,7 @@ export const MaskTrackContent = memo(function MaskTrackContent({
   const setDraggingMaskSegment = useVideoEditorStore(selectSetDraggingMaskSegment);
 
   // Check if any segment is being dragged
-  const isDraggingAny = useVideoEditorStore((s) =>
-    s.isDraggingZoomRegion || s.isDraggingSceneSegment || s.isDraggingMaskSegment || s.isDraggingTextSegment
-  );
+  const isDraggingAny = useVideoEditorStore(selectIsDraggingAnySegment);
 
   // Calculate preview segment details when hovering
   const previewSegmentDetails = useMemo(() => {

@@ -14,6 +14,7 @@
 
 import { useCallback, useMemo, useRef, useEffect } from 'react';
 import { useVideoEditorStore, getEffectiveDuration, sourceToTimeline, timelineToSource, findSegmentAtSourceTime } from '../stores/videoEditorStore';
+import { selectCurrentTimeMs, selectPreviewTimeMs } from '../stores/videoEditor/selectors';
 
 /**
  * PlaybackEngine class - manages playback state for a single video editor instance.
@@ -161,7 +162,7 @@ export function stopPlaybackLoop() {
  * Returns preview time when scrubbing, otherwise current time from store.
  */
 export function usePlaybackTime(): number {
-  const currentTimeMs = useVideoEditorStore((s) => s.currentTimeMs);
+  const currentTimeMs = useVideoEditorStore(selectCurrentTimeMs);
   return currentTimeMs;
 }
 
@@ -169,8 +170,8 @@ export function usePlaybackTime(): number {
  * Hook that returns preview time when scrubbing, or playback time otherwise.
  */
 export function usePreviewOrPlaybackTime(): number {
-  const currentTimeMs = useVideoEditorStore((s) => s.currentTimeMs);
-  const previewTimeMs = useVideoEditorStore((s) => s.previewTimeMs);
+  const currentTimeMs = useVideoEditorStore(selectCurrentTimeMs);
+  const previewTimeMs = useVideoEditorStore(selectPreviewTimeMs);
   return previewTimeMs !== null ? previewTimeMs : currentTimeMs;
 }
 

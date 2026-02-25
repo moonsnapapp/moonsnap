@@ -4,80 +4,33 @@ import { videoEditorLogger } from '../../utils/logger';
 import { sanitizeProjectForSave } from './projectSlice';
 import { clipSegmentsToTimelineRange, getEffectiveDuration } from './trimSlice';
 import { preRenderForExport } from '../../utils/textPreRenderer';
+import {
+  calculateCompositionOutputSize,
+  calculateFrameBoundsInComposition,
+  MIN_COMPOSITION_FRAME_DIMENSION,
+  toEven,
+} from '../../utils/compositionBounds';
+import { getContentDimensionsFromCrop } from '../../utils/videoContentDimensions';
 
-const MIN_FRAME_DIMENSION = 1;
-const REFERENCE_COMPOSITION_HEIGHT = 1080;
-
-const toEven = (value: number): number => Math.floor(value / 2) * 2;
-
-function getEffectiveManualPadding(
-  requestedPadding: number,
-  outputWidth: number,
-  outputHeight: number,
-): number {
-  if (requestedPadding <= 0 || outputWidth <= 0 || outputHeight <= 0) {
-    return 0;
-  }
-
-  const scaledPadding = requestedPadding * (outputHeight / REFERENCE_COMPOSITION_HEIGHT);
-  const maxPadding = Math.max(0, (Math.min(outputWidth, outputHeight) - MIN_FRAME_DIMENSION) / 2);
-  return Math.min(scaledPadding, maxPadding);
-}
-
-function calculateCompositionOutputSize(
-  project: VideoProject,
-  videoW: number,
-  videoH: number,
-  padding: number,
-): { width: number; height: number } {
-  const composition = project.export.composition;
-
-  if (composition.mode === 'auto') {
-    return {
-      width: toEven(videoW + padding * 2),
-      height: toEven(videoH + padding * 2),
-    };
-  }
-
-  if (composition.width && composition.height) {
-    return {
-      width: toEven(composition.width),
-      height: toEven(composition.height),
-    };
-  }
-
-  if (composition.aspectRatio) {
-    const videoRatio = videoW / videoH;
-    const targetRatio = composition.aspectRatio;
-
-    if (targetRatio > videoRatio) {
-      const h = videoH + padding * 2;
-      const w = Math.floor(h * targetRatio);
-      return { width: toEven(w), height: toEven(h) };
-    }
-
-    const w = videoW + padding * 2;
-    const h = Math.floor(w / targetRatio);
-    return { width: toEven(w), height: toEven(h) };
-  }
-
-  return {
-    width: toEven(videoW + padding * 2),
-    height: toEven(videoH + padding * 2),
-  };
-}
+const MIN_FRAME_DIMENSION = MIN_COMPOSITION_FRAME_DIMENSION;
 
 function calculateTextFrameSizeForExport(project: VideoProject): { width: number; height: number } {
   const crop = project.export.crop;
-  const cropEnabled = crop?.enabled && crop.width > 0 && crop.height > 0;
-
-  const rawVideoW = cropEnabled ? crop.width : (project.sources.originalWidth ?? 1920);
-  const rawVideoH = cropEnabled ? crop.height : (project.sources.originalHeight ?? 1080);
+  const { width: rawVideoW, height: rawVideoH } = getContentDimensionsFromCrop(
+    crop,
+    project.sources.originalWidth ?? 1920,
+    project.sources.originalHeight ?? 1080
+  );
   const videoW = toEven(rawVideoW);
   const videoH = toEven(rawVideoH);
   const padding = project.export.background.padding;
 
-  const composition = calculateCompositionOutputSize(project, videoW, videoH, padding);
+  const composition = calculateCompositionOutputSize(
+    videoW,
+    videoH,
+    padding,
+    project.export.composition
+  );
 
   // Mirrors Rust parity::calculate_composition_bounds() used by exporter/mod.rs.
   if (project.export.composition.mode !== 'manual') {
@@ -87,22 +40,17 @@ function calculateTextFrameSizeForExport(project: VideoProject): { width: number
     };
   }
 
-  const effectivePadding = getEffectiveManualPadding(
+  const frameBounds = calculateFrameBoundsInComposition(
+    videoW,
+    videoH,
     padding,
-    composition.width,
-    composition.height,
+    composition,
+    project.export.composition
   );
-  const availableW = Math.max(MIN_FRAME_DIMENSION, composition.width - effectivePadding * 2);
-  const availableH = Math.max(MIN_FRAME_DIMENSION, composition.height - effectivePadding * 2);
-  const videoAspect = videoW / videoH;
-  const availableAspect = availableW / availableH;
-
-  const frameW = videoAspect > availableAspect ? availableW : availableH * videoAspect;
-  const frameH = videoAspect > availableAspect ? availableW / videoAspect : availableH;
 
   return {
-    width: Math.max(MIN_FRAME_DIMENSION, Math.floor(frameW)),
-    height: Math.max(MIN_FRAME_DIMENSION, Math.floor(frameH)),
+    width: Math.max(MIN_FRAME_DIMENSION, Math.floor(frameBounds.width)),
+    height: Math.max(MIN_FRAME_DIMENSION, Math.floor(frameBounds.height)),
   };
 }
 

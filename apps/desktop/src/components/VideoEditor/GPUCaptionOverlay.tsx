@@ -1,6 +1,8 @@
 import { memo, useCallback, useEffect, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { useVideoEditorStore } from '../../stores/videoEditorStore';
+import { selectCaptionSegments, selectCaptionSettings } from '../../stores/videoEditor/selectors';
+import type { VideoEditorState } from '../../stores/videoEditor/types';
 import { usePreviewOrPlaybackTime } from '../../hooks/usePlaybackEngine';
 import { usePreviewStream } from '../../hooks/usePreviewStream';
 import { videoEditorLogger } from '../../utils/logger';
@@ -20,8 +22,8 @@ type RenderCaptionOverlayArgs = {
 };
 
 type CaptionOverlayDataArgs = {
-  segments: ReturnType<typeof useVideoEditorStore.getState>['captionSegments'];
-  settings: ReturnType<typeof useVideoEditorStore.getState>['captionSettings'];
+  segments: VideoEditorState['captionSegments'];
+  settings: VideoEditorState['captionSettings'];
 };
 
 export const GPUCaptionOverlay = memo(function GPUCaptionOverlay({
@@ -31,8 +33,8 @@ export const GPUCaptionOverlay = memo(function GPUCaptionOverlay({
   displayHeight,
   onActiveChange,
 }: GPUCaptionOverlayProps) {
-  const captionSegments = useVideoEditorStore((s) => s.captionSegments);
-  const captionSettings = useVideoEditorStore((s) => s.captionSettings);
+  const captionSegments = useVideoEditorStore(selectCaptionSegments);
+  const captionSettings = useVideoEditorStore(selectCaptionSettings);
   const currentTimeMs = usePreviewOrPlaybackTime();
   const [gpuFailed, setGpuFailed] = useState(false);
 
@@ -238,4 +240,3 @@ export const GPUCaptionOverlay = memo(function GPUCaptionOverlay({
 });
 
 export default GPUCaptionOverlay;
-

@@ -5,17 +5,16 @@
  * Zoom is applied at the frame wrapper level in SceneModeRenderer.
  */
 
-import { memo, useRef, useEffect, useState, useMemo, useCallback } from 'react';
+import { memo, useRef, useEffect, useState, useMemo } from 'react';
 import { convertFileSrc } from '@tauri-apps/api/core';
-import { useVideoEditorStore, timelineToSource } from '../../../stores/videoEditorStore';
+import { useVideoEditorStore } from '../../../stores/videoEditorStore';
+import {
+  selectIsPlaying,
+  selectPreviewTimeMs,
+} from '../../../stores/videoEditor/selectors';
 import { usePreviewOrPlaybackTime } from '../../../hooks/usePlaybackEngine';
+import { useTimelineToSourceTime } from '../../../hooks/useTimelineSourceTime';
 import { useWebCodecsPreview } from '../../../hooks/useWebCodecsPreview';
-import type { TrimSegment } from '../../../types';
-
-// Selectors to prevent re-renders from unrelated store changes
-const selectPreviewTimeMs = (s: ReturnType<typeof useVideoEditorStore.getState>) => s.previewTimeMs;
-const selectIsPlaying = (s: ReturnType<typeof useVideoEditorStore.getState>) => s.isPlaying;
-const selectSegments = (s: ReturnType<typeof useVideoEditorStore.getState>) => s.project?.timeline.segments as TrimSegment[] | undefined;
 
 /**
  * WebCodecs-accelerated preview canvas for instant scrubbing.
@@ -37,16 +36,8 @@ export const WebCodecsCanvasNoZoom = memo(function WebCodecsCanvasNoZoom({
 
   const previewTimeMs = useVideoEditorStore(selectPreviewTimeMs);
   const isPlaying = useVideoEditorStore(selectIsPlaying);
-  const segments = useVideoEditorStore(selectSegments);
+  const getSourceTime = useTimelineToSourceTime();
   const { getFrame, prefetchAround, isReady } = useWebCodecsPreview(videoPath);
-
-  // Convert timeline time to source time for video seeking
-  const getSourceTime = useCallback((timelineTimeMs: number): number => {
-    if (!segments || segments.length === 0) {
-      return timelineTimeMs;
-    }
-    return timelineToSource(timelineTimeMs, segments);
-  }, [segments]);
 
   // Prefetch frames when preview position changes (use source time)
   useEffect(() => {
@@ -150,15 +141,7 @@ export const VideoNoZoom = memo(function VideoNoZoom({
 }) {
   const currentTimeMs = usePreviewOrPlaybackTime();
   const isPlaying = useVideoEditorStore(selectIsPlaying);
-  const segments = useVideoEditorStore(selectSegments);
-
-  // Convert timeline time to source time for video seeking
-  const getSourceTime = useCallback((timelineTimeMs: number): number => {
-    if (!segments || segments.length === 0) {
-      return timelineTimeMs;
-    }
-    return timelineToSource(timelineTimeMs, segments);
-  }, [segments]);
+  const getSourceTime = useTimelineToSourceTime();
 
   // Keep video seeked even when hidden (needed for mask overlay sampling)
   // Convert timeline time to source time before seeking
@@ -214,17 +197,9 @@ export const FullscreenWebcam = memo(function FullscreenWebcam({
   const videoRef = useRef<HTMLVideoElement>(null);
   const currentTimeMs = usePreviewOrPlaybackTime();
   const isPlaying = useVideoEditorStore(selectIsPlaying);
-  const segments = useVideoEditorStore(selectSegments);
+  const getSourceTime = useTimelineToSourceTime();
 
   const videoSrc = useMemo(() => convertFileSrc(webcamVideoPath), [webcamVideoPath]);
-
-  // Convert timeline time to source time for video seeking
-  const getSourceTime = useCallback((timelineTimeMs: number): number => {
-    if (!segments || segments.length === 0) {
-      return timelineTimeMs;
-    }
-    return timelineToSource(timelineTimeMs, segments);
-  }, [segments]);
 
   // Sync webcam video play/pause state with main playback
   useEffect(() => {

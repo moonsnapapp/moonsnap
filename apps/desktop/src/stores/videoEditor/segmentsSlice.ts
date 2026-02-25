@@ -9,6 +9,7 @@ import type {
   CursorConfig,
   AudioTrackSettings,
 } from './types';
+import { createTextSegmentId, getTextSegmentIndexFromId } from '../../utils/textSegmentId';
 
 /**
  * Generate a unique zoom region ID
@@ -221,8 +222,8 @@ export const createSegmentsSlice: SliceCreator<SegmentsSlice> = (set, get) => ({
     // Find the index of the newly added segment after sorting
     const newIndex = segments.findIndex((s) => Math.abs(s.start - clampedSegment.start) < 0.001);
 
-    // Generate ID for selection (matches frontend component ID generation: text_<start>_<index>)
-    const segmentId = `text_${clampedSegment.start.toFixed(3)}_${newIndex}`;
+    // Generate selection ID (shared formatter used by TextTrack/TextOverlay).
+    const segmentId = createTextSegmentId(clampedSegment.start, newIndex);
 
     set({
       project: {
@@ -240,12 +241,8 @@ export const createSegmentsSlice: SliceCreator<SegmentsSlice> = (set, get) => ({
     const { project } = get();
     if (!project) return;
 
-    // Find segment by generated ID (format: text_<start>_<index>)
-    // Use index for reliable matching during drag (start time changes)
-    const idParts = id.match(/^text_[0-9.]+_(\d+)$/);
-    if (!idParts) return;
-
-    const targetIndex = parseInt(idParts[1], 10);
+    const targetIndex = getTextSegmentIndexFromId(id);
+    if (targetIndex === null) return;
     if (targetIndex < 0 || targetIndex >= project.text.segments.length) return;
 
     set({
@@ -268,12 +265,8 @@ export const createSegmentsSlice: SliceCreator<SegmentsSlice> = (set, get) => ({
     const { project, selectedTextSegmentId } = get();
     if (!project) return;
 
-    // Find segment by generated ID (format: text_<start>_<index>)
-    // Use index for reliable matching
-    const idParts = id.match(/^text_[0-9.]+_(\d+)$/);
-    if (!idParts) return;
-
-    const targetIndex = parseInt(idParts[1], 10);
+    const targetIndex = getTextSegmentIndexFromId(id);
+    if (targetIndex === null) return;
     if (targetIndex < 0 || targetIndex >= project.text.segments.length) return;
 
     set({

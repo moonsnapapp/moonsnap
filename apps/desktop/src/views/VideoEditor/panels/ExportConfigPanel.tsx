@@ -1,4 +1,4 @@
-/**
+﻿/**
  * ExportConfigPanel - Format, FPS, resolution, crop, and audio settings.
  */
 import { useMemo } from 'react';
@@ -6,10 +6,9 @@ import { Crop, X } from 'lucide-react';
 import { Button } from '../../../components/ui/button';
 import { AudioControlsPanel } from './AudioControlsPanel';
 import type { VideoProject, ExportConfig, ExportFormat, AudioTrackSettings } from '../../../types';
-
-function toEven(value: number): number {
-  return Math.floor(value / 2) * 2;
-}
+import { calculateCompositionOutputSize } from '@/utils/compositionBounds';
+import { hasVideoBackgroundFrameStyling } from '@/utils/backgroundFrameStyling';
+import { getContentDimensionsFromCrop } from '@/utils/videoContentDimensions';
 
 export interface ExportConfigPanelProps {
   project: VideoProject;
@@ -19,18 +18,31 @@ export interface ExportConfigPanelProps {
 }
 
 export function ExportConfigPanel({ project, onUpdateExportConfig, onUpdateAudioConfig, onOpenCropDialog }: ExportConfigPanelProps) {
-  const autoResolution = useMemo(() => {
+  const outputResolution = useMemo(() => {
     const crop = project.export.crop;
     const bg = project.export.background;
-    const contentW = crop?.enabled && crop.width > 0 ? crop.width : project.sources.originalWidth;
-    const contentH = crop?.enabled && crop.height > 0 ? crop.height : project.sources.originalHeight;
-    const hasStyling = bg?.enabled && (bg.padding > 0 || bg.rounding > 0 || bg.shadow?.enabled || bg.border?.enabled);
+    const { width: contentW, height: contentH } = getContentDimensionsFromCrop(
+      crop,
+      project.sources.originalWidth,
+      project.sources.originalHeight
+    );
+    const hasStyling = hasVideoBackgroundFrameStyling(bg);
     const padding = hasStyling ? (bg?.padding ?? 0) : 0;
-    return {
-      width: toEven(contentW + padding * 2),
-      height: toEven(contentH + padding * 2),
-    };
-  }, [project.export.crop, project.export.background, project.sources.originalWidth, project.sources.originalHeight]);
+
+    return calculateCompositionOutputSize(
+      contentW,
+      contentH,
+      padding,
+      project.export.composition
+    );
+  }, [
+    project.export.crop,
+    project.export.background,
+    project.export.composition,
+    project.sources.originalWidth,
+    project.sources.originalHeight,
+  ]);
+
   return (
     <div className="space-y-4">
       {/* Format */}
@@ -87,18 +99,16 @@ export function ExportConfigPanel({ project, onUpdateExportConfig, onUpdateAudio
           className="w-full h-8 bg-[var(--polar-mist)] border border-[var(--glass-border)] rounded-md text-sm text-[var(--ink-dark)] px-2"
         >
           <option value="auto">Auto (Match Source)</option>
-          <option value="3840x2160">4K (3840×2160)</option>
-          <option value="1920x1080">1080p (1920×1080)</option>
-          <option value="1280x720">720p (1280×720)</option>
-          <option value="1080x1920">1080p Portrait (1080×1920)</option>
-          <option value="1080x1080">Square (1080×1080)</option>
+          <option value="3840x2160">4K (3840x2160)</option>
+          <option value="1920x1080">1080p (1920x1080)</option>
+          <option value="1280x720">720p (1280x720)</option>
+          <option value="1080x1920">1080p Portrait (1080x1920)</option>
+          <option value="1080x1080">Square (1080x1080)</option>
         </select>
         <div className="flex items-center gap-2 mt-2 px-2.5 py-1.5 rounded-md bg-[var(--polar-mist)] border border-[var(--glass-border)]">
           <span className="text-[11px] text-[var(--ink-muted)]">Output</span>
           <span className="text-[11px] text-[var(--ink-dark)] font-mono font-medium">
-            {project.export.composition?.mode === 'manual' && project.export.composition?.width
-              ? `${project.export.composition.width}×${project.export.composition.height}`
-              : `${autoResolution.width}×${autoResolution.height}`}
+            {`${outputResolution.width}x${outputResolution.height}`}
           </span>
         </div>
       </div>
@@ -143,3 +153,4 @@ export function ExportConfigPanel({ project, onUpdateExportConfig, onUpdateAudio
     </div>
   );
 }
+
