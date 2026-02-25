@@ -456,7 +456,7 @@ export function VideoTimeline({ onExport, onResetTrimSegments, onSetInPoint, onS
 
   // Handle mouse move for preview scrubber (on scroll container to catch moves outside content)
   const handleTimelineMouseMove = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
-    if (isPlaying) {
+    if (isPlaying || isDraggingPlayhead || draggingIOMarker !== null) {
       if (useVideoEditorStore.getState().previewTimeMs !== null) {
         setPreviewTime(null);
       }
@@ -487,7 +487,7 @@ export function VideoTimeline({ onExport, onResetTrimSegments, onSetInPoint, onS
         setPreviewTime(nextPreviewTimeMs);
       });
     }
-  }, [isPlaying, effectiveDurationMs, timelineZoom, setPreviewTime]);
+  }, [isPlaying, isDraggingPlayhead, draggingIOMarker, effectiveDurationMs, timelineZoom, setPreviewTime]);
 
   // Clear preview on mouse leave (only when leaving the scroll container entirely)
   const handleTimelineMouseLeave = useCallback(() => {
@@ -499,6 +499,75 @@ export function VideoTimeline({ onExport, onResetTrimSegments, onSetInPoint, onS
     lastPreviewTimeRef.current = null;
     setPreviewTime(null);
   }, [setPreviewTime]);
+
+  // Handle dragging on the ruler to scrub playhead position continuously.
+  const handleRulerMouseDown = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    const target = e.target as HTMLElement;
+    if (target.closest('[data-timeline-control]')) {
+      return;
+    }
+
+    e.preventDefault();
+    e.stopPropagation();
+    setDraggingPlayhead(true);
+    setPreviewTime(null);
+
+    let dragRafId: number | null = null;
+    let pendingSeekTime: number | null = null;
+    let lastSeekTime: number | null = null;
+
+    const getTimeFromClientX = (clientX: number): number | null => {
+      const scrollContainer = scrollRef.current;
+      if (!scrollContainer) return null;
+
+      const rect = scrollContainer.getBoundingClientRect();
+      const scrollLeft = scrollContainer.scrollLeft;
+      const x = clientX - rect.left + scrollLeft;
+      return quantizeTimeMs(
+        Math.max(0, Math.min(effectiveDurationMs, x / timelineZoom)),
+        TIMING.SCRUB_SEEK_STEP_MS
+      );
+    };
+
+    const flushSeek = () => {
+      if (pendingSeekTime === null || pendingSeekTime === lastSeekTime) {
+        return;
+      }
+      lastSeekTime = pendingSeekTime;
+      controls.seek(pendingSeekTime);
+    };
+
+    const initialSeekTime = getTimeFromClientX(e.clientX);
+    if (initialSeekTime !== null) {
+      pendingSeekTime = initialSeekTime;
+      flushSeek();
+    }
+
+    const handleMouseMove = (moveEvent: MouseEvent) => {
+      pendingSeekTime = getTimeFromClientX(moveEvent.clientX);
+
+      if (dragRafId === null) {
+        dragRafId = requestAnimationFrame(() => {
+          dragRafId = null;
+          flushSeek();
+        });
+      }
+    };
+
+    const handleMouseUp = () => {
+      if (dragRafId !== null) {
+        cancelAnimationFrame(dragRafId);
+        dragRafId = null;
+      }
+      flushSeek();
+      setDraggingPlayhead(false);
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+  }, [effectiveDurationMs, timelineZoom, controls, setDraggingPlayhead, setPreviewTime]);
 
   // Handle playhead dragging (content area, account for label column offset)
   const handlePlayheadMouseDown = useCallback((e: React.MouseEvent) => {
@@ -669,9 +738,9 @@ export function VideoTimeline({ onExport, onResetTrimSegments, onSetInPoint, onS
               <TooltipTrigger asChild>
                 <button
                   data-cut-mode-toggle
+                  aria-pressed={splitMode}
                   onClick={handleToggleCutMode}
-                  className={splitMode ? 'tool-button h-8 w-8 active' : 'glass-btn h-8 w-8'}
-                  style={splitMode ? { color: 'var(--coral-400)' } : undefined}
+                  className={`glass-btn h-8 w-8 timeline-cut-toggle ${splitMode ? 'timeline-cut-toggle--active' : ''}`}
                 >
                   <Scissors className="w-4 h-4" />
                 </button>
@@ -992,6 +1061,7 @@ export function VideoTimeline({ onExport, onResetTrimSegments, onSetInPoint, onS
               durationMs={effectiveDurationMs}
               timelineZoom={timelineZoom}
               width={timelineWidth}
+              onMouseDown={handleRulerMouseDown}
             />
 
             {/* Video Track Content (Trim Segments) */}

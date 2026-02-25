@@ -2488,6 +2488,25 @@ body.overlay-window #root {
   background: rgba(255, 255, 255, 0.06);
 }
 
+/* Stable timeline cut toggle: no positional hover/press motion to avoid layout/jump */
+.timeline-cut-toggle:hover,
+.timeline-cut-toggle:active {
+  transform: none;
+}
+
+.timeline-cut-toggle--active {
+  background: linear-gradient(135deg, var(--coral-400) 0%, var(--coral-500) 100%);
+  border-color: rgba(255, 255, 255, 0.22);
+  color: #ffffff;
+  box-shadow: 0 2px 10px rgba(249, 112, 102, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.18);
+}
+
+.timeline-cut-toggle--active:hover {
+  background: linear-gradient(135deg, var(--coral-400) 0%, var(--coral-500) 100%);
+  border-color: rgba(255, 255, 255, 0.28);
+  color: #ffffff;
+}
+
 /* Active/toggled state */
 .glass-btn--active {
   background: rgba(255, 255, 255, 0.12);

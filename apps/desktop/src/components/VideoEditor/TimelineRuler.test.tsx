@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { describe, it, expect, vi } from 'vitest';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { TimelineRuler } from './TimelineRuler';
 
 describe('TimelineRuler', () => {
@@ -23,6 +23,16 @@ describe('TimelineRuler', () => {
       expect(screen.getByText('0:00')).toBeInTheDocument();
       expect(screen.getByText('0:01')).toBeInTheDocument();
       expect(screen.getByText('0:02')).toBeInTheDocument();
+    });
+
+    it('should forward mouse down events for ruler scrubbing', () => {
+      const onMouseDown = vi.fn();
+      const { container } = render(
+        <TimelineRuler durationMs={10000} timelineZoom={0.1} width={1000} onMouseDown={onMouseDown} />
+      );
+
+      fireEvent.mouseDown(container.firstChild as HTMLElement, { clientX: 200 });
+      expect(onMouseDown).toHaveBeenCalledTimes(1);
     });
   });
 
