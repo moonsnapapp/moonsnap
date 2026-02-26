@@ -177,6 +177,7 @@ fn apply_cpu_compositing(pending: &mut PendingCpuWork, ctx: &CpuCompositeCtx) {
                         cursor.x,
                         cursor.y,
                         ctx.cursor_scale,
+                        cursor.opacity,
                     );
                 } else {
                     let mut rendered = false;

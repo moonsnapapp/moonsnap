@@ -264,7 +264,10 @@ export const CursorOverlay = memo(function CursorOverlay({
   const triggerUpdate = useCallback(() => forceUpdate((n) => n + 1), []);
 
   // Get interpolated cursor data
-  const { getCursorAt, hasCursorData, cursorImages } = useCursorInterpolation(cursorRecording);
+  const { getCursorAt, hasCursorData, cursorImages } = useCursorInterpolation(
+    cursorRecording,
+    cursorConfig?.hideWhenIdle ?? true
+  );
 
   // Default cursor shape fallback when shape detection fails.
   // Uses 'arrow' as the universal default (most common cursor in general usage).
@@ -316,6 +319,7 @@ export const CursorOverlay = memo(function CursorOverlay({
 
   // Get cursor position at source time (cursor data is in source time coordinates)
   const cursorData = hasCursorData ? getCursorAt(sourceTimeMs) : null;
+  const cursorOpacity = Math.max(0, Math.min(1, cursorData?.opacity ?? 1));
   const roundedRenderWidth = Math.max(1, Math.round(renderWidth));
   const roundedRenderHeight = Math.max(1, Math.round(renderHeight));
   const roundedDisplayWidth = Math.max(1, Math.round(displayWidth));
@@ -365,6 +369,11 @@ export const CursorOverlay = memo(function CursorOverlay({
     // Enable high-quality image smoothing for SVG cursor rendering
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = 'high';
+
+    if (cursorOpacity <= 0) {
+      ctx.clearRect(0, 0, roundedRenderWidth, roundedRenderHeight);
+      return;
+    }
 
     // Transform cursor coordinates for crop
     // Cursor coords are 0-1 relative to original video, need to transform to cropped space
@@ -445,11 +454,11 @@ export const CursorOverlay = memo(function CursorOverlay({
           const sampleY = pixelY + offsetY * roundedRenderHeight;
           const weight = (1 - t * 0.75) * motionBlur * velocityFactor * weightNormalization;
           if (weight > 0) {
-            drawSample(sampleX, sampleY, weight);
+            drawSample(sampleX, sampleY, weight * cursorOpacity);
           }
         }
       }
-      drawSample(pixelX, pixelY, 1);
+      drawSample(pixelX, pixelY, cursorOpacity);
     };
 
     const drawCircleAt = (x: number, y: number, opacity: number) => {
@@ -566,6 +575,7 @@ export const CursorOverlay = memo(function CursorOverlay({
   }, [
     cursorData,
     currentCursor,
+    cursorOpacity,
     visible,
     cursorType,
     scale,
@@ -578,6 +588,7 @@ export const CursorOverlay = memo(function CursorOverlay({
     cursorImages,
     triggerUpdate,
     currentTimeMs,
+    cursorRecording,
     cursorRecording?.width,
     cursorRecording?.height,
     cropConfig,

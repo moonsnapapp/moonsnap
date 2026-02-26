@@ -22,12 +22,88 @@ export interface InterpolatedCursor {
   velocityY: number;
   /** Active cursor image ID (references cursorImages map) */
   cursorId: string | null;
+  /** Opacity (0-1) based on inactivity fade-out */
+  opacity: number;
   /** Scale factor (reserved for click animation parity) */
   scale: number;
 }
 
+// Cursor idle fade constants - keep aligned with Rust rendering/cursor.rs.
+const CURSOR_IDLE_TIMEOUT_MS = 1200;
+const CURSOR_IDLE_FADE_DURATION_MS = 300;
+// Ignore tiny move jitter when deciding if cursor is "active".
+// Normalized units: 0.0015 ~= ~3px at 1920px width.
+const CURSOR_ACTIVITY_MOVE_DEADZONE = 0.0015;
+const CURSOR_ACTIVITY_MOVE_DEADZONE_SQ = CURSOR_ACTIVITY_MOVE_DEADZONE * CURSOR_ACTIVITY_MOVE_DEADZONE;
+
 function getCursorClickScale(_events: CursorEvent[], _timeMs: number): number {
   return 1.0;
+}
+
+function isCursorActivityEvent(event: CursorEvent): boolean {
+  const type = event.eventType.type;
+  return (
+    type === 'move' ||
+    type === 'leftClick' ||
+    type === 'rightClick' ||
+    type === 'middleClick' ||
+    type === 'scroll'
+  );
+}
+
+function collectCursorActivityEvents(events: CursorEvent[]): CursorEvent[] {
+  const activityEvents: CursorEvent[] = [];
+  let lastSignificantMove: CursorEvent | null = null;
+
+  for (const event of events) {
+    if (!isCursorActivityEvent(event)) {
+      continue;
+    }
+
+    if (event.eventType.type !== 'move') {
+      activityEvents.push(event);
+      continue;
+    }
+
+    if (!lastSignificantMove) {
+      activityEvents.push(event);
+      lastSignificantMove = event;
+      continue;
+    }
+
+    const dx = event.x - lastSignificantMove.x;
+    const dy = event.y - lastSignificantMove.y;
+    const distanceSq = dx * dx + dy * dy;
+    if (distanceSq >= CURSOR_ACTIVITY_MOVE_DEADZONE_SQ) {
+      activityEvents.push(event);
+      lastSignificantMove = event;
+    }
+  }
+
+  return activityEvents;
+}
+
+function getCursorIdleOpacity(activityEvents: CursorEvent[], timeMs: number): number {
+  if (activityEvents.length === 0) {
+    return 1.0;
+  }
+
+  const idx = findLastEventAtOrBefore(activityEvents, timeMs);
+  if (idx < 0) {
+    return 1.0;
+  }
+
+  const idleMs = Math.max(0, timeMs - activityEvents[idx].timestampMs);
+  if (idleMs <= CURSOR_IDLE_TIMEOUT_MS) {
+    return 1.0;
+  }
+
+  if (CURSOR_IDLE_FADE_DURATION_MS <= 0) {
+    return 0.0;
+  }
+
+  const fadeProgress = (idleMs - CURSOR_IDLE_TIMEOUT_MS) / CURSOR_IDLE_FADE_DURATION_MS;
+  return Math.max(0, Math.min(1, 1 - fadeProgress));
 }
 
 function findLastEventAtOrBefore(events: CursorEvent[], timeMs: number): number {
@@ -73,12 +149,13 @@ function interpolateRawAtTime(
   moveEvents: CursorEvent[],
   originalEvents: CursorEvent[],
   timeMs: number,
-  cursorId: string | null
+  cursorId: string | null,
+  opacity: number
 ): InterpolatedCursor {
   const scale = getCursorClickScale(originalEvents, timeMs);
 
   if (moveEvents.length === 0) {
-    return { x: 0.5, y: 0.5, velocityX: 0, velocityY: 0, cursorId, scale };
+    return { x: 0.5, y: 0.5, velocityX: 0, velocityY: 0, cursorId, opacity, scale };
   }
 
   if (timeMs <= moveEvents[0].timestampMs) {
@@ -90,6 +167,7 @@ function interpolateRawAtTime(
       velocityX: velocity.x,
       velocityY: velocity.y,
       cursorId,
+      opacity,
       scale,
     };
   }
@@ -104,6 +182,7 @@ function interpolateRawAtTime(
       velocityX: velocity.x,
       velocityY: velocity.y,
       cursorId,
+      opacity,
       scale,
     };
   }
@@ -121,6 +200,7 @@ function interpolateRawAtTime(
       velocityX: velocity.x,
       velocityY: velocity.y,
       cursorId,
+      opacity,
       scale,
     };
   }
@@ -131,6 +211,7 @@ function interpolateRawAtTime(
     velocityX: 0,
     velocityY: 0,
     cursorId,
+    opacity,
     scale,
   };
 }
@@ -153,7 +234,8 @@ function getFallbackCursorId(cursorRecording: CursorRecording | null | undefined
  * Hook to get interpolated cursor position at any timestamp.
  */
 export function useCursorInterpolation(
-  cursorRecording: CursorRecording | null | undefined
+  cursorRecording: CursorRecording | null | undefined,
+  hideWhenIdle = true
 ) {
   const originalEvents = useMemo(() => {
     const events = cursorRecording?.events ?? [];
@@ -171,6 +253,10 @@ export function useCursorInterpolation(
     () => originalEvents.filter((e) => e.cursorId !== null),
     [originalEvents]
   );
+  const activityEvents = useMemo(
+    () => collectCursorActivityEvents(originalEvents),
+    [originalEvents]
+  );
   const fallbackCursorId = useMemo(
     () => getFallbackCursorId(cursorRecording),
     [cursorRecording]
@@ -181,9 +267,12 @@ export function useCursorInterpolation(
     (timeMs: number): InterpolatedCursor => {
       const adjustedTimeMs = timeMs + videoStartOffsetMs;
       const cursorId = getActiveCursorId(cursorIdEvents, adjustedTimeMs) ?? fallbackCursorId;
-      return interpolateRawAtTime(rawMoveEvents, originalEvents, adjustedTimeMs, cursorId);
+      const opacity = hideWhenIdle
+        ? getCursorIdleOpacity(activityEvents, adjustedTimeMs)
+        : 1.0;
+      return interpolateRawAtTime(rawMoveEvents, originalEvents, adjustedTimeMs, cursorId, opacity);
     },
-    [rawMoveEvents, originalEvents, cursorIdEvents, fallbackCursorId, videoStartOffsetMs]
+    [rawMoveEvents, originalEvents, cursorIdEvents, activityEvents, fallbackCursorId, videoStartOffsetMs, hideWhenIdle]
   );
 
   return {
@@ -198,10 +287,11 @@ export function useCursorInterpolation(
  */
 export function getRawCursorAt(
   recording: CursorRecording | null | undefined,
-  timeMs: number
+  timeMs: number,
+  hideWhenIdle = true
 ): InterpolatedCursor {
   if (!recording || recording.events.length === 0) {
-    return { x: 0.5, y: 0.5, velocityX: 0, velocityY: 0, cursorId: null, scale: 1.0 };
+    return { x: 0.5, y: 0.5, velocityX: 0, velocityY: 0, cursorId: null, opacity: 1.0, scale: 1.0 };
   }
 
   const adjustedTimeMs = timeMs + (recording.videoStartOffsetMs ?? 0);
@@ -210,7 +300,11 @@ export function getRawCursorAt(
     : [...recording.events].sort((a, b) => a.timestampMs - b.timestampMs);
   const moveEvents = originalEvents.filter((e: CursorEvent) => e.eventType.type === 'move');
   const cursorIdEvents = originalEvents.filter((e) => e.cursorId !== null);
+  const activityEvents = collectCursorActivityEvents(originalEvents);
   const cursorId = getActiveCursorId(cursorIdEvents, adjustedTimeMs) ?? getFallbackCursorId(recording);
+  const opacity = hideWhenIdle
+    ? getCursorIdleOpacity(activityEvents, adjustedTimeMs)
+    : 1.0;
 
-  return interpolateRawAtTime(moveEvents, originalEvents, adjustedTimeMs, cursorId);
+  return interpolateRawAtTime(moveEvents, originalEvents, adjustedTimeMs, cursorId, opacity);
 }

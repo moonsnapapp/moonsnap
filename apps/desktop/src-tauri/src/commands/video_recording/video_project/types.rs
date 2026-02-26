@@ -448,8 +448,15 @@ pub struct CursorConfig {
     /// Motion blur amount (0.0 = none, 1.0 = maximum).
     #[serde(default)]
     pub motion_blur: f32,
+    /// Fade cursor out after inactivity.
+    #[serde(default = "default_cursor_hide_when_idle")]
+    pub hide_when_idle: bool,
     /// Click highlight settings.
     pub click_highlight: ClickHighlightConfig,
+}
+
+const fn default_cursor_hide_when_idle() -> bool {
+    true
 }
 
 impl Default for CursorConfig {
@@ -459,6 +466,7 @@ impl Default for CursorConfig {
             cursor_type: CursorType::default(),
             scale: 1.0,
             motion_blur: 0.0,
+            hide_when_idle: default_cursor_hide_when_idle(),
             click_highlight: ClickHighlightConfig::default(),
         }
     }

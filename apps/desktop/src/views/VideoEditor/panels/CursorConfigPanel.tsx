@@ -11,6 +11,8 @@ export interface CursorConfigPanelProps {
 }
 
 export function CursorConfigPanel({ project, onUpdateCursorConfig }: CursorConfigPanelProps) {
+  const hideWhenIdle = project.cursor.hideWhenIdle ?? true;
+
   return (
     <div className="space-y-4">
       {/* Show/Hide Toggle */}
@@ -82,6 +84,26 @@ export function CursorConfigPanel({ project, onUpdateCursorConfig }: CursorConfi
           max={15}
           step={1}
         />
+      </div>
+
+      {/* Idle Fade Toggle */}
+      <div className="flex items-center justify-between">
+        <div className="flex flex-col">
+          <span className="text-xs text-[var(--ink-muted)]">Hide When Idle</span>
+          <span className="text-[10px] text-[var(--ink-subtle)]">Fade cursor after inactivity</span>
+        </div>
+        <button
+          onClick={() => onUpdateCursorConfig({ hideWhenIdle: !hideWhenIdle })}
+          className={`relative w-10 h-5 rounded-full transition-colors ${
+            hideWhenIdle ? 'bg-[var(--coral-400)]' : 'bg-[var(--polar-frost)]'
+          }`}
+        >
+          <span
+            className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${
+              hideWhenIdle ? 'translate-x-5' : 'translate-x-0'
+            }`}
+          />
+        </button>
       </div>
 
       {/* Click Highlight Section */}

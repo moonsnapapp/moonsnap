@@ -412,7 +412,6 @@ export type {
 // Video project types
 export type {
   AutoZoomConfig,
-  VideoProject,
   VideoSources,
   TimelineState,
   TrimSegment,
@@ -455,14 +454,25 @@ export type {
   MaskConfig,
 } from './generated';
 
-import type { CursorConfig as GeneratedCursorConfig } from './generated';
+import type {
+  CursorConfig as GeneratedCursorConfig,
+  VideoProject as GeneratedVideoProject,
+} from './generated';
 
 // Smooth movement settings were removed. Keep the app-level type aligned even when
 // generated files are temporarily stale before ts-rs regeneration.
 export type CursorConfig = Omit<
   GeneratedCursorConfig,
   'smoothMovement' | 'animationStyle' | 'tension' | 'mass' | 'friction'
->;
+> & {
+  // Cursor fade-out when idle (Screen Studio-like behavior).
+  hideWhenIdle?: boolean;
+};
+
+// Keep VideoProject aligned with app-level CursorConfig extensions.
+export type VideoProject = Omit<GeneratedVideoProject, 'cursor'> & {
+  cursor: CursorConfig;
+};
 
 // GPU Video Editor types (wgpu-accelerated rendering)
 export type {

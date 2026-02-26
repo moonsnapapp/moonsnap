@@ -77,6 +77,18 @@ const MAX_INTERPOLATED_STEPS: usize = 120;
 // Cursor Idle Fade-Out (from Cap)
 // ============================================================================
 
+/// Delay before cursor starts fading out when idle.
+const CURSOR_IDLE_TIMEOUT_MS: u64 = 1200;
+
+/// Duration of fade-out once idle timeout has elapsed.
+const CURSOR_IDLE_FADE_DURATION_MS: u64 = 300;
+
+/// Ignore tiny move jitter when deciding cursor activity (normalized units).
+/// 0.0015 ~= ~3px at 1920px width.
+const CURSOR_ACTIVITY_MOVE_DEADZONE: f64 = 0.0015;
+const CURSOR_ACTIVITY_MOVE_DEADZONE_SQ: f64 =
+    CURSOR_ACTIVITY_MOVE_DEADZONE * CURSOR_ACTIVITY_MOVE_DEADZONE;
+
 // ============================================================================
 // Cursor Click Animation (from Cap)
 // ============================================================================
@@ -441,6 +453,11 @@ pub struct CursorInterpolator {
     /// Offset between recording start and first video frame.
     /// Cursor event lookups must apply this to match frontend preview timing.
     video_start_offset_ms: u64,
+    /// Whether inactivity fade-out is enabled in cursor settings.
+    hide_when_idle: bool,
+    /// Timestamps for cursor activity events (move/click/scroll), sorted ascending.
+    /// Used for inactivity fade-out opacity.
+    activity_timestamps: Vec<u64>,
 }
 
 /// Decoded cursor image ready for compositing.
@@ -455,13 +472,17 @@ pub struct DecodedCursorImage {
 
 impl CursorInterpolator {
     /// Create a new cursor interpolator from a recording.
-    pub fn new(recording: &CursorRecording, _cursor_config: &CursorConfig) -> Self {
+    pub fn new(recording: &CursorRecording, cursor_config: &CursorConfig) -> Self {
         let raw_move_events: Vec<CursorEvent> = recording
             .events
             .iter()
             .filter(|e| matches!(e.event_type, CursorEventType::Move))
             .cloned()
             .collect();
+
+        let mut activity_timestamps = collect_activity_timestamps(&recording.events);
+        activity_timestamps.sort_unstable();
+        activity_timestamps.dedup();
 
         // Decode cursor images from base64 PNG
         let decoded_images = decode_cursor_images(&recording.cursor_images);
@@ -513,6 +534,8 @@ impl CursorInterpolator {
             width: recording.width,
             height: recording.height,
             video_start_offset_ms: recording.video_start_offset_ms,
+            hide_when_idle: cursor_config.hide_when_idle,
+            activity_timestamps,
         }
     }
 
@@ -544,8 +567,12 @@ impl CursorInterpolator {
             cursor.cursor_shape = self.fallback_cursor_shape;
         }
 
-        // Opacity and scale are always 1.0
-        cursor.opacity = 1.0;
+        // Fade cursor out after inactivity.
+        cursor.opacity = if self.hide_when_idle {
+            get_cursor_idle_opacity(&self.activity_timestamps, adjusted_time_ms)
+        } else {
+            1.0
+        };
         cursor.scale = 1.0;
 
         cursor
@@ -575,6 +602,64 @@ impl CursorInterpolator {
 // ============================================================================
 // Helper Functions
 // ============================================================================
+
+fn collect_activity_timestamps(events: &[CursorEvent]) -> Vec<u64> {
+    let mut activity_timestamps = Vec::new();
+    let mut last_significant_move: Option<(f64, f64)> = None;
+
+    for event in events {
+        match event.event_type {
+            CursorEventType::Move => {
+                let should_count_move = if let Some((last_x, last_y)) = last_significant_move {
+                    let dx = event.x - last_x;
+                    let dy = event.y - last_y;
+                    (dx * dx + dy * dy) >= CURSOR_ACTIVITY_MOVE_DEADZONE_SQ
+                } else {
+                    true
+                };
+
+                if should_count_move {
+                    activity_timestamps.push(event.timestamp_ms);
+                    last_significant_move = Some((event.x, event.y));
+                }
+            },
+            CursorEventType::LeftClick { .. }
+            | CursorEventType::RightClick { .. }
+            | CursorEventType::MiddleClick { .. }
+            | CursorEventType::Scroll { .. } => {
+                activity_timestamps.push(event.timestamp_ms);
+            },
+        }
+    }
+
+    activity_timestamps
+}
+
+fn get_cursor_idle_opacity(activity_timestamps: &[u64], time_ms: u64) -> f32 {
+    if activity_timestamps.is_empty() {
+        return 1.0;
+    }
+
+    let idx = match activity_timestamps.binary_search(&time_ms) {
+        Ok(i) => i,
+        Err(0) => return 1.0,
+        Err(i) => i - 1,
+    };
+
+    let last_activity = activity_timestamps[idx];
+    let idle_ms = time_ms.saturating_sub(last_activity);
+    if idle_ms <= CURSOR_IDLE_TIMEOUT_MS {
+        return 1.0;
+    }
+
+    if CURSOR_IDLE_FADE_DURATION_MS == 0 {
+        return 0.0;
+    }
+
+    let fade_progress =
+        (idle_ms - CURSOR_IDLE_TIMEOUT_MS) as f32 / CURSOR_IDLE_FADE_DURATION_MS as f32;
+    (1.0 - fade_progress).clamp(0.0, 1.0)
+}
 
 /// Get position as XY from a cursor event (events already have normalized 0-1 coords).
 fn get_normalized_position(event: &CursorEvent) -> XY {
@@ -1620,6 +1705,68 @@ mod tests {
         assert_eq!(cursor.velocity_x, 0.0);
         assert_eq!(cursor.velocity_y, 0.0);
         assert!(cursor.cursor_id.is_none());
+    }
+
+    #[test]
+    fn test_cursor_idle_fades_out_after_timeout() {
+        let recording = test_recording();
+        let interp = CursorInterpolator::new(&recording, &CursorConfig::default());
+
+        // Last activity in test_recording is at 400ms.
+        let visible = interp.get_cursor_at(1500);
+        let fading = interp.get_cursor_at(1700);
+        let hidden = interp.get_cursor_at(2100);
+
+        assert!((visible.opacity - 1.0).abs() < 0.0001);
+        assert!(fading.opacity > 0.0 && fading.opacity < 1.0);
+        assert!(hidden.opacity <= 0.01);
+    }
+
+    #[test]
+    fn test_cursor_idle_opacity_resets_on_click_activity() {
+        let mut recording = test_recording();
+        recording.events.push(CursorEvent {
+            timestamp_ms: 2600,
+            x: 1.0,
+            y: 0.5,
+            event_type: CursorEventType::LeftClick { pressed: true },
+            cursor_id: None,
+        });
+
+        let interp = CursorInterpolator::new(&recording, &CursorConfig::default());
+        let before_click = interp.get_cursor_at(2500);
+        let on_click = interp.get_cursor_at(2600);
+
+        assert!(before_click.opacity <= 0.01);
+        assert!((on_click.opacity - 1.0).abs() < 0.0001);
+    }
+
+    #[test]
+    fn test_cursor_idle_ignores_tiny_move_jitter() {
+        let mut recording = test_recording();
+        recording.events.push(CursorEvent {
+            timestamp_ms: 2500,
+            x: 1.0003,
+            y: 0.5,
+            event_type: CursorEventType::Move,
+            cursor_id: None,
+        });
+
+        let interp = CursorInterpolator::new(&recording, &CursorConfig::default());
+        let after_jitter = interp.get_cursor_at(2600);
+
+        assert!(after_jitter.opacity <= 0.01);
+    }
+
+    #[test]
+    fn test_cursor_idle_fade_can_be_disabled() {
+        let recording = test_recording();
+        let mut cursor_config = CursorConfig::default();
+        cursor_config.hide_when_idle = false;
+
+        let interp = CursorInterpolator::new(&recording, &cursor_config);
+        let cursor = interp.get_cursor_at(10_000);
+        assert!((cursor.opacity - 1.0).abs() < 0.0001);
     }
 
     #[test]
