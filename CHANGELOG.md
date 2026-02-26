@@ -2,6 +2,43 @@
 
 All notable changes to SnapIt are documented in this file.
 
+## [0.5.5] - 2026-02-26
+
+### Added
+- Click-to-cut mode replaces split-at-playhead for faster timeline trimming.
+- Ruler scrub-to-seek for quick timeline navigation by dragging the ruler.
+- Typewriter text animation with optional typing sound effect.
+- Cursor fade-out after inactivity with configurable toggle.
+- Media type filter (image/video/gif) in the capture library toolbar.
+- Arrows and lines now participate in group selection and transforms.
+- Background image is now a movable shape, independent of crop bounds.
+- Wallpaper background type with auto-resolve for the compositor.
+- IO markers now extend the counterpart to the timeline boundary instead of clearing it.
+
+### Changed
+- Default webcam overlay shape changed from circle to rounded rectangle.
+- Playhead is now amber and IO markers are coral for clearer visual distinction.
+- Stroke width uses a 1–20 px slider instead of fixed presets.
+- Crop handles require Shift to snap, reducing accidental constraint.
+- Faster caption overlay updates by caching data between frames.
+- Faster editor scrubbing and rendering responsiveness.
+- Wallpaper thumbnail caching for quicker background panel loads.
+
+### Fixed
+- Cursor sizing normalized by dominant dimension so wide cursors render at the same scale as arrow.
+- Export cursor now matches preview behavior for zoom tracking and shape fallback.
+- Pixel-aligned render bounds eliminate sub-pixel blurriness on artboard edges.
+- Playback pauses automatically when scrubbing the timeline ruler.
+- Webcam lifecycle and cursor compositing stability improvements.
+- Compositor shadow and border-radius suppressed when content has transparency.
+- Crop handle drag jitter and square handles outside artboard edges.
+- Marquee selection no longer gets stuck when the mouse is released outside the canvas.
+- Arrow and line shapes now support group drag correctly.
+- Editor gizmos excluded from screenshot export and clipboard copy.
+- Video preview and audio suspended when the editor view is inactive.
+- FFmpeg export errors now log stderr output for diagnostics.
+- Update check button loading state resets correctly on failure.
+
 ## [0.5.4] - 2026-02-17
 
 ### Added
