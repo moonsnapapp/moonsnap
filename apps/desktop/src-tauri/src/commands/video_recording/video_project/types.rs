@@ -570,7 +570,7 @@ impl Default for WebcamConfig {
             custom_x: 0.95,
             custom_y: 0.95,
             size: 0.2, // 20% of video width
-            shape: WebcamOverlayShape::Circle,
+            shape: WebcamOverlayShape::RoundedRectangle,
             rounding: default_rounding(),
             corner_style: CornerStyle::default(),
             shadow: default_shadow(),

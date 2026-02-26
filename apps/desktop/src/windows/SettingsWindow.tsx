@@ -70,8 +70,11 @@ const SettingsWindow: React.FC = () => {
 
   const handleCheckUpdates = async () => {
     setIsCheckingUpdates(true);
-    await checkForUpdates();
-    setIsCheckingUpdates(false);
+    try {
+      await checkForUpdates(true);
+    } finally {
+      setIsCheckingUpdates(false);
+    }
   };
 
   // Load settings on mount
