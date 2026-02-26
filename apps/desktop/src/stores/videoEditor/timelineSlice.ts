@@ -170,7 +170,7 @@ export const createTimelineSlice: SliceCreator<TimelineSlice> = (set, get) => ({
 
     // If I >= O, keep the newer in marker and extend out to timeline end.
     if (newOut !== null && newIn >= newOut) {
-      newOut = effectiveDurationMs;
+      newOut = effectiveDurationMs ?? newOut;
     }
 
     set({ exportInPointMs: newIn, exportOutPointMs: newOut });
@@ -217,7 +217,7 @@ export const createTimelineSlice: SliceCreator<TimelineSlice> = (set, get) => ({
           ...project,
           timeline: {
             ...project.timeline,
-            inPoint: newIn ?? 0,
+            inPoint: newIn,
             outPoint: newOut,
           },
         },
@@ -230,13 +230,17 @@ export const createTimelineSlice: SliceCreator<TimelineSlice> = (set, get) => ({
     set({ exportInPointMs: null, exportOutPointMs: null });
     // Sync to project for persistence
     if (project) {
+      const effectiveDurationMs = getEffectiveDuration(
+        project.timeline.segments ?? [],
+        project.timeline.durationMs,
+      );
       set({
         project: {
           ...project,
           timeline: {
             ...project.timeline,
             inPoint: 0,
-            outPoint: project.timeline.durationMs,
+            outPoint: effectiveDurationMs,
           },
         },
       });

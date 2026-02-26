@@ -64,6 +64,9 @@ const IO_MARKER_TOOLTIP_BG = 'var(--glass-bg-solid)';
 const IO_MARKER_TOOLTIP_BORDER = 'var(--coral-400, #F97066)';
 const IO_MARKER_TOOLTIP_TEXT = 'var(--coral-300, #FDA4A0)';
 const PLAYHEAD_COLOR = 'var(--warning, #F59E0B)';
+const PLAYHEAD_GLOW = 'rgba(245, 158, 11, 0.35)';
+const PLAYHEAD_BORDER = 'rgba(245, 158, 11, 0.55)';
+const CUT_SCRUBBER_COLOR = 'var(--coral-500, #F04438)';
 
 /**
  * Preview scrubber - ghost playhead that follows mouse when not playing.
@@ -80,7 +83,7 @@ const PreviewScrubber = memo(function PreviewScrubber({
   isCutMode: boolean;
 }) {
   const position = previewTimeMs * timelineZoom + trackLabelWidth;
-  const scrubberColor = isCutMode ? 'var(--coral-500, #F04438)' : 'var(--ink-muted)';
+  const scrubberColor = isCutMode ? CUT_SCRUBBER_COLOR : 'var(--ink-muted)';
 
   return (
     <div
@@ -147,7 +150,6 @@ const Playhead = memo(function Playhead({
 }) {
   const currentTimeMs = usePlaybackTime();
   const playheadPosition = currentTimeMs * timelineZoom + trackLabelWidth;
-  const playheadGlow = 'rgba(245, 158, 11, 0.35)';
 
   return (
     <div
@@ -173,7 +175,7 @@ const Playhead = memo(function Playhead({
         style={{
           clipPath: 'polygon(0 0, 100% 0, 100% 60%, 50% 100%, 0 60%)',
           backgroundColor: PLAYHEAD_COLOR,
-          boxShadow: `0 10px 15px -3px ${playheadGlow}`,
+          boxShadow: `0 10px 15px -3px ${PLAYHEAD_GLOW}`,
         }}
       />
       
@@ -195,9 +197,9 @@ const PlayheadTimeIndicator = memo(function PlayheadTimeIndicator() {
     <div 
       className="absolute top-5 left-1/2 -translate-x-1/2 px-2 py-0.5 bg-[var(--polar-ice)] rounded text-[10px] font-mono whitespace-nowrap shadow-lg"
       style={{ 
-        borderColor: 'rgba(245, 158, 11, 0.55)',
+        borderColor: PLAYHEAD_BORDER,
         borderWidth: '1px',
-        color: 'var(--warning, #F59E0B)',
+        color: PLAYHEAD_COLOR,
       }}
     >
       {Math.floor(currentTimeMs / 60000)}:{String(Math.floor((currentTimeMs % 60000) / 1000)).padStart(2, '0')}
@@ -802,9 +804,9 @@ export function VideoTimeline({ onExport, onResetTrimSegments, onSetInPoint, onS
                         className="glass-btn h-8 px-2 text-[11px] font-semibold"
                         style={exportInPointMs !== null
                           ? {
-                              color: 'var(--coral-300, #FDA4A0)',
+                              color: IO_MARKER_TOOLTIP_TEXT,
                               backgroundColor: 'var(--coral-subtle)',
-                              borderColor: 'var(--coral-400, #F97066)',
+                              borderColor: IO_MARKER_TOOLTIP_BORDER,
                             }
                           : undefined}
                       >
@@ -828,9 +830,9 @@ export function VideoTimeline({ onExport, onResetTrimSegments, onSetInPoint, onS
                         className="glass-btn h-8 px-2 text-[11px] font-semibold"
                         style={exportOutPointMs !== null
                           ? {
-                              color: 'var(--coral-300, #FDA4A0)',
+                              color: IO_MARKER_TOOLTIP_TEXT,
                               backgroundColor: 'var(--coral-subtle)',
-                              borderColor: 'var(--coral-400, #F97066)',
+                              borderColor: IO_MARKER_TOOLTIP_BORDER,
                             }
                           : undefined}
                       >

@@ -97,6 +97,10 @@ export interface VideoEditorViewProps {
   isActive?: boolean;
 }
 
+const SKIP_AMOUNT_MS = 5000;
+const SAVE_WAIT_TIMEOUT_MS = 5000;
+const SAVE_WAIT_POLL_MS = 50;
+
 /**
  * VideoEditorView - Main video editor component with preview, timeline, and controls.
  */
@@ -150,10 +154,6 @@ export const VideoEditorView = forwardRef<VideoEditorViewRef, VideoEditorViewPro
   const [isCropDialogOpen, setIsCropDialogOpen] = useState(false);
   const lastUserActivityAtRef = useRef(Date.now());
 
-  // Skip amount in milliseconds
-  const SKIP_AMOUNT_MS = 5000;
-  const SAVE_WAIT_TIMEOUT_MS = 5000;
-  const SAVE_WAIT_POLL_MS = 50;
 
   // Keyboard shortcut handlers
   const handleSkipBack = useCallback(() => {
@@ -411,7 +411,7 @@ export const VideoEditorView = forwardRef<VideoEditorViewRef, VideoEditorViewPro
     } catch (error) {
       videoEditorLogger.warn('Save on close failed:', error);
     }
-  }, [SAVE_WAIT_POLL_MS, SAVE_WAIT_TIMEOUT_MS]);
+  }, []);
 
   // Navigate back to library
   const handleBack = useCallback(async () => {

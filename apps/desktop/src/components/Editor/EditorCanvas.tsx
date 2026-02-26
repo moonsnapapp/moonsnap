@@ -417,6 +417,23 @@ export const EditorCanvas = React.memo(forwardRef<EditorCanvasRef, EditorCanvasP
   }, [backgroundShape, originalImageSize]);
 
 
+  // Check if source image has transparent pixels (only recalculated when image changes).
+  const imageHasAlpha = useMemo(() => {
+    if (!image) return false;
+    const size = 20;
+    const c = document.createElement('canvas');
+    c.width = size;
+    c.height = size;
+    const ctx = c.getContext('2d');
+    if (!ctx) return false;
+    ctx.drawImage(image, 0, 0, size, size);
+    const data = ctx.getImageData(0, 0, size, size).data;
+    for (let i = 3; i < data.length; i += 4) {
+      if (data[i] < 255) return true;
+    }
+    return false;
+  }, [image]);
+
   // Detect if the content has ANY transparency (edges or interior).
   // When true, skip shadow/border-radius to avoid the floaty look.
   // Checks both preview bounds (visibleBounds) and export bounds (canvasBounds).
@@ -450,24 +467,11 @@ export const EditorCanvas = React.memo(forwardRef<EditorCanvasRef, EditorCanvasP
       }
     }
 
-    // Check 3: source image itself has transparent pixels
-    if (image) {
-      const size = 20;
-      const c = document.createElement('canvas');
-      c.width = size;
-      c.height = size;
-      const ctx = c.getContext('2d');
-      if (ctx) {
-        ctx.drawImage(image, 0, 0, size, size);
-        const data = ctx.getImageData(0, 0, size, size).data;
-        for (let i = 3; i < data.length; i += 4) {
-          if (data[i] < 255) return true;
-        }
-      }
-    }
+    // Check 3: source image itself has transparent pixels (cached by image identity)
+    if (imageHasAlpha) return true;
 
     return false;
-  }, [visibleBounds, cropRegion, canvasBounds, backgroundShape, image]);
+  }, [visibleBounds, cropRegion, canvasBounds, backgroundShape, imageHasAlpha]);
 
   // Selection bounds for group drag
   const selectionBounds = useMemo(() => {

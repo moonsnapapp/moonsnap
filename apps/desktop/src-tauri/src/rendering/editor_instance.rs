@@ -21,7 +21,7 @@ use super::cursor::{
 use super::decoder::VideoDecoder;
 use super::exporter::{build_webcam_overlay, is_webcam_visible_at};
 use super::renderer::Renderer;
-use super::svg_cursor::render_svg_cursor_to_height;
+use super::svg_cursor::render_svg_cursor_to_extent;
 use super::types::{
     BackgroundStyle, EditorInstanceInfo, PlaybackEvent, PlaybackState, RenderOptions, RenderedFrame,
 };
@@ -434,7 +434,7 @@ impl EditorInstance {
                     let mut rendered = false;
                     if let Some(shape) = cursor.cursor_shape {
                         let target_height = final_cursor_height.round() as u32;
-                        if let Some(svg_cursor) = render_svg_cursor_to_height(shape, target_height)
+                        if let Some(svg_cursor) = render_svg_cursor_to_extent(shape, target_height)
                         {
                             let svg_decoded = DecodedCursorImage {
                                 width: svg_cursor.width,

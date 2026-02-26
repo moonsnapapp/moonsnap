@@ -548,6 +548,83 @@ describe('timelineSlice', () => {
       expect(state.exportInPointMs).toBe(12000);
       expect(state.exportOutPointMs).toBe(60000);
     });
+
+    it('should handle setExportInPoint without a project', () => {
+      useVideoEditorStore.getState().setExportInPoint(5000);
+
+      const state = useVideoEditorStore.getState();
+      expect(state.exportInPointMs).toBe(5000);
+      // Without project, out marker stays null (no effective duration to extend to)
+      expect(state.exportOutPointMs).toBeNull();
+    });
+
+    it('should handle setExportOutPoint without a project', () => {
+      useVideoEditorStore.getState().setExportOutPoint(25000);
+
+      const state = useVideoEditorStore.getState();
+      expect(state.exportOutPointMs).toBe(25000);
+      // Without project, in marker extends to 0
+      expect(state.exportInPointMs).toBe(0);
+    });
+
+    it('should clamp in point to effective duration', () => {
+      const project = createTestProject();
+      useVideoEditorStore.setState({ project });
+
+      useVideoEditorStore.getState().setExportInPoint(999999);
+
+      const state = useVideoEditorStore.getState();
+      expect(state.exportInPointMs).toBe(60000);
+    });
+
+    it('should clamp out point to effective duration', () => {
+      const project = createTestProject();
+      useVideoEditorStore.setState({ project });
+
+      useVideoEditorStore.getState().setExportOutPoint(999999);
+
+      const state = useVideoEditorStore.getState();
+      expect(state.exportOutPointMs).toBe(60000);
+    });
+
+    it('should clear export range and reset project markers', () => {
+      const project = createTestProject();
+      useVideoEditorStore.setState({ project });
+
+      useVideoEditorStore.getState().setExportInPoint(10000);
+      useVideoEditorStore.getState().setExportOutPoint(30000);
+      useVideoEditorStore.getState().clearExportRange();
+
+      const state = useVideoEditorStore.getState();
+      expect(state.exportInPointMs).toBeNull();
+      expect(state.exportOutPointMs).toBeNull();
+      expect(state.project?.timeline.inPoint).toBe(0);
+      expect(state.project?.timeline.outPoint).toBe(60000);
+    });
+
+    it('should clear export range using effective duration with trims', () => {
+      const project = createTestProject({
+        timeline: {
+          durationMs: 60000,
+          inPoint: 5000,
+          outPoint: 15000,
+          speed: 1.0,
+          segments: [
+            { id: 'seg-1', sourceStartMs: 0, sourceEndMs: 10000 },
+            { id: 'seg-2', sourceStartMs: 20000, sourceEndMs: 30000 },
+          ],
+        },
+      });
+      useVideoEditorStore.setState({ project });
+
+      useVideoEditorStore.getState().clearExportRange();
+
+      const state = useVideoEditorStore.getState();
+      expect(state.exportInPointMs).toBeNull();
+      expect(state.exportOutPointMs).toBeNull();
+      // Should reset to effective duration (20000), not raw durationMs (60000)
+      expect(state.project?.timeline.outPoint).toBe(20000);
+    });
   });
 
   describe('multiple drag states', () => {

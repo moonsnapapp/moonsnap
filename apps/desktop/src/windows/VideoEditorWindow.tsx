@@ -20,14 +20,15 @@ import { videoEditorLogger } from '@/utils/logger';
 /**
  * VideoEditorWindow - Standalone video editor window.
  */
+const SAVE_WAIT_TIMEOUT_MS = 5000;
+const SAVE_WAIT_POLL_MS = 50;
+
 const VideoEditorWindow: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [projectPath, setProjectPath] = useState<string | null>(null);
   const hasLoadedRef = useRef(false);
   const isClosingRef = useRef(false);
-  const SAVE_WAIT_TIMEOUT_MS = 5000;
-  const SAVE_WAIT_POLL_MS = 50;
 
   const {
     project,
@@ -107,7 +108,7 @@ const VideoEditorWindow: React.FC = () => {
     } catch (error) {
       videoEditorLogger.warn('Video editor window save-on-close failed:', error);
     }
-  }, [SAVE_WAIT_POLL_MS, SAVE_WAIT_TIMEOUT_MS]);
+  }, []);
 
   const performWindowClose = useCallback(async () => {
     if (isClosingRef.current) return;

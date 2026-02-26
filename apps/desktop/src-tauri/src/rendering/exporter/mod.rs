@@ -1222,10 +1222,28 @@ pub async fn export_video_gpu(
     }
 
     // Wait for FFmpeg encoder to finish
+    let stderr_output = ffmpeg.stderr.take().and_then(|mut stderr| {
+        use std::io::Read;
+        let mut buf = Vec::new();
+        stderr.read_to_end(&mut buf).ok()?;
+        String::from_utf8(buf).ok()
+    });
     let status = ffmpeg
         .wait()
         .map_err(|e| format!("FFmpeg wait failed: {}", e))?;
     if !status.success() {
+        if let Some(ref stderr) = stderr_output {
+            let tail: String = stderr
+                .lines()
+                .rev()
+                .take(20)
+                .collect::<Vec<_>>()
+                .into_iter()
+                .rev()
+                .collect::<Vec<_>>()
+                .join("\n");
+            log::error!("[EXPORT] FFmpeg stderr (last 20 lines):\n{}", tail);
+        }
         return Err(format!(
             "FFmpeg encoding failed with status: {:?}",
             status.code()

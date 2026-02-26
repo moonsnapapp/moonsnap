@@ -1500,22 +1500,15 @@ pub fn composite_cursor_with_motion_blur(
     );
 }
 
-/// Get an SVG cursor as a DecodedCursorImage if the shape is known.
+/// Get an SVG cursor as a DecodedCursorImage at the specified target extent.
 ///
-/// This allows using SVG cursors with the existing composite functions.
-/// Returns None if the shape is not recognized or SVG rendering fails.
-///
-/// # Arguments
-/// * `shape` - The Windows cursor shape
-/// * `target_height` - Target height in pixels (used for scaling)
+/// Uses dominant-dimension normalization so all cursor shapes render at
+/// visually consistent sizes. Delegates to `get_svg_cursor`.
 pub fn get_svg_cursor_image(
     shape: crate::commands::video_recording::cursor::events::WindowsCursorShape,
-    target_height: u32,
+    target_extent: u32,
 ) -> Option<DecodedCursorImage> {
-    use super::svg_cursor::render_svg_cursor;
-
-    let scale = target_height as f32 / 24.0;
-    let rendered = render_svg_cursor(shape, scale)?;
+    let rendered = super::svg_cursor::get_svg_cursor(shape, target_extent)?;
 
     Some(DecodedCursorImage {
         width: rendered.width,

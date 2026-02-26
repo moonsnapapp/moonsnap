@@ -363,7 +363,7 @@ pub fn start_ffmpeg_encoder(
         .args(&args)
         .stdin(Stdio::piped())
         .stdout(Stdio::null())
-        .stderr(Stdio::null())
+        .stderr(Stdio::piped())
         .spawn()
         .map_err(|e| format!("Failed to start FFmpeg: {}", e))
 }
