@@ -22,6 +22,7 @@ function App() {
     saveNewCaptureFromFile,
     loadCaptures,
   } = useCaptureStore();
+  const isVideoEditorActive = view === 'videoEditor';
 
   // Initialize theme (applies theme class to document root)
   useTheme();
@@ -130,8 +131,8 @@ function App() {
         </Activity>
 
         {/* Video Editor (legacy embedded view - kept for video playback) */}
-        <Activity mode={view === 'videoEditor' ? 'visible' : 'hidden'}>
-          <VideoEditorView />
+        <Activity mode={isVideoEditorActive ? 'visible' : 'hidden'}>
+          <VideoEditorView isActive={isVideoEditorActive} />
         </Activity>
       </div>
     </div>

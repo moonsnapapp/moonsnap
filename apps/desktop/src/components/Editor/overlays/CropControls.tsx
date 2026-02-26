@@ -39,7 +39,7 @@ export const CropControls: React.FC<CropControlsProps> = React.memo(({
         <button
           onClick={onReset}
           className="px-2 py-1 text-xs text-[var(--ink-muted)] hover:bg-[var(--polar-frost)] hover:text-[var(--ink-dark)] rounded-lg transition-colors"
-          title="Reset to original"
+          title="Reset to minimum bounds"
         >
           Reset
         </button>

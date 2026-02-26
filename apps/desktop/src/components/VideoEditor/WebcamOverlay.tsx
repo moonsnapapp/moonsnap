@@ -2,12 +2,13 @@ import { memo, useMemo, useRef, useEffect, useState, useCallback } from 'react';
 import { convertFileSrc } from '@tauri-apps/api/core';
 import { usePreviewOrPlaybackTime } from '../../hooks/usePlaybackEngine';
 import { useVideoEditorStore } from '../../stores/videoEditorStore';
+import {
+  selectIsPlaying,
+  selectPreviewTimeMs,
+} from '../../stores/videoEditor/selectors';
 import { useWebCodecsPreview } from '../../hooks/useWebCodecsPreview';
 import { webcamLogger } from '../../utils/logger';
 import type { WebcamConfig, VisibilitySegment, CornerStyle } from '../../types';
-
-const selectIsPlaying = (s: ReturnType<typeof useVideoEditorStore.getState>) => s.isPlaying;
-const selectPreviewTimeMs = (s: ReturnType<typeof useVideoEditorStore.getState>) => s.previewTimeMs;
 
 interface WebcamOverlayProps {
   webcamVideoPath: string;
@@ -436,7 +437,7 @@ export const WebcamOverlay = memo(function WebcamOverlay({
   // Sync webcam video play/pause state with main playback
   useEffect(() => {
     const video = videoRef.current;
-    if (!video) return;
+    if (!video || !isVisible) return;
 
     if (isPlaying && video.paused) {
       // Read current time once from store, don't subscribe to updates
@@ -446,12 +447,12 @@ export const WebcamOverlay = memo(function WebcamOverlay({
     } else if (!isPlaying && !video.paused) {
       video.pause();
     }
-  }, [isPlaying]); // Remove currentTimeMs - only respond to play/pause changes
+  }, [isPlaying, isVisible]); // Re-run when visibility toggles so remounted video resumes.
 
   // Seek webcam video when scrubbing (not playing)
   useEffect(() => {
     const video = videoRef.current;
-    if (!video || isPlaying) return;
+    if (!video || isPlaying || !isVisible) return;
 
     const targetTime = currentTimeMs / 1000;
     const diff = Math.abs(video.currentTime - targetTime);
@@ -460,7 +461,7 @@ export const WebcamOverlay = memo(function WebcamOverlay({
     if (diff > 0.1) {
       video.currentTime = targetTime;
     }
-  }, [currentTimeMs, isPlaying]);
+  }, [currentTimeMs, isPlaying, isVisible]);
 
   // Hide completely only when webcam is disabled via visibility segments
   // Keep mounted during scene transitions (sceneOpacity) to maintain video sync

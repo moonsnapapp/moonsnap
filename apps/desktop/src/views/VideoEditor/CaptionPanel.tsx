@@ -16,6 +16,34 @@ import {
 } from 'lucide-react';
 import { listen } from '@tauri-apps/api/event';
 import { useVideoEditorStore } from '../../stores/videoEditorStore';
+import {
+  selectCaptionSegments,
+  selectCaptionSettings,
+  selectCurrentTimeMs,
+  selectDownloadModel,
+  selectDownloadProgress,
+  selectIsDownloadingModel,
+  selectIsPlaying,
+  selectIsTranscribing,
+  selectLoadWhisperModels,
+  selectProject,
+  selectRequestSeek,
+  selectSelectedModelName,
+  selectSetCaptionSegments,
+  selectSetCaptionsEnabled,
+  selectSetIsPlaying,
+  selectSetSelectedModel,
+  selectSetTranscriptionProgress,
+  selectStartTranscription,
+  selectTogglePlayback,
+  selectTranscribeCaptionSegment,
+  selectTranscriptionError,
+  selectTranscriptionProgress,
+  selectTranscriptionStage,
+  selectUpdateCaptionSegment,
+  selectUpdateCaptionSettings,
+  selectWhisperModels,
+} from '../../stores/videoEditor/selectors';
 import { Button } from '../../components/ui/button';
 import {
   Dialog,
@@ -35,6 +63,23 @@ import type {
   DownloadProgress,
 } from '../../types';
 import { videoEditorLogger } from '../../utils/logger';
+import {
+  buildEditableWordsForSegment,
+  buildUpdatedWords,
+  buildWordsFromEditor,
+  clamp,
+  cloneCaptionSegment,
+  cloneCaptionSegments,
+  distributeCaptionWordTiming,
+  formatTime,
+  MIN_SEGMENT_DURATION_SECONDS,
+  MIN_WORD_DURATION_SECONDS,
+  parseEditableWords,
+  segmentMatchesUpdate,
+  splitCaptionWords,
+  toEditableCaptionWords,
+  type EditableCaptionWord,
+} from '../../utils/captionTiming';
 
 interface CaptionPanelProps {
   videoPath: string | null;
@@ -49,14 +94,6 @@ const MODEL_SIZES: Record<string, string> = {
 };
 
 const DEFAULT_VISIBLE_SEGMENTS = 20;
-const MIN_SEGMENT_DURATION_SECONDS = 0.05;
-const MIN_WORD_DURATION_SECONDS = 0.01;
-
-interface EditableCaptionWord {
-  text: string;
-  start: string;
-  end: string;
-}
 
 type WordDragMode = 'start' | 'end' | 'move';
 
@@ -79,242 +116,393 @@ interface SegmentAuditionState {
   endMs: number;
 }
 
-function clamp(value: number, min: number, max: number): number {
-  if (max <= min) return min;
-  return Math.max(min, Math.min(max, value));
-}
-
-function parseEditableWords(words: EditableCaptionWord[]) {
-  return words.map((word) => ({
-    text: word.text,
-    start: Number.parseFloat(word.start),
-    end: Number.parseFloat(word.end),
-  }));
-}
-
-function splitCaptionWords(text: string): string[] {
-  return text.trim().split(/\s+/).filter(Boolean);
-}
-
-function remapWordsToSegmentTiming(
-  words: CaptionWord[],
-  oldStart: number,
-  oldEnd: number,
-  newStart: number,
-  newEnd: number
-): CaptionWord[] {
-  if (words.length === 0) return [];
-
-  const oldDuration = Math.max(oldEnd - oldStart, MIN_SEGMENT_DURATION_SECONDS);
-  const newDuration = Math.max(newEnd - newStart, MIN_SEGMENT_DURATION_SECONDS);
-
-  return words.map((word) => {
-    const relStart = Math.max(0, Math.min(1, (word.start - oldStart) / oldDuration));
-    const relEnd = Math.max(0, Math.min(1, (word.end - oldStart) / oldDuration));
-
-    return {
-      ...word,
-      start: newStart + relStart * newDuration,
-      end: newStart + relEnd * newDuration,
-    };
-  });
-}
-
-function distributeCaptionWordTiming(
-  wordTexts: string[],
-  start: number,
-  end: number
-): CaptionWord[] {
-  if (wordTexts.length === 0) return [];
-
-  const duration = Math.max(0, end - start);
-  if (duration === 0) {
-    return wordTexts.map((text) => ({ text, start, end }));
-  }
-
-  const step = duration / wordTexts.length;
-  return wordTexts.map((text, index) => ({
-    text,
-    start: start + step * index,
-    end: index === wordTexts.length - 1 ? end : start + step * (index + 1),
-  }));
-}
-
-function buildUpdatedWords(
-  segment: CaptionSegment,
-  text: string,
-  nextStart: number,
-  nextEnd: number
-): CaptionWord[] {
-  const wordTexts = splitCaptionWords(text);
-  if (wordTexts.length === 0) return [];
-
-  if (segment.words.length === wordTexts.length && segment.words.length > 0) {
-    const remapped = remapWordsToSegmentTiming(
-      segment.words,
-      segment.start,
-      segment.end,
-      nextStart,
-      nextEnd
-    );
-    return remapped.map((word, index) => ({
-      ...word,
-      text: wordTexts[index],
-    }));
-  }
-
-  return distributeCaptionWordTiming(wordTexts, nextStart, nextEnd);
-}
-
-function toEditableCaptionWords(words: CaptionWord[]): EditableCaptionWord[] {
-  return words.map((word) => ({
-    text: word.text,
-    start: word.start.toFixed(2),
-    end: word.end.toFixed(2),
-  }));
-}
-
-function buildEditableWordsForSegment(segment: CaptionSegment): EditableCaptionWord[] {
-  const words =
-    segment.words.length > 0
-      ? segment.words
-      : distributeCaptionWordTiming(
-          splitCaptionWords(segment.text),
-          segment.start,
-          segment.end
-        );
-  return toEditableCaptionWords(words);
-}
-
-function buildWordsFromEditor(
-  editorWords: EditableCaptionWord[],
-  text: string,
-  segmentStart: number,
-  segmentEnd: number
-): CaptionWord[] | null {
-  const wordTexts = splitCaptionWords(text);
-  if (wordTexts.length === 0) return [];
-
-  if (editorWords.length !== wordTexts.length) {
-    return distributeCaptionWordTiming(wordTexts, segmentStart, segmentEnd);
-  }
-
-  const parsedWords = editorWords.map((word) => ({
-    text: word.text,
-    start: Number.parseFloat(word.start),
-    end: Number.parseFloat(word.end),
-  }));
-
-  if (parsedWords.some((word) => !Number.isFinite(word.start) || !Number.isFinite(word.end))) {
-    return null;
-  }
-
-  let previousEnd = segmentStart;
-  const mapped: CaptionWord[] = [];
-
-  for (let index = 0; index < parsedWords.length; index += 1) {
-    const parsed = parsedWords[index];
-    const start = Math.max(segmentStart, parsed.start);
-    const end = Math.min(segmentEnd, parsed.end);
-
-    if (end - start < MIN_WORD_DURATION_SECONDS) {
-      return null;
-    }
-
-    if (start < previousEnd) {
-      return null;
-    }
-
-    mapped.push({
-      text: wordTexts[index],
-      start,
-      end,
-    });
-    previousEnd = end;
-  }
-
-  return mapped;
-}
-
-function cloneCaptionSegment(segment: CaptionSegment): CaptionSegment {
-  return {
-    ...segment,
-    words: segment.words.map((word) => ({ ...word })),
-  };
-}
-
-function cloneCaptionSegments(segments: CaptionSegment[]): CaptionSegment[] {
-  return segments.map((segment) => cloneCaptionSegment(segment));
-}
-
 interface CaptionSnapshot {
   segments: CaptionSegment[];
   settings: CaptionSettings;
 }
 
-function numbersApproxEqual(left: number, right: number): boolean {
-  return Math.abs(left - right) < 0.0005;
+interface CaptionAuditionWatcherProps {
+  segmentAuditionState: SegmentAuditionState | null;
+  requestSeek: (timeMs: number) => void;
+  setIsPlaying: (isPlaying: boolean) => void;
+  clearSegmentAuditionState: () => void;
 }
 
-function wordsEqual(left: CaptionWord[], right: CaptionWord[]): boolean {
-  if (left.length !== right.length) return false;
+function CaptionAuditionWatcher({
+  segmentAuditionState,
+  requestSeek,
+  setIsPlaying,
+  clearSegmentAuditionState,
+}: CaptionAuditionWatcherProps) {
+  const currentTimeMs = useVideoEditorStore(selectCurrentTimeMs);
+  const isPlaying = useVideoEditorStore(selectIsPlaying);
 
-  for (let index = 0; index < left.length; index += 1) {
-    const leftWord = left[index];
-    const rightWord = right[index];
-    if (
-      leftWord.text !== rightWord.text ||
-      !numbersApproxEqual(leftWord.start, rightWord.start) ||
-      !numbersApproxEqual(leftWord.end, rightWord.end)
-    ) {
-      return false;
-    }
-  }
+  useEffect(() => {
+    if (!segmentAuditionState || !isPlaying) return;
+    if (currentTimeMs < segmentAuditionState.endMs) return;
 
-  return true;
+    requestSeek(segmentAuditionState.endMs);
+    setIsPlaying(false);
+    clearSegmentAuditionState();
+  }, [
+    clearSegmentAuditionState,
+    currentTimeMs,
+    isPlaying,
+    requestSeek,
+    segmentAuditionState,
+    setIsPlaying,
+  ]);
+
+  return null;
 }
 
-function segmentMatchesUpdate(
-  segment: CaptionSegment,
-  update: { start: number; end: number; text: string; words: CaptionWord[] }
-): boolean {
+interface CaptionPlaybackTransportProps {
+  captionSegments: CaptionSegment[];
+  projectDurationSeconds: number;
+  onTogglePlayback: () => void;
+  onBeginPlaybackScrub: (event: React.MouseEvent<HTMLDivElement>) => void;
+  playbackTimelineRef: React.MutableRefObject<HTMLDivElement | null>;
+}
+
+function CaptionPlaybackTransport({
+  captionSegments,
+  projectDurationSeconds,
+  onTogglePlayback,
+  onBeginPlaybackScrub,
+  playbackTimelineRef,
+}: CaptionPlaybackTransportProps) {
+  const currentTimeMs = useVideoEditorStore(selectCurrentTimeMs);
+  const isPlaying = useVideoEditorStore(selectIsPlaying);
+  const playbackPositionPercent = clamp(
+    ((currentTimeMs / 1000) / projectDurationSeconds) * 100,
+    0,
+    100
+  );
+
   return (
-    segment.text === update.text &&
-    numbersApproxEqual(segment.start, update.start) &&
-    numbersApproxEqual(segment.end, update.end) &&
-    wordsEqual(segment.words, update.words)
+    <>
+      <div className="flex items-center gap-2">
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          onClick={onTogglePlayback}
+        >
+          {isPlaying ? (
+            <>
+              <Pause className="w-3.5 h-3.5 mr-1" />
+              Pause
+            </>
+          ) : (
+            <>
+              <Play className="w-3.5 h-3.5 mr-1" />
+              Play
+            </>
+          )}
+        </Button>
+        <span className="text-xs font-mono text-[var(--ink-subtle)]">
+          {formatTime(currentTimeMs / 1000)} / {formatTime(projectDurationSeconds)}
+        </span>
+      </div>
+
+      <div
+        ref={playbackTimelineRef}
+        onMouseDown={onBeginPlaybackScrub}
+        className="relative h-16 rounded-md border border-[var(--glass-border)] bg-[var(--glass-surface-dark)]/60 overflow-hidden cursor-ew-resize"
+      >
+        <div className="absolute inset-0">
+          {captionSegments.map((segment) => {
+            const left = (segment.start / projectDurationSeconds) * 100;
+            const width = Math.max(
+              ((segment.end - segment.start) / projectDurationSeconds) * 100,
+              0.8
+            );
+            return (
+              <div
+                key={`playback-segment-${segment.id}`}
+                className="absolute top-2 bottom-2 rounded bg-[var(--polar-mist)]/80 border border-[var(--glass-border)]"
+                style={{ left: `${left}%`, width: `${width}%` }}
+              />
+            );
+          })}
+        </div>
+        <div
+          className="absolute top-0 bottom-0 w-px bg-[var(--coral-400)]"
+          style={{ left: `${playbackPositionPercent}%` }}
+        />
+      </div>
+    </>
+  );
+}
+
+interface WordTimingEditorProps {
+  timelineSegmentStart: number;
+  timelineDuration: number;
+  wordCompressionRange: [number, number];
+  beginLocalTimelineScrub: (event: React.MouseEvent<HTMLDivElement>) => void;
+  localTimelineRef: React.MutableRefObject<HTMLDivElement | null>;
+  applyWordCompressionRange: (nextRange: number[]) => void;
+  wordTimelineRef: React.MutableRefObject<HTMLDivElement | null>;
+  editingWords: EditableCaptionWord[];
+  wordDragState: WordDragState | null;
+  startWordDrag: (
+    event: {
+      clientX: number;
+      preventDefault: () => void;
+      stopPropagation: () => void;
+    },
+    index: number,
+    mode: WordDragMode
+  ) => void;
+  updateEditingWordTiming: (
+    index: number,
+    field: 'start' | 'end',
+    value: string
+  ) => void;
+  syncWordsFromText: () => void;
+  hasInvalidWordTiming: boolean;
+}
+
+function WordTimingEditor({
+  timelineSegmentStart,
+  timelineDuration,
+  wordCompressionRange,
+  beginLocalTimelineScrub,
+  localTimelineRef,
+  applyWordCompressionRange,
+  wordTimelineRef,
+  editingWords,
+  wordDragState,
+  startWordDrag,
+  updateEditingWordTiming,
+  syncWordsFromText,
+  hasInvalidWordTiming,
+}: WordTimingEditorProps) {
+  const currentTimeMs = useVideoEditorStore(selectCurrentTimeMs);
+  const segmentCurrentTimeSeconds = currentTimeMs / 1000;
+  const localPlayheadSeconds = clamp(
+    segmentCurrentTimeSeconds - timelineSegmentStart,
+    0,
+    timelineDuration
+  );
+  const localPlayheadPercent = clamp(
+    (localPlayheadSeconds / timelineDuration) * 100,
+    0,
+    100
+  );
+
+  return (
+    <div className="rounded-md border border-[var(--glass-border)] bg-[var(--glass-surface-dark)]/60 p-2 space-y-2">
+      <div className="flex items-center justify-between">
+        <span className="text-[10px] text-[var(--ink-subtle)] uppercase tracking-wide">
+          Word Timing
+        </span>
+        <button
+          type="button"
+          onClick={syncWordsFromText}
+          className="px-1.5 py-0.5 rounded text-[10px] text-[var(--ink-subtle)] hover:text-[var(--ink-dark)] hover:bg-[var(--glass-highlight)] transition-colors"
+        >
+          Sync Words From Text
+        </button>
+      </div>
+      <div className="rounded-md border border-[var(--glass-border)] bg-[var(--polar-mist)]/50 px-2 py-1.5 space-y-1">
+        <div className="flex items-center justify-between">
+          <span className="text-[10px] text-[var(--ink-subtle)]">
+            Segment Timeline
+          </span>
+          <span className="text-[10px] font-mono text-[var(--ink-subtle)]">
+            {localPlayheadSeconds.toFixed(2)}s / {timelineDuration.toFixed(2)}s
+          </span>
+        </div>
+        <div
+          ref={localTimelineRef}
+          onMouseDown={beginLocalTimelineScrub}
+          className="relative h-8 rounded border border-[var(--glass-border)] bg-[var(--glass-surface-dark)]/70 overflow-hidden cursor-ew-resize"
+        >
+          <div
+            className="absolute top-1 bottom-1 rounded-sm border border-[var(--coral-300)]/60 bg-[var(--coral-100)]/30"
+            style={{
+              left: `${wordCompressionRange[0]}%`,
+              width: `${Math.max(wordCompressionRange[1] - wordCompressionRange[0], 0.75)}%`,
+            }}
+          />
+          <div
+            className="absolute top-0 bottom-0 w-px bg-[var(--coral-400)]"
+            style={{ left: `${wordCompressionRange[0]}%` }}
+          />
+          <div
+            className="absolute top-0 bottom-0 w-px bg-[var(--coral-400)]"
+            style={{ left: `${wordCompressionRange[1]}%` }}
+          />
+          <div
+            className="absolute top-0 bottom-0 w-[2px] bg-white"
+            style={{ left: `${localPlayheadPercent}%` }}
+          />
+        </div>
+        <p className="text-[10px] text-[var(--ink-subtle)]">
+          Click or drag to scrub within this segment. White line is local playhead.
+        </p>
+      </div>
+      <div className="rounded-md border border-[var(--glass-border)] bg-[var(--polar-mist)]/50 px-2 py-1.5 space-y-1">
+        <div className="flex items-center justify-between">
+          <span className="text-[10px] text-[var(--ink-subtle)]">
+            Master Compression (A/B)
+          </span>
+          <span className="text-[10px] font-mono text-[var(--ink-subtle)]">
+            A {wordCompressionRange[0].toFixed(0)}% / B {wordCompressionRange[1].toFixed(0)}%
+          </span>
+        </div>
+        <Slider
+          value={wordCompressionRange}
+          min={0}
+          max={100}
+          step={1}
+          onValueChange={(values) => applyWordCompressionRange(values)}
+        />
+        <p className="text-[10px] text-[var(--ink-subtle)]">
+          Keep A or B on an endpoint to anchor that side, then drag the other handle to compress toward it.
+        </p>
+      </div>
+      <div
+        ref={wordTimelineRef}
+        className="relative h-12 rounded-md border border-[var(--glass-border)] bg-[var(--polar-mist)]/50 overflow-hidden"
+      >
+        <div className="absolute inset-0">
+          <div className="absolute left-0 right-0 top-1/2 h-px bg-[var(--glass-border)] -translate-y-1/2" />
+        </div>
+        <div
+          className="absolute top-0 bottom-0 w-px bg-white/80 pointer-events-none z-20"
+          style={{ left: `${localPlayheadPercent}%` }}
+        />
+        {editingWords.map((word, index) => {
+          const wordStart = Number.parseFloat(word.start);
+          const wordEnd = Number.parseFloat(word.end);
+          if (!Number.isFinite(wordStart) || !Number.isFinite(wordEnd)) {
+            return null;
+          }
+
+          const left = clamp(
+            ((wordStart - timelineSegmentStart) / timelineDuration) * 100,
+            0,
+            100
+          );
+          const right = clamp(
+            ((wordEnd - timelineSegmentStart) / timelineDuration) * 100,
+            0,
+            100
+          );
+          const width = Math.max(right - left, 1.5);
+          const isDragging = wordDragState?.index === index;
+
+          return (
+            <div
+              key={`timeline-${index}-${word.text}`}
+              className={`absolute top-1 bottom-1 rounded-md border transition-colors ${
+                isDragging
+                  ? 'border-[var(--coral-400)] bg-[var(--coral-100)]/80'
+                  : 'border-[var(--glass-border)] bg-[var(--card)]/85'
+              } cursor-grab active:cursor-grabbing`}
+              style={{ left: `${left}%`, width: `${width}%` }}
+              onMouseDown={(event) => startWordDrag(event, index, 'move')}
+              title={word.text}
+            >
+              <div className="absolute inset-0 flex items-center justify-center px-1">
+                <span className="truncate text-[10px] text-[var(--ink-dark)]">
+                  {word.text || `Word ${index + 1}`}
+                </span>
+              </div>
+              <div
+                className="absolute left-0 top-0 bottom-0 w-1.5 cursor-ew-resize bg-[var(--coral-300)]/60 hover:bg-[var(--coral-300)]"
+                onMouseDown={(event) => startWordDrag(event, index, 'start')}
+              />
+              <div
+                className="absolute right-0 top-0 bottom-0 w-1.5 cursor-ew-resize bg-[var(--coral-300)]/60 hover:bg-[var(--coral-300)]"
+                onMouseDown={(event) => startWordDrag(event, index, 'end')}
+              />
+            </div>
+          );
+        })}
+      </div>
+      <p className="text-[10px] text-[var(--ink-subtle)]">
+        Drag a word block to move timing, or drag left/right edges to trim.
+      </p>
+      <div className="max-h-36 overflow-y-auto space-y-1 pr-1">
+        {editingWords.map((word, index) => (
+          <div
+            key={`${index}-${word.text}`}
+            className="grid grid-cols-[minmax(0,1fr)_78px_78px] gap-1 items-center"
+          >
+            <span
+              className="truncate text-[11px] text-[var(--ink-dark)]"
+              title={word.text}
+            >
+              {word.text || `Word ${index + 1}`}
+            </span>
+            <Input
+              type="number"
+              min={0}
+              step={0.01}
+              value={word.start}
+              onChange={(event) =>
+                updateEditingWordTiming(
+                  index,
+                  'start',
+                  event.target.value
+                )
+              }
+              className="h-7 rounded-md px-1.5 text-[10px] font-mono"
+            />
+            <Input
+              type="number"
+              min={0}
+              step={0.01}
+              value={word.end}
+              onChange={(event) =>
+                updateEditingWordTiming(
+                  index,
+                  'end',
+                  event.target.value
+                )
+              }
+              className="h-7 rounded-md px-1.5 text-[10px] font-mono"
+            />
+          </div>
+        ))}
+      </div>
+      {hasInvalidWordTiming && (
+        <p className="text-[10px] text-[var(--error)]">
+          Invalid word timings. Ensure each word start/end is valid and ordered.
+        </p>
+      )}
+    </div>
   );
 }
 
 export function CaptionPanel({ videoPath }: CaptionPanelProps) {
-  const {
-    project,
-    captionSegments,
-    captionSettings,
-    isTranscribing,
-    transcriptionProgress,
-    transcriptionStage,
-    transcriptionError,
-    whisperModels,
-    selectedModelName,
-    isDownloadingModel,
-    downloadProgress,
-    loadWhisperModels,
-    setSelectedModel,
-    downloadModel,
-    startTranscription,
-    transcribeCaptionSegment,
-    updateCaptionSettings,
-    updateCaptionSegment,
-    setCaptionSegments,
-    setCaptionsEnabled,
-    setTranscriptionProgress,
-    currentTimeMs,
-    isPlaying,
-    requestSeek,
-    setIsPlaying,
-    togglePlayback,
-  } = useVideoEditorStore();
+  const project = useVideoEditorStore(selectProject);
+  const captionSegments = useVideoEditorStore(selectCaptionSegments);
+  const captionSettings = useVideoEditorStore(selectCaptionSettings);
+  const isTranscribing = useVideoEditorStore(selectIsTranscribing);
+  const transcriptionProgress = useVideoEditorStore(selectTranscriptionProgress);
+  const transcriptionStage = useVideoEditorStore(selectTranscriptionStage);
+  const transcriptionError = useVideoEditorStore(selectTranscriptionError);
+  const whisperModels = useVideoEditorStore(selectWhisperModels);
+  const selectedModelName = useVideoEditorStore(selectSelectedModelName);
+  const isDownloadingModel = useVideoEditorStore(selectIsDownloadingModel);
+  const downloadProgress = useVideoEditorStore(selectDownloadProgress);
+  const loadWhisperModels = useVideoEditorStore(selectLoadWhisperModels);
+  const setSelectedModel = useVideoEditorStore(selectSetSelectedModel);
+  const downloadModel = useVideoEditorStore(selectDownloadModel);
+  const startTranscription = useVideoEditorStore(selectStartTranscription);
+  const transcribeCaptionSegment = useVideoEditorStore(selectTranscribeCaptionSegment);
+  const updateCaptionSettings = useVideoEditorStore(selectUpdateCaptionSettings);
+  const updateCaptionSegment = useVideoEditorStore(selectUpdateCaptionSegment);
+  const setCaptionSegments = useVideoEditorStore(selectSetCaptionSegments);
+  const setCaptionsEnabled = useVideoEditorStore(selectSetCaptionsEnabled);
+  const setTranscriptionProgress = useVideoEditorStore(selectSetTranscriptionProgress);
+  const requestSeek = useVideoEditorStore(selectRequestSeek);
+  const setIsPlaying = useVideoEditorStore(selectSetIsPlaying);
+  const togglePlayback = useVideoEditorStore(selectTogglePlayback);
 
   const [showModelSelector, setShowModelSelector] = useState(false);
   const [showAllSegments, setShowAllSegments] = useState(true);
@@ -441,12 +629,6 @@ export function CaptionPanel({ videoPath }: CaptionPanelProps) {
     } catch (error) {
       videoEditorLogger.error('Transcription failed:', error);
     }
-  };
-
-  const formatTime = (seconds: number): string => {
-    const mins = Math.floor(seconds / 60);
-    const secs = Math.floor(seconds % 60);
-    return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
   const startEditingSegment = (segment: CaptionSegment) => {
@@ -913,15 +1095,6 @@ export function CaptionPanel({ videoPath }: CaptionPanelProps) {
   }, [wordDragState]);
 
   useEffect(() => {
-    if (!segmentAuditionState || !isPlaying) return;
-    if (currentTimeMs < segmentAuditionState.endMs) return;
-
-    requestSeek(segmentAuditionState.endMs);
-    setIsPlaying(false);
-    setSegmentAuditionState(null);
-  }, [currentTimeMs, isPlaying, requestSeek, segmentAuditionState, setIsPlaying]);
-
-  useEffect(() => {
     const host = captionPreviewHostRef.current;
     if (!host) return;
 
@@ -988,17 +1161,6 @@ export function CaptionPanel({ videoPath }: CaptionPanelProps) {
   const timelineDuration = Math.max(
     timelineSegmentEnd - timelineSegmentStart,
     MIN_SEGMENT_DURATION_SECONDS
-  );
-  const segmentCurrentTimeSeconds = currentTimeMs / 1000;
-  const localPlayheadSeconds = clamp(
-    segmentCurrentTimeSeconds - timelineSegmentStart,
-    0,
-    timelineDuration
-  );
-  const localPlayheadPercent = clamp(
-    (localPlayheadSeconds / timelineDuration) * 100,
-    0,
-    100
   );
   const saveEditingSegment = () => {
     if (!editingSegmentId) return;
@@ -1234,6 +1396,13 @@ export function CaptionPanel({ videoPath }: CaptionPanelProps) {
 
   return (
     <div className="space-y-4">
+      <CaptionAuditionWatcher
+        segmentAuditionState={segmentAuditionState}
+        requestSeek={requestSeek}
+        setIsPlaying={setIsPlaying}
+        clearSegmentAuditionState={() => setSegmentAuditionState(null)}
+      />
+
       {/* Enable/Disable Toggle */}
       <div className="flex items-center justify-between">
         <span className="text-xs text-[var(--ink-muted)]">Show Captions</span>
@@ -1643,62 +1812,13 @@ export function CaptionPanel({ videoPath }: CaptionPanelProps) {
             </div>
 
             <div className="min-w-0 min-h-0 flex flex-col p-4 gap-3 overflow-hidden">
-              <div className="flex items-center gap-2">
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  onClick={handleTransportToggle}
-                >
-                  {isPlaying ? (
-                    <>
-                      <Pause className="w-3.5 h-3.5 mr-1" />
-                      Pause
-                    </>
-                  ) : (
-                    <>
-                      <Play className="w-3.5 h-3.5 mr-1" />
-                      Play
-                    </>
-                  )}
-                </Button>
-                <span className="text-xs font-mono text-[var(--ink-subtle)]">
-                  {formatTime(currentTimeMs / 1000)} / {formatTime(projectDurationSeconds)}
-                </span>
-              </div>
-
-              <div
-                ref={playbackTimelineRef}
-                onMouseDown={beginPlaybackScrub}
-                className="relative h-16 rounded-md border border-[var(--glass-border)] bg-[var(--glass-surface-dark)]/60 overflow-hidden cursor-ew-resize"
-              >
-                <div className="absolute inset-0">
-                  {captionSegments.map((segment) => {
-                    const left = (segment.start / projectDurationSeconds) * 100;
-                    const width = Math.max(
-                      ((segment.end - segment.start) / projectDurationSeconds) * 100,
-                      0.8
-                    );
-                    return (
-                      <div
-                        key={`playback-segment-${segment.id}`}
-                        className="absolute top-2 bottom-2 rounded bg-[var(--polar-mist)]/80 border border-[var(--glass-border)]"
-                        style={{ left: `${left}%`, width: `${width}%` }}
-                      />
-                    );
-                  })}
-                </div>
-                <div
-                  className="absolute top-0 bottom-0 w-px bg-[var(--coral-400)]"
-                  style={{
-                    left: `${clamp(
-                      ((currentTimeMs / 1000) / projectDurationSeconds) * 100,
-                      0,
-                      100
-                    )}%`,
-                  }}
-                />
-              </div>
+              <CaptionPlaybackTransport
+                captionSegments={captionSegments}
+                projectDurationSeconds={projectDurationSeconds}
+                onTogglePlayback={handleTransportToggle}
+                onBeginPlaybackScrub={beginPlaybackScrub}
+                playbackTimelineRef={playbackTimelineRef}
+              />
 
               <div className="rounded-md border border-[var(--glass-border)] bg-[var(--glass-surface-dark)]/60 p-2">
                 <div className="text-[10px] uppercase tracking-wide text-[var(--ink-subtle)] mb-2">
@@ -1784,189 +1904,21 @@ export function CaptionPanel({ videoPath }: CaptionPanelProps) {
                     className="min-h-[96px] text-sm"
                   />
 
-                  <div className="rounded-md border border-[var(--glass-border)] bg-[var(--glass-surface-dark)]/60 p-2 space-y-2">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[10px] text-[var(--ink-subtle)] uppercase tracking-wide">
-                        Word Timing
-                      </span>
-                      <button
-                        type="button"
-                        onClick={syncWordsFromText}
-                        className="px-1.5 py-0.5 rounded text-[10px] text-[var(--ink-subtle)] hover:text-[var(--ink-dark)] hover:bg-[var(--glass-highlight)] transition-colors"
-                      >
-                        Sync Words From Text
-                      </button>
-                    </div>
-                    <div className="rounded-md border border-[var(--glass-border)] bg-[var(--polar-mist)]/50 px-2 py-1.5 space-y-1">
-                      <div className="flex items-center justify-between">
-                        <span className="text-[10px] text-[var(--ink-subtle)]">
-                          Segment Timeline
-                        </span>
-                        <span className="text-[10px] font-mono text-[var(--ink-subtle)]">
-                          {localPlayheadSeconds.toFixed(2)}s / {timelineDuration.toFixed(2)}s
-                        </span>
-                      </div>
-                      <div
-                        ref={localTimelineRef}
-                        onMouseDown={beginLocalTimelineScrub}
-                        className="relative h-8 rounded border border-[var(--glass-border)] bg-[var(--glass-surface-dark)]/70 overflow-hidden cursor-ew-resize"
-                      >
-                        <div
-                          className="absolute top-1 bottom-1 rounded-sm border border-[var(--coral-300)]/60 bg-[var(--coral-100)]/30"
-                          style={{
-                            left: `${wordCompressionRange[0]}%`,
-                            width: `${Math.max(wordCompressionRange[1] - wordCompressionRange[0], 0.75)}%`,
-                          }}
-                        />
-                        <div
-                          className="absolute top-0 bottom-0 w-px bg-[var(--coral-400)]"
-                          style={{ left: `${wordCompressionRange[0]}%` }}
-                        />
-                        <div
-                          className="absolute top-0 bottom-0 w-px bg-[var(--coral-400)]"
-                          style={{ left: `${wordCompressionRange[1]}%` }}
-                        />
-                        <div
-                          className="absolute top-0 bottom-0 w-[2px] bg-white"
-                          style={{ left: `${localPlayheadPercent}%` }}
-                        />
-                      </div>
-                      <p className="text-[10px] text-[var(--ink-subtle)]">
-                        Click or drag to scrub within this segment. White line is local playhead.
-                      </p>
-                    </div>
-                    <div className="rounded-md border border-[var(--glass-border)] bg-[var(--polar-mist)]/50 px-2 py-1.5 space-y-1">
-                      <div className="flex items-center justify-between">
-                        <span className="text-[10px] text-[var(--ink-subtle)]">
-                          Master Compression (A/B)
-                        </span>
-                        <span className="text-[10px] font-mono text-[var(--ink-subtle)]">
-                          A {wordCompressionRange[0].toFixed(0)}% / B {wordCompressionRange[1].toFixed(0)}%
-                        </span>
-                      </div>
-                      <Slider
-                        value={wordCompressionRange}
-                        min={0}
-                        max={100}
-                        step={1}
-                        onValueChange={(values) => applyWordCompressionRange(values)}
-                      />
-                      <p className="text-[10px] text-[var(--ink-subtle)]">
-                        Keep A or B on an endpoint to anchor that side, then drag the other handle to compress toward it.
-                      </p>
-                    </div>
-                    <div
-                      ref={wordTimelineRef}
-                      className="relative h-12 rounded-md border border-[var(--glass-border)] bg-[var(--polar-mist)]/50 overflow-hidden"
-                    >
-                      <div className="absolute inset-0">
-                        <div className="absolute left-0 right-0 top-1/2 h-px bg-[var(--glass-border)] -translate-y-1/2" />
-                      </div>
-                      <div
-                        className="absolute top-0 bottom-0 w-px bg-white/80 pointer-events-none z-20"
-                        style={{ left: `${localPlayheadPercent}%` }}
-                      />
-                      {editingWords.map((word, index) => {
-                        const wordStart = Number.parseFloat(word.start);
-                        const wordEnd = Number.parseFloat(word.end);
-                        if (!Number.isFinite(wordStart) || !Number.isFinite(wordEnd)) {
-                          return null;
-                        }
-
-                        const left = clamp(
-                          ((wordStart - timelineSegmentStart) / timelineDuration) * 100,
-                          0,
-                          100
-                        );
-                        const right = clamp(
-                          ((wordEnd - timelineSegmentStart) / timelineDuration) * 100,
-                          0,
-                          100
-                        );
-                        const width = Math.max(right - left, 1.5);
-                        const isDragging = wordDragState?.index === index;
-
-                        return (
-                          <div
-                            key={`timeline-${index}-${word.text}`}
-                            className={`absolute top-1 bottom-1 rounded-md border transition-colors ${
-                              isDragging
-                                ? 'border-[var(--coral-400)] bg-[var(--coral-100)]/80'
-                                : 'border-[var(--glass-border)] bg-[var(--card)]/85'
-                            } cursor-grab active:cursor-grabbing`}
-                            style={{ left: `${left}%`, width: `${width}%` }}
-                            onMouseDown={(event) => startWordDrag(event, index, 'move')}
-                            title={word.text}
-                          >
-                            <div className="absolute inset-0 flex items-center justify-center px-1">
-                              <span className="truncate text-[10px] text-[var(--ink-dark)]">
-                                {word.text || `Word ${index + 1}`}
-                              </span>
-                            </div>
-                            <div
-                              className="absolute left-0 top-0 bottom-0 w-1.5 cursor-ew-resize bg-[var(--coral-300)]/60 hover:bg-[var(--coral-300)]"
-                              onMouseDown={(event) => startWordDrag(event, index, 'start')}
-                            />
-                            <div
-                              className="absolute right-0 top-0 bottom-0 w-1.5 cursor-ew-resize bg-[var(--coral-300)]/60 hover:bg-[var(--coral-300)]"
-                              onMouseDown={(event) => startWordDrag(event, index, 'end')}
-                            />
-                          </div>
-                        );
-                      })}
-                    </div>
-                    <p className="text-[10px] text-[var(--ink-subtle)]">
-                      Drag a word block to move timing, or drag left/right edges to trim.
-                    </p>
-                    <div className="max-h-36 overflow-y-auto space-y-1 pr-1">
-                      {editingWords.map((word, index) => (
-                        <div
-                          key={`${index}-${word.text}`}
-                          className="grid grid-cols-[minmax(0,1fr)_78px_78px] gap-1 items-center"
-                        >
-                          <span
-                            className="truncate text-[11px] text-[var(--ink-dark)]"
-                            title={word.text}
-                          >
-                            {word.text || `Word ${index + 1}`}
-                          </span>
-                          <Input
-                            type="number"
-                            min={0}
-                            step={0.01}
-                            value={word.start}
-                            onChange={(event) =>
-                              updateEditingWordTiming(
-                                index,
-                                'start',
-                                event.target.value
-                              )
-                            }
-                            className="h-7 rounded-md px-1.5 text-[10px] font-mono"
-                          />
-                          <Input
-                            type="number"
-                            min={0}
-                            step={0.01}
-                            value={word.end}
-                            onChange={(event) =>
-                              updateEditingWordTiming(
-                                index,
-                                'end',
-                                event.target.value
-                              )
-                            }
-                            className="h-7 rounded-md px-1.5 text-[10px] font-mono"
-                          />
-                        </div>
-                      ))}
-                    </div>
-                    {hasInvalidWordTiming && (
-                      <p className="text-[10px] text-[var(--error)]">
-                        Invalid word timings. Ensure each word start/end is valid and ordered.
-                      </p>
-                    )}
-                  </div>
+                  <WordTimingEditor
+                    timelineSegmentStart={timelineSegmentStart}
+                    timelineDuration={timelineDuration}
+                    wordCompressionRange={wordCompressionRange}
+                    beginLocalTimelineScrub={beginLocalTimelineScrub}
+                    localTimelineRef={localTimelineRef}
+                    applyWordCompressionRange={applyWordCompressionRange}
+                    wordTimelineRef={wordTimelineRef}
+                    editingWords={editingWords}
+                    wordDragState={wordDragState}
+                    startWordDrag={startWordDrag}
+                    updateEditingWordTiming={updateEditingWordTiming}
+                    syncWordsFromText={syncWordsFromText}
+                    hasInvalidWordTiming={hasInvalidWordTiming}
+                  />
 
                   <div className="flex items-center justify-between gap-2">
                     <div className="flex items-center gap-2 min-w-0">
@@ -2070,4 +2022,3 @@ export function CaptionPanel({ videoPath }: CaptionPanelProps) {
     </div>
   );
 }
-

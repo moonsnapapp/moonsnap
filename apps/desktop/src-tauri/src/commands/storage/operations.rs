@@ -1415,11 +1415,13 @@ fn create_migration_project_json(
             "quality": 80,
             "fps": 30,
             "background": {
-                "bgType": "solid",
+                "enabled": false,
+                "bgType": "wallpaper",
                 "solidColor": "#000000",
                 "gradientStart": "#1a1a2e",
                 "gradientEnd": "#16213e",
-                "gradientAngle": 135.0
+                "gradientAngle": 135.0,
+                "wallpaper": "macOS/sequoia-dark"
             }
         },
         "scene": {

@@ -175,7 +175,19 @@ export const GPUPreviewCanvas = memo(function GPUPreviewCanvas({
 
   // Compute a version string for text content to detect changes
   const textVersion = project?.text?.segments
-    ? JSON.stringify(project.text.segments.map(s => ({ content: s.content, center: s.center, size: s.size, fontSize: s.fontSize })))
+    ? JSON.stringify(
+      project.text.segments.map((s) => ({
+        start: s.start,
+        end: s.end,
+        content: s.content,
+        center: s.center,
+        size: s.size,
+        fontSize: s.fontSize,
+        fadeDuration: s.fadeDuration,
+        animation: s.animation,
+        typewriterCharsPerSecond: s.typewriterCharsPerSecond,
+      }))
+    )
     : null;
 
   // Set project when initialized, connected, and project/text changes

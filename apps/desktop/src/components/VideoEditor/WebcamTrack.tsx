@@ -1,13 +1,14 @@
-import { memo, useCallback, useRef } from 'react';
+import { memo, useCallback, useMemo, useRef } from 'react';
 import { Video, Eye, EyeOff } from 'lucide-react';
 import type { VisibilitySegment } from '../../types';
 import { useVideoEditorStore, formatTimeSimple } from '../../stores/videoEditorStore';
-
-// Drag state stored in ref to avoid re-renders during drag
-interface DragState {
-  startMs: number;
-  endMs: number;
-}
+import {
+  selectDeleteWebcamSegment,
+  selectSelectWebcamSegment,
+  selectSelectedWebcamSegmentIndex,
+  selectUpdateWebcamSegment,
+} from '../../stores/videoEditor/selectors';
+import { useSegmentDrag } from './tracks/BaseTrack';
 
 interface WebcamTrackProps {
   segments: VisibilitySegment[];
@@ -17,8 +18,7 @@ interface WebcamTrackProps {
   enabled: boolean;
 }
 
-// Selectors for atomic subscriptions
-const selectSelectedWebcamSegmentIndex = (s: ReturnType<typeof useVideoEditorStore.getState>) => s.selectedWebcamSegmentIndex;
+const MIN_WEBCAM_SEGMENT_DURATION_MS = 100;
 
 /**
  * Memoized webcam segment component.
@@ -45,7 +45,13 @@ const WebcamSegmentItem = memo(function WebcamSegmentItem({
 }) {
   const elementRef = useRef<HTMLDivElement>(null);
   const tooltipRef = useRef<HTMLDivElement>(null);
-  const dragStateRef = useRef<DragState | null>(null);
+  const draggableSegment = useMemo(
+    () => ({
+      ...segment,
+      id: `webcam-${index}`,
+    }),
+    [segment, index]
+  );
 
   const left = segment.startMs * timelineZoom;
   const segmentWidth = (segment.endMs - segment.startMs) * timelineZoom;
@@ -55,88 +61,17 @@ const WebcamSegmentItem = memo(function WebcamSegmentItem({
     onSelect(index);
   }, [onSelect, index]);
 
-  const handlePointerDown = useCallback((
-    e: React.PointerEvent,
-    edge: 'start' | 'end' | 'move'
-  ) => {
-    e.preventDefault();
-    e.stopPropagation();
-
-    // Capture pointer to prevent flickering when cursor leaves element
-    (e.target as HTMLElement).setPointerCapture(e.pointerId);
-
-    onSelect(index);
-
-    const startX = e.clientX;
-    const startTimeMs = edge === 'end' ? segment.endMs : segment.startMs;
-    const segmentDuration = segment.endMs - segment.startMs;
-
-    // Initialize drag state
-    dragStateRef.current = { startMs: segment.startMs, endMs: segment.endMs };
-
-    const handlePointerMove = (moveEvent: PointerEvent) => {
-      const deltaX = moveEvent.clientX - startX;
-      const deltaMs = deltaX / timelineZoom;
-
-      let newStartMs = dragStateRef.current!.startMs;
-      let newEndMs = dragStateRef.current!.endMs;
-
-      if (edge === 'start') {
-        newStartMs = Math.max(0, Math.min(segment.endMs - 100, startTimeMs + deltaMs));
-        newEndMs = segment.endMs;
-      } else if (edge === 'end') {
-        newStartMs = segment.startMs;
-        newEndMs = Math.max(segment.startMs + 100, Math.min(durationMs, startTimeMs + deltaMs));
-      } else {
-        newStartMs = startTimeMs + deltaMs;
-        newEndMs = newStartMs + segmentDuration;
-
-        if (newStartMs < 0) {
-          newStartMs = 0;
-          newEndMs = segmentDuration;
-        }
-        if (newEndMs > durationMs) {
-          newEndMs = durationMs;
-          newStartMs = durationMs - segmentDuration;
-        }
-      }
-
-      // Update ref state
-      dragStateRef.current = { startMs: newStartMs, endMs: newEndMs };
-
-      // Update DOM directly (no re-render)
-      if (elementRef.current) {
-        const newLeft = newStartMs * timelineZoom;
-        const newWidth = (newEndMs - newStartMs) * timelineZoom;
-        elementRef.current.style.left = `${newLeft}px`;
-        elementRef.current.style.width = `${Math.max(newWidth, 20)}px`;
-      }
-
-      // Update tooltip if visible
-      if (tooltipRef.current) {
-        tooltipRef.current.textContent = `${formatTimeSimple(newStartMs)} - ${formatTimeSimple(newEndMs)}`;
-      }
-    };
-
-    const handlePointerUp = (upEvent: PointerEvent) => {
-      // Release pointer capture
-      (upEvent.target as HTMLElement).releasePointerCapture(upEvent.pointerId);
-
-      // Commit final state to store
-      if (dragStateRef.current) {
-        const { startMs, endMs } = dragStateRef.current;
-        if (startMs !== segment.startMs || endMs !== segment.endMs) {
-          onUpdate(index, { startMs, endMs });
-        }
-      }
-      dragStateRef.current = null;
-      document.removeEventListener('pointermove', handlePointerMove);
-      document.removeEventListener('pointerup', handlePointerUp);
-    };
-
-    document.addEventListener('pointermove', handlePointerMove);
-    document.addEventListener('pointerup', handlePointerUp);
-  }, [segment, index, durationMs, timelineZoom, onSelect, onUpdate]);
+  const { handlePointerDown } = useSegmentDrag({
+    segment: draggableSegment,
+    timelineZoom,
+    durationMs,
+    minDurationMs: MIN_WEBCAM_SEGMENT_DURATION_MS,
+    elementRef,
+    tooltipRef,
+    onSelect: () => onSelect(index),
+    onUpdate: (_id, updates) => onUpdate(index, updates),
+    onDragStart: () => {},
+  });
 
   const handleDelete = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
@@ -238,12 +173,9 @@ export const WebcamTrack = memo(function WebcamTrack({
   enabled 
 }: WebcamTrackProps) {
   const selectedWebcamSegmentIndex = useVideoEditorStore(selectSelectedWebcamSegmentIndex);
-  
-  const {
-    selectWebcamSegment,
-    updateWebcamSegment,
-    deleteWebcamSegment,
-  } = useVideoEditorStore();
+  const selectWebcamSegment = useVideoEditorStore(selectSelectWebcamSegment);
+  const updateWebcamSegment = useVideoEditorStore(selectUpdateWebcamSegment);
+  const deleteWebcamSegment = useVideoEditorStore(selectDeleteWebcamSegment);
 
   return (
     <div 

@@ -5,7 +5,7 @@
 
 use std::collections::HashMap;
 
-use crate::commands::video_recording::video_project::TextSegment;
+use crate::commands::video_recording::video_project::{TextAnimation, TextSegment};
 
 /// A pre-rendered text image from the frontend.
 #[derive(Debug, Clone)]
@@ -46,6 +46,92 @@ pub struct TextCompositeInfo {
 #[derive(Default)]
 pub struct PreRenderedTextStore {
     images: HashMap<usize, PreRenderedTextImage>,
+}
+
+fn calculate_segment_opacity(segment: &TextSegment, frame_time: f64) -> f32 {
+    let fade_duration = segment.fade_duration.max(0.0);
+    if fade_duration <= 0.0 {
+        return 1.0;
+    }
+
+    let time_since_start = frame_time - segment.start;
+    let time_until_end = segment.end - frame_time;
+    let segment_duration = segment.end - segment.start;
+
+    let apply_intro = matches!(
+        segment.animation,
+        TextAnimation::None | TextAnimation::TypeWriter
+    );
+    let apply_outro = matches!(
+        segment.animation,
+        TextAnimation::None | TextAnimation::TypeWriter
+    );
+
+    if apply_intro && time_since_start < fade_duration {
+        return (time_since_start / fade_duration).clamp(0.0, 1.0) as f32;
+    }
+
+    if apply_outro && time_until_end < fade_duration && segment_duration > fade_duration * 2.0 {
+        return (time_until_end / fade_duration).clamp(0.0, 1.0) as f32;
+    }
+
+    1.0
+}
+
+fn calculate_typewriter_typing_window_secs(segment: &TextSegment) -> f64 {
+    let segment_duration = (segment.end - segment.start).max(0.0);
+    let fade_duration = segment.fade_duration.max(0.0);
+    let has_fade_out_window = fade_duration > 0.0 && segment_duration > fade_duration * 2.0;
+    let outro_duration = if has_fade_out_window {
+        fade_duration
+    } else {
+        0.0
+    };
+    (segment_duration - outro_duration).max(0.0)
+}
+
+fn calculate_effective_typewriter_chars_per_second(
+    segment: &TextSegment,
+    total_chars: usize,
+) -> f64 {
+    let requested = segment.typewriter_chars_per_second.clamp(1.0, 60.0) as f64;
+    if total_chars == 0 {
+        return requested;
+    }
+
+    let typing_window_secs = calculate_typewriter_typing_window_secs(segment);
+    if typing_window_secs <= 0.0 {
+        return requested;
+    }
+
+    let minimum_required = total_chars as f64 / typing_window_secs;
+    requested.max(minimum_required)
+}
+
+fn calculate_typewriter_reveal_width(
+    segment: &TextSegment,
+    image_width: u32,
+    frame_time: f64,
+) -> u32 {
+    if segment.animation != TextAnimation::TypeWriter {
+        return image_width;
+    }
+
+    let total_chars = segment.content.chars().count();
+    if total_chars == 0 {
+        return 0;
+    }
+
+    let chars_per_second = calculate_effective_typewriter_chars_per_second(segment, total_chars);
+    let elapsed = (frame_time - segment.start).max(0.0);
+    let visible_chars = (elapsed * chars_per_second).floor() as usize;
+    let clamped_visible_chars = visible_chars.min(total_chars);
+    if clamped_visible_chars == 0 {
+        return 0;
+    }
+
+    ((image_width as f64 * (clamped_visible_chars as f64 / total_chars as f64)).ceil() as u32)
+        .clamp(1, image_width)
 }
 
 impl PreRenderedTextStore {
@@ -94,23 +180,7 @@ impl PreRenderedTextStore {
                 continue;
             }
 
-            // Calculate fade opacity (same logic as Rust text.rs)
-            let fade_duration = segment.fade_duration.max(0.0);
-            let opacity = if fade_duration > 0.0 {
-                let time_since_start = frame_time - segment.start;
-                let time_until_end = segment.end - frame_time;
-                let segment_duration = segment.end - segment.start;
-
-                if time_since_start < fade_duration {
-                    (time_since_start / fade_duration).clamp(0.0, 1.0) as f32
-                } else if time_until_end < fade_duration && segment_duration > fade_duration * 2.0 {
-                    (time_until_end / fade_duration).clamp(0.0, 1.0) as f32
-                } else {
-                    1.0
-                }
-            } else {
-                1.0
-            };
+            let opacity = calculate_segment_opacity(segment, frame_time);
 
             if opacity < 0.001 {
                 continue;
@@ -132,7 +202,7 @@ impl PreRenderedTextStore {
             let src_offset_y = if raw_y < 0.0 { (-raw_y) as u32 } else { 0 };
             let dst_x = raw_x.max(0.0) as u32;
             let dst_y = raw_y.max(0.0) as u32;
-            let dst_w = image
+            let mut dst_w = image
                 .width
                 .saturating_sub(src_offset_x)
                 .min(output_w.saturating_sub(dst_x));
@@ -140,6 +210,14 @@ impl PreRenderedTextStore {
                 .height
                 .saturating_sub(src_offset_y)
                 .min(output_h.saturating_sub(dst_y));
+
+            // Typewriter: progressively reveal text from left to right.
+            // We keep a single pre-rendered image and clip source width per frame.
+            let reveal_src_w = calculate_typewriter_reveal_width(segment, image.width, frame_time);
+            if reveal_src_w == 0 || src_offset_x >= reveal_src_w {
+                continue;
+            }
+            dst_w = dst_w.min(reveal_src_w - src_offset_x);
 
             if dst_w == 0 || dst_h == 0 {
                 continue;

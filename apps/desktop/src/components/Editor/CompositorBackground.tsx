@@ -100,8 +100,8 @@ export const CompositorBackground: React.FC<CompositorBackgroundProps> = ({
     );
   }
 
-  // Image background
-  if (settings.backgroundType === 'image') {
+  // Image/wallpaper background
+  if (settings.backgroundType === 'image' || settings.backgroundType === 'wallpaper') {
     if (!backgroundImage) {
       // Fallback while loading
       return (

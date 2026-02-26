@@ -64,12 +64,26 @@ export interface CompositorSettingsAnnotation {
   aspectRatio: CompositorSettings['aspectRatio'];
 }
 
+// Special annotation for crop region (export-only bounds, replaces CropBoundsAnnotation)
+export interface CropRegionAnnotation {
+  id: '__crop_region__';
+  type: '__crop_region__';
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
 // Union type for all annotation types
-export type Annotation = ShapeAnnotation | CropBoundsAnnotation | CompositorSettingsAnnotation;
+export type Annotation = ShapeAnnotation | CropBoundsAnnotation | CropRegionAnnotation | CompositorSettingsAnnotation;
 
 // Type guards for annotation types
 export function isCropBoundsAnnotation(ann: Annotation): ann is CropBoundsAnnotation {
   return ann.type === '__crop_bounds__';
+}
+
+export function isCropRegionAnnotation(ann: Annotation): ann is CropRegionAnnotation {
+  return ann.type === '__crop_region__';
 }
 
 export function isCompositorSettingsAnnotation(ann: Annotation): ann is CompositorSettingsAnnotation {
@@ -184,6 +198,8 @@ export interface CanvasShape {
   pixelSize?: number;
   blurType?: BlurType;
   blurAmount?: number;
+  imageSrc?: string; // base64 data URL for pasted images
+  isBackground?: boolean; // true for the original screenshot background shape
   rotation?: number;
   scaleX?: number;
   scaleY?: number;
@@ -230,14 +246,16 @@ export interface CompositorSettings {
   aspectRatio: 'auto' | '16:9' | '4:3' | '1:1' | 'twitter' | 'instagram';
 }
 
+export const DEFAULT_COMPOSITOR_WALLPAPER_ID = 'macOS/sequoia-dark';
+
 export const DEFAULT_COMPOSITOR_SETTINGS: CompositorSettings = {
   enabled: false,
-  backgroundType: 'gradient',
+  backgroundType: 'wallpaper',
   backgroundColor: '#6366f1',
   gradientStart: '#667eea',
   gradientEnd: '#764ba2',
   gradientAngle: 135,
-  wallpaper: null,
+  wallpaper: DEFAULT_COMPOSITOR_WALLPAPER_ID,
   backgroundImage: null,
   padding: 64,
   borderRadius: 12,
@@ -394,7 +412,6 @@ export type {
 // Video project types
 export type {
   AutoZoomConfig,
-  VideoProject,
   VideoSources,
   TimelineState,
   TrimSegment,
@@ -430,21 +447,52 @@ export type {
   SceneSegment,
   SceneConfig,
   XY,
-  TextSegment,
-  TextConfig,
   MaskType,
   MaskSegment,
   MaskConfig,
 } from './generated';
 
-import type { CursorConfig as GeneratedCursorConfig } from './generated';
+import type {
+  CursorConfig as GeneratedCursorConfig,
+  TextConfig as GeneratedTextConfig,
+  TextSegment as GeneratedTextSegment,
+  VideoProject as GeneratedVideoProject,
+} from './generated';
 
 // Smooth movement settings were removed. Keep the app-level type aligned even when
 // generated files are temporarily stale before ts-rs regeneration.
 export type CursorConfig = Omit<
   GeneratedCursorConfig,
   'smoothMovement' | 'animationStyle' | 'tension' | 'mass' | 'friction'
->;
+> & {
+  // Cursor fade-out when idle (Screen Studio-like behavior).
+  hideWhenIdle?: boolean;
+};
+
+// Text animation style for text overlay segments.
+export type TextAnimation = 'none' | 'typeWriter';
+
+// Keep text segment typing animation fields optional at app level for compatibility
+// with older project payloads and in-flight generated type changes.
+export type TextSegment = Omit<
+  GeneratedTextSegment,
+  'animation' | 'typewriterCharsPerSecond' | 'typewriterSoundEnabled'
+> & {
+  animation?: TextAnimation;
+  typewriterCharsPerSecond?: number;
+  typewriterSoundEnabled?: boolean;
+};
+
+// Keep text config aligned with app-level TextSegment extensions.
+export type TextConfig = Omit<GeneratedTextConfig, 'segments'> & {
+  segments: TextSegment[];
+};
+
+// Keep VideoProject aligned with app-level CursorConfig/TextConfig extensions.
+export type VideoProject = Omit<GeneratedVideoProject, 'cursor' | 'text'> & {
+  cursor: CursorConfig;
+  text: TextConfig;
+};
 
 // GPU Video Editor types (wgpu-accelerated rendering)
 export type {

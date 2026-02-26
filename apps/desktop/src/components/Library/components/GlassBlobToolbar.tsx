@@ -1,12 +1,13 @@
 import React, { useState, useRef, useEffect } from 'react';
 import {
   Star,
-  LayoutGrid,
-  List,
   FolderOpen,
   Search,
   X,
   Trash2,
+  Image,
+  Video,
+  Film,
 } from 'lucide-react';
 import {
   Tooltip,
@@ -23,8 +24,8 @@ interface GlassBlobToolbarProps {
   filterTags: string[];
   onFilterTagsChange: (tags: string[]) => void;
   allTags: string[];
-  viewMode: 'grid' | 'list';
-  onViewModeChange: (mode: 'grid' | 'list') => void;
+  filterMediaTypes: string[];
+  onFilterMediaTypesChange: (types: string[]) => void;
   selectedCount: number;
   onDeleteSelected: () => void;
   onClearSelection: () => void;
@@ -39,8 +40,8 @@ export const GlassBlobToolbar: React.FC<GlassBlobToolbarProps> = ({
   filterTags,
   onFilterTagsChange,
   allTags,
-  viewMode,
-  onViewModeChange,
+  filterMediaTypes,
+  onFilterMediaTypesChange,
   selectedCount,
   onDeleteSelected,
   onClearSelection,
@@ -65,6 +66,14 @@ export const GlassBlobToolbar: React.FC<GlassBlobToolbarProps> = ({
   const handleSearchBlur = () => {
     if (!searchQuery) {
       setSearchExpanded(false);
+    }
+  };
+
+  const toggleMediaType = (type: string) => {
+    if (filterMediaTypes.includes(type)) {
+      onFilterMediaTypesChange(filterMediaTypes.filter((t) => t !== type));
+    } else {
+      onFilterMediaTypesChange([...filterMediaTypes, type]);
     }
   };
 
@@ -144,34 +153,45 @@ export const GlassBlobToolbar: React.FC<GlassBlobToolbarProps> = ({
           onSelectionChange={onFilterTagsChange}
         />
 
-        <div className="cloud-divider" />
-
-        {/* View modes */}
         <Tooltip>
           <TooltipTrigger asChild>
             <button
-              onClick={() => onViewModeChange('grid')}
-              className={`cloud-btn cloud-btn--small ${viewMode === 'grid' ? 'cloud-btn--active' : ''}`}
+              onClick={() => toggleMediaType('image')}
+              className={`cloud-btn cloud-btn--small ${filterMediaTypes.includes('image') ? 'cloud-btn--active' : ''}`}
             >
-              <LayoutGrid className="w-[15px] h-[15px]" />
+              <Image className="w-[15px] h-[15px]" />
             </button>
           </TooltipTrigger>
           <TooltipContent side="top">
-            <p className="text-xs">Grid View</p>
+            <p className="text-xs">Images</p>
           </TooltipContent>
         </Tooltip>
 
         <Tooltip>
           <TooltipTrigger asChild>
             <button
-              onClick={() => onViewModeChange('list')}
-              className={`cloud-btn cloud-btn--small ${viewMode === 'list' ? 'cloud-btn--active' : ''}`}
+              onClick={() => toggleMediaType('video')}
+              className={`cloud-btn cloud-btn--small ${filterMediaTypes.includes('video') ? 'cloud-btn--active' : ''}`}
             >
-              <List className="w-[15px] h-[15px]" />
+              <Video className="w-[15px] h-[15px]" />
             </button>
           </TooltipTrigger>
           <TooltipContent side="top">
-            <p className="text-xs">List View</p>
+            <p className="text-xs">Videos</p>
+          </TooltipContent>
+        </Tooltip>
+
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              onClick={() => toggleMediaType('gif')}
+              className={`cloud-btn cloud-btn--small ${filterMediaTypes.includes('gif') ? 'cloud-btn--active' : ''}`}
+            >
+              <Film className="w-[15px] h-[15px]" />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="top">
+            <p className="text-xs">GIFs</p>
           </TooltipContent>
         </Tooltip>
 

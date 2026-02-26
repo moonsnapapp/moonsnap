@@ -1,38 +1,15 @@
 import { memo, useCallback, useState, useRef, useMemo, useEffect } from 'react';
 import type { TextSegment } from '../../types';
 import { useVideoEditorStore } from '../../stores/videoEditorStore';
+import {
+  selectSelectTextSegment,
+  selectSelectedTextSegmentId,
+  selectUpdateTextSegment,
+} from '../../stores/videoEditor/selectors';
+import { createTextSegmentId } from '../../utils/textSegmentId';
+import { clampWithFallback } from '../../utils/math';
 import { renderTextOnCanvas } from '../../utils/textPreRenderer';
-
-/**
- * Measure text dimensions using an offscreen canvas.
- * Returns { width, height } in pixels.
- */
-let _measureCanvas: OffscreenCanvas | null = null;
-export function measureTextSize(
-  content: string,
-  fontFamily: string,
-  fontSize: number,
-  fontWeight: number,
-  maxWidthPx: number,
-): { width: number; height: number } {
-  if (!_measureCanvas) {
-    _measureCanvas = new OffscreenCanvas(1, 1);
-  }
-  const ctx = _measureCanvas.getContext('2d');
-  if (!ctx) return { width: 100, height: fontSize * 1.2 };
-
-  ctx.font = `${fontWeight} ${fontSize}px ${fontFamily}`;
-  const metrics = ctx.measureText(content);
-  const textWidth = metrics.width;
-
-  // Approximate line wrapping
-  const lines = Math.max(1, Math.ceil(textWidth / maxWidthPx));
-  const lineHeight = fontSize * 1.2;
-  const totalHeight = lines * lineHeight;
-  const effectiveWidth = lines > 1 ? maxWidthPx : textWidth;
-
-  return { width: effectiveWidth, height: totalHeight };
-}
+import { getAnimatedTextContent } from '../../utils/textSegmentAnimation';
 
 interface TextOverlayProps {
   segments: TextSegment[];
@@ -45,6 +22,7 @@ interface TextOverlayProps {
 
 interface TextItemProps {
   segment: TextSegment;
+  displayContent: string;
   segmentId: string;
   isSelected: boolean;
   opacity: number;
@@ -84,8 +62,7 @@ const ResizeHandle = memo(function ResizeHandle({ position, onMouseDown }: Resiz
  * Clamp a value between min and max, handling edge cases
  */
 function clamp(value: number, min: number, max: number): number {
-  if (min > max) return (min + max) / 2;
-  return Math.min(Math.max(value, min), max);
+  return clampWithFallback(value, min, max, 'midpoint');
 }
 
 const MIN_VISIBLE_OPACITY = 0.001;
@@ -121,6 +98,7 @@ function calculateTextSegmentOpacity(segment: TextSegment, timeSec: number): num
  */
 const TextItem = memo(function TextItem({
   segment,
+  displayContent,
   segmentId,
   isSelected,
   opacity,
@@ -172,7 +150,7 @@ const TextItem = memo(function TextItem({
     ctx.scale(dpr, dpr);
 
     renderTextOnCanvas(ctx, {
-      content: segment.content || 'Text',
+      content: displayContent,
       fontFamily: segment.fontFamily || 'sans-serif',
       fontWeight: segment.fontWeight || 700,
       italic: !!segment.italic,
@@ -180,7 +158,7 @@ const TextItem = memo(function TextItem({
       color: segment.color || '#ffffff',
     }, safeWidth, safeHeight, renderSize.height);
   }, [
-    segment.content,
+    displayContent,
     segment.fontFamily,
     segment.fontWeight,
     segment.italic,
@@ -468,9 +446,9 @@ export const TextOverlay = memo(function TextOverlay({
   displayWidth,
   displayHeight,
 }: TextOverlayProps) {
-  const selectedTextSegmentId = useVideoEditorStore((s) => s.selectedTextSegmentId);
-  const selectTextSegment = useVideoEditorStore((s) => s.selectTextSegment);
-  const updateTextSegment = useVideoEditorStore((s) => s.updateTextSegment);
+  const selectedTextSegmentId = useVideoEditorStore(selectSelectedTextSegmentId);
+  const selectTextSegment = useVideoEditorStore(selectSelectTextSegment);
+  const updateTextSegment = useVideoEditorStore(selectUpdateTextSegment);
 
   const safeRenderWidth = Math.max(1, Math.round(renderWidth));
   const safeRenderHeight = Math.max(1, Math.round(renderHeight));
@@ -502,6 +480,7 @@ export const TextOverlay = memo(function TextOverlay({
         segment,
         originalIndex,
         opacity: calculateTextSegmentOpacity(segment, currentTimeSec),
+        displayContent: getAnimatedTextContent(segment, currentTimeSec),
       }))
       .filter(({ opacity }) => opacity >= MIN_VISIBLE_OPACITY),
     [segments, currentTimeSec]
@@ -519,7 +498,7 @@ export const TextOverlay = memo(function TextOverlay({
   // This must match TextTrack's ID generation exactly
   const segmentIds = useMemo(() =>
     activeSegmentsWithIndex.map(({ segment: seg, originalIndex }) =>
-      `text_${seg.start.toFixed(3)}_${originalIndex}`
+      createTextSegmentId(seg.start, originalIndex)
     ),
     [activeSegmentsWithIndex]
   );
@@ -544,10 +523,11 @@ export const TextOverlay = memo(function TextOverlay({
         }}
         onClick={handleContainerClick}
       >
-        {activeSegmentsWithIndex.map(({ segment, opacity }, index) => (
+        {activeSegmentsWithIndex.map(({ segment, opacity, displayContent }, index) => (
           <TextItem
             key={segmentIds[index]}
             segment={segment}
+            displayContent={displayContent}
             segmentId={segmentIds[index]}
             isSelected={segmentIds[index] === selectedTextSegmentId}
             opacity={opacity}

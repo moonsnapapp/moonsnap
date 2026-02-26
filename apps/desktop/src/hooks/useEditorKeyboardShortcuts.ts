@@ -1,5 +1,6 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState } from 'react';
 import type { Tool } from '../types';
+import { isTextInputTarget } from '../utils/keyboard';
 
 /**
  * Tool shortcuts mapping (single keys, no modifiers)
@@ -67,11 +68,6 @@ export const useEditorKeyboardShortcuts = ({
 }: UseEditorKeyboardShortcutsProps): UseEditorKeyboardShortcutsReturn => {
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
 
-  // Check if event target is an input field
-  const isInputTarget = useCallback((e: KeyboardEvent): boolean => {
-    return e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement;
-  }, []);
-
   // Command palette shortcut (Ctrl+K / Cmd+K) - works in all views
   useEffect(() => {
     const handleCommandPalette = (e: KeyboardEvent) => {
@@ -91,7 +87,7 @@ export const useEditorKeyboardShortcuts = ({
       if (view !== 'editor') return;
 
       // Don't handle shortcuts when typing in an input
-      if (isInputTarget(e)) return;
+      if (isTextInputTarget(e.target)) return;
 
       // Undo/Redo
       if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
@@ -185,7 +181,6 @@ export const useEditorKeyboardShortcuts = ({
     selectedTool,
     selectedIds,
     compositorEnabled,
-    isInputTarget,
     onToolChange,
     onUndo,
     onRedo,

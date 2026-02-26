@@ -23,6 +23,48 @@ import { listen } from '@tauri-apps/api/event';
 import { save } from '@tauri-apps/plugin-dialog';
 import { useCaptureStore } from '../../stores/captureStore';
 import { useVideoEditorStore } from '../../stores/videoEditorStore';
+import {
+  selectIsPlaying,
+  selectCancelExport,
+  selectClearEditor,
+  selectClearExportRange,
+  selectDeleteMaskSegment,
+  selectDeleteSceneSegment,
+  selectDeleteTextSegment,
+  selectDeleteTrimSegment,
+  selectDeleteZoomRegion,
+  selectExportProgress,
+  selectExportVideo,
+  selectIsExporting,
+  selectIsSaving,
+  selectProject,
+  selectRedoTrim,
+  selectRequestSeek,
+  selectResetTrimSegments,
+  selectSaveProject,
+  selectSelectMaskSegment,
+  selectSelectSceneSegment,
+  selectSelectTextSegment,
+  selectSelectTrimSegment,
+  selectSelectZoomRegion,
+  selectSelectedMaskSegmentId,
+  selectSelectedSceneSegmentId,
+  selectSelectedTextSegmentId,
+  selectSelectedTrimSegmentId,
+  selectSelectedZoomRegionId,
+  selectSetExportInPoint,
+  selectSetExportOutPoint,
+  selectSetIsPlaying,
+  selectSetPreviewTime,
+  selectSetSplitMode,
+  selectSetExportProgress,
+  selectSetTimelineZoom,
+  selectSplitMode,
+  selectTimelineZoom,
+  selectTogglePlayback,
+  selectUndoTrim,
+  selectUpdateExportConfig,
+} from '../../stores/videoEditor/selectors';
 import { useVideoEditorShortcuts } from '../../hooks/useVideoEditorShortcuts';
 import { VideoEditorToolbar } from './VideoEditorToolbar';
 import { VideoEditorSidebar } from './VideoEditorSidebar';
@@ -51,68 +93,67 @@ export interface VideoEditorViewProps {
   onBack?: () => void;
   /** Hide the top bar entirely (useful when embedded in a window with its own titlebar) */
   hideTopBar?: boolean;
+  /** Whether this editor view is currently active/interactive. */
+  isActive?: boolean;
 }
+
+const SKIP_AMOUNT_MS = 5000;
+const SAVE_WAIT_TIMEOUT_MS = 5000;
+const SAVE_WAIT_POLL_MS = 50;
 
 /**
  * VideoEditorView - Main video editor component with preview, timeline, and controls.
  */
 export const VideoEditorView = forwardRef<VideoEditorViewRef, VideoEditorViewProps>(function VideoEditorView(
-  { onBack, hideTopBar },
+  { onBack, hideTopBar, isActive = true },
   ref
 ) {
   const { setView } = useCaptureStore();
-  const {
-    project,
-    togglePlayback,
-    requestSeek,
-    clearEditor,
-    isExporting,
-    exportProgress,
-    exportVideo,
-    setExportProgress,
-    cancelExport,
-    updateExportConfig,
-    selectZoomRegion,
-    timelineZoom,
-    setTimelineZoom,
-    // Zoom region
-    selectedZoomRegionId,
-    deleteZoomRegion,
-    // Scene segment
-    selectedSceneSegmentId,
-    selectSceneSegment,
-    deleteSceneSegment,
-    // Mask segment
-    selectedMaskSegmentId,
-    selectMaskSegment,
-    deleteMaskSegment,
-    // Text segment
-    selectedTextSegmentId,
-    selectTextSegment,
-    deleteTextSegment,
-    // Trim segment
-    selectedTrimSegmentId,
-    selectTrimSegment,
-    deleteTrimSegment,
-    splitAtPlayhead,
-    resetTrimSegments,
-    undoTrim,
-    redoTrim,
-    // Save
-    saveProject,
-    isSaving,
-    // IO markers
-    setExportInPoint,
-    setExportOutPoint,
-    clearExportRange,
-  } = useVideoEditorStore();
+  const project = useVideoEditorStore(selectProject);
+  const isPlaying = useVideoEditorStore(selectIsPlaying);
+  const setIsPlaying = useVideoEditorStore(selectSetIsPlaying);
+  const setPreviewTime = useVideoEditorStore(selectSetPreviewTime);
+  const togglePlayback = useVideoEditorStore(selectTogglePlayback);
+  const requestSeek = useVideoEditorStore(selectRequestSeek);
+  const clearEditor = useVideoEditorStore(selectClearEditor);
+  const isExporting = useVideoEditorStore(selectIsExporting);
+  const exportProgress = useVideoEditorStore(selectExportProgress);
+  const exportVideo = useVideoEditorStore(selectExportVideo);
+  const setExportProgress = useVideoEditorStore(selectSetExportProgress);
+  const cancelExport = useVideoEditorStore(selectCancelExport);
+  const updateExportConfig = useVideoEditorStore(selectUpdateExportConfig);
+  const selectZoomRegion = useVideoEditorStore(selectSelectZoomRegion);
+  const timelineZoom = useVideoEditorStore(selectTimelineZoom);
+  const setTimelineZoom = useVideoEditorStore(selectSetTimelineZoom);
+  const selectedZoomRegionId = useVideoEditorStore(selectSelectedZoomRegionId);
+  const deleteZoomRegion = useVideoEditorStore(selectDeleteZoomRegion);
+  const selectedSceneSegmentId = useVideoEditorStore(selectSelectedSceneSegmentId);
+  const selectSceneSegment = useVideoEditorStore(selectSelectSceneSegment);
+  const deleteSceneSegment = useVideoEditorStore(selectDeleteSceneSegment);
+  const selectedMaskSegmentId = useVideoEditorStore(selectSelectedMaskSegmentId);
+  const selectMaskSegment = useVideoEditorStore(selectSelectMaskSegment);
+  const deleteMaskSegment = useVideoEditorStore(selectDeleteMaskSegment);
+  const selectedTextSegmentId = useVideoEditorStore(selectSelectedTextSegmentId);
+  const selectTextSegment = useVideoEditorStore(selectSelectTextSegment);
+  const deleteTextSegment = useVideoEditorStore(selectDeleteTextSegment);
+  const selectedTrimSegmentId = useVideoEditorStore(selectSelectedTrimSegmentId);
+  const selectTrimSegment = useVideoEditorStore(selectSelectTrimSegment);
+  const deleteTrimSegment = useVideoEditorStore(selectDeleteTrimSegment);
+  const splitMode = useVideoEditorStore(selectSplitMode);
+  const setSplitMode = useVideoEditorStore(selectSetSplitMode);
+  const resetTrimSegments = useVideoEditorStore(selectResetTrimSegments);
+  const undoTrim = useVideoEditorStore(selectUndoTrim);
+  const redoTrim = useVideoEditorStore(selectRedoTrim);
+  const saveProject = useVideoEditorStore(selectSaveProject);
+  const isSaving = useVideoEditorStore(selectIsSaving);
+  const setExportInPoint = useVideoEditorStore(selectSetExportInPoint);
+  const setExportOutPoint = useVideoEditorStore(selectSetExportOutPoint);
+  const clearExportRange = useVideoEditorStore(selectClearExportRange);
 
   // Crop dialog state
   const [isCropDialogOpen, setIsCropDialogOpen] = useState(false);
   const lastUserActivityAtRef = useRef(Date.now());
 
-  // Skip amount in milliseconds
-  const SKIP_AMOUNT_MS = 5000;
 
   // Keyboard shortcut handlers
   const handleSkipBack = useCallback(() => {
@@ -182,10 +223,10 @@ export const VideoEditorView = forwardRef<VideoEditorViewRef, VideoEditorViewPro
     }
   }, [project, isSaving, saveProject]);
 
-  // Handle split at playhead - splits video trim segments
-  const handleSplitAtPlayhead = useCallback(() => {
-    splitAtPlayhead();
-  }, [splitAtPlayhead]);
+  // Toggle cut mode for click-to-cut on the timeline
+  const handleToggleCutMode = useCallback(() => {
+    setSplitMode(!splitMode);
+  }, [setSplitMode, splitMode]);
 
   // Handle reset trim segments - restore full video
   const handleResetTrimSegments = useCallback(() => {
@@ -224,7 +265,7 @@ export const VideoEditorView = forwardRef<VideoEditorViewRef, VideoEditorViewPro
     onSeekToEnd: () => project && requestSeek(project.timeline.durationMs),
     onSkipBack: handleSkipBack,
     onSkipForward: handleSkipForward,
-    onSplitAtPlayhead: handleSplitAtPlayhead,
+    onToggleCutMode: handleToggleCutMode,
     onDeleteSelected: handleDeleteSelected,
     onTimelineZoomIn: handleTimelineZoomIn,
     onTimelineZoomOut: handleTimelineZoomOut,
@@ -322,15 +363,66 @@ export const VideoEditorView = forwardRef<VideoEditorViewRef, VideoEditorViewPro
     };
   }, [project, isExporting, saveProject]);
 
+  // Suspend playback/scrub activity when the editor is not active.
+  useEffect(() => {
+    if (isActive) return;
+    if (isPlaying) {
+      setIsPlaying(false);
+    }
+    setPreviewTime(null);
+  }, [isActive, isPlaying, setIsPlaying, setPreviewTime]);
+
+  // Best-effort save when the tab/window is closed before autosave debounce fires.
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      const state = useVideoEditorStore.getState();
+      if (!state.project || state.isExporting) return;
+      void state.saveProject().catch((error) => {
+        videoEditorLogger.warn('Save on window close failed:', error);
+      });
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
+  }, []);
+
   // Navigate back to library
-  const handleBack = useCallback(() => {
-    clearEditor();
+  const flushSaveBeforeClose = useCallback(async () => {
+    const waitForSavingToSettle = async () => {
+      const startedAt = Date.now();
+      while (useVideoEditorStore.getState().isSaving) {
+        if (Date.now() - startedAt > SAVE_WAIT_TIMEOUT_MS) {
+          return;
+        }
+        await new Promise((resolve) => setTimeout(resolve, SAVE_WAIT_POLL_MS));
+      }
+    };
+
+    const state = useVideoEditorStore.getState();
+    if (!state.project || state.isExporting) return;
+
+    try {
+      // If an autosave is running, wait and then force one final save with latest state.
+      await waitForSavingToSettle();
+      await useVideoEditorStore.getState().saveProject();
+      await waitForSavingToSettle();
+    } catch (error) {
+      videoEditorLogger.warn('Save on close failed:', error);
+    }
+  }, []);
+
+  // Navigate back to library
+  const handleBack = useCallback(async () => {
+    await flushSaveBeforeClose();
     if (onBack) {
       onBack();
     } else {
+      clearEditor();
       setView('library');
     }
-  }, [clearEditor, setView, onBack]);
+  }, [clearEditor, flushSaveBeforeClose, setView, onBack]);
 
   // Export video with zoom effects applied
   const handleExport = useCallback(async () => {
@@ -409,7 +501,7 @@ export const VideoEditorView = forwardRef<VideoEditorViewRef, VideoEditorViewPro
           )}
 
           {/* Video Preview */}
-          <VideoEditorPreview />
+          <VideoEditorPreview isActive={isActive} />
         </div>
 
         {/* Right sidebar with tabbed properties panel */}
@@ -422,7 +514,6 @@ export const VideoEditorView = forwardRef<VideoEditorViewRef, VideoEditorViewPro
       {/* Timeline with integrated controls */}
       <VideoEditorTimeline
         onExport={handleExport}
-        onSplitAtPlayhead={handleSplitAtPlayhead}
         onResetTrimSegments={handleResetTrimSegments}
         onSetInPoint={handleSetInPoint}
         onSetOutPoint={handleSetOutPoint}

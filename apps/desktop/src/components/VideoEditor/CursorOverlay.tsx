@@ -10,10 +10,11 @@
 import { memo, useRef, useEffect, useState, useCallback, useMemo } from 'react';
 import { useCursorInterpolation } from '../../hooks/useCursorInterpolation';
 import { usePreviewOrPlaybackTime } from '../../hooks/usePlaybackEngine';
+import { useTimelineToSourceTime } from '../../hooks/useTimelineSourceTime';
 import { WINDOWS_CURSORS, DEFAULT_CURSOR, type CursorDefinition } from '../../constants/cursors';
 import { editorLogger } from '../../utils/logger';
-import { useVideoEditorStore } from '../../stores/videoEditorStore';
-import { timelineToSource } from '../../stores/videoEditor/trimSlice';
+import { remapNormalizedPointThroughCrop } from '../../utils/cropCoordinateMapping';
+import { resolveRecordingDimensions } from '../../utils/recordingDimensions';
 import type { CursorRecording, CursorConfig, CursorImage, WindowsCursorShape, ZoomRegion, CropConfig } from '../../types';
 
 // Default cursor config values
@@ -25,7 +26,8 @@ const BASE_CURSOR_HEIGHT = 24.0; // Base cursor height in pixels
 const REFERENCE_HEIGHT = 720.0;  // Reference video height for scaling
 
 // Motion blur constants - must stay aligned with Rust compositor logic
-const MOTION_BLUR_SAMPLES = 20;
+const MOTION_BLUR_SAMPLES = 32;
+const MOTION_BLUR_BASE_TRAIL_SAMPLES = 19; // Equivalent to prior 20-sample implementation.
 const MOTION_BLUR_MIN_VELOCITY = 0.005;
 const MOTION_BLUR_VELOCITY_RAMP_END = 0.03;
 const MOTION_BLUR_MAX_TRAIL = 0.15;
@@ -86,8 +88,8 @@ const svgFetchPromises = new Map<WindowsCursorShape, Promise<string>>();
 /**
  * Generate cache key for SVG cursors at a specific size.
  */
-function svgCacheKey(shape: WindowsCursorShape, targetHeight?: number): string {
-  return targetHeight ? `__svg_${shape}_${targetHeight}__` : `__svg_${shape}__`;
+function svgCacheKey(shape: WindowsCursorShape, targetExtent?: number): string {
+  return targetExtent ? `__svg_${shape}_${targetExtent}__` : `__svg_${shape}__`;
 }
 
 /**
@@ -124,15 +126,15 @@ async function fetchSvgText(shape: WindowsCursorShape): Promise<string | null> {
 }
 
 /**
- * Rasterize SVG at exact target height for lossless quality.
+ * Rasterize SVG at exact target extent for lossless quality.
  * Returns cached image if already rasterized at this size.
  */
 function getSvgCursorAtSize(
   shape: WindowsCursorShape,
-  targetHeight: number,
+  targetExtent: number,
   onLoad: () => void
 ): HTMLImageElement | null {
-  const key = svgCacheKey(shape, targetHeight);
+  const key = svgCacheKey(shape, targetExtent);
   const cached = cursorImageCache.get(key);
   if (cached) return cached;
 
@@ -158,10 +160,12 @@ function getSvgCursorAtSize(
   const origWidth = parseFloat(svgElement.getAttribute('width') || '24');
   const origHeight = parseFloat(svgElement.getAttribute('height') || '24');
 
-  // Calculate exact dimensions for target height
-  const scale = targetHeight / origHeight;
-  const newWidth = Math.round(origWidth * scale);
-  const newHeight = targetHeight;
+  // Normalize cursors by fitting the larger SVG dimension to targetExtent.
+  // This prevents wide cursors like sizeWE from rendering much larger than arrow.
+  const dominantDimension = Math.max(origWidth, origHeight, 1);
+  const scale = targetExtent / dominantDimension;
+  const newWidth = Math.max(1, Math.round(origWidth * scale));
+  const newHeight = Math.max(1, Math.round(origHeight * scale));
 
   // Update SVG dimensions
   svgElement.setAttribute('width', String(newWidth));
@@ -179,7 +183,7 @@ function getSvgCursorAtSize(
     onLoad();
   };
   img.onerror = () => {
-    editorLogger.warn(`Failed to rasterize SVG cursor ${shape} at ${targetHeight}px`);
+    editorLogger.warn(`Failed to rasterize SVG cursor ${shape} at ${targetExtent}px`);
   };
   img.src = dataUrl;
 
@@ -227,10 +231,6 @@ function loadBitmapCursor(
  * 2. Bitmap cursor (fallback for custom cursors)
  * 3. Default arrow SVG (fallback when nothing else available)
  */
-// Selector for trim segments
-const selectSegments = (s: ReturnType<typeof useVideoEditorStore.getState>) =>
-  s.project?.timeline.segments;
-
 export const CursorOverlay = memo(function CursorOverlay({
   cursorRecording,
   cursorConfig,
@@ -248,13 +248,13 @@ export const CursorOverlay = memo(function CursorOverlay({
 }: CursorOverlayProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const currentTimeMs = usePreviewOrPlaybackTime();
-  const segments = useVideoEditorStore(selectSegments);
+  const toSourceTime = useTimelineToSourceTime();
 
   // Convert timeline time to source time for cursor lookup
   // Cursor data is recorded in source time (original video), but currentTimeMs is in timeline time (after cuts)
   const sourceTimeMs = useMemo(
-    () => timelineToSource(currentTimeMs, segments ?? []),
-    [currentTimeMs, segments]
+    () => toSourceTime(currentTimeMs),
+    [currentTimeMs, toSourceTime]
   );
 
   // NOTE: Zoom transform is applied by parent container (GPUVideoPreview's frameZoomStyle)
@@ -266,7 +266,10 @@ export const CursorOverlay = memo(function CursorOverlay({
   const triggerUpdate = useCallback(() => forceUpdate((n) => n + 1), []);
 
   // Get interpolated cursor data
-  const { getCursorAt, hasCursorData, cursorImages } = useCursorInterpolation(cursorRecording);
+  const { getCursorAt, hasCursorData, cursorImages } = useCursorInterpolation(
+    cursorRecording,
+    cursorConfig?.hideWhenIdle ?? true
+  );
 
   // Default cursor shape fallback when shape detection fails.
   // Uses 'arrow' as the universal default (most common cursor in general usage).
@@ -318,6 +321,7 @@ export const CursorOverlay = memo(function CursorOverlay({
 
   // Get cursor position at source time (cursor data is in source time coordinates)
   const cursorData = hasCursorData ? getCursorAt(sourceTimeMs) : null;
+  const cursorOpacity = Math.max(0, Math.min(1, cursorData?.opacity ?? 1));
   const roundedRenderWidth = Math.max(1, Math.round(renderWidth));
   const roundedRenderHeight = Math.max(1, Math.round(renderHeight));
   const roundedDisplayWidth = Math.max(1, Math.round(displayWidth));
@@ -368,29 +372,33 @@ export const CursorOverlay = memo(function CursorOverlay({
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = 'high';
 
+    if (cursorOpacity <= 0) {
+      ctx.clearRect(0, 0, roundedRenderWidth, roundedRenderHeight);
+      return;
+    }
+
     // Transform cursor coordinates for crop
     // Cursor coords are 0-1 relative to original video, need to transform to cropped space
     let cursorX = cursorData.x;
     let cursorY = cursorData.y;
-    const cropEnabled = cropConfig?.enabled && cropConfig.width > 0 && cropConfig.height > 0;
+    const { width: recordingWidth, height: recordingHeight } = resolveRecordingDimensions(
+      cursorRecording,
+      videoWidth,
+      actualVideoHeight
+    );
+    const remappedCursor = remapNormalizedPointThroughCrop(
+      { x: cursorX, y: cursorY },
+      recordingWidth,
+      recordingHeight,
+      cropConfig
+    );
+    cursorX = remappedCursor.point.x;
+    cursorY = remappedCursor.point.y;
 
-    if (cropEnabled && cropConfig) {
-      // Match export exactly:
-      // cursor coordinates are normalized to uncropped source dimensions,
-      // then remapped directly into crop-relative coordinates.
-      const recordingWidth = cursorRecording?.width ?? videoWidth;
-      const recordingHeight = cursorRecording?.height ?? actualVideoHeight;
-
-      const cursorPxX = cursorX * recordingWidth;
-      const cursorPxY = cursorY * recordingHeight;
-      cursorX = (cursorPxX - cropConfig.x) / cropConfig.width;
-      cursorY = (cursorPxY - cropConfig.y) / cropConfig.height;
-
-      // Hide cursor if outside visible region
-      if (cursorX < -0.1 || cursorX > 1.1 || cursorY < -0.1 || cursorY > 1.1) {
-        ctx.clearRect(0, 0, roundedRenderWidth, roundedRenderHeight);
-        return;
-      }
+    // Hide cursor if outside visible region after crop remap.
+    if (!remappedCursor.inVisibleBounds) {
+      ctx.clearRect(0, 0, roundedRenderWidth, roundedRenderHeight);
+      return;
     }
 
     // Cursor coordinates are normalized (0-1) in source-space.
@@ -407,9 +415,9 @@ export const CursorOverlay = memo(function CursorOverlay({
     // Get click animation scale from cursor data (0.7-1.0)
     const clickAnimationScale = cursorData.scale ?? 1.0;
 
-    // Calculate exact SVG rasterization height for lossless rendering
+    // Calculate exact SVG rasterization extent for lossless rendering
     // Account for DPR so the SVG is rasterized at screen pixel resolution
-    const svgTargetHeight = Math.round(finalCursorHeight * clickAnimationScale * renderScale);
+    const svgTargetExtent = Math.round(finalCursorHeight * clickAnimationScale * renderScale);
 
     const velocityX = cursorData.velocityX ?? 0;
     const velocityY = cursorData.velocityY ?? 0;
@@ -437,6 +445,8 @@ export const CursorOverlay = memo(function CursorOverlay({
     // Draw a motion trail (if enabled) and then the main cursor sample.
     const drawMotionBlurTrail = (drawSample: (x: number, y: number, opacity: number) => void) => {
       if (shouldDrawMotionBlur) {
+        const trailSampleCount = Math.max(1, MOTION_BLUR_SAMPLES - 1);
+        const weightNormalization = MOTION_BLUR_BASE_TRAIL_SAMPLES / trailSampleCount;
         for (let i = MOTION_BLUR_SAMPLES - 1; i >= 1; i -= 1) {
           const t = i / (MOTION_BLUR_SAMPLES - 1);
           const easedT = smoothstep(0, 1, t);
@@ -444,13 +454,13 @@ export const CursorOverlay = memo(function CursorOverlay({
           const offsetY = blurDirY * trailLength * easedT;
           const sampleX = pixelX + offsetX * roundedRenderWidth;
           const sampleY = pixelY + offsetY * roundedRenderHeight;
-          const weight = (1 - t * 0.75) * motionBlur * velocityFactor;
+          const weight = (1 - t * 0.75) * motionBlur * velocityFactor * weightNormalization;
           if (weight > 0) {
-            drawSample(sampleX, sampleY, weight);
+            drawSample(sampleX, sampleY, weight * cursorOpacity);
           }
         }
       }
-      drawSample(pixelX, pixelY, 1);
+      drawSample(pixelX, pixelY, cursorOpacity);
     };
 
     const drawCircleAt = (x: number, y: number, opacity: number) => {
@@ -482,10 +492,9 @@ export const CursorOverlay = memo(function CursorOverlay({
       if (opacity <= 0) return;
       const previousAlpha = ctx.globalAlpha;
       ctx.globalAlpha = opacity;
-      // Image is already at exact size (svgTargetHeight), draw at 1:1.
-      // But we need to account for renderScale in our coordinate system.
-      const drawHeight = finalCursorHeight * clickAnimationScale;
-      const drawWidth = (img.width / img.height) * drawHeight;
+      // Image is already rasterized to exact display size at renderScale.
+      const drawWidth = img.width / renderScale;
+      const drawHeight = img.height / renderScale;
       const drawX = x - drawWidth * def.hotspotX;
       const drawY = y - drawHeight * def.hotspotY;
       ctx.drawImage(img, drawX, drawY, drawWidth, drawHeight);
@@ -531,8 +540,8 @@ export const CursorOverlay = memo(function CursorOverlay({
     if (shape) {
       const definition: CursorDefinition | undefined = WINDOWS_CURSORS[shape as WindowsCursorShape];
       if (definition) {
-        // Get or trigger rasterization at exact target height
-        const svgImage = getSvgCursorAtSize(shape, svgTargetHeight, triggerUpdate);
+        // Get or trigger rasterization at exact target extent
+        const svgImage = getSvgCursorAtSize(shape, svgTargetExtent, triggerUpdate);
         if (svgImage) {
           ctx.clearRect(0, 0, roundedRenderWidth, roundedRenderHeight);
           drawMotionBlurTrail((x, y, opacity) => drawSvgCursorAt(svgImage, definition, x, y, opacity));
@@ -556,7 +565,7 @@ export const CursorOverlay = memo(function CursorOverlay({
     }
 
     // Priority 3: Default arrow SVG at exact size (final fallback)
-    const defaultImage = getSvgCursorAtSize('arrow', svgTargetHeight, triggerUpdate);
+    const defaultImage = getSvgCursorAtSize('arrow', svgTargetExtent, triggerUpdate);
     if (defaultImage) {
       ctx.clearRect(0, 0, roundedRenderWidth, roundedRenderHeight);
       drawMotionBlurTrail((x, y, opacity) => drawSvgCursorAt(defaultImage, DEFAULT_CURSOR, x, y, opacity));
@@ -567,6 +576,7 @@ export const CursorOverlay = memo(function CursorOverlay({
   }, [
     cursorData,
     currentCursor,
+    cursorOpacity,
     visible,
     cursorType,
     scale,
@@ -579,6 +589,7 @@ export const CursorOverlay = memo(function CursorOverlay({
     cursorImages,
     triggerUpdate,
     currentTimeMs,
+    cursorRecording,
     cursorRecording?.width,
     cursorRecording?.height,
     cropConfig,

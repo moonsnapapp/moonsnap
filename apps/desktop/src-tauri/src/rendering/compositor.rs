@@ -724,7 +724,11 @@ impl Compositor {
             frame.width as f32,
             frame.height as f32,
             options.background.padding,
-            Some((out_w, out_h)), // Always manual mode in compositor
+            if options.use_manual_composition {
+                Some((out_w, out_h))
+            } else {
+                None
+            },
         );
 
         let frame_x = bounds.frame_x;
@@ -1106,7 +1110,11 @@ impl Compositor {
             video_w,
             video_h,
             options.background.padding,
-            Some((out_w, out_h)),
+            if options.use_manual_composition {
+                Some((out_w, out_h))
+            } else {
+                None
+            },
         );
 
         let rounding_type = match options.background.rounding_type {

@@ -60,11 +60,11 @@ export function WebcamConfigPanel({ project, onUpdateWebcamConfig }: WebcamConfi
           }}
           className="justify-start"
         >
-          <ToggleGroupItem value="circle" aria-label="Circle" className="h-8 w-8 p-0 data-[state=on]:bg-[var(--polar-frost)]">
-            <Circle className="h-4 w-4" />
-          </ToggleGroupItem>
           <ToggleGroupItem value="roundedRectangle" aria-label="Squircle" className="h-8 w-8 p-0 data-[state=on]:bg-[var(--polar-frost)]">
             <Square className="h-4 w-4" />
+          </ToggleGroupItem>
+          <ToggleGroupItem value="circle" aria-label="Circle" className="h-8 w-8 p-0 data-[state=on]:bg-[var(--polar-frost)]">
+            <Circle className="h-4 w-4" />
           </ToggleGroupItem>
           <ToggleGroupItem value="source" aria-label="Source" className="h-8 w-8 p-0 data-[state=on]:bg-[var(--polar-frost)]">
             <Monitor className="h-4 w-4" />

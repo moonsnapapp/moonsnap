@@ -8,10 +8,12 @@
  */
 
 import { useEffect, useCallback, useRef } from 'react';
-import { useVideoEditorStore, timelineToSource } from '../../../stores/videoEditorStore';
+import { useVideoEditorStore } from '../../../stores/videoEditorStore';
+import { selectLastSeekToken } from '../../../stores/videoEditor/selectors';
 import { usePlaybackControls, initPlaybackEngine } from '../../../hooks/usePlaybackEngine';
+import { useTimelineToSourceTime } from '../../../hooks/useTimelineSourceTime';
 import { videoEditorLogger } from '../../../utils/logger';
-import type { AudioTrackSettings, TrimSegment } from '../../../types';
+import type { AudioTrackSettings } from '../../../types';
 
 interface PlaybackSyncOptions {
   /** Main video element ref */
@@ -59,7 +61,6 @@ export function usePlaybackSync(options: PlaybackSyncOptions): PlaybackSyncResul
     videoRef,
     systemAudioRef,
     micAudioRef,
-    videoSrc,
     systemAudioSrc,
     micAudioSrc,
     audioConfig,
@@ -72,19 +73,10 @@ export function usePlaybackSync(options: PlaybackSyncOptions): PlaybackSyncResul
 
   const controls = usePlaybackControls();
   const hasSeparateAudio = Boolean(systemAudioSrc || micAudioSrc);
-  const lastSeekToken = useVideoEditorStore((s) => s.lastSeekToken);
+  const lastSeekToken = useVideoEditorStore(selectLastSeekToken);
   const lastSeekTokenRef = useRef(lastSeekToken);
 
-  // Get trim segments for time conversion
-  const segments = useVideoEditorStore((s) => s.project?.timeline.segments) as TrimSegment[] | undefined;
-
-  // Convert timeline time to source time for seeking
-  const getSourceTime = useCallback((timelineTimeMs: number): number => {
-    if (!segments || segments.length === 0) {
-      return timelineTimeMs;
-    }
-    return timelineToSource(timelineTimeMs, segments);
-  }, [segments]);
+  const getSourceTime = useTimelineToSourceTime();
 
   // Initialize playback engine when project loads
   useEffect(() => {
@@ -93,19 +85,14 @@ export function usePlaybackSync(options: PlaybackSyncOptions): PlaybackSyncResul
     }
   }, [durationMs]);
 
-  // Register video element with playback engine
+  // Keep playback engine video element in sync with the actual mounted <video>.
+  // This must update on mount/unmount transitions (for example when editor view is inactive).
   useEffect(() => {
-    if (videoRef.current) {
-      controls.setVideoElement(videoRef.current);
-      return;
-    }
-    const id = requestAnimationFrame(() => {
-      if (videoRef.current) {
-        controls.setVideoElement(videoRef.current);
-      }
-    });
-    return () => cancelAnimationFrame(id);
-  }, [controls, videoSrc]);
+    controls.setVideoElement(videoRef.current);
+    return () => {
+      controls.setVideoElement(null);
+    };
+  });
 
   // Set duration when project loads
   useEffect(() => {
@@ -152,7 +139,7 @@ export function usePlaybackSync(options: PlaybackSyncOptions): PlaybackSyncResul
       video.removeEventListener('error', onError);
       video.removeEventListener('loadeddata', onLoadedData);
     };
-  }, [controls, audioConfig, hasSeparateAudio, onVideoError]);
+  }, [controls, audioConfig, hasSeparateAudio, onVideoError, videoRef]);
 
   // Sync play/pause state from store to video element and RAF loop
   useEffect(() => {
@@ -213,7 +200,7 @@ export function usePlaybackSync(options: PlaybackSyncOptions): PlaybackSyncResul
         video.removeEventListener('seeked', seekedHandler);
       }
     };
-  }, [isPlaying, controls, getSourceTime]);
+  }, [isPlaying, controls, getSourceTime, videoRef]);
 
   // Apply volume settings to main video element
   useEffect(() => {
@@ -228,7 +215,7 @@ export function usePlaybackSync(options: PlaybackSyncOptions): PlaybackSyncResul
         videoEditorLogger.debug(`[Audio] Main video volume set to ${newVolume} (embedded audio)`);
       }
     }
-  }, [audioConfig, hasSeparateAudio]);
+  }, [audioConfig, hasSeparateAudio, videoRef]);
 
   // Apply volume settings to system audio element
   useEffect(() => {
@@ -238,7 +225,7 @@ export function usePlaybackSync(options: PlaybackSyncOptions): PlaybackSyncResul
       audio.volume = newVolume;
       videoEditorLogger.debug(`[Audio] System audio volume set to ${newVolume}`);
     }
-  }, [audioConfig]);
+  }, [audioConfig, systemAudioRef]);
 
   // Apply volume settings to microphone audio element
   useEffect(() => {
@@ -248,7 +235,7 @@ export function usePlaybackSync(options: PlaybackSyncOptions): PlaybackSyncResul
       audio.volume = newVolume;
       videoEditorLogger.debug(`[Audio] Mic audio volume set to ${newVolume}`);
     }
-  }, [audioConfig]);
+  }, [audioConfig, micAudioRef]);
 
   // Sync audio playback with video playback
   useEffect(() => {
@@ -275,7 +262,7 @@ export function usePlaybackSync(options: PlaybackSyncOptions): PlaybackSyncResul
       if (systemAudio) systemAudio.pause();
       if (micAudio) micAudio.pause();
     }
-  }, [isPlaying, getSourceTime]);
+  }, [isPlaying, getSourceTime, micAudioRef, systemAudioRef]);
 
   // Seek audio when preview time or current time changes
   useEffect(() => {
@@ -295,7 +282,7 @@ export function usePlaybackSync(options: PlaybackSyncOptions): PlaybackSyncResul
 
     syncAudio(systemAudioRef.current);
     syncAudio(micAudioRef.current);
-  }, [previewTimeMs, currentTimeMs, isPlaying, getSourceTime, lastSeekToken]);
+  }, [previewTimeMs, currentTimeMs, isPlaying, getSourceTime, lastSeekToken, micAudioRef, systemAudioRef]);
 
   // While playing, keep video clock aligned to audio (audio is master).
   useEffect(() => {
@@ -324,7 +311,7 @@ export function usePlaybackSync(options: PlaybackSyncOptions): PlaybackSyncResul
     const timelineTime = previewTimeMs !== null ? previewTimeMs : currentTimeMs;
     const sourceTime = getSourceTime(timelineTime);
     video.currentTime = sourceTime / 1000;
-  }, [previewTimeMs, currentTimeMs, isPlaying, getSourceTime]);
+  }, [previewTimeMs, currentTimeMs, isPlaying, getSourceTime, videoRef]);
 
   const handleVideoClick = useCallback(() => {
     controls.toggle();

@@ -1,6 +1,8 @@
 import { memo, useCallback, useEffect, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { useVideoEditorStore } from '../../stores/videoEditorStore';
+import { selectCaptionSegments, selectCaptionSettings } from '../../stores/videoEditor/selectors';
+import type { VideoEditorState } from '../../stores/videoEditor/types';
 import { usePreviewOrPlaybackTime } from '../../hooks/usePlaybackEngine';
 import { usePreviewStream } from '../../hooks/usePreviewStream';
 import { videoEditorLogger } from '../../utils/logger';
@@ -17,8 +19,11 @@ type RenderCaptionOverlayArgs = {
   timeMs: number;
   width: number;
   height: number;
-  segments: ReturnType<typeof useVideoEditorStore.getState>['captionSegments'];
-  settings: ReturnType<typeof useVideoEditorStore.getState>['captionSettings'];
+};
+
+type CaptionOverlayDataArgs = {
+  segments: VideoEditorState['captionSegments'];
+  settings: VideoEditorState['captionSettings'];
 };
 
 export const GPUCaptionOverlay = memo(function GPUCaptionOverlay({
@@ -28,8 +33,8 @@ export const GPUCaptionOverlay = memo(function GPUCaptionOverlay({
   displayHeight,
   onActiveChange,
 }: GPUCaptionOverlayProps) {
-  const captionSegments = useVideoEditorStore((s) => s.captionSegments);
-  const captionSettings = useVideoEditorStore((s) => s.captionSettings);
+  const captionSegments = useVideoEditorStore(selectCaptionSegments);
+  const captionSettings = useVideoEditorStore(selectCaptionSettings);
   const currentTimeMs = usePreviewOrPlaybackTime();
   const [gpuFailed, setGpuFailed] = useState(false);
 
@@ -48,6 +53,8 @@ export const GPUCaptionOverlay = memo(function GPUCaptionOverlay({
 
   const renderInFlightRef = useRef(false);
   const queuedArgsRef = useRef<RenderCaptionOverlayArgs | null>(null);
+  const captionDataSyncInFlightRef = useRef(false);
+  const queuedCaptionDataRef = useRef<CaptionOverlayDataArgs | null>(null);
   const rafRef = useRef<number | null>(null);
   const consecutiveRenderErrorsRef = useRef(0);
   // Only show GPU output when stream is connected and has produced at least one frame.
@@ -61,7 +68,7 @@ export const GPUCaptionOverlay = memo(function GPUCaptionOverlay({
     if (!canUseGpu || !isConnected || !captionSettings.enabled) {
       return;
     }
-    if (renderInFlightRef.current) {
+    if (renderInFlightRef.current || captionDataSyncInFlightRef.current) {
       return;
     }
 
@@ -73,12 +80,12 @@ export const GPUCaptionOverlay = memo(function GPUCaptionOverlay({
     queuedArgsRef.current = null;
     renderInFlightRef.current = true;
 
-    invoke('render_caption_overlay', args)
+    invoke('render_caption_overlay_frame', args)
       .then(() => {
         consecutiveRenderErrorsRef.current = 0;
       })
       .catch((error) => {
-        videoEditorLogger.warn('[CaptionParity] render_caption_overlay failed:', error);
+        videoEditorLogger.warn('[CaptionParity] render_caption_overlay_frame failed:', error);
         consecutiveRenderErrorsRef.current += 1;
         // Allow transient command/stream hiccups without permanently switching to CSS.
         if (consecutiveRenderErrorsRef.current >= 3) {
@@ -92,6 +99,43 @@ export const GPUCaptionOverlay = memo(function GPUCaptionOverlay({
         }
       });
   }, [canUseGpu, isConnected, captionSettings.enabled]);
+
+  const flushQueuedCaptionData = useCallback(() => {
+    if (!canUseGpu || !isConnected || !captionSettings.enabled) {
+      return;
+    }
+    if (captionDataSyncInFlightRef.current) {
+      return;
+    }
+
+    const args = queuedCaptionDataRef.current;
+    if (!args) {
+      return;
+    }
+
+    queuedCaptionDataRef.current = null;
+    captionDataSyncInFlightRef.current = true;
+
+    invoke('set_caption_overlay_data', args)
+      .then(() => {
+        consecutiveRenderErrorsRef.current = 0;
+      })
+      .catch((error) => {
+        videoEditorLogger.warn('[CaptionParity] set_caption_overlay_data failed:', error);
+        consecutiveRenderErrorsRef.current += 1;
+        if (consecutiveRenderErrorsRef.current >= 3) {
+          setGpuFailed(true);
+        }
+      })
+      .finally(() => {
+        captionDataSyncInFlightRef.current = false;
+        if (queuedCaptionDataRef.current) {
+          flushQueuedCaptionData();
+        } else if (queuedArgsRef.current) {
+          flushQueuedRender();
+        }
+      });
+  }, [canUseGpu, isConnected, captionSettings.enabled, flushQueuedRender]);
 
   useEffect(() => {
     if (!canUseGpu || !captionSettings.enabled) {
@@ -121,12 +165,28 @@ export const GPUCaptionOverlay = memo(function GPUCaptionOverlay({
       return;
     }
 
+    queuedCaptionDataRef.current = {
+      segments: captionSegments,
+      settings: captionSettings,
+    };
+    flushQueuedCaptionData();
+  }, [
+    canUseGpu,
+    captionSettings,
+    captionSegments,
+    flushQueuedCaptionData,
+    isConnected,
+  ]);
+
+  useEffect(() => {
+    if (!canUseGpu || !captionSettings.enabled || !isConnected) {
+      return;
+    }
+
     queuedArgsRef.current = {
       timeMs: Math.max(0, Math.floor(currentTimeMs)),
       width: roundedRenderWidth,
       height: roundedRenderHeight,
-      segments: captionSegments,
-      settings: captionSettings,
     };
 
     if (rafRef.current !== null) {
@@ -147,7 +207,6 @@ export const GPUCaptionOverlay = memo(function GPUCaptionOverlay({
   }, [
     canUseGpu,
     captionSettings,
-    captionSegments,
     currentTimeMs,
     flushQueuedRender,
     isConnected,
@@ -181,4 +240,3 @@ export const GPUCaptionOverlay = memo(function GPUCaptionOverlay({
 });
 
 export default GPUCaptionOverlay;
-

@@ -29,6 +29,8 @@ export const TIMING = {
 
   // Playback behavior
   PLAYBACK_END_RESTART_THRESHOLD_MS: 150,
+  SCRUB_PREVIEW_STEP_MS: 16,
+  SCRUB_SEEK_STEP_MS: 16,
 } as const;
 
 export type TimingConstants = typeof TIMING;

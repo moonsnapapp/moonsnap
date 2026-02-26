@@ -10,6 +10,13 @@
 
 import { useMemo } from 'react';
 import type { BackgroundConfig, CropConfig, CompositionConfig } from '../../../types';
+import { getVideoFrameShadowMetrics } from '@/utils/frameEffects';
+import {
+  calculateCompositionOutputSize,
+  calculateFrameBoundsInComposition,
+} from '@/utils/compositionBounds';
+import { hasVideoBackgroundFrameStyling } from '@/utils/backgroundFrameStyling';
+import { getContentDimensionsFromCrop } from '@/utils/videoContentDimensions';
 
 interface PreviewStylesOptions {
   /** Background configuration */
@@ -56,26 +63,6 @@ interface PreviewStylesResult {
   croppedFrameSizeInParent: { width: number; height: number } | null;
 }
 
-const REFERENCE_COMPOSITION_HEIGHT = 1080;
-
-function toEven(value: number): number {
-  return Math.floor(value / 2) * 2;
-}
-
-function getEffectiveManualPadding(
-  requestedPadding: number,
-  outputWidth: number,
-  outputHeight: number
-): number {
-  if (requestedPadding <= 0 || outputWidth <= 0 || outputHeight <= 0) {
-    return 0;
-  }
-
-  const scaledPadding = requestedPadding * (outputHeight / REFERENCE_COMPOSITION_HEIGHT);
-  const maxPadding = Math.max(0, (Math.min(outputWidth, outputHeight) - 1) / 2);
-  return Math.min(scaledPadding, maxPadding);
-}
-
 function fitCompositionToArea(
   areaWidth: number,
   areaHeight: number,
@@ -98,91 +85,6 @@ function fitCompositionToArea(
   const scaleY = height / compositionHeight;
 
   return { width, height, scaleX, scaleY };
-}
-
-function calculateCompositionOutputSize(
-  videoWidth: number,
-  videoHeight: number,
-  padding: number,
-  compositionConfig: CompositionConfig | undefined
-): { width: number; height: number } {
-  if (!compositionConfig || compositionConfig.mode === 'auto') {
-    return {
-      width: toEven(videoWidth + padding * 2),
-      height: toEven(videoHeight + padding * 2),
-    };
-  }
-
-  if (compositionConfig.width && compositionConfig.height) {
-    return {
-      width: toEven(compositionConfig.width),
-      height: toEven(compositionConfig.height),
-    };
-  }
-
-  if (compositionConfig.aspectRatio) {
-    const videoRatio = videoWidth / videoHeight;
-    const targetRatio = compositionConfig.aspectRatio;
-
-    if (targetRatio > videoRatio) {
-      const h = videoHeight + padding * 2;
-      return { width: toEven(h * targetRatio), height: toEven(h) };
-    }
-
-    const w = videoWidth + padding * 2;
-    return { width: toEven(w), height: toEven(w / targetRatio) };
-  }
-
-  return {
-    width: toEven(videoWidth + padding * 2),
-    height: toEven(videoHeight + padding * 2),
-  };
-}
-
-function calculateFrameBounds(
-  videoWidth: number,
-  videoHeight: number,
-  padding: number,
-  compositionSize: { width: number; height: number },
-  compositionConfig: CompositionConfig | undefined
-): { x: number; y: number; width: number; height: number } {
-  const manualMode = compositionConfig?.mode === 'manual';
-
-  if (!manualMode) {
-    return {
-      x: padding,
-      y: padding,
-      width: videoWidth,
-      height: videoHeight,
-    };
-  }
-
-  const effectivePadding = getEffectiveManualPadding(
-    padding,
-    compositionSize.width,
-    compositionSize.height
-  );
-  const availableW = Math.max(1, compositionSize.width - effectivePadding * 2);
-  const availableH = Math.max(1, compositionSize.height - effectivePadding * 2);
-  const videoAspect = videoWidth / videoHeight;
-  const availableAspect = availableW / availableH;
-
-  let frameWidth: number;
-  let frameHeight: number;
-  if (videoAspect > availableAspect) {
-    frameWidth = availableW;
-    frameHeight = availableW / videoAspect;
-  } else {
-    frameHeight = availableH;
-    frameWidth = availableH * videoAspect;
-  }
-
-  return {
-    x: (compositionSize.width - frameWidth) / 2,
-    y: (compositionSize.height - frameHeight) / 2,
-    width: frameWidth,
-    height: frameHeight,
-  };
 }
 
 /**
@@ -212,19 +114,12 @@ export function usePreviewStyles(options: PreviewStylesOptions): PreviewStylesRe
 
   // Check if frame styling is enabled (has any visual effect)
   const hasFrameStyling = useMemo(() => {
-    if (!backgroundConfig) return false;
-    if (!backgroundConfig.enabled) return false;
-    return Boolean(
-      backgroundConfig.padding > 0 ||
-      backgroundConfig.rounding > 0 ||
-      backgroundConfig.shadow?.enabled ||
-      backgroundConfig.border?.enabled
-    );
+    return hasVideoBackgroundFrameStyling(backgroundConfig);
   }, [backgroundConfig]);
 
   // Source video dimensions used by export after crop.
-  const contentWidth = cropConfig?.enabled && cropConfig.width > 0 ? cropConfig.width : originalWidth;
-  const contentHeight = cropConfig?.enabled && cropConfig.height > 0 ? cropConfig.height : originalHeight;
+  const { width: contentWidth, height: contentHeight, cropEnabled } =
+    getContentDimensionsFromCrop(cropConfig, originalWidth, originalHeight);
   const padding = backgroundConfig?.padding ?? 0;
 
   // Export-equivalent composition dimensions.
@@ -240,7 +135,7 @@ export function usePreviewStyles(options: PreviewStylesOptions): PreviewStylesRe
     if (!hasFrameStyling) {
       return { x: 0, y: 0, width: contentWidth, height: contentHeight };
     }
-    return calculateFrameBounds(
+    return calculateFrameBoundsInComposition(
       contentWidth,
       contentHeight,
       padding,
@@ -254,7 +149,6 @@ export function usePreviewStyles(options: PreviewStylesOptions): PreviewStylesRe
   const compositeAspectRatio = compositeWidth / compositeHeight;
 
   // Check if crop is enabled with background
-  const cropEnabled = Boolean(cropConfig?.enabled && cropConfig.width > 0 && cropConfig.height > 0);
   const applyCropToFrame = cropEnabled && hasFrameStyling && (backgroundConfig?.padding ?? 0) > 0;
 
   // Calculate cropped frame size in parent coordinates
@@ -396,8 +290,9 @@ export function usePreviewStyles(options: PreviewStylesOptions): PreviewStylesRe
       }
     }
 
-    if (backgroundConfig.border?.enabled) {
-      const scaledBorderWidth = Math.max(1, backgroundConfig.border.width * previewScale);
+    if (backgroundConfig.border?.enabled && backgroundConfig.border.opacity > 0) {
+      const scaledBorderWidth = backgroundConfig.border.width * previewScale;
+      if (scaledBorderWidth <= 0) return style;
       const borderOpacity = backgroundConfig.border.opacity / 100;
       style.border = `${scaledBorderWidth}px solid ${hexToRgba(backgroundConfig.border.color, borderOpacity)}`;
     }
@@ -407,17 +302,25 @@ export function usePreviewStyles(options: PreviewStylesOptions): PreviewStylesRe
 
   // Frame shadow style (drop-shadow filter)
   const frameShadowStyle = useMemo((): React.CSSProperties => {
-    if (!backgroundConfig?.shadow?.enabled || containerSize.width === 0) return {};
+    if (!backgroundConfig?.shadow?.enabled) return {};
 
-    const minFrameSize = Math.min(containerSize.width, containerSize.height);
-    const strength = (backgroundConfig.shadow.shadow ?? 50) / 100;
-    const shadowBlur = strength * minFrameSize * 0.15;
-    const shadowOpacity = strength * 0.5;
+    const metrics = getVideoFrameShadowMetrics(
+      backgroundConfig.shadow.shadow ?? 50,
+      frameDisplaySize.width,
+      frameDisplaySize.height
+    );
+
+    if (metrics.blurPx <= 0 || metrics.opacity <= 0) return {};
 
     return {
-      filter: `drop-shadow(0 0 ${shadowBlur}px rgba(0, 0, 0, ${shadowOpacity}))`,
+      filter: `drop-shadow(0 0 ${metrics.blurPx}px rgba(0, 0, 0, ${metrics.opacity}))`,
     };
-  }, [backgroundConfig, containerSize]);
+  }, [
+    backgroundConfig?.shadow?.enabled,
+    backgroundConfig?.shadow?.shadow,
+    frameDisplaySize.width,
+    frameDisplaySize.height,
+  ]);
 
   // Combined frame style for SceneModeRenderer
   const frameStyle = useMemo((): React.CSSProperties => {

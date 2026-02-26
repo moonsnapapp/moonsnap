@@ -4,6 +4,28 @@
  */
 import { useState } from 'react';
 import { useVideoEditorStore } from '../../stores/videoEditorStore';
+import {
+  selectDeleteMaskSegment,
+  selectDeleteSceneSegment,
+  selectDeleteTextSegment,
+  selectDeleteZoomRegion,
+  selectSelectMaskSegment,
+  selectSelectSceneSegment,
+  selectSelectTextSegment,
+  selectSelectZoomRegion,
+  selectSelectedMaskSegmentId,
+  selectSelectedSceneSegmentId,
+  selectSelectedTextSegmentId,
+  selectSelectedZoomRegionId,
+  selectUpdateAudioConfig,
+  selectUpdateCursorConfig,
+  selectUpdateExportConfig,
+  selectUpdateMaskSegment,
+  selectUpdateSceneSegment,
+  selectUpdateTextSegment,
+  selectUpdateWebcamConfig,
+  selectUpdateZoomRegion,
+} from '../../stores/videoEditor/selectors';
 import { BackgroundSettings } from '../../components/VideoEditor/BackgroundSettings';
 import { ZoomRegionConfig } from './ZoomRegionConfig';
 import { MaskSegmentConfig } from './MaskSegmentConfig';
@@ -14,6 +36,7 @@ import { ProjectInfoPanel } from './panels/ProjectInfoPanel';
 import { CursorConfigPanel } from './panels/CursorConfigPanel';
 import { WebcamConfigPanel } from './panels/WebcamConfigPanel';
 import { ExportConfigPanel } from './panels/ExportConfigPanel';
+import { findTextSegmentById } from '../../utils/textSegmentId';
 import type { SceneMode, VideoProject } from '../../types';
 
 export interface VideoEditorSidebarProps {
@@ -22,32 +45,26 @@ export interface VideoEditorSidebarProps {
 }
 
 export function VideoEditorSidebar({ project, onOpenCropDialog }: VideoEditorSidebarProps) {
-  const {
-    updateWebcamConfig,
-    updateExportConfig,
-    updateCursorConfig,
-    updateAudioConfig,
-    // Zoom region
-    selectedZoomRegionId,
-    selectZoomRegion,
-    updateZoomRegion,
-    deleteZoomRegion,
-    // Scene segment
-    selectedSceneSegmentId,
-    selectSceneSegment,
-    updateSceneSegment,
-    deleteSceneSegment,
-    // Mask segment
-    selectedMaskSegmentId,
-    selectMaskSegment,
-    updateMaskSegment,
-    deleteMaskSegment,
-    // Text segment
-    selectedTextSegmentId,
-    selectTextSegment,
-    updateTextSegment,
-    deleteTextSegment,
-  } = useVideoEditorStore();
+  const updateWebcamConfig = useVideoEditorStore(selectUpdateWebcamConfig);
+  const updateExportConfig = useVideoEditorStore(selectUpdateExportConfig);
+  const updateCursorConfig = useVideoEditorStore(selectUpdateCursorConfig);
+  const updateAudioConfig = useVideoEditorStore(selectUpdateAudioConfig);
+  const selectedZoomRegionId = useVideoEditorStore(selectSelectedZoomRegionId);
+  const selectZoomRegion = useVideoEditorStore(selectSelectZoomRegion);
+  const updateZoomRegion = useVideoEditorStore(selectUpdateZoomRegion);
+  const deleteZoomRegion = useVideoEditorStore(selectDeleteZoomRegion);
+  const selectedSceneSegmentId = useVideoEditorStore(selectSelectedSceneSegmentId);
+  const selectSceneSegment = useVideoEditorStore(selectSelectSceneSegment);
+  const updateSceneSegment = useVideoEditorStore(selectUpdateSceneSegment);
+  const deleteSceneSegment = useVideoEditorStore(selectDeleteSceneSegment);
+  const selectedMaskSegmentId = useVideoEditorStore(selectSelectedMaskSegmentId);
+  const selectMaskSegment = useVideoEditorStore(selectSelectMaskSegment);
+  const updateMaskSegment = useVideoEditorStore(selectUpdateMaskSegment);
+  const deleteMaskSegment = useVideoEditorStore(selectDeleteMaskSegment);
+  const selectedTextSegmentId = useVideoEditorStore(selectSelectedTextSegmentId);
+  const selectTextSegment = useVideoEditorStore(selectSelectTextSegment);
+  const updateTextSegment = useVideoEditorStore(selectUpdateTextSegment);
+  const deleteTextSegment = useVideoEditorStore(selectDeleteTextSegment);
 
   // Properties panel tab state
   const [activeTab, setActiveTab] = useState<PropertiesTab>('project');
@@ -153,13 +170,7 @@ export function VideoEditorSidebar({ project, onOpenCropDialog }: VideoEditorSid
 
             {/* Text Segment Properties */}
             {selectedTextSegmentId && (() => {
-              // Find segment by generated ID (format: text_<start>_<index>)
-              const idParts = selectedTextSegmentId.match(/^text_([0-9.]+)_/);
-              if (!idParts) return null;
-              const targetStart = parseFloat(idParts[1]);
-              const segment = project.text?.segments.find(s =>
-                Math.abs(s.start - targetStart) < 0.001
-              );
+              const segment = findTextSegmentById(project.text?.segments, selectedTextSegmentId);
               if (!segment) return null;
               return (
                 <TextSegmentConfig

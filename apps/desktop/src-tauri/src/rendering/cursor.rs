@@ -77,6 +77,18 @@ const MAX_INTERPOLATED_STEPS: usize = 120;
 // Cursor Idle Fade-Out (from Cap)
 // ============================================================================
 
+/// Delay before cursor starts fading out when idle.
+const CURSOR_IDLE_TIMEOUT_MS: u64 = 1200;
+
+/// Duration of fade-out once idle timeout has elapsed.
+const CURSOR_IDLE_FADE_DURATION_MS: u64 = 300;
+
+/// Ignore tiny move jitter when deciding cursor activity (normalized units).
+/// 0.0015 ~= ~3px at 1920px width.
+const CURSOR_ACTIVITY_MOVE_DEADZONE: f64 = 0.0015;
+const CURSOR_ACTIVITY_MOVE_DEADZONE_SQ: f64 =
+    CURSOR_ACTIVITY_MOVE_DEADZONE * CURSOR_ACTIVITY_MOVE_DEADZONE;
+
 // ============================================================================
 // Cursor Click Animation (from Cap)
 // ============================================================================
@@ -94,8 +106,13 @@ const CLICK_SHRINK_SIZE: f32 = 0.7;
 // Motion Blur Configuration (aligned with Cap)
 // ============================================================================
 
-/// Number of samples for motion blur effect (Cap uses 20 for GPU shader).
-const MOTION_BLUR_SAMPLES: usize = 20;
+/// Number of samples for motion blur effect.
+/// Higher sample count improves trail smoothness.
+const MOTION_BLUR_SAMPLES: usize = 32;
+
+/// Baseline trail sample count from the previous 20-sample implementation.
+/// Used to normalize trail brightness as sample count changes.
+const MOTION_BLUR_BASE_TRAIL_SAMPLES: f32 = 19.0;
 
 /// Minimum velocity (normalized units/frame) to trigger motion blur.
 /// Below this threshold, no blur is applied.
@@ -409,9 +426,6 @@ impl SpringSimulation {
 // Cursor Interpolator
 // ============================================================================
 
-/// Debounce duration for cursor shape changes (matches editor).
-const CURSOR_SHAPE_DEBOUNCE_MS: u64 = 80;
-
 /// Cursor interpolator for raw cursor movement.
 pub struct CursorInterpolator {
     /// Raw move events from the recording.
@@ -424,15 +438,17 @@ pub struct CursorInterpolator {
     decoded_images: HashMap<String, DecodedCursorImage>,
     /// Fallback cursor ID (first available cursor in the recording).
     fallback_cursor_id: Option<String>,
-    /// Fallback cursor shape (most common shape found in cursor_images).
-    /// Used when cursor_id points to an image without a detected shape.
-    fallback_cursor_shape: Option<WindowsCursorShape>,
-    /// Pre-computed stable cursor shapes with debouncing applied.
-    /// Each entry is (timestamp_ms, shape) - shape is valid from this timestamp until next entry.
-    stable_cursor_timeline: Vec<(u64, WindowsCursorShape)>,
     /// Region dimensions (for reference).
     width: u32,
     height: u32,
+    /// Offset between recording start and first video frame.
+    /// Cursor event lookups must apply this to match frontend preview timing.
+    video_start_offset_ms: u64,
+    /// Whether inactivity fade-out is enabled in cursor settings.
+    hide_when_idle: bool,
+    /// Timestamps for cursor activity events (move/click/scroll), sorted ascending.
+    /// Used for inactivity fade-out opacity.
+    activity_timestamps: Vec<u64>,
 }
 
 /// Decoded cursor image ready for compositing.
@@ -447,7 +463,7 @@ pub struct DecodedCursorImage {
 
 impl CursorInterpolator {
     /// Create a new cursor interpolator from a recording.
-    pub fn new(recording: &CursorRecording, _cursor_config: &CursorConfig) -> Self {
+    pub fn new(recording: &CursorRecording, cursor_config: &CursorConfig) -> Self {
         let raw_move_events: Vec<CursorEvent> = recording
             .events
             .iter()
@@ -455,44 +471,28 @@ impl CursorInterpolator {
             .cloned()
             .collect();
 
+        let mut activity_timestamps = collect_activity_timestamps(&recording.events);
+        activity_timestamps.sort_unstable();
+        activity_timestamps.dedup();
+
         // Decode cursor images from base64 PNG
         let decoded_images = decode_cursor_images(&recording.cursor_images);
 
-        // Find fallback cursor_id (first available in the recording)
-        // This ensures cursor is always rendered even if cursor_id is lost
-        let fallback_cursor_id = recording.cursor_images.keys().next().cloned();
-
-        // Find fallback cursor shape (most common shape found in cursor_images)
-        // This provides consistent cursor rendering when shape detection was spotty during recording
-        let fallback_cursor_shape = {
-            let mut shape_counts: HashMap<WindowsCursorShape, usize> = HashMap::new();
-            for img in recording.cursor_images.values() {
-                if let Some(shape) = img.cursor_shape {
-                    *shape_counts.entry(shape).or_insert(0) += 1;
-                }
-            }
-            // Get the most common shape
-            shape_counts
-                .into_iter()
-                .max_by_key(|(_, count)| *count)
-                .map(|(shape, _)| shape)
+        // Match frontend preview fallback cursor-id strategy:
+        // 1) cursor_0, 2) first arrow-shaped image, 3) stable first key.
+        let fallback_cursor_id = if recording.cursor_images.contains_key("cursor_0") {
+            Some("cursor_0".to_string())
+        } else if let Some((id, _)) = recording
+            .cursor_images
+            .iter()
+            .find(|(_, img)| img.cursor_shape == Some(WindowsCursorShape::Arrow))
+        {
+            Some(id.clone())
+        } else {
+            let mut keys: Vec<&String> = recording.cursor_images.keys().collect();
+            keys.sort();
+            keys.first().map(|k| (*k).clone())
         };
-
-        if let Some(ref shape) = fallback_cursor_shape {
-            log::info!("[CURSOR] Using fallback cursor shape: {:?}", shape);
-        }
-
-        // Pre-compute stable cursor timeline with debouncing
-        let stable_cursor_timeline = compute_stable_cursor_timeline(
-            &recording.events,
-            &recording.cursor_images,
-            fallback_cursor_shape,
-        );
-
-        log::info!(
-            "[CURSOR] Computed {} stable cursor shape transitions",
-            stable_cursor_timeline.len()
-        );
 
         Self {
             raw_move_events,
@@ -500,38 +500,53 @@ impl CursorInterpolator {
             cursor_images: recording.cursor_images.clone(),
             decoded_images,
             fallback_cursor_id,
-            fallback_cursor_shape,
-            stable_cursor_timeline,
             width: recording.width,
             height: recording.height,
+            video_start_offset_ms: recording.video_start_offset_ms,
+            hide_when_idle: cursor_config.hide_when_idle,
+            activity_timestamps,
         }
     }
 
     /// Get interpolated cursor position at a specific timestamp.
     ///
     /// This returns the cursor position along with:
-    /// - `cursor_id`: Active cursor image ID (with fallback)
-    /// - `cursor_shape`: Debounced cursor shape for SVG rendering (prevents flickering)
+    /// - `cursor_id`: Active cursor image ID (with preview-matching fallback)
+    /// - `cursor_shape`: Shape from active cursor image, falling back to Arrow
     pub fn get_cursor_at(&self, time_ms: u64) -> InterpolatedCursor {
-        let cursor_id = get_active_cursor_id(&self.original_events, time_ms);
-        let mut cursor = interpolate_raw_at_time(&self.raw_move_events, time_ms, cursor_id);
+        // Apply video start offset to align cursor timestamps with video frame timestamps.
+        let adjusted_time_ms = time_ms.saturating_add(self.video_start_offset_ms);
+
+        let cursor_id = get_active_cursor_id(&self.original_events, adjusted_time_ms);
+        let mut cursor =
+            interpolate_raw_at_time(&self.raw_move_events, adjusted_time_ms, cursor_id);
 
         // Use fallback cursor_id if none found (prevents cursor from disappearing)
         if cursor.cursor_id.is_none() {
             cursor.cursor_id = self.fallback_cursor_id.clone();
         }
 
-        // Use pre-computed stable cursor shape (with debouncing applied)
-        // This prevents rapid flickering between cursor shapes
-        cursor.cursor_shape = get_stable_cursor_shape(&self.stable_cursor_timeline, time_ms);
+        // Match frontend preview behavior:
+        // derive shape from the active cursor image, fallback to Arrow when shape is missing.
+        cursor.cursor_shape = cursor
+            .cursor_id
+            .as_ref()
+            .and_then(|id| self.cursor_images.get(id))
+            .and_then(|img| img.cursor_shape)
+            .or_else(|| {
+                if cursor.cursor_id.is_some() {
+                    Some(WindowsCursorShape::Arrow)
+                } else {
+                    None
+                }
+            });
 
-        // Use fallback cursor_shape if stable timeline didn't have a shape
-        if cursor.cursor_shape.is_none() {
-            cursor.cursor_shape = self.fallback_cursor_shape;
-        }
-
-        // Opacity and scale are always 1.0
-        cursor.opacity = 1.0;
+        // Fade cursor out after inactivity.
+        cursor.opacity = if self.hide_when_idle {
+            get_cursor_idle_opacity(&self.activity_timestamps, adjusted_time_ms)
+        } else {
+            1.0
+        };
         cursor.scale = 1.0;
 
         cursor
@@ -561,6 +576,64 @@ impl CursorInterpolator {
 // ============================================================================
 // Helper Functions
 // ============================================================================
+
+fn collect_activity_timestamps(events: &[CursorEvent]) -> Vec<u64> {
+    let mut activity_timestamps = Vec::new();
+    let mut last_significant_move: Option<(f64, f64)> = None;
+
+    for event in events {
+        match event.event_type {
+            CursorEventType::Move => {
+                let should_count_move = if let Some((last_x, last_y)) = last_significant_move {
+                    let dx = event.x - last_x;
+                    let dy = event.y - last_y;
+                    (dx * dx + dy * dy) >= CURSOR_ACTIVITY_MOVE_DEADZONE_SQ
+                } else {
+                    true
+                };
+
+                if should_count_move {
+                    activity_timestamps.push(event.timestamp_ms);
+                    last_significant_move = Some((event.x, event.y));
+                }
+            },
+            CursorEventType::LeftClick { .. }
+            | CursorEventType::RightClick { .. }
+            | CursorEventType::MiddleClick { .. }
+            | CursorEventType::Scroll { .. } => {
+                activity_timestamps.push(event.timestamp_ms);
+            },
+        }
+    }
+
+    activity_timestamps
+}
+
+fn get_cursor_idle_opacity(activity_timestamps: &[u64], time_ms: u64) -> f32 {
+    if activity_timestamps.is_empty() {
+        return 1.0;
+    }
+
+    let idx = match activity_timestamps.binary_search(&time_ms) {
+        Ok(i) => i,
+        Err(0) => return 1.0,
+        Err(i) => i - 1,
+    };
+
+    let last_activity = activity_timestamps[idx];
+    let idle_ms = time_ms.saturating_sub(last_activity);
+    if idle_ms <= CURSOR_IDLE_TIMEOUT_MS {
+        return 1.0;
+    }
+
+    if CURSOR_IDLE_FADE_DURATION_MS == 0 {
+        return 0.0;
+    }
+
+    let fade_progress =
+        (idle_ms - CURSOR_IDLE_TIMEOUT_MS) as f32 / CURSOR_IDLE_FADE_DURATION_MS as f32;
+    (1.0 - fade_progress).clamp(0.0, 1.0)
+}
 
 /// Get position as XY from a cursor event (events already have normalized 0-1 coords).
 fn get_normalized_position(event: &CursorEvent) -> XY {
@@ -766,98 +839,6 @@ fn get_active_cursor_id(events: &[CursorEvent], time_ms: u64) -> Option<String> 
     }
 
     active_cursor_id
-}
-
-/// Compute stable cursor shape timeline with debouncing.
-///
-/// This prevents rapid flickering between cursor shapes (e.g., arrow ↔ resize)
-/// by requiring a shape to persist for CURSOR_SHAPE_DEBOUNCE_MS before committing.
-fn compute_stable_cursor_timeline(
-    events: &[CursorEvent],
-    cursor_images: &HashMap<String, CursorImage>,
-    fallback_shape: Option<WindowsCursorShape>,
-) -> Vec<(u64, WindowsCursorShape)> {
-    let mut timeline: Vec<(u64, WindowsCursorShape)> = Vec::new();
-
-    // Track debouncing state
-    let mut stable_shape: Option<WindowsCursorShape> = fallback_shape;
-    let mut pending_shape: Option<WindowsCursorShape> = None;
-    let mut pending_since: u64 = 0;
-
-    // Get shape for a cursor ID
-    let get_shape = |cursor_id: &Option<String>| -> Option<WindowsCursorShape> {
-        cursor_id
-            .as_ref()
-            .and_then(|id| cursor_images.get(id))
-            .and_then(|img| img.cursor_shape)
-            .or(fallback_shape)
-    };
-
-    for event in events {
-        let current_shape = get_shape(&event.cursor_id);
-
-        // Skip if no shape detected
-        let Some(shape) = current_shape else {
-            continue;
-        };
-
-        // If shape matches stable, reset pending
-        if Some(shape) == stable_shape {
-            pending_shape = None;
-            continue;
-        }
-
-        // If shape matches pending, check if debounce period passed
-        if Some(shape) == pending_shape {
-            if event.timestamp_ms >= pending_since + CURSOR_SHAPE_DEBOUNCE_MS {
-                // Debounce complete - promote to stable
-                stable_shape = Some(shape);
-                timeline.push((pending_since + CURSOR_SHAPE_DEBOUNCE_MS, shape));
-                pending_shape = None;
-            }
-            continue;
-        }
-
-        // New shape detected - start debounce timer
-        pending_shape = Some(shape);
-        pending_since = event.timestamp_ms;
-
-        // If no stable shape yet, use this one immediately
-        if stable_shape.is_none() {
-            stable_shape = Some(shape);
-            timeline.push((event.timestamp_ms, shape));
-            pending_shape = None;
-        }
-    }
-
-    // If timeline is empty but we have a fallback, add it at time 0
-    if timeline.is_empty() {
-        if let Some(shape) = fallback_shape {
-            timeline.push((0, shape));
-        }
-    }
-
-    timeline
-}
-
-/// Look up stable cursor shape at a given timestamp.
-fn get_stable_cursor_shape(
-    timeline: &[(u64, WindowsCursorShape)],
-    time_ms: u64,
-) -> Option<WindowsCursorShape> {
-    if timeline.is_empty() {
-        return None;
-    }
-
-    // Find the last entry at or before time_ms
-    let mut result = timeline[0].1;
-    for (ts, shape) in timeline {
-        if *ts > time_ms {
-            break;
-        }
-        result = *shape;
-    }
-    Some(result)
 }
 
 /// Interpolate smoothed position at a specific timestamp.
@@ -1204,6 +1185,54 @@ impl VideoContentBounds {
     }
 }
 
+/// Sample a cursor texture with bilinear filtering.
+fn sample_cursor_bilinear(cursor_image: &DecodedCursorImage, src_x: f32, src_y: f32) -> [f32; 4] {
+    let width = cursor_image.width as i32;
+    let height = cursor_image.height as i32;
+
+    if width <= 0 || height <= 0 {
+        return [0.0, 0.0, 0.0, 0.0];
+    }
+
+    let clamped_x = src_x.clamp(0.0, (width - 1) as f32);
+    let clamped_y = src_y.clamp(0.0, (height - 1) as f32);
+
+    let x0 = clamped_x.floor() as i32;
+    let y0 = clamped_y.floor() as i32;
+    let x1 = (x0 + 1).min(width - 1);
+    let y1 = (y0 + 1).min(height - 1);
+
+    let tx = clamped_x - x0 as f32;
+    let ty = clamped_y - y0 as f32;
+
+    let sample = |x: i32, y: i32| -> [f32; 4] {
+        let idx = ((y as u32 * cursor_image.width + x as u32) * 4) as usize;
+        if idx + 3 >= cursor_image.data.len() {
+            return [0.0, 0.0, 0.0, 0.0];
+        }
+        [
+            cursor_image.data[idx] as f32,
+            cursor_image.data[idx + 1] as f32,
+            cursor_image.data[idx + 2] as f32,
+            cursor_image.data[idx + 3] as f32,
+        ]
+    };
+
+    let p00 = sample(x0, y0);
+    let p10 = sample(x1, y0);
+    let p01 = sample(x0, y1);
+    let p11 = sample(x1, y1);
+
+    let mut out = [0.0_f32; 4];
+    for channel in 0..4 {
+        let top = p00[channel] * (1.0 - tx) + p10[channel] * tx;
+        let bottom = p01[channel] * (1.0 - tx) + p11[channel] * tx;
+        out[channel] = top * (1.0 - ty) + bottom * ty;
+    }
+
+    out
+}
+
 /// Composite cursor image onto frame (CPU-based).
 ///
 /// Uses the cursor's opacity and scale properties for idle fade-out and click animation.
@@ -1234,6 +1263,9 @@ pub fn composite_cursor(
 
     // Combine base scale with click animation scale
     let scale = base_scale * cursor.scale;
+    if scale <= 0.0 {
+        return;
+    }
 
     // Convert normalized position to pixel position within video content area,
     // then offset by video bounds to position correctly within composition
@@ -1244,51 +1276,54 @@ pub fn composite_cursor(
     let draw_x = pixel_x - (cursor_image.hotspot_x as f32 * scale);
     let draw_y = pixel_y - (cursor_image.hotspot_y as f32 * scale);
 
-    let scaled_width = (cursor_image.width as f32 * scale).round() as i32;
-    let scaled_height = (cursor_image.height as f32 * scale).round() as i32;
+    let scaled_width = cursor_image.width as f32 * scale;
+    let scaled_height = cursor_image.height as f32 * scale;
+    if scaled_width <= 0.0 || scaled_height <= 0.0 {
+        return;
+    }
 
-    // Alpha blending with premultiplied alpha support (like Cap)
-    for sy in 0..scaled_height {
-        for sx in 0..scaled_width {
-            // Calculate destination pixel
-            let dst_x = (draw_x + sx as f32).round() as i32;
-            let dst_y = (draw_y + sy as f32).round() as i32;
+    let min_x = draw_x.floor().max(0.0) as i32;
+    let min_y = draw_y.floor().max(0.0) as i32;
+    let max_x = (draw_x + scaled_width).ceil().min(frame_width as f32) as i32;
+    let max_y = (draw_y + scaled_height).ceil().min(frame_height as f32) as i32;
 
-            // Bounds check
-            if dst_x < 0 || dst_y < 0 || dst_x >= frame_width as i32 || dst_y >= frame_height as i32
+    if min_x >= max_x || min_y >= max_y {
+        return;
+    }
+
+    // Alpha blending with premultiplied alpha support.
+    // Use bilinear filtering for smoother cursor edges during scale and motion blur trails.
+    for dst_y in min_y..max_y {
+        for dst_x in min_x..max_x {
+            let src_x = ((dst_x as f32 + 0.5) - draw_x) / scale - 0.5;
+            let src_y = ((dst_y as f32 + 0.5) - draw_y) / scale - 0.5;
+
+            if src_x < 0.0
+                || src_y < 0.0
+                || src_x > (cursor_image.width as f32 - 1.0)
+                || src_y > (cursor_image.height as f32 - 1.0)
             {
                 continue;
             }
 
-            // Calculate source pixel (nearest-neighbor scaling)
-            let src_x = ((sx as f32 / scale).floor() as u32).min(cursor_image.width - 1);
-            let src_y = ((sy as f32 / scale).floor() as u32).min(cursor_image.height - 1);
+            let [src_r, src_g, src_b, src_a] = sample_cursor_bilinear(cursor_image, src_x, src_y);
 
-            let src_idx = ((src_y * cursor_image.width + src_x) * 4) as usize;
-            let dst_idx = ((dst_y as u32 * frame_width + dst_x as u32) * 4) as usize;
-
-            if src_idx + 3 >= cursor_image.data.len() || dst_idx + 3 >= frame_data.len() {
+            if src_a <= 0.0 {
                 continue;
             }
 
-            // Get source pixel (cursor) - premultiplied alpha
-            let src_r = cursor_image.data[src_idx] as f32;
-            let src_g = cursor_image.data[src_idx + 1] as f32;
-            let src_b = cursor_image.data[src_idx + 2] as f32;
-            let src_a = cursor_image.data[src_idx + 3] as f32;
-
-            // Skip fully transparent pixels
-            if src_a == 0.0 {
+            let dst_idx = ((dst_y as u32 * frame_width + dst_x as u32) * 4) as usize;
+            if dst_idx + 3 >= frame_data.len() {
                 continue;
             }
 
             // For premultiplied alpha blending:
             // result = src + dst * (1 - src_alpha)
-            // Where src is already premultiplied by its alpha
+            // Where src is already premultiplied by its alpha.
             let alpha = (src_a / 255.0) * cursor.opacity;
             let inv_alpha = 1.0 - alpha;
 
-            // Source is premultiplied, so we multiply by opacity, not full alpha
+            // Source is premultiplied, so we multiply by opacity, not full alpha.
             frame_data[dst_idx] = ((src_r * cursor.opacity)
                 + (frame_data[dst_idx] as f32 * inv_alpha))
                 .min(255.0) as u8;
@@ -1298,7 +1333,7 @@ pub fn composite_cursor(
             frame_data[dst_idx + 2] = ((src_b * cursor.opacity)
                 + (frame_data[dst_idx + 2] as f32 * inv_alpha))
                 .min(255.0) as u8;
-            // Keep destination alpha (frame_data[dst_idx + 3])
+            // Keep destination alpha (frame_data[dst_idx + 3]).
         }
     }
 }
@@ -1404,6 +1439,12 @@ pub fn composite_cursor_with_motion_blur(
     // Normalize velocity direction
     let dir_x = -cursor.velocity_x / velocity_magnitude;
     let dir_y = -cursor.velocity_y / velocity_magnitude;
+    let trail_sample_count = (MOTION_BLUR_SAMPLES.saturating_sub(1)) as f32;
+    let weight_normalization = if trail_sample_count > 0.0 {
+        MOTION_BLUR_BASE_TRAIL_SAMPLES / trail_sample_count
+    } else {
+        1.0
+    };
 
     // Render trail samples from back to front (excluding the main cursor sample).
     // Main cursor is rendered once at full opacity after the trail.
@@ -1419,7 +1460,7 @@ pub fn composite_cursor_with_motion_blur(
 
         // Weight distribution like Cap: weight = 1.0 - t * 0.75
         // This creates smoother falloff than our previous 0.85
-        let weight = (1.0 - t * 0.75) * motion_blur_amount * velocity_factor;
+        let weight = (1.0 - t * 0.75) * motion_blur_amount * velocity_factor * weight_normalization;
         if weight <= 0.0 {
             continue;
         }
@@ -1459,22 +1500,15 @@ pub fn composite_cursor_with_motion_blur(
     );
 }
 
-/// Get an SVG cursor as a DecodedCursorImage if the shape is known.
+/// Get an SVG cursor as a DecodedCursorImage at the specified target extent.
 ///
-/// This allows using SVG cursors with the existing composite functions.
-/// Returns None if the shape is not recognized or SVG rendering fails.
-///
-/// # Arguments
-/// * `shape` - The Windows cursor shape
-/// * `target_height` - Target height in pixels (used for scaling)
+/// Uses dominant-dimension normalization so all cursor shapes render at
+/// visually consistent sizes. Delegates to `get_svg_cursor`.
 pub fn get_svg_cursor_image(
     shape: crate::commands::video_recording::cursor::events::WindowsCursorShape,
-    target_height: u32,
+    target_extent: u32,
 ) -> Option<DecodedCursorImage> {
-    use super::svg_cursor::render_svg_cursor;
-
-    let scale = target_height as f32 / 24.0;
-    let rendered = render_svg_cursor(shape, scale)?;
+    let rendered = super::svg_cursor::get_svg_cursor(shape, target_extent)?;
 
     Some(DecodedCursorImage {
         width: rendered.width,
@@ -1549,6 +1583,68 @@ mod tests {
     }
 
     #[test]
+    fn test_cursor_idle_fades_out_after_timeout() {
+        let recording = test_recording();
+        let interp = CursorInterpolator::new(&recording, &CursorConfig::default());
+
+        // Last activity in test_recording is at 400ms.
+        let visible = interp.get_cursor_at(1500);
+        let fading = interp.get_cursor_at(1700);
+        let hidden = interp.get_cursor_at(2100);
+
+        assert!((visible.opacity - 1.0).abs() < 0.0001);
+        assert!(fading.opacity > 0.0 && fading.opacity < 1.0);
+        assert!(hidden.opacity <= 0.01);
+    }
+
+    #[test]
+    fn test_cursor_idle_opacity_resets_on_click_activity() {
+        let mut recording = test_recording();
+        recording.events.push(CursorEvent {
+            timestamp_ms: 2600,
+            x: 1.0,
+            y: 0.5,
+            event_type: CursorEventType::LeftClick { pressed: true },
+            cursor_id: None,
+        });
+
+        let interp = CursorInterpolator::new(&recording, &CursorConfig::default());
+        let before_click = interp.get_cursor_at(2500);
+        let on_click = interp.get_cursor_at(2600);
+
+        assert!(before_click.opacity <= 0.01);
+        assert!((on_click.opacity - 1.0).abs() < 0.0001);
+    }
+
+    #[test]
+    fn test_cursor_idle_ignores_tiny_move_jitter() {
+        let mut recording = test_recording();
+        recording.events.push(CursorEvent {
+            timestamp_ms: 2500,
+            x: 1.0003,
+            y: 0.5,
+            event_type: CursorEventType::Move,
+            cursor_id: None,
+        });
+
+        let interp = CursorInterpolator::new(&recording, &CursorConfig::default());
+        let after_jitter = interp.get_cursor_at(2600);
+
+        assert!(after_jitter.opacity <= 0.01);
+    }
+
+    #[test]
+    fn test_cursor_idle_fade_can_be_disabled() {
+        let recording = test_recording();
+        let mut cursor_config = CursorConfig::default();
+        cursor_config.hide_when_idle = false;
+
+        let interp = CursorInterpolator::new(&recording, &cursor_config);
+        let cursor = interp.get_cursor_at(10_000);
+        assert!((cursor.opacity - 1.0).abs() < 0.0001);
+    }
+
+    #[test]
     fn test_cursor_interpolator_uses_raw_interpolation() {
         let recording = test_recording();
 
@@ -1569,5 +1665,17 @@ mod tests {
         assert!((a.y - b.y).abs() < 0.0001);
         assert!((a.velocity_x - b.velocity_x).abs() < 0.0001);
         assert!((a.velocity_y - b.velocity_y).abs() < 0.0001);
+    }
+
+    #[test]
+    fn test_cursor_interpolator_applies_video_start_offset() {
+        let mut recording = test_recording();
+        recording.video_start_offset_ms = 100;
+
+        let interp = CursorInterpolator::new(&recording, &CursorConfig::default());
+
+        // With 100ms offset applied, querying at t=0 should match raw event stream at t=100.
+        let cursor = interp.get_cursor_at(0);
+        assert!((cursor.x - 0.5).abs() < 0.05);
     }
 }

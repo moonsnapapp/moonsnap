@@ -171,33 +171,61 @@ interface SegmentsCursor {
   segments: ZoomRegion[];
 }
 
-function createCursor(timeS: number, segments: ZoomRegion[]): SegmentsCursor {
-  // Find active segment (time is within start..end)
-  const timeMs = timeS * 1000;
-  const activeIdx = segments.findIndex(s => timeMs > s.startMs && timeMs <= s.endMs);
-
-  if (activeIdx >= 0) {
-    return {
-      timeS,
-      segment: segments[activeIdx],
-      prevSegment: activeIdx > 0 ? segments[activeIdx - 1] : null,
-      segments,
-    };
+function sortRegionsByStart(regions: ZoomRegion[]): ZoomRegion[] {
+  if (regions.length < 2) {
+    return regions;
   }
 
-  // Not in a segment - find the most recent previous segment
-  let prevSegment: ZoomRegion | null = null;
-  for (let i = segments.length - 1; i >= 0; i--) {
-    if (segments[i].endMs / 1000 <= timeS) {
-      prevSegment = segments[i];
+  let alreadySorted = true;
+  for (let i = 1; i < regions.length; i++) {
+    if (regions[i - 1].startMs > regions[i].startMs) {
+      alreadySorted = false;
       break;
     }
+  }
+
+  if (alreadySorted) {
+    return regions;
+  }
+
+  return [...regions].sort((a, b) => a.startMs - b.startMs);
+}
+
+function findLastRegionStartedBefore(segments: ZoomRegion[], timeMs: number): number {
+  let low = 0;
+  let high = segments.length - 1;
+  let result = -1;
+
+  while (low <= high) {
+    const mid = (low + high) >> 1;
+    if (segments[mid].startMs < timeMs) {
+      result = mid;
+      low = mid + 1;
+    } else {
+      high = mid - 1;
+    }
+  }
+
+  return result;
+}
+
+function createCursor(timeS: number, segments: ZoomRegion[]): SegmentsCursor {
+  const timeMs = timeS * 1000;
+  const candidateIdx = findLastRegionStartedBefore(segments, timeMs);
+
+  if (candidateIdx >= 0 && timeMs <= segments[candidateIdx].endMs) {
+    return {
+      timeS,
+      segment: segments[candidateIdx],
+      prevSegment: candidateIdx > 0 ? segments[candidateIdx - 1] : null,
+      segments,
+    };
   }
 
   return {
     timeS,
     segment: null,
-    prevSegment,
+    prevSegment: candidateIdx >= 0 ? segments[candidateIdx] : null,
     segments,
   };
 }
@@ -320,17 +348,15 @@ function boundsToZoomState(interp: InterpolatedZoom): ZoomState {
 /**
  * Calculate the zoom state at a specific timestamp.
  */
-export function getZoomStateAt(
-  regions: ZoomRegion[],
+function getZoomStateAtSorted(
+  sortedRegions: ZoomRegion[],
   timestampMs: number,
   getCursorAt?: ((timeMs: number) => InterpolatedCursor) | null
 ): ZoomState {
-  if (!regions || regions.length === 0) {
+  if (!sortedRegions || sortedRegions.length === 0) {
     return { scale: 1, centerX: 0.5, centerY: 0.5 };
   }
 
-  // Sort regions by start time
-  const sorted = [...regions].sort((a, b) => a.startMs - b.startMs);
   const timeS = timestampMs / 1000;
 
   // Get cursor position for auto mode
@@ -340,10 +366,21 @@ export function getZoomStateAt(
     cursorPos = { x: cursor.x, y: cursor.y };
   }
 
-  const cursor = createCursor(timeS, sorted);
+  const cursor = createCursor(timeS, sortedRegions);
   const interp = interpolateZoom(cursor, cursorPos);
 
   return boundsToZoomState(interp);
+}
+
+export function getZoomStateAt(
+  regions: ZoomRegion[],
+  timestampMs: number,
+  getCursorAt?: ((timeMs: number) => InterpolatedCursor) | null
+): ZoomState {
+  if (!regions || regions.length === 0) {
+    return { scale: 1, centerX: 0.5, centerY: 0.5 };
+  }
+  return getZoomStateAtSorted(sortRegionsByStart(regions), timestampMs, getCursorAt);
 }
 
 interface ZoomTransformOptions {
@@ -359,13 +396,13 @@ interface ZoomTransformOptions {
 /**
  * Convert zoom state to CSS transform properties.
  *
- * Clamping behavior:
- * - No padding: Clamp to prevent showing empty areas at edges
- * - With padding: Allow extended range, but preserve enough margin for rounded corners
+ * Parity note:
+ * Export shader applies zoom by scaling around `zoom_center` (transform-origin equivalent)
+ * with no extra translate/clamp adjustment. Keep preview identical.
  */
 export function zoomStateToTransform(
   state: ZoomState,
-  options: ZoomTransformOptions = {}
+  _options: ZoomTransformOptions = {}
 ): ZoomTransformStyle {
   // Always use an actual transform (even identity) to ensure consistent GPU compositing
   // Using 'none' vs actual transforms can cause rendering artifacts
@@ -376,41 +413,9 @@ export function zoomStateToTransform(
     };
   }
 
-  const { backgroundPadding = 0, rounding = 0, videoWidth = 1920, videoHeight = 1080 } = options;
-
-  let centerX = state.centerX;
-  let centerY = state.centerY;
-
-  // Calculate minimum edge distance based on zoom scale
-  const halfVisible = 0.5 / state.scale;
-
-  if (backgroundPadding > 0 && rounding > 0) {
-    // With padding: Allow extended range but preserve rounded corners
-    // Calculate how much of the edge (as ratio) the rounding occupies
-    const roundingRatioX = rounding / videoWidth;
-    const roundingRatioY = rounding / videoHeight;
-
-    // Minimum edge distance = rounding ratio (to keep corners visible)
-    // This is much smaller than halfVisible, giving more zoom range
-    const minEdgeX = Math.min(halfVisible, roundingRatioX);
-    const minEdgeY = Math.min(halfVisible, roundingRatioY);
-
-    centerX = Math.max(minEdgeX, Math.min(1 - minEdgeX, centerX));
-    centerY = Math.max(minEdgeY, Math.min(1 - minEdgeY, centerY));
-  } else if (backgroundPadding === 0) {
-    // No padding: Clamp to prevent showing empty areas at edges
-    centerX = Math.max(halfVisible, Math.min(1 - halfVisible, centerX));
-    centerY = Math.max(halfVisible, Math.min(1 - halfVisible, centerY));
-  }
-  // else: padding > 0 but no rounding - allow full range (no clamping)
-
-  // Calculate translation to keep the target point centered
-  const translateX = (0.5 - centerX) * 100 * (state.scale - 1) / state.scale;
-  const translateY = (0.5 - centerY) * 100 * (state.scale - 1) / state.scale;
-
   return {
-    transform: `scale(${state.scale}) translate(${translateX}%, ${translateY}%)`,
-    transformOrigin: `${centerX * 100}% ${centerY * 100}%`,
+    transform: `scale(${state.scale})`,
+    transformOrigin: `${state.centerX * 100}% ${state.centerY * 100}%`,
   };
 }
 
@@ -423,6 +428,8 @@ interface UseZoomPreviewOptions {
   videoWidth?: number;
   /** Video height for calculating rounding ratio */
   videoHeight?: number;
+  /** Optional source-time timestamp for Auto zoom cursor lookup (trim-aware parity). */
+  cursorTimeMs?: number;
 }
 
 /**
@@ -444,8 +451,13 @@ export function useZoomPreview(
     rounding = 0,
     videoWidth = 1920,
     videoHeight = 1080,
+    cursorTimeMs,
   } = options;
   const { getCursorAt, hasCursorData } = useCursorInterpolation(cursorRecording);
+  const sortedRegions = useMemo(
+    () => (regions && regions.length > 0 ? sortRegionsByStart(regions) : []),
+    [regions]
+  );
 
   return useMemo(() => {
     // Always return an identity transform instead of 'none'
@@ -456,19 +468,31 @@ export function useZoomPreview(
       transformOrigin: 'center center',
     };
 
-    if (!regions || regions.length === 0) {
+    if (sortedRegions.length === 0) {
       return identityTransform;
     }
 
-    const state = getZoomStateAt(
-      regions,
+    const state = getZoomStateAtSorted(
+      sortedRegions,
       currentTimeMs,
-      hasCursorData ? getCursorAt : null
+      hasCursorData
+        ? (timeMs) => getCursorAt(cursorTimeMs ?? timeMs)
+        : null
     );
 
     // Pass through all options for smart clamping
     return zoomStateToTransform(state, { backgroundPadding, rounding, videoWidth, videoHeight });
-  }, [regions, currentTimeMs, getCursorAt, hasCursorData, backgroundPadding, rounding, videoWidth, videoHeight]);
+  }, [
+    sortedRegions,
+    currentTimeMs,
+    getCursorAt,
+    hasCursorData,
+    backgroundPadding,
+    rounding,
+    videoWidth,
+    videoHeight,
+    cursorTimeMs,
+  ]);
 }
 
 /**

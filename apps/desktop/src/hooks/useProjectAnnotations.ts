@@ -3,7 +3,8 @@
  *
  * Syncs project annotations to editor state when a project is loaded.
  * Handles:
- * - Crop bounds restoration
+ * - Background shape initialization
+ * - Crop region restoration (new) and crop bounds migration (legacy)
  * - Compositor settings restoration
  * - Original image size tracking
  * - Shape annotation conversion
@@ -14,8 +15,14 @@
 import { useEffect } from 'react';
 import { useCaptureStore } from '../stores/captureStore';
 import { useEditorStore } from '../stores/editorStore';
-import { isCropBoundsAnnotation, isCompositorSettingsAnnotation } from '../types';
+import {
+  isCropBoundsAnnotation,
+  isCropRegionAnnotation,
+  isCompositorSettingsAnnotation,
+  DEFAULT_COMPOSITOR_SETTINGS,
+} from '../types';
 import type { CanvasShape } from '../types';
+import { ensureBackgroundShape } from '../utils/canvasGeometry';
 
 /**
  * Hook that syncs project annotations to editor state.
@@ -23,19 +30,48 @@ import type { CanvasShape } from '../types';
  */
 export function useProjectAnnotations() {
   const { currentProject } = useCaptureStore();
-  const { setShapes, setCanvasBounds, setCompositorSettings, setOriginalImageSize } = useEditorStore();
+  const { setShapes, setCanvasBounds, setCropRegion, setCompositorSettings, setOriginalImageSize } = useEditorStore();
 
   // Load annotations when project changes
   useEffect(() => {
     if (currentProject?.annotations) {
       // Separate special annotations from shape annotations using type guards
       const cropBoundsAnn = currentProject.annotations.find(isCropBoundsAnnotation);
+      const cropRegionAnn = currentProject.annotations.find(isCropRegionAnnotation);
       const compositorAnn = currentProject.annotations.find(isCompositorSettingsAnnotation);
       const shapeAnnotations = currentProject.annotations.filter(
-        (ann) => !isCropBoundsAnnotation(ann) && !isCompositorSettingsAnnotation(ann)
+        (ann) => !isCropBoundsAnnotation(ann) && !isCropRegionAnnotation(ann) && !isCompositorSettingsAnnotation(ann)
       );
 
-      // Load crop bounds if present (type is narrowed by type guard)
+      // Load crop region: prefer new CropRegionAnnotation, fall back to legacy CropBoundsAnnotation
+      if (cropRegionAnn) {
+        setCropRegion({
+          x: cropRegionAnn.x,
+          y: cropRegionAnn.y,
+          width: cropRegionAnn.width,
+          height: cropRegionAnn.height,
+        });
+      } else if (cropBoundsAnn) {
+        // Migrate legacy crop bounds → crop region
+        setCropRegion({
+          x: -cropBoundsAnn.imageOffsetX,
+          y: -cropBoundsAnn.imageOffsetY,
+          width: cropBoundsAnn.width,
+          height: cropBoundsAnn.height,
+        });
+      } else if (currentProject.dimensions) {
+        // Default artboard = full image dimensions
+        setCropRegion({
+          x: 0,
+          y: 0,
+          width: currentProject.dimensions.width,
+          height: currentProject.dimensions.height,
+        });
+      } else {
+        setCropRegion(null);
+      }
+
+      // Load crop bounds for canvas display (legacy: still used for auto-extend)
       if (cropBoundsAnn) {
         setCanvasBounds({
           width: cropBoundsAnn.width,
@@ -48,22 +84,22 @@ export function useProjectAnnotations() {
       // Load compositor settings if present (type is narrowed by type guard)
       if (compositorAnn) {
         setCompositorSettings({
-          enabled: compositorAnn.enabled,
-          backgroundType: compositorAnn.backgroundType ?? 'gradient',
-          backgroundColor: compositorAnn.backgroundColor ?? '#6366f1',
-          gradientStart: compositorAnn.gradientStart ?? '#667eea',
-          gradientEnd: compositorAnn.gradientEnd ?? '#764ba2',
-          gradientAngle: compositorAnn.gradientAngle ?? 135,
-          wallpaper: compositorAnn.wallpaper ?? null,
-          backgroundImage: compositorAnn.backgroundImage ?? null,
-          padding: compositorAnn.padding ?? 64,
-          borderRadius: compositorAnn.borderRadius ?? 12,
-          borderRadiusType: compositorAnn.borderRadiusType ?? 'squircle',
-          shadowIntensity: compositorAnn.shadowIntensity ?? 0.5,
-          borderWidth: compositorAnn.borderWidth ?? 2,
-          borderColor: compositorAnn.borderColor ?? '#ffffff',
-          borderOpacity: compositorAnn.borderOpacity ?? 0,
-          aspectRatio: compositorAnn.aspectRatio ?? 'auto',
+          enabled: compositorAnn.enabled ?? DEFAULT_COMPOSITOR_SETTINGS.enabled,
+          backgroundType: compositorAnn.backgroundType ?? DEFAULT_COMPOSITOR_SETTINGS.backgroundType,
+          backgroundColor: compositorAnn.backgroundColor ?? DEFAULT_COMPOSITOR_SETTINGS.backgroundColor,
+          gradientStart: compositorAnn.gradientStart ?? DEFAULT_COMPOSITOR_SETTINGS.gradientStart,
+          gradientEnd: compositorAnn.gradientEnd ?? DEFAULT_COMPOSITOR_SETTINGS.gradientEnd,
+          gradientAngle: compositorAnn.gradientAngle ?? DEFAULT_COMPOSITOR_SETTINGS.gradientAngle,
+          wallpaper: compositorAnn.wallpaper ?? DEFAULT_COMPOSITOR_SETTINGS.wallpaper,
+          backgroundImage: compositorAnn.backgroundImage ?? DEFAULT_COMPOSITOR_SETTINGS.backgroundImage,
+          padding: compositorAnn.padding ?? DEFAULT_COMPOSITOR_SETTINGS.padding,
+          borderRadius: compositorAnn.borderRadius ?? DEFAULT_COMPOSITOR_SETTINGS.borderRadius,
+          borderRadiusType: compositorAnn.borderRadiusType ?? DEFAULT_COMPOSITOR_SETTINGS.borderRadiusType,
+          shadowIntensity: compositorAnn.shadowIntensity ?? DEFAULT_COMPOSITOR_SETTINGS.shadowIntensity,
+          borderWidth: compositorAnn.borderWidth ?? DEFAULT_COMPOSITOR_SETTINGS.borderWidth,
+          borderColor: compositorAnn.borderColor ?? DEFAULT_COMPOSITOR_SETTINGS.borderColor,
+          borderOpacity: compositorAnn.borderOpacity ?? DEFAULT_COMPOSITOR_SETTINGS.borderOpacity,
+          aspectRatio: compositorAnn.aspectRatio ?? DEFAULT_COMPOSITOR_SETTINGS.aspectRatio,
         });
       }
 
@@ -81,9 +117,16 @@ export function useProjectAnnotations() {
         id: ann.id,
         type: ann.type,
       } as CanvasShape));
-      setShapes(projectShapes);
+
+      // Ensure background shape exists at index 0
+      const dims = currentProject.dimensions;
+      if (dims) {
+        setShapes(ensureBackgroundShape(projectShapes, dims.width, dims.height));
+      } else {
+        setShapes(projectShapes);
+      }
     } else {
       setShapes([]);
     }
-  }, [currentProject, setCanvasBounds, setCompositorSettings, setOriginalImageSize, setShapes]);
+  }, [currentProject, setCanvasBounds, setCropRegion, setCompositorSettings, setOriginalImageSize, setShapes]);
 }

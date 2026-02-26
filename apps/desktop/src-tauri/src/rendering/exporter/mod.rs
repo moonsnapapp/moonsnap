@@ -47,11 +47,12 @@ use super::renderer::Renderer;
 use super::scene::SceneInterpolator;
 use super::stream_decoder::StreamDecoder;
 use super::svg_cursor::get_svg_cursor;
-use super::types::{BackgroundStyle, PixelFormat, RenderOptions};
+use super::types::{BackgroundStyle, PixelFormat, RenderOptions, ZoomState};
 use super::zoom::ZoomInterpolator;
 use crate::commands::captions::types::CaptionSegment;
 use crate::commands::text_prerender::PreRenderedTextState;
 use crate::commands::video_recording::cursor::events::load_cursor_recording;
+use crate::commands::video_recording::cursor::events::WindowsCursorShape;
 use crate::commands::video_recording::video_export::{ExportResult, ExportStage};
 use crate::commands::video_recording::video_project::{
     CompositionMode, CursorType, SceneMode, TimelineState, VideoProject,
@@ -89,6 +90,7 @@ struct PendingCpuWork {
     prerendered_texts: Vec<TextCompositeInfo>,
     camera_only_opacity: f64,
     source_time_ms: u64,
+    zoom_state: ZoomState,
     output_frame_idx: u32,
 }
 
@@ -101,7 +103,21 @@ struct PendingReadback {
     prerendered_texts: Vec<TextCompositeInfo>,
     camera_only_opacity: f64,
     source_time_ms: u64,
+    zoom_state: ZoomState,
     output_frame_idx: u32,
+}
+
+/// Apply the same zoom transform used by the compositor shader to normalized cursor coordinates.
+/// This keeps CPU cursor compositing aligned with GPU-zoomed video content.
+fn apply_zoom_to_cursor_position(x: f32, y: f32, zoom: ZoomState) -> (f32, f32) {
+    if zoom.scale <= 1.0 {
+        return (x, y);
+    }
+
+    let s = zoom.scale;
+    let x_zoomed = 0.5 - (zoom.center_x - 0.5) * (s - 1.0) + (x - 0.5) * s;
+    let y_zoomed = 0.5 - (zoom.center_y - 0.5) * (s - 1.0) + (y - 0.5) * s;
+    (x_zoomed, y_zoomed)
 }
 
 /// NV12 fast path requires even dimensions for stable chroma sampling/strides.
@@ -168,6 +184,12 @@ fn apply_cpu_compositing(pending: &mut PendingCpuWork, ctx: &CpuCompositeCtx) {
             }
 
             if cursor_visible {
+                // Match compositor shader zoom math so cursor tracks zoomed video precisely.
+                let (zoomed_x, zoomed_y) =
+                    apply_zoom_to_cursor_position(cursor.x, cursor.y, pending.zoom_state);
+                cursor.x = zoomed_x;
+                cursor.y = zoomed_y;
+
                 if ctx.cursor_type == CursorType::Circle {
                     draw_cursor_circle(
                         &mut pending.rgba_data,
@@ -177,6 +199,7 @@ fn apply_cpu_compositing(pending: &mut PendingCpuWork, ctx: &CpuCompositeCtx) {
                         cursor.x,
                         cursor.y,
                         ctx.cursor_scale,
+                        cursor.opacity,
                     );
                 } else {
                     let mut rendered = false;
@@ -250,6 +273,45 @@ fn apply_cpu_compositing(pending: &mut PendingCpuWork, ctx: &CpuCompositeCtx) {
                                         bitmap_scale,
                                     );
                                 }
+                                rendered = true;
+                            }
+                        }
+                    }
+
+                    // Final fallback: default arrow SVG, matching preview behavior.
+                    if !rendered {
+                        let target_height = final_cursor_height.round() as u32;
+                        if let Some(svg_cursor) =
+                            get_svg_cursor(WindowsCursorShape::Arrow, target_height)
+                        {
+                            let svg_decoded = super::cursor::DecodedCursorImage {
+                                width: svg_cursor.width,
+                                height: svg_cursor.height,
+                                hotspot_x: svg_cursor.hotspot_x,
+                                hotspot_y: svg_cursor.hotspot_y,
+                                data: svg_cursor.data,
+                            };
+                            if ctx.cursor_motion_blur > 0.0 {
+                                composite_cursor_with_motion_blur(
+                                    &mut pending.rgba_data,
+                                    ctx.composition_w,
+                                    ctx.composition_h,
+                                    &ctx.video_content_bounds,
+                                    &cursor,
+                                    &svg_decoded,
+                                    1.0,
+                                    ctx.cursor_motion_blur,
+                                );
+                            } else {
+                                composite_cursor(
+                                    &mut pending.rgba_data,
+                                    ctx.composition_w,
+                                    ctx.composition_h,
+                                    &ctx.video_content_bounds,
+                                    &cursor,
+                                    &svg_decoded,
+                                    1.0,
+                                );
                             }
                         }
                     }
@@ -744,6 +806,7 @@ pub async fn export_video_gpu(
                 prerendered_texts: oldest_rb.prerendered_texts,
                 camera_only_opacity: oldest_rb.camera_only_opacity,
                 source_time_ms: oldest_rb.source_time_ms,
+                zoom_state: oldest_rb.zoom_state,
                 output_frame_idx: oldest_rb.output_frame_idx,
             });
         }
@@ -948,6 +1011,7 @@ pub async fn export_video_gpu(
         let render_options = RenderOptions {
             output_width: composition_w,
             output_height: composition_h,
+            use_manual_composition: matches!(composition.mode, CompositionMode::Manual),
             zoom: zoom_state,
             webcam: webcam_overlay,
             cursor: None,
@@ -1048,6 +1112,7 @@ pub async fn export_video_gpu(
             prerendered_texts,
             camera_only_opacity,
             source_time_ms,
+            zoom_state,
             output_frame_idx: output_frame_count,
         });
         buf_idx = (buf_idx + 1) % 3;
@@ -1111,6 +1176,7 @@ pub async fn export_video_gpu(
                 prerendered_texts: rb.prerendered_texts,
                 camera_only_opacity: rb.camera_only_opacity,
                 source_time_ms: rb.source_time_ms,
+                zoom_state: rb.zoom_state,
                 output_frame_idx: rb.output_frame_idx,
             };
             apply_cpu_compositing(&mut work, &cpu_ctx);
@@ -1156,10 +1222,28 @@ pub async fn export_video_gpu(
     }
 
     // Wait for FFmpeg encoder to finish
+    let stderr_output = ffmpeg.stderr.take().and_then(|mut stderr| {
+        use std::io::Read;
+        let mut buf = Vec::new();
+        stderr.read_to_end(&mut buf).ok()?;
+        String::from_utf8(buf).ok()
+    });
     let status = ffmpeg
         .wait()
         .map_err(|e| format!("FFmpeg wait failed: {}", e))?;
     if !status.success() {
+        if let Some(ref stderr) = stderr_output {
+            let tail: String = stderr
+                .lines()
+                .rev()
+                .take(20)
+                .collect::<Vec<_>>()
+                .into_iter()
+                .rev()
+                .collect::<Vec<_>>()
+                .join("\n");
+            log::error!("[EXPORT] FFmpeg stderr (last 20 lines):\n{}", tail);
+        }
         return Err(format!(
             "FFmpeg encoding failed with status: {:?}",
             status.code()

@@ -4,10 +4,8 @@ import { libraryLogger } from '@/utils/logger';
 import type { CaptureListItem } from '../../../types';
 
 export interface VirtualLayoutInfo {
-  viewMode: 'grid' | 'list';
   cardsPerRow: number;
   gridRowHeight: number;
-  listRowHeight: number;
   cardWidth: number;
   headerHeight: number;
   gridGap: number;
@@ -94,7 +92,7 @@ export function useMarqueeSelection({
       if (!virtualLayout) return null;
 
       const {
-        viewMode, cardsPerRow, gridRowHeight, listRowHeight,
+        cardsPerRow, gridRowHeight,
         cardWidth, headerHeight, gridGap,
         contentOffsetX, contentOffsetY, gridWidth, containerWidth, dateGroups
       } = virtualLayout;
@@ -115,41 +113,22 @@ export function useMarqueeSelection({
         // Find capture in this group
         const captureIndex = group.captures.findIndex(c => c.id === captureId);
         if (captureIndex !== -1) {
-          if (viewMode === 'list') {
-            // List view: single column, each row is one capture
-            const rowHeight = listRowHeight;
-            const LIST_ITEM_GAP = 8; // pb-2 class in VirtualizedGrid list rendering
-            const itemHeight = rowHeight - LIST_ITEM_GAP;
+          const row = Math.floor(captureIndex / cardsPerRow);
+          const col = captureIndex % cardsPerRow;
+          const GRID_ROW_SPACING = 24; // ROW_SPACING constant from VirtualizedGrid
+          const cardHeight = gridRowHeight - GRID_ROW_SPACING;
 
-            return {
-              left: contentOffsetX,
-              top: currentY + captureIndex * rowHeight,
-              width: cardWidth,
-              height: itemHeight,
-            };
-          } else {
-            // Grid view: multiple columns (cards are centered)
-            const row = Math.floor(captureIndex / cardsPerRow);
-            const col = captureIndex % cardsPerRow;
-            const GRID_ROW_SPACING = 24; // ROW_SPACING constant from VirtualizedGrid
-            const cardHeight = gridRowHeight - GRID_ROW_SPACING;
-
-            return {
-              left: gridStartX + col * (cardWidth + gridGap),
-              top: currentY + row * gridRowHeight,
-              width: cardWidth,
-              height: cardHeight,
-            };
-          }
+          return {
+            left: gridStartX + col * (cardWidth + gridGap),
+            top: currentY + row * gridRowHeight,
+            width: cardWidth,
+            height: cardHeight,
+          };
         }
 
         // Move past this group's rows
-        if (viewMode === 'list') {
-          currentY += group.captures.length * listRowHeight;
-        } else {
-          const rowCount = Math.ceil(group.captures.length / cardsPerRow);
-          currentY += rowCount * gridRowHeight;
-        }
+        const rowCount = Math.ceil(group.captures.length / cardsPerRow);
+        currentY += rowCount * gridRowHeight;
       }
 
       return null;

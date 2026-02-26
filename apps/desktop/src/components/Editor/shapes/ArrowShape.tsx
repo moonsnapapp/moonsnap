@@ -1,5 +1,5 @@
 import React, { useRef, useCallback, useMemo, useEffect } from 'react';
-import { Arrow, Circle } from 'react-konva';
+import { Arrow, Circle, Group } from 'react-konva';
 import Konva from 'konva';
 import type { CanvasShape } from '../../../types';
 import { useShapeCursor } from '../../../hooks/useShapeCursor';
@@ -90,6 +90,7 @@ export const ArrowShape: React.FC<ArrowShapeProps> = React.memo(({
     onDragStart(e);
   }, [onDragStart]);
 
+  // Sync endpoint handles with arrow body during drag
   const handleArrowDragMove = useCallback((e: Konva.KonvaEventObject<DragEvent>) => {
     const moveDx = e.target.x();
     const moveDy = e.target.y();
@@ -147,13 +148,13 @@ export const ArrowShape: React.FC<ArrowShapeProps> = React.memo(({
   const hitStrokeWidth = Math.max((shape.strokeWidth || 2) * 3, 12);
 
   return (
-    <>
+    <Group id={shape.id}>
       <Arrow
         ref={arrowRef}
-        id={shape.id}
         points={arrowPoints}
         stroke={shape.stroke}
         strokeWidth={shape.strokeWidth}
+        strokeScaleEnabled={false}
         fill={shape.fill}
         pointerLength={10}
         pointerWidth={10}
@@ -170,6 +171,7 @@ export const ArrowShape: React.FC<ArrowShapeProps> = React.memo(({
         <>
           <Circle
             ref={startHandleRef}
+            name="editor-gizmo"
             x={anchors[0]}
             y={anchors[1]}
             radius={handleSize}
@@ -191,6 +193,7 @@ export const ArrowShape: React.FC<ArrowShapeProps> = React.memo(({
           />
           <Circle
             ref={endHandleRef}
+            name="editor-gizmo"
             x={anchors[2]}
             y={anchors[3]}
             radius={handleSize}
@@ -212,7 +215,7 @@ export const ArrowShape: React.FC<ArrowShapeProps> = React.memo(({
           />
         </>
       )}
-    </>
+    </Group>
   );
 });
 

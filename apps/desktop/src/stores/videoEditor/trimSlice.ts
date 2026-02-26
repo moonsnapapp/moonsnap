@@ -254,6 +254,7 @@ export interface TrimSlice {
   selectTrimSegment: (id: string | null) => void;
 
   // Segment actions
+  splitAtTimelineTime: (timelineTimeMs: number) => void;
   splitAtPlayhead: () => void;
   deleteTrimSegment: (id: string) => void;
   updateTrimSegment: (id: string, updates: Partial<Pick<TrimSegment, 'sourceStartMs' | 'sourceEndMs'>>) => void;
@@ -358,9 +359,9 @@ export const createTrimSlice: SliceCreator<TrimSlice> = (set, get) => ({
     });
   },
 
-  // Split the video at the current playhead position
-  splitAtPlayhead: () => {
-    const { project, currentTimeMs } = get();
+  // Split the video at a specific timeline time (after cuts/ripple)
+  splitAtTimelineTime: (timelineTimeMs) => {
+    const { project } = get();
     let { trimHistory, trimHistoryIndex } = get();
     if (!project) return;
 
@@ -383,9 +384,9 @@ export const createTrimSlice: SliceCreator<TrimSlice> = (set, get) => ({
       trimHistoryIndex = initialHistory.index;
     }
 
-    // Current time is in timeline time, convert to source time
+    // Timeline time is in edited timeline units, convert to source time
     // Round to integer since Rust expects u64
-    const sourceTimeMs = Math.round(timelineToSource(currentTimeMs, segments));
+    const sourceTimeMs = Math.round(timelineToSource(timelineTimeMs, segments));
 
     // Find the segment that contains this source time
     const segmentIndex = segments.findIndex(
@@ -429,7 +430,7 @@ export const createTrimSlice: SliceCreator<TrimSlice> = (set, get) => ({
     // Push to history (split doesn't change overlays — snapshot current state)
     const { history, index } = pushTrimHistory(trimHistory, trimHistoryIndex, {
       segments: newSegments,
-      selectedId: rightSegment.id,
+      selectedId: null,
       overlays: snapshotOverlayState(project),
     });
 
@@ -441,10 +442,16 @@ export const createTrimSlice: SliceCreator<TrimSlice> = (set, get) => ({
           segments: newSegments,
         },
       },
-      selectedTrimSegmentId: rightSegment.id,
+      selectedTrimSegmentId: null,
       trimHistory: history,
       trimHistoryIndex: index,
     });
+  },
+
+  // Split the video at the current playhead position
+  splitAtPlayhead: () => {
+    const { currentTimeMs, splitAtTimelineTime } = get();
+    splitAtTimelineTime(currentTimeMs);
   },
 
   // Delete a trim segment (ripple: remaining segments collapse together, overlays adjusted)

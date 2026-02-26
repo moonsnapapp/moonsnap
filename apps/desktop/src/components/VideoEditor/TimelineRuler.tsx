@@ -1,10 +1,11 @@
-import { memo, useMemo } from 'react';
+import { memo, useMemo, type MouseEventHandler } from 'react';
 import { formatTimeSimple } from '../../stores/videoEditorStore';
 
 interface TimelineRulerProps {
   durationMs: number;
   timelineZoom: number; // px per ms
   width: number;
+  onMouseDown?: MouseEventHandler<HTMLDivElement>;
 }
 
 /**
@@ -12,7 +13,12 @@ interface TimelineRulerProps {
  * Shows tick marks at regular intervals with time labels.
  * Memoized to prevent re-renders during playback.
  */
-export const TimelineRuler = memo(function TimelineRuler({ durationMs, timelineZoom, width }: TimelineRulerProps) {
+export const TimelineRuler = memo(function TimelineRuler({
+  durationMs,
+  timelineZoom,
+  width,
+  onMouseDown,
+}: TimelineRulerProps) {
   // Calculate tick intervals based on zoom level
   const ticks = useMemo(() => {
     const pxPerSecond = timelineZoom * 1000;
@@ -52,8 +58,10 @@ export const TimelineRuler = memo(function TimelineRuler({ durationMs, timelineZ
 
   return (
     <div
+      data-timeline-ruler
       className="relative h-8 bg-[var(--polar-mist)] border-b border-[var(--glass-border)]"
       style={{ width: `${width}px` }}
+      onMouseDown={onMouseDown}
     >
       {/* Tick marks */}
       {ticks.map((tick) => (

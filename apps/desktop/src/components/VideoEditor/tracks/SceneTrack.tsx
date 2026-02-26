@@ -2,13 +2,21 @@ import { memo, useCallback, useMemo, useRef } from 'react';
 import { Camera, Monitor, Video, Plus, GripVertical } from 'lucide-react';
 import type { SceneSegment, SceneMode } from '../../../types';
 import { useVideoEditorStore, formatTimeSimple } from '../../../stores/videoEditorStore';
+import {
+  selectAddSceneSegment,
+  selectDeleteSceneSegment,
+  selectHoveredTrack,
+  selectIsDraggingAnySegment,
+  selectIsPlaying,
+  selectPreviewTimeMs,
+  selectSelectSceneSegment,
+  selectSelectedSceneSegmentId,
+  selectSetDraggingSceneSegment,
+  selectSetHoveredTrack,
+  selectUpdateSceneSegment,
+} from '../../../stores/videoEditor/selectors';
 import type { DragEdge } from './BaseTrack';
-
-// Drag state stored in ref to avoid re-renders during drag
-interface DragState {
-  startMs: number;
-  endMs: number;
-}
+import { useSegmentDrag } from './BaseTrack';
 
 interface SceneTrackProps {
   segments: SceneSegment[];
@@ -80,7 +88,6 @@ const SceneSegmentItem = memo(function SceneSegmentItem({
 }) {
   const elementRef = useRef<HTMLDivElement>(null);
   const tooltipRef = useRef<HTMLDivElement>(null);
-  const dragStateRef = useRef<DragState | null>(null);
 
   const left = segment.startMs * timelineZoom;
   const segmentWidth = (segment.endMs - segment.startMs) * timelineZoom;
@@ -92,90 +99,17 @@ const SceneSegmentItem = memo(function SceneSegmentItem({
     onSelect(segment.id);
   }, [onSelect, segment.id]);
 
-  const handlePointerDown = useCallback((
-    e: React.PointerEvent,
-    edge: DragEdge
-  ) => {
-    e.preventDefault();
-    e.stopPropagation();
-
-    // Capture pointer to prevent flickering when cursor leaves element
-    (e.target as HTMLElement).setPointerCapture(e.pointerId);
-
-    onSelect(segment.id);
-    onDragStart(true, edge);
-
-    const startX = e.clientX;
-    const startTimeMs = edge === 'end' ? segment.endMs : segment.startMs;
-    const segmentDuration = segment.endMs - segment.startMs;
-
-    // Initialize drag state
-    dragStateRef.current = { startMs: segment.startMs, endMs: segment.endMs };
-
-    const handlePointerMove = (moveEvent: PointerEvent) => {
-      const deltaX = moveEvent.clientX - startX;
-      const deltaMs = deltaX / timelineZoom;
-
-      let newStartMs = dragStateRef.current!.startMs;
-      let newEndMs = dragStateRef.current!.endMs;
-
-      if (edge === 'start') {
-        newStartMs = Math.max(0, Math.min(segment.endMs - MIN_SEGMENT_DURATION_MS, startTimeMs + deltaMs));
-        newEndMs = segment.endMs;
-      } else if (edge === 'end') {
-        newStartMs = segment.startMs;
-        newEndMs = Math.max(segment.startMs + MIN_SEGMENT_DURATION_MS, Math.min(durationMs, startTimeMs + deltaMs));
-      } else {
-        newStartMs = startTimeMs + deltaMs;
-        newEndMs = newStartMs + segmentDuration;
-
-        if (newStartMs < 0) {
-          newStartMs = 0;
-          newEndMs = segmentDuration;
-        }
-        if (newEndMs > durationMs) {
-          newEndMs = durationMs;
-          newStartMs = durationMs - segmentDuration;
-        }
-      }
-
-      // Update ref state
-      dragStateRef.current = { startMs: newStartMs, endMs: newEndMs };
-
-      // Update DOM directly (no re-render)
-      if (elementRef.current) {
-        const newLeft = newStartMs * timelineZoom;
-        const newWidth = (newEndMs - newStartMs) * timelineZoom;
-        elementRef.current.style.left = `${newLeft}px`;
-        elementRef.current.style.width = `${Math.max(newWidth, 20)}px`;
-      }
-
-      // Update tooltip if visible
-      if (tooltipRef.current) {
-        tooltipRef.current.textContent = `${formatTimeSimple(newStartMs)} - ${formatTimeSimple(newEndMs)}`;
-      }
-    };
-
-    const handlePointerUp = (upEvent: PointerEvent) => {
-      // Release pointer capture
-      (upEvent.target as HTMLElement).releasePointerCapture(upEvent.pointerId);
-
-      // Commit final state to store
-      if (dragStateRef.current) {
-        const { startMs, endMs } = dragStateRef.current;
-        if (startMs !== segment.startMs || endMs !== segment.endMs) {
-          onUpdate(segment.id, { startMs, endMs });
-        }
-      }
-      dragStateRef.current = null;
-      onDragStart(false);
-      document.removeEventListener('pointermove', handlePointerMove);
-      document.removeEventListener('pointerup', handlePointerUp);
-    };
-
-    document.addEventListener('pointermove', handlePointerMove);
-    document.addEventListener('pointerup', handlePointerUp);
-  }, [segment, durationMs, timelineZoom, onSelect, onUpdate, onDragStart]);
+  const { handlePointerDown } = useSegmentDrag({
+    segment,
+    timelineZoom,
+    durationMs,
+    minDurationMs: MIN_SEGMENT_DURATION_MS,
+    elementRef,
+    tooltipRef,
+    onSelect,
+    onUpdate,
+    onDragStart,
+  });
 
   const handleDelete = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
@@ -351,23 +285,21 @@ export const SceneTrack = memo(function SceneTrack({
   durationMs,
   timelineZoom,
 }: SceneTrackProps) {
-  const selectSceneSegment = useVideoEditorStore((s) => s.selectSceneSegment);
-  const addSceneSegment = useVideoEditorStore((s) => s.addSceneSegment);
-  const updateSceneSegment = useVideoEditorStore((s) => s.updateSceneSegment);
-  const deleteSceneSegment = useVideoEditorStore((s) => s.deleteSceneSegment);
-  const setDraggingSceneSegment = useVideoEditorStore((s) => s.setDraggingSceneSegment);
-  const selectedSceneSegmentId = useVideoEditorStore((s) => s.selectedSceneSegmentId);
-  const previewTimeMs = useVideoEditorStore((s) => s.previewTimeMs);
-  const hoveredTrack = useVideoEditorStore((s) => s.hoveredTrack);
-  const setHoveredTrack = useVideoEditorStore((s) => s.setHoveredTrack);
-  const isPlaying = useVideoEditorStore((s) => s.isPlaying);
+  const selectSceneSegment = useVideoEditorStore(selectSelectSceneSegment);
+  const addSceneSegment = useVideoEditorStore(selectAddSceneSegment);
+  const updateSceneSegment = useVideoEditorStore(selectUpdateSceneSegment);
+  const deleteSceneSegment = useVideoEditorStore(selectDeleteSceneSegment);
+  const setDraggingSceneSegment = useVideoEditorStore(selectSetDraggingSceneSegment);
+  const selectedSceneSegmentId = useVideoEditorStore(selectSelectedSceneSegmentId);
+  const previewTimeMs = useVideoEditorStore(selectPreviewTimeMs);
+  const hoveredTrack = useVideoEditorStore(selectHoveredTrack);
+  const setHoveredTrack = useVideoEditorStore(selectSetHoveredTrack);
+  const isPlaying = useVideoEditorStore(selectIsPlaying);
 
   const totalWidth = durationMs * timelineZoom;
 
   // Check if any segment is being dragged
-  const isDraggingAny = useVideoEditorStore((s) =>
-    s.isDraggingZoomRegion || s.isDraggingSceneSegment || s.isDraggingMaskSegment || s.isDraggingTextSegment
-  );
+  const isDraggingAny = useVideoEditorStore(selectIsDraggingAnySegment);
 
   const previewSegmentDetails = useScenePreviewSegment(
     segments, defaultMode, durationMs, hoveredTrack, previewTimeMs, isPlaying, isDraggingAny
@@ -468,21 +400,19 @@ export const SceneTrackContent = memo(function SceneTrackContent({
   timelineZoom,
   width,
 }: SceneTrackProps) {
-  const selectSceneSegment = useVideoEditorStore((s) => s.selectSceneSegment);
-  const addSceneSegment = useVideoEditorStore((s) => s.addSceneSegment);
-  const updateSceneSegment = useVideoEditorStore((s) => s.updateSceneSegment);
-  const deleteSceneSegment = useVideoEditorStore((s) => s.deleteSceneSegment);
-  const setDraggingSceneSegment = useVideoEditorStore((s) => s.setDraggingSceneSegment);
-  const selectedSceneSegmentId = useVideoEditorStore((s) => s.selectedSceneSegmentId);
-  const previewTimeMs = useVideoEditorStore((s) => s.previewTimeMs);
-  const hoveredTrack = useVideoEditorStore((s) => s.hoveredTrack);
-  const setHoveredTrack = useVideoEditorStore((s) => s.setHoveredTrack);
-  const isPlaying = useVideoEditorStore((s) => s.isPlaying);
+  const selectSceneSegment = useVideoEditorStore(selectSelectSceneSegment);
+  const addSceneSegment = useVideoEditorStore(selectAddSceneSegment);
+  const updateSceneSegment = useVideoEditorStore(selectUpdateSceneSegment);
+  const deleteSceneSegment = useVideoEditorStore(selectDeleteSceneSegment);
+  const setDraggingSceneSegment = useVideoEditorStore(selectSetDraggingSceneSegment);
+  const selectedSceneSegmentId = useVideoEditorStore(selectSelectedSceneSegmentId);
+  const previewTimeMs = useVideoEditorStore(selectPreviewTimeMs);
+  const hoveredTrack = useVideoEditorStore(selectHoveredTrack);
+  const setHoveredTrack = useVideoEditorStore(selectSetHoveredTrack);
+  const isPlaying = useVideoEditorStore(selectIsPlaying);
 
   // Check if any segment is being dragged
-  const isDraggingAny = useVideoEditorStore((s) =>
-    s.isDraggingZoomRegion || s.isDraggingSceneSegment || s.isDraggingMaskSegment || s.isDraggingTextSegment
-  );
+  const isDraggingAny = useVideoEditorStore(selectIsDraggingAnySegment);
 
   const previewSegmentDetails = useScenePreviewSegment(
     segments, defaultMode, durationMs, hoveredTrack, previewTimeMs, isPlaying, isDraggingAny

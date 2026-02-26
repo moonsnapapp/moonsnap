@@ -356,16 +356,21 @@ export const useShapeDrawing = ({
       const node = stage.findOne(`#${liveShape.id}`);
       if (!node) return;
 
+      // For Group-wrapped shapes (arrow, line), drill into the first child
+      const drawNode = node.getClassName() === 'Group'
+        ? (node as Konva.Group).getChildren()[0]
+        : node;
+
       switch (liveShape.type) {
         case 'arrow': {
-          const arrow = node as Konva.Arrow;
+          const arrow = drawNode as Konva.Arrow;
           const newPoints = [drawStart.x, drawStart.y, pos.x, pos.y];
           arrow.points(newPoints);
           liveShapeRef.current = { ...liveShape, points: newPoints };
           break;
         }
         case 'line': {
-          const line = node as Konva.Line;
+          const line = drawNode as Konva.Line;
           const newPoints = [drawStart.x, drawStart.y, pos.x, pos.y];
           line.points(newPoints);
           liveShapeRef.current = { ...liveShape, points: newPoints };

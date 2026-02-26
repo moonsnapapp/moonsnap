@@ -559,6 +559,7 @@ fn test_gpu_webcam_pixel_position_bottom_right() {
     let render_options = crate::rendering::types::RenderOptions {
         output_width: out_w,
         output_height: out_h,
+        use_manual_composition: false,
         zoom: crate::rendering::types::ZoomState::identity(),
         webcam: Some(overlay),
         cursor: None,
@@ -671,6 +672,7 @@ fn test_gpu_webcam_circle_not_oval() {
     let render_options = crate::rendering::types::RenderOptions {
         output_width: out_w,
         output_height: out_h,
+        use_manual_composition: false,
         zoom: crate::rendering::types::ZoomState::identity(),
         webcam: Some(overlay),
         cursor: None,
@@ -770,6 +772,7 @@ fn test_gpu_webcam_all_corners() {
         let render_options = crate::rendering::types::RenderOptions {
             output_width: out_w,
             output_height: out_h,
+            use_manual_composition: false,
             zoom: crate::rendering::types::ZoomState::identity(),
             webcam: Some(overlay),
             cursor: None,

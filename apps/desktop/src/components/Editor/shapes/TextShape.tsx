@@ -80,7 +80,7 @@ export const TextShape: React.FC<TextShapeProps> = React.memo(({
       {/* Bounding box border - always rendered, visibility toggled to avoid
           expensive Konva node mount/unmount on every select/deselect */}
       <Rect
-        name="text-box-border"
+        name="text-box-border editor-gizmo"
         x={0}
         y={0}
         width={width}

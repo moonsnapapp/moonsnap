@@ -85,13 +85,20 @@ export const createProjectSlice: SliceCreator<ProjectSlice> = (set, get) => ({
 
   // Project actions
   setProject: (project) => {
-    // Restore IO markers from project (inPoint=0 → null, outPoint=durationMs → null)
-    const exportInPointMs = project && project.timeline.inPoint > 0
-      ? project.timeline.inPoint
-      : null;
-    const exportOutPointMs = project && project.timeline.outPoint < project.timeline.durationMs
-      ? project.timeline.outPoint
-      : null;
+    // Restore IO markers from project. A full-range export keeps both markers hidden.
+    let exportInPointMs: number | null = null;
+    let exportOutPointMs: number | null = null;
+
+    if (project) {
+      const hasCustomRange =
+        project.timeline.inPoint > 0 ||
+        project.timeline.outPoint < project.timeline.durationMs;
+
+      if (hasCustomRange) {
+        exportInPointMs = project.timeline.inPoint;
+        exportOutPointMs = project.timeline.outPoint;
+      }
+    }
 
     set({
       project,

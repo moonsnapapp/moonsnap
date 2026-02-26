@@ -11,6 +11,7 @@ import {
   calculateCoverSize,
   calculateCompositorDimensions,
 } from '../hooks/useCompositorBackground';
+import { getEditorShadowLayers } from './frameEffects';
 
 interface CompositeOptions {
   settings: CompositorSettings;
@@ -124,16 +125,11 @@ function drawShadow(
 ) {
   ctx.save();
 
-  // Multiple shadow layers for realistic effect
-  const shadowLayers = [
-    { blur: 10, opacity: 0.15 * intensity, offsetY: 2 },
-    { blur: 30, opacity: 0.25 * intensity, offsetY: 8 },
-    { blur: 60, opacity: 0.35 * intensity, offsetY: 16 },
-  ];
+  const shadowLayers = getEditorShadowLayers(intensity);
 
   shadowLayers.forEach((layer) => {
     ctx.shadowColor = `rgba(0, 0, 0, ${layer.opacity})`;
-    ctx.shadowBlur = layer.blur;
+    ctx.shadowBlur = layer.blurPx;
     ctx.shadowOffsetX = 0;
     ctx.shadowOffsetY = layer.offsetY;
 
@@ -157,6 +153,32 @@ function loadImage(src: string): Promise<HTMLImageElement> {
     img.onerror = reject;
     img.src = src;
   });
+}
+
+/**
+ * Check if the source canvas has ANY transparent pixels.
+ * Scales down to a small thumbnail for fast scanning.
+ * When true, shadow/border-radius would create a floaty look.
+ */
+function hasAnyTransparency(canvas: HTMLCanvasElement): boolean {
+  const w = canvas.width;
+  const h = canvas.height;
+  if (w === 0 || h === 0) return false;
+
+  // Scale down to small thumbnail and scan all pixels
+  const size = 20;
+  const thumb = document.createElement('canvas');
+  thumb.width = size;
+  thumb.height = size;
+  const ctx = thumb.getContext('2d');
+  if (!ctx) return false;
+
+  ctx.drawImage(canvas, 0, 0, size, size);
+  const data = ctx.getImageData(0, 0, size, size).data;
+  for (let i = 3; i < data.length; i += 4) {
+    if (data[i] < 255) return true;
+  }
+  return false;
 }
 
 /**
@@ -229,6 +251,10 @@ export async function compositeImage(
       return workingCanvas;
     }
 
+    // If the source has any transparency, keep background but skip
+    // shadow and border-radius to avoid the floaty look.
+    const transparentEdges = hasAnyTransparency(workingCanvas);
+
     const sourceWidth = workingCanvas.width;
     const sourceHeight = workingCanvas.height;
 
@@ -263,8 +289,8 @@ export async function compositeImage(
       backgroundImage
     );
 
-    // Draw shadow if intensity > 0
-    if (settings.shadowIntensity > 0) {
+    // Draw shadow if intensity > 0 (skip when transparent edges — causes floaty look)
+    if (settings.shadowIntensity > 0 && !transparentEdges) {
       drawShadow(
         ctx,
         dimensions.contentX,
@@ -283,8 +309,8 @@ export async function compositeImage(
     const tempCtx = tempCanvas.getContext('2d');
 
     if (tempCtx) {
-      // Apply rounded clip first
-      if (settings.borderRadius > 0) {
+      // Apply rounded clip (skip when transparent edges)
+      if (settings.borderRadius > 0 && !transparentEdges) {
         drawRoundedRect(tempCtx, 0, 0, sourceWidth, sourceHeight, settings.borderRadius);
         tempCtx.clip();
       }
@@ -309,4 +335,3 @@ export async function compositeImage(
     cleanupImage(backgroundImage);
   }
 }
-

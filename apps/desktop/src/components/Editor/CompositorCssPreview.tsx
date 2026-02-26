@@ -1,5 +1,6 @@
 import React from 'react';
 import type { CompositorSettings } from '../../types';
+import { getEditorShadowCss, getEditorShadowLayers } from '@/utils/frameEffects';
 
 interface CompositionBox {
   left: number;
@@ -19,6 +20,8 @@ interface CompositorCssPreviewProps {
   zoom: number;
   /** Background style computed from settings */
   backgroundStyle: React.CSSProperties;
+  /** When true, artboard has transparent areas — skip shadow and border-radius */
+  hasTransparency?: boolean;
 }
 
 /**
@@ -32,6 +35,7 @@ export const CompositorCssPreview: React.FC<CompositorCssPreviewProps> = ({
   compositionBox,
   zoom,
   backgroundStyle,
+  hasTransparency = false,
 }) => {
   if (!settings.enabled) return null;
 
@@ -40,7 +44,7 @@ export const CompositorCssPreview: React.FC<CompositorCssPreviewProps> = ({
   const scaledPadding = settings.padding * zoom;
   const contentWidth = compositionBox.width - scaledPadding * 2;
   const contentHeight = compositionBox.height - scaledPadding * 2;
-  const intensity = settings.shadowIntensity;
+  const shadowLayers = getEditorShadowLayers(settings.shadowIntensity);
 
   return (
     <div
@@ -57,7 +61,7 @@ export const CompositorCssPreview: React.FC<CompositorCssPreviewProps> = ({
         ...backgroundStyle,
       }}
     >
-      {settings.shadowIntensity > 0 && (
+      {shadowLayers.length > 0 && !hasTransparency && (
         <div
           style={{
             position: 'absolute',
@@ -66,11 +70,7 @@ export const CompositorCssPreview: React.FC<CompositorCssPreviewProps> = ({
             width: contentWidth,
             height: contentHeight,
             borderRadius: settings.borderRadius * zoom,
-            boxShadow: [
-              `0 ${2 * intensity}px ${10 * intensity}px rgba(0,0,0,${0.15 * intensity})`,
-              `0 ${8 * intensity}px ${30 * intensity}px rgba(0,0,0,${0.25 * intensity})`,
-              `0 ${16 * intensity}px ${60 * intensity}px rgba(0,0,0,${0.35 * intensity})`,
-            ].join(', '),
+            boxShadow: getEditorShadowCss(shadowLayers),
           }}
         />
       )}

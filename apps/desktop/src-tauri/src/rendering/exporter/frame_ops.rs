@@ -224,6 +224,7 @@ impl std::fmt::Display for SceneMode {
 ///
 /// Draws a white circle with semi-transparent fill and a darker border
 /// to indicate cursor position when actual cursor images aren't available.
+/// `opacity` controls overall alpha for inactivity fade-out.
 pub fn draw_cursor_circle(
     frame_data: &mut [u8],
     frame_width: u32,
@@ -232,7 +233,13 @@ pub fn draw_cursor_circle(
     cursor_x: f32, // normalized 0-1
     cursor_y: f32, // normalized 0-1
     scale: f32,
+    opacity: f32,
 ) {
+    let opacity = opacity.clamp(0.0, 1.0);
+    if opacity <= 0.0 {
+        return;
+    }
+
     // Circle parameters
     let base_radius = 12.0; // Base radius in pixels
     let radius = base_radius * scale;
@@ -265,7 +272,7 @@ pub fn draw_cursor_circle(
 
             if dist <= inner_radius {
                 // Inside the circle - semi-transparent white fill
-                let alpha = 0.5;
+                let alpha = 0.5 * opacity;
                 let fill_r = 255u8;
                 let fill_g = 255u8;
                 let fill_b = 255u8;
@@ -287,7 +294,7 @@ pub fn draw_cursor_circle(
                     ((fill_b as f32 * edge_alpha) + (frame_data[idx + 2] as f32 * inv_alpha)) as u8;
             } else if dist <= radius {
                 // On the border - darker semi-transparent ring
-                let alpha = 0.7;
+                let alpha = 0.7 * opacity;
                 let border_r = 50u8;
                 let border_g = 50u8;
                 let border_b = 50u8;

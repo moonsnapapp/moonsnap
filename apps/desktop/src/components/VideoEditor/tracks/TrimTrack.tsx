@@ -9,6 +9,13 @@ import {
   getSegmentTimelinePosition,
   getEffectiveDuration,
 } from '../../../stores/videoEditorStore';
+import {
+  selectDeleteTrimSegment,
+  selectSelectTrimSegment,
+  selectSelectedTrimSegmentId,
+  selectSetDraggingZoomRegion,
+  selectUpdateTrimSegment,
+} from '../../../stores/videoEditor/selectors';
 import { audioLogger } from '../../../utils/logger';
 
 interface TrimTrackProps {
@@ -75,10 +82,6 @@ const TRIM_COLORS = {
   hover: 'var(--coral-300)',
   text: 'var(--coral-400)',
 };
-
-// Selectors for atomic subscriptions
-const selectSelectedTrimSegmentId = (s: ReturnType<typeof useVideoEditorStore.getState>) =>
-  s.selectedTrimSegmentId;
 
 /**
  * Individual trim segment component with drag handles.
@@ -394,13 +397,10 @@ export const TrimTrackContent = memo(function TrimTrackContent({
 }: TrimTrackProps) {
   const selectedTrimSegmentId = useVideoEditorStore(selectSelectedTrimSegmentId);
   const { waveform, visualGain } = useWaveform(audioPath);
-
-  const {
-    selectTrimSegment,
-    updateTrimSegment,
-    deleteTrimSegment,
-    setDraggingZoomRegion,
-  } = useVideoEditorStore();
+  const selectTrimSegment = useVideoEditorStore(selectSelectTrimSegment);
+  const updateTrimSegment = useVideoEditorStore(selectUpdateTrimSegment);
+  const deleteTrimSegment = useVideoEditorStore(selectDeleteTrimSegment);
+  const setDraggingZoomRegion = useVideoEditorStore(selectSetDraggingZoomRegion);
 
   // Calculate effective duration (total of all segments)
   const effectiveDuration = useMemo(() => {
@@ -419,6 +419,7 @@ export const TrimTrackContent = memo(function TrimTrackContent({
   if (!segments || segments.length === 0) {
     return (
       <div
+        data-trim-track
         className="relative h-12 bg-[var(--polar-mist)]/60 border-b border-[var(--glass-border)]"
         style={{ width: `${width}px` }}
       >
@@ -451,6 +452,7 @@ export const TrimTrackContent = memo(function TrimTrackContent({
 
   return (
     <div
+      data-trim-track
       className="relative h-12 bg-[var(--polar-mist)]/60 border-b border-[var(--glass-border)]"
       style={{ width: `${width}px` }}
     >

@@ -144,7 +144,7 @@ export function useCompositorBackgroundImage(
       imageRef.current = null;
     }
 
-    if (backgroundType === 'image' && backgroundImageUrl) {
+    if ((backgroundType === 'image' || backgroundType === 'wallpaper') && backgroundImageUrl) {
       const img = new Image();
       imageRef.current = img;
       img.onload = () => setImage(img);
@@ -280,14 +280,14 @@ export function useCompositorBackground(
       );
     }
 
-    // For image type, we return solid fallback - image rendered separately
+    // For image/wallpaper types, we return solid fallback - image rendered separately
     return getSolidBackgroundProps(backgroundBounds, '#1a1a2e', 0);
   }, [settings, backgroundBounds]);
 
-  // Image cover sizing for background image
+  // Image/wallpaper cover sizing for background image
   const imageCoverProps = useMemo(() => {
     if (
-      settings.backgroundType !== 'image' ||
+      (settings.backgroundType !== 'image' && settings.backgroundType !== 'wallpaper') ||
       !backgroundImage ||
       !settings.enabled
     ) {

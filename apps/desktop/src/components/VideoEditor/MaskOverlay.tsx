@@ -1,6 +1,11 @@
 import { memo, useCallback, useState, useRef, useEffect } from 'react';
 import type { MaskSegment, MaskType, CropConfig } from '../../types';
 import { useVideoEditorStore } from '../../stores/videoEditorStore';
+import {
+  selectSelectMaskSegment,
+  selectSelectedMaskSegmentId,
+  selectUpdateMaskSegment,
+} from '../../stores/videoEditor/selectors';
 
 interface MaskOverlayProps {
   segments: MaskSegment[];
@@ -504,9 +509,9 @@ export const MaskOverlay = memo(function MaskOverlay({
   zoomStyle,
   cropConfig,
 }: MaskOverlayProps) {
-  const selectedMaskSegmentId = useVideoEditorStore((s) => s.selectedMaskSegmentId);
-  const selectMaskSegment = useVideoEditorStore((s) => s.selectMaskSegment);
-  const updateMaskSegment = useVideoEditorStore((s) => s.updateMaskSegment);
+  const selectedMaskSegmentId = useVideoEditorStore(selectSelectedMaskSegmentId);
+  const selectMaskSegment = useVideoEditorStore(selectSelectMaskSegment);
+  const updateMaskSegment = useVideoEditorStore(selectUpdateMaskSegment);
 
   // Filter segments that are active at current time
   const activeSegments = segments.filter(

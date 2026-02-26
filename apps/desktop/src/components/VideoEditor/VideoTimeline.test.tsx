@@ -55,6 +55,7 @@ const createMockProject = (overrides: Partial<VideoProject> = {}): VideoProject 
     offsetY: 20,
     zIndex: 10,
     fitMode: 'cover',
+    visibilitySegments: [],
   },
   audio: {
     systemVolume: 1.0,
@@ -100,6 +101,7 @@ beforeEach(() => {
     currentTimeMs: 0,
     isPlaying: false,
     isDraggingPlayhead: false,
+    splitMode: false,
     previewTimeMs: null,
     timelineZoom: 0.05,
     timelineScrollLeft: 0,
@@ -274,6 +276,30 @@ describe('VideoTimeline', () => {
       expect(useVideoEditorStore.getState().isPlaying).toBe(true);
     });
 
+    it('should pause playback when scrubbing the timeline ruler', async () => {
+      useVideoEditorStore.setState({
+        project: createMockProject(),
+        isPlaying: true,
+        currentTimeMs: 5000,
+      });
+
+      let container: HTMLElement;
+      await act(async () => {
+        const result = render(<VideoTimeline {...defaultProps} />);
+        container = result.container;
+      });
+
+      const ruler = container!.querySelector('[data-timeline-ruler]');
+      expect(ruler).toBeInTheDocument();
+
+      if (ruler) {
+        fireEvent.mouseDown(ruler, { clientX: 200 });
+        fireEvent.mouseUp(document);
+      }
+
+      expect(useVideoEditorStore.getState().isPlaying).toBe(false);
+    });
+
     it('should call onExport when export button is clicked', () => {
       const onExport = vi.fn();
       render(<VideoTimeline {...defaultProps} onExport={onExport} />);
@@ -432,9 +458,7 @@ describe('VideoTimeline', () => {
 
       // Preview scrubber has a specific structure with ink-muted background
       // When playing, the preview scrubber should not be rendered even if previewTimeMs is set
-      // The PreviewScrubber component is conditionally rendered based on !isPlaying
-      // Look for the specific preview scrubber element (z-20 with ink-muted background)
-      const previewScrubber = container!.querySelector('.z-20.bg-\\[var\\(--ink-muted\\)\\]');
+      const previewScrubber = container!.querySelector('[data-preview-scrubber]');
       expect(previewScrubber).not.toBeInTheDocument();
     });
 
@@ -452,9 +476,98 @@ describe('VideoTimeline', () => {
       });
 
       // Preview scrubber should be visible when not playing
-      // It has z-20 class and ink-muted background
-      const previewScrubber = container!.querySelector('.z-20.pointer-events-none');
+      const previewScrubber = container!.querySelector('[data-preview-scrubber]');
       expect(previewScrubber).toBeInTheDocument();
+      expect(previewScrubber?.getAttribute('data-cut-mode')).toBe('false');
+    });
+  });
+
+  describe('cut mode', () => {
+    it('should toggle cut mode when scissors button is clicked', async () => {
+      let container: HTMLElement;
+      await act(async () => {
+        const result = render(<VideoTimeline {...defaultProps} />);
+        container = result.container;
+      });
+
+      const cutToggle = container!.querySelector('[data-cut-mode-toggle]');
+      expect(cutToggle).toBeInTheDocument();
+
+      if (cutToggle) {
+        fireEvent.click(cutToggle);
+      }
+
+      expect(useVideoEditorStore.getState().splitMode).toBe(true);
+    });
+
+    it('should mark preview scrubber as cut mode when splitMode is active', async () => {
+      useVideoEditorStore.setState({
+        project: createMockProject(),
+        splitMode: true,
+        isPlaying: false,
+        previewTimeMs: 2500,
+      });
+
+      let container: HTMLElement;
+      await act(async () => {
+        const result = render(<VideoTimeline {...defaultProps} />);
+        container = result.container;
+      });
+
+      const previewScrubber = container!.querySelector('[data-preview-scrubber]');
+      expect(previewScrubber).toBeInTheDocument();
+      expect(previewScrubber?.getAttribute('data-cut-mode')).toBe('true');
+    });
+
+    it('should split hovered trim segment when clicking timeline in cut mode', async () => {
+      useVideoEditorStore.setState({
+        project: createMockProject({
+          timeline: {
+            durationMs: 10000,
+            trimStart: 0,
+            trimEnd: 10000,
+            inPoint: 0,
+            outPoint: 10000,
+            cuts: [],
+          },
+        }),
+        splitMode: true,
+        timelineZoom: 0.1,
+      });
+
+      let container: HTMLElement;
+      await act(async () => {
+        const result = render(<VideoTimeline {...defaultProps} />);
+        container = result.container;
+      });
+
+      const scrollContainer = container!.querySelector('.overflow-x-auto');
+      const timelineArea = scrollContainer?.querySelector('.relative') as HTMLElement | null;
+      const trimTrack = container!.querySelector('[data-trim-track]') as HTMLElement | null;
+      expect(timelineArea).toBeInTheDocument();
+      expect(trimTrack).toBeInTheDocument();
+
+      if (timelineArea && trimTrack) {
+        const originalGetBoundingClientRect = timelineArea.getBoundingClientRect;
+        timelineArea.getBoundingClientRect = () => ({
+          left: 0,
+          top: 0,
+          right: 1000,
+          bottom: 200,
+          width: 1000,
+          height: 200,
+          x: 0,
+          y: 0,
+          toJSON: () => ({}),
+        });
+
+        fireEvent.click(trimTrack, { clientX: 500 });
+        timelineArea.getBoundingClientRect = originalGetBoundingClientRect;
+      }
+
+      const segments = useVideoEditorStore.getState().project?.timeline.segments ?? [];
+      expect(segments.length).toBe(2);
+      expect(useVideoEditorStore.getState().selectedTrimSegmentId).toBeNull();
     });
   });
 
@@ -596,8 +709,10 @@ describe('VideoTimeline', () => {
         // Restore
         timelineArea.getBoundingClientRect = originalGetBoundingClientRect;
 
-        // Current time should be updated (approximately 5000ms)
-        expect(useVideoEditorStore.getState().currentTimeMs).toBe(5000);
+        // Current time should be updated near 5000ms.
+        // Allow a small tolerance because timeline seek math may quantize by a few ms.
+        expect(useVideoEditorStore.getState().currentTimeMs).toBeGreaterThanOrEqual(4990);
+        expect(useVideoEditorStore.getState().currentTimeMs).toBeLessThanOrEqual(5010);
       }
     });
   });

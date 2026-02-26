@@ -1,4 +1,5 @@
-import { useEffect, useCallback } from 'react';
+import { useEffect } from 'react';
+import { isTextInputTarget } from '../utils/keyboard';
 
 /**
  * Keyboard shortcuts for the video editor.
@@ -9,7 +10,7 @@ import { useEffect, useCallback } from 'react';
  * - End: Seek to end
  * - ArrowLeft: Skip back 5 seconds
  * - ArrowRight: Skip forward 5 seconds
- * - S: Split video at playhead (creates trim segments)
+ * - S: Toggle cut mode
  * - Delete/Backspace: Delete selected segment (trim/zoom/scene/mask/text)
  * - Escape: Deselect all
  *
@@ -31,7 +32,7 @@ interface UseVideoEditorShortcutsProps {
   onSeekToEnd: () => void;
   onSkipBack: () => void;
   onSkipForward: () => void;
-  onSplitAtPlayhead: () => void;
+  onToggleCutMode: () => void;
   onDeleteSelected: () => void;
   onTimelineZoomIn: () => void;
   onTimelineZoomOut: () => void;
@@ -51,7 +52,7 @@ export function useVideoEditorShortcuts({
   onSeekToEnd,
   onSkipBack,
   onSkipForward,
-  onSplitAtPlayhead,
+  onToggleCutMode,
   onDeleteSelected,
   onTimelineZoomIn,
   onTimelineZoomOut,
@@ -63,17 +64,12 @@ export function useVideoEditorShortcuts({
   onSetInPoint,
   onSetOutPoint,
 }: UseVideoEditorShortcutsProps) {
-  // Check if event target is an input field
-  const isInputTarget = useCallback((e: KeyboardEvent): boolean => {
-    return e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement;
-  }, []);
-
   useEffect(() => {
     if (!enabled) return;
 
     const handleKeyDown = (e: KeyboardEvent) => {
       // Don't handle shortcuts when typing in an input
-      if (isInputTarget(e)) return;
+      if (isTextInputTarget(e.target)) return;
 
       const isMod = e.ctrlKey || e.metaKey;
 
@@ -138,7 +134,7 @@ export function useVideoEditorShortcuts({
         case 's':
         case 'S':
           e.preventDefault();
-          onSplitAtPlayhead();
+          onToggleCutMode();
           break;
         case 'Delete':
         case 'Backspace':
@@ -166,13 +162,12 @@ export function useVideoEditorShortcuts({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [
     enabled,
-    isInputTarget,
     onTogglePlayback,
     onSeekToStart,
     onSeekToEnd,
     onSkipBack,
     onSkipForward,
-    onSplitAtPlayhead,
+    onToggleCutMode,
     onDeleteSelected,
     onTimelineZoomIn,
     onTimelineZoomOut,

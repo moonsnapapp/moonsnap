@@ -5,6 +5,7 @@
  */
 import { memo, useMemo } from 'react';
 import { useVideoEditorStore } from '../../stores/videoEditorStore';
+import { selectCaptionSegments, selectCaptionSettings } from '../../stores/videoEditor/selectors';
 import { usePreviewOrPlaybackTime } from '../../hooks/usePlaybackEngine';
 import { useScaledLayout } from '@/hooks/useParityLayout';
 
@@ -158,8 +159,8 @@ export const CaptionOverlay = memo(function CaptionOverlay({
   containerWidth,
   containerHeight,
 }: CaptionOverlayProps) {
-  const captionSegments = useVideoEditorStore((s) => s.captionSegments);
-  const captionSettings = useVideoEditorStore((s) => s.captionSettings);
+  const captionSegments = useVideoEditorStore(selectCaptionSegments);
+  const captionSettings = useVideoEditorStore(selectCaptionSettings);
   const currentTimeMs = usePreviewOrPlaybackTime();
   const currentTimeSecs = currentTimeMs / 1000;
 

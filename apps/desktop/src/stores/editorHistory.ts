@@ -9,6 +9,7 @@ import type { CanvasShape, CanvasBounds } from '../types';
 export interface HistorySnapshot {
   shapes: CanvasShape[];
   canvasBounds: CanvasBounds | null;
+  cropRegion: { x: number; y: number; width: number; height: number } | null;
   estimatedBytes: number;
 }
 
@@ -62,6 +63,7 @@ export function getShapeHash(shape: CanvasShape): string {
       blurType: shape.blurType,
       blurAmount: shape.blurAmount,
       pixelSize: shape.pixelSize,
+      isBackground: shape.isBackground,
     });
     shapeHashCache.set(shape, hash);
   }

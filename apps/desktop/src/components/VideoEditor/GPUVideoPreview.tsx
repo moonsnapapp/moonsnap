@@ -1,9 +1,22 @@
 import { memo, useCallback, useRef, useEffect, useState, useMemo } from 'react';
 import { convertFileSrc } from '@tauri-apps/api/core';
 import { resolveResource } from '@tauri-apps/api/path';
+import { TEXT_ANIMATION } from '../../constants';
 import { useVideoEditorStore } from '../../stores/videoEditorStore';
+import {
+  selectProject,
+  selectIsPlaying,
+  selectPreviewTimeMs,
+  selectCurrentTimeMs,
+  selectCursorRecording,
+  selectAudioConfig,
+  selectScreenVideoPath,
+} from '../../stores/videoEditor/selectors';
 import { videoEditorLogger } from '../../utils/logger';
+import { hasEnabledCrop } from '../../utils/videoContentDimensions';
+import { hasActiveTypewriterSound } from '../../utils/textSegmentAnimation';
 import { usePreviewOrPlaybackTime } from '../../hooks/usePlaybackEngine';
+import { useTimelineToSourceTime } from '../../hooks/useTimelineSourceTime';
 import { useZoomPreview } from '../../hooks/useZoomPreview';
 import { useInterpolatedScene, shouldRenderScreen, shouldRenderCursor, getCameraOnlyTransitionOpacity, getRegularCameraTransitionOpacity } from '../../hooks/useSceneMode';
 import { WebcamOverlay } from './WebcamOverlay';
@@ -21,14 +34,6 @@ import {
   usePlaybackSync,
 } from './gpu';
 import type { SceneSegment, SceneMode, WebcamConfig, ZoomRegion, CursorRecording, CursorConfig, MaskSegment, TextSegment, CropConfig } from '../../types';
-
-// Selectors to prevent re-renders from unrelated store changes
-const selectProject = (s: ReturnType<typeof useVideoEditorStore.getState>) => s.project;
-const selectIsPlaying = (s: ReturnType<typeof useVideoEditorStore.getState>) => s.isPlaying;
-const selectPreviewTimeMs = (s: ReturnType<typeof useVideoEditorStore.getState>) => s.previewTimeMs;
-const selectCurrentTimeMs = (s: ReturnType<typeof useVideoEditorStore.getState>) => s.currentTimeMs;
-const selectCursorRecording = (s: ReturnType<typeof useVideoEditorStore.getState>) => s.cursorRecording;
-const selectAudioConfig = (s: ReturnType<typeof useVideoEditorStore.getState>) => s.project?.audio;
 
 /**
  * Scene mode aware renderer that shows/hides content based on current scene mode.
@@ -87,19 +92,26 @@ const SceneModeRenderer = memo(function SceneModeRenderer({
   cropConfig?: CropConfig;
 }) {
   const currentTimeMs = usePreviewOrPlaybackTime();
+  const toSourceTime = useTimelineToSourceTime();
   const scene = useInterpolatedScene(sceneSegments, defaultSceneMode, currentTimeMs);
+
+  const sourceTimeMs = useMemo(
+    () => toSourceTime(currentTimeMs),
+    [currentTimeMs, toSourceTime]
+  );
 
   const showScreen = shouldRenderScreen(scene);
   const showCursor = shouldRenderCursor(scene);
   const cameraOnlyOpacity = getCameraOnlyTransitionOpacity(scene);
 
-  const originalVideoPath = useVideoEditorStore((s) => s.project?.sources.screenVideo ?? null);
+  const originalVideoPath = useVideoEditorStore(selectScreenVideoPath);
 
   const zoomStyle = useZoomPreview(zoomRegions, currentTimeMs, cursorRecording, {
     backgroundPadding,
     rounding,
     videoWidth,
     videoHeight,
+    cursorTimeMs: sourceTimeMs,
   });
 
   const screenStyle: React.CSSProperties = {
@@ -111,7 +123,7 @@ const SceneModeRenderer = memo(function SceneModeRenderer({
 
   const frameOpacity = 1 - cameraOnlyOpacity;
 
-  const cropEnabled = cropConfig?.enabled && cropConfig.width > 0 && cropConfig.height > 0;
+  const cropEnabled = hasEnabledCrop(cropConfig);
 
   const fullscreenWebcamStyle: React.CSSProperties = {
     position: 'absolute',
@@ -279,12 +291,17 @@ const SceneModeRenderer = memo(function SceneModeRenderer({
  * Main video preview component.
  * Optimized to minimize re-renders during playback.
  */
-export function GPUVideoPreview() {
+interface GPUVideoPreviewProps {
+  isActive?: boolean;
+}
+
+export function GPUVideoPreview({ isActive = true }: GPUVideoPreviewProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const previewAreaRef = useRef<HTMLDivElement>(null);
   const systemAudioRef = useRef<HTMLAudioElement>(null);
   const micAudioRef = useRef<HTMLAudioElement>(null);
+  const typewriterAudioRef = useRef<HTMLAudioElement>(null);
   const [videoError, setVideoError] = useState<string | null>(null);
   const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
   const [previewAreaSize, setPreviewAreaSize] = useState({ width: 0, height: 0 });
@@ -298,9 +315,11 @@ export function GPUVideoPreview() {
   const currentTimeMs = useVideoEditorStore(selectCurrentTimeMs);
   const cursorRecording = useVideoEditorStore(selectCursorRecording);
   const audioConfig = useVideoEditorStore(selectAudioConfig);
+  const effectiveIsPlaying = isPlaying && isActive;
 
   // Get effective time for scene interpolation
   const effectiveTimeMs = previewTimeMs !== null ? previewTimeMs : currentTimeMs;
+  const effectiveTimeSec = effectiveTimeMs / 1000;
 
   // Get interpolated scene for webcam overlay opacity
   const scene = useInterpolatedScene(
@@ -372,6 +391,12 @@ export function GPUVideoPreview() {
     return src;
   }, [project?.sources.microphoneAudio]);
 
+  const typewriterAudioSrc = TEXT_ANIMATION.TYPEWRITER_SOUND_LOOP_PATH;
+  const shouldPlayTypewriterAudio = useMemo(
+    () => hasActiveTypewriterSound(project?.text?.segments, effectiveTimeSec),
+    [project?.text?.segments, effectiveTimeSec]
+  );
+
   // Get aspect ratio from project
   const aspectRatio = useMemo(() => {
     return project?.sources.originalWidth && project?.sources.originalHeight
@@ -382,7 +407,7 @@ export function GPUVideoPreview() {
   // Calculate crop aspect ratio
   const cropAspectRatio = useMemo(() => {
     const crop = project?.export?.crop;
-    if (crop?.enabled && crop.width > 0 && crop.height > 0) {
+    if (hasEnabledCrop(crop)) {
       return crop.width / crop.height;
     }
     return null;
@@ -448,16 +473,49 @@ export function GPUVideoPreview() {
     micAudioSrc,
     audioConfig,
     durationMs: project?.timeline.durationMs,
-    isPlaying,
+    isPlaying: effectiveIsPlaying,
     previewTimeMs,
     currentTimeMs,
     onVideoError: useCallback((msg: string) => setVideoError(msg || null), []),
   });
 
+  useEffect(() => {
+    const audio = typewriterAudioRef.current;
+    if (!audio || !isActive) {
+      return;
+    }
+
+    audio.volume = audioConfig?.systemMuted ? 0 : (audioConfig?.systemVolume ?? 1);
+  }, [audioConfig?.systemMuted, audioConfig?.systemVolume, isActive]);
+
+  useEffect(() => {
+    const audio = typewriterAudioRef.current;
+    if (!audio || !isActive) {
+      return;
+    }
+
+    const shouldPlay = effectiveIsPlaying && shouldPlayTypewriterAudio;
+    if (shouldPlay) {
+      if (audio.paused) {
+        audio.play().catch((error) => {
+          videoEditorLogger.warn('Typewriter audio play failed:', error);
+        });
+      }
+      return;
+    }
+
+    if (!audio.paused) {
+      audio.pause();
+    }
+    if (audio.currentTime !== 0) {
+      audio.currentTime = 0;
+    }
+  }, [effectiveIsPlaying, isActive, shouldPlayTypewriterAudio]);
+
   return (
     <div ref={previewAreaRef} className="flex items-center justify-center h-full bg-[var(--polar-snow)] overflow-hidden">
       {/* Hidden audio elements */}
-      {systemAudioSrc && (
+      {isActive && systemAudioSrc && (
         <audio
           ref={systemAudioRef}
           src={systemAudioSrc}
@@ -471,7 +529,7 @@ export function GPUVideoPreview() {
           }}
         />
       )}
-      {micAudioSrc && (
+      {isActive && micAudioSrc && (
         <audio
           ref={micAudioRef}
           src={micAudioSrc}
@@ -482,6 +540,19 @@ export function GPUVideoPreview() {
             if (audioConfig) {
               audio.volume = audioConfig.microphoneMuted ? 0 : audioConfig.microphoneVolume;
             }
+          }}
+        />
+      )}
+      {isActive && (
+        <audio
+          ref={typewriterAudioRef}
+          src={typewriterAudioSrc}
+          preload="auto"
+          loop
+          style={{ display: 'none' }}
+          onLoadedData={(e) => {
+            const audio = e.currentTarget;
+            audio.volume = audioConfig?.systemMuted ? 0 : (audioConfig?.systemVolume ?? 1);
           }}
         />
       )}
@@ -551,7 +622,7 @@ export function GPUVideoPreview() {
             }),
           }}
         >
-          {videoSrc || project?.sources.webcamVideo ? (
+          {isActive && (videoSrc || project?.sources.webcamVideo) ? (
             <SceneModeRenderer
               videoRef={videoRef}
               videoSrc={videoSrc ?? undefined}
@@ -572,7 +643,7 @@ export function GPUVideoPreview() {
               videoHeight={project?.sources.originalHeight ?? 1080}
               maskSegments={project?.mask?.segments}
               textSegments={project?.text?.segments}
-              isPlaying={isPlaying}
+              isPlaying={effectiveIsPlaying}
               onVideoClick={handleVideoClick}
               backgroundPadding={backgroundConfig?.padding ?? 0}
               rounding={backgroundConfig?.rounding ?? 0}
@@ -581,7 +652,9 @@ export function GPUVideoPreview() {
             />
           ) : (
             <div className="absolute inset-0 flex items-center justify-center">
-              <span className="text-[var(--ink-subtle)]">No video loaded</span>
+              <span className="text-[var(--ink-subtle)]">
+                {isActive ? 'No video loaded' : 'Preview paused while inactive'}
+              </span>
             </div>
           )}
 
@@ -599,7 +672,7 @@ export function GPUVideoPreview() {
         </div>
 
         {/* Webcam overlay */}
-        {project?.sources.webcamVideo && project?.webcam && compositionSize.width > 0 && (
+        {isActive && project?.sources.webcamVideo && project?.webcam && compositionSize.width > 0 && (
           <WebcamOverlay
             webcamVideoPath={project.sources.webcamVideo}
             config={project.webcam}
@@ -611,7 +684,7 @@ export function GPUVideoPreview() {
         )}
 
         {/* Caption overlay - positioned relative to composition (video + padding) to match export */}
-        {compositionSize.width > 0 && compositionSize.height > 0 && (
+        {isActive && compositionSize.width > 0 && compositionSize.height > 0 && (
           <UnifiedCaptionOverlay
             renderWidth={compositeWidth}
             renderHeight={compositeHeight}

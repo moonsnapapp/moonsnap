@@ -1,25 +1,153 @@
 //! FFmpeg encoder setup and helpers.
 
-use std::path::Path;
+use std::fs;
+use std::path::{Path, PathBuf};
 use std::process::{Child, Stdio};
 
 use tauri::{AppHandle, Emitter};
 
 use crate::commands::video_recording::video_export::{ExportProgress, ExportStage};
-use crate::commands::video_recording::video_project::{ExportFormat, VideoProject};
+use crate::commands::video_recording::video_project::{ExportFormat, TextAnimation, VideoProject};
 
 use super::encoder_selection::{select_encoder, EncoderType};
+
+const TYPEWRITER_LOOP_AUDIO_BYTES: &[u8] =
+    include_bytes!("../../../../public/sounds/fast_typing_loop_001.wav");
+const TYPEWRITER_LOOP_AUDIO_FILE_NAME: &str = "snapit_fast_typing_loop_001.wav";
 
 /// Audio input info for building ffmpeg filter.
 struct AudioInput {
     input_index: usize,
     volume: f32,
+    source: AudioInputSource,
+}
+
+/// How a given audio input should be aligned in the export timeline.
+enum AudioInputSource {
+    /// Source-timeline audio (system/mic) that must follow kept trim segments.
+    SourceTrack,
+    /// Timeline-space windows (already in edited timeline coordinates).
+    TimelineWindows(Vec<AudioSegment>),
 }
 
 /// Segment info for audio trimming (in seconds for FFmpeg).
+#[derive(Clone, Copy)]
 struct AudioSegment {
     start_sec: f64,
     end_sec: f64,
+}
+
+fn ensure_typewriter_loop_sound_file() -> Result<PathBuf, String> {
+    let path = std::env::temp_dir().join(TYPEWRITER_LOOP_AUDIO_FILE_NAME);
+    fs::write(&path, TYPEWRITER_LOOP_AUDIO_BYTES).map_err(|e| {
+        format!(
+            "Failed to stage typewriter loop audio at {}: {}",
+            path.display(),
+            e
+        )
+    })?;
+    Ok(path)
+}
+
+fn calculate_typewriter_typing_window_secs(
+    segment_start_sec: f64,
+    segment_end_sec: f64,
+    fade_duration_sec: f64,
+) -> f64 {
+    let segment_duration = (segment_end_sec - segment_start_sec).max(0.0);
+    let fade_duration = fade_duration_sec.max(0.0);
+    let has_fade_out_window = fade_duration > 0.0 && segment_duration > fade_duration * 2.0;
+    let outro_duration = if has_fade_out_window {
+        fade_duration
+    } else {
+        0.0
+    };
+    (segment_duration - outro_duration).max(0.0)
+}
+
+fn calculate_effective_typewriter_chars_per_second(
+    requested_chars_per_second: f32,
+    total_chars: usize,
+    typing_window_secs: f64,
+) -> f64 {
+    let requested = requested_chars_per_second.clamp(1.0, 60.0) as f64;
+    if total_chars == 0 || typing_window_secs <= 0.0 {
+        return requested;
+    }
+
+    let minimum_required = total_chars as f64 / typing_window_secs;
+    requested.max(minimum_required)
+}
+
+fn calculate_typewriter_sound_end_sec(
+    segment_start_sec: f64,
+    segment_end_sec: f64,
+    fade_duration_sec: f64,
+    requested_chars_per_second: f32,
+    total_chars: usize,
+) -> f64 {
+    if total_chars == 0 {
+        return segment_start_sec;
+    }
+
+    let typing_window_secs = calculate_typewriter_typing_window_secs(
+        segment_start_sec,
+        segment_end_sec,
+        fade_duration_sec,
+    );
+    let chars_per_second = calculate_effective_typewriter_chars_per_second(
+        requested_chars_per_second,
+        total_chars,
+        typing_window_secs,
+    );
+    if chars_per_second <= 0.0 {
+        return segment_end_sec;
+    }
+
+    let reveal_duration_sec = total_chars as f64 / chars_per_second;
+    let capped_reveal_duration_sec = if typing_window_secs > 0.0 {
+        reveal_duration_sec.min(typing_window_secs)
+    } else {
+        reveal_duration_sec
+    };
+
+    (segment_start_sec + capped_reveal_duration_sec).min(segment_end_sec)
+}
+
+fn collect_typewriter_sound_segments(project: &VideoProject) -> Vec<AudioSegment> {
+    let mut segments: Vec<AudioSegment> = project
+        .text
+        .segments
+        .iter()
+        .filter(|segment| {
+            segment.enabled
+                && segment.animation == TextAnimation::TypeWriter
+                && segment.typewriter_sound_enabled
+        })
+        .filter_map(|segment| {
+            let start_sec = segment.start.max(0.0);
+            let total_chars = segment.content.chars().count();
+            let end_sec = calculate_typewriter_sound_end_sec(
+                start_sec,
+                segment.end.max(start_sec),
+                segment.fade_duration,
+                segment.typewriter_chars_per_second,
+                total_chars,
+            );
+            if end_sec <= start_sec {
+                return None;
+            }
+            Some(AudioSegment { start_sec, end_sec })
+        })
+        .collect();
+
+    segments.sort_by(|a, b| {
+        a.start_sec
+            .partial_cmp(&b.start_sec)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+
+    segments
 }
 
 /// Start FFmpeg process for encoding raw RGBA input.
@@ -59,6 +187,7 @@ pub fn start_ffmpeg_encoder(
             audio_inputs.push(AudioInput {
                 input_index: next_input_index,
                 volume: project.audio.system_volume,
+                source: AudioInputSource::SourceTrack,
             });
             next_input_index += 1;
         }
@@ -71,8 +200,29 @@ pub fn start_ffmpeg_encoder(
             audio_inputs.push(AudioInput {
                 input_index: next_input_index,
                 volume: project.audio.microphone_volume,
+                source: AudioInputSource::SourceTrack,
             });
-            // next_input_index += 1; // Uncomment when adding more audio sources
+            next_input_index += 1;
+        }
+    }
+
+    // Add typewriter effect loop audio on segments that opt-in.
+    if !project.audio.system_muted && project.audio.system_volume > 0.0 {
+        let typewriter_sound_segments = collect_typewriter_sound_segments(project);
+        if !typewriter_sound_segments.is_empty() {
+            let staged_path = ensure_typewriter_loop_sound_file()?;
+            args.extend([
+                "-stream_loop".to_string(),
+                "-1".to_string(),
+                "-i".to_string(),
+                staged_path.to_string_lossy().to_string(),
+            ]);
+            audio_inputs.push(AudioInput {
+                input_index: next_input_index,
+                volume: project.audio.system_volume,
+                source: AudioInputSource::TimelineWindows(typewriter_sound_segments),
+            });
+            next_input_index += 1;
         }
     }
 
@@ -151,12 +301,10 @@ pub fn start_ffmpeg_encoder(
                 encoder_config.quality_value
             );
 
-            if !audio_inputs.is_empty() {
-                if let Some(ref filter) = audio_filter {
-                    args.extend(["-filter_complex".to_string(), filter.clone()]);
-                    args.extend(["-map".to_string(), "0:v".to_string()]);
-                    args.extend(["-map".to_string(), "[aout]".to_string()]);
-                }
+            if let Some(ref filter) = audio_filter {
+                args.extend(["-filter_complex".to_string(), filter.clone()]);
+                args.extend(["-map".to_string(), "0:v".to_string()]);
+                args.extend(["-map".to_string(), "[aout]".to_string()]);
                 args.extend([
                     "-c:a".to_string(),
                     "aac".to_string(),
@@ -183,17 +331,16 @@ pub fn start_ffmpeg_encoder(
                 "-g".to_string(),
                 fps.to_string(),
             ]);
-            if !audio_inputs.is_empty() {
-                if let Some(ref filter) = audio_filter {
-                    args.extend(["-filter_complex".to_string(), filter.clone()]);
-                    args.extend(["-map".to_string(), "0:v".to_string()]);
-                    args.extend(["-map".to_string(), "[aout]".to_string()]);
-                }
+            if let Some(ref filter) = audio_filter {
+                args.extend(["-filter_complex".to_string(), filter.clone()]);
+                args.extend(["-map".to_string(), "0:v".to_string()]);
+                args.extend(["-map".to_string(), "[aout]".to_string()]);
                 args.extend([
                     "-c:a".to_string(),
                     "libopus".to_string(),
                     "-b:a".to_string(),
                     "128k".to_string(),
+                    "-shortest".to_string(),
                 ]);
             }
         },
@@ -222,78 +369,174 @@ pub fn start_ffmpeg_encoder(
 }
 
 /// Build audio filter graph for mixing multiple audio tracks with volume control.
-/// Trims audio to match the kept segments and concatenates them.
-/// Returns None if no audio inputs, otherwise returns the filter string.
-fn build_audio_filter(audio_inputs: &[AudioInput], segments: &[AudioSegment]) -> Option<String> {
-    if audio_inputs.is_empty() || segments.is_empty() {
+/// Source tracks are trimmed to kept segments; timeline tracks use absolute windows.
+/// Returns None when no usable audio graph can be built.
+fn build_audio_filter(
+    audio_inputs: &[AudioInput],
+    source_segments: &[AudioSegment],
+) -> Option<String> {
+    if audio_inputs.is_empty() {
         return None;
     }
 
-    // Build segment-aware filter that trims and concatenates audio portions
     let mut filter_parts: Vec<String> = Vec::new();
     let mut final_labels: Vec<String> = Vec::new();
 
     for (input_idx, input) in audio_inputs.iter().enumerate() {
-        let mut segment_labels: Vec<String> = Vec::new();
+        let base_label = format!("a{}_base", input_idx);
+        let mut has_base_stream = false;
 
-        // Create atrim filter for each segment
-        for (seg_idx, segment) in segments.iter().enumerate() {
-            let label = format!("a{}s{}", input_idx, seg_idx);
-            // atrim extracts the segment, asetpts resets timestamps to start from 0
-            filter_parts.push(format!(
-                "[{}:a]atrim=start={:.3}:end={:.3},asetpts=PTS-STARTPTS[{}]",
-                input.input_index, segment.start_sec, segment.end_sec, label
-            ));
-            segment_labels.push(format!("[{}]", label));
+        match &input.source {
+            AudioInputSource::SourceTrack => {
+                if source_segments.is_empty() {
+                    continue;
+                }
+
+                let mut segment_labels: Vec<String> = Vec::new();
+                for (seg_idx, segment) in source_segments.iter().enumerate() {
+                    let label = format!("a{}s{}", input_idx, seg_idx);
+                    filter_parts.push(format!(
+                        "[{}:a]atrim=start={:.3}:end={:.3},asetpts=PTS-STARTPTS[{}]",
+                        input.input_index, segment.start_sec, segment.end_sec, label
+                    ));
+                    segment_labels.push(format!("[{}]", label));
+                }
+
+                if segment_labels.len() > 1 {
+                    filter_parts.push(format!(
+                        "{}concat=n={}:v=0:a=1[{}]",
+                        segment_labels.join(""),
+                        segment_labels.len(),
+                        base_label
+                    ));
+                } else if let Some(single_label) = segment_labels.first() {
+                    let inner_label = &single_label[1..single_label.len() - 1];
+                    filter_parts.push(format!("[{}]anull[{}]", inner_label, base_label));
+                }
+                has_base_stream = true;
+            },
+            AudioInputSource::TimelineWindows(windows) => {
+                let mut window_labels: Vec<String> = Vec::new();
+                for (window_idx, window) in windows.iter().enumerate() {
+                    let duration_sec = (window.end_sec - window.start_sec).max(0.0);
+                    if duration_sec <= 0.0 {
+                        continue;
+                    }
+
+                    let delay_ms = (window.start_sec.max(0.0) * 1000.0).round() as u64;
+                    let label = format!("a{}w{}", input_idx, window_idx);
+                    filter_parts.push(format!(
+                        "[{}:a]atrim=start=0:end={:.3},asetpts=PTS-STARTPTS,adelay={}:all=1[{}]",
+                        input.input_index, duration_sec, delay_ms, label
+                    ));
+                    window_labels.push(format!("[{}]", label));
+                }
+
+                if window_labels.len() > 1 {
+                    filter_parts.push(format!(
+                        "{}amix=inputs={}:duration=longest[{}]",
+                        window_labels.join(""),
+                        window_labels.len(),
+                        base_label
+                    ));
+                } else if let Some(single_label) = window_labels.first() {
+                    let inner_label = &single_label[1..single_label.len() - 1];
+                    filter_parts.push(format!("[{}]anull[{}]", inner_label, base_label));
+                }
+                has_base_stream = !window_labels.is_empty();
+            },
         }
 
-        // Concatenate all segments for this audio track
-        let concat_label = format!("a{}_concat", input_idx);
-        if segment_labels.len() > 1 {
-            filter_parts.push(format!(
-                "{}concat=n={}:v=0:a=1[{}]",
-                segment_labels.join(""),
-                segment_labels.len(),
-                concat_label
-            ));
-        } else {
-            // Only one segment - just rename the label
-            let single_label = &segment_labels[0];
-            // Extract label name without brackets
-            let inner_label = &single_label[1..single_label.len() - 1];
-            filter_parts.push(format!("[{}]anull[{}]", inner_label, concat_label));
+        if !has_base_stream {
+            continue;
         }
 
-        // Apply volume to the concatenated audio
         let vol_label = format!("a{}_vol", input_idx);
         filter_parts.push(format!(
             "[{}]volume={:.2}[{}]",
-            concat_label, input.volume, vol_label
+            base_label, input.volume, vol_label
         ));
         final_labels.push(format!("[{}]", vol_label));
     }
 
-    // Mix all audio tracks if multiple, otherwise just rename to aout
+    if final_labels.is_empty() {
+        return None;
+    }
+
+    // Mix all audio tracks if multiple, otherwise just rename to aout_raw
     if final_labels.len() > 1 {
         filter_parts.push(format!(
-            "{}amix=inputs={}:duration=longest[aout]",
+            "{}amix=inputs={}:duration=longest[aout_raw]",
             final_labels.join(""),
             final_labels.len()
         ));
     } else {
-        // Single track - rename to aout
+        // Single track - rename to aout_raw
         let single_label = &final_labels[0];
         let inner_label = &single_label[1..single_label.len() - 1];
-        filter_parts.push(format!("[{}]anull[aout]", inner_label));
+        filter_parts.push(format!("[{}]anull[aout_raw]", inner_label));
     }
 
+    // Pad with silence so sparse SFX tracks don't truncate the video when using -shortest.
+    filter_parts.push("[aout_raw]apad[aout]".to_string());
+
     log::info!(
-        "[EXPORT] Audio filter with {} segment(s): {}",
-        segments.len(),
+        "[EXPORT] Audio filter with {} track(s): {}",
+        final_labels.len(),
         filter_parts.join(";")
     );
 
     Some(filter_parts.join(";"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn builds_source_audio_filter() {
+        let inputs = vec![AudioInput {
+            input_index: 1,
+            volume: 0.8,
+            source: AudioInputSource::SourceTrack,
+        }];
+        let segments = vec![AudioSegment {
+            start_sec: 1.0,
+            end_sec: 3.0,
+        }];
+
+        let filter = build_audio_filter(&inputs, &segments).expect("filter should be built");
+        assert!(filter.contains("[1:a]atrim=start=1.000:end=3.000"));
+        assert!(filter.contains("volume=0.80"));
+        assert!(filter.contains("apad[aout]"));
+        assert!(filter.contains("[aout]"));
+    }
+
+    #[test]
+    fn builds_timeline_window_audio_filter() {
+        let inputs = vec![AudioInput {
+            input_index: 2,
+            volume: 1.0,
+            source: AudioInputSource::TimelineWindows(vec![
+                AudioSegment {
+                    start_sec: 0.5,
+                    end_sec: 1.5,
+                },
+                AudioSegment {
+                    start_sec: 2.0,
+                    end_sec: 2.4,
+                },
+            ]),
+        }];
+
+        let filter = build_audio_filter(&inputs, &[]).expect("filter should be built");
+        assert!(filter.contains("atrim=start=0:end=1.000"));
+        assert!(filter.contains("atrim=start=0:end=0.400"));
+        assert!(filter.contains("adelay=500:all=1"));
+        assert!(filter.contains("adelay=2000:all=1"));
+        assert!(filter.contains("amix=inputs=2:duration=longest"));
+        assert!(filter.contains("apad[aout]"));
+    }
 }
 
 /// Convert quality percentage to CRF value.

@@ -267,7 +267,7 @@ export function useRecordingEvents(): UseRecordingEventsReturn {
       unlistenReselecting = await listen('capture-overlay-reselecting', async () => {
         // Close webcam preview window during selection (enabled setting preserved in Rust)
         try {
-          await invoke('close_webcam_preview');
+          await closeWebcamPreview();
         } catch {
           // Ignore
         }

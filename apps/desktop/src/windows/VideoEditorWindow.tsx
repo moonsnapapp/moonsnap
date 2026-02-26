@@ -20,19 +20,21 @@ import { videoEditorLogger } from '@/utils/logger';
 /**
  * VideoEditorWindow - Standalone video editor window.
  */
+const SAVE_WAIT_TIMEOUT_MS = 5000;
+const SAVE_WAIT_POLL_MS = 50;
+
 const VideoEditorWindow: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [projectPath, setProjectPath] = useState<string | null>(null);
   const hasLoadedRef = useRef(false);
+  const isClosingRef = useRef(false);
 
   const {
     project,
     setProject,
     clearEditor,
     setExportProgress,
-    destroyGPUEditor,
-    initializeGPUEditor,
   } = useVideoEditorStore();
 
   // Apply theme
@@ -65,16 +67,13 @@ const VideoEditorWindow: React.FC = () => {
 
       setProject(videoProject);
 
-      // Initialize GPU editor
-      await initializeGPUEditor(videoProject);
-
       setIsLoading(false);
     } catch (err) {
       videoEditorLogger.error('Failed to load video project:', err);
       setError(err instanceof Error ? err.message : 'Failed to load video project');
       setIsLoading(false);
     }
-  }, [setProject, initializeGPUEditor]);
+  }, [setProject]);
 
   // Load project from URL params on mount
   useEffect(() => {
@@ -88,30 +87,55 @@ const VideoEditorWindow: React.FC = () => {
     }
   }, [loadProject]);
 
+  const flushSaveBeforeClose = useCallback(async () => {
+    const waitForSavingToSettle = async () => {
+      const startedAt = Date.now();
+      while (useVideoEditorStore.getState().isSaving) {
+        if (Date.now() - startedAt > SAVE_WAIT_TIMEOUT_MS) {
+          return;
+        }
+        await new Promise((resolve) => setTimeout(resolve, SAVE_WAIT_POLL_MS));
+      }
+    };
+
+    const state = useVideoEditorStore.getState();
+    if (!state.project || state.isExporting) return;
+
+    try {
+      await waitForSavingToSettle();
+      await useVideoEditorStore.getState().saveProject();
+      await waitForSavingToSettle();
+    } catch (error) {
+      videoEditorLogger.warn('Video editor window save-on-close failed:', error);
+    }
+  }, []);
+
+  const performWindowClose = useCallback(async () => {
+    if (isClosingRef.current) return;
+    isClosingRef.current = true;
+
+    await flushSaveBeforeClose();
+    clearEditor();
+    await getCurrentWebviewWindow().destroy();
+  }, [flushSaveBeforeClose, clearEditor]);
+
   // Cleanup on window close
   useEffect(() => {
     const currentWindow = getCurrentWebviewWindow();
-    const unlisten = currentWindow.onCloseRequested(async () => {
-      // Destroy GPU editor instance
-      await destroyGPUEditor();
-      // Clear store state
-      clearEditor();
+    const unlisten = currentWindow.onCloseRequested(async (event: { preventDefault: () => void }) => {
+      event.preventDefault();
+      await performWindowClose();
     });
 
     return () => {
       unlisten.then((fn) => fn());
     };
-  }, [destroyGPUEditor, clearEditor]);
+  }, [performWindowClose]);
 
   // Handle close - called when back button is pressed or window is closed
   const handleClose = useCallback(async () => {
-    // Destroy GPU editor
-    await destroyGPUEditor();
-    // Clear store
-    clearEditor();
-    // Close window
-    getCurrentWebviewWindow().close();
-  }, [destroyGPUEditor, clearEditor]);
+    await performWindowClose();
+  }, [performWindowClose]);
 
   // Loading state
   if (isLoading) {

@@ -1,11 +1,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { nanoid } from 'nanoid';
-import type { CanvasShape } from '../types';
-
-/** Check if keyboard event target is a text input (should ignore shortcuts) */
-export function isTextInputTarget(e: KeyboardEvent): boolean {
-  return e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement;
-}
+import type { CanvasShape, Tool } from '../types';
+import { isTextInputTarget } from '../utils/keyboard';
 
 interface UseKeyboardShortcutsProps {
   selectedIds: string[];
@@ -14,6 +10,12 @@ interface UseKeyboardShortcutsProps {
   onShapesChange: (shapes: CanvasShape[]) => void;
   /** Record action for undo/redo (take snapshot + action + commit) */
   recordAction: (action: () => void) => void;
+  /** Get canvas position from screen position */
+  getCanvasPosition: (screenPos: { x: number; y: number }) => { x: number; y: number };
+  /** Container size for centering pasted images */
+  containerSize: { width: number; height: number };
+  /** Switch to a different tool */
+  setSelectedTool: (tool: Tool) => void;
 }
 
 interface UseKeyboardShortcutsReturn {
@@ -25,6 +27,7 @@ interface UseKeyboardShortcutsReturn {
  * - Delete/Backspace: Delete selected shapes
  * - Ctrl+A: Select all shapes
  * - Ctrl+D: Duplicate selected shapes
+ * - Ctrl+V: Paste image from clipboard
  * - Shift: Track for proportional resize constraint
  */
 export const useKeyboardShortcuts = ({
@@ -33,27 +36,37 @@ export const useKeyboardShortcuts = ({
   shapes,
   onShapesChange,
   recordAction,
+  getCanvasPosition,
+  containerSize,
+  setSelectedTool,
 }: UseKeyboardShortcutsProps): UseKeyboardShortcutsReturn => {
   const [isShiftHeld, setIsShiftHeld] = useState(false);
 
-  // Delete selected shapes handler
+  // Delete selected shapes handler (protects background shape)
   const handleDelete = useCallback(() => {
     if (selectedIds.length === 0) return;
 
+    // Filter out background shapes — they cannot be deleted
+    const deletableIds = selectedIds.filter((id) => {
+      const shape = shapes.find((s) => s.id === id);
+      return shape && !shape.isBackground;
+    });
+    if (deletableIds.length === 0) return;
+
     recordAction(() => {
-      const newShapes = shapes.filter((shape) => !selectedIds.includes(shape.id));
+      const newShapes = shapes.filter((shape) => !deletableIds.includes(shape.id));
       onShapesChange(newShapes);
     });
     setSelectedIds([]);
-  }, [selectedIds, shapes, onShapesChange, setSelectedIds]);
+  }, [selectedIds, shapes, onShapesChange, setSelectedIds, recordAction]);
 
-  // Select all shapes handler
+  // Select all shapes handler (includes background for consistency — user can move it too)
   const handleSelectAll = useCallback(() => {
     if (shapes.length === 0) return;
     setSelectedIds(shapes.map(s => s.id));
   }, [shapes, setSelectedIds]);
 
-  // Duplicate selected shapes handler
+  // Duplicate selected shapes handler (skips background shapes)
   const handleDuplicate = useCallback(() => {
     if (selectedIds.length === 0) return;
 
@@ -64,7 +77,7 @@ export const useKeyboardShortcuts = ({
 
       selectedIds.forEach(id => {
         const original = shapes.find(s => s.id === id);
-        if (original) {
+        if (original && !original.isBackground) {
           const newId = nanoid();
           const duplicate: CanvasShape = {
             ...original,
@@ -85,7 +98,69 @@ export const useKeyboardShortcuts = ({
       onShapesChange([...shapes, ...duplicatedShapes]);
       setSelectedIds(newSelectedIds);
     });
-  }, [selectedIds, shapes, onShapesChange, setSelectedIds]);
+  }, [selectedIds, shapes, onShapesChange, setSelectedIds, recordAction]);
+
+  // Paste image from clipboard handler
+  const handlePaste = useCallback((e: ClipboardEvent) => {
+    if (isTextInputTarget(e.target)) return;
+
+    const items = e.clipboardData?.items;
+    if (!items) return;
+
+    // Find an image item in the clipboard
+    let imageItem: DataTransferItem | null = null;
+    for (let i = 0; i < items.length; i++) {
+      if (items[i].type.startsWith('image/')) {
+        imageItem = items[i];
+        break;
+      }
+    }
+    if (!imageItem) return;
+
+    e.preventDefault();
+
+    const blob = imageItem.getAsFile();
+    if (!blob) return;
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      const dataUrl = reader.result as string;
+
+      // Load image to get natural dimensions
+      const img = new window.Image();
+      img.onload = () => {
+        const imgWidth = img.naturalWidth;
+        const imgHeight = img.naturalHeight;
+
+        // Calculate center of the current viewport in canvas coordinates
+        const centerScreen = {
+          x: containerSize.width / 2,
+          y: containerSize.height / 2,
+        };
+        const centerCanvas = getCanvasPosition(centerScreen);
+
+        const newId = nanoid();
+        const imageShape: CanvasShape = {
+          id: newId,
+          type: 'image',
+          x: centerCanvas.x - imgWidth / 2,
+          y: centerCanvas.y - imgHeight / 2,
+          width: imgWidth,
+          height: imgHeight,
+          imageSrc: dataUrl,
+        };
+
+        recordAction(() => {
+          onShapesChange([...shapes, imageShape]);
+        });
+
+        setSelectedIds([newId]);
+        setSelectedTool('select');
+      };
+      img.src = dataUrl;
+    };
+    reader.readAsDataURL(blob);
+  }, [shapes, onShapesChange, recordAction, setSelectedIds, setSelectedTool, getCanvasPosition, containerSize]);
 
   // Combined keyboard event handler for shortcuts and shift tracking
   useEffect(() => {
@@ -97,7 +172,7 @@ export const useKeyboardShortcuts = ({
       }
 
       // Don't handle shortcuts if user is typing in an input
-      if (isTextInputTarget(e)) return;
+      if (isTextInputTarget(e.target)) return;
 
       // Delete selected shapes
       if ((e.key === 'Delete' || e.key === 'Backspace') && selectedIds.length > 0) {
@@ -126,11 +201,13 @@ export const useKeyboardShortcuts = ({
 
     window.addEventListener('keydown', handleKeyDown);
     window.addEventListener('keyup', handleKeyUp);
+    window.addEventListener('paste', handlePaste);
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
+      window.removeEventListener('paste', handlePaste);
     };
-  }, [selectedIds, shapes, handleDelete, handleSelectAll, handleDuplicate]);
+  }, [selectedIds, shapes, handleDelete, handleSelectAll, handleDuplicate, handlePaste]);
 
   return { isShiftHeld };
 };

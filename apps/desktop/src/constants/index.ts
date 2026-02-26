@@ -1,6 +1,7 @@
 export { LAYOUT, type LayoutConstants } from './layout';
 export { TIMING, type TimingConstants } from './timing';
 export { STORAGE, type StorageConstants } from './storage';
+export { TEXT_ANIMATION, type TextAnimationConstants } from './text';
 export {
   WINDOWS_CURSORS,
   DEFAULT_CURSOR,

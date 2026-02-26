@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import type { CanvasShape } from '../types';
 import { shapeIntersectsRect } from '../utils/canvasGeometry';
 
@@ -26,11 +26,13 @@ export const useMarqueeSelection = ({
   setSelectedIds,
 }: UseMarqueeSelectionProps): UseMarqueeSelectionReturn => {
   const [isMarqueeSelecting, setIsMarqueeSelecting] = useState(false);
+  const isSelectingRef = useRef(false);
   const [marqueeStart, setMarqueeStart] = useState({ x: 0, y: 0 });
   const [marqueeEnd, setMarqueeEnd] = useState({ x: 0, y: 0 });
 
   // Start marquee selection
   const startMarquee = useCallback((pos: { x: number; y: number }) => {
+    isSelectingRef.current = true;
     setIsMarqueeSelecting(true);
     setMarqueeStart(pos);
     setMarqueeEnd(pos);
@@ -38,13 +40,14 @@ export const useMarqueeSelection = ({
 
   // Update marquee selection during drag
   const updateMarquee = useCallback((pos: { x: number; y: number }) => {
-    if (!isMarqueeSelecting) return;
+    if (!isSelectingRef.current) return;
     setMarqueeEnd(pos);
-  }, [isMarqueeSelecting]);
+  }, []);
 
   // Finish marquee selection and select intersecting shapes
   const finishMarquee = useCallback(() => {
-    if (!isMarqueeSelecting) return;
+    if (!isSelectingRef.current) return;
+    isSelectingRef.current = false;
 
     // Calculate marquee bounds (normalized for any drag direction)
     const marqueeBounds = {
@@ -64,12 +67,25 @@ export const useMarqueeSelection = ({
     }
 
     setIsMarqueeSelecting(false);
-  }, [isMarqueeSelecting, marqueeStart, marqueeEnd, shapes, setSelectedIds]);
+  }, [marqueeStart, marqueeEnd, shapes, setSelectedIds]);
 
   // Cancel marquee without selecting
   const cancelMarquee = useCallback(() => {
+    isSelectingRef.current = false;
     setIsMarqueeSelecting(false);
   }, []);
+
+  // Global mouseup listener to finish marquee when mouse released outside canvas
+  const finishMarqueeRef = useRef(finishMarquee);
+  finishMarqueeRef.current = finishMarquee;
+
+  useEffect(() => {
+    if (!isMarqueeSelecting) return;
+
+    const handleGlobalMouseUp = () => finishMarqueeRef.current();
+    window.addEventListener('mouseup', handleGlobalMouseUp);
+    return () => window.removeEventListener('mouseup', handleGlobalMouseUp);
+  }, [isMarqueeSelecting]);
 
   return {
     isMarqueeSelecting,

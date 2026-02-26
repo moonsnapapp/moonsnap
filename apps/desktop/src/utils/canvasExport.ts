@@ -18,12 +18,24 @@ export interface ExportBounds {
 }
 
 /**
- * Get content dimensions from canvas bounds or background image
+ * Get content dimensions from cropRegion, canvas bounds, or background image.
+ * If cropRegion is set, it takes priority as export bounds.
  */
 export function getContentBounds(
   stage: Konva.Stage,
-  canvasBounds: CanvasBounds | null
+  canvasBounds: CanvasBounds | null,
+  cropRegion?: { x: number; y: number; width: number; height: number } | null
 ): ContentBounds {
+  // cropRegion takes priority — it defines export-only bounds
+  if (cropRegion) {
+    return {
+      x: cropRegion.x,
+      y: cropRegion.y,
+      width: cropRegion.width,
+      height: cropRegion.height,
+    };
+  }
+
   const imageNode = stage.findOne('[name=background]') as Konva.Image | undefined;
   return {
     width: canvasBounds?.width || imageNode?.width() || 800,
@@ -71,13 +83,27 @@ export function exportCanvas(
   stage.scale({ x: 1, y: 1 });
   stage.position({ x: 0, y: 0 });
 
-  // Hide editor-only elements
-  const checkerboard = stage.findOne('[name=checkerboard]');
-  const editorShadow = stage.findOne('[name=editor-shadow]');
-  const transformer = stage.findOne('[name=transformer]');
-  if (checkerboard) checkerboard.hide();
-  if (editorShadow) editorShadow.hide();
-  if (transformer) transformer.hide();
+  // Physically remove editor-only nodes from the scene graph before export.
+  // hide()/show() is unreliable with layer.toCanvas(), so we remove() and re-add().
+  const removedNodes: { node: Konva.Node; parent: Konva.Container; index: number }[] = [];
+
+  const removeForExport = (node: Konva.Node | undefined | null) => {
+    if (!node) return;
+    const parent = node.getParent();
+    if (!parent) return;
+    const index = parent.children ? parent.children.indexOf(node) : -1;
+    removedNodes.push({ node, parent, index });
+    node.remove();
+  };
+
+  // Search from layer (not stage) using .name selector — works inside clip groups
+  removeForExport(layer.findOne('.checkerboard'));
+  removeForExport(layer.findOne('.editor-shadow'));
+  removeForExport(layer.findOne('.compositor-bg'));
+  removeForExport(layer.findOne('.transformer'));
+
+  // Remove all gizmo elements (selection handles, crop overlay, artboard, etc.)
+  layer.find('.editor-gizmo').forEach((n) => removeForExport(n));
 
   // Export from Konva
   const outputCanvas = layer.toCanvas({
@@ -88,12 +114,19 @@ export function exportCanvas(
     pixelRatio: 1,
   });
 
-  // Restore immediately
+  // Restore all removed nodes back to their original positions
   stage.scale(savedScale);
   stage.position(savedPosition);
-  if (checkerboard) checkerboard.show();
-  if (editorShadow) editorShadow.show();
-  if (transformer) transformer.show();
+  for (const { node, parent, index } of removedNodes) {
+    if (index >= 0 && parent.children && index < parent.children.length) {
+      // Insert back at original position
+      parent.children.splice(index, 0, node);
+      node.parent = parent;
+    } else {
+      parent.add(node);
+    }
+  }
+  layer.batchDraw();
 
   return outputCanvas;
 }
@@ -115,7 +148,8 @@ export async function exportToBlob(
   stageRef: React.RefObject<Konva.Stage | null>,
   canvasBounds: CanvasBounds | null,
   compositorSettings: CompositorSettings,
-  options: ExportOptions = { format: 'image/png' }
+  options: ExportOptions = { format: 'image/png' },
+  cropRegion?: { x: number; y: number; width: number; height: number } | null
 ): Promise<Blob> {
   const stage = stageRef.current;
   if (!stage) throw new Error('Stage not available');
@@ -124,7 +158,7 @@ export async function exportToBlob(
   if (!layer) throw new Error('Layer not found');
 
   // Export raw content from Konva (without compositor padding)
-  const content = getContentBounds(stage, canvasBounds);
+  const content = getContentBounds(stage, canvasBounds, cropRegion);
   const rawBounds: ExportBounds = {
     x: Math.round(content.x),
     y: Math.round(content.y),
@@ -155,9 +189,10 @@ export async function exportToBlob(
 export async function exportToClipboard(
   stageRef: React.RefObject<Konva.Stage | null>,
   canvasBounds: CanvasBounds | null,
-  compositorSettings: CompositorSettings
+  compositorSettings: CompositorSettings,
+  cropRegion?: { x: number; y: number; width: number; height: number } | null
 ): Promise<void> {
-  const blob = await exportToBlob(stageRef, canvasBounds, compositorSettings);
+  const blob = await exportToBlob(stageRef, canvasBounds, compositorSettings, { format: 'image/png' }, cropRegion);
   await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
 }
 
@@ -169,9 +204,10 @@ export async function exportToFile(
   canvasBounds: CanvasBounds | null,
   compositorSettings: CompositorSettings,
   filePath: string,
-  options: ExportOptions = { format: 'image/png' }
+  options: ExportOptions = { format: 'image/png' },
+  cropRegion?: { x: number; y: number; width: number; height: number } | null
 ): Promise<void> {
-  const blob = await exportToBlob(stageRef, canvasBounds, compositorSettings, options);
+  const blob = await exportToBlob(stageRef, canvasBounds, compositorSettings, options, cropRegion);
   const arrayBuffer = await blob.arrayBuffer();
   await writeFile(filePath, new Uint8Array(arrayBuffer));
 }

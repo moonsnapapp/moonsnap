@@ -2,6 +2,19 @@ import { memo, useCallback, useMemo } from 'react';
 import { GripVertical, Plus } from 'lucide-react';
 import type { ZoomRegion, ZoomTransition } from '../../../types';
 import { useVideoEditorStore, generateZoomRegionId } from '../../../stores/videoEditorStore';
+import {
+  selectAddZoomRegion,
+  selectDeleteZoomRegion,
+  selectHoveredTrack,
+  selectIsDraggingAnySegment,
+  selectIsPlaying,
+  selectPreviewTimeMs,
+  selectSelectZoomRegion,
+  selectSelectedZoomRegionId,
+  selectSetDraggingZoomRegion,
+  selectSetHoveredTrack,
+  selectUpdateZoomRegion,
+} from '../../../stores/videoEditor/selectors';
 import { BaseSegmentItem, type BaseSegment } from './BaseTrack';
 
 interface ZoomTrackProps {
@@ -25,9 +38,6 @@ const ZOOM_COLORS = {
   hover: 'var(--track-zoom-hover)',
   text: 'var(--track-zoom-text)',
 };
-
-// Selectors for atomic subscriptions
-const selectSelectedZoomRegionId = (s: ReturnType<typeof useVideoEditorStore.getState>) => s.selectedZoomRegionId;
 
 /**
  * Preview region shown when hovering over empty track space.
@@ -94,23 +104,18 @@ export const ZoomTrackContent = memo(function ZoomTrackContent({
   width
 }: ZoomTrackProps) {
   const selectedZoomRegionId = useVideoEditorStore(selectSelectedZoomRegionId);
-  const previewTimeMs = useVideoEditorStore((s) => s.previewTimeMs);
-  const hoveredTrack = useVideoEditorStore((s) => s.hoveredTrack);
-  const setHoveredTrack = useVideoEditorStore((s) => s.setHoveredTrack);
-  const isPlaying = useVideoEditorStore((s) => s.isPlaying);
-
-  const {
-    selectZoomRegion,
-    updateZoomRegion,
-    deleteZoomRegion,
-    addZoomRegion,
-    setDraggingZoomRegion,
-  } = useVideoEditorStore();
+  const previewTimeMs = useVideoEditorStore(selectPreviewTimeMs);
+  const hoveredTrack = useVideoEditorStore(selectHoveredTrack);
+  const setHoveredTrack = useVideoEditorStore(selectSetHoveredTrack);
+  const isPlaying = useVideoEditorStore(selectIsPlaying);
+  const selectZoomRegion = useVideoEditorStore(selectSelectZoomRegion);
+  const updateZoomRegion = useVideoEditorStore(selectUpdateZoomRegion);
+  const deleteZoomRegion = useVideoEditorStore(selectDeleteZoomRegion);
+  const addZoomRegion = useVideoEditorStore(selectAddZoomRegion);
+  const setDraggingZoomRegion = useVideoEditorStore(selectSetDraggingZoomRegion);
 
   // Check if any segment is being dragged
-  const isDraggingAny = useVideoEditorStore((s) =>
-    s.isDraggingZoomRegion || s.isDraggingSceneSegment || s.isDraggingMaskSegment || s.isDraggingTextSegment
-  );
+  const isDraggingAny = useVideoEditorStore(selectIsDraggingAnySegment);
 
   // Calculate preview region details when hovering
   const previewRegionDetails = useMemo(() => {

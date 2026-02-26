@@ -448,8 +448,15 @@ pub struct CursorConfig {
     /// Motion blur amount (0.0 = none, 1.0 = maximum).
     #[serde(default)]
     pub motion_blur: f32,
+    /// Fade cursor out after inactivity.
+    #[serde(default = "default_cursor_hide_when_idle")]
+    pub hide_when_idle: bool,
     /// Click highlight settings.
     pub click_highlight: ClickHighlightConfig,
+}
+
+const fn default_cursor_hide_when_idle() -> bool {
+    true
 }
 
 impl Default for CursorConfig {
@@ -459,6 +466,7 @@ impl Default for CursorConfig {
             cursor_type: CursorType::default(),
             scale: 1.0,
             motion_blur: 0.0,
+            hide_when_idle: default_cursor_hide_when_idle(),
             click_highlight: ClickHighlightConfig::default(),
         }
     }
@@ -562,7 +570,7 @@ impl Default for WebcamConfig {
             custom_x: 0.95,
             custom_y: 0.95,
             size: 0.2, // 20% of video width
-            shape: WebcamOverlayShape::Circle,
+            shape: WebcamOverlayShape::RoundedRectangle,
             rounding: default_rounding(),
             corner_style: CornerStyle::default(),
             shadow: default_shadow(),
@@ -857,7 +865,7 @@ pub struct BackgroundConfig {
 impl Default for BackgroundConfig {
     fn default() -> Self {
         Self {
-            enabled: true,
+            enabled: false,
             bg_type: BackgroundType::Wallpaper,
             solid_color: "#ffffff".to_string(), // Cap's default: white
             gradient_start: "#4785ff".to_string(), // Cap's default: blue [71, 133, 255]
@@ -1141,6 +1149,27 @@ impl<T> XY<T> {
     }
 }
 
+/// Text animation style.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS, Default)]
+#[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "../../src/types/generated/")]
+pub enum TextAnimation {
+    #[default]
+    #[serde(alias = "fadeIn")]
+    #[serde(alias = "fadeOut")]
+    #[serde(alias = "fadeInOut")]
+    None,
+    #[serde(alias = "typewriter")]
+    TypeWriter,
+}
+
+const MIN_TYPEWRITER_CHARS_PER_SECOND: f32 = 1.0;
+const MAX_TYPEWRITER_CHARS_PER_SECOND: f32 = 60.0;
+
+fn default_typewriter_chars_per_second() -> f32 {
+    16.0
+}
+
 /// A text overlay segment.
 /// Matches Cap's TextSegment model for consistency.
 /// Supports backward compatibility with old format (startMs/endMs/text/x/y).
@@ -1172,6 +1201,15 @@ pub struct TextSegment {
     pub color: String,
     /// Fade duration in seconds (for fade in/out animation).
     pub fade_duration: f64,
+    /// Text animation mode.
+    #[serde(default)]
+    pub animation: TextAnimation,
+    /// Typewriter reveal speed in characters per second.
+    #[serde(default = "default_typewriter_chars_per_second")]
+    pub typewriter_chars_per_second: f32,
+    /// Whether to play looping typewriter audio while this segment is active.
+    #[serde(default)]
+    pub typewriter_sound_enabled: bool,
 }
 
 /// Helper struct for deserializing both old and new TextSegment formats.
@@ -1185,6 +1223,9 @@ struct TextSegmentRaw {
     center: Option<XY<f64>>,
     size: Option<XY<f64>>,
     fade_duration: Option<f64>,
+    animation: Option<TextAnimation>,
+    typewriter_chars_per_second: Option<f32>,
+    typewriter_sound_enabled: Option<bool>,
 
     // Old format fields (for backward compatibility)
     #[serde(default)]
@@ -1251,6 +1292,15 @@ impl<'de> Deserialize<'de> for TextSegment {
 
         // Fade duration: use new format or default
         let fade_duration = raw.fade_duration.unwrap_or(0.15);
+        let animation = raw.animation.unwrap_or_default();
+        let typewriter_chars_per_second = raw
+            .typewriter_chars_per_second
+            .unwrap_or(default_typewriter_chars_per_second())
+            .clamp(
+                MIN_TYPEWRITER_CHARS_PER_SECOND,
+                MAX_TYPEWRITER_CHARS_PER_SECOND,
+            );
+        let typewriter_sound_enabled = raw.typewriter_sound_enabled.unwrap_or(false);
 
         Ok(TextSegment {
             start,
@@ -1265,6 +1315,9 @@ impl<'de> Deserialize<'de> for TextSegment {
             italic: raw.italic.unwrap_or(false),
             color: raw.color.unwrap_or_else(|| "#ffffff".to_string()),
             fade_duration,
+            animation,
+            typewriter_chars_per_second,
+            typewriter_sound_enabled,
         })
     }
 }
@@ -1284,6 +1337,9 @@ impl Default for TextSegment {
             italic: false,
             color: "#ffffff".to_string(),
             fade_duration: 0.15,
+            animation: TextAnimation::None,
+            typewriter_chars_per_second: default_typewriter_chars_per_second(),
+            typewriter_sound_enabled: false,
         }
     }
 }

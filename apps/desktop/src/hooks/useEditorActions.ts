@@ -13,7 +13,7 @@ import { useCaptureStore } from '../stores/captureStore';
 import { useEditorStore } from '../stores/editorStore';
 import { exportToClipboard, exportToFile } from '../utils/canvasExport';
 import { reportError } from '../utils/errorReporting';
-import type { Annotation } from '../types';
+import type { Annotation, CropRegionAnnotation } from '../types';
 
 interface UseEditorActionsProps {
   stageRef: React.RefObject<Konva.Stage | null>;
@@ -26,7 +26,7 @@ export function useEditorActions({ stageRef, imageData }: UseEditorActionsProps)
   const [isSaving, setIsSaving] = useState(false);
 
   const { currentProject, currentImageData, updateAnnotations } = useCaptureStore();
-  const { shapes, canvasBounds, compositorSettings } = useEditorStore();
+  const { shapes, canvasBounds, cropRegion, compositorSettings } = useEditorStore();
 
   // Use provided imageData or fall back to store value
   const hasImageData = imageData ?? currentImageData;
@@ -37,9 +37,15 @@ export function useEditorActions({ stageRef, imageData }: UseEditorActionsProps)
   const saveProjectAnnotations = useCallback(async () => {
     if (!currentProject) return;
 
-    const shapeAnnotations: Annotation[] = shapes.map((shape) => ({
-      ...shape,
-    } as Annotation));
+    // Exclude imageSrc for background shapes (loaded from project image)
+    const shapeAnnotations: Annotation[] = shapes.map((shape) => {
+      if (shape.isBackground) {
+        const { imageSrc: _unused, ...rest } = shape;
+        void _unused;
+        return { ...rest } as Annotation;
+      }
+      return { ...shape } as Annotation;
+    });
 
     const annotations = [...shapeAnnotations];
     if (canvasBounds) {
@@ -53,6 +59,19 @@ export function useEditorActions({ stageRef, imageData }: UseEditorActionsProps)
       } as Annotation);
     }
 
+    // Save crop region if set
+    if (cropRegion) {
+      const cropRegionAnn: CropRegionAnnotation = {
+        id: '__crop_region__',
+        type: '__crop_region__',
+        x: cropRegion.x,
+        y: cropRegion.y,
+        width: cropRegion.width,
+        height: cropRegion.height,
+      };
+      annotations.push(cropRegionAnn);
+    }
+
     // Save all compositor settings
     annotations.push({
       id: '__compositor_settings__',
@@ -61,7 +80,7 @@ export function useEditorActions({ stageRef, imageData }: UseEditorActionsProps)
     } as Annotation);
 
     await updateAnnotations(annotations);
-  }, [currentProject, shapes, canvasBounds, compositorSettings, updateAnnotations]);
+  }, [currentProject, shapes, canvasBounds, cropRegion, compositorSettings, updateAnnotations]);
 
   /**
    * Copy canvas to clipboard (browser native API - faster than Rust for clipboard).
@@ -71,14 +90,14 @@ export function useEditorActions({ stageRef, imageData }: UseEditorActionsProps)
 
     setIsCopying(true);
     try {
-      await exportToClipboard(stageRef, canvasBounds, compositorSettings);
+      await exportToClipboard(stageRef, canvasBounds, compositorSettings, cropRegion);
       toast.success('Copied to clipboard');
     } catch (error) {
       reportError(error, { operation: 'copy to clipboard' });
     } finally {
       setIsCopying(false);
     }
-  }, [stageRef, hasImageData, canvasBounds, compositorSettings]);
+  }, [stageRef, hasImageData, canvasBounds, compositorSettings, cropRegion]);
 
   /**
    * Save to file (browser toBlob + Tauri writeFile - no IPC serialization).
@@ -96,7 +115,7 @@ export function useEditorActions({ stageRef, imageData }: UseEditorActionsProps)
       });
 
       if (filePath) {
-        await exportToFile(stageRef, canvasBounds, compositorSettings, filePath);
+        await exportToFile(stageRef, canvasBounds, compositorSettings, filePath, { format: 'image/png' }, cropRegion);
         toast.success('Image saved successfully');
       }
     } catch (error) {
@@ -104,7 +123,7 @@ export function useEditorActions({ stageRef, imageData }: UseEditorActionsProps)
     } finally {
       setIsSaving(false);
     }
-  }, [stageRef, hasImageData, canvasBounds, compositorSettings, saveProjectAnnotations]);
+  }, [stageRef, hasImageData, canvasBounds, compositorSettings, cropRegion, saveProjectAnnotations]);
 
   /**
    * Save to file with specific format.
@@ -130,7 +149,7 @@ export function useEditorActions({ stageRef, imageData }: UseEditorActionsProps)
           await exportToFile(stageRef, canvasBounds, compositorSettings, filePath, {
             format: formatInfo.mime,
             quality: formatInfo.quality,
-          });
+          }, cropRegion);
           toast.success(`Image saved as ${formatInfo.name}`);
         }
       } catch (error) {
@@ -139,7 +158,7 @@ export function useEditorActions({ stageRef, imageData }: UseEditorActionsProps)
         setIsSaving(false);
       }
     },
-    [stageRef, hasImageData, canvasBounds, compositorSettings]
+    [stageRef, hasImageData, canvasBounds, compositorSettings, cropRegion]
   );
 
   return {
