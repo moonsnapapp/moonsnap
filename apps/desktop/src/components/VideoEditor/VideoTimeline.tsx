@@ -58,6 +58,13 @@ function quantizeTimeMs(timeMs: number, stepMs: number): number {
   return Math.round(timeMs / stepMs) * stepMs;
 }
 
+const IO_MARKER_LINE_COLOR = 'var(--coral-300, #FDA4A0)';
+const IO_MARKER_HANDLE_BG = 'linear-gradient(135deg, var(--coral-400) 0%, var(--coral-500) 100%)';
+const IO_MARKER_TOOLTIP_BG = 'var(--glass-bg-solid)';
+const IO_MARKER_TOOLTIP_BORDER = 'var(--coral-400, #F97066)';
+const IO_MARKER_TOOLTIP_TEXT = 'var(--coral-300, #FDA4A0)';
+const PLAYHEAD_COLOR = 'var(--warning, #F59E0B)';
+
 /**
  * Preview scrubber - ghost playhead that follows mouse when not playing.
  */
@@ -73,7 +80,7 @@ const PreviewScrubber = memo(function PreviewScrubber({
   isCutMode: boolean;
 }) {
   const position = previewTimeMs * timelineZoom + trackLabelWidth;
-  const scrubberColor = isCutMode ? 'var(--coral-400)' : 'var(--ink-muted)';
+  const scrubberColor = isCutMode ? 'var(--coral-500, #F04438)' : 'var(--ink-muted)';
 
   return (
     <div
@@ -140,6 +147,7 @@ const Playhead = memo(function Playhead({
 }) {
   const currentTimeMs = usePlaybackTime();
   const playheadPosition = currentTimeMs * timelineZoom + trackLabelWidth;
+  const playheadGlow = 'rgba(245, 158, 11, 0.35)';
 
   return (
     <div
@@ -150,7 +158,7 @@ const Playhead = memo(function Playhead({
       `}
       style={{ 
         left: `${playheadPosition}px`,
-        backgroundColor: 'var(--coral-400)',
+        backgroundColor: PLAYHEAD_COLOR,
       }}
       onMouseDown={onMouseDown}
     >
@@ -164,8 +172,8 @@ const Playhead = memo(function Playhead({
         `}
         style={{
           clipPath: 'polygon(0 0, 100% 0, 100% 60%, 50% 100%, 0 60%)',
-          backgroundColor: 'var(--coral-400)',
-          boxShadow: '0 10px 15px -3px rgba(249, 112, 102, 0.3)',
+          backgroundColor: PLAYHEAD_COLOR,
+          boxShadow: `0 10px 15px -3px ${playheadGlow}`,
         }}
       />
       
@@ -187,9 +195,9 @@ const PlayheadTimeIndicator = memo(function PlayheadTimeIndicator() {
     <div 
       className="absolute top-5 left-1/2 -translate-x-1/2 px-2 py-0.5 bg-[var(--polar-ice)] rounded text-[10px] font-mono whitespace-nowrap shadow-lg"
       style={{ 
-        borderColor: 'rgba(249, 112, 102, 0.5)',
+        borderColor: 'rgba(245, 158, 11, 0.55)',
         borderWidth: '1px',
-        color: 'var(--coral-300)',
+        color: 'var(--warning, #F59E0B)',
       }}
     >
       {Math.floor(currentTimeMs / 60000)}:{String(Math.floor((currentTimeMs % 60000) / 1000)).padStart(2, '0')}
@@ -221,14 +229,18 @@ const IOMarker = memo(function IOMarker({
       className="absolute top-0 h-8 w-0.5 z-25 pointer-events-none"
       style={{
         left: `${position}px`,
-        backgroundColor: 'var(--teal-400, #2dd4bf)',
+        backgroundColor: IO_MARKER_LINE_COLOR,
       }}
     >
       {/* Draggable label handle */}
       <div
         data-timeline-control
         className={`absolute top-0 left-1/2 -translate-x-1/2 w-4 h-4 rounded-b-sm flex items-center justify-center text-[9px] font-bold text-white pointer-events-auto ${isDragging ? 'cursor-grabbing scale-110' : 'cursor-grab hover:scale-105'} transition-transform`}
-        style={{ backgroundColor: 'var(--teal-400, #2dd4bf)' }}
+        style={{
+          background: IO_MARKER_HANDLE_BG,
+          borderColor: 'rgba(255, 255, 255, 0.15)',
+          borderWidth: '1px',
+        }}
         onMouseDown={onMouseDown}
       >
         {label}
@@ -238,8 +250,10 @@ const IOMarker = memo(function IOMarker({
         <div
           className="absolute top-5 left-1/2 -translate-x-1/2 px-2 py-0.5 rounded text-[10px] font-mono whitespace-nowrap shadow-lg pointer-events-none"
           style={{
-            backgroundColor: 'var(--teal-400, #2dd4bf)',
-            color: 'white',
+            backgroundColor: IO_MARKER_TOOLTIP_BG,
+            color: IO_MARKER_TOOLTIP_TEXT,
+            borderColor: IO_MARKER_TOOLTIP_BORDER,
+            borderWidth: '1px',
           }}
         >
           {formatTimeSimple(timeMs)}
@@ -786,7 +800,13 @@ export function VideoTimeline({ onExport, onResetTrimSegments, onSetInPoint, onS
                       <button
                         onClick={onSetInPoint}
                         className="glass-btn h-8 px-2 text-[11px] font-semibold"
-                        style={{ color: exportInPointMs !== null ? 'var(--teal-400, #2dd4bf)' : undefined }}
+                        style={exportInPointMs !== null
+                          ? {
+                              color: 'var(--coral-300, #FDA4A0)',
+                              backgroundColor: 'var(--coral-subtle)',
+                              borderColor: 'var(--coral-400, #F97066)',
+                            }
+                          : undefined}
                       >
                         I
                       </button>
@@ -806,7 +826,13 @@ export function VideoTimeline({ onExport, onResetTrimSegments, onSetInPoint, onS
                       <button
                         onClick={onSetOutPoint}
                         className="glass-btn h-8 px-2 text-[11px] font-semibold"
-                        style={{ color: exportOutPointMs !== null ? 'var(--teal-400, #2dd4bf)' : undefined }}
+                        style={exportOutPointMs !== null
+                          ? {
+                              color: 'var(--coral-300, #FDA4A0)',
+                              backgroundColor: 'var(--coral-subtle)',
+                              borderColor: 'var(--coral-400, #F97066)',
+                            }
+                          : undefined}
                       >
                         O
                       </button>
