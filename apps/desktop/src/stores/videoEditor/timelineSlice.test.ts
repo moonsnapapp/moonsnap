@@ -96,6 +96,8 @@ const getInitialTimelineState = () => ({
     zoom: true,
     scene: true,
   },
+  exportInPointMs: null,
+  exportOutPointMs: null,
 });
 
 describe('timelineSlice', () => {
@@ -432,6 +434,119 @@ describe('timelineSlice', () => {
       useVideoEditorStore.getState().setSplitMode(true);
       useVideoEditorStore.getState().setSplitMode(false);
       expect(useVideoEditorStore.getState().splitMode).toBe(false);
+    });
+  });
+
+  describe('IO markers', () => {
+    it('should extend out marker to timeline end when setting in marker first', () => {
+      const project = createTestProject();
+      useVideoEditorStore.setState({ project });
+
+      useVideoEditorStore.getState().setExportInPoint(10000);
+
+      const state = useVideoEditorStore.getState();
+      expect(state.exportInPointMs).toBe(10000);
+      expect(state.exportOutPointMs).toBe(60000);
+      expect(state.project?.timeline.inPoint).toBe(10000);
+      expect(state.project?.timeline.outPoint).toBe(60000);
+    });
+
+    it('should extend out marker to effective timeline end after trims', () => {
+      const project = createTestProject({
+        timeline: {
+          durationMs: 60000,
+          inPoint: 0,
+          outPoint: 60000,
+          speed: 1.0,
+          segments: [
+            { id: 'seg-1', sourceStartMs: 0, sourceEndMs: 10000 },
+            { id: 'seg-2', sourceStartMs: 20000, sourceEndMs: 30000 },
+          ],
+        },
+      });
+      useVideoEditorStore.setState({ project });
+
+      useVideoEditorStore.getState().setExportInPoint(5000);
+
+      const state = useVideoEditorStore.getState();
+      expect(state.exportInPointMs).toBe(5000);
+      expect(state.exportOutPointMs).toBe(20000);
+      expect(state.project?.timeline.outPoint).toBe(20000);
+    });
+
+    it('should extend in marker to timeline start when setting out marker first', () => {
+      const project = createTestProject();
+      useVideoEditorStore.setState({ project });
+
+      useVideoEditorStore.getState().setExportOutPoint(25000);
+
+      const state = useVideoEditorStore.getState();
+      expect(state.exportInPointMs).toBe(0);
+      expect(state.exportOutPointMs).toBe(25000);
+      expect(state.project?.timeline.inPoint).toBe(0);
+      expect(state.project?.timeline.outPoint).toBe(25000);
+    });
+
+    it('should extend out marker to end when in marker crosses it', () => {
+      const project = createTestProject();
+      useVideoEditorStore.setState({ project });
+
+      const store = useVideoEditorStore.getState();
+      store.setExportOutPoint(30000);
+      store.setExportInPoint(35000);
+
+      const state = useVideoEditorStore.getState();
+      expect(state.exportInPointMs).toBe(35000);
+      expect(state.exportOutPointMs).toBe(60000);
+      expect(state.project?.timeline.outPoint).toBe(60000);
+    });
+
+    it('should extend in marker to start when out marker crosses it', () => {
+      const project = createTestProject();
+      useVideoEditorStore.setState({ project });
+
+      const store = useVideoEditorStore.getState();
+      store.setExportInPoint(20000);
+      store.setExportOutPoint(15000);
+
+      const state = useVideoEditorStore.getState();
+      expect(state.exportInPointMs).toBe(0);
+      expect(state.exportOutPointMs).toBe(15000);
+      expect(state.project?.timeline.inPoint).toBe(0);
+    });
+
+    it('should restore both markers from project when only out point is custom', () => {
+      const project = createTestProject({
+        timeline: {
+          durationMs: 60000,
+          inPoint: 0,
+          outPoint: 25000,
+          speed: 1.0,
+        },
+      });
+
+      useVideoEditorStore.getState().setProject(project);
+
+      const state = useVideoEditorStore.getState();
+      expect(state.exportInPointMs).toBe(0);
+      expect(state.exportOutPointMs).toBe(25000);
+    });
+
+    it('should restore both markers from project when only in point is custom', () => {
+      const project = createTestProject({
+        timeline: {
+          durationMs: 60000,
+          inPoint: 12000,
+          outPoint: 60000,
+          speed: 1.0,
+        },
+      });
+
+      useVideoEditorStore.getState().setProject(project);
+
+      const state = useVideoEditorStore.getState();
+      expect(state.exportInPointMs).toBe(12000);
+      expect(state.exportOutPointMs).toBe(60000);
     });
   });
 

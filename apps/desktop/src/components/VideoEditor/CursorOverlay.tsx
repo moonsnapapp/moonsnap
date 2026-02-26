@@ -88,8 +88,8 @@ const svgFetchPromises = new Map<WindowsCursorShape, Promise<string>>();
 /**
  * Generate cache key for SVG cursors at a specific size.
  */
-function svgCacheKey(shape: WindowsCursorShape, targetHeight?: number): string {
-  return targetHeight ? `__svg_${shape}_${targetHeight}__` : `__svg_${shape}__`;
+function svgCacheKey(shape: WindowsCursorShape, targetExtent?: number): string {
+  return targetExtent ? `__svg_${shape}_${targetExtent}__` : `__svg_${shape}__`;
 }
 
 /**
@@ -126,15 +126,15 @@ async function fetchSvgText(shape: WindowsCursorShape): Promise<string | null> {
 }
 
 /**
- * Rasterize SVG at exact target height for lossless quality.
+ * Rasterize SVG at exact target extent for lossless quality.
  * Returns cached image if already rasterized at this size.
  */
 function getSvgCursorAtSize(
   shape: WindowsCursorShape,
-  targetHeight: number,
+  targetExtent: number,
   onLoad: () => void
 ): HTMLImageElement | null {
-  const key = svgCacheKey(shape, targetHeight);
+  const key = svgCacheKey(shape, targetExtent);
   const cached = cursorImageCache.get(key);
   if (cached) return cached;
 
@@ -160,10 +160,12 @@ function getSvgCursorAtSize(
   const origWidth = parseFloat(svgElement.getAttribute('width') || '24');
   const origHeight = parseFloat(svgElement.getAttribute('height') || '24');
 
-  // Calculate exact dimensions for target height
-  const scale = targetHeight / origHeight;
-  const newWidth = Math.round(origWidth * scale);
-  const newHeight = targetHeight;
+  // Normalize cursors by fitting the larger SVG dimension to targetExtent.
+  // This prevents wide cursors like sizeWE from rendering much larger than arrow.
+  const dominantDimension = Math.max(origWidth, origHeight, 1);
+  const scale = targetExtent / dominantDimension;
+  const newWidth = Math.max(1, Math.round(origWidth * scale));
+  const newHeight = Math.max(1, Math.round(origHeight * scale));
 
   // Update SVG dimensions
   svgElement.setAttribute('width', String(newWidth));
@@ -181,7 +183,7 @@ function getSvgCursorAtSize(
     onLoad();
   };
   img.onerror = () => {
-    editorLogger.warn(`Failed to rasterize SVG cursor ${shape} at ${targetHeight}px`);
+    editorLogger.warn(`Failed to rasterize SVG cursor ${shape} at ${targetExtent}px`);
   };
   img.src = dataUrl;
 
@@ -413,9 +415,9 @@ export const CursorOverlay = memo(function CursorOverlay({
     // Get click animation scale from cursor data (0.7-1.0)
     const clickAnimationScale = cursorData.scale ?? 1.0;
 
-    // Calculate exact SVG rasterization height for lossless rendering
+    // Calculate exact SVG rasterization extent for lossless rendering
     // Account for DPR so the SVG is rasterized at screen pixel resolution
-    const svgTargetHeight = Math.round(finalCursorHeight * clickAnimationScale * renderScale);
+    const svgTargetExtent = Math.round(finalCursorHeight * clickAnimationScale * renderScale);
 
     const velocityX = cursorData.velocityX ?? 0;
     const velocityY = cursorData.velocityY ?? 0;
@@ -490,10 +492,9 @@ export const CursorOverlay = memo(function CursorOverlay({
       if (opacity <= 0) return;
       const previousAlpha = ctx.globalAlpha;
       ctx.globalAlpha = opacity;
-      // Image is already at exact size (svgTargetHeight), draw at 1:1.
-      // But we need to account for renderScale in our coordinate system.
-      const drawHeight = finalCursorHeight * clickAnimationScale;
-      const drawWidth = (img.width / img.height) * drawHeight;
+      // Image is already rasterized to exact display size at renderScale.
+      const drawWidth = img.width / renderScale;
+      const drawHeight = img.height / renderScale;
       const drawX = x - drawWidth * def.hotspotX;
       const drawY = y - drawHeight * def.hotspotY;
       ctx.drawImage(img, drawX, drawY, drawWidth, drawHeight);
@@ -539,8 +540,8 @@ export const CursorOverlay = memo(function CursorOverlay({
     if (shape) {
       const definition: CursorDefinition | undefined = WINDOWS_CURSORS[shape as WindowsCursorShape];
       if (definition) {
-        // Get or trigger rasterization at exact target height
-        const svgImage = getSvgCursorAtSize(shape, svgTargetHeight, triggerUpdate);
+        // Get or trigger rasterization at exact target extent
+        const svgImage = getSvgCursorAtSize(shape, svgTargetExtent, triggerUpdate);
         if (svgImage) {
           ctx.clearRect(0, 0, roundedRenderWidth, roundedRenderHeight);
           drawMotionBlurTrail((x, y, opacity) => drawSvgCursorAt(svgImage, definition, x, y, opacity));
@@ -564,7 +565,7 @@ export const CursorOverlay = memo(function CursorOverlay({
     }
 
     // Priority 3: Default arrow SVG at exact size (final fallback)
-    const defaultImage = getSvgCursorAtSize('arrow', svgTargetHeight, triggerUpdate);
+    const defaultImage = getSvgCursorAtSize('arrow', svgTargetExtent, triggerUpdate);
     if (defaultImage) {
       ctx.clearRect(0, 0, roundedRenderWidth, roundedRenderHeight);
       drawMotionBlurTrail((x, y, opacity) => drawSvgCursorAt(defaultImage, DEFAULT_CURSOR, x, y, opacity));

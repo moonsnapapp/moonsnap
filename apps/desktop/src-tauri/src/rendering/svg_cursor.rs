@@ -214,7 +214,7 @@ pub fn render_svg_cursor(shape: WindowsCursorShape, scale: f32) -> Option<Render
     })
 }
 
-/// Render an SVG cursor to exactly the specified target height.
+/// Render an SVG cursor so its largest dimension matches the target extent.
 ///
 /// This properly handles SVGs of any original size by calculating the scale
 /// based on the actual SVG dimensions, not an assumed base size.
@@ -232,12 +232,14 @@ pub fn render_svg_cursor_to_height(
     let orig_width = size.width();
     let orig_height = size.height();
 
-    // Calculate scale to achieve target height
-    let scale = target_height as f32 / orig_height;
+    // Normalize cursors by fitting the dominant SVG dimension to target_height.
+    // This keeps wide cursors (e.g. SizeWE) visually consistent with Arrow.
+    let dominant_dimension = orig_width.max(orig_height).max(1.0);
+    let scale = target_height as f32 / dominant_dimension;
 
     // Calculate scaled dimensions (preserve aspect ratio)
-    let scaled_width = (orig_width * scale).ceil() as u32;
-    let scaled_height = target_height;
+    let scaled_width = (orig_width * scale).round() as u32;
+    let scaled_height = (orig_height * scale).round() as u32;
 
     // Minimum size of 1
     let scaled_width = scaled_width.max(1);
@@ -274,10 +276,10 @@ pub fn render_svg_cursor_to_height(
     })
 }
 
-/// Get or render an SVG cursor at the specified target height.
+/// Get or render an SVG cursor at the specified target extent.
 ///
 /// Uses a cache to avoid re-rendering the same cursor at the same size.
-/// The cursor is scaled to fit the target_height while preserving aspect ratio.
+/// The cursor is scaled so its largest dimension fits the target extent.
 pub fn get_svg_cursor(shape: WindowsCursorShape, target_height: u32) -> Option<RenderedSvgCursor> {
     let cache = cursor_cache();
     let key = (shape, target_height);

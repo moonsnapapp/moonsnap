@@ -1,4 +1,5 @@
 import type { SliceCreator, TrackVisibility, HoveredTrack, DragEdge } from './types';
+import { getEffectiveDuration } from './trimSlice';
 
 export const DEFAULT_TIMELINE_ZOOM = 0.05; // 50px per second
 
@@ -154,9 +155,24 @@ export const createTimelineSlice: SliceCreator<TimelineSlice> = (set, get) => ({
 
   setExportInPoint: (ms) => {
     const { exportOutPointMs, project } = get();
-    // If I >= O, clear the out point (standard NLE behavior: newer marker wins)
-    const newIn = ms;
-    const newOut = (exportOutPointMs !== null && ms >= exportOutPointMs) ? null : exportOutPointMs;
+    const effectiveDurationMs = project
+      ? getEffectiveDuration(project.timeline.segments ?? [], project.timeline.durationMs)
+      : null;
+    const newIn = effectiveDurationMs !== null
+      ? Math.max(0, Math.min(ms, effectiveDurationMs))
+      : Math.max(0, ms);
+
+    // If only one marker is set, extend the counterpart marker to the timeline boundary.
+    let newOut = exportOutPointMs;
+    if (newOut === null && effectiveDurationMs !== null) {
+      newOut = effectiveDurationMs;
+    }
+
+    // If I >= O, keep the newer in marker and extend out to timeline end.
+    if (newOut !== null && newIn >= newOut) {
+      newOut = effectiveDurationMs;
+    }
+
     set({ exportInPointMs: newIn, exportOutPointMs: newOut });
     // Sync to project for persistence
     if (project) {
@@ -175,9 +191,24 @@ export const createTimelineSlice: SliceCreator<TimelineSlice> = (set, get) => ({
 
   setExportOutPoint: (ms) => {
     const { exportInPointMs, project } = get();
-    // If O <= I, clear the in point (standard NLE behavior: newer marker wins)
-    const newOut = ms;
-    const newIn = (exportInPointMs !== null && ms <= exportInPointMs) ? null : exportInPointMs;
+    const effectiveDurationMs = project
+      ? getEffectiveDuration(project.timeline.segments ?? [], project.timeline.durationMs)
+      : null;
+    const newOut = effectiveDurationMs !== null
+      ? Math.max(0, Math.min(ms, effectiveDurationMs))
+      : Math.max(0, ms);
+
+    // If only one marker is set, extend the counterpart marker to the timeline boundary.
+    let newIn = exportInPointMs;
+    if (newIn === null) {
+      newIn = 0;
+    }
+
+    // If O <= I, keep the newer out marker and extend in to timeline start.
+    if (newOut <= newIn) {
+      newIn = 0;
+    }
+
     set({ exportOutPointMs: newOut, exportInPointMs: newIn });
     // Sync to project for persistence
     if (project) {
