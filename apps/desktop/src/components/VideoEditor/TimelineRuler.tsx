@@ -58,6 +58,7 @@ export const TimelineRuler = memo(function TimelineRuler({
 
   return (
     <div
+      data-timeline-ruler
       className="relative h-8 bg-[var(--polar-mist)] border-b border-[var(--glass-border)]"
       style={{ width: `${width}px` }}
       onMouseDown={onMouseDown}

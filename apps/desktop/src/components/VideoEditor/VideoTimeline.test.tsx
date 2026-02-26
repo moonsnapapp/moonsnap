@@ -276,6 +276,30 @@ describe('VideoTimeline', () => {
       expect(useVideoEditorStore.getState().isPlaying).toBe(true);
     });
 
+    it('should pause playback when scrubbing the timeline ruler', async () => {
+      useVideoEditorStore.setState({
+        project: createMockProject(),
+        isPlaying: true,
+        currentTimeMs: 5000,
+      });
+
+      let container: HTMLElement;
+      await act(async () => {
+        const result = render(<VideoTimeline {...defaultProps} />);
+        container = result.container;
+      });
+
+      const ruler = container!.querySelector('[data-timeline-ruler]');
+      expect(ruler).toBeInTheDocument();
+
+      if (ruler) {
+        fireEvent.mouseDown(ruler, { clientX: 200 });
+        fireEvent.mouseUp(document);
+      }
+
+      expect(useVideoEditorStore.getState().isPlaying).toBe(false);
+    });
+
     it('should call onExport when export button is clicked', () => {
       const onExport = vi.fn();
       render(<VideoTimeline {...defaultProps} onExport={onExport} />);

@@ -33,6 +33,7 @@ import {
   selectIsPlaying,
   selectPreviewTimeMs,
   selectProject,
+  selectSetIsPlaying,
   selectSplitAtTimelineTime,
   selectSplitMode,
   selectSetDraggingPlayhead,
@@ -318,6 +319,7 @@ export function VideoTimeline({ onExport, onResetTrimSegments, onSetInPoint, onS
   const setTimelineZoom = useVideoEditorStore(selectSetTimelineZoom);
   const setPreviewTime = useVideoEditorStore(selectSetPreviewTime);
   const setSplitMode = useVideoEditorStore(selectSetSplitMode);
+  const setIsPlaying = useVideoEditorStore(selectSetIsPlaying);
   const togglePlayback = useVideoEditorStore(selectTogglePlayback);
   const fitTimelineToWindow = useVideoEditorStore(selectFitTimelineToWindow);
   const setExportInPoint = useVideoEditorStore(selectSetExportInPoint);
@@ -509,6 +511,9 @@ export function VideoTimeline({ onExport, onResetTrimSegments, onSetInPoint, onS
 
     e.preventDefault();
     e.stopPropagation();
+    if (isPlaying) {
+      setIsPlaying(false);
+    }
     setDraggingPlayhead(true);
     setPreviewTime(null);
 
@@ -567,7 +572,7 @@ export function VideoTimeline({ onExport, onResetTrimSegments, onSetInPoint, onS
 
     document.addEventListener('mousemove', handleMouseMove);
     document.addEventListener('mouseup', handleMouseUp);
-  }, [effectiveDurationMs, timelineZoom, controls, setDraggingPlayhead, setPreviewTime]);
+  }, [effectiveDurationMs, timelineZoom, controls, isPlaying, setDraggingPlayhead, setIsPlaying, setPreviewTime]);
 
   // Handle playhead dragging (content area, account for label column offset)
   const handlePlayheadMouseDown = useCallback((e: React.MouseEvent) => {
