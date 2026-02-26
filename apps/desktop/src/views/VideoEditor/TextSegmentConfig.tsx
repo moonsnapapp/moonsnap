@@ -5,9 +5,11 @@
 import { useState, useEffect, useMemo } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { Italic } from 'lucide-react';
+import { TEXT_ANIMATION } from '@/constants';
 import { videoEditorLogger } from '@/utils/logger';
+import { getTypewriterCharsPerSecond, normalizeTextAnimation } from '@/utils/textSegmentAnimation';
 import { Slider } from '../../components/ui/slider';
-import type { TextSegment } from '../../types';
+import type { TextAnimation, TextSegment } from '../../types';
 
 export interface TextSegmentConfigProps {
   segment: TextSegment;
@@ -36,11 +38,22 @@ const WEIGHT_LABELS: Record<number, string> = {
   900: 'Black',
 };
 
+const ANIMATION_OPTIONS: Array<{ value: TextAnimation; label: string }> = [
+  { value: 'none', label: 'Default' },
+  { value: 'typeWriter', label: 'TypeWriter' },
+];
+
 export function TextSegmentConfig({ segment, onUpdate, onDelete, onDone }: TextSegmentConfigProps) {
   // System fonts state - start with defaults + current font
   const [systemFonts, setSystemFonts] = useState<string[]>([]);
   // Available font weights for the selected font
   const [availableWeights, setAvailableWeights] = useState<number[]>([400, 700]);
+  // Collapse legacy fade variants into a single "Default" mode in the UI.
+  const animation = normalizeTextAnimation(segment.animation) === 'typeWriter'
+    ? 'typeWriter'
+    : 'none';
+  const typewriterCharsPerSecond = getTypewriterCharsPerSecond(segment);
+  const typewriterSoundEnabled = segment.typewriterSoundEnabled ?? false;
 
   // Ensure current font is always in the list, even before system fonts load
   const fontFamilies = useMemo(() => {
@@ -214,6 +227,72 @@ export function TextSegmentConfig({ segment, onUpdate, onDelete, onDone }: TextS
           onValueChange={(values) => onUpdate({ fadeDuration: values[0] / 100 })}
         />
       </div>
+
+      {/* Animation Effect */}
+      <div>
+        <span className="text-xs text-[var(--ink-muted)] block mb-2">Animation</span>
+        <select
+          value={animation}
+          onChange={(e) => {
+            const nextAnimation = e.target.value as TextAnimation;
+            const updates: Partial<TextSegment> = { animation: nextAnimation };
+            if (nextAnimation === 'typeWriter' && segment.typewriterCharsPerSecond == null) {
+              updates.typewriterCharsPerSecond = TEXT_ANIMATION.DEFAULT_TYPEWRITER_CHARS_PER_SECOND;
+            }
+            if (nextAnimation === 'typeWriter' && segment.typewriterSoundEnabled == null) {
+              updates.typewriterSoundEnabled = false;
+            }
+            onUpdate(updates);
+          }}
+          className="w-full h-8 bg-[var(--polar-mist)] border border-[var(--glass-border)] rounded-md text-sm text-[var(--ink-dark)] px-2"
+        >
+          {ANIMATION_OPTIONS.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      {animation === 'typeWriter' && (
+        <div>
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-xs text-[var(--ink-muted)]">Typing Speed</span>
+            <span className="text-xs text-[var(--ink-dark)] font-mono">
+              {typewriterCharsPerSecond.toFixed(0)} chars/s
+            </span>
+          </div>
+          <Slider
+            value={[typewriterCharsPerSecond]}
+            min={TEXT_ANIMATION.MIN_TYPEWRITER_CHARS_PER_SECOND}
+            max={TEXT_ANIMATION.MAX_TYPEWRITER_CHARS_PER_SECOND}
+            step={1}
+            onValueChange={(values) => onUpdate({ typewriterCharsPerSecond: values[0] })}
+          />
+          <p className="text-[10px] text-[var(--ink-faint)] mt-2">
+            Speed auto-adjusts when needed so full text appears before fade-out.
+          </p>
+
+          <div className="flex items-center justify-between mt-3">
+            <span className="text-xs text-[var(--ink-muted)]">Typing Sound</span>
+            <button
+              onClick={() => onUpdate({ typewriterSoundEnabled: !typewriterSoundEnabled })}
+              className={`relative w-10 h-5 rounded-full transition-colors ${
+                typewriterSoundEnabled
+                  ? 'bg-[var(--coral-400)]'
+                  : 'bg-[var(--polar-frost)]'
+              }`}
+            >
+              <span className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow-sm transition-transform ${
+                typewriterSoundEnabled ? 'translate-x-5' : ''
+              }`} />
+            </button>
+          </div>
+          <p className="text-[10px] text-[var(--ink-faint)] mt-2">
+            Loops typing audio only while characters are being revealed.
+          </p>
+        </div>
+      )}
 
       {/* Position info */}
       <div className="pt-3 border-t border-[var(--glass-border)]">

@@ -447,8 +447,6 @@ export type {
   SceneSegment,
   SceneConfig,
   XY,
-  TextSegment,
-  TextConfig,
   MaskType,
   MaskSegment,
   MaskConfig,
@@ -456,6 +454,8 @@ export type {
 
 import type {
   CursorConfig as GeneratedCursorConfig,
+  TextConfig as GeneratedTextConfig,
+  TextSegment as GeneratedTextSegment,
   VideoProject as GeneratedVideoProject,
 } from './generated';
 
@@ -469,9 +469,29 @@ export type CursorConfig = Omit<
   hideWhenIdle?: boolean;
 };
 
-// Keep VideoProject aligned with app-level CursorConfig extensions.
-export type VideoProject = Omit<GeneratedVideoProject, 'cursor'> & {
+// Text animation style for text overlay segments.
+export type TextAnimation = 'none' | 'typeWriter';
+
+// Keep text segment typing animation fields optional at app level for compatibility
+// with older project payloads and in-flight generated type changes.
+export type TextSegment = Omit<
+  GeneratedTextSegment,
+  'animation' | 'typewriterCharsPerSecond' | 'typewriterSoundEnabled'
+> & {
+  animation?: TextAnimation;
+  typewriterCharsPerSecond?: number;
+  typewriterSoundEnabled?: boolean;
+};
+
+// Keep text config aligned with app-level TextSegment extensions.
+export type TextConfig = Omit<GeneratedTextConfig, 'segments'> & {
+  segments: TextSegment[];
+};
+
+// Keep VideoProject aligned with app-level CursorConfig/TextConfig extensions.
+export type VideoProject = Omit<GeneratedVideoProject, 'cursor' | 'text'> & {
   cursor: CursorConfig;
+  text: TextConfig;
 };
 
 // GPU Video Editor types (wgpu-accelerated rendering)

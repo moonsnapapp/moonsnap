@@ -1,6 +1,7 @@
 import { memo, useCallback, useMemo, useRef } from 'react';
 import { Type, GripVertical, Plus } from 'lucide-react';
 import type { TextSegment } from '../../../types';
+import { TEXT_ANIMATION } from '../../../constants';
 import { useVideoEditorStore, formatTimeSimple } from '../../../stores/videoEditorStore';
 import {
   selectAddTextSegment,
@@ -405,7 +406,10 @@ export const TextTrackContent = memo(function TextTrackContent({
       fontWeight,
       italic: false,
       color: '#ffffff',
-      fadeDuration: 0.15,
+      fadeDuration: TEXT_ANIMATION.DEFAULT_FADE_DURATION_SEC,
+      animation: TEXT_ANIMATION.DEFAULT_MODE,
+      typewriterCharsPerSecond: TEXT_ANIMATION.DEFAULT_TYPEWRITER_CHARS_PER_SECOND,
+      typewriterSoundEnabled: false,
     };
 
     // addTextSegment handles selection internally after sorting

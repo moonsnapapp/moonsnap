@@ -1,6 +1,7 @@
 import { memo, useCallback, useRef, useEffect, useState, useMemo } from 'react';
 import { convertFileSrc } from '@tauri-apps/api/core';
 import { resolveResource } from '@tauri-apps/api/path';
+import { TEXT_ANIMATION } from '../../constants';
 import { useVideoEditorStore } from '../../stores/videoEditorStore';
 import {
   selectProject,
@@ -13,6 +14,7 @@ import {
 } from '../../stores/videoEditor/selectors';
 import { videoEditorLogger } from '../../utils/logger';
 import { hasEnabledCrop } from '../../utils/videoContentDimensions';
+import { hasActiveTypewriterSound } from '../../utils/textSegmentAnimation';
 import { usePreviewOrPlaybackTime } from '../../hooks/usePlaybackEngine';
 import { useTimelineToSourceTime } from '../../hooks/useTimelineSourceTime';
 import { useZoomPreview } from '../../hooks/useZoomPreview';
@@ -299,6 +301,7 @@ export function GPUVideoPreview({ isActive = true }: GPUVideoPreviewProps) {
   const previewAreaRef = useRef<HTMLDivElement>(null);
   const systemAudioRef = useRef<HTMLAudioElement>(null);
   const micAudioRef = useRef<HTMLAudioElement>(null);
+  const typewriterAudioRef = useRef<HTMLAudioElement>(null);
   const [videoError, setVideoError] = useState<string | null>(null);
   const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
   const [previewAreaSize, setPreviewAreaSize] = useState({ width: 0, height: 0 });
@@ -316,6 +319,7 @@ export function GPUVideoPreview({ isActive = true }: GPUVideoPreviewProps) {
 
   // Get effective time for scene interpolation
   const effectiveTimeMs = previewTimeMs !== null ? previewTimeMs : currentTimeMs;
+  const effectiveTimeSec = effectiveTimeMs / 1000;
 
   // Get interpolated scene for webcam overlay opacity
   const scene = useInterpolatedScene(
@@ -386,6 +390,12 @@ export function GPUVideoPreview({ isActive = true }: GPUVideoPreviewProps) {
     videoEditorLogger.debug(`[Audio] Mic audio path: ${project?.sources.microphoneAudio ?? 'none'}, src: ${src ?? 'none'}`);
     return src;
   }, [project?.sources.microphoneAudio]);
+
+  const typewriterAudioSrc = TEXT_ANIMATION.TYPEWRITER_SOUND_LOOP_PATH;
+  const shouldPlayTypewriterAudio = useMemo(
+    () => hasActiveTypewriterSound(project?.text?.segments, effectiveTimeSec),
+    [project?.text?.segments, effectiveTimeSec]
+  );
 
   // Get aspect ratio from project
   const aspectRatio = useMemo(() => {
@@ -469,6 +479,39 @@ export function GPUVideoPreview({ isActive = true }: GPUVideoPreviewProps) {
     onVideoError: useCallback((msg: string) => setVideoError(msg || null), []),
   });
 
+  useEffect(() => {
+    const audio = typewriterAudioRef.current;
+    if (!audio || !isActive) {
+      return;
+    }
+
+    audio.volume = audioConfig?.systemMuted ? 0 : (audioConfig?.systemVolume ?? 1);
+  }, [audioConfig?.systemMuted, audioConfig?.systemVolume, isActive]);
+
+  useEffect(() => {
+    const audio = typewriterAudioRef.current;
+    if (!audio || !isActive) {
+      return;
+    }
+
+    const shouldPlay = effectiveIsPlaying && shouldPlayTypewriterAudio;
+    if (shouldPlay) {
+      if (audio.paused) {
+        audio.play().catch((error) => {
+          videoEditorLogger.warn('Typewriter audio play failed:', error);
+        });
+      }
+      return;
+    }
+
+    if (!audio.paused) {
+      audio.pause();
+    }
+    if (audio.currentTime !== 0) {
+      audio.currentTime = 0;
+    }
+  }, [effectiveIsPlaying, isActive, shouldPlayTypewriterAudio]);
+
   return (
     <div ref={previewAreaRef} className="flex items-center justify-center h-full bg-[var(--polar-snow)] overflow-hidden">
       {/* Hidden audio elements */}
@@ -497,6 +540,19 @@ export function GPUVideoPreview({ isActive = true }: GPUVideoPreviewProps) {
             if (audioConfig) {
               audio.volume = audioConfig.microphoneMuted ? 0 : audioConfig.microphoneVolume;
             }
+          }}
+        />
+      )}
+      {isActive && (
+        <audio
+          ref={typewriterAudioRef}
+          src={typewriterAudioSrc}
+          preload="auto"
+          loop
+          style={{ display: 'none' }}
+          onLoadedData={(e) => {
+            const audio = e.currentTarget;
+            audio.volume = audioConfig?.systemMuted ? 0 : (audioConfig?.systemVolume ?? 1);
           }}
         />
       )}

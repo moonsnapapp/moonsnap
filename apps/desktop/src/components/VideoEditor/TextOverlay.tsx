@@ -9,6 +9,7 @@ import {
 import { createTextSegmentId } from '../../utils/textSegmentId';
 import { clampWithFallback } from '../../utils/math';
 import { renderTextOnCanvas } from '../../utils/textPreRenderer';
+import { getAnimatedTextContent } from '../../utils/textSegmentAnimation';
 
 interface TextOverlayProps {
   segments: TextSegment[];
@@ -21,6 +22,7 @@ interface TextOverlayProps {
 
 interface TextItemProps {
   segment: TextSegment;
+  displayContent: string;
   segmentId: string;
   isSelected: boolean;
   opacity: number;
@@ -96,6 +98,7 @@ function calculateTextSegmentOpacity(segment: TextSegment, timeSec: number): num
  */
 const TextItem = memo(function TextItem({
   segment,
+  displayContent,
   segmentId,
   isSelected,
   opacity,
@@ -147,7 +150,7 @@ const TextItem = memo(function TextItem({
     ctx.scale(dpr, dpr);
 
     renderTextOnCanvas(ctx, {
-      content: segment.content || 'Text',
+      content: displayContent,
       fontFamily: segment.fontFamily || 'sans-serif',
       fontWeight: segment.fontWeight || 700,
       italic: !!segment.italic,
@@ -155,7 +158,7 @@ const TextItem = memo(function TextItem({
       color: segment.color || '#ffffff',
     }, safeWidth, safeHeight, renderSize.height);
   }, [
-    segment.content,
+    displayContent,
     segment.fontFamily,
     segment.fontWeight,
     segment.italic,
@@ -477,6 +480,7 @@ export const TextOverlay = memo(function TextOverlay({
         segment,
         originalIndex,
         opacity: calculateTextSegmentOpacity(segment, currentTimeSec),
+        displayContent: getAnimatedTextContent(segment, currentTimeSec),
       }))
       .filter(({ opacity }) => opacity >= MIN_VISIBLE_OPACITY),
     [segments, currentTimeSec]
@@ -519,10 +523,11 @@ export const TextOverlay = memo(function TextOverlay({
         }}
         onClick={handleContainerClick}
       >
-        {activeSegmentsWithIndex.map(({ segment, opacity }, index) => (
+        {activeSegmentsWithIndex.map(({ segment, opacity, displayContent }, index) => (
           <TextItem
             key={segmentIds[index]}
             segment={segment}
+            displayContent={displayContent}
             segmentId={segmentIds[index]}
             isSelected={segmentIds[index] === selectedTextSegmentId}
             opacity={opacity}
