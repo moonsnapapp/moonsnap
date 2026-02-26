@@ -22,6 +22,7 @@ interface UseCanvasNavigationProps {
   setCanvasBounds: (bounds: CanvasBounds) => void;
   setOriginalImageSize: (size: { width: number; height: number }) => void;
   selectedTool: Tool;
+  fitVisibleBounds?: { x: number; y: number; width: number; height: number } | null;
   compositorBgRef?: React.RefObject<HTMLDivElement | null>;
 }
 
@@ -59,6 +60,7 @@ export const useCanvasNavigation = ({
   setCanvasBounds,
   setOriginalImageSize,
   selectedTool,
+  fitVisibleBounds,
   compositorBgRef,
 }: UseCanvasNavigationProps): UseCanvasNavigationReturn => {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -198,6 +200,22 @@ export const useCanvasNavigation = ({
     };
   }, [image, canvasBounds, isCropApplied]);
 
+  // Visible pixel bounds (typically background image extents), used for F-key framing.
+  const getVisiblePixelDimensions = useCallback(() => {
+    if (!image) return { width: 0, height: 0, cropX: 0, cropY: 0 };
+
+    if (fitVisibleBounds && fitVisibleBounds.width > 0 && fitVisibleBounds.height > 0) {
+      return {
+        width: fitVisibleBounds.width,
+        height: fitVisibleBounds.height,
+        cropX: fitVisibleBounds.x,
+        cropY: fitVisibleBounds.y,
+      };
+    }
+
+    return getContentDimensions();
+  }, [image, fitVisibleBounds, getContentDimensions]);
+
   // Transform screen position to canvas position
   const getCanvasPosition = useCallback(
     (screenPos: { x: number; y: number }) => ({
@@ -260,10 +278,12 @@ export const useCanvasNavigation = ({
   }, []);
 
   // Core fit calculation (no state updates)
-  const calculateFitToSize = useCallback(() => {
+  const calculateFitToSize = useCallback((mode: 'content' | 'visiblePixels' = 'content') => {
     if (!image) return null;
 
-    const { width, height, cropX, cropY } = getContentDimensions();
+    const { width, height, cropX, cropY } = mode === 'visiblePixels'
+      ? getVisiblePixelDimensions()
+      : getContentDimensions();
     const availableWidth = containerSize.width - VIEW_PADDING * 2;
     const availableHeight = containerSize.height - VIEW_PADDING * 2;
 
@@ -276,7 +296,7 @@ export const useCanvasNavigation = ({
     const y = (containerSize.height - height * fitZoom) / 2 - cropY * fitZoom;
 
     return { zoom: fitZoom, position: { x, y } };
-  }, [image, containerSize, getCompositionSize, getContentDimensions]);
+  }, [image, containerSize, getCompositionSize, getContentDimensions, getVisiblePixelDimensions]);
 
   // Fit to size handler - debounced to prevent multiple fits per frame
   const handleFitToSize = useCallback(() => {
@@ -285,6 +305,21 @@ export const useCanvasNavigation = ({
     }
     fitRequestRef.current = requestAnimationFrame(() => {
       const fit = calculateFitToSize();
+      if (fit) {
+        setZoom(fit.zoom);
+        setPosition(fit.position);
+      }
+      fitRequestRef.current = null;
+    });
+  }, [calculateFitToSize]);
+
+  // Fit to visible pixels handler (used by F-key event).
+  const handleFitToVisiblePixels = useCallback(() => {
+    if (fitRequestRef.current) {
+      cancelAnimationFrame(fitRequestRef.current);
+    }
+    fitRequestRef.current = requestAnimationFrame(() => {
+      const fit = calculateFitToSize('visiblePixels');
       if (fit) {
         setZoom(fit.zoom);
         setPosition(fit.position);
@@ -355,10 +390,10 @@ export const useCanvasNavigation = ({
 
   // Listen for fit-to-center event (F key)
   useEffect(() => {
-    const handleFitEvent = () => handleFitToSize();
+    const handleFitEvent = () => handleFitToVisiblePixels();
     window.addEventListener('fit-to-center', handleFitEvent);
     return () => window.removeEventListener('fit-to-center', handleFitEvent);
-  }, [handleFitToSize]);
+  }, [handleFitToVisiblePixels]);
 
   // Auto-refit on canvas bounds change (skip during crop mode)
   useEffect(() => {

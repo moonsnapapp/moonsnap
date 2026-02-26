@@ -32,7 +32,6 @@ import { ZoomControls } from './overlays/ZoomControls';
 import { CropControls } from './overlays/CropControls';
 import { TextEditorOverlay } from './overlays/TextEditorOverlay';
 import { CropOverlay } from './overlays/CropOverlay';
-import { ArtboardOverlay } from './overlays/ArtboardOverlay';
 
 // Utility functions
 import { getSelectionBounds, expandBoundsForShapes, ensureBackgroundShape, BACKGROUND_SHAPE_ID, createCheckerPattern } from '../../utils/canvasGeometry';
@@ -47,6 +46,50 @@ interface EditorCanvasProps {
   shapes: CanvasShape[];
   onShapesChange: (shapes: CanvasShape[]) => void;
   stageRef: React.RefObject<Konva.Stage | null>;
+}
+
+const PIXEL_SNAP_EPSILON = 0.02;
+type ClipContext = Parameters<NonNullable<Konva.GroupConfig['clipFunc']>>[0];
+
+function snapInsideStart(value: number): number {
+  const rounded = Math.round(value);
+  if (Math.abs(value - rounded) < PIXEL_SNAP_EPSILON) return rounded;
+  return Math.ceil(value);
+}
+
+function snapInsideEnd(value: number): number {
+  const rounded = Math.round(value);
+  if (Math.abs(value - rounded) < PIXEL_SNAP_EPSILON) return rounded;
+  return Math.floor(value);
+}
+
+function alignBoundsToPixels(bounds: { x: number; y: number; width: number; height: number }) {
+  const left = bounds.x;
+  const top = bounds.y;
+  const right = bounds.x + bounds.width;
+  const bottom = bounds.y + bounds.height;
+
+  const x = snapInsideStart(left);
+  const y = snapInsideStart(top);
+  const alignedRight = snapInsideEnd(right);
+  const alignedBottom = snapInsideEnd(bottom);
+
+  // Guard against degenerate values from extreme fractional inputs.
+  if (alignedRight <= x || alignedBottom <= y) {
+    return {
+      x: Math.round(left),
+      y: Math.round(top),
+      width: Math.max(1, Math.round(bounds.width)),
+      height: Math.max(1, Math.round(bounds.height)),
+    };
+  }
+
+  return {
+    x,
+    y,
+    width: alignedRight - x,
+    height: alignedBottom - y,
+  };
 }
 
 /** Ref handle exposed by EditorCanvas for imperative operations */
@@ -214,16 +257,49 @@ export const EditorCanvas = React.memo(forwardRef<EditorCanvasRef, EditorCanvasP
     return { x: 0, y: 0, width: image.width, height: image.height };
   }, [backgroundShape, cropRegion, image, selectedTool]);
 
+  // Pixel-aligned bounds for all preview rendering paths (clip/background/border).
+  const renderBounds = useMemo(
+    () => (visibleBounds ? alignBoundsToPixels(visibleBounds) : null),
+    [visibleBounds]
+  );
+
+  // Visible pixel bounds (background image extents).
+  const visiblePixelBounds = useMemo(() => {
+    if (backgroundShape) {
+      return {
+        x: backgroundShape.x ?? 0,
+        y: backgroundShape.y ?? 0,
+        width: backgroundShape.width ?? (image?.width ?? 0),
+        height: backgroundShape.height ?? (image?.height ?? 0),
+      };
+    }
+
+    if (image) {
+      return { x: 0, y: 0, width: image.width, height: image.height };
+    }
+
+    return null;
+  }, [backgroundShape, image]);
+
+  // F-key framing target:
+  // - In crop mode: frame source visible pixels (full image extents)
+  // - Outside crop mode: frame current visible result (crop/artboard bounds)
+  const fitToCenterBounds = useMemo(
+    () => (selectedTool === 'crop' ? visiblePixelBounds : renderBounds),
+    [selectedTool, visiblePixelBounds, renderBounds]
+  );
+
   // Navigation hook
   const navigation = useCanvasNavigation({
     image,
     imageData,
     compositorSettings,
-    compositorVisibleOrigin: visibleBounds ? { x: visibleBounds.x, y: visibleBounds.y } : null,
+    compositorVisibleOrigin: renderBounds ? { x: renderBounds.x, y: renderBounds.y } : null,
     canvasBounds,
     setCanvasBounds,
     setOriginalImageSize,
     selectedTool,
+    fitVisibleBounds: fitToCenterBounds,
     compositorBgRef,
   });
 
@@ -322,6 +398,24 @@ export const EditorCanvas = React.memo(forwardRef<EditorCanvasRef, EditorCanvasP
     history,
   });
 
+  // Reset target: exact background image bounds (pixel-aligned).
+  const minCropResetBounds = useMemo(() => {
+    if (backgroundShape) {
+      return alignBoundsToPixels({
+        x: backgroundShape.x ?? 0,
+        y: backgroundShape.y ?? 0,
+        width: backgroundShape.width ?? (originalImageSize?.width ?? 0),
+        height: backgroundShape.height ?? (originalImageSize?.height ?? 0),
+      });
+    }
+
+    if (originalImageSize) {
+      return { x: 0, y: 0, width: originalImageSize.width, height: originalImageSize.height };
+    }
+
+    return null;
+  }, [backgroundShape, originalImageSize]);
+
 
   // Detect if the content has ANY transparency (edges or interior).
   // When true, skip shadow/border-radius to avoid the floaty look.
@@ -396,8 +490,8 @@ export const EditorCanvas = React.memo(forwardRef<EditorCanvasRef, EditorCanvasP
 
     const handleBeforeDraw = () => {
       const ctx = layer.getCanvas().getContext()._context;
-      // Disable smoothing when at or near 100% zoom for pixel-perfect rendering
-      ctx.imageSmoothingEnabled = navigation.zoom < 0.95 || navigation.zoom > 1.05;
+      // Keep smoothing disabled to avoid zoom-dependent edge seams on clipped image bounds.
+      ctx.imageSmoothingEnabled = false;
     };
 
     layer.on('beforeDraw', handleBeforeDraw);
@@ -515,32 +609,32 @@ export const EditorCanvas = React.memo(forwardRef<EditorCanvasRef, EditorCanvasP
   // Composition box dimensions (for CSS preview background)
   // Simple calculation: content size + padding on each side, scaled by zoom
   const compositionBox = useMemo(() => {
-    if (!compositorSettings.enabled || !visibleBounds) return null;
+    if (!compositorSettings.enabled || !renderBounds) return null;
 
     const padding = compositorSettings.padding * navigation.zoom;
-    const contentWidth = visibleBounds.width * navigation.zoom;
-    const contentHeight = visibleBounds.height * navigation.zoom;
+    const contentWidth = renderBounds.width * navigation.zoom;
+    const contentHeight = renderBounds.height * navigation.zoom;
 
     // Position: content position in screen space, offset by padding
-    const left = navigation.position.x + visibleBounds.x * navigation.zoom - padding;
-    const top = navigation.position.y + visibleBounds.y * navigation.zoom - padding;
+    const left = navigation.position.x + renderBounds.x * navigation.zoom - padding;
+    const top = navigation.position.y + renderBounds.y * navigation.zoom - padding;
     const width = contentWidth + padding * 2;
     const height = contentHeight + padding * 2;
 
     return { width, height, left, top };
-  }, [compositorSettings.enabled, compositorSettings.padding, visibleBounds, navigation.zoom, navigation.position]);
+  }, [compositorSettings.enabled, compositorSettings.padding, renderBounds, navigation.zoom, navigation.position]);
 
   // Base composition size for consistent background scaling
   const baseCompositionSize = useMemo(() => {
-    if (!visibleBounds) return { width: 0, height: 0 };
+    if (!renderBounds) return { width: 0, height: 0 };
 
     const padding = compositorSettings.padding;
 
     return {
-      width: visibleBounds.width + padding * 2,
-      height: visibleBounds.height + padding * 2,
+      width: renderBounds.width + padding * 2,
+      height: renderBounds.height + padding * 2,
     };
-  }, [visibleBounds, compositorSettings.padding]);
+  }, [renderBounds, compositorSettings.padding]);
 
   // Background style for composition box
   const compositionBackgroundStyle = useMemo((): React.CSSProperties => {
@@ -656,23 +750,21 @@ export const EditorCanvas = React.memo(forwardRef<EditorCanvasRef, EditorCanvasP
           {!compositorSettings.enabled && !hasTransparency && (
             <KonvaBackgroundLayer
               settings={compositorSettings}
-              visibleBounds={visibleBounds}
+              visibleBounds={renderBounds}
               baseCompositionSize={baseCompositionSize}
             />
           )}
 
           {/* Cropped canvas content - only render when visibleBounds is ready */}
-          {image && visibleBounds && (() => {
-            const clipX = Math.round(visibleBounds.x);
-            const clipY = Math.round(visibleBounds.y);
-            const clipW = Math.round(visibleBounds.width);
-            const clipH = Math.round(visibleBounds.height);
+          {image && renderBounds && (() => {
+            const clipX = renderBounds.x;
+            const clipY = renderBounds.y;
+            const clipW = renderBounds.width;
+            const clipH = renderBounds.height;
             const radius = (compositorSettings.enabled && !hasTransparency) ? compositorSettings.borderRadius : 0;
-
-            return (
-              <Group
-                clipFunc={(ctx) => {
-                  if (radius > 0) {
+            const clipProps = radius > 0
+              ? {
+                  clipFunc: (ctx: ClipContext) => {
                     // Use arcTo for circular corners (matches Konva Rect cornerRadius)
                     const r = Math.min(radius, clipW / 2, clipH / 2);
                     ctx.beginPath();
@@ -682,13 +774,20 @@ export const EditorCanvas = React.memo(forwardRef<EditorCanvasRef, EditorCanvasP
                     ctx.arcTo(clipX, clipY + clipH, clipX, clipY, r);
                     ctx.arcTo(clipX, clipY, clipX + clipW, clipY, r);
                     ctx.closePath();
-                  } else {
-                    ctx.rect(clipX, clipY, clipW, clipH);
-                  }
-                }}
-              >
+                  },
+                }
+              : {
+                  // Axis-aligned rect clipping avoids subpixel anti-alias seams in preview.
+                  clipX,
+                  clipY,
+                  clipWidth: clipW,
+                  clipHeight: clipH,
+                };
+
+            return (
+              <Group {...clipProps}>
                 {/* Checkerboard pattern — shows transparent areas, hidden during export by name */}
-                {checkerPatternImage && !compositorSettings.enabled && (
+                {checkerPatternImage && !compositorSettings.enabled && hasTransparency && (
                   <Rect
                     name="checkerboard"
                     x={clipX}
@@ -736,14 +835,14 @@ export const EditorCanvas = React.memo(forwardRef<EditorCanvasRef, EditorCanvasP
           })()}
 
           {/* Border on screenshot content - grows outward, not into content */}
-          {image && visibleBounds && compositorSettings.enabled && compositorSettings.borderOpacity > 0 && (() => {
+          {image && renderBounds && compositorSettings.enabled && compositorSettings.borderOpacity > 0 && (() => {
             const halfStroke = compositorSettings.borderWidth / 2;
             return (
               <Rect
-                x={Math.round(visibleBounds.x) - halfStroke}
-                y={Math.round(visibleBounds.y) - halfStroke}
-                width={Math.round(visibleBounds.width) + compositorSettings.borderWidth}
-                height={Math.round(visibleBounds.height) + compositorSettings.borderWidth}
+                x={renderBounds.x - halfStroke}
+                y={renderBounds.y - halfStroke}
+                width={renderBounds.width + compositorSettings.borderWidth}
+                height={renderBounds.height + compositorSettings.borderWidth}
                 cornerRadius={hasTransparency ? 0 : compositorSettings.borderRadius + halfStroke}
                 stroke={compositorSettings.borderColor}
                 strokeWidth={compositorSettings.borderWidth}
@@ -752,17 +851,6 @@ export const EditorCanvas = React.memo(forwardRef<EditorCanvasRef, EditorCanvasP
               />
             );
           })()}
-
-          {/* Artboard indicator with resize handles (hidden in crop mode and on export) */}
-          {cropRegion && selectedTool !== 'crop' && (
-            <ArtboardOverlay
-              bounds={cropRegion}
-              zoom={navigation.zoom}
-              onResizeStart={() => history.takeSnapshot()}
-              onResize={(newBounds) => setCropRegion(newBounds)}
-              onResizeEnd={() => history.commitSnapshot()}
-            />
-          )}
 
           {/* Marquee selection rectangle */}
           <MarqueeSelection
@@ -1046,12 +1134,11 @@ export const EditorCanvas = React.memo(forwardRef<EditorCanvasRef, EditorCanvasP
       {/* Crop Controls */}
       {selectedTool === 'crop' && canvasBounds && (() => {
         const displayBounds = crop.getDisplayBounds();
-        // Artboard is "modified" if it differs from the original image dimensions
-        const artboardModified = cropRegion !== null && originalImageSize !== null && (
-          cropRegion.x !== 0 ||
-          cropRegion.y !== 0 ||
-          cropRegion.width !== originalImageSize.width ||
-          cropRegion.height !== originalImageSize.height
+        const artboardModified = cropRegion !== null && minCropResetBounds !== null && (
+          cropRegion.x !== minCropResetBounds.x ||
+          cropRegion.y !== minCropResetBounds.y ||
+          cropRegion.width !== minCropResetBounds.width ||
+          cropRegion.height !== minCropResetBounds.height
         );
         return (
           <CropControls
@@ -1066,8 +1153,25 @@ export const EditorCanvas = React.memo(forwardRef<EditorCanvasRef, EditorCanvasP
               onToolChange('select');
             }}
             onReset={() => {
-              if (originalImageSize) {
-                setCropRegion({ x: 0, y: 0, width: originalImageSize.width, height: originalImageSize.height });
+              if (minCropResetBounds && canvasBounds) {
+                const minCanvasBoundsForReset = {
+                  width: minCropResetBounds.width,
+                  height: minCropResetBounds.height,
+                  imageOffsetX: -minCropResetBounds.x,
+                  imageOffsetY: -minCropResetBounds.y,
+                };
+                const boundsChanged =
+                  minCanvasBoundsForReset.width !== canvasBounds.width ||
+                  minCanvasBoundsForReset.height !== canvasBounds.height ||
+                  minCanvasBoundsForReset.imageOffsetX !== canvasBounds.imageOffsetX ||
+                  minCanvasBoundsForReset.imageOffsetY !== canvasBounds.imageOffsetY;
+                if (boundsChanged) {
+                  setCanvasBounds(minCanvasBoundsForReset);
+                }
+              }
+              if (minCropResetBounds) {
+                setCropRegion(minCropResetBounds);
+                navigation.handleFitToSize();
               }
             }}
             onCommit={() => onToolChange('select')}
