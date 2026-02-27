@@ -310,7 +310,6 @@ pub fn start_ffmpeg_encoder(
                     "aac".to_string(),
                     "-b:a".to_string(),
                     "192k".to_string(),
-                    "-shortest".to_string(),
                 ]);
             }
         },
@@ -340,7 +339,6 @@ pub fn start_ffmpeg_encoder(
                     "libopus".to_string(),
                     "-b:a".to_string(),
                     "128k".to_string(),
-                    "-shortest".to_string(),
                 ]);
             }
         },
@@ -416,34 +414,70 @@ fn build_audio_filter(
                 has_base_stream = true;
             },
             AudioInputSource::TimelineWindows(windows) => {
-                let mut window_labels: Vec<String> = Vec::new();
-                for (window_idx, window) in windows.iter().enumerate() {
-                    let duration_sec = (window.end_sec - window.start_sec).max(0.0);
-                    if duration_sec <= 0.0 {
-                        continue;
-                    }
+                // Filter to valid windows (positive duration).
+                let valid_windows: Vec<(usize, &AudioSegment)> = windows
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, w)| (w.end_sec - w.start_sec) > 0.0)
+                    .collect();
 
+                if valid_windows.is_empty() {
+                    continue;
+                }
+
+                if valid_windows.len() == 1 {
+                    // Single window: use adelay (simple, no sync issues).
+                    let (window_idx, window) = valid_windows[0];
+                    let duration_sec = window.end_sec - window.start_sec;
                     let delay_ms = (window.start_sec.max(0.0) * 1000.0).round() as u64;
                     let label = format!("a{}w{}", input_idx, window_idx);
                     filter_parts.push(format!(
                         "[{}:a]atrim=start=0:end={:.3},asetpts=PTS-STARTPTS,adelay={}:all=1[{}]",
                         input.input_index, duration_sec, delay_ms, label
                     ));
-                    window_labels.push(format!("[{}]", label));
-                }
+                    filter_parts.push(format!("[{}]anull[{}]", label, base_label));
+                } else {
+                    // Multiple non-overlapping windows: use concat with silence
+                    // gaps instead of amix. amix processes all inputs in parallel
+                    // which creates synchronization overhead in FFmpeg's filter
+                    // graph; concat processes them sequentially.
+                    // Silence gaps use the same audio source (muted) to guarantee
+                    // format compatibility for concat.
+                    let mut concat_labels: Vec<String> = Vec::new();
+                    let mut prev_end = 0.0_f64;
 
-                if window_labels.len() > 1 {
+                    for (window_idx, window) in &valid_windows {
+                        let duration_sec = window.end_sec - window.start_sec;
+
+                        // Silence gap before this window (same source, muted).
+                        let gap = window.start_sec - prev_end;
+                        if gap > 0.001 {
+                            let gap_label = format!("a{}g{}", input_idx, window_idx);
+                            filter_parts.push(format!(
+                                "[{}:a]atrim=start=0:end={:.3},volume=0,asetpts=PTS-STARTPTS[{}]",
+                                input.input_index, gap, gap_label
+                            ));
+                            concat_labels.push(format!("[{}]", gap_label));
+                        }
+
+                        let label = format!("a{}w{}", input_idx, window_idx);
+                        filter_parts.push(format!(
+                            "[{}:a]atrim=start=0:end={:.3},asetpts=PTS-STARTPTS[{}]",
+                            input.input_index, duration_sec, label
+                        ));
+                        concat_labels.push(format!("[{}]", label));
+
+                        prev_end = window.end_sec;
+                    }
+
                     filter_parts.push(format!(
-                        "{}amix=inputs={}:duration=longest[{}]",
-                        window_labels.join(""),
-                        window_labels.len(),
+                        "{}concat=n={}:v=0:a=1[{}]",
+                        concat_labels.join(""),
+                        concat_labels.len(),
                         base_label
                     ));
-                } else if let Some(single_label) = window_labels.first() {
-                    let inner_label = &single_label[1..single_label.len() - 1];
-                    filter_parts.push(format!("[{}]anull[{}]", inner_label, base_label));
                 }
-                has_base_stream = !window_labels.is_empty();
+                has_base_stream = true;
             },
         }
 
@@ -463,10 +497,12 @@ fn build_audio_filter(
         return None;
     }
 
-    // Mix all audio tracks if multiple, otherwise just rename to aout_raw
+    // Mix all audio tracks if multiple, otherwise just rename to aout_raw.
+    // normalize=0: each track already has its own volume control applied,
+    // so we don't want amix to divide by N (which halves volume with 2 tracks).
     if final_labels.len() > 1 {
         filter_parts.push(format!(
-            "{}amix=inputs={}:duration=longest[aout_raw]",
+            "{}amix=inputs={}:duration=longest:normalize=0[aout_raw]",
             final_labels.join(""),
             final_labels.len()
         ));
@@ -478,7 +514,12 @@ fn build_audio_filter(
     }
 
     // Pad with silence so sparse SFX tracks don't truncate the video when using -shortest.
-    filter_parts.push("[aout_raw]apad[aout]".to_string());
+    // Must specify whole_dur so apad doesn't produce infinite audio.
+    let total_dur: f64 = source_segments
+        .iter()
+        .map(|s| s.end_sec - s.start_sec)
+        .sum();
+    filter_parts.push(format!("[aout_raw]apad=whole_dur={:.3}[aout]", total_dur));
 
     log::info!(
         "[EXPORT] Audio filter with {} track(s): {}",
@@ -508,8 +549,7 @@ mod tests {
         let filter = build_audio_filter(&inputs, &segments).expect("filter should be built");
         assert!(filter.contains("[1:a]atrim=start=1.000:end=3.000"));
         assert!(filter.contains("volume=0.80"));
-        assert!(filter.contains("apad[aout]"));
-        assert!(filter.contains("[aout]"));
+        assert!(filter.contains("apad=whole_dur=2.000[aout]"));
     }
 
     #[test]
@@ -528,14 +568,47 @@ mod tests {
                 },
             ]),
         }];
+        let segments = vec![AudioSegment {
+            start_sec: 0.0,
+            end_sec: 3.0,
+        }];
 
-        let filter = build_audio_filter(&inputs, &[]).expect("filter should be built");
+        let filter = build_audio_filter(&inputs, &segments).expect("filter should be built");
+        // Multiple windows use concat with silence gaps (no amix/adelay).
+        // Gap before first window (0.5s silence, muted from same source)
+        assert!(filter.contains("atrim=start=0:end=0.500,volume=0"));
+        // First window (1.0s audio)
+        assert!(filter.contains("atrim=start=0:end=1.000,asetpts=PTS-STARTPTS[a0w0]"));
+        // Gap between windows (0.5s silence)
+        assert!(filter.contains("atrim=start=0:end=0.500,volume=0,asetpts=PTS-STARTPTS[a0g1]"));
+        // Second window (0.4s audio)
+        assert!(filter.contains("atrim=start=0:end=0.400,asetpts=PTS-STARTPTS[a0w1]"));
+        // Concatenated (4 segments: gap + w0 + gap + w1)
+        assert!(filter.contains("concat=n=4:v=0:a=1"));
+        assert!(filter.contains("apad=whole_dur=3.000[aout]"));
+    }
+
+    #[test]
+    fn builds_single_timeline_window_audio_filter() {
+        let inputs = vec![AudioInput {
+            input_index: 2,
+            volume: 1.0,
+            source: AudioInputSource::TimelineWindows(vec![AudioSegment {
+                start_sec: 0.5,
+                end_sec: 1.5,
+            }]),
+        }];
+        let segments = vec![AudioSegment {
+            start_sec: 0.0,
+            end_sec: 3.0,
+        }];
+
+        let filter = build_audio_filter(&inputs, &segments).expect("filter should be built");
+        // Single window uses adelay (simpler, no concat needed).
         assert!(filter.contains("atrim=start=0:end=1.000"));
-        assert!(filter.contains("atrim=start=0:end=0.400"));
         assert!(filter.contains("adelay=500:all=1"));
-        assert!(filter.contains("adelay=2000:all=1"));
-        assert!(filter.contains("amix=inputs=2:duration=longest"));
-        assert!(filter.contains("apad[aout]"));
+        assert!(!filter.contains("concat"));
+        assert!(filter.contains("apad=whole_dur=3.000[aout]"));
     }
 }
 

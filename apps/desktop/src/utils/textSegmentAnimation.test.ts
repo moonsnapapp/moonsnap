@@ -84,6 +84,37 @@ describe('textSegmentAnimation', () => {
     expect(getAnimatedTextContent(segment, 1.5)).toBe('0123456789');
   });
 
+  it('preserves whitespace characters in typewriter pacing', () => {
+    const segment: TextSegment = {
+      ...baseSegment,
+      start: 0,
+      end: 5,
+      content: 'Hello   \n\tworld',
+      animation: 'typeWriter',
+      typewriterCharsPerSecond: 5,
+    };
+
+    // 15 graphemes / 5 chars/s = 3.0s.
+    expect(getTypewriterTypingEndSec(segment)).toBeCloseTo(3.0, 5);
+    expect(getAnimatedTextContent(segment, 3.1)).toBe('Hello   \n\tworld');
+  });
+
+  it('reveals extended grapheme clusters as single typing units', () => {
+    const segment: TextSegment = {
+      ...baseSegment,
+      start: 0,
+      end: 5,
+      content: '👨‍👩‍👧‍👦!',
+      animation: 'typeWriter',
+      typewriterCharsPerSecond: 1,
+    };
+
+    expect(getTypewriterTypingEndSec(segment)).toBeCloseTo(2, 5);
+    expect(getAnimatedTextContent(segment, 0.9)).toBe('');
+    expect(getAnimatedTextContent(segment, 1.1)).toBe('👨‍👩‍👧‍👦');
+    expect(getAnimatedTextContent(segment, 2.1)).toBe('👨‍👩‍👧‍👦!');
+  });
+
   it('enables typewriter sound only when explicitly toggled on', () => {
     expect(isTypewriterSoundEnabled({
       ...baseSegment,

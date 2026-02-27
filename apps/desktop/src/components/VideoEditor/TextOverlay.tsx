@@ -9,7 +9,7 @@ import {
 import { createTextSegmentId } from '../../utils/textSegmentId';
 import { clampWithFallback } from '../../utils/math';
 import { renderTextOnCanvas } from '../../utils/textPreRenderer';
-import { getAnimatedTextContent } from '../../utils/textSegmentAnimation';
+import { getTypewriterCharsPerSecond, normalizeTextAnimation } from '../../utils/textSegmentAnimation';
 
 interface TextOverlayProps {
   segments: TextSegment[];
@@ -22,7 +22,7 @@ interface TextOverlayProps {
 
 interface TextItemProps {
   segment: TextSegment;
-  displayContent: string;
+  currentTimeSec: number;
   segmentId: string;
   isSelected: boolean;
   opacity: number;
@@ -66,6 +66,36 @@ function clamp(value: number, min: number, max: number): number {
 }
 
 const MIN_VISIBLE_OPACITY = 0.001;
+const MIN_TYPEWRITER_CHARS_PER_SECOND = 1;
+const MAX_TYPEWRITER_CHARS_PER_SECOND = 60;
+
+interface TypewriterLineMetric {
+  topPx: number;
+  heightPx: number;
+  cumulativeChars: number;
+  contentWidthPx: number;
+  revealWidthsPx: number[];
+}
+
+interface CachedTextRender {
+  key: string;
+  dpr: number;
+  widthPx: number;
+  heightPx: number;
+  canvas: HTMLCanvasElement;
+  lineMetrics: TypewriterLineMetric[];
+  totalRenderedChars: number;
+}
+
+function buildTextRenderKey(
+  segment: TextSegment,
+  safeWidth: number,
+  safeHeight: number,
+  dpr: number,
+  referenceHeight: number,
+): string {
+  return `${segment.content}|${segment.fontFamily}|${segment.fontWeight}|${segment.italic ? 1 : 0}|${segment.fontSize}|${segment.color}|${safeWidth}|${safeHeight}|${dpr}|${referenceHeight}`;
+}
 
 /**
  * Match export fade logic (prerendered_text.rs) for preview parity.
@@ -91,6 +121,55 @@ function calculateTextSegmentOpacity(segment: TextSegment, timeSec: number): num
   return 1;
 }
 
+function calculateTypewriterTypingWindowSec(segment: TextSegment): number {
+  const segmentDuration = Math.max(0, segment.end - segment.start);
+  const fadeDuration = Math.max(0, segment.fadeDuration);
+  const hasFadeOutWindow = fadeDuration > 0 && segmentDuration > fadeDuration * 2;
+  const outroDuration = hasFadeOutWindow ? fadeDuration : 0;
+  return Math.max(0, segmentDuration - outroDuration);
+}
+
+function calculateEffectiveTypewriterCharsPerSecond(segment: TextSegment, totalChars: number): number {
+  const requested = clamp(
+    getTypewriterCharsPerSecond(segment),
+    MIN_TYPEWRITER_CHARS_PER_SECOND,
+    MAX_TYPEWRITER_CHARS_PER_SECOND,
+  );
+  if (totalChars <= 0) {
+    return requested;
+  }
+
+  const typingWindowSec = calculateTypewriterTypingWindowSec(segment);
+  if (typingWindowSec <= 0) {
+    return requested;
+  }
+
+  const minimumRequired = totalChars / typingWindowSec;
+  return Math.max(requested, minimumRequired);
+}
+
+function calculateTypewriterVisibleChars(
+  segment: TextSegment,
+  timeSec: number,
+  totalChars: number,
+): number {
+  if (totalChars <= 0) {
+    return 0;
+  }
+  const elapsed = Math.max(0, timeSec - segment.start);
+  const charsPerSecond = calculateEffectiveTypewriterCharsPerSecond(segment, totalChars);
+  return clamp(Math.floor(elapsed * charsPerSecond), 0, totalChars);
+}
+
+function calculateTypewriterVisibleCharsApprox(segment: TextSegment, timeSec: number): number {
+  const normalized = (segment.content ?? '')
+    .split(/\s+/)
+    .filter(Boolean)
+    .join(' ');
+  const totalChars = Array.from(normalized).length;
+  return calculateTypewriterVisibleChars(segment, timeSec, totalChars);
+}
+
 /**
  * Individual text item bounding box with drag and resize support.
  * Canvas text rendering shares the same code path as export (renderTextOnCanvas)
@@ -98,7 +177,7 @@ function calculateTextSegmentOpacity(segment: TextSegment, timeSec: number): num
  */
 const TextItem = memo(function TextItem({
   segment,
-  displayContent,
+  currentTimeSec,
   segmentId,
   isSelected,
   opacity,
@@ -108,7 +187,10 @@ const TextItem = memo(function TextItem({
   onUpdate,
 }: TextItemProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const canvasCtxRef = useRef<CanvasRenderingContext2D | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const cacheRef = useRef<CachedTextRender | null>(null);
+  const lastDrawStateRef = useRef<string | null>(null);
   const [isHovered, setIsHovered] = useState(false);
   const [isResizing, setIsResizing] = useState(false);
   const dragStartRef = useRef<{
@@ -129,48 +211,178 @@ const TextItem = memo(function TextItem({
   const left = segment.center.x * renderSize.width - halfW;
   const top = segment.center.y * renderSize.height - halfH;
 
-  const drawTextPreview = useCallback((targetWidth: number, targetHeight: number) => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-
+  const ensureCachedRender = useCallback((targetWidth: number, targetHeight: number): CachedTextRender | null => {
     const safeWidth = Math.max(1, targetWidth);
     const safeHeight = Math.max(1, targetHeight);
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
     const pixelWidth = Math.max(1, Math.round(safeWidth * dpr));
     const pixelHeight = Math.max(1, Math.round(safeHeight * dpr));
+    const renderKey = buildTextRenderKey(segment, safeWidth, safeHeight, dpr, renderSize.height);
 
-    // Setting canvas dimensions clears it and resets context state.
+    if (cacheRef.current && cacheRef.current.key === renderKey) {
+      return cacheRef.current;
+    }
+
+    const canvas = document.createElement('canvas');
     canvas.width = pixelWidth;
     canvas.height = pixelHeight;
-
     const ctx = canvas.getContext('2d', { alpha: true });
-    if (!ctx) return;
+    if (!ctx) return null;
 
-    // Scale for HiDPI; all drawing uses CSS pixel coordinates.
     ctx.scale(dpr, dpr);
-
-    renderTextOnCanvas(ctx, {
-      content: displayContent,
+    const lineInfos = renderTextOnCanvas(ctx, {
+      content: segment.content,
       fontFamily: segment.fontFamily || 'sans-serif',
       fontWeight: segment.fontWeight || 700,
       italic: !!segment.italic,
       fontSize: segment.fontSize,
       color: segment.color || '#ffffff',
     }, safeWidth, safeHeight, renderSize.height);
+
+    let cumulativeChars = 0;
+    const lineMetrics: TypewriterLineMetric[] = lineInfos.map((info) => {
+      cumulativeChars += info.revealWidthsPx.length;
+      return {
+        topPx: info.topPx,
+        heightPx: info.heightPx,
+        cumulativeChars,
+        contentWidthPx: info.contentWidthPx,
+        revealWidthsPx: info.revealWidthsPx,
+      };
+    });
+
+    cacheRef.current = {
+      key: renderKey,
+      dpr,
+      widthPx: pixelWidth,
+      heightPx: pixelHeight,
+      canvas,
+      lineMetrics,
+      totalRenderedChars: cumulativeChars,
+    };
+    return cacheRef.current;
   }, [
-    displayContent,
-    segment.fontFamily,
-    segment.fontWeight,
-    segment.italic,
-    segment.fontSize,
-    segment.color,
+    segment,
     renderSize.height,
+  ]);
+
+  const drawTextPreview = useCallback((targetWidth: number, targetHeight: number) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const safeWidth = Math.max(1, targetWidth);
+    const safeHeight = Math.max(1, targetHeight);
+    const cached = ensureCachedRender(safeWidth, safeHeight);
+    if (!cached) return;
+
+    const { dpr, widthPx, heightPx } = cached;
+    const isTypewriter = normalizeTextAnimation(segment.animation) === 'typeWriter';
+    const visibleChars = isTypewriter
+      ? calculateTypewriterVisibleChars(segment, currentTimeSec, cached.totalRenderedChars)
+      : cached.totalRenderedChars;
+    const drawState = `${cached.key}|${visibleChars}|${isTypewriter ? 'type' : 'full'}`;
+    if (lastDrawStateRef.current === drawState) {
+      return;
+    }
+    lastDrawStateRef.current = drawState;
+
+    // Avoid resetting canvas dimensions on every tick (expensive).
+    if (canvas.width !== widthPx || canvas.height !== heightPx) {
+      canvas.width = widthPx;
+      canvas.height = heightPx;
+      canvasCtxRef.current = null;
+    }
+
+    let ctx = canvasCtxRef.current;
+    if (!ctx) {
+      ctx = canvas.getContext('2d', { alpha: true });
+      if (!ctx) return;
+      canvasCtxRef.current = ctx;
+    }
+
+    // Set transform per draw so coordinates stay in CSS pixels.
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, safeWidth, safeHeight);
+
+    const drawLineSlice = (leftPx: number, topPx: number, widthSlicePx: number, heightSlicePx: number) => {
+      const clampedLeft = clamp(leftPx, 0, safeWidth);
+      const clampedTop = clamp(topPx, 0, safeHeight);
+      const clampedWidth = Math.min(widthSlicePx, safeWidth - clampedLeft);
+      const clampedHeight = Math.min(heightSlicePx, safeHeight - clampedTop);
+      if (clampedWidth <= 0 || clampedHeight <= 0) {
+        return;
+      }
+
+      ctx.drawImage(
+        cached.canvas,
+        clampedLeft * dpr,
+        clampedTop * dpr,
+        clampedWidth * dpr,
+        clampedHeight * dpr,
+        clampedLeft,
+        clampedTop,
+        clampedWidth,
+        clampedHeight,
+      );
+    };
+
+    if (!isTypewriter) {
+      drawLineSlice(0, 0, safeWidth, safeHeight);
+      return;
+    }
+
+    if (visibleChars <= 0) {
+      return;
+    }
+    if (visibleChars >= cached.totalRenderedChars) {
+      drawLineSlice(0, 0, safeWidth, safeHeight);
+      return;
+    }
+
+    if (cached.lineMetrics.length === 0) {
+      const fallbackRevealWidth = Math.max(
+        1,
+        Math.ceil(safeWidth * (visibleChars / Math.max(cached.totalRenderedChars, 1))),
+      );
+      drawLineSlice(0, 0, fallbackRevealWidth, safeHeight);
+      return;
+    }
+
+    let previousCumulative = 0;
+    for (const metric of cached.lineMetrics) {
+      if (visibleChars > metric.cumulativeChars) {
+        drawLineSlice(0, metric.topPx, safeWidth, metric.heightPx);
+        previousCumulative = metric.cumulativeChars;
+        continue;
+      }
+
+      const charsOnLine = Math.max(0, metric.cumulativeChars - previousCumulative);
+      const charsVisibleOnLine = Math.max(0, visibleChars - previousCumulative);
+      if (charsVisibleOnLine > 0) {
+        const measuredRevealWidth = metric.revealWidthsPx[charsVisibleOnLine - 1];
+        const proportionalRevealWidth = charsOnLine > 0
+          ? (metric.contentWidthPx * charsVisibleOnLine) / charsOnLine
+          : metric.contentWidthPx;
+        const revealContentWidth = Math.min(
+          metric.contentWidthPx,
+          measuredRevealWidth ?? proportionalRevealWidth,
+        );
+        const textLeft = Math.max(0, (safeWidth - metric.contentWidthPx) / 2);
+        const revealWidth = Math.max(1, Math.ceil(textLeft + revealContentWidth));
+        drawLineSlice(0, metric.topPx, revealWidth, metric.heightPx);
+      }
+      break;
+    }
+  }, [
+    ensureCachedRender,
+    segment,
+    currentTimeSec,
   ]);
 
   // Render text on canvas — same code path as export for WYSIWYG
   useEffect(() => {
     drawTextPreview(width, height);
-  }, [drawTextPreview, width, height]);
+  }, [drawTextPreview, width, height, currentTimeSec]);
 
   // Handle drag to move — updates DOM directly during drag for zero-lag interaction,
   // commits final position to store on mouseUp to avoid per-frame re-render cascade.
@@ -428,6 +640,31 @@ const TextItem = memo(function TextItem({
       )}
     </div>
   );
+}, (prev, next) => {
+  if (prev.segment !== next.segment) return false;
+  if (prev.segmentId !== next.segmentId) return false;
+  if (prev.isSelected !== next.isSelected) return false;
+  if (prev.opacity !== next.opacity) return false;
+  if (prev.renderSize.width !== next.renderSize.width || prev.renderSize.height !== next.renderSize.height) {
+    return false;
+  }
+  if (
+    prev.interactionSize.width !== next.interactionSize.width ||
+    prev.interactionSize.height !== next.interactionSize.height
+  ) {
+    return false;
+  }
+  if (prev.onSelect !== next.onSelect) return false;
+  if (prev.onUpdate !== next.onUpdate) return false;
+
+  const isTypewriter = normalizeTextAnimation(prev.segment.animation) === 'typeWriter';
+  if (!isTypewriter) {
+    return true;
+  }
+
+  const prevTick = calculateTypewriterVisibleCharsApprox(prev.segment, prev.currentTimeSec);
+  const nextTick = calculateTypewriterVisibleCharsApprox(next.segment, next.currentTimeSec);
+  return prevTick === nextTick;
 });
 
 /**
@@ -480,7 +717,6 @@ export const TextOverlay = memo(function TextOverlay({
         segment,
         originalIndex,
         opacity: calculateTextSegmentOpacity(segment, currentTimeSec),
-        displayContent: getAnimatedTextContent(segment, currentTimeSec),
       }))
       .filter(({ opacity }) => opacity >= MIN_VISIBLE_OPACITY),
     [segments, currentTimeSec]
@@ -523,11 +759,11 @@ export const TextOverlay = memo(function TextOverlay({
         }}
         onClick={handleContainerClick}
       >
-        {activeSegmentsWithIndex.map(({ segment, opacity, displayContent }, index) => (
+        {activeSegmentsWithIndex.map(({ segment, opacity }, index) => (
           <TextItem
             key={segmentIds[index]}
             segment={segment}
-            displayContent={displayContent}
+            currentTimeSec={currentTimeSec}
             segmentId={segmentIds[index]}
             isSelected={segmentIds[index] === selectedTextSegmentId}
             opacity={opacity}

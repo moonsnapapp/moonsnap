@@ -354,6 +354,7 @@ pub async fn export_video_gpu(
         let state = app.state::<PreRenderedTextState>();
         state.store.clone()
     };
+    prerendered_text_store.lock().log_summary();
 
     emit_progress(&app, 0.02, ExportStage::Preparing, "Loading video...");
 
@@ -818,20 +819,15 @@ pub async fn export_video_gpu(
         let source_time_ms =
             decode_start_ms + ((decoded_frame_idx as f64 / fps as f64) * 1000.0) as u64;
 
-        // For segment-aware export: check if this frame is in a kept segment
-        // source_to_timeline returns None if the source time is in a deleted region
-        let timeline_time_ms = if has_segments {
-            match project.timeline.source_to_timeline(source_time_ms) {
-                Some(t) => t,
-                None => {
-                    // This frame is in a deleted region - skip it
-                    continue;
-                },
-            }
-        } else {
-            // No segments - use simple offset from decode start
-            source_time_ms - decode_start_ms
-        };
+        // Skip decoded frames that fall in deleted regions.
+        if has_segments
+            && project
+                .timeline
+                .source_to_timeline(source_time_ms)
+                .is_none()
+        {
+            continue;
+        }
 
         // Apply source normalization BEFORE composition:
         // - With user crop: RGBA path crops on CPU (NV12 crop happens in converter).
@@ -846,9 +842,12 @@ pub async fn export_video_gpu(
             }
         }
 
-        // Use timeline_time_ms for user-defined effects (zoom regions, scene segments, visibility)
-        // Use source_time_ms for recorded data (cursor position)
-        let relative_time_ms = timeline_time_ms;
+        // Use output frame index for user-defined timeline effects (zoom, scene, text, captions).
+        // Why: when kept segment lengths are not exact frame multiples, source->timeline mapping
+        // can be ahead/behind encoded frame pacing by up to ~1 frame per cut boundary.
+        // Frame-index timing stays locked to what is actually encoded.
+        // Use source_time_ms for recorded data (cursor position).
+        let relative_time_ms = ((output_frame_count as f64 / fps as f64) * 1000.0).round() as u64;
 
         // Get cursor position using SOURCE time (cursor data is recorded in source time)
         // This ensures cursor appears at correct position even after trimming
@@ -1047,6 +1046,7 @@ pub async fn export_video_gpu(
                 composition_bounds.frame_y as u32,
                 composition_bounds.frame_width as u32,
                 composition_bounds.frame_height as u32,
+                zoom_state,
             )
         };
 
