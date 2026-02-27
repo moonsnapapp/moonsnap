@@ -30,6 +30,7 @@ pub mod stream_decoder;
 pub mod svg_cursor;
 pub mod text;
 pub mod text_layer;
+pub mod text_overlay_layer;
 pub mod types;
 
 #[cfg(test)]
@@ -66,5 +67,6 @@ pub use stream_decoder::StreamDecoder;
 pub use svg_cursor::{get_svg_cursor, render_svg_cursor, RenderedSvgCursor};
 pub use text::{parse_color, PreparedText};
 pub use text_layer::TextLayer;
+pub use text_overlay_layer::TextOverlayQuad;
 pub use types::*;
 pub use zoom::ZoomInterpolator;

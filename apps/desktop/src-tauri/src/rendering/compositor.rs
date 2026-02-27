@@ -12,9 +12,11 @@ use wgpu::{Device, Queue};
 
 use super::background::{Background, BackgroundLayer};
 use super::parity::calculate_composition_bounds;
+use super::prerendered_text::PreRenderedTextStore;
 use super::renderer::Renderer;
 use super::text::PreparedText;
 use super::text_layer::TextLayer;
+use super::text_overlay_layer::{TextOverlayLayer, TextOverlayQuad};
 use super::types::{
     BackgroundStyle, BackgroundType, CornerStyle, DecodedFrame, RenderOptions, WebcamShape,
 };
@@ -374,8 +376,10 @@ pub struct Compositor {
     placeholder_view: wgpu::TextureView,
     // Background layer for rendering backgrounds
     background_layer: BackgroundLayer,
-    // Text layer for GPU text rendering
+    // Text layer for GPU text rendering (captions)
     text_layer: TextLayer,
+    // Pre-rendered text overlay layer for export
+    text_overlay_layer: TextOverlayLayer,
 }
 
 impl Compositor {
@@ -543,6 +547,7 @@ impl Compositor {
 
         // Initialize text layer
         let text_layer = TextLayer::new(&device, &queue);
+        let text_overlay_layer = TextOverlayLayer::new(&device, &queue);
 
         Self {
             device,
@@ -555,6 +560,7 @@ impl Compositor {
             placeholder_view,
             background_layer,
             text_layer,
+            text_overlay_layer,
         }
     }
 
@@ -1332,6 +1338,32 @@ impl Compositor {
                 self.queue.submit(Some(encoder.finish()));
             }
         }
+    }
+
+    /// Upload pre-rendered text images to GPU textures for export.
+    /// Called once at export start.
+    pub fn upload_text_overlays(&mut self, store: &PreRenderedTextStore) {
+        self.text_overlay_layer.upload_textures(store);
+    }
+
+    /// Render pre-rendered text overlay quads onto the output texture.
+    /// Called per-frame during export, after the main composite pass.
+    pub fn render_text_overlays(&self, output_texture: &wgpu::Texture, quads: &[TextOverlayQuad]) {
+        if quads.is_empty() || !self.text_overlay_layer.has_textures() {
+            return;
+        }
+
+        let output_view = output_texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("Text Overlay Encoder"),
+            });
+
+        self.text_overlay_layer
+            .render_overlays(&mut encoder, &output_view, quads);
+
+        self.queue.submit(Some(encoder.finish()));
     }
 
     /// Render only text overlays on a transparent background.

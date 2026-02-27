@@ -7,6 +7,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use crate::commands::video_recording::video_project::{TextAnimation, TextSegment};
+use crate::rendering::text_overlay_layer::TextOverlayQuad;
 use crate::rendering::types::ZoomState;
 
 /// A pre-rendered text image from the frontend.
@@ -288,6 +289,133 @@ impl PreRenderedTextStore {
                 image.line_metrics.len()
             );
         }
+    }
+
+    /// Public iterator over stored images for GPU texture upload.
+    pub fn images(&self) -> impl Iterator<Item = (&usize, &PreRenderedTextImage)> {
+        self.images.iter()
+    }
+
+    /// Get GPU-ready overlay quads for visible text segments at the given frame time.
+    ///
+    /// Returns `TextOverlayQuad`s with positions in NDC and typewriter reveal in UV space.
+    /// The GPU shader handles clipping via `discard` — no 2-rect split needed.
+    pub fn get_gpu_quads_for_frame(
+        &self,
+        frame_time: f64,
+        segments: &[TextSegment],
+        output_w: u32,
+        output_h: u32,
+        video_x: u32,
+        video_y: u32,
+        video_w: u32,
+        video_h: u32,
+        zoom: ZoomState,
+    ) -> Vec<TextOverlayQuad> {
+        let mut result = Vec::new();
+
+        for (idx, image) in &self.images {
+            let idx = *idx;
+            if idx >= segments.len() {
+                continue;
+            }
+
+            let segment = &segments[idx];
+            if !segment.enabled {
+                continue;
+            }
+            if frame_time < segment.start || frame_time > segment.end {
+                continue;
+            }
+
+            let opacity = calculate_segment_opacity(segment, frame_time);
+            if opacity < 0.001 {
+                continue;
+            }
+
+            // Apply zoom transform to text center (same math as cursor zoom).
+            let (zoomed_cx, zoomed_cy) = if zoom.scale > 1.0 {
+                let s = zoom.scale as f64;
+                let zx =
+                    0.5 - (zoom.center_x as f64 - 0.5) * (s - 1.0) + (image.center_x - 0.5) * s;
+                let zy =
+                    0.5 - (zoom.center_y as f64 - 0.5) * (s - 1.0) + (image.center_y - 0.5) * s;
+                (zx, zy)
+            } else {
+                (image.center_x, image.center_y)
+            };
+
+            // Scale text image size by zoom factor.
+            let scale = (zoom.scale as f64).max(1.0);
+            let scaled_w = image.width as f64 * scale;
+            let scaled_h = image.height as f64 * scale;
+
+            // Map from video-content-relative coords to composition pixel coords.
+            let center_px_x = video_x as f64 + zoomed_cx * video_w as f64;
+            let center_px_y = video_y as f64 + zoomed_cy * video_h as f64;
+            let left_px = center_px_x - scaled_w / 2.0;
+            let top_px = center_px_y - scaled_h / 2.0;
+            let right_px = left_px + scaled_w;
+            let bottom_px = top_px + scaled_h;
+
+            // Convert pixel coords to NDC: x = px / output_w * 2 - 1, y flipped
+            let ndc_left = (left_px / output_w as f64) * 2.0 - 1.0;
+            let ndc_right = (right_px / output_w as f64) * 2.0 - 1.0;
+            // NDC y: top of screen = +1, bottom = -1 (wgpu clip space)
+            let ndc_top = 1.0 - (top_px / output_h as f64) * 2.0;
+            let ndc_bottom = 1.0 - (bottom_px / output_h as f64) * 2.0;
+
+            // Typewriter reveal
+            let reveal = calculate_typewriter_reveal(segment, image, frame_time);
+            let (
+                typewriter_active,
+                full_reveal_v,
+                last_v_top,
+                last_v_bottom,
+                last_u_left,
+                last_u_right,
+            ) = if let Some(reveal) = &reveal {
+                let img_h = image.height as f32;
+                let img_w = image.width as f32;
+                (
+                    true,
+                    reveal.full_height_px as f32 / img_h,
+                    reveal.last_line_top_px as f32 / img_h,
+                    (reveal.last_line_top_px + reveal.last_line_height_px) as f32 / img_h,
+                    reveal.last_line_content_left_px as f32 / img_w,
+                    (reveal.last_line_content_left_px + reveal.last_line_content_width_px) as f32
+                        / img_w,
+                )
+            } else {
+                // No clipping — fully revealed or no typewriter animation
+                (false, 1.0, 0.0, 1.0, 0.0, 1.0)
+            };
+
+            // If typewriter is active and reveal is zero-area, skip this quad
+            if typewriter_active {
+                if let Some(r) = &reveal {
+                    let total_reveal_h = r.full_height_px + r.last_line_height_px;
+                    if total_reveal_h == 0 || r.last_line_content_width_px == 0 {
+                        continue;
+                    }
+                }
+            }
+
+            result.push(TextOverlayQuad {
+                quad_min: [ndc_left as f32, ndc_bottom as f32],
+                quad_max: [ndc_right as f32, ndc_top as f32],
+                opacity,
+                typewriter_active,
+                full_reveal_v,
+                last_line_v_top: last_v_top,
+                last_line_v_bottom: last_v_bottom,
+                last_line_u_left: last_u_left,
+                last_line_u_right: last_u_right,
+                texture_index: idx,
+            });
+        }
+
+        result
     }
 
     /// Get pre-rendered text images visible at the given frame time.

@@ -42,7 +42,6 @@ use super::cursor::{
     composite_cursor, composite_cursor_with_motion_blur, CursorInterpolator, VideoContentBounds,
 };
 use super::nv12_converter::{CropRect, Nv12Converter};
-use super::prerendered_text::{composite_prerendered_texts, TextCompositeInfo};
 use super::renderer::Renderer;
 use super::scene::SceneInterpolator;
 use super::stream_decoder::StreamDecoder;
@@ -87,7 +86,6 @@ struct CpuCompositeCtx<'a> {
 /// Per-frame state for deferred CPU compositing (double-buffer pipeline).
 struct PendingCpuWork {
     rgba_data: Vec<u8>,
-    prerendered_texts: Vec<TextCompositeInfo>,
     camera_only_opacity: f64,
     source_time_ms: u64,
     zoom_state: ZoomState,
@@ -100,7 +98,6 @@ struct PendingCpuWork {
 /// from staging buffer B.
 struct PendingReadback {
     staging_buf_idx: usize,
-    prerendered_texts: Vec<TextCompositeInfo>,
     camera_only_opacity: f64,
     source_time_ms: u64,
     zoom_state: ZoomState,
@@ -148,16 +145,6 @@ fn can_use_nv12_fast_path(
 /// Extracted from the render loop to enable double-buffered pipeline overlap:
 /// GPU renders frame N+1 while CPU processes frame N.
 fn apply_cpu_compositing(pending: &mut PendingCpuWork, ctx: &CpuCompositeCtx) {
-    // Composite pre-rendered text overlays (CPU-based, WYSIWYG matching CSS preview)
-    if !pending.prerendered_texts.is_empty() {
-        composite_prerendered_texts(
-            &mut pending.rgba_data,
-            ctx.composition_w,
-            ctx.composition_h,
-            &pending.prerendered_texts,
-        );
-    }
-
     // Composite cursor onto frame (CPU-based) if cursor is visible and not in cameraOnly mode
     if let Some(cursor_interp) = ctx.cursor_interpolator {
         if pending.camera_only_opacity < 0.99 {
@@ -354,7 +341,11 @@ pub async fn export_video_gpu(
         let state = app.state::<PreRenderedTextState>();
         state.store.clone()
     };
-    prerendered_text_store.lock().log_summary();
+    {
+        let store = prerendered_text_store.lock();
+        store.log_summary();
+        compositor.upload_text_overlays(&store);
+    }
 
     emit_progress(&app, 0.02, ExportStage::Preparing, "Loading video...");
 
@@ -804,7 +795,6 @@ pub async fn export_video_gpu(
 
             pending_cpu = Some(PendingCpuWork {
                 rgba_data,
-                prerendered_texts: oldest_rb.prerendered_texts,
                 camera_only_opacity: oldest_rb.camera_only_opacity,
                 source_time_ms: oldest_rb.source_time_ms,
                 zoom_state: oldest_rb.zoom_state,
@@ -1032,12 +1022,12 @@ pub async fn export_video_gpu(
             Vec::new()
         };
 
-        // Get pre-rendered text images for this frame (from frontend OffscreenCanvas)
+        // Get GPU-ready text overlay quads for this frame.
         // Text coordinates are normalized 0-1 relative to the video content area,
-        // so we need the video frame position within the composition.
-        let prerendered_texts = {
+        // positions are returned in NDC for direct GPU rendering.
+        let text_overlay_quads = {
             let store = prerendered_text_store.lock();
-            store.get_for_frame(
+            store.get_gpu_quads_for_frame(
                 frame_time_secs,
                 &project.text.segments,
                 composition_w,
@@ -1067,6 +1057,9 @@ pub async fn export_video_gpu(
                 &prepared_captions,
             )
             .await;
+
+        // Render pre-rendered text overlays on GPU (after video/captions, before readback)
+        compositor.render_text_overlays(&output_texture, &text_overlay_quads);
 
         // Submit readback copy command (non-blocking — GPU will execute asynchronously)
         renderer.submit_readback(
@@ -1109,7 +1102,6 @@ pub async fn export_video_gpu(
         pending_readback_old = pending_readback_new.take();
         pending_readback_new = Some(PendingReadback {
             staging_buf_idx: buf_idx,
-            prerendered_texts,
             camera_only_opacity,
             source_time_ms,
             zoom_state,
@@ -1173,7 +1165,6 @@ pub async fn export_video_gpu(
                 .await;
             let mut work = PendingCpuWork {
                 rgba_data,
-                prerendered_texts: rb.prerendered_texts,
                 camera_only_opacity: rb.camera_only_opacity,
                 source_time_ms: rb.source_time_ms,
                 zoom_state: rb.zoom_state,

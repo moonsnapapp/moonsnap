@@ -336,7 +336,7 @@ export async function preRenderForExport(
         centerY: rendered.centerY,
         sizeX: rendered.sizeX,
         sizeY: rendered.sizeY,
-        rgbaData: Array.from(rendered.rgbaData),
+        rgbaData: rendered.rgbaData,
         lineMetrics: rendered.lineMetrics,
       }),
     );
