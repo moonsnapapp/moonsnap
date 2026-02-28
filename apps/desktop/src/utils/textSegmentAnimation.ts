@@ -8,6 +8,32 @@ function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
 
+type GraphemeSegmenter = {
+  segment(input: string): Iterable<{ segment: string }>;
+};
+
+let graphemeSegmenter: GraphemeSegmenter | null | undefined;
+
+function splitGraphemes(text: string): string[] {
+  if (graphemeSegmenter === undefined) {
+    const segmenterCtor = (Intl as unknown as {
+      Segmenter?: new (
+        locales?: string | string[],
+        options?: { granularity: 'grapheme' },
+      ) => GraphemeSegmenter;
+    }).Segmenter;
+    graphemeSegmenter = segmenterCtor
+      ? new segmenterCtor(undefined, { granularity: 'grapheme' })
+      : null;
+  }
+
+  if (!graphemeSegmenter) {
+    return Array.from(text);
+  }
+
+  return Array.from(graphemeSegmenter.segment(text), (entry) => entry.segment);
+}
+
 function getTypewriterTypingWindowSec(segment: TextSegment): number {
   const segmentDuration = Math.max(0, segment.end - segment.start);
   const fadeDuration = Math.max(0, segment.fadeDuration);
@@ -49,7 +75,7 @@ export function getTypewriterCharsPerSecond(segment: TextSegment): number {
 
 export function getEffectiveTypewriterCharsPerSecond(segment: TextSegment): number {
   const requested = getTypewriterCharsPerSecond(segment);
-  const totalChars = Array.from(segment.content ?? '').length;
+  const totalChars = splitGraphemes(segment.content ?? '').length;
   if (totalChars === 0) {
     return requested;
   }
@@ -69,7 +95,7 @@ export function getAnimatedTextContent(segment: TextSegment, timeSec: number): s
     return content;
   }
 
-  const graphemes = Array.from(content);
+  const graphemes = splitGraphemes(content);
   if (graphemes.length === 0) {
     return '';
   }
@@ -86,7 +112,7 @@ export function getTypewriterTypingEndSec(segment: TextSegment): number {
     return segment.end;
   }
 
-  const totalChars = Array.from(segment.content ?? '').length;
+  const totalChars = splitGraphemes(segment.content ?? '').length;
   if (totalChars === 0) {
     return segment.start;
   }

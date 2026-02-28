@@ -13,7 +13,7 @@
 //! ```text
 //! video_project/
 //!   mod.rs       - Re-exports and tests
-//!   types.rs     - Type definitions (VideoProject, configs, etc.)
+//!   snapit-domain::video_project - shared type definitions (VideoProject, configs, etc.)
 //!   metadata.rs  - Video metadata extraction and project loading
 //!   frames.rs    - Video frame extraction and caching
 //!   auto_zoom.rs - Auto-zoom generation from cursor data
@@ -22,13 +22,12 @@
 pub mod auto_zoom;
 pub mod frames;
 pub mod metadata;
-pub mod types;
 
 // Re-export all types for convenience
-pub use auto_zoom::{apply_auto_zoom_to_project, AutoZoomConfig};
+pub use auto_zoom::apply_auto_zoom_to_project;
 pub use frames::{clear_frame_cache, get_video_frame_cached};
 pub use metadata::{load_video_project_from_file, VideoMetadata};
-pub use types::*;
+use snapit_domain::video_project::*;
 
 #[cfg(test)]
 mod tests {

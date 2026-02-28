@@ -9,13 +9,13 @@ use std::path::PathBuf;
 use tauri::{command, AppHandle, Emitter};
 use tokio::fs as async_fs;
 
-use super::ffmpeg::{
-    find_ffmpeg, find_ffprobe, generate_gif_thumbnail, generate_thumbnail,
-    generate_video_thumbnail, get_video_metadata_for_migration,
-};
-use super::types::*;
 use super::{
     calculate_dir_size, ensure_directories, generate_id, get_app_data_dir, get_captures_dir,
+};
+use snapit_domain::storage::*;
+use snapit_media::ffmpeg::{
+    find_ffmpeg, find_ffprobe, generate_gif_thumbnail, generate_thumbnail,
+    generate_video_thumbnail, get_video_metadata_for_migration,
 };
 
 // ============================================================================

@@ -4,9 +4,9 @@
 
 use chrono::Utc;
 
-use super::ffmpeg::THUMBNAIL_SIZE;
 use super::generate_id;
-use super::types::*;
+use snapit_domain::storage::*;
+use snapit_media::ffmpeg::THUMBNAIL_SIZE;
 
 #[test]
 fn test_generate_id_format() {

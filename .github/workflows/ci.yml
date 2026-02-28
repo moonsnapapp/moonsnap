@@ -50,6 +50,29 @@ jobs:
       # Run locally: cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --lib
       # Then verify: git diff --exit-code apps/desktop/src/types/generated/
 
+  rust-crate-contracts:
+    name: Rust Crate Contracts (${{ matrix.crate }})
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        crate:
+          - snapit-core
+          - snapit-domain
+          - snapit-media
+          - snapit-render
+          - snapit-capture
+          - snapit-export
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Test shared crate contract
+        run: cargo test -p ${{ matrix.crate }} --lib --manifest-path apps/desktop/src-tauri/Cargo.toml
+
   build-web:
     name: Build Web
     runs-on: ubuntu-latest

@@ -13,9 +13,7 @@ use std::time::{Duration, Instant};
 use super::capture::FrameReceiver;
 use super::drift::VideoDriftTracker;
 use super::native_frame::NativeCameraFrame;
-use crate::commands::video_recording::fragmentation::{
-    atomic_write_json, sync_file, FragmentManifest,
-};
+use snapit_capture::fragmentation::{atomic_write_json, sync_file, FragmentManifest};
 
 /// Default segment duration (3 seconds).
 const DEFAULT_SEGMENT_DURATION: Duration = Duration::from_secs(3);
@@ -399,11 +397,11 @@ impl SegmentedWebcamMuxer {
         height: u32,
     ) -> Result<CurrentSegment, String> {
         let path = self.output_dir.join(format!("fragment_{:03}.mp4", index));
-        let ffmpeg_path = crate::commands::storage::find_ffmpeg().ok_or("FFmpeg not found")?;
+        let ffmpeg_path = snapit_media::ffmpeg::find_ffmpeg().ok_or("FFmpeg not found")?;
 
         log::debug!("[SEGMENTED] Creating segment {} at {:?}", index, path);
 
-        let mut child = crate::commands::storage::ffmpeg::create_hidden_command(&ffmpeg_path)
+        let mut child = snapit_media::ffmpeg::create_hidden_command(&ffmpeg_path)
             .args([
                 "-y",
                 "-f",
@@ -455,7 +453,7 @@ pub fn concatenate_segments(segments: &[SegmentInfo], output_path: &Path) -> Res
         return Err("No segments to concatenate".to_string());
     }
 
-    let ffmpeg_path = crate::commands::storage::find_ffmpeg().ok_or("FFmpeg not found")?;
+    let ffmpeg_path = snapit_media::ffmpeg::find_ffmpeg().ok_or("FFmpeg not found")?;
 
     // Create concat list file
     let concat_list_path = output_path.with_extension("concat.txt");
@@ -475,7 +473,7 @@ pub fn concatenate_segments(segments: &[SegmentInfo], output_path: &Path) -> Res
     );
 
     // Run ffmpeg concat
-    let output = crate::commands::storage::ffmpeg::create_hidden_command(&ffmpeg_path)
+    let output = snapit_media::ffmpeg::create_hidden_command(&ffmpeg_path)
         .args([
             "-y",
             "-f",

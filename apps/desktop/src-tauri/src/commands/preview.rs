@@ -1,10 +1,10 @@
 //! Tauri commands for GPU-rendered preview.
 
-use crate::commands::captions::{CaptionSegment, CaptionSettings};
-use crate::commands::video_recording::video_project::VideoProject;
 use crate::preview::{create_frame_ws, PreviewRenderer, ShutdownSignal, WSFrame};
 use crate::rendering::RendererState;
 use parking_lot::Mutex as ParkingMutex;
+use snapit_domain::captions::{CaptionSegment, CaptionSettings};
+use snapit_domain::video_project::VideoProject;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tauri::{command, State, WebviewWindow};

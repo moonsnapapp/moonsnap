@@ -4,33 +4,31 @@
 //! and VideoEncoder for hardware-accelerated MP4 encoding.
 
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
-use crossbeam_channel::{Receiver, TryRecvError};
+use crossbeam_channel::Receiver;
+use snapit_capture::audio_multitrack::MultiTrackAudioRecorder;
+use snapit_capture::frame_buffer::FrameBufferPool;
+use snapit_capture::recorder_helpers::{
+    create_video_project_file, get_window_rect, make_video_faststart, mux_audio_to_video,
+};
+use snapit_capture::state::{RecorderCommand, RecordingProgress};
+use snapit_capture::timestamp::Timestamps;
 use tauri::AppHandle;
 use windows_capture::encoder::{
     AudioSettingsBuilder, ContainerSettingsBuilder, VideoEncoder, VideoSettingsBuilder,
     VideoSettingsSubType,
 };
 
-use super::super::audio_multitrack::MultiTrackAudioRecorder;
 use super::super::cursor::{save_cursor_recording, CursorEventCapture};
-use super::super::state::{RecorderCommand, RecordingProgress};
-use super::super::timestamp::Timestamps;
 use super::super::webcam::{
     global_feed_dimensions, start_global_feed, stop_capture_service, stop_global_feed,
     FeedWebcamEncoder,
 };
 use super::super::{
-    emit_state_change, find_monitor_for_point, get_scap_display_bounds, get_webcam_settings,
-    RecordingMode, RecordingSettings, RecordingState,
-};
-use super::buffer::FrameBufferPool;
-use super::capture_source::CaptureSource;
-use super::helpers::{
-    create_video_project_file, is_window_mode, make_video_faststart, mux_audio_to_video,
+    emit_state_change, get_scap_display_bounds, get_webcam_settings, RecordingSettings,
 };
 
 /// Run video (MP4) capture using Windows Graphics Capture (WGC).
@@ -56,68 +54,23 @@ pub fn run_video_capture(
         settings.quick_capture
     );
 
-    // Determine video output path based on capture mode:
-    // - Quick capture: output_path IS the final MP4 file
-    // - Editor flow: output_path is a folder, video goes to screen.mp4 inside
-    let screen_video_path = if settings.quick_capture {
-        output_path.clone()
+    let finalization_plan =
+        snapit_capture::recorder_finalization::build_finalization_plan(settings.quick_capture);
+    let webcam_enabled_for_editor = if settings.quick_capture {
+        false
     } else {
-        output_path.join("screen.mp4")
+        get_webcam_settings().map(|s| s.enabled).unwrap_or(false)
     };
+    let output_paths = snapit_capture::recorder_output_paths::plan_video_output_paths(
+        output_path.as_path(),
+        settings.quick_capture,
+        webcam_enabled_for_editor,
+    );
+    let screen_video_path = output_paths.screen_video_path;
+    let webcam_output_path: Option<PathBuf> = output_paths.webcam_output_path;
 
-    // === WEBCAM OUTPUT PATH ===
-    // Webcam is only supported in editor flow (not quick capture).
-    // Webcam capture service is already running (pre-warmed during countdown).
-    let webcam_output_path: Option<PathBuf> = if !settings.quick_capture {
-        let webcam_enabled = get_webcam_settings().map(|s| s.enabled).unwrap_or(false);
-        if webcam_enabled {
-            Some(output_path.join("webcam.mp4"))
-        } else {
-            None
-        }
-    } else {
-        // Quick capture: no webcam support
-        None
-    };
-
-    // Check if this is Window mode (native window capture via WGC)
-    let window_id = is_window_mode(&settings.mode);
-
-    // Get crop region if in region mode (not used for Window mode)
-    let crop_region = match &settings.mode {
-        RecordingMode::Region {
-            x,
-            y,
-            width,
-            height,
-        } => Some((*x, *y, *width, *height)),
-        _ => None,
-    };
-
-    // Get monitor index and offset for WGC capture
-    // We need the monitor offset to convert screen-space crop coords to monitor-local coords
-    let (monitor_index, monitor_offset) = match &settings.mode {
-        RecordingMode::Monitor { monitor_index } => (*monitor_index, (0, 0)),
-        RecordingMode::Region { x, y, .. } => {
-            // Find monitor that contains this region's top-left corner using Windows API
-            if let Some((idx, name, mx, my)) = find_monitor_for_point(*x, *y) {
-                log::info!(
-                    "[CAPTURE] Region ({}, {}) is on monitor {} '{}' at offset ({}, {})",
-                    x,
-                    y,
-                    idx,
-                    &name,
-                    mx,
-                    my
-                );
-
-                (idx, (mx, my))
-            } else {
-                (0, (0, 0))
-            }
-        },
-        _ => (0, (0, 0)),
-    };
+    let capture_plan =
+        snapit_capture::recorder_video_capture::CapturePlan::from_mode(&settings.mode);
 
     // Create capture source based on mode
     // All modes use Scap for consistent timestamp handling and native crop support.
@@ -128,63 +81,19 @@ pub fn run_video_capture(
     // NOTE: We always capture WITHOUT the baked-in cursor. The cursor is rendered
     // separately via the cursor overlay in the video editor, which allows for
     // customization (size, style, visibility) and proper zoom tracking.
-    let (capture_source, first_frame) = if let Some(wid) = window_id {
-        log::debug!("[CAPTURE] Using Scap window capture for hwnd={}", wid);
-        let source = CaptureSource::new_window(wid, false)
-            .map_err(|e| format!("Failed to create Scap window capture: {}", e))?;
-
-        // Wait for first frame to get actual dimensions (important for DPI scaling)
-        let first_frame = source.wait_for_first_frame(1000);
-        (source, first_frame)
-    } else if let Some((x, y, w, h)) = crop_region {
-        // Region mode: use WGC with manual crop for consistent hardware timestamps
-        log::debug!(
-            "[CAPTURE] Using WGC region capture: ({}, {}) {}x{} on monitor {} (offset {:?})",
-            x,
-            y,
-            w,
-            h,
-            monitor_index,
-            monitor_offset
-        );
-        let source = CaptureSource::new_region(
-            monitor_index,
-            (x, y, w, h),
-            monitor_offset,
+    let (capture_source, first_frame) =
+        snapit_capture::recorder_video_capture::create_capture_source(
+            &capture_plan,
             settings.fps,
             false,
-        )
-        .map_err(|e| format!("Failed to create WGC region capture: {}", e))?;
+        )?;
 
-        // Wait for first frame to get actual dimensions
-        let first_frame = source.wait_for_first_frame(1000);
-        (source, first_frame)
-    } else {
-        // Monitor mode
-        log::debug!(
-            "[CAPTURE] Using Scap monitor capture, index={}",
-            monitor_index
-        );
-        let source = CaptureSource::new_monitor(monitor_index, false)
-            .map_err(|e| format!("Failed to create Scap capture: {}", e))?;
-
-        // Wait for first frame to get actual dimensions (critical for correct encoder init)
-        // Without this, we use placeholder 1920x1080 which causes tiling artifacts on
-        // monitors with different resolutions
-        let first_frame = source.wait_for_first_frame(1000);
-        (source, first_frame)
-    };
-
-    // Get capture dimensions - use actual frame dimensions when available
-    let (width, height) = if let Some((w, h, _)) = &first_frame {
-        // Use actual frame dimensions from capture source (handles DPI scaling correctly)
-        (*w, *h)
-    } else if let Some((_, _, w, h)) = crop_region {
-        // Region mode: use specified dimensions
-        (w, h)
-    } else {
-        (capture_source.width(), capture_source.height())
-    };
+    let first_frame_dims = first_frame.as_ref().map(|(w, h, _)| (*w, *h));
+    let (width, height) = snapit_capture::recorder_video_capture::resolve_capture_dimensions(
+        &capture_plan,
+        first_frame_dims,
+        (capture_source.width(), capture_source.height()),
+    );
 
     let bitrate = settings.calculate_bitrate(width, height);
     let max_duration = settings
@@ -224,47 +133,30 @@ pub fn run_video_capture(
 
     // === WEBCAM ENCODER SETUP (Feed-based) ===
     // Uses the camera feed subscription system for zero-copy frame sharing.
+    let device_index = get_webcam_settings().map(|s| s.device_index).unwrap_or(0);
     let webcam_encoder: Option<FeedWebcamEncoder> =
-        if let Some(ref webcam_path) = webcam_output_path {
-            // Ensure camera feed is running (should be from GPU preview pre-warm)
-            let device_index = get_webcam_settings().map(|s| s.device_index).unwrap_or(0);
-            if let Err(e) = start_global_feed(device_index) {
-                log::warn!("[WEBCAM] Failed to start camera feed: {}", e);
-            }
-
-            // Wait briefly for feed to produce frames
-            let deadline = Instant::now() + Duration::from_millis(200);
-            while Instant::now() < deadline {
-                if let Some((w, h)) = global_feed_dimensions() {
-                    if w > 0 && h > 0 {
-                        break;
-                    }
-                }
-                std::thread::sleep(Duration::from_millis(10));
-            }
-
-            // Get dimensions from feed
-            let (width, height) = global_feed_dimensions().unwrap_or((1280, 720));
-
-            // Create feed-based encoder with pause signal for sync with video
-            match FeedWebcamEncoder::with_pause_signal(
-                webcam_path.clone(),
-                width,
-                height,
-                Some(Arc::clone(&is_paused)),
-            ) {
-                Ok(encoder) => {
-                    log::info!("[WEBCAM] Feed encoder started: {}x{}", width, height);
-                    Some(encoder)
-                },
-                Err(e) => {
-                    log::warn!("[WEBCAM] Feed encoder failed: {}", e);
-                    None
-                },
-            }
-        } else {
-            None
-        };
+        snapit_capture::recorder_webcam_lifecycle::maybe_start_webcam_encoder(
+            webcam_output_path.as_deref(),
+            device_index,
+            |idx| {
+                snapit_capture::recorder_webcam_feed::prepare_webcam_feed(
+                    idx,
+                    |inner_idx| start_global_feed(inner_idx),
+                    || global_feed_dimensions(),
+                    Duration::from_millis(200),
+                    Duration::from_millis(10),
+                    (1280, 720),
+                )
+            },
+            |webcam_path, width, height| {
+                FeedWebcamEncoder::with_pause_signal(
+                    webcam_path,
+                    width,
+                    height,
+                    Some(Arc::clone(&is_paused)),
+                )
+            },
+        );
 
     // === MULTI-TRACK AUDIO RECORDING ===
     // Record system audio and microphone to separate WAV files for later mixing.
@@ -276,51 +168,13 @@ pub fn run_video_capture(
     // Audio files location depends on capture mode:
     // - Quick capture: output_path is a FILE (e.g., recording.mp4), so put audio as siblings
     // - Editor flow: output_path is a FOLDER, so put audio files inside
-    let (system_audio_path, mic_audio_path) = {
-        let audio_base_path = if settings.quick_capture {
-            // Quick capture: put temp audio files alongside the video file
-            // e.g., recording.mp4 → recording_system.wav, recording_mic.wav
-            output_path
-                .parent()
-                .map(|p| p.to_path_buf())
-                .unwrap_or_else(|| output_path.clone())
-        } else {
-            // Editor flow: put audio files inside the project folder
-            output_path.clone()
-        };
-
-        let file_stem = if settings.quick_capture {
-            output_path
-                .file_stem()
-                .and_then(|s| s.to_str())
-                .unwrap_or("recording")
-                .to_string()
-        } else {
-            String::new()
-        };
-
-        let system_path = if settings.audio.capture_system_audio {
-            if settings.quick_capture {
-                Some(audio_base_path.join(format!("{}_system.wav", file_stem)))
-            } else {
-                Some(audio_base_path.join("system.wav"))
-            }
-        } else {
-            None
-        };
-
-        let mic_path = if settings.audio.microphone_device_index.is_some() {
-            if settings.quick_capture {
-                Some(audio_base_path.join(format!("{}_mic.wav", file_stem)))
-            } else {
-                Some(audio_base_path.join("mic.wav"))
-            }
-        } else {
-            None
-        };
-
-        (system_path, mic_path)
-    };
+    let (system_audio_path, mic_audio_path) =
+        snapit_capture::recorder_audio_paths::plan_audio_artifact_paths(
+            output_path.as_path(),
+            settings.quick_capture,
+            settings.audio.capture_system_audio,
+            settings.audio.microphone_device_index.is_some(),
+        );
 
     // Start multi-track audio recording
     if system_audio_path.is_some() || mic_audio_path.is_some() {
@@ -343,12 +197,6 @@ pub fn run_video_capture(
 
     // Recording loop variables
     let frame_duration = Duration::from_secs_f64(1.0 / settings.fps as f64);
-    let mut frame_count: u64 = 0;
-    let mut paused = false;
-    let mut pause_time = Duration::ZERO;
-    let mut pause_start: Option<Instant> = None;
-    let mut first_frame_captured = false;
-    let mut _first_frame_hw_timestamp: i64 = 0; // Hardware timestamp of first video frame (debug only)
 
     // === START RECORDING ===
     // Recording state was already emitted before thread started (optimistic UI)
@@ -365,7 +213,6 @@ pub fn run_video_capture(
     // The Timestamps struct ensures both use the exact same reference point.
     let timestamps = Timestamps::now();
     let start_time = timestamps.instant();
-    let mut last_frame_time = start_time;
 
     // === CURSOR EVENT CAPTURE ===
     // Record cursor positions and clicks for auto-zoom in video editor.
@@ -384,71 +231,16 @@ pub fn run_video_capture(
     // Get region for cursor capture (region mode, window mode, or monitor mode)
     // Cursor coordinates need to be normalized relative to the capture region,
     // so we need the region's screen-space bounds.
-    let cursor_region = match &settings.mode {
-        RecordingMode::Region {
-            x,
-            y,
-            width,
-            height,
-        } => {
-            log::info!(
-                "[CAPTURE] Region mode - screen coords: ({}, {}) {}x{}, monitor_offset: ({}, {})",
-                x,
-                y,
-                width,
-                height,
-                monitor_offset.0,
-                monitor_offset.1
-            );
-            Some((*x, *y, *width, *height))
-        },
-        RecordingMode::Window { window_id } => {
-            // Get window bounds for cursor coordinate offset
-            match super::helpers::get_window_rect(*window_id) {
-                Ok((x, y, w, h)) => {
-                    log::debug!(
-                        "[CAPTURE] Window mode cursor region: ({}, {}) {}x{}",
-                        x,
-                        y,
-                        w,
-                        h
-                    );
-                    Some((x, y, w, h))
-                },
-                Err(e) => {
-                    log::warn!("[CAPTURE] Could not get window rect for cursor: {}", e);
-                    None
-                },
-            }
-        },
-        RecordingMode::Monitor { monitor_index } => {
-            // Get monitor bounds for cursor coordinate normalization.
+    let cursor_region = snapit_capture::recorder_cursor_region::resolve_cursor_region(
+        &settings.mode,
+        capture_plan.monitor_offset,
+        |window_id| get_window_rect(window_id),
+        |monitor_index| {
             // CRITICAL: Use scap's display enumeration (same as video capture) to ensure
             // monitor_index refers to the same physical display for both video and cursor.
-            // Using a different enumeration (e.g., EnumDisplayMonitors) could return monitors
-            // in a different order, causing cursor offset issues on multi-monitor setups.
-            get_scap_display_bounds(*monitor_index).map(|(x, y, w, h)| {
-                    log::debug!(
-                        "[CAPTURE] Monitor mode cursor region (from scap): ({}, {}) {}x{} (monitor {})",
-                        x, y, w, h, monitor_index
-                    );
-                    (x, y, w, h)
-                }).or_else(|| {
-                    log::warn!(
-                        "[CAPTURE] Monitor {} not found in scap, cursor coordinates may be incorrect",
-                        monitor_index
-                    );
-                    None
-                })
+            get_scap_display_bounds(monitor_index)
         },
-        RecordingMode::AllMonitors => {
-            // For all monitors mode, cursor coordinates span the entire virtual screen
-            // Use None to fall back to get_screen_dimensions() which returns primary screen size
-            // This may not be perfect for multi-monitor but AllMonitors is a special case
-            log::debug!("[CAPTURE] AllMonitors mode - cursor region spans virtual screen");
-            None
-        },
-    };
+    );
 
     // Only start cursor capture for editor flow - use shared start_time for synchronization
     if !settings.quick_capture {
@@ -457,233 +249,72 @@ pub fn run_video_capture(
         }
     }
 
-    // NOTE: Do NOT use the pre-captured first frame for recording!
-    // It was captured BEFORE start_time, so cursor timestamps won't align.
-    // We only use first_frame for dimension detection, then wait for a fresh frame.
-    let mut pending_first_frame: Option<Vec<u8>> = None;
-
     // Wait for a frame captured AFTER our start time.
     // Pre-buffered frames have timestamps before start_time, which would cause
     // cursor to appear ahead of video. We skip these stale frames.
     // Scap uses SystemTime (UNIX_EPOCH-based), stored in timestamps.system_time_100ns()
     let start_system_time = timestamps.system_time_100ns();
-    let mut stale_frames_skipped = 0;
-    loop {
-        if let Some(frame) = capture_source.get_frame(50) {
-            if frame.timestamp_100ns > 0 {
-                // Compare frame timestamp to start time (both in 100ns since UNIX_EPOCH)
-                if frame.timestamp_100ns >= start_system_time {
-                    // Frame was captured after start - this is the first valid frame
-                    let offset_ms = (frame.timestamp_100ns - start_system_time) / 10_000;
-                    log::debug!(
-                        "[RECORDING] Skipped {} stale frames, first valid frame captured {}ms after start",
-                        stale_frames_skipped,
-                        offset_ms
-                    );
-                    break;
+    let _first_frame_sync = snapit_capture::recorder_first_frame::wait_for_first_frame_after_start(
+        || capture_source.get_frame(50).map(|f| f.timestamp_100ns),
+        start_system_time,
+        10,
+    );
+
+    let loop_result = snapit_capture::recorder_video_loop::run_video_capture_loop(
+        snapit_capture::recorder_video_loop::VideoCaptureLoopConfig {
+            command_rx: &command_rx,
+            progress: progress.as_ref(),
+            should_stop: should_stop.as_ref(),
+            is_paused: is_paused.as_ref(),
+            started_at,
+            start_time,
+            max_duration,
+            frame_duration,
+            frame_timeout_ms: 100,
+            control_poll_timeout: Duration::from_millis(100),
+            pacing_margin: Duration::from_micros(500),
+            progress_every_frames: 30,
+        },
+        |timeout_ms| {
+            capture_source.get_frame(timeout_ms).map(|f| {
+                snapit_capture::recorder_video_loop::VideoLoopFrame {
+                    data: f.data,
+                    hardware_timestamp_100ns: f.timestamp_100ns,
                 }
-            }
-            // Frame was captured before start, skip it
-            stale_frames_skipped += 1;
-            if stale_frames_skipped > 10 {
-                // Safety limit - just proceed with what we have
-                log::warn!(
-                    "[RECORDING] Skipped {} stale frames, proceeding anyway",
-                    stale_frames_skipped
-                );
-                break;
-            }
-        } else {
-            // No frame available, timeout - just proceed
-            break;
-        }
-    }
-
-    loop {
-        // Check for commands
-        match command_rx.try_recv() {
-            Ok(RecorderCommand::Stop) => {
-                should_stop.store(true, Ordering::SeqCst);
-                break;
-            },
-            Ok(RecorderCommand::Cancel) => {
-                should_stop.store(true, Ordering::SeqCst);
-                progress.mark_cancelled();
-                break;
-            },
-            Ok(RecorderCommand::Pause) => {
-                if !paused {
-                    paused = true;
-                    pause_start = Some(Instant::now());
-                    progress.set_paused(true);
-                    is_paused.store(true, Ordering::SeqCst);
-                }
-            },
-            Ok(RecorderCommand::Resume) => {
-                if paused {
-                    if let Some(ps) = pause_start.take() {
-                        pause_time += ps.elapsed();
-                    }
-                    paused = false;
-                    progress.set_paused(false);
-                    is_paused.store(false, Ordering::SeqCst);
-                }
-            },
-            Err(TryRecvError::Empty) => {},
-            Err(TryRecvError::Disconnected) => {
-                should_stop.store(true, Ordering::SeqCst);
-                break;
-            },
-        }
-
-        // Skip frame capture while paused
-        if paused {
-            match command_rx.recv_timeout(Duration::from_millis(100)) {
-                Ok(RecorderCommand::Resume) => {
-                    if let Some(ps) = pause_start.take() {
-                        pause_time += ps.elapsed();
-                    }
-                    paused = false;
-                    progress.set_paused(false);
-                    is_paused.store(false, Ordering::SeqCst);
-                },
-                Ok(RecorderCommand::Stop) => {
-                    should_stop.store(true, Ordering::SeqCst);
-                    break;
-                },
-                Ok(RecorderCommand::Cancel) => {
-                    should_stop.store(true, Ordering::SeqCst);
-                    progress.mark_cancelled();
-                    break;
-                },
-                Ok(RecorderCommand::Pause) => {}, // Already paused, ignore
-                Err(crossbeam_channel::RecvTimeoutError::Timeout) => {}, // Normal timeout, continue loop
-                Err(crossbeam_channel::RecvTimeoutError::Disconnected) => {
-                    should_stop.store(true, Ordering::SeqCst);
-                    break;
-                },
-            }
-            continue;
-        }
-
-        // Check max duration
-        let actual_elapsed = start_time.elapsed() - pause_time;
-        if let Some(max_dur) = max_duration {
-            if actual_elapsed >= max_dur {
-                should_stop.store(true, Ordering::SeqCst);
-                break;
-            }
-        }
-
-        // Frame rate limiting - sleep for remaining time instead of busy-waiting
-        let elapsed_since_frame = last_frame_time.elapsed();
-        if elapsed_since_frame < frame_duration {
-            let remaining = frame_duration - elapsed_since_frame;
-            // Sleep for most of the remaining time, leaving a small margin for timing accuracy
-            if remaining > Duration::from_micros(500) {
-                std::thread::sleep(remaining - Duration::from_micros(500));
-            }
-            continue;
-        }
-
-        // Acquire next frame from capture source (WGC for all modes)
-        // Get frame with hardware timestamp for precise cursor synchronization
-        // Note: Region capture frames are already cropped by CaptureSource
-        let frame = if let Some(data) = pending_first_frame.take() {
-            // Fallback: use application timing if we have a pending frame
-            Some((data, 0i64))
-        } else {
-            capture_source
-                .get_frame(100)
-                .map(|f| (f.data, f.timestamp_100ns))
-        };
-
-        let (frame_data, frame_hw_timestamp) = match frame {
-            Some((data, ts)) => {
-                // Copy frame data to buffer
-                let len = data.len().min(buffer_pool.frame_size);
-                buffer_pool.frame_buffer[..len].copy_from_slice(&data[..len]);
-                (true, ts)
-            },
-            None => (false, 0), // Timeout or no frame
-        };
-
-        // Skip if no frame was acquired
-        if !frame_data {
-            continue;
-        }
-
-        // Track first frame timing for cursor sync.
-        // IMPORTANT: Use Instant::elapsed() for offset since cursor also uses Instant::elapsed().
-        // Using hardware timestamps from different clock domains causes sync issues.
-        // Cap's approach: use single clock source (Instant) for everything.
-        if !first_frame_captured {
-            first_frame_captured = true;
-            _first_frame_hw_timestamp = frame_hw_timestamp;
-
-            // Use Instant-based timing (same clock as cursor capture)
-            let first_frame_offset_ms = actual_elapsed.as_millis() as u64;
+            })
+        },
+        |first_frame_offset_ms, frame_hw_timestamp| {
             cursor_event_capture.set_video_start_offset(first_frame_offset_ms);
-
             log::info!(
                 "[RECORDING] First frame: offset={}ms (Instant-based, hw_ts={} for debug)",
                 first_frame_offset_ms,
                 frame_hw_timestamp
             );
-        }
+        },
+        |frame, actual_elapsed| {
+            // Copy frame data to buffer
+            let len = frame.data.len().min(buffer_pool.frame_size);
+            buffer_pool.frame_buffer[..len].copy_from_slice(&frame.data[..len]);
 
-        last_frame_time = Instant::now();
+            // Flip vertically using pooled buffer (both DXGI and WGC return top-down, encoder expects bottom-up)
+            let flipped_data = buffer_pool.flip_vertical(width, height);
 
-        // NOTE: Cursor is NO LONGER composited onto frames!
-        // Cursor events and images are captured separately (CursorEventCapture)
-        // and rendered by the video editor/exporter for flexibility.
-        // This allows: cursor type switching, motion blur, and click effects.
+            // Get video timestamp using Instant-based timing (same as cursor)
+            // This ensures video and cursor timestamps are in the same time domain.
+            let video_timestamp = (actual_elapsed.as_micros() * 10) as i64;
 
-        // NOTE: Webcam is recorded to a separate file (not composited onto screen)
-        // This allows toggling webcam visibility in the video editor
-
-        // Flip vertically using pooled buffer (both DXGI and WGC return top-down, encoder expects bottom-up)
-        let flipped_data = buffer_pool.flip_vertical(width, height);
-
-        // Get video timestamp using Instant-based timing (same as cursor)
-        // This ensures video and cursor timestamps are in the same time domain,
-        // eliminating any drift from mixing clock sources.
-        // Hardware timestamps are captured above but used only for debugging.
-        let video_timestamp = (actual_elapsed.as_micros() * 10) as i64;
-
-        // Send video frame to encoder
-        let _ = encoder.send_frame_buffer(flipped_data, video_timestamp);
-
-        // Audio is NOT sent to encoder - see comment at audio_settings creation.
-        // MultiTrackAudioRecorder handles WAV capture, FFmpeg muxes post-recording.
-
-        // Webcam frames are captured automatically by FeedWebcamEncoder subscription
-
-        frame_count += 1;
-        progress.increment_frame();
-
-        // Emit progress periodically
-        if frame_count % 30 == 0 {
-            emit_state_change(
-                app,
-                &RecordingState::Recording {
-                    started_at: started_at.to_string(),
-                    elapsed_secs: actual_elapsed.as_secs_f64(),
-                    frame_count,
-                },
-            );
-        }
-    }
+            // Send video frame to encoder
+            let _ = encoder.send_frame_buffer(flipped_data, video_timestamp);
+            Ok(())
+        },
+        |state| emit_state_change(app, &state),
+    )?;
 
     // Calculate recording stats
+    let frame_count = loop_result.frame_count;
     let total_elapsed = start_time.elapsed();
-    // If we stopped while paused, add the current pause duration to the total
-    let final_pause_time = if let Some(ps) = pause_start {
-        pause_time + ps.elapsed()
-    } else {
-        pause_time
-    };
-    let recording_duration = total_elapsed - final_pause_time;
+    let final_pause_time = loop_result.total_pause_duration;
+    let recording_duration = total_elapsed.saturating_sub(final_pause_time);
     let webcam_frames = webcam_encoder
         .as_ref()
         .map(|e| e.frames_written())
@@ -701,16 +332,17 @@ pub fn run_video_capture(
 
     // Finish webcam encoder BEFORE stopping capture service
     // Pass the actual recording duration so webcam syncs perfectly with screen
-    if let Some(encoder) = webcam_encoder {
-        if was_cancelled {
-            encoder.cancel();
-            if let Some(ref path) = webcam_output_path {
-                let _ = std::fs::remove_file(path);
-            }
-        } else if let Err(e) = encoder.finish_with_duration(recording_duration.as_secs_f64()) {
-            log::warn!("Webcam encoding failed: {}", e);
-        }
-    }
+    snapit_capture::recorder_webcam_lifecycle::finalize_webcam_encoder(
+        webcam_encoder,
+        webcam_output_path.as_deref(),
+        was_cancelled,
+        recording_duration.as_secs_f64(),
+        |encoder| encoder.cancel(),
+        |encoder, duration_secs| encoder.finish_with_duration(duration_secs),
+        |path| {
+            let _ = std::fs::remove_file(path);
+        },
+    );
 
     // Stop capture services (both old buffer and new feed system)
     stop_capture_service();
@@ -718,88 +350,51 @@ pub fn run_video_capture(
     let _ = multitrack_audio.stop();
     let cursor_recording = cursor_event_capture.stop();
 
-    // If cancelled, skip main encoder
-    if was_cancelled {
-        drop(encoder);
-        return Ok(recording_duration.as_secs_f64());
-    }
-
-    // Save cursor data (editor flow only)
-    if !settings.quick_capture {
-        if let Some(ref path) = cursor_data_path {
-            if !cursor_recording.events.is_empty() {
-                let _ = save_cursor_recording(&cursor_recording, path);
+    let finalize_outcome = snapit_capture::recorder_video_finalize::finalize_video_capture(
+        finalization_plan,
+        was_cancelled,
+        cursor_data_path.is_some(),
+        cursor_recording.events.len(),
+        webcam_output_path.is_some(),
+        screen_video_path.as_path(),
+        system_audio_path.as_deref(),
+        mic_audio_path.as_deref(),
+        || {
+            if let Some(ref path) = cursor_data_path {
+                save_cursor_recording(&cursor_recording, path)
+            } else {
+                Ok(())
             }
-        }
-    }
-
-    // Finish main video encoder (video-only, no audio)
-    encoder
-        .finish()
-        .map_err(|e| format!("Failed to finish encoding: {:?}", e))?;
-
-    // Verify video file was created and has content
-    let video_file_size = std::fs::metadata(&screen_video_path)
-        .map(|m| m.len())
-        .unwrap_or(0);
-    log::info!(
-        "[CAPTURE] Video file after encoder.finish(): {} ({} bytes)",
-        screen_video_path.to_string_lossy(),
-        video_file_size
-    );
-    if video_file_size == 0 {
-        return Err(format!(
-            "Video encoder produced empty file: {}",
-            screen_video_path.to_string_lossy()
-        ));
-    }
-
-    // Mux audio with video using FFmpeg (bypasses windows-capture audio jitter)
-    // Only mux for quick capture - editor flow keeps separate audio files for volume control
-    if settings.quick_capture {
-        if let Err(e) = mux_audio_to_video(
-            &screen_video_path,
-            system_audio_path.as_ref(),
-            mic_audio_path.as_ref(),
-        ) {
-            log::warn!("Audio muxing failed: {}", e);
-        }
-    } else {
-        log::debug!("[CAPTURE] Editor flow: keeping separate audio files for editing");
-    }
-
-    // Make video faststart-enabled for instant streaming in editor
-    // This relocates the moov atom to the start of the file
-    if let Err(e) = make_video_faststart(&screen_video_path) {
-        log::warn!("[CAPTURE] Faststart failed (video will load slowly): {}", e);
-    }
+        },
+        || {
+            encoder
+                .finish()
+                .map_err(|e| format!("Failed to finish encoding: {:?}", e))
+        },
+        |video_path, system_path, mic_path| mux_audio_to_video(video_path, system_path, mic_path),
+        |video_path| make_video_faststart(video_path),
+        |artifact_flags| {
+            create_video_project_file(
+                output_path,
+                width,
+                height,
+                recording_duration.as_millis() as u64,
+                settings.fps,
+                artifact_flags.has_webcam,
+                artifact_flags.has_cursor,
+                artifact_flags.has_system_audio,
+                artifact_flags.has_microphone_audio,
+            )
+        },
+    )?;
 
     // NOTE: Webcam sync is now handled in finish_with_duration() above.
     // The webcam encoder remuxes with correct FPS to match screen duration.
-
-    // Create project.json with video project metadata (editor flow only)
-    if !settings.quick_capture {
-        // Check which audio files exist
-        let has_system_audio = system_audio_path
-            .as_ref()
-            .map(|p| p.exists())
-            .unwrap_or(false);
-        let has_mic_audio = mic_audio_path.as_ref().map(|p| p.exists()).unwrap_or(false);
-
-        create_video_project_file(
-            output_path,
-            width,
-            height,
-            recording_duration.as_millis() as u64,
-            settings.fps,
-            webcam_output_path.is_some(),
-            cursor_data_path
-                .as_ref()
-                .map(|_| !cursor_recording.events.is_empty())
-                .unwrap_or(false),
-            has_system_audio,
-            has_mic_audio,
-        )?;
+    if matches!(
+        finalize_outcome,
+        snapit_capture::recorder_video_finalize::VideoFinalizeOutcome::Cancelled
+    ) {
+        return Ok(recording_duration.as_secs_f64());
     }
 
     Ok(recording_duration.as_secs_f64())

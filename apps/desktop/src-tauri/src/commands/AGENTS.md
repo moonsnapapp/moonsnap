@@ -43,7 +43,7 @@ commands/
 
 ### Command Signature
 ```rust
-use crate::error::{SnapItError, SnapItResult};
+use snapit_core::error::{SnapItError, SnapItResult};
 
 #[tauri::command]
 pub async fn my_command(
@@ -57,7 +57,7 @@ pub async fn my_command(
 
 ### Error Handling
 ```rust
-use crate::error::{SnapItError, ResultExt};
+use snapit_core::error::{SnapItError, ResultExt};
 
 // Convert any error with context
 let data = fs::read(&path)

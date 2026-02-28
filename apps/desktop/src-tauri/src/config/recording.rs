@@ -7,7 +7,7 @@ use lazy_static::lazy_static;
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
 
-use crate::commands::video_recording::GifQualityPreset;
+use snapit_capture::ffmpeg_gif_encoder::GifQualityPreset;
 
 /// Centralized recording configuration.
 ///

@@ -45,9 +45,9 @@ impl WebcamEncoderPipe {
 
         log::debug!("[WEBCAM_PIPE] Spawning FFmpeg: {}x{}", width, height);
 
-        let ffmpeg_path = crate::commands::storage::find_ffmpeg().ok_or("FFmpeg not found")?;
+        let ffmpeg_path = snapit_media::ffmpeg::find_ffmpeg().ok_or("FFmpeg not found")?;
 
-        let mut child = crate::commands::storage::ffmpeg::create_hidden_command(&ffmpeg_path)
+        let mut child = snapit_media::ffmpeg::create_hidden_command(&ffmpeg_path)
             .args([
                 "-y",
                 "-f",
@@ -187,7 +187,7 @@ impl WebcamEncoderPipe {
     /// Remux the video with correct timing using stream copy (no re-encoding).
     /// Uses -itsscale to scale timestamps to match target duration.
     fn remux_with_correct_fps(output_path: &PathBuf, target_fps: f64) -> Result<(), String> {
-        let ffmpeg_path = crate::commands::storage::find_ffmpeg().ok_or("FFmpeg not found")?;
+        let ffmpeg_path = snapit_media::ffmpeg::find_ffmpeg().ok_or("FFmpeg not found")?;
 
         // Rename original to temp
         let temp_path = output_path.with_extension("temp.mp4");
@@ -208,7 +208,7 @@ impl WebcamEncoderPipe {
         );
 
         // Use -itsscale to scale input timestamps, -c copy for stream copy (no re-encoding)
-        let output = crate::commands::storage::ffmpeg::create_hidden_command(&ffmpeg_path)
+        let output = snapit_media::ffmpeg::create_hidden_command(&ffmpeg_path)
             .args([
                 "-y",
                 "-itsscale",
@@ -357,7 +357,7 @@ impl FeedWebcamEncoder {
         pause_signal: Arc<AtomicBool>,
         frames_written: Arc<AtomicU64>,
     ) -> Result<(), String> {
-        let ffmpeg_path = crate::commands::storage::find_ffmpeg().ok_or("FFmpeg not found")?;
+        let ffmpeg_path = snapit_media::ffmpeg::find_ffmpeg().ok_or("FFmpeg not found")?;
 
         // Wait for first frame to get actual dimensions and format
         let first_frame = loop {
@@ -412,7 +412,7 @@ impl FeedWebcamEncoder {
         // Choose input format based on frame type
         // MJPEG: use image2pipe (FFmpeg decodes JPEG directly - much faster)
         // Other formats: use rawvideo with BGRA conversion
-        let mut cmd = crate::commands::storage::ffmpeg::create_hidden_command(&ffmpeg_path);
+        let mut cmd = snapit_media::ffmpeg::create_hidden_command(&ffmpeg_path);
         cmd.arg("-y");
 
         if is_mjpeg {

@@ -5,6 +5,7 @@
 
 use std::sync::Mutex;
 
+use snapit_domain::capture::ScreenRegionSelection;
 use tauri::{
     image::Image,
     menu::{Menu, MenuItem, PredefinedMenuItem},
@@ -114,7 +115,7 @@ pub fn setup_system_tray(app: &App) -> Result<TrayState, Box<dyn std::error::Err
                 let app_handle = app.clone();
                 tauri::async_runtime::spawn(async move {
                     if let Ok(bounds) = commands::capture::get_virtual_screen_bounds().await {
-                        let selection = commands::capture::ScreenRegionSelection {
+                        let selection = ScreenRegionSelection {
                             x: bounds.x,
                             y: bounds.y,
                             width: bounds.width,

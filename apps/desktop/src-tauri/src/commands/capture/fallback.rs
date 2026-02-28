@@ -8,7 +8,7 @@
 
 use xcap::{Monitor, Window};
 
-use super::types::{CaptureError, MonitorInfo, ScreenRegionSelection, WindowInfo};
+use snapit_domain::capture::{CaptureError, MonitorInfo, ScreenRegionSelection, WindowInfo};
 
 /// Flush DWM composition before capture.
 /// This ensures layered windows (transparent windows) are properly composited

@@ -1,49 +1,13 @@
 //! Auto-zoom generation from cursor recording data.
 
-use serde::{Deserialize, Serialize};
-use ts_rs::TS;
-
-use super::types::{EasingFunction, VideoProject, ZoomRegion, ZoomRegionMode, ZoomTransition};
 use crate::commands::video_recording::cursor::{load_cursor_recording, CursorEventType};
+use snapit_domain::video_project::{
+    AutoZoomConfig, VideoProject, ZoomRegion, ZoomRegionMode, ZoomTransition,
+};
 
 // ============================================================================
 // Auto-Zoom Configuration
 // ============================================================================
-
-/// Configuration for auto-zoom generation.
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[serde(rename_all = "camelCase")]
-#[ts(export, export_to = "../../src/types/generated/")]
-pub struct AutoZoomConfig {
-    /// Zoom scale factor (e.g., 2.0 = 2x zoom).
-    pub scale: f32,
-    /// How long to hold the zoom at the click location (ms).
-    pub hold_duration_ms: u32,
-    /// Minimum gap between zoom regions (ms). Clicks closer than this are merged.
-    pub min_gap_ms: u32,
-    /// Transition in duration (ms).
-    pub transition_in_ms: u32,
-    /// Transition out duration (ms).
-    pub transition_out_ms: u32,
-    /// Easing function for transitions.
-    pub easing: EasingFunction,
-    /// Only include left clicks (ignore right/middle clicks).
-    pub left_clicks_only: bool,
-}
-
-impl Default for AutoZoomConfig {
-    fn default() -> Self {
-        Self {
-            scale: 2.0,
-            hold_duration_ms: 1500,
-            min_gap_ms: 500,
-            transition_in_ms: 300,
-            transition_out_ms: 300,
-            easing: EasingFunction::EaseInOut,
-            left_clicks_only: true,
-        }
-    }
-}
 
 // ============================================================================
 // Auto-Zoom Generation

@@ -1,9 +1,22 @@
 //! Tauri commands for registering pre-rendered text images from the frontend.
 
-use crate::rendering::prerendered_text::{PreRenderedTextImage, PreRenderedTextStore};
 use parking_lot::Mutex;
+use serde::Deserialize;
+use snapit_render::prerendered_text::{LineMetric, PreRenderedTextImage, PreRenderedTextStore};
 use std::sync::Arc;
 use tauri::{command, State};
+
+/// JSON-friendly line metric from the frontend.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LineMetricInput {
+    pub top_px: u32,
+    pub height_px: u32,
+    pub cumulative_chars: usize,
+    pub content_width_px: u32,
+    #[serde(default)]
+    pub reveal_widths_px: Vec<u32>,
+}
 
 /// Global state for pre-rendered text images.
 pub struct PreRenderedTextState {
@@ -40,6 +53,7 @@ pub async fn register_prerendered_text(
     size_x: f64,
     size_y: f64,
     rgba_data: Vec<u8>,
+    line_metrics: Option<Vec<LineMetricInput>>,
 ) -> Result<(), String> {
     let expected_size = (width * height * 4) as usize;
     if rgba_data.len() != expected_size {
@@ -52,6 +66,18 @@ pub async fn register_prerendered_text(
         ));
     }
 
+    let metrics = line_metrics
+        .unwrap_or_default()
+        .into_iter()
+        .map(|m| LineMetric {
+            top_px: m.top_px,
+            height_px: m.height_px,
+            cumulative_chars: m.cumulative_chars,
+            content_width_px: m.content_width_px,
+            reveal_widths_px: m.reveal_widths_px,
+        })
+        .collect();
+
     let image = PreRenderedTextImage {
         segment_index,
         width,
@@ -60,7 +86,8 @@ pub async fn register_prerendered_text(
         center_y,
         size_x,
         size_y,
-        rgba_data,
+        rgba_data: Arc::new(rgba_data),
+        line_metrics: metrics,
     };
 
     state.store.lock().register(image);

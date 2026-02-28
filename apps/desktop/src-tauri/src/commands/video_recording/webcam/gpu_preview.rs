@@ -21,7 +21,7 @@ use wgpu::CompositeAlphaMode;
 
 use super::feed::{start_global_feed, stop_global_feed, subscribe_global, Subscription};
 use super::NativeCameraFrame;
-use crate::commands::video_recording::webcam::{WebcamShape, WebcamSize};
+use snapit_domain::webcam::{WebcamShape, WebcamSize};
 
 /// Preview window size constants
 pub const MIN_PREVIEW_SIZE: f32 = 120.0;

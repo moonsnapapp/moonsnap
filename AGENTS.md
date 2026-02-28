@@ -112,7 +112,10 @@ pub async fn my_command() -> SnapItResult<MyType> {
 #[ts(export, export_to = "../../src/types/generated/")]
 pub struct MyType { /* fields */ }
 ```
-**CRITICAL**: All `export_to` paths MUST be identical (`"../../src/types/generated/"`) across ALL Rust files. Different paths cause ts-rs to generate incorrect relative imports between types.
+**CRITICAL**: Keep `export_to` path constants consistent per source root so all generated types land in `apps/desktop/src/types/generated/`:
+- `src-tauri/src/**`: `../../src/types/generated/`
+- `src-tauri/crates/*/src/**`: `../../../../src/types/generated/`
+Use `bun run check:ts-rs-paths` in `apps/desktop` to verify.
 
 ### CSS
 

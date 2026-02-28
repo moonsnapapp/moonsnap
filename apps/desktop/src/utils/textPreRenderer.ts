@@ -9,6 +9,15 @@
 import { invoke } from '@tauri-apps/api/core';
 import type { TextSegment } from '../types';
 
+/** Per-line layout info for typewriter reveal in export. */
+export interface LineMetric {
+  topPx: number;
+  heightPx: number;
+  cumulativeChars: number;
+  contentWidthPx: number;
+  revealWidthsPx: number[];
+}
+
 /** Result of pre-rendering a single text segment. */
 export interface PreRenderedSegment {
   segmentIndex: number;
@@ -19,6 +28,7 @@ export interface PreRenderedSegment {
   sizeX: number;
   sizeY: number;
   rgbaData: Uint8Array;
+  lineMetrics: LineMetric[];
 }
 
 /** Options for renderTextOnCanvas. */
@@ -32,6 +42,32 @@ export interface RenderTextOptions {
 }
 
 type RenderContext = CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
+
+type GraphemeSegmenter = {
+  segment(input: string): Iterable<{ segment: string }>;
+};
+
+let graphemeSegmenter: GraphemeSegmenter | null | undefined;
+
+function splitGraphemes(text: string): string[] {
+  if (graphemeSegmenter === undefined) {
+    const segmenterCtor = (Intl as unknown as {
+      Segmenter?: new (
+        locales?: string | string[],
+        options?: { granularity: 'grapheme' },
+      ) => GraphemeSegmenter;
+    }).Segmenter;
+    graphemeSegmenter = segmenterCtor
+      ? new segmenterCtor(undefined, { granularity: 'grapheme' })
+      : null;
+  }
+
+  if (!graphemeSegmenter) {
+    return Array.from(text);
+  }
+
+  return Array.from(graphemeSegmenter.segment(text), (entry) => entry.segment);
+}
 
 /**
  * Break a single word into chunks that each fit within maxWidth.
@@ -106,6 +142,20 @@ function wordWrap(
   return lines.length > 0 ? lines : [''];
 }
 
+/** Line layout info returned by renderTextOnCanvas for typewriter export. */
+export interface RenderedLineInfo {
+  /** Text content of this line. */
+  text: string;
+  /** Y offset from the top of the drawing area. */
+  topPx: number;
+  /** Height of this line box. */
+  heightPx: number;
+  /** Measured pixel width of text content on this line. */
+  contentWidthPx: number;
+  /** Measured reveal width after each grapheme in the line. */
+  revealWidthsPx: number[];
+}
+
 /**
  * Render text onto a canvas context. Single source of truth for text rendering,
  * used by both preview (TextOverlay canvas) and export (preRenderForExport).
@@ -118,6 +168,7 @@ function wordWrap(
  * @param canvasWidth - Drawing area width in current coordinate space
  * @param canvasHeight - Drawing area height in current coordinate space
  * @param referenceHeight - Video height for font scaling (videoSize.height for preview, exportHeight for export)
+ * @returns Line layout info for typewriter reveal (empty array if not needed)
  */
 export function renderTextOnCanvas(
   ctx: RenderContext,
@@ -125,7 +176,7 @@ export function renderTextOnCanvas(
   canvasWidth: number,
   canvasHeight: number,
   referenceHeight: number,
-): void {
+): RenderedLineInfo[] {
   const heightScale = referenceHeight / 1080;
   const fontSize = Math.max(1, opts.fontSize * heightScale);
   const lineHeight = fontSize * 1.2;
@@ -159,9 +210,29 @@ export function renderTextOnCanvas(
 
   ctx.fillStyle = opts.color;
   const centerX = canvasWidth / 2;
+  const lineInfos: RenderedLineInfo[] = [];
   for (let i = 0; i < lines.length; i++) {
-    ctx.fillText(lines[i], centerX, startY + i * lineHeight + baselineInLine);
+    const lineTopPx = startY + i * lineHeight;
+    const lineText = lines[i];
+    ctx.fillText(lineText, centerX, lineTopPx + baselineInLine);
+    const graphemes = splitGraphemes(lineText);
+    const revealWidthsPx: number[] = [];
+    let prefix = '';
+    for (const grapheme of graphemes) {
+      prefix += grapheme;
+      revealWidthsPx.push(ctx.measureText(prefix).width);
+    }
+
+    lineInfos.push({
+      text: lineText,
+      topPx: lineTopPx,
+      heightPx: lineHeight,
+      contentWidthPx: ctx.measureText(lineText).width,
+      revealWidthsPx,
+    });
   }
+
+  return lineInfos;
 }
 
 /**
@@ -194,7 +265,7 @@ function preRenderSegment(
   ctx.save();
   ctx.translate(padding, padding);
 
-  renderTextOnCanvas(ctx, {
+  const lineInfos = renderTextOnCanvas(ctx, {
     content: segment.content,
     fontFamily: segment.fontFamily || 'sans-serif',
     fontWeight: segment.fontWeight || 700,
@@ -204,6 +275,21 @@ function preRenderSegment(
   }, contentWidth, contentHeight, exportHeight);
 
   ctx.restore();
+
+  // Build per-line metrics for typewriter reveal.
+  // topPx is offset by padding to match the pre-rendered image coordinates.
+  // cumulativeChars must match revealWidthsPx indexing (grapheme-based).
+  let cumulativeChars = 0;
+  const lineMetrics: LineMetric[] = lineInfos.map((info) => {
+    cumulativeChars += info.revealWidthsPx.length;
+    return {
+      topPx: Math.round(info.topPx + padding),
+      heightPx: Math.round(info.heightPx),
+      cumulativeChars,
+      contentWidthPx: Math.round(info.contentWidthPx),
+      revealWidthsPx: info.revealWidthsPx.map((width) => Math.round(width)),
+    };
+  });
 
   const imageData = ctx.getImageData(0, 0, boxWidth, boxHeight);
 
@@ -216,6 +302,7 @@ function preRenderSegment(
     sizeX: segment.size.x,
     sizeY: segment.size.y,
     rgbaData: new Uint8Array(imageData.data.buffer),
+    lineMetrics,
   };
 }
 
@@ -249,7 +336,8 @@ export async function preRenderForExport(
         centerY: rendered.centerY,
         sizeX: rendered.sizeX,
         sizeY: rendered.sizeY,
-        rgbaData: Array.from(rendered.rgbaData),
+        rgbaData: rendered.rgbaData,
+        lineMetrics: rendered.lineMetrics,
       }),
     );
   }

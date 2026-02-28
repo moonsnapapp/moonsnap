@@ -23,6 +23,10 @@ scale: number,
  */
 motionBlur: number, 
 /**
+ * Fade cursor out after inactivity.
+ */
+hideWhenIdle: boolean, 
+/**
  * Click highlight settings.
  */
 clickHighlight: ClickHighlightConfig, };

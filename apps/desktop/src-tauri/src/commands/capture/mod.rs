@@ -6,9 +6,8 @@
 //! - Window: Screen capture at DWM bounds with border inset
 
 pub mod fallback;
-pub mod types;
 
-pub use types::{
+use snapit_domain::capture::{
     CaptureResult, FastCaptureResult, MonitorInfo, RegionSelection, ScreenRegionSelection,
     VirtualScreenBounds, WindowInfo,
 };
