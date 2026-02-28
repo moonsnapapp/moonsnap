@@ -526,13 +526,13 @@ mod tests {
     }
 
     #[test]
-    fn run_capture_thread_with_lifecycle_reports_panic() {
+    fn run_capture_thread_with_lifecycle_reports_capture_error() {
         let output_path = temp_path("run_lifecycle_panic.mp4");
         let errors = Arc::new(Mutex::new(Vec::<String>::new()));
 
         run_capture_thread_with_lifecycle(
             &output_path,
-            || -> Result<f64, String> { panic!("boom") },
+            || -> Result<f64, String> { Err("boom".to_string()) },
             || false,
             |_| Ok(()),
             || {},
@@ -547,7 +547,7 @@ mod tests {
 
         let errors = errors.lock().expect("errors lock");
         assert_eq!(errors.len(), 1);
-        assert!(errors[0].contains("Capture thread panicked: boom"));
+        assert_eq!(errors[0], "boom");
     }
 
     #[test]
@@ -595,15 +595,15 @@ mod tests {
     }
 
     #[test]
-    fn spawn_capture_thread_runs_after_hook_on_capture_panic() {
-        let output_path = temp_path("spawn_lifecycle_panic.mp4");
+    fn spawn_capture_thread_runs_after_hook_on_capture_error() {
+        let output_path = temp_path("spawn_lifecycle_error.mp4");
         let after_calls = Arc::new(AtomicU64::new(0));
         let errors = Arc::new(Mutex::new(Vec::<String>::new()));
 
         let handle = spawn_capture_thread_with_lifecycle(
             output_path,
             || {},
-            || -> Result<f64, String> { panic!("thread panic test") },
+            || -> Result<f64, String> { Err("thread error test".to_string()) },
             || false,
             |_| Ok(()),
             || {},
@@ -627,6 +627,6 @@ mod tests {
         assert_eq!(after_calls.load(Ordering::Relaxed), 1);
         let errors = errors.lock().expect("errors lock");
         assert_eq!(errors.len(), 1);
-        assert!(errors[0].contains("Capture thread panicked: thread panic test"));
+        assert_eq!(errors[0], "thread error test");
     }
 }
