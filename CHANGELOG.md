@@ -2,6 +2,15 @@
 
 All notable changes to SnapIt are documented in this file.
 
+## [0.5.6] - 2026-02-28
+
+### Changed
+- Faster video export with GPU-accelerated text overlay compositing.
+- Smoother typewriter animation with per-character reveal timing and line-aware clipping.
+
+### Fixed
+- Correct audio volume when mixing typewriter sound effects with source audio.
+
 ## [0.5.5] - 2026-02-26
 
 ### Added
