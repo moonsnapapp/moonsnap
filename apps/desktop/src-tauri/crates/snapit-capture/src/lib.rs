@@ -75,8 +75,10 @@ mod tests {
         let recorder = MultiTrackAudioRecorder::new();
         let (_sys, _mic) = recorder.get_audio_paths();
 
-        let _ = recording_runtime::get_scap_display_bounds(0);
-
-        let _ = audio::list_input_devices();
+        // Export-contract checks only: keep references to native helpers
+        // without invoking them in CI/headless environments.
+        let _display_bounds: fn(usize) -> Option<(i32, i32, u32, u32)> =
+            recording_runtime::get_scap_display_bounds;
+        let _list_input_devices: fn() -> Vec<String> = audio::list_input_devices;
     }
 }
