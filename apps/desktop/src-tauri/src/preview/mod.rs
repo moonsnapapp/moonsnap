@@ -15,17 +15,17 @@ pub use native_surface::{
     get_caption_preview_instance, remove_caption_preview_instance, NativeCaptionPreview,
 };
 
-use crate::commands::captions::{CaptionSegment, CaptionSettings};
-use crate::commands::video_recording::video_project::{TextAnimation, TextSegment, VideoProject};
-use crate::rendering::caption_layer::prepare_captions;
 use crate::rendering::compositor::Compositor;
 use crate::rendering::renderer::Renderer;
-use crate::rendering::text::{parse_color, PreparedText};
-use crate::rendering::types::{
-    BackgroundStyle, BackgroundType, BorderStyle, CornerStyle, DecodedFrame, RenderOptions,
-    ShadowStyle, ZoomState,
-};
 use log::info;
+use snapit_domain::captions::{CaptionSegment, CaptionSettings};
+use snapit_domain::video_project::{TextAnimation, TextSegment, VideoProject};
+use snapit_render::caption_layer::prepare_captions;
+use snapit_render::text::{parse_color, PreparedText};
+use snapit_render::types::{
+    BackgroundStyle, BackgroundType, BorderStyle, CornerStyle, DecodedFrame, PixelFormat,
+    RenderOptions, ShadowStyle, ZoomState,
+};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Instant;
@@ -242,7 +242,7 @@ impl PreviewRenderer {
             data: async_frame.data,
             width: async_frame.width,
             height: async_frame.height,
-            format: crate::rendering::types::PixelFormat::Rgba,
+            format: PixelFormat::Rgba,
         };
 
         // Build render options from project

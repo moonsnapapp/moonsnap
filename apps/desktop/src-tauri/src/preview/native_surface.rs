@@ -6,11 +6,11 @@
 //! Note: Text overlay preview was removed — text overlays now use CSS rendering
 //! exclusively (see TextOverlay.tsx). Only caption preview remains here.
 
-use crate::commands::captions::{CaptionSegment, CaptionSettings};
-use crate::rendering::caption_layer::prepare_captions;
-use crate::rendering::text_layer::TextLayer;
 use log::{error, info};
 use parking_lot::Mutex;
+use snapit_domain::captions::{CaptionSegment, CaptionSettings};
+use snapit_render::caption_layer::prepare_captions;
+use snapit_render::text_layer::TextLayer;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU64, Ordering};
 use std::sync::Arc;

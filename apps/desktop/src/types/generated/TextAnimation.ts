@@ -3,4 +3,4 @@
 /**
  * Text animation style.
  */
-export type TextAnimation = "none" | "fadeIn" | "fadeOut" | "fadeInOut";
+export type TextAnimation = "none" | "typeWriter";

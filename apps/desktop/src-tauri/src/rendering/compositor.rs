@@ -10,15 +10,16 @@
 use std::sync::Arc;
 use wgpu::{Device, Queue};
 
-use super::background::{Background, BackgroundLayer};
-use super::parity::calculate_composition_bounds;
-use super::prerendered_text::PreRenderedTextStore;
 use super::renderer::Renderer;
-use super::text::PreparedText;
-use super::text_layer::TextLayer;
-use super::text_overlay_layer::{TextOverlayLayer, TextOverlayQuad};
-use super::types::{
-    BackgroundStyle, BackgroundType, CornerStyle, DecodedFrame, RenderOptions, WebcamShape,
+use snapit_render::background::{Background, BackgroundLayer};
+use snapit_render::parity::calculate_composition_bounds;
+use snapit_render::prerendered_text::PreRenderedTextStore;
+use snapit_render::text::PreparedText;
+use snapit_render::text_layer::TextLayer;
+use snapit_render::text_overlay_layer::TextOverlayLayer;
+use snapit_render::types::{
+    BackgroundStyle, BackgroundType, CornerStyle, DecodedFrame, RenderOptions, TextOverlayQuad,
+    WebcamShape,
 };
 
 /// WGSL shader for video compositing with zoom, padding, rounding, shadow, border, and webcam overlay.

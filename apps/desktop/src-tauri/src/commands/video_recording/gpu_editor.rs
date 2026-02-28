@@ -7,10 +7,9 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tauri::{AppHandle, Manager, State};
 
-use crate::commands::video_recording::video_project::VideoProject;
-use crate::rendering::{
-    EditorInstance, EditorInstanceInfo, PlaybackState, RenderedFrame, RendererState,
-};
+use crate::rendering::{EditorInstance, RendererState};
+use snapit_domain::video_project::VideoProject;
+use snapit_render::types::{EditorInstanceInfo, PlaybackState, RenderedFrame};
 
 /// Global state for managing editor instances.
 pub struct EditorState {

@@ -3,12 +3,18 @@
 // Allow unused fields - kept for potential future use
 #![allow(dead_code)]
 
-use super::coord::{Coord, FrameSpace, ScreenUVSpace, Size, ZoomedFrameSpace};
-use super::zoom::InterpolatedZoom;
 use crate::commands::video_recording::cursor::events::{
     CursorEvent, CursorEventType, CursorImage, CursorRecording, WindowsCursorShape,
 };
-use crate::commands::video_recording::video_project::CursorConfig;
+use snapit_domain::video_project::CursorConfig;
+use snapit_render::coord::{Coord, FrameSpace, ScreenUVSpace, Size, ZoomedFrameSpace};
+use snapit_render::cursor_composite::{
+    composite_cursor as composite_cursor_shared,
+    composite_cursor_with_motion_blur as composite_cursor_with_motion_blur_shared,
+    CursorCompositeState, DecodedCursorImage as SharedDecodedCursorImage,
+    VideoContentBounds as SharedVideoContentBounds,
+};
+use snapit_render::zoom::InterpolatedZoom;
 use std::collections::HashMap;
 
 // ============================================================================
@@ -101,42 +107,6 @@ const CURSOR_CLICK_DURATION_MS: f64 = CURSOR_CLICK_DURATION * 1000.0;
 
 /// Scale factor when cursor is "shrunk" during click (0.7 = 30% smaller).
 const CLICK_SHRINK_SIZE: f32 = 0.7;
-
-// ============================================================================
-// Motion Blur Configuration (aligned with Cap)
-// ============================================================================
-
-/// Number of samples for motion blur effect.
-/// Higher sample count improves trail smoothness.
-const MOTION_BLUR_SAMPLES: usize = 32;
-
-/// Baseline trail sample count from the previous 20-sample implementation.
-/// Used to normalize trail brightness as sample count changes.
-const MOTION_BLUR_BASE_TRAIL_SAMPLES: f32 = 19.0;
-
-/// Minimum velocity (normalized units/frame) to trigger motion blur.
-/// Below this threshold, no blur is applied.
-const MOTION_BLUR_MIN_VELOCITY: f32 = 0.005;
-
-/// Velocity where blur reaches full strength ramp (smoothstep end).
-const MOTION_BLUR_VELOCITY_RAMP_END: f32 = 0.03;
-
-/// Maximum trail length as fraction of frame diagonal.
-/// Limits how far back the motion blur trail extends.
-const MOTION_BLUR_MAX_TRAIL: f32 = 0.15;
-
-/// Max effective user blur amount (15%).
-const MOTION_BLUR_MAX_USER_AMOUNT: f32 = 0.15;
-
-/// Velocity multiplier for trail length calculation.
-/// Higher values = longer trails for same velocity.
-const MOTION_BLUR_VELOCITY_SCALE: f32 = 2.0;
-
-/// Maximum motion in pixels before clamping (from Cap).
-const MAX_MOTION_PIXELS: f32 = 320.0;
-
-/// Minimum motion threshold in normalized coords (from Cap).
-const MIN_MOTION_THRESHOLD: f32 = 0.01;
 
 // ============================================================================
 // Cursor Scaling Configuration (aligned with Cap)
@@ -452,14 +422,7 @@ pub struct CursorInterpolator {
 }
 
 /// Decoded cursor image ready for compositing.
-#[derive(Debug, Clone)]
-pub struct DecodedCursorImage {
-    pub width: u32,
-    pub height: u32,
-    pub hotspot_x: i32,
-    pub hotspot_y: i32,
-    pub data: Vec<u8>, // RGBA
-}
+pub type DecodedCursorImage = SharedDecodedCursorImage;
 
 impl CursorInterpolator {
     /// Create a new cursor interpolator from a recording.
@@ -1142,96 +1105,7 @@ pub fn calculate_aspect_aware_scale(
 
 /// Video content bounds within the composition frame.
 /// Used to correctly position cursor when padding is applied.
-#[derive(Debug, Clone, Copy)]
-pub struct VideoContentBounds {
-    /// X offset of video content within composition
-    pub x: f32,
-    /// Y offset of video content within composition
-    pub y: f32,
-    /// Width of video content area
-    pub width: f32,
-    /// Height of video content area
-    pub height: f32,
-}
-
-impl VideoContentBounds {
-    /// Create bounds where video fills the entire frame (no padding).
-    pub fn full_frame(frame_width: u32, frame_height: u32) -> Self {
-        Self {
-            x: 0.0,
-            y: 0.0,
-            width: frame_width as f32,
-            height: frame_height as f32,
-        }
-    }
-
-    /// Create bounds with padding (video centered within composition).
-    pub fn with_padding(
-        _composition_width: u32,
-        _composition_height: u32,
-        video_width: u32,
-        video_height: u32,
-        padding: u32,
-    ) -> Self {
-        // In auto mode, video is centered with padding on all sides
-        // frame_x = padding, frame_y = padding
-        // frame_width = video_width, frame_height = video_height
-        Self {
-            x: padding as f32,
-            y: padding as f32,
-            width: video_width as f32,
-            height: video_height as f32,
-        }
-    }
-}
-
-/// Sample a cursor texture with bilinear filtering.
-fn sample_cursor_bilinear(cursor_image: &DecodedCursorImage, src_x: f32, src_y: f32) -> [f32; 4] {
-    let width = cursor_image.width as i32;
-    let height = cursor_image.height as i32;
-
-    if width <= 0 || height <= 0 {
-        return [0.0, 0.0, 0.0, 0.0];
-    }
-
-    let clamped_x = src_x.clamp(0.0, (width - 1) as f32);
-    let clamped_y = src_y.clamp(0.0, (height - 1) as f32);
-
-    let x0 = clamped_x.floor() as i32;
-    let y0 = clamped_y.floor() as i32;
-    let x1 = (x0 + 1).min(width - 1);
-    let y1 = (y0 + 1).min(height - 1);
-
-    let tx = clamped_x - x0 as f32;
-    let ty = clamped_y - y0 as f32;
-
-    let sample = |x: i32, y: i32| -> [f32; 4] {
-        let idx = ((y as u32 * cursor_image.width + x as u32) * 4) as usize;
-        if idx + 3 >= cursor_image.data.len() {
-            return [0.0, 0.0, 0.0, 0.0];
-        }
-        [
-            cursor_image.data[idx] as f32,
-            cursor_image.data[idx + 1] as f32,
-            cursor_image.data[idx + 2] as f32,
-            cursor_image.data[idx + 3] as f32,
-        ]
-    };
-
-    let p00 = sample(x0, y0);
-    let p10 = sample(x1, y0);
-    let p01 = sample(x0, y1);
-    let p11 = sample(x1, y1);
-
-    let mut out = [0.0_f32; 4];
-    for channel in 0..4 {
-        let top = p00[channel] * (1.0 - tx) + p10[channel] * tx;
-        let bottom = p01[channel] * (1.0 - tx) + p11[channel] * tx;
-        out[channel] = top * (1.0 - ty) + bottom * ty;
-    }
-
-    out
-}
+pub type VideoContentBounds = SharedVideoContentBounds;
 
 /// Composite cursor image onto frame (CPU-based).
 ///
@@ -1256,86 +1130,24 @@ pub fn composite_cursor(
     cursor_image: &DecodedCursorImage,
     base_scale: f32,
 ) {
-    // Skip if cursor is fully transparent
-    if cursor.opacity <= 0.0 {
-        return;
-    }
+    let state = CursorCompositeState {
+        x: cursor.x,
+        y: cursor.y,
+        velocity_x: cursor.velocity_x,
+        velocity_y: cursor.velocity_y,
+        opacity: cursor.opacity,
+        scale: cursor.scale,
+    };
 
-    // Combine base scale with click animation scale
-    let scale = base_scale * cursor.scale;
-    if scale <= 0.0 {
-        return;
-    }
-
-    // Convert normalized position to pixel position within video content area,
-    // then offset by video bounds to position correctly within composition
-    let pixel_x = video_bounds.x + cursor.x * video_bounds.width;
-    let pixel_y = video_bounds.y + cursor.y * video_bounds.height;
-
-    // Apply hotspot offset and scale
-    let draw_x = pixel_x - (cursor_image.hotspot_x as f32 * scale);
-    let draw_y = pixel_y - (cursor_image.hotspot_y as f32 * scale);
-
-    let scaled_width = cursor_image.width as f32 * scale;
-    let scaled_height = cursor_image.height as f32 * scale;
-    if scaled_width <= 0.0 || scaled_height <= 0.0 {
-        return;
-    }
-
-    let min_x = draw_x.floor().max(0.0) as i32;
-    let min_y = draw_y.floor().max(0.0) as i32;
-    let max_x = (draw_x + scaled_width).ceil().min(frame_width as f32) as i32;
-    let max_y = (draw_y + scaled_height).ceil().min(frame_height as f32) as i32;
-
-    if min_x >= max_x || min_y >= max_y {
-        return;
-    }
-
-    // Alpha blending with premultiplied alpha support.
-    // Use bilinear filtering for smoother cursor edges during scale and motion blur trails.
-    for dst_y in min_y..max_y {
-        for dst_x in min_x..max_x {
-            let src_x = ((dst_x as f32 + 0.5) - draw_x) / scale - 0.5;
-            let src_y = ((dst_y as f32 + 0.5) - draw_y) / scale - 0.5;
-
-            if src_x < 0.0
-                || src_y < 0.0
-                || src_x > (cursor_image.width as f32 - 1.0)
-                || src_y > (cursor_image.height as f32 - 1.0)
-            {
-                continue;
-            }
-
-            let [src_r, src_g, src_b, src_a] = sample_cursor_bilinear(cursor_image, src_x, src_y);
-
-            if src_a <= 0.0 {
-                continue;
-            }
-
-            let dst_idx = ((dst_y as u32 * frame_width + dst_x as u32) * 4) as usize;
-            if dst_idx + 3 >= frame_data.len() {
-                continue;
-            }
-
-            // For premultiplied alpha blending:
-            // result = src + dst * (1 - src_alpha)
-            // Where src is already premultiplied by its alpha.
-            let alpha = (src_a / 255.0) * cursor.opacity;
-            let inv_alpha = 1.0 - alpha;
-
-            // Source is premultiplied, so we multiply by opacity, not full alpha.
-            frame_data[dst_idx] = ((src_r * cursor.opacity)
-                + (frame_data[dst_idx] as f32 * inv_alpha))
-                .min(255.0) as u8;
-            frame_data[dst_idx + 1] = ((src_g * cursor.opacity)
-                + (frame_data[dst_idx + 1] as f32 * inv_alpha))
-                .min(255.0) as u8;
-            frame_data[dst_idx + 2] = ((src_b * cursor.opacity)
-                + (frame_data[dst_idx + 2] as f32 * inv_alpha))
-                .min(255.0) as u8;
-            // Keep destination alpha (frame_data[dst_idx + 3]).
-        }
-    }
+    composite_cursor_shared(
+        frame_data,
+        frame_width,
+        frame_height,
+        video_bounds,
+        &state,
+        cursor_image,
+        base_scale,
+    );
 }
 
 /// Composite cursor with motion blur effect onto frame (CPU-based).
@@ -1363,140 +1175,24 @@ pub fn composite_cursor_with_motion_blur(
     base_scale: f32,
     motion_blur_amount: f32,
 ) {
-    let motion_blur_amount = motion_blur_amount.clamp(0.0, MOTION_BLUR_MAX_USER_AMOUNT);
-    if motion_blur_amount <= 0.0 {
-        composite_cursor(
-            frame_data,
-            frame_width,
-            frame_height,
-            video_bounds,
-            cursor,
-            cursor_image,
-            base_scale,
-        );
-        return;
-    }
-
-    // Calculate velocity magnitude (in normalized units)
-    let velocity_magnitude =
-        (cursor.velocity_x * cursor.velocity_x + cursor.velocity_y * cursor.velocity_y).sqrt();
-
-    // If velocity is below threshold, just render normally without blur
-    if velocity_magnitude < MOTION_BLUR_MIN_VELOCITY {
-        composite_cursor(
-            frame_data,
-            frame_width,
-            frame_height,
-            video_bounds,
-            cursor,
-            cursor_image,
-            base_scale,
-        );
-        return;
-    }
-
-    // Smoothly ramp in blur strength with speed to avoid abrupt/stiff trails.
-    let velocity_factor = smoothstep(
-        MOTION_BLUR_MIN_VELOCITY,
-        MOTION_BLUR_VELOCITY_RAMP_END,
-        velocity_magnitude,
-    );
-    if velocity_factor <= 0.0 {
-        composite_cursor(
-            frame_data,
-            frame_width,
-            frame_height,
-            video_bounds,
-            cursor,
-            cursor_image,
-            base_scale,
-        );
-        return;
-    }
-
-    // Calculate motion in pixels and clamp to max (like Cap)
-    let frame_diagonal = ((frame_width * frame_width + frame_height * frame_height) as f32).sqrt();
-    let motion_pixels = velocity_magnitude * frame_diagonal * MOTION_BLUR_VELOCITY_SCALE;
-    let clamped_motion = motion_pixels.min(MAX_MOTION_PIXELS);
-
-    // Convert back to normalized trail length and apply user intensity.
-    let trail_length = ((clamped_motion / frame_diagonal).min(MOTION_BLUR_MAX_TRAIL))
-        * motion_blur_amount
-        * velocity_factor;
-    if trail_length < MIN_MOTION_THRESHOLD {
-        composite_cursor(
-            frame_data,
-            frame_width,
-            frame_height,
-            video_bounds,
-            cursor,
-            cursor_image,
-            base_scale,
-        );
-        return;
-    }
-
-    // Normalize velocity direction
-    let dir_x = -cursor.velocity_x / velocity_magnitude;
-    let dir_y = -cursor.velocity_y / velocity_magnitude;
-    let trail_sample_count = (MOTION_BLUR_SAMPLES.saturating_sub(1)) as f32;
-    let weight_normalization = if trail_sample_count > 0.0 {
-        MOTION_BLUR_BASE_TRAIL_SAMPLES / trail_sample_count
-    } else {
-        1.0
+    let state = CursorCompositeState {
+        x: cursor.x,
+        y: cursor.y,
+        velocity_x: cursor.velocity_x,
+        velocity_y: cursor.velocity_y,
+        opacity: cursor.opacity,
+        scale: cursor.scale,
     };
 
-    // Render trail samples from back to front (excluding the main cursor sample).
-    // Main cursor is rendered once at full opacity after the trail.
-    for i in (1..MOTION_BLUR_SAMPLES).rev() {
-        let t = i as f32 / (MOTION_BLUR_SAMPLES - 1) as f32;
-
-        // Use smoothstep easing for smooth deceleration (like Cap's GPU shader)
-        let eased_t = smoothstep(0.0, 1.0, t);
-
-        // Position along the trail (0 = current position, 1 = trail end)
-        let offset_x = dir_x * trail_length * eased_t;
-        let offset_y = dir_y * trail_length * eased_t;
-
-        // Weight distribution like Cap: weight = 1.0 - t * 0.75
-        // This creates smoother falloff than our previous 0.85
-        let weight = (1.0 - t * 0.75) * motion_blur_amount * velocity_factor * weight_normalization;
-        if weight <= 0.0 {
-            continue;
-        }
-
-        // Create a modified cursor for this trail sample
-        let trail_cursor = InterpolatedCursor {
-            x: cursor.x + offset_x,
-            y: cursor.y + offset_y,
-            velocity_x: cursor.velocity_x,
-            velocity_y: cursor.velocity_y,
-            cursor_id: cursor.cursor_id.clone(),
-            cursor_shape: cursor.cursor_shape,
-            opacity: cursor.opacity * weight,
-            scale: cursor.scale,
-        };
-
-        composite_cursor(
-            frame_data,
-            frame_width,
-            frame_height,
-            video_bounds,
-            &trail_cursor,
-            cursor_image,
-            base_scale,
-        );
-    }
-
-    // Render main cursor on top at full opacity.
-    composite_cursor(
+    composite_cursor_with_motion_blur_shared(
         frame_data,
         frame_width,
         frame_height,
         video_bounds,
-        cursor,
+        &state,
         cursor_image,
         base_scale,
+        motion_blur_amount,
     );
 }
 
@@ -1584,10 +1280,18 @@ mod tests {
 
     #[test]
     fn test_cursor_idle_fades_out_after_timeout() {
-        let recording = test_recording();
+        let mut recording = test_recording();
+        // Ensure the most recent activity is at 400ms.
+        recording.events.push(CursorEvent {
+            timestamp_ms: 400,
+            x: 1.0,
+            y: 0.5,
+            event_type: CursorEventType::LeftClick { pressed: true },
+            cursor_id: None,
+        });
         let interp = CursorInterpolator::new(&recording, &CursorConfig::default());
 
-        // Last activity in test_recording is at 400ms.
+        // Last explicit activity is at 400ms (click above).
         let visible = interp.get_cursor_at(1500);
         let fading = interp.get_cursor_at(1700);
         let hidden = interp.get_cursor_at(2100);

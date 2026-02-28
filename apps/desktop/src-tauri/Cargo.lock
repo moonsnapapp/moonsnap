@@ -6373,6 +6373,12 @@ dependencies = [
  "serde_json",
  "sha2",
  "snapit-camera-windows",
+ "snapit-capture",
+ "snapit-core",
+ "snapit-domain",
+ "snapit-export",
+ "snapit-media",
+ "snapit-render",
  "tauri",
  "tauri-build",
  "tauri-plugin-autostart",
@@ -6411,6 +6417,87 @@ dependencies = [
  "tracing",
  "windows 0.60.0",
  "windows-core 0.60.1",
+]
+
+[[package]]
+name = "snapit-capture"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "cpal",
+ "crossbeam-channel",
+ "hound",
+ "image",
+ "lazy_static",
+ "log",
+ "proptest",
+ "scap-direct3d",
+ "scap-targets",
+ "serde",
+ "serde_json",
+ "snapit-domain",
+ "snapit-media",
+ "wasapi",
+ "windows 0.58.0",
+]
+
+[[package]]
+name = "snapit-core"
+version = "0.1.0"
+dependencies = [
+ "image",
+ "serde",
+ "serde_json",
+ "thiserror 1.0.69",
+]
+
+[[package]]
+name = "snapit-domain"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "rand 0.8.5",
+ "serde",
+ "serde_json",
+ "ts-rs",
+]
+
+[[package]]
+name = "snapit-export"
+version = "0.1.0"
+dependencies = [
+ "log",
+ "snapit-domain",
+ "snapit-media",
+ "snapit-render",
+ "tokio",
+]
+
+[[package]]
+name = "snapit-media"
+version = "0.1.0"
+dependencies = [
+ "ffmpeg-sidecar",
+ "image",
+ "log",
+ "serde_json",
+]
+
+[[package]]
+name = "snapit-render"
+version = "0.1.0"
+dependencies = [
+ "bezier_easing",
+ "bytemuck",
+ "glyphon",
+ "image",
+ "log",
+ "proptest",
+ "serde",
+ "snapit-domain",
+ "tokio",
+ "ts-rs",
+ "wgpu",
 ]
 
 [[package]]

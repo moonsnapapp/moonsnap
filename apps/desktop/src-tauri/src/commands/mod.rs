@@ -8,7 +8,6 @@
 //! |--------|-------------|
 //! | [`capture`] | Screen/window capture with transparency support |
 //! | [`capture_overlay`] | Native DirectComposition overlay for region selection |
-//! | [`capture_settings`] | Screenshot/video/GIF settings types |
 //! | [`fonts`] | System font enumeration |
 //! | [`image`] | Clipboard operations |
 //! | [`keyboard_hook`] | Windows low-level keyboard hook for global shortcuts |
@@ -27,7 +26,6 @@
 pub mod captions;
 pub mod capture;
 pub mod capture_overlay;
-pub mod capture_settings;
 pub mod fonts;
 pub mod image;
 pub mod keyboard_hook;

@@ -19,15 +19,15 @@ use super::cursor::{
     VideoContentBounds,
 };
 use super::decoder::VideoDecoder;
-use super::exporter::{build_webcam_overlay, is_webcam_visible_at};
 use super::renderer::Renderer;
 use super::svg_cursor::render_svg_cursor_to_extent;
-use super::types::{
+use crate::commands::video_recording::cursor::events::load_cursor_recording;
+use snapit_domain::video_project::VideoProject;
+use snapit_render::types::{
     BackgroundStyle, EditorInstanceInfo, PlaybackEvent, PlaybackState, RenderOptions, RenderedFrame,
 };
-use super::zoom::ZoomInterpolator;
-use crate::commands::video_recording::cursor::events::load_cursor_recording;
-use crate::commands::video_recording::video_project::VideoProject;
+use snapit_render::webcam_overlay::{build_webcam_overlay, is_webcam_visible_at};
+use snapit_render::zoom::ZoomInterpolator;
 
 /// Events sent from playback loop to main thread.
 enum PlaybackCommand {

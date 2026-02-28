@@ -16,7 +16,9 @@
     "test:ui": "vitest --ui",
     "lint": "eslint src",
     "lint:fix": "eslint src --fix",
-    "typecheck": "tsc --noEmit",
+    "check:ts-rs-paths": "node scripts/check-ts-rs-paths.cjs",
+    "report:pr-split": "node scripts/report-pr-split.cjs",
+    "typecheck": "node scripts/check-ts-rs-paths.cjs && tsc --noEmit",
     "update-server": "node scripts/update-test-server.js",
     "version": "node scripts/sync-version.cjs && git add src-tauri/tauri.conf.json src-tauri/Cargo.toml src-tauri/Cargo.lock"
   },

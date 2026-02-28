@@ -5,13 +5,8 @@
 
 use lazy_static::lazy_static;
 use parking_lot::RwLock;
-
-// Re-export webcam types for convenience
-pub use crate::commands::video_recording::webcam::{
-    WebcamPosition, WebcamSettings, WebcamShape, WebcamSize,
-};
-
-use crate::error::SnapItResult;
+use snapit_core::error::SnapItResult;
+use snapit_domain::webcam::{WebcamPosition, WebcamSettings, WebcamShape, WebcamSize};
 
 /// Type alias for webcam config (same as WebcamSettings).
 pub type WebcamConfig = WebcamSettings;

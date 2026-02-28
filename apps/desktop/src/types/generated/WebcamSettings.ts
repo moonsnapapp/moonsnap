@@ -5,8 +5,6 @@ import type { WebcamSize } from "./WebcamSize";
 
 /**
  * Settings for webcam overlay during recording.
- * Note: Webcam capture always uses 1080p (or best available) and output
- * is capped at 1280 width (like Cap) for consistent file sizes.
  */
 export type WebcamSettings = { 
 /**

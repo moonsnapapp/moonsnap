@@ -35,7 +35,6 @@ pub mod app;
 mod commands;
 pub mod config;
 pub mod cursor;
-pub mod error;
 pub mod preview;
 pub mod rendering;
 
@@ -351,12 +350,12 @@ pub fn run() {
             }
 
             // Install panic hook to restore desktop icons on any future panic (fast, non-blocking)
-            commands::video_recording::desktop_icons::install_panic_hook();
+            snapit_capture::desktop_icons::install_panic_hook();
 
             // Safety: Restore desktop icons in case previous session crashed while hiding them
             // Run in background thread to not block startup toolbar
             std::thread::spawn(|| {
-                commands::video_recording::desktop_icons::force_show_desktop_icons();
+                snapit_capture::desktop_icons::force_show_desktop_icons();
             });
 
             #[cfg(desktop)]
@@ -410,7 +409,7 @@ pub fn run() {
             // Ensure ffmpeg is available for video thumbnails (downloads if needed)
             // This runs in background and doesn't block app startup
             std::thread::spawn(|| {
-                if commands::storage::find_ffmpeg().is_none() {
+                if snapit_media::ffmpeg::find_ffmpeg().is_none() {
                     // Try to download ffmpeg if not found
                     let _ = ffmpeg_sidecar::download::auto_download();
                 }

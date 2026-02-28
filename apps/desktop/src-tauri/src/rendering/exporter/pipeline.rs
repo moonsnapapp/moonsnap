@@ -10,22 +10,11 @@ use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 
 use crate::rendering::stream_decoder::StreamDecoder;
-use crate::rendering::types::DecodedFrame;
-
-/// Buffer size for decode and encode channels.
-/// 8 frames provides good overlap and absorbs decode timing jitter.
-/// At 1080p RGBA (~8MB/frame), this uses ~64MB per channel.
-pub const PIPELINE_BUFFER_SIZE: usize = 8;
+use snapit_export::pipeline as shared_pipeline;
+use snapit_render::types::DecodedFrame;
 
 /// Bundle of decoded frames for a single frame index.
-pub struct DecodedFrameBundle {
-    /// Frame index (0-indexed from start of export).
-    pub frame_idx: u32,
-    /// Decoded screen frame.
-    pub screen_frame: DecodedFrame,
-    /// Decoded webcam frame (if webcam enabled).
-    pub webcam_frame: Option<DecodedFrame>,
-}
+pub type DecodedFrameBundle = shared_pipeline::DecodedFrameBundle<DecodedFrame>;
 
 /// Spawns a decode task that pre-fetches frames into a bounded channel.
 ///
@@ -41,56 +30,17 @@ pub fn spawn_decode_task(
     mpsc::Receiver<DecodedFrameBundle>,
     JoinHandle<Result<(), String>>,
 ) {
-    let (tx, rx) = mpsc::channel(PIPELINE_BUFFER_SIZE);
-
-    let handle = tokio::task::spawn_blocking(move || {
-        let mut frame_idx = 0u32;
-        let mut last_webcam_frame: Option<DecodedFrame> = None;
-
-        loop {
-            // Read screen frame (blocking I/O)
-            let screen_frame = match screen_decoder.next_frame() {
-                Ok(Some(frame)) => frame,
-                Ok(None) => break, // End of stream
-                Err(e) => {
-                    log::error!("[PIPELINE] Decode error: {}", e);
-                    return Err(e);
-                },
-            };
-
-            // Read webcam frame (always consume to stay in sync).
-            // Store into last_webcam_frame, then clone once for the bundle.
+    shared_pipeline::spawn_decode_task(
+        move || screen_decoder.next_frame(),
+        move || {
             if let Some(ref mut decoder) = webcam_decoder {
-                if let Ok(Some(frame)) = decoder.next_frame() {
-                    last_webcam_frame = Some(frame);
-                }
+                decoder.next_frame()
+            } else {
+                Ok(None)
             }
-            let webcam_frame = last_webcam_frame.clone();
-
-            // Send bundle to render loop
-            let bundle = DecodedFrameBundle {
-                frame_idx,
-                screen_frame,
-                webcam_frame,
-            };
-
-            if tx.blocking_send(bundle).is_err() {
-                // Receiver dropped (render loop exited early)
-                log::debug!("[PIPELINE] Decode channel closed");
-                break;
-            }
-
-            frame_idx += 1;
-            if frame_idx >= total_frames {
-                break;
-            }
-        }
-
-        log::debug!("[PIPELINE] Decode task complete: {} frames", frame_idx);
-        Ok(())
-    });
-
-    (rx, handle)
+        },
+        total_frames,
+    )
 }
 
 /// Spawns an encode task that writes rendered frames to FFmpeg.
@@ -103,25 +53,9 @@ pub fn spawn_decode_task(
 pub fn spawn_encode_task(
     mut stdin: ChildStdin,
 ) -> (mpsc::Sender<Vec<u8>>, JoinHandle<Result<(), String>>) {
-    let (tx, mut rx) = mpsc::channel::<Vec<u8>>(PIPELINE_BUFFER_SIZE);
-
-    let handle = tokio::task::spawn_blocking(move || {
-        let mut frame_count = 0u32;
-
-        while let Some(rgba_data) = rx.blocking_recv() {
-            if let Err(e) = stdin.write_all(&rgba_data) {
-                log::error!("[PIPELINE] Encode write error: {}", e);
-                return Err(format!("FFmpeg write failed: {}", e));
-            }
-            frame_count += 1;
-        }
-
-        // Close stdin to signal EOF to FFmpeg
-        drop(stdin);
-
-        log::debug!("[PIPELINE] Encode task complete: {} frames", frame_count);
-        Ok(())
-    });
-
-    (tx, handle)
+    shared_pipeline::spawn_encode_task(move |rgba_data| {
+        stdin
+            .write_all(rgba_data)
+            .map_err(|e| format!("FFmpeg write failed: {}", e))
+    })
 }

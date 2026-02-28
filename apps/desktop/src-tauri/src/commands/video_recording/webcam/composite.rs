@@ -8,7 +8,8 @@
 
 #![allow(dead_code)]
 
-use super::{compute_webcam_rect, WebcamFrame, WebcamSettings, WebcamShape};
+use super::WebcamFrame;
+use snapit_domain::webcam::{compute_webcam_rect, WebcamSettings, WebcamShape};
 
 /// Composite webcam frame onto the recording frame buffer.
 ///
@@ -304,8 +305,8 @@ mod tests {
         let settings = WebcamSettings {
             enabled: true,
             device_index: 0,
-            position: super::super::WebcamPosition::BottomRight,
-            size: super::super::WebcamSize::Small, // 15%
+            position: snapit_domain::webcam::WebcamPosition::BottomRight,
+            size: snapit_domain::webcam::WebcamSize::Small, // 15%
             shape: WebcamShape::Circle,
             mirror: false,
         };

@@ -2,41 +2,38 @@
 
 #![cfg(test)]
 
-use super::super::types::DecodedFrame;
-use super::webcam::*;
-use crate::commands::captions::{CaptionSegment, CaptionSettings};
-use crate::commands::video_recording::video_project::{
+use snapit_domain::captions::{CaptionSegment, CaptionSettings};
+use snapit_domain::video_project::{
     AudioTrackSettings, CornerStyle, CursorConfig, ExportConfig, MaskConfig, SceneConfig,
     ShadowConfig, TextConfig, TimelineState, VideoProject, VideoSources, WebcamBorder,
     WebcamConfig, WebcamOverlayPosition, WebcamOverlayShape, ZoomConfig,
 };
+use snapit_export::frame_path_plan::can_use_nv12_fast_path;
+use snapit_render::types::{DecodedFrame, PixelFormat, RenderOptions, ZoomState};
+use snapit_render::webcam_overlay::build_webcam_overlay;
 
 #[test]
 fn test_nv12_fast_path_requires_even_source_dimensions() {
-    assert!(super::can_use_nv12_fast_path(1920, 1080, false, 0, 0, 0, 0));
-    assert!(!super::can_use_nv12_fast_path(
-        2035, 1102, false, 0, 0, 0, 0
-    ));
-    assert!(!super::can_use_nv12_fast_path(
-        2034, 1103, false, 0, 0, 0, 0
-    ));
+    assert!(can_use_nv12_fast_path(1920, 1080, false, 0, 0, 0, 0));
+    assert!(!can_use_nv12_fast_path(2035, 1102, false, 0, 0, 0, 0));
+    assert!(!can_use_nv12_fast_path(2034, 1103, false, 0, 0, 0, 0));
 }
 
 #[test]
 fn test_nv12_fast_path_requires_even_crop_alignment() {
-    assert!(super::can_use_nv12_fast_path(
+    assert!(can_use_nv12_fast_path(
         1920, 1080, true, 100, 200, 1280, 720
     ));
-    assert!(!super::can_use_nv12_fast_path(
+    assert!(!can_use_nv12_fast_path(
         1920, 1080, true, 101, 200, 1280, 720
     ));
-    assert!(!super::can_use_nv12_fast_path(
+    assert!(!can_use_nv12_fast_path(
         1920, 1080, true, 100, 201, 1280, 720
     ));
-    assert!(!super::can_use_nv12_fast_path(
+    assert!(!can_use_nv12_fast_path(
         1920, 1080, true, 100, 200, 1279, 720
     ));
-    assert!(!super::can_use_nv12_fast_path(
+    assert!(!can_use_nv12_fast_path(
         1920, 1080, true, 100, 200, 1280, 721
     ));
 }
@@ -105,7 +102,7 @@ fn make_test_frame() -> DecodedFrame {
         data: vec![0u8; 1280 * 720 * 4],
         width: 1280,
         height: 720,
-        format: super::super::types::PixelFormat::Rgba,
+        format: PixelFormat::Rgba,
     }
 }
 
@@ -471,7 +468,7 @@ fn make_solid_frame(width: u32, height: u32, r: u8, g: u8, b: u8) -> DecodedFram
         data,
         width,
         height,
-        format: super::super::types::PixelFormat::Rgba,
+        format: PixelFormat::Rgba,
     }
 }
 
@@ -556,11 +553,11 @@ fn test_gpu_webcam_pixel_position_bottom_right() {
     let overlay = build_webcam_overlay(&project, webcam_frame, out_w, out_h);
 
     // Create render options
-    let render_options = crate::rendering::types::RenderOptions {
+    let render_options = RenderOptions {
         output_width: out_w,
         output_height: out_h,
         use_manual_composition: false,
-        zoom: crate::rendering::types::ZoomState::identity(),
+        zoom: ZoomState::identity(),
         webcam: Some(overlay),
         cursor: None,
         background: Default::default(),
@@ -669,11 +666,11 @@ fn test_gpu_webcam_circle_not_oval() {
     let project = make_test_project(WebcamOverlayPosition::BottomRight, webcam_size, 0.0, 0.0);
     let overlay = build_webcam_overlay(&project, webcam_frame, out_w, out_h);
 
-    let render_options = crate::rendering::types::RenderOptions {
+    let render_options = RenderOptions {
         output_width: out_w,
         output_height: out_h,
         use_manual_composition: false,
-        zoom: crate::rendering::types::ZoomState::identity(),
+        zoom: ZoomState::identity(),
         webcam: Some(overlay),
         cursor: None,
         background: Default::default(),
@@ -769,11 +766,11 @@ fn test_gpu_webcam_all_corners() {
         let project = make_test_project(position, webcam_size, 0.0, 0.0);
         let overlay = build_webcam_overlay(&project, webcam_frame, out_w, out_h);
 
-        let render_options = crate::rendering::types::RenderOptions {
+        let render_options = RenderOptions {
             output_width: out_w,
             output_height: out_h,
             use_manual_composition: false,
-            zoom: crate::rendering::types::ZoomState::identity(),
+            zoom: ZoomState::identity(),
             webcam: Some(overlay),
             cursor: None,
             background: Default::default(),

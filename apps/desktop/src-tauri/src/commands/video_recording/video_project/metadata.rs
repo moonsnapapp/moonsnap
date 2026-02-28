@@ -2,7 +2,7 @@
 
 use std::path::PathBuf;
 
-use super::types::{VideoProject, VisibilitySegment};
+use snapit_domain::video_project::{VideoProject, VisibilitySegment};
 
 // ============================================================================
 // Video Metadata Extraction (FFmpeg)

@@ -5,65 +5,73 @@
 //! 2. Render on GPU with zoom/webcam effects
 //! 3. Pipe rendered RGBA frames to FFmpeg for encoding only
 
-mod encoder_selection;
 mod ffmpeg;
-mod frame_ops;
 mod pipeline;
-mod webcam;
 
-pub use encoder_selection::is_nvenc_available;
 use pipeline::{spawn_decode_task, spawn_encode_task};
 
 #[cfg(test)]
 mod tests;
 
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, OnceLock};
 
+use snapit_domain::video_export::{ExportResult, ExportStage};
+use snapit_export::caption_timeline::remap_captions_to_timeline;
+use snapit_export::cursor_overlay::{
+    composite_cursor_overlay_frame, CursorFrameSample, CursorOverlayContext,
+};
+use snapit_export::export_job::{
+    run_export_loop_with_context, ExportLoopDirective, ExportLoopExit,
+};
+use snapit_export::export_plan::plan_video_export;
+use snapit_export::frame_composition::{build_frame_composition, FrameCompositionRequest};
+use snapit_export::frame_context::{
+    build_frame_scene_context, build_frame_timeline_context, should_log_camera_transition_debug,
+    should_log_frame_debug,
+};
+use snapit_export::frame_overlays::{
+    build_frame_overlay_plan, build_frame_text_overlay_quads, FrameOverlayRequest,
+    FrameTextOverlayRequest,
+};
+use snapit_export::frame_path_plan::{plan_frame_render, CropRectPlan};
+use snapit_export::frame_pipeline_state::{ExportLoopState, PendingCpuWork};
+use snapit_export::frame_prepare::{prepare_base_screen_frame, PrepareFrameRequest};
+use snapit_export::job_control::{
+    is_export_cancelled, request_cancel_export as request_job_cancel, reset_cancel_export,
+    FINALIZING_PROGRESS,
+};
+use snapit_export::job_finalize::{
+    drain_pipeline_if_needed, finalize_cancelled_export, finalize_completed_export,
+    EncoderFinalizeError,
+};
+use snapit_export::job_runner::{ExportJobRunner, ExportJobRunnerConfig, LoopControl};
 use tauri::{AppHandle, Manager};
-
-/// Global cancel flag for export. Set via `request_cancel_export()`.
-static EXPORT_CANCEL_FLAG: OnceLock<Arc<AtomicBool>> = OnceLock::new();
-
-fn cancel_flag() -> &'static Arc<AtomicBool> {
-    EXPORT_CANCEL_FLAG.get_or_init(|| Arc::new(AtomicBool::new(false)))
-}
 
 /// Request cancellation of the currently running export.
 pub fn request_cancel_export() {
-    cancel_flag().store(true, Ordering::Relaxed);
+    request_job_cancel();
     log::info!("[EXPORT] Cancel requested");
 }
 
-use super::caption_layer::prepare_captions;
 use super::compositor::Compositor;
-use super::cursor::{
-    composite_cursor, composite_cursor_with_motion_blur, CursorInterpolator, VideoContentBounds,
-};
-use super::nv12_converter::{CropRect, Nv12Converter};
+use super::cursor::{CursorInterpolator, VideoContentBounds};
 use super::renderer::Renderer;
-use super::scene::SceneInterpolator;
 use super::stream_decoder::StreamDecoder;
 use super::svg_cursor::get_svg_cursor;
-use super::types::{BackgroundStyle, PixelFormat, RenderOptions, ZoomState};
-use super::zoom::ZoomInterpolator;
-use crate::commands::captions::types::CaptionSegment;
 use crate::commands::text_prerender::PreRenderedTextState;
 use crate::commands::video_recording::cursor::events::load_cursor_recording;
 use crate::commands::video_recording::cursor::events::WindowsCursorShape;
-use crate::commands::video_recording::video_export::{ExportResult, ExportStage};
-use crate::commands::video_recording::video_project::{
-    CompositionMode, CursorType, SceneMode, TimelineState, VideoProject,
-};
+use snapit_domain::video_project::{CursorType, VideoProject};
+use snapit_render::nv12_converter::{CropRect, Nv12Converter};
+use snapit_render::scene::SceneInterpolator;
+use snapit_render::types::{BackgroundStyle, PixelFormat};
+use snapit_render::webcam_overlay::is_webcam_visible_at;
+use snapit_render::zoom::ZoomInterpolator;
 
 // Re-export submodule functions used externally
 pub use ffmpeg::emit_progress;
-pub use frame_ops::draw_cursor_circle;
-pub use webcam::{build_webcam_overlay, is_webcam_visible_at};
 
 use ffmpeg::start_ffmpeg_encoder;
-use frame_ops::{blend_frames_alpha, crop_decoded_frame, scale_frame_to_fill};
 
 /// Constant context for CPU frame compositing, shared across all export frames.
 struct CpuCompositeCtx<'a> {
@@ -83,61 +91,9 @@ struct CpuCompositeCtx<'a> {
     cursor_interpolator: Option<&'a CursorInterpolator>,
 }
 
-/// Per-frame state for deferred CPU compositing (double-buffer pipeline).
-struct PendingCpuWork {
-    rgba_data: Vec<u8>,
-    camera_only_opacity: f64,
-    source_time_ms: u64,
-    zoom_state: ZoomState,
-    output_frame_idx: u32,
-}
-
-/// Metadata for a frame whose GPU readback is still in-flight.
-/// Used by the double-buffered staging pipeline: while the GPU copies frame N
-/// into staging buffer A, we can safely read the completed copy of frame N-1
-/// from staging buffer B.
-struct PendingReadback {
-    staging_buf_idx: usize,
-    camera_only_opacity: f64,
-    source_time_ms: u64,
-    zoom_state: ZoomState,
-    output_frame_idx: u32,
-}
-
-/// Apply the same zoom transform used by the compositor shader to normalized cursor coordinates.
-/// This keeps CPU cursor compositing aligned with GPU-zoomed video content.
-fn apply_zoom_to_cursor_position(x: f32, y: f32, zoom: ZoomState) -> (f32, f32) {
-    if zoom.scale <= 1.0 {
-        return (x, y);
-    }
-
-    let s = zoom.scale;
-    let x_zoomed = 0.5 - (zoom.center_x - 0.5) * (s - 1.0) + (x - 0.5) * s;
-    let y_zoomed = 0.5 - (zoom.center_y - 0.5) * (s - 1.0) + (y - 0.5) * s;
-    (x_zoomed, y_zoomed)
-}
-
-/// NV12 fast path requires even dimensions for stable chroma sampling/strides.
-/// Also require even crop alignment when crop is active.
-fn can_use_nv12_fast_path(
-    source_width: u32,
-    source_height: u32,
-    crop_enabled: bool,
-    crop_x: u32,
-    crop_y: u32,
-    crop_width: u32,
-    crop_height: u32,
-) -> bool {
-    let even_source = source_width % 2 == 0 && source_height % 2 == 0;
-    if !even_source {
-        return false;
-    }
-
-    if !crop_enabled {
-        return true;
-    }
-
-    crop_x % 2 == 0 && crop_y % 2 == 0 && crop_width % 2 == 0 && crop_height % 2 == 0
+struct ExportRenderLoopContext<'a> {
+    loop_state: ExportLoopState,
+    compositor: &'a mut Compositor,
 }
 
 /// Apply CPU-based compositing (cursor + pre-rendered text overlays) to a pending frame.
@@ -145,167 +101,56 @@ fn can_use_nv12_fast_path(
 /// Extracted from the render loop to enable double-buffered pipeline overlap:
 /// GPU renders frame N+1 while CPU processes frame N.
 fn apply_cpu_compositing(pending: &mut PendingCpuWork, ctx: &CpuCompositeCtx) {
-    // Composite cursor onto frame (CPU-based) if cursor is visible and not in cameraOnly mode
-    if let Some(cursor_interp) = ctx.cursor_interpolator {
-        if pending.camera_only_opacity < 0.99 {
-            let mut cursor = cursor_interp.get_cursor_at(pending.source_time_ms);
+    let Some(cursor_interp) = ctx.cursor_interpolator else {
+        return;
+    };
+    let cursor = cursor_interp.get_cursor_at(pending.source_time_ms);
+    let overlay_ctx = CursorOverlayContext {
+        composition_w: ctx.composition_w,
+        composition_h: ctx.composition_h,
+        crop_enabled: ctx.crop_enabled,
+        crop_x: ctx.crop_x,
+        crop_y: ctx.crop_y,
+        crop_width: ctx.crop_width,
+        crop_height: ctx.crop_height,
+        original_width: ctx.original_width,
+        original_height: ctx.original_height,
+        video_bounds: ctx.video_content_bounds,
+        cursor_type: ctx.cursor_type,
+        cursor_scale: ctx.cursor_scale,
+        cursor_motion_blur: ctx.cursor_motion_blur,
+    };
+    let sample = CursorFrameSample {
+        x: cursor.x,
+        y: cursor.y,
+        velocity_x: cursor.velocity_x,
+        velocity_y: cursor.velocity_y,
+        opacity: cursor.opacity,
+        scale: cursor.scale,
+        cursor_id: cursor.cursor_id.as_deref(),
+        cursor_shape: cursor.cursor_shape,
+    };
 
-            // Transform cursor position for crop
-            let mut cursor_visible = true;
-            if ctx.crop_enabled {
-                let orig_w = ctx.original_width as f32;
-                let orig_h = ctx.original_height as f32;
-                let crop_x = ctx.crop_x as f32;
-                let crop_y = ctx.crop_y as f32;
-                let crop_w = ctx.crop_width as f32;
-                let crop_h = ctx.crop_height as f32;
-
-                let cursor_px_x = cursor.x * orig_w;
-                let cursor_px_y = cursor.y * orig_h;
-                cursor.x = (cursor_px_x - crop_x) / crop_w;
-                cursor.y = (cursor_px_y - crop_y) / crop_h;
-
-                if cursor.x < -0.1 || cursor.x > 1.1 || cursor.y < -0.1 || cursor.y > 1.1 {
-                    cursor_visible = false;
+    composite_cursor_overlay_frame(
+        &mut pending.rgba_data,
+        &overlay_ctx,
+        pending.camera_only_opacity,
+        pending.zoom_state,
+        sample,
+        WindowsCursorShape::Arrow,
+        |shape, target_height| {
+            get_svg_cursor(shape, target_height).map(|svg_cursor| {
+                super::cursor::DecodedCursorImage {
+                    width: svg_cursor.width,
+                    height: svg_cursor.height,
+                    hotspot_x: svg_cursor.hotspot_x,
+                    hotspot_y: svg_cursor.hotspot_y,
+                    data: svg_cursor.data,
                 }
-            }
-
-            if cursor_visible {
-                // Match compositor shader zoom math so cursor tracks zoomed video precisely.
-                let (zoomed_x, zoomed_y) =
-                    apply_zoom_to_cursor_position(cursor.x, cursor.y, pending.zoom_state);
-                cursor.x = zoomed_x;
-                cursor.y = zoomed_y;
-
-                if ctx.cursor_type == CursorType::Circle {
-                    draw_cursor_circle(
-                        &mut pending.rgba_data,
-                        ctx.composition_w,
-                        ctx.composition_h,
-                        &ctx.video_content_bounds,
-                        cursor.x,
-                        cursor.y,
-                        ctx.cursor_scale,
-                        cursor.opacity,
-                    );
-                } else {
-                    let mut rendered = false;
-
-                    let base_cursor_height = 24.0;
-                    let reference_height = 720.0;
-                    let size_scale = ctx.composition_h as f32 / reference_height;
-                    let final_cursor_height =
-                        (base_cursor_height * size_scale * ctx.cursor_scale).clamp(16.0, 256.0);
-
-                    if let Some(shape) = cursor.cursor_shape {
-                        let target_height = final_cursor_height.round() as u32;
-
-                        if let Some(svg_cursor) = get_svg_cursor(shape, target_height) {
-                            let svg_decoded = super::cursor::DecodedCursorImage {
-                                width: svg_cursor.width,
-                                height: svg_cursor.height,
-                                hotspot_x: svg_cursor.hotspot_x,
-                                hotspot_y: svg_cursor.hotspot_y,
-                                data: svg_cursor.data,
-                            };
-                            if ctx.cursor_motion_blur > 0.0 {
-                                composite_cursor_with_motion_blur(
-                                    &mut pending.rgba_data,
-                                    ctx.composition_w,
-                                    ctx.composition_h,
-                                    &ctx.video_content_bounds,
-                                    &cursor,
-                                    &svg_decoded,
-                                    1.0,
-                                    ctx.cursor_motion_blur,
-                                );
-                            } else {
-                                composite_cursor(
-                                    &mut pending.rgba_data,
-                                    ctx.composition_w,
-                                    ctx.composition_h,
-                                    &ctx.video_content_bounds,
-                                    &cursor,
-                                    &svg_decoded,
-                                    1.0,
-                                );
-                            }
-                            rendered = true;
-                        }
-                    }
-
-                    if !rendered {
-                        if let Some(ref cursor_id) = cursor.cursor_id {
-                            if let Some(cursor_image) = cursor_interp.get_cursor_image(cursor_id) {
-                                let bitmap_scale = final_cursor_height / cursor_image.height as f32;
-                                if ctx.cursor_motion_blur > 0.0 {
-                                    composite_cursor_with_motion_blur(
-                                        &mut pending.rgba_data,
-                                        ctx.composition_w,
-                                        ctx.composition_h,
-                                        &ctx.video_content_bounds,
-                                        &cursor,
-                                        cursor_image,
-                                        bitmap_scale,
-                                        ctx.cursor_motion_blur,
-                                    );
-                                } else {
-                                    composite_cursor(
-                                        &mut pending.rgba_data,
-                                        ctx.composition_w,
-                                        ctx.composition_h,
-                                        &ctx.video_content_bounds,
-                                        &cursor,
-                                        cursor_image,
-                                        bitmap_scale,
-                                    );
-                                }
-                                rendered = true;
-                            }
-                        }
-                    }
-
-                    // Final fallback: default arrow SVG, matching preview behavior.
-                    if !rendered {
-                        let target_height = final_cursor_height.round() as u32;
-                        if let Some(svg_cursor) =
-                            get_svg_cursor(WindowsCursorShape::Arrow, target_height)
-                        {
-                            let svg_decoded = super::cursor::DecodedCursorImage {
-                                width: svg_cursor.width,
-                                height: svg_cursor.height,
-                                hotspot_x: svg_cursor.hotspot_x,
-                                hotspot_y: svg_cursor.hotspot_y,
-                                data: svg_cursor.data,
-                            };
-                            if ctx.cursor_motion_blur > 0.0 {
-                                composite_cursor_with_motion_blur(
-                                    &mut pending.rgba_data,
-                                    ctx.composition_w,
-                                    ctx.composition_h,
-                                    &ctx.video_content_bounds,
-                                    &cursor,
-                                    &svg_decoded,
-                                    1.0,
-                                    ctx.cursor_motion_blur,
-                                );
-                            } else {
-                                composite_cursor(
-                                    &mut pending.rgba_data,
-                                    ctx.composition_w,
-                                    ctx.composition_h,
-                                    &ctx.video_content_bounds,
-                                    &cursor,
-                                    &svg_decoded,
-                                    1.0,
-                                );
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
+            })
+        },
+        |cursor_id| cursor_interp.get_cursor_image(cursor_id),
+    );
 }
 
 /// Export a video project using GPU rendering.
@@ -319,7 +164,7 @@ pub async fn export_video_gpu(
     let start_time = std::time::Instant::now();
 
     // Reset cancel flag at the start of each export
-    cancel_flag().store(false, Ordering::Relaxed);
+    reset_cancel_export();
 
     // Get resource directory for wallpaper path resolution
     let resource_dir = app.path().resource_dir().ok();
@@ -354,22 +199,25 @@ pub async fn export_video_gpu(
     let original_width = project.sources.original_width;
     let original_height = project.sources.original_height;
 
-    // Use effective duration (respects trim segments)
-    let effective_duration_ms = project.timeline.effective_duration_ms();
-    let duration_secs = effective_duration_ms as f64 / 1000.0;
-    let total_output_frames = ((effective_duration_ms as f64 / 1000.0) * fps as f64).ceil() as u32;
+    let export_plan = plan_video_export(&project);
+    let timeline_plan = export_plan.timeline;
+    let dimensions = export_plan.dimensions;
+    let decode_plan = &export_plan.decode;
+    let use_nv12_decode = export_plan.use_nv12_decode;
+    // No-crop area captures can have odd source dimensions; this ensures
+    // RGBA uploads match the pre-allocated even-sized export texture.
+    let force_even_source_crop = export_plan.force_even_source_crop;
 
-    // Get decode range (first segment start to last segment end, or in/out points)
-    let (decode_start_ms, decode_end_ms) = project.timeline.decode_range();
-    let has_segments = !project.timeline.segments.is_empty();
-
-    // Calculate how many frames to decode (may be more than output when there are gaps)
-    let decode_duration_ms = decode_end_ms - decode_start_ms;
-    let total_decode_frames = ((decode_duration_ms as f64 / 1000.0) * fps as f64).ceil() as u32;
+    let duration_secs = timeline_plan.duration_secs;
+    let total_output_frames = timeline_plan.total_output_frames;
+    let decode_start_ms = decode_plan.decode_start_ms;
+    let decode_end_ms = decode_plan.decode_end_ms;
+    let has_segments = timeline_plan.has_segments;
+    let total_decode_frames = decode_plan.total_decode_frames;
 
     log::info!(
         "[EXPORT] Timeline: effective_duration={}ms, decode_range={}ms-{}ms, segments={}, decode_frames={}, output_frames={}",
-        effective_duration_ms,
+        timeline_plan.effective_duration_ms,
         decode_start_ms,
         decode_end_ms,
         project.timeline.segments.len(),
@@ -387,128 +235,45 @@ pub async fn export_video_gpu(
         composition.height,
         composition.aspect_ratio
     );
-    let padding = if project.export.background.enabled {
-        project.export.background.padding as u32
-    } else {
-        0
-    };
+    let padding = dimensions.padding;
+    let crop_enabled = dimensions.crop_enabled;
+    let video_w = dimensions.video_width;
+    let video_h = dimensions.video_height;
+    let composition_w = dimensions.composition_width;
+    let composition_h = dimensions.composition_height;
+    let out_w = dimensions.output_width;
+    let out_h = dimensions.output_height;
+    let use_manual_composition = dimensions.use_manual_composition;
 
-    // Step 1: Determine video dimensions after crop
-    let crop_enabled = crop.enabled && crop.width > 0 && crop.height > 0;
-    let (video_w, video_h) = if crop_enabled {
-        // Video crop is applied - use crop dimensions
-        let crop_w = (crop.width / 2) * 2;
-        let crop_h = (crop.height / 2) * 2;
+    if crop_enabled {
         log::info!(
             "[EXPORT] Video crop enabled: {}x{} at ({}, {})",
-            crop_w,
-            crop_h,
+            video_w,
+            video_h,
             crop.x,
             crop.y
         );
-        (crop_w, crop_h)
-    } else {
-        // No crop - use original video dimensions
-        let w = (original_width / 2) * 2;
-        let h = (original_height / 2) * 2;
-        (w, h)
-    };
-
-    // Step 2: Calculate composition (output) dimensions based on composition mode
-    let (composition_w, composition_h) = match composition.mode {
-        CompositionMode::Auto => {
-            // Auto mode: composition matches video crop + padding
-            let w = ((video_w + padding * 2) / 2) * 2;
-            let h = ((video_h + padding * 2) / 2) * 2;
-            log::info!(
-                "[EXPORT] Auto composition: {}x{} (video {}x{} + padding {})",
-                w,
-                h,
-                video_w,
-                video_h,
-                padding
-            );
-            (w, h)
-        },
-        CompositionMode::Manual => {
-            // Manual mode: check for fixed dimensions first, then aspect ratio
-            log::info!(
-                "[EXPORT] Manual mode - checking fixed dimensions: width={:?}, height={:?}",
-                composition.width,
-                composition.height
-            );
-            if let (Some(fixed_w), Some(fixed_h)) = (composition.width, composition.height) {
-                // Fixed dimensions specified - use them directly
-                let w = (fixed_w / 2) * 2; // Ensure even
-                let h = (fixed_h / 2) * 2;
-                log::info!(
-                    "[EXPORT] Manual composition (fixed): {}x{} (requested {}x{})",
-                    w,
-                    h,
-                    fixed_w,
-                    fixed_h
-                );
-                (w, h)
-            } else if let Some(target_ratio) = composition.aspect_ratio {
-                // Calculate composition size that fits the video at the target aspect ratio
-                let video_ratio = video_w as f32 / video_h as f32;
-
-                let (comp_w, comp_h) = if target_ratio > video_ratio {
-                    // Composition is wider than video - video height determines composition height
-                    // Add padding to video, then calculate width from aspect ratio
-                    let h = video_h + padding * 2;
-                    let w = (h as f32 * target_ratio) as u32;
-                    (w, h)
-                } else {
-                    // Composition is taller than video - video width determines composition width
-                    // Add padding to video, then calculate height from aspect ratio
-                    let w = video_w + padding * 2;
-                    let h = (w as f32 / target_ratio) as u32;
-                    (w, h)
-                };
-
-                // Ensure even dimensions
-                let w = (comp_w / 2) * 2;
-                let h = (comp_h / 2) * 2;
-
-                log::info!(
-                    "[EXPORT] Manual composition: {}x{} (ratio {:.3}, video {}x{})",
-                    w,
-                    h,
-                    target_ratio,
-                    video_w,
-                    video_h
-                );
-                (w, h)
-            } else {
-                // No aspect ratio specified, fall back to auto
-                let w = ((video_w + padding * 2) / 2) * 2;
-                let h = ((video_h + padding * 2) / 2) * 2;
-                log::info!(
-                    "[EXPORT] Manual composition (no ratio): {}x{} (video {}x{} + padding {})",
-                    w,
-                    h,
-                    video_w,
-                    video_h,
-                    padding
-                );
-                (w, h)
-            }
-        },
-    };
-
-    // Output dimensions = composition dimensions
-    let out_w = composition_w;
-    let out_h = composition_h;
+    }
+    log::info!(
+        "[EXPORT] Planned dimensions: video={}x{}, composition={}x{}, output={}x{}, padding={}, manual={}",
+        video_w,
+        video_h,
+        composition_w,
+        composition_h,
+        out_w,
+        out_h,
+        padding,
+        use_manual_composition
+    );
 
     // Compute export-equivalent video content bounds once.
     // Cursor and pre-rendered text overlays must use the exact same frame bounds
     // as compositor composition to keep preview/export parity.
-    let composition_bounds = super::parity::calculate_composition_bounds(
+    let composition_bounds = snapit_render::parity::calculate_composition_bounds(
         video_w as f32,
         video_h as f32,
         padding as f32,
-        if matches!(composition.mode, CompositionMode::Manual) {
+        if use_manual_composition {
             Some((composition_w as f32, composition_h as f32))
         } else {
             None
@@ -524,16 +289,7 @@ pub async fn export_video_gpu(
     // Initialize streaming decoders (ONE FFmpeg process each!)
     // Use decode_range which respects segments (first seg start to last seg end).
     // NV12 fast path is disabled for odd source/crop alignment to avoid frame jitter.
-    let screen_path = Path::new(&project.sources.screen_video);
-    let use_nv12_decode = can_use_nv12_fast_path(
-        original_width,
-        original_height,
-        crop_enabled,
-        crop.x,
-        crop.y,
-        crop.width,
-        crop.height,
-    );
+    let screen_path = Path::new(&decode_plan.screen_video_path);
     if !use_nv12_decode {
         log::info!(
             "[EXPORT] NV12 fast path disabled for source {}x{} crop=({},{} {}x{} enabled={}); using RGBA decode",
@@ -552,20 +308,12 @@ pub async fn export_video_gpu(
     }
     screen_decoder.start(screen_path)?;
 
-    // Webcam decoder if enabled
-    let webcam_decoder = if project.webcam.enabled {
-        if let Some(ref path) = project.sources.webcam_video {
-            let webcam_path = Path::new(path);
-            if webcam_path.exists() {
-                let mut decoder = StreamDecoder::new(webcam_path, decode_start_ms, decode_end_ms)?;
-                decoder.start(webcam_path)?;
-                Some(decoder)
-            } else {
-                None
-            }
-        } else {
-            None
-        }
+    // Webcam decoder if planned and available.
+    let webcam_decoder = if let Some(ref path) = decode_plan.webcam_video_path {
+        let webcam_path = Path::new(path);
+        let mut decoder = StreamDecoder::new(webcam_path, decode_start_ms, decode_end_ms)?;
+        decoder.start(webcam_path)?;
+        Some(decoder)
     } else {
         None
     };
@@ -720,7 +468,6 @@ pub async fn export_video_gpu(
         renderer.create_staging_buffer(composition_w, composition_h),
         renderer.create_staging_buffer(composition_w, composition_h),
     ];
-    let mut buf_idx = 0usize;
 
     // Build constant context for CPU compositing (shared across all frames)
     let cpu_ctx = CpuCompositeCtx {
@@ -739,21 +486,40 @@ pub async fn export_video_gpu(
         cursor_motion_blur: project.cursor.motion_blur.clamp(0.0, 1.0),
         cursor_interpolator: cursor_interpolator.as_ref(),
     };
-    // No-crop area captures can have odd source dimensions. Crop to the export
-    // video size once per frame so RGBA uploads match the pre-allocated texture.
-    let force_even_source_crop =
-        !crop_enabled && (original_width != video_w || original_height != video_h);
 
+    // Background config is static for the export job; compute once.
+    let background_style =
+        BackgroundStyle::from_config(&project.export.background, resource_dir.as_deref());
+    log::info!(
+        "[EXPORT] Background: type={:?}, padding={}, rounding={}",
+        background_style.background_type,
+        background_style.padding,
+        background_style.rounding
+    );
     // Track output frames separately from decoded frames
-    let mut output_frame_count = 0u32;
+    let job_runner = ExportJobRunner::new(ExportJobRunnerConfig {
+        total_output_frames,
+        progress_every_sent_frames: 10,
+    });
 
-    // Per-frame timing instrumentation (aggregated every 30 frames)
-    let mut timing_decode_us = 0u64;
-    let mut timing_gpu_us = 0u64;
-    let mut timing_cpu_us = 0u64;
-    let mut timing_readback_us = 0u64;
-    let mut timing_encode_us = 0u64;
-    let mut timing_frame_count = 0u32;
+    let mut render_ctx = ExportRenderLoopContext {
+        loop_state: ExportLoopState::new(3, 30),
+        compositor: &mut compositor,
+    };
+    let app_ref = &app;
+    let project_ref = &project;
+    let renderer_ref = &renderer;
+    let zoom_interpolator_ref = &zoom_interpolator;
+    let scene_interpolator_ref = &scene_interpolator;
+    let nv12_converter_ref = &nv12_converter;
+    let video_texture_ref = &video_texture;
+    let output_texture_ref = &output_texture;
+    let staging_buffers_ref = &staging_buffers;
+    let background_style_ref = &background_style;
+    let timeline_captions_ref = &timeline_captions;
+    let prerendered_text_store_ref = &prerendered_text_store;
+    let cpu_ctx_ref = &cpu_ctx;
+    let encode_tx_ref = &encode_tx;
 
     // Pipeline with triple-buffered staging (4-stage depth):
     //   1. complete_readback for frame N-2  → ~0ms fence (GPU done 2 iters ago) + data copy
@@ -762,74 +528,74 @@ pub async fn export_video_gpu(
     // The readback queue holds up to 2 entries; we only complete the oldest
     // (submitted 2 iterations ago, guaranteed complete). This eliminates the
     // GPU fence wait entirely — readback is pure PCIe data transfer.
-    let mut pending_cpu: Option<PendingCpuWork> = None;
     // Two-deep readback queue: _old was submitted 2 iters ago, _new was submitted 1 iter ago
-    let mut pending_readback_old: Option<PendingReadback> = None;
-    let mut pending_readback_new: Option<PendingReadback> = None;
 
-    // Render frames from decode pipeline, send to encode pipeline
-    let mut t_decode_start = std::time::Instant::now();
-    while let Some(bundle) = decode_rx.recv().await {
-        timing_decode_us += t_decode_start.elapsed().as_micros() as u64;
-        // Check for cancellation
-        if cancel_flag().load(Ordering::Relaxed) {
-            log::info!("[EXPORT] Export cancelled by user");
-            break;
-        }
+    // Render frames from decode pipeline, send to encode pipeline.
+    let loop_exit = run_export_loop_with_context(
+        &mut decode_rx,
+        &mut render_ctx,
+        |_| is_export_cancelled(),
+        |ctx, bundle| {
+            Box::pin(async move {
+        let loop_state = &mut ctx.loop_state;
+        let app = app_ref;
+        let project = project_ref;
+        let renderer = renderer_ref;
+        let compositor = &mut *ctx.compositor;
+        let zoom_interpolator = zoom_interpolator_ref;
+        let scene_interpolator = scene_interpolator_ref;
+        let nv12_converter = nv12_converter_ref;
+        let video_texture = video_texture_ref;
+        let output_texture = output_texture_ref;
+        let staging_buffers = staging_buffers_ref;
+        let background_style = background_style_ref;
+        let timeline_captions = timeline_captions_ref;
+        let prerendered_text_store = prerendered_text_store_ref;
+        let cpu_ctx = cpu_ctx_ref;
+        let encode_tx = encode_tx_ref;
+        loop_state
+            .timing
+            .add_decode_us(loop_state.t_decode_start.elapsed().as_micros() as u64);
 
         // === Complete readback for frame N-2 (submitted 2 iterations ago) ===
         // With triple-buffered staging, the oldest entry was submitted ~46ms ago.
-        // The GPU is guaranteed to be done — readback is pure PCIe data transfer
+        // The GPU is guaranteed to be done - readback is pure PCIe data transfer
         // with zero fence wait. Runs BEFORE any new GPU submissions so poll(Wait)
         // doesn't block on freshly-enqueued work.
-        if let Some(oldest_rb) = pending_readback_old.take() {
-            let t_readback_start = std::time::Instant::now();
-            let rgba_data = renderer
-                .complete_readback(
-                    &staging_buffers[oldest_rb.staging_buf_idx],
+        let t_readback_start = std::time::Instant::now();
+        if loop_state
+            .promote_oldest_readback_to_pending_cpu(|staging_buf_idx| {
+                renderer.complete_readback(
+                    &staging_buffers[staging_buf_idx],
                     composition_w,
                     composition_h,
                 )
-                .await;
-            timing_readback_us += t_readback_start.elapsed().as_micros() as u64;
-
-            pending_cpu = Some(PendingCpuWork {
-                rgba_data,
-                camera_only_opacity: oldest_rb.camera_only_opacity,
-                source_time_ms: oldest_rb.source_time_ms,
-                zoom_state: oldest_rb.zoom_state,
-                output_frame_idx: oldest_rb.output_frame_idx,
-            });
+            })
+            .await
+        {
+            loop_state
+                .timing
+                .add_readback_us(t_readback_start.elapsed().as_micros() as u64);
         }
 
         let decoded_frame_idx = bundle.frame_idx;
         let current_webcam_frame = bundle.webcam_frame;
 
-        // Calculate source time for this decoded frame
-        let source_time_ms =
-            decode_start_ms + ((decoded_frame_idx as f64 / fps as f64) * 1000.0) as u64;
+        let frame_timeline = build_frame_timeline_context(
+            decode_start_ms,
+            decoded_frame_idx,
+            loop_state.output_frame_count,
+            fps,
+            &project.timeline,
+            has_segments,
+        );
+        let source_time_ms = frame_timeline.source_time_ms;
+        let relative_time_ms = frame_timeline.relative_time_ms;
 
         // Skip decoded frames that fall in deleted regions.
-        if has_segments
-            && project
-                .timeline
-                .source_to_timeline(source_time_ms)
-                .is_none()
-        {
-            continue;
-        }
-
-        // Apply source normalization BEFORE composition:
-        // - With user crop: RGBA path crops on CPU (NV12 crop happens in converter).
-        // - Without user crop: odd-sized RGBA sources are cropped to even export source size.
-        let mut screen_frame = bundle.screen_frame;
-        if screen_frame.format == PixelFormat::Rgba {
-            if crop_enabled {
-                screen_frame =
-                    crop_decoded_frame(&screen_frame, crop.x, crop.y, crop.width, crop.height);
-            } else if force_even_source_crop {
-                screen_frame = crop_decoded_frame(&screen_frame, 0, 0, video_w, video_h);
-            }
+        if frame_timeline.should_skip {
+            loop_state.t_decode_start = std::time::Instant::now();
+            return Ok(ExportLoopDirective::Continue);
         }
 
         // Use output frame index for user-defined timeline effects (zoom, scene, text, captions).
@@ -837,27 +603,54 @@ pub async fn export_video_gpu(
         // can be ahead/behind encoded frame pacing by up to ~1 frame per cut boundary.
         // Frame-index timing stays locked to what is actually encoded.
         // Use source_time_ms for recorded data (cursor position).
-        let relative_time_ms = ((output_frame_count as f64 / fps as f64) * 1000.0).round() as u64;
+        let frame_scene = build_frame_scene_context(
+            relative_time_ms,
+            source_time_ms,
+            zoom_interpolator,
+            scene_interpolator,
+            |source_time_ms| {
+                cpu_ctx.cursor_interpolator.map(|interp| {
+                    let cursor = interp.get_cursor_at(source_time_ms);
+                    (cursor.x as f64, cursor.y as f64)
+                })
+            },
+            |timeline_time_ms| is_webcam_visible_at(project, timeline_time_ms),
+        );
+        let zoom_state = frame_scene.zoom_state;
+        let interpolated_scene = frame_scene.interpolated_scene;
+        let webcam_visible = frame_scene.webcam_visible;
+        let camera_only_opacity = frame_scene.camera_only_opacity;
+        let regular_camera_opacity = frame_scene.regular_camera_opacity;
+        let is_in_camera_only_transition = frame_scene.in_camera_only_transition;
 
-        // Get cursor position using SOURCE time (cursor data is recorded in source time)
-        // This ensures cursor appears at correct position even after trimming
-        let cursor_pos_for_zoom = cursor_interpolator.as_ref().map(|interp| {
-            let cursor = interp.get_cursor_at(source_time_ms);
-            (cursor.x as f64, cursor.y as f64)
+        // Apply source normalization BEFORE composition:
+        // - With user crop: RGBA path crops on CPU (NV12 crop happens in converter).
+        // - Without user crop: odd-sized RGBA sources are cropped to even export source size.
+        let prepared_frame = prepare_base_screen_frame(PrepareFrameRequest {
+            screen_frame: bundle.screen_frame,
+            crop_enabled,
+            crop: CropRectPlan {
+                x: crop.x,
+                y: crop.y,
+                width: crop.width,
+                height: crop.height,
+            },
+            force_even_source_crop,
+            video_width: video_w,
+            video_height: video_h,
+            camera_only_opacity,
+            has_webcam_frame: current_webcam_frame.is_some(),
         });
-
-        // Scene segments and zoom regions use RELATIVE time (timeline position)
-        // Pass cursor position so Auto zoom mode can follow cursor
-        let zoom_state =
-            zoom_interpolator.get_zoom_at_with_cursor(relative_time_ms, cursor_pos_for_zoom);
-        let interpolated_scene = scene_interpolator.get_scene_at(relative_time_ms);
-        let webcam_visible = is_webcam_visible_at(&project, relative_time_ms);
+        let screen_frame = prepared_frame.screen_frame;
+        let frame_path = prepared_frame.frame_path;
+        let is_nv12 = prepared_frame.is_nv12;
+        let use_nv12_gpu_path = prepared_frame.use_nv12_gpu_path;
 
         // Log first few frames for debugging
-        if output_frame_count < 3 || (6000..=6200).contains(&relative_time_ms) {
+        if should_log_frame_debug(loop_state.output_frame_count, relative_time_ms) {
             log::debug!(
                 "[EXPORT] Frame {}: timeline={}ms, source={}ms, scene_mode={:?}, transition_progress={:.2}",
-                output_frame_count,
+                loop_state.output_frame_count,
                 relative_time_ms,
                 source_time_ms,
                 interpolated_scene.scene_mode,
@@ -865,17 +658,14 @@ pub async fn export_video_gpu(
             );
         }
 
-        // Determine what to render based on interpolated scene values
-        // This handles smooth transitions between scene modes
-        let camera_only_opacity = interpolated_scene.camera_only_transition_opacity();
-        let regular_camera_opacity = interpolated_scene.regular_camera_transition_opacity();
-        let is_in_camera_only_transition = interpolated_scene.is_transitioning_camera_only();
-
         // Log transition state for debugging
-        if is_in_camera_only_transition && output_frame_count.is_multiple_of(10) {
+        if should_log_camera_transition_debug(
+            loop_state.output_frame_count,
+            is_in_camera_only_transition,
+        ) {
             log::debug!(
                 "[EXPORT] Frame {}: cameraOnly transition - camera_only_opacity={:.2}, regular_camera_opacity={:.2}, screen_blur={:.2}",
-                output_frame_count, camera_only_opacity, regular_camera_opacity, interpolated_scene.screen_blur
+                loop_state.output_frame_count, camera_only_opacity, regular_camera_opacity, interpolated_scene.screen_blur
             );
         }
 
@@ -883,160 +673,80 @@ pub async fn export_video_gpu(
         // NV12 fast path: for the common case (no camera-only transition), we skip
         // CPU frame manipulation entirely — the NV12 converter writes directly to GPU.
         // Camera-only transitions need RGBA for CPU blending (rare, ~1s per transition).
-        let is_nv12 = screen_frame.format == PixelFormat::Nv12;
-
-        // Determine if we need the NV12 GPU path or RGBA fallback.
-        let needs_rgba_blend = camera_only_opacity > 0.01
-            && camera_only_opacity <= 0.99
-            && current_webcam_frame.is_some();
-        let needs_fullscreen_webcam = camera_only_opacity > 0.99 && current_webcam_frame.is_some();
-        let use_nv12_gpu_path = is_nv12 && !needs_rgba_blend && !needs_fullscreen_webcam;
-
         // Run NV12→RGBA GPU conversion NOW, before screen_frame is moved.
         // This writes RGBA into video_texture; the compositor reads it later.
         if use_nv12_gpu_path {
-            let gpu_crop = if crop_enabled {
-                Some(CropRect {
-                    x: crop.x,
-                    y: crop.y,
-                    width: crop.width,
-                    height: crop.height,
-                })
-            } else {
-                None
-            };
+            let gpu_crop = prepared_frame.nv12_gpu_crop.map(|c| CropRect {
+                x: c.x,
+                y: c.y,
+                width: c.width,
+                height: c.height,
+            });
             nv12_converter.convert(&screen_frame.data, &video_texture, gpu_crop);
         }
 
-        let (frame_to_render, webcam_overlay) = if needs_fullscreen_webcam {
-            // Fully in cameraOnly mode - just show fullscreen webcam
-            let webcam_frame = current_webcam_frame.as_ref().unwrap();
-            let scaled_frame = scale_frame_to_fill(webcam_frame, video_w, video_h);
-            (Some(scaled_frame), None)
-        } else if needs_rgba_blend {
-            // In cameraOnly transition - blend screen and fullscreen webcam.
-            // CPU blending requires RGBA, so convert NV12 frames if needed.
-            let webcam_frame = current_webcam_frame.as_ref().unwrap();
-            let rgba_screen = if is_nv12 {
-                let rgba = screen_frame.to_rgba();
-                // NV12 frames skipped CPU crop earlier, apply it now
-                if crop_enabled {
-                    crop_decoded_frame(&rgba, crop.x, crop.y, crop.width, crop.height)
-                } else {
-                    rgba
-                }
-            } else {
-                screen_frame.clone()
-            };
-            let mut blended_frame = rgba_screen;
+        let render_plan = plan_frame_render(
+            interpolated_scene.scene_mode,
+            frame_path,
+            webcam_visible,
+            regular_camera_opacity,
+        );
+        let composition = build_frame_composition(FrameCompositionRequest {
+            project,
+            render_plan,
+            screen_frame,
+            webcam_frame: current_webcam_frame.as_ref(),
+            is_nv12,
+            use_nv12_gpu_path,
+            camera_only_opacity,
+            crop_enabled,
+            crop: CropRectPlan {
+                x: crop.x,
+                y: crop.y,
+                width: crop.width,
+                height: crop.height,
+            },
+            video_width: video_w,
+            video_height: video_h,
+            composition_width: composition_w,
+            composition_height: composition_h,
+        });
+        let frame_to_render = composition.frame_to_render;
+        let webcam_overlay = composition.webcam_overlay;
 
-            // Scale webcam to fill video area (matches screen dimensions)
-            let fullscreen_webcam = scale_frame_to_fill(webcam_frame, video_w, video_h);
-
-            // Blend fullscreen webcam over screen with camera_only_opacity
-            blend_frames_alpha(
-                &mut blended_frame,
-                &fullscreen_webcam,
-                camera_only_opacity as f32,
-            );
-
-            // Regular webcam overlay during transition (fades at 1.5x speed)
-            let overlay = if regular_camera_opacity > 0.01 && webcam_visible {
-                let mut overlay = build_webcam_overlay(
-                    &project,
-                    webcam_frame.clone(),
-                    composition_w,
-                    composition_h,
-                );
-                overlay.shadow_opacity *= regular_camera_opacity as f32;
-                Some(overlay)
-            } else {
-                None
-            };
-
-            (Some(blended_frame), overlay)
-        } else {
-            // Not in cameraOnly transition - normal rendering (common path, ~99% of frames)
-            let overlay = match interpolated_scene.scene_mode {
-                SceneMode::ScreenOnly => None,
-                _ => {
-                    if webcam_visible && regular_camera_opacity > 0.01 {
-                        current_webcam_frame.as_ref().map(|frame| {
-                            build_webcam_overlay(
-                                &project,
-                                frame.clone(),
-                                composition_w,
-                                composition_h,
-                            )
-                        })
-                    } else {
-                        None
-                    }
-                },
-            };
-            if use_nv12_gpu_path {
-                // NV12 fast path: converter will write directly to video_texture
-                (None, overlay)
-            } else {
-                // RGBA path: compositor uploads the frame
-                (Some(screen_frame), overlay)
-            }
-        };
-
-        // Convert background config to rendering style
-        let background_style =
-            BackgroundStyle::from_config(&project.export.background, resource_dir.as_deref());
-
-        // Log background config on first frame
-        if output_frame_count == 0 {
-            log::info!(
-                "[EXPORT] Background: type={:?}, padding={}, rounding={}",
-                background_style.background_type,
-                background_style.padding,
-                background_style.rounding
-            );
-        }
-
-        let render_options = RenderOptions {
-            output_width: composition_w,
-            output_height: composition_h,
-            use_manual_composition: matches!(composition.mode, CompositionMode::Manual),
-            zoom: zoom_state,
-            webcam: webcam_overlay,
-            cursor: None,
-            background: background_style,
-        };
-
-        let frame_time_secs = relative_time_ms as f64 / 1000.0;
-
-        // Prepare caption overlays for this frame (captions still use glyphon GPU pipeline)
-        let prepared_captions = if project.captions.enabled {
-            prepare_captions(
-                &timeline_captions,
-                &project.captions,
-                frame_time_secs as f32,
-                composition_w as f32,
-                composition_h as f32,
-            )
-        } else {
-            Vec::new()
-        };
+        let overlay_plan = build_frame_overlay_plan(FrameOverlayRequest {
+            relative_time_ms,
+            composition_width: composition_w,
+            composition_height: composition_h,
+            use_manual_composition,
+            zoom_state,
+            webcam_overlay,
+            background_style,
+            timeline_captions,
+            caption_settings: &project.captions,
+        });
+        let render_options = overlay_plan.render_options;
+        let frame_time_secs = overlay_plan.frame_time_secs;
+        let prepared_captions = overlay_plan.prepared_captions;
 
         // Get GPU-ready text overlay quads for this frame.
         // Text coordinates are normalized 0-1 relative to the video content area,
         // positions are returned in NDC for direct GPU rendering.
         let text_overlay_quads = {
             let store = prerendered_text_store.lock();
-            store.get_gpu_quads_for_frame(
-                frame_time_secs,
-                &project.text.segments,
-                composition_w,
-                composition_h,
-                composition_bounds.frame_x as u32,
-                composition_bounds.frame_y as u32,
-                composition_bounds.frame_width as u32,
-                composition_bounds.frame_height as u32,
-                zoom_state,
+            build_frame_text_overlay_quads(
+                &store,
+                FrameTextOverlayRequest {
+                    frame_time_secs,
+                    text_segments: &project.text.segments,
+                    composition_width: composition_w,
+                    composition_height: composition_h,
+                    video_frame_x: composition_bounds.frame_x as u32,
+                    video_frame_y: composition_bounds.frame_y as u32,
+                    video_frame_width: composition_bounds.frame_width as u32,
+                    video_frame_height: composition_bounds.frame_height as u32,
+                    zoom_state,
+                },
             )
         };
 
@@ -1064,136 +774,122 @@ pub async fn export_video_gpu(
         // Submit readback copy command (non-blocking — GPU will execute asynchronously)
         renderer.submit_readback(
             &output_texture,
-            &staging_buffers[buf_idx],
+            &staging_buffers[loop_state.buf_idx],
             composition_w,
             composition_h,
         );
 
-        timing_gpu_us += t_gpu_start.elapsed().as_micros() as u64;
+        loop_state
+            .timing
+            .add_gpu_us(t_gpu_start.elapsed().as_micros() as u64);
 
         // === CPU phase: process frame N-2 (pending_cpu) while GPU works on frame N ===
-        if let Some(mut prev) = pending_cpu.take() {
+        if let Some(mut prev) = loop_state.pending_cpu.take() {
             let t_cpu_start = std::time::Instant::now();
             apply_cpu_compositing(&mut prev, &cpu_ctx);
-            timing_cpu_us += t_cpu_start.elapsed().as_micros() as u64;
+            loop_state
+                .timing
+                .add_cpu_us(t_cpu_start.elapsed().as_micros() as u64);
 
             let t_encode_start = std::time::Instant::now();
             if encode_tx.send(prev.rgba_data).await.is_err() {
                 log::error!("[EXPORT] Encode channel closed unexpectedly");
-                break;
+                return Ok(ExportLoopDirective::Stop);
             }
-            timing_encode_us += t_encode_start.elapsed().as_micros() as u64;
+            loop_state
+                .timing
+                .add_encode_us(t_encode_start.elapsed().as_micros() as u64);
 
             // Progress update (every 10 frames, based on frames sent to encoder)
             let sent_count = prev.output_frame_idx + 1;
-            if sent_count.is_multiple_of(10) {
-                let progress = sent_count as f32 / total_output_frames as f32;
-                let stage_progress = 0.08 + progress * 0.87;
+            job_runner.on_frame_sent(sent_count, |progress| {
                 emit_progress(
                     &app,
-                    stage_progress,
+                    progress.stage_progress,
                     ExportStage::Encoding,
-                    &format!("Rendering: {:.0}%", progress * 100.0),
+                    &format!("Rendering: {}%", progress.percent),
                 );
-            }
+            });
         }
 
         // Shift readback queue: new → old, current frame → new
-        pending_readback_old = pending_readback_new.take();
-        pending_readback_new = Some(PendingReadback {
-            staging_buf_idx: buf_idx,
-            camera_only_opacity,
-            source_time_ms,
-            zoom_state,
-            output_frame_idx: output_frame_count,
-        });
-        buf_idx = (buf_idx + 1) % 3;
+        loop_state.enqueue_submitted_readback(camera_only_opacity, source_time_ms, zoom_state);
 
-        output_frame_count += 1;
-        timing_frame_count += 1;
-
-        // Log aggregate timing every 30 frames
-        if timing_frame_count >= 30 {
-            let n = timing_frame_count as f64;
+        loop_state.output_frame_count += 1;
+        if let Some(summary) = loop_state.timing.finish_frame() {
             log::info!(
                 "[EXPORT] Frame timing (avg over {}): decode={:.1}ms gpu={:.1}ms cpu={:.1}ms readback={:.1}ms encode={:.1}ms total={:.1}ms",
-                timing_frame_count,
-                timing_decode_us as f64 / n / 1000.0,
-                timing_gpu_us as f64 / n / 1000.0,
-                timing_cpu_us as f64 / n / 1000.0,
-                timing_readback_us as f64 / n / 1000.0,
-                timing_encode_us as f64 / n / 1000.0,
-                (timing_decode_us + timing_gpu_us + timing_cpu_us + timing_readback_us + timing_encode_us) as f64 / n / 1000.0,
+                summary.frame_count,
+                summary.decode_ms,
+                summary.gpu_ms,
+                summary.cpu_ms,
+                summary.readback_ms,
+                summary.encode_ms,
+                summary.total_ms,
             );
-            timing_decode_us = 0;
-            timing_gpu_us = 0;
-            timing_cpu_us = 0;
-            timing_readback_us = 0;
-            timing_encode_us = 0;
-            timing_frame_count = 0;
         }
 
         // Check if we've read back enough frames
-        if output_frame_count >= total_output_frames {
-            break;
+        if matches!(
+            job_runner.loop_control(loop_state.output_frame_count, false),
+            LoopControl::StopTargetReached
+        ) {
+            return Ok(ExportLoopDirective::Stop);
         }
 
         // Reset decode timer for next iteration's recv() wait
-        t_decode_start = std::time::Instant::now();
+        loop_state.t_decode_start = std::time::Instant::now();
+        Ok(ExportLoopDirective::Continue)
+            })
+        },
+    )
+    .await?;
+    if matches!(loop_exit, ExportLoopExit::Cancelled) {
+        log::info!("[EXPORT] Export cancelled by user");
     }
 
     // Drain pipeline: up to 3 frames may still be in-flight.
     // pending_cpu: readback done, needs CPU composite + encode
     // pending_readback_old: needs complete_readback + CPU composite + encode
     // pending_readback_new: needs complete_readback + CPU composite + encode
-    if !cancel_flag().load(Ordering::Relaxed) {
-        if let Some(mut cpu_work) = pending_cpu.take() {
+    let _ = drain_pipeline_if_needed(
+        &mut render_ctx.loop_state,
+        job_runner.should_drain_after_loop(is_export_cancelled()),
+        |staging_buf_idx| {
+            renderer.complete_readback(
+                &staging_buffers[staging_buf_idx],
+                composition_w,
+                composition_h,
+            )
+        },
+        |mut cpu_work| async {
             apply_cpu_compositing(&mut cpu_work, &cpu_ctx);
             let _ = encode_tx.send(cpu_work.rgba_data).await;
-        }
-
-        for rb in [pending_readback_old.take(), pending_readback_new.take()]
-            .into_iter()
-            .flatten()
-        {
-            let rgba_data = renderer
-                .complete_readback(
-                    &staging_buffers[rb.staging_buf_idx],
-                    composition_w,
-                    composition_h,
-                )
-                .await;
-            let mut work = PendingCpuWork {
-                rgba_data,
-                camera_only_opacity: rb.camera_only_opacity,
-                source_time_ms: rb.source_time_ms,
-                zoom_state: rb.zoom_state,
-                output_frame_idx: rb.output_frame_idx,
-            };
-            apply_cpu_compositing(&mut work, &cpu_ctx);
-            let _ = encode_tx.send(work.rgba_data).await;
-        }
-    }
+        },
+    )
+    .await;
 
     // Check if export was cancelled
-    let was_cancelled = cancel_flag().load(Ordering::Relaxed);
+    let was_cancelled = is_export_cancelled();
 
     // Signal end of render loop and wait for encode to finish
     drop(encode_tx);
 
     if was_cancelled {
-        // Kill FFmpeg process immediately and clean up partial file
-        let _ = ffmpeg.kill();
-        let _ = ffmpeg.wait();
-
         // Wait for pipeline tasks to complete
         drop(decode_rx);
-        let _ = decode_handle.await;
-        let _ = encode_handle.await;
+        let cancelled_summary =
+            finalize_cancelled_export(decode_handle, encode_handle, &mut ffmpeg, &output_path)
+                .await;
+        for warning in cancelled_summary.pipeline_warnings {
+            log::warn!(
+                "[EXPORT] {} task issue during cancel: {}",
+                warning.stage,
+                warning.message
+            );
+        }
 
-        // Delete partial output file
-        if output_path.exists() {
-            let _ = std::fs::remove_file(&output_path);
+        if cancelled_summary.removed_partial_output {
             log::info!("[EXPORT] Deleted partial output file: {:?}", output_path);
         }
 
@@ -1202,196 +898,52 @@ pub async fn export_video_gpu(
         return Err("Export cancelled by user".to_string());
     }
 
-    emit_progress(&app, 0.95, ExportStage::Finalizing, "Finalizing...");
+    emit_progress(
+        &app,
+        FINALIZING_PROGRESS,
+        ExportStage::Finalizing,
+        "Finalizing...",
+    );
 
-    // Wait for pipeline tasks to complete
-    if let Err(e) = decode_handle.await {
-        log::warn!("[EXPORT] Decode task join error: {:?}", e);
+    let completed_summary = match finalize_completed_export(
+        decode_handle,
+        encode_handle,
+        &mut ffmpeg,
+        &output_path,
+        20,
+    )
+    .await
+    {
+        Ok(summary) => summary,
+        Err(EncoderFinalizeError::Wait(msg)) => return Err(msg),
+        Err(EncoderFinalizeError::Metadata(msg)) => return Err(msg),
+        Err(EncoderFinalizeError::EncodeFailure(failure)) => {
+            if let Some(tail) = failure.stderr_tail {
+                log::error!("[EXPORT] FFmpeg stderr (last 20 lines):\n{}", tail);
+            }
+            return Err(format!(
+                "FFmpeg encoding failed with status: {:?}",
+                failure.status_code
+            ));
+        },
+    };
+    for warning in completed_summary.pipeline_warnings {
+        log::warn!("[EXPORT] {} task issue: {}", warning.stage, warning.message);
     }
-    if let Err(e) = encode_handle.await {
-        log::warn!("[EXPORT] Encode task join error: {:?}", e);
-    }
-
-    // Wait for FFmpeg encoder to finish
-    let stderr_output = ffmpeg.stderr.take().and_then(|mut stderr| {
-        use std::io::Read;
-        let mut buf = Vec::new();
-        stderr.read_to_end(&mut buf).ok()?;
-        String::from_utf8(buf).ok()
-    });
-    let status = ffmpeg
-        .wait()
-        .map_err(|e| format!("FFmpeg wait failed: {}", e))?;
-    if !status.success() {
-        if let Some(ref stderr) = stderr_output {
-            let tail: String = stderr
-                .lines()
-                .rev()
-                .take(20)
-                .collect::<Vec<_>>()
-                .into_iter()
-                .rev()
-                .collect::<Vec<_>>()
-                .join("\n");
-            log::error!("[EXPORT] FFmpeg stderr (last 20 lines):\n{}", tail);
-        }
-        return Err(format!(
-            "FFmpeg encoding failed with status: {:?}",
-            status.code()
-        ));
-    }
-
-    // Get output file info
-    let metadata = std::fs::metadata(&output_path)
-        .map_err(|e| format!("Failed to read output file: {}", e))?;
+    let file_size_bytes = completed_summary.file_size_bytes;
 
     emit_progress(&app, 1.0, ExportStage::Complete, "Export complete!");
 
     log::info!(
         "[EXPORT] Complete in {:.1}s: {} bytes",
         start_time.elapsed().as_secs_f32(),
-        metadata.len()
+        file_size_bytes
     );
 
     Ok(ExportResult {
         output_path: output_path.to_string_lossy().to_string(),
         duration_secs,
-        file_size_bytes: metadata.len(),
+        file_size_bytes,
         format: project.export.format,
     })
-}
-
-/// Remap caption segments from source time to timeline time.
-/// Filters out captions that fall entirely within deleted segments.
-/// For captions that partially overlap kept segments, clips them to the segment boundaries.
-fn remap_captions_to_timeline(
-    captions: &[CaptionSegment],
-    timeline: &TimelineState,
-) -> Vec<CaptionSegment> {
-    // If no segments (no cuts), captions are already in the right time space
-    // Just offset by in_point
-    if timeline.segments.is_empty() {
-        return captions
-            .iter()
-            .filter_map(|cap| {
-                let start_ms = (cap.start * 1000.0) as u64;
-                let end_ms = (cap.end * 1000.0) as u64;
-
-                // Check if caption is within in_point/out_point range
-                if end_ms <= timeline.in_point || start_ms >= timeline.out_point {
-                    return None; // Caption is outside trim range
-                }
-
-                // Clip to in_point/out_point and offset to timeline
-                let clipped_start_ms = start_ms.max(timeline.in_point);
-                let clipped_end_ms = end_ms.min(timeline.out_point);
-                let timeline_start = (clipped_start_ms - timeline.in_point) as f32 / 1000.0;
-                let timeline_end = (clipped_end_ms - timeline.in_point) as f32 / 1000.0;
-
-                // Remap words too
-                let remapped_words = cap
-                    .words
-                    .iter()
-                    .filter_map(|word| {
-                        let word_start_ms = (word.start * 1000.0) as u64;
-                        let word_end_ms = (word.end * 1000.0) as u64;
-
-                        if word_end_ms <= timeline.in_point || word_start_ms >= timeline.out_point {
-                            return None;
-                        }
-
-                        let w_start = word_start_ms.max(timeline.in_point);
-                        let w_end = word_end_ms.min(timeline.out_point);
-
-                        Some(crate::commands::captions::types::CaptionWord {
-                            text: word.text.clone(),
-                            start: (w_start - timeline.in_point) as f32 / 1000.0,
-                            end: (w_end - timeline.in_point) as f32 / 1000.0,
-                        })
-                    })
-                    .collect();
-
-                Some(CaptionSegment {
-                    id: cap.id.clone(),
-                    start: timeline_start,
-                    end: timeline_end,
-                    text: cap.text.clone(),
-                    words: remapped_words,
-                })
-            })
-            .collect();
-    }
-
-    // With segments: remap each caption through all kept segments
-    let mut remapped: Vec<CaptionSegment> = Vec::new();
-
-    for cap in captions {
-        let cap_start_ms = (cap.start * 1000.0) as u64;
-        let cap_end_ms = (cap.end * 1000.0) as u64;
-
-        // Check if this caption overlaps with any kept segment
-        let mut timeline_offset = 0u64;
-        for seg in &timeline.segments {
-            // Check if caption overlaps this segment
-            if cap_end_ms > seg.source_start_ms && cap_start_ms < seg.source_end_ms {
-                // Caption overlaps this segment - clip and remap
-                let clipped_start_ms = cap_start_ms.max(seg.source_start_ms);
-                let clipped_end_ms = cap_end_ms.min(seg.source_end_ms);
-
-                // Convert to timeline time
-                let timeline_start =
-                    (timeline_offset + (clipped_start_ms - seg.source_start_ms)) as f32 / 1000.0;
-                let timeline_end =
-                    (timeline_offset + (clipped_end_ms - seg.source_start_ms)) as f32 / 1000.0;
-
-                // Remap words that fall within this segment
-                let remapped_words: Vec<_> = cap
-                    .words
-                    .iter()
-                    .filter_map(|word| {
-                        let word_start_ms = (word.start * 1000.0) as u64;
-                        let word_end_ms = (word.end * 1000.0) as u64;
-
-                        // Check if word overlaps this segment
-                        if word_end_ms > seg.source_start_ms && word_start_ms < seg.source_end_ms {
-                            let w_start = word_start_ms.max(seg.source_start_ms);
-                            let w_end = word_end_ms.min(seg.source_end_ms);
-
-                            Some(crate::commands::captions::types::CaptionWord {
-                                text: word.text.clone(),
-                                start: (timeline_offset + (w_start - seg.source_start_ms)) as f32
-                                    / 1000.0,
-                                end: (timeline_offset + (w_end - seg.source_start_ms)) as f32
-                                    / 1000.0,
-                            })
-                        } else {
-                            None
-                        }
-                    })
-                    .collect();
-
-                // Only add if we have content
-                if !remapped_words.is_empty() || timeline_end > timeline_start {
-                    remapped.push(CaptionSegment {
-                        id: format!("{}_{}", cap.id, seg.source_start_ms),
-                        start: timeline_start,
-                        end: timeline_end,
-                        text: cap.text.clone(),
-                        words: remapped_words,
-                    });
-                }
-            }
-
-            // Advance timeline offset for next segment
-            timeline_offset += seg.source_end_ms - seg.source_start_ms;
-        }
-    }
-
-    log::debug!(
-        "[EXPORT] Remapped {} captions to {} timeline captions",
-        captions.len(),
-        remapped.len()
-    );
-
-    remapped
 }

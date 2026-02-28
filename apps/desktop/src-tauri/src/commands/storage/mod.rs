@@ -3,24 +3,18 @@
 //! ## Architecture
 //!
 //! ```text
-//! mod.rs (public API + shared helpers)
+//! mod.rs (public API + shared helpers + crate re-exports)
 //!   |
-//!   +-- types.rs (type definitions)
-//!   +-- ffmpeg.rs (FFmpeg utilities, thumbnail generation)
 //!   +-- operations.rs (Tauri command handlers)
 //!   +-- tests.rs (unit tests)
+//!
+//! Shared types now come from `snapit-domain::storage`.
+//! Shared FFmpeg utilities now come from `snapit-media::ffmpeg`.
 //! ```
 
-pub mod ffmpeg;
 pub mod operations;
 #[cfg(test)]
 mod tests;
-pub mod types;
-
-// Re-export FFmpeg utilities (widely used by video_recording, rendering modules)
-pub use ffmpeg::{find_ffmpeg, find_ffprobe};
-
-// Types are available via `storage::types::*` for external use
 
 use rand::Rng;
 use std::fs;

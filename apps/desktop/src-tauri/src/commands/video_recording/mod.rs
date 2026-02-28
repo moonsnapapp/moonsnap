@@ -17,7 +17,7 @@
 //! ```text
 //! mod.rs (public API, commands)
 //!   |
-//!   +-- types.rs (RecordingFormat, RecordingSettings, etc.)
+//!   +-- snapit-domain::recording (RecordingFormat, RecordingSettings, etc.)
 //!   +-- recorder.rs (core recording logic)
 //!   +-- state.rs (RecordingController state machine)
 //!   +-- webcam/ (webcam capture and encoding)
@@ -28,24 +28,10 @@
 //!   +-- gpu_editor.rs (GPU-accelerated editing)
 //! ```
 
-pub mod audio;
 pub mod audio_monitor;
-pub mod audio_multitrack;
-pub mod audio_sync;
-pub mod audio_wasapi;
 pub mod cursor;
-pub mod d3d_capture;
-pub mod desktop_icons;
-pub mod ffmpeg_gif_encoder;
-pub mod fragmentation;
-pub mod gif_encoder;
 pub mod gpu_editor;
-pub mod master_clock;
 pub mod recorder;
-pub mod state;
-pub mod timestamp;
-pub mod types;
-pub mod video_export;
 pub mod video_project;
 pub mod webcam;
 
@@ -55,29 +41,30 @@ use std::sync::Mutex;
 use tauri::{command, AppHandle, Emitter, Manager};
 
 // ============================================================================
-// Re-exports
+// Shared type imports
 // ============================================================================
 
 // Types (from types.rs)
-pub use types::{
-    find_monitor_for_point, get_scap_display_bounds, AudioInputDevice, RecordingFormat,
-    RecordingMode, RecordingSettings, RecordingState, RecordingStatus, StartRecordingResult,
+use snapit_capture::recording_runtime::get_scap_display_bounds;
+use snapit_domain::recording::{
+    AudioInputDevice, AudioOutputDevice, RecordingFormat, RecordingSettings, RecordingState,
+    RecordingStatus, StartRecordingResult,
 };
-// StopRecordingResult is available via types:: but not re-exported (unused)
 
 // Recording state
-pub use ffmpeg_gif_encoder::GifQualityPreset;
-pub use state::RECORDING_CONTROLLER;
+use snapit_capture::state::RECORDING_CONTROLLER;
 
 // Webcam config - re-export only what's actually used
-pub use crate::config::webcam::{get_webcam_settings, WebcamShape, WebcamSize, WEBCAM_CONFIG};
+use crate::config::webcam::{get_webcam_settings, WEBCAM_CONFIG};
+use snapit_domain::webcam::{WebcamShape, WebcamSize};
 
 // Video editor types
 pub use cursor::CursorRecording;
-pub use video_export::ExportResult;
+use snapit_domain::video_export::ExportResult;
+use snapit_domain::video_project::{AudioWaveform, AutoZoomConfig, VideoProject};
 pub use video_project::{
     apply_auto_zoom_to_project, clear_frame_cache, get_video_frame_cached,
-    load_video_project_from_file, AudioWaveform, AutoZoomConfig, VideoProject,
+    load_video_project_from_file,
 };
 
 // GPU-accelerated editor
@@ -488,8 +475,8 @@ pub fn notify_preview_window_closed() {
 
 /// Get available audio output devices (speakers/headphones) for system audio capture.
 #[command]
-pub fn list_audio_output_devices() -> Result<Vec<types::AudioOutputDevice>, String> {
-    audio_wasapi::list_output_devices()
+pub fn list_audio_output_devices() -> Result<Vec<AudioOutputDevice>, String> {
+    snapit_capture::audio_wasapi::list_output_devices()
 }
 
 /// Get available audio input devices (microphones).
@@ -881,7 +868,7 @@ pub async fn start_recording(
     settings.validate();
 
     // Check if FFmpeg is available (required for video/audio muxing and GIF encoding)
-    if crate::commands::storage::find_ffmpeg().is_none() {
+    if snapit_media::ffmpeg::find_ffmpeg().is_none() {
         return Err(
             "FFmpeg is not available. Please wait for it to download or restart the app."
                 .to_string(),
@@ -1129,7 +1116,7 @@ pub async fn extract_audio_waveform(
     let sps = samples_per_second.unwrap_or(100);
 
     let ffmpeg_path =
-        crate::commands::storage::find_ffmpeg().ok_or_else(|| "FFmpeg not found".to_string())?;
+        snapit_media::ffmpeg::find_ffmpeg().ok_or_else(|| "FFmpeg not found".to_string())?;
 
     // Get audio duration via ffprobe
     let ffprobe_name = if cfg!(windows) {
@@ -1174,7 +1161,7 @@ pub async fn extract_audio_waveform(
     }
 
     // Extract audio as raw PCM samples (mono, f32)
-    let output = crate::commands::storage::ffmpeg::create_hidden_command(&ffmpeg_path)
+    let output = snapit_media::ffmpeg::create_hidden_command(&ffmpeg_path)
         .args([
             "-i",
             &audio_path,
@@ -1267,7 +1254,7 @@ pub async fn export_video(
     output_path: String,
 ) -> Result<ExportResult, String> {
     // Check if FFmpeg is available (required for video encoding)
-    if crate::commands::storage::find_ffmpeg().is_none() {
+    if snapit_media::ffmpeg::find_ffmpeg().is_none() {
         return Err(
             "FFmpeg is not available. Please wait for it to download or restart the app."
                 .to_string(),
@@ -1318,8 +1305,10 @@ pub fn cancel_export() {
 /// true if NVENC is available, false otherwise
 #[command]
 pub async fn check_nvenc_available() -> Result<bool, String> {
-    let ffmpeg_path = crate::commands::storage::find_ffmpeg().ok_or("FFmpeg not found")?;
-    Ok(crate::rendering::exporter::is_nvenc_available(&ffmpeg_path))
+    let ffmpeg_path = snapit_media::ffmpeg::find_ffmpeg().ok_or("FFmpeg not found")?;
+    Ok(snapit_export::encoder_selection::is_nvenc_available(
+        &ffmpeg_path,
+    ))
 }
 
 // ============================================================================

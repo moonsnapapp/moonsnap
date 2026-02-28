@@ -10,7 +10,7 @@ use std::path::Path;
 use std::sync::Arc;
 use tokio::sync::mpsc;
 
-use super::types::DecodedFrame;
+use snapit_render::types::{DecodedFrame, PixelFormat};
 
 /// Number of frames to prefetch ahead of playback position.
 /// Configurable via SNAPIT_PREFETCH_COUNT env var (default: 5).
@@ -358,10 +358,10 @@ fn decode_frame_ffmpeg(
 
     // Find FFmpeg
     let ffmpeg_path =
-        crate::commands::storage::find_ffmpeg().ok_or_else(|| "FFmpeg not found".to_string())?;
+        snapit_media::ffmpeg::find_ffmpeg().ok_or_else(|| "FFmpeg not found".to_string())?;
 
     // Use FFmpeg to extract frame as raw RGBA with explicit scaling to target dimensions
-    let output = crate::commands::storage::ffmpeg::create_hidden_command(&ffmpeg_path)
+    let output = snapit_media::ffmpeg::create_hidden_command(&ffmpeg_path)
         .args([
             "-ss",
             &format!("{:.3}", timestamp_secs),
@@ -415,7 +415,7 @@ fn decode_frame_ffmpeg(
         data: output.stdout,
         width,
         height,
-        format: super::types::PixelFormat::Rgba,
+        format: PixelFormat::Rgba,
     })
 }
 

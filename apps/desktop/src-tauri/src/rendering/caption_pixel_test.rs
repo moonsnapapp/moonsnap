@@ -5,11 +5,11 @@
 
 #[cfg(test)]
 mod tests {
-    use crate::commands::captions::{CaptionSegment, CaptionSettings, CaptionWord};
-    use crate::rendering::caption_layer::prepare_captions;
     use crate::rendering::renderer::Renderer;
-    use crate::rendering::text_layer::TextLayer;
     use image::{ImageBuffer, Rgba};
+    use snapit_domain::captions::{CaptionSegment, CaptionSettings, CaptionWord};
+    use snapit_render::caption_layer::prepare_captions;
+    use snapit_render::text_layer::TextLayer;
     use std::path::PathBuf;
 
     fn make_test_segment() -> CaptionSegment {

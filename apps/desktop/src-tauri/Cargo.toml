@@ -5,6 +5,21 @@ description = "A Snagit-like screen capture and annotation tool"
 authors = ["SnapIt"]
 edition = "2021"
 
+[workspace]
+members = [
+    ".",
+    "crates/camera-windows",
+    "crates/snapit-capture",
+    "crates/scap-direct3d",
+    "crates/scap-targets",
+    "crates/snapit-core",
+    "crates/snapit-domain",
+    "crates/snapit-media",
+    "crates/snapit-render",
+    "crates/snapit-export",
+]
+resolver = "2"
+
 [lib]
 name = "snapit_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
@@ -54,6 +69,12 @@ scap-targets = { path = "crates/scap-targets" }
 
 # Native Windows camera capture (ported from Cap)
 snapit-camera-windows = { path = "crates/camera-windows" }
+snapit-capture = { path = "crates/snapit-capture" }
+snapit-core = { path = "crates/snapit-core" }
+snapit-domain = { path = "crates/snapit-domain" }
+snapit-media = { path = "crates/snapit-media" }
+snapit-render = { path = "crates/snapit-render" }
+snapit-export = { path = "crates/snapit-export" }
 
 # Image processing
 image = "0.25"

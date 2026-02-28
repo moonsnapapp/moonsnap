@@ -1,5 +1,6 @@
 //! Capture flow and overlay commands.
 
+use snapit_domain::capture::ScreenRegionSelection;
 use std::sync::atomic::Ordering;
 use tauri::{command, AppHandle, Emitter, Manager};
 
@@ -112,7 +113,7 @@ pub fn trigger_capture(app: &AppHandle, capture_type: Option<&str>) -> Result<()
                                     "[SCREENSHOT] Using region capture: x={}, y={}, w={}, h={}",
                                     x, y, width, height
                                 );
-                                let selection = crate::commands::capture::ScreenRegionSelection {
+                                let selection = ScreenRegionSelection {
                                     x,
                                     y,
                                     width,

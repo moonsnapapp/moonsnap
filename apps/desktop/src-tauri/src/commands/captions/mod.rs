@@ -1,9 +1,7 @@
 //! Caption transcription and management commands.
 
 pub mod audio;
-pub mod types;
-
-pub use types::*;
+use snapit_domain::captions::*;
 
 use futures_util::StreamExt;
 use std::path::PathBuf;
