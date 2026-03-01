@@ -1,0 +1,7 @@
+@supports (corner-shape: squircle) {
+  .webcam-preview-squircle,
+  .webcam-preview-squircle > img,
+  .webcam-preview-squircle > .webcam-preview-squircle {
+    corner-shape: squircle squircle squircle squircle;
+  }
+}

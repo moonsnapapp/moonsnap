@@ -3,4 +3,4 @@
 /**
  * Shape of the webcam overlay.
  */
-export type WebcamShape = "circle" | "rectangle";
+export type WebcamShape = "circle" | "squircle";

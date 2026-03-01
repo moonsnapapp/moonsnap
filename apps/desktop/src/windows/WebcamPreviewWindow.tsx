@@ -25,6 +25,7 @@ const CIRCLE_SIZES: Record<WebcamSize, number> = {
   small: 160,
   large: 200,
 };
+const SQUIRCLE_RADIUS_RATIO = 0.4;
 
 const WebcamPreviewWindow: React.FC = () => {
   const [imageSrc, setImageSrc] = useState<string | null>(null);
@@ -35,7 +36,7 @@ const WebcamPreviewWindow: React.FC = () => {
     deviceIndex: 0,
     position: { type: 'bottomRight' },
     size: 'small',
-    shape: 'circle',
+    shape: 'squircle',
     mirror: true,
   });
 
@@ -191,7 +192,7 @@ const WebcamPreviewWindow: React.FC = () => {
 
   // Toggle shape
   const handleToggleShape = useCallback(async () => {
-    const newShape: WebcamShape = settings.shape === 'circle' ? 'rectangle' : 'circle';
+    const newShape: WebcamShape = settings.shape === 'circle' ? 'squircle' : 'circle';
     try {
       await invoke('set_webcam_shape', { shape: newShape });
       const newSettings = { ...settings, shape: newShape };
@@ -246,9 +247,10 @@ const WebcamPreviewWindow: React.FC = () => {
     }
   }, []);
 
-  const isCircle = settings.shape === 'circle';
-  const borderRadius = isCircle ? '50%' : '12px';
   const circleSize = CIRCLE_SIZES[settings.size];
+  const isCircle = settings.shape === 'circle';
+  const borderRadius = isCircle ? '50%' : `${Math.round(circleSize * SQUIRCLE_RADIUS_RATIO)}px`;
+  const webcamShapeClassName = isCircle ? '' : 'webcam-preview-squircle';
 
   return (
     <div
@@ -301,7 +303,7 @@ const WebcamPreviewWindow: React.FC = () => {
               alignItems: 'center',
               justifyContent: 'center',
             }}
-            title={isCircle ? 'Switch to rectangle' : 'Switch to circle'}
+            title={isCircle ? 'Switch to squircle' : 'Switch to circle'}
           >
             {isCircle ? <Square size={16} /> : <Circle size={16} />}
           </button>
@@ -362,6 +364,7 @@ const WebcamPreviewWindow: React.FC = () => {
 
       {/* Webcam feed - explicit square size */}
       <div
+        className={webcamShapeClassName}
         style={{
           width: `${circleSize}px`,
           height: `${circleSize}px`,
@@ -372,6 +375,7 @@ const WebcamPreviewWindow: React.FC = () => {
       >
         {imageSrc ? (
           <img
+            className={webcamShapeClassName}
             src={imageSrc}
             alt="Webcam preview"
             style={{
@@ -387,6 +391,7 @@ const WebcamPreviewWindow: React.FC = () => {
           />
         ) : (
           <div
+            className={webcamShapeClassName}
             style={{
               width: '100%',
               height: '100%',

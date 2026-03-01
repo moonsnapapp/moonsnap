@@ -54,7 +54,7 @@ impl Default for GpuPreviewState {
     fn default() -> Self {
         Self {
             size: DEFAULT_PREVIEW_SIZE,
-            shape: WebcamShape::Circle,
+            shape: WebcamShape::Squircle,
             mirrored: false,
         }
     }
@@ -843,7 +843,7 @@ impl Renderer {
         let uniforms = StateUniforms {
             shape: match state.shape {
                 WebcamShape::Circle => 0.0,
-                WebcamShape::Rectangle => 1.0,
+                WebcamShape::Squircle => 1.0,
             },
             size: normalized_size.clamp(0.0, 1.0),
             mirrored: if state.mirrored { 1.0 } else { 0.0 },

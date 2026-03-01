@@ -8,7 +8,7 @@ const DEFAULT_WEBCAM_SETTINGS: WebcamSettings = {
   deviceIndex: 0,
   position: { type: 'bottomRight' },
   size: 'small',
-  shape: 'circle',
+  shape: 'squircle',
   mirror: true,
 };
 

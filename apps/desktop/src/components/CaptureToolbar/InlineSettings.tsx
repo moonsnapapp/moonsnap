@@ -497,7 +497,7 @@ export const SettingsCol3: React.FC<SettingsColProps> = ({ mode }) => {
               value={webcamSettings.shape}
               options={[
                 { value: 'circle', label: 'Circle' },
-                { value: 'rectangle', label: 'Square' },
+                { value: 'squircle', label: 'Squircle' },
               ]}
               onChange={(v) => setShape(v as WebcamShape)}
             />

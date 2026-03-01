@@ -48,10 +48,14 @@ impl WebcamSize {
 #[ts(export, export_to = "../../../../src/types/generated/")]
 pub enum WebcamShape {
     /// Circular overlay (common for PiP).
-    #[default]
     Circle,
-    /// Rectangular overlay with rounded corners.
-    Rectangle,
+    /// Squircle overlay.
+    ///
+    /// Backward compatibility: accepts legacy `"rectangle"` values when deserializing.
+    #[default]
+    #[serde(alias = "rectangle")]
+    #[ts(rename = "squircle")]
+    Squircle,
 }
 
 /// Settings for webcam overlay during recording.
@@ -67,7 +71,7 @@ pub struct WebcamSettings {
     pub position: WebcamPosition,
     /// Size of the webcam overlay.
     pub size: WebcamSize,
-    /// Shape of the webcam overlay (circle or rectangle).
+    /// Shape of the webcam overlay (circle or squircle).
     pub shape: WebcamShape,
     /// Whether to mirror the webcam horizontally (selfie mode).
     pub mirror: bool,

@@ -167,7 +167,7 @@ mod tests {
             device_index: 1,
             position: WebcamPosition::Custom { x: 50, y: 100 },
             size: WebcamSize::Large,
-            shape: WebcamShape::Rectangle,
+            shape: WebcamShape::Squircle,
             mirror: true,
         };
 
@@ -197,9 +197,13 @@ mod tests {
             "\"circle\""
         );
         assert_eq!(
-            serde_json::to_string(&WebcamShape::Rectangle).unwrap(),
-            "\"rectangle\""
+            serde_json::to_string(&WebcamShape::Squircle).unwrap(),
+            "\"squircle\""
         );
+
+        // Backward compatibility: legacy stored value should still deserialize.
+        let legacy_shape: WebcamShape = serde_json::from_str("\"rectangle\"").unwrap();
+        assert_eq!(legacy_shape, WebcamShape::Squircle);
     }
 
     #[test]
@@ -233,7 +237,7 @@ mod tests {
             device_index: 2,
             position: WebcamPosition::TopLeft,
             size: WebcamSize::Large,
-            shape: WebcamShape::Rectangle,
+            shape: WebcamShape::Squircle,
             mirror: true,
         };
 

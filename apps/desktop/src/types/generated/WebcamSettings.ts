@@ -24,7 +24,7 @@ position: WebcamPosition,
  */
 size: WebcamSize, 
 /**
- * Shape of the webcam overlay (circle or rectangle).
+ * Shape of the webcam overlay (circle or squircle).
  */
 shape: WebcamShape, 
 /**

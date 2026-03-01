@@ -44,7 +44,7 @@ pub fn composite_webcam(
                 diameter,
             );
         },
-        WebcamShape::Rectangle => {
+        WebcamShape::Squircle => {
             composite_rectangle(
                 frame,
                 frame_width,
