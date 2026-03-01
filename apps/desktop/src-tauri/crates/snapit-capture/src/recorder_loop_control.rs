@@ -104,6 +104,12 @@ impl PauseState {
     }
 }
 
+impl Default for PauseState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// Process command channel updates and pause waiting for one recording-loop tick.
 ///
 /// Semantics intentionally match the historical in-loop logic used by the app shell:

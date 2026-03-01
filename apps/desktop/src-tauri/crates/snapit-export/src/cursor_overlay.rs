@@ -2,8 +2,8 @@
 
 use snapit_domain::video_project::CursorType;
 use snapit_render::cursor_composite::{
-    composite_cursor, composite_cursor_with_motion_blur, CursorCompositeState, DecodedCursorImage,
-    VideoContentBounds,
+    composite_cursor, composite_cursor_with_motion_blur, CursorCompositeInput,
+    CursorCompositeState, DecodedCursorImage, VideoContentBounds,
 };
 use snapit_render::cursor_plan::{
     plan_cursor_geometry, plan_cursor_raster_source, should_composite_cursor, CursorCropPlan,
@@ -11,7 +11,7 @@ use snapit_render::cursor_plan::{
 };
 use snapit_render::ZoomState;
 
-use crate::frame_ops::{draw_cursor_circle, FrameContentBounds};
+use crate::frame_ops::{draw_cursor_circle, CursorCircleStyle, FrameContentBounds};
 
 /// Static cursor-overlay context shared across export frames.
 #[derive(Debug, Clone, Copy)]
@@ -44,6 +44,14 @@ pub struct CursorFrameSample<'a, TShape> {
     pub cursor_shape: Option<TShape>,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct CursorOverlayFrameRequest<'a, TShape> {
+    pub camera_only_opacity: f64,
+    pub zoom_state: ZoomState,
+    pub sample: CursorFrameSample<'a, TShape>,
+    pub fallback_shape: TShape,
+}
+
 /// Composite cursor overlay into an RGBA export frame.
 ///
 /// Shape/bitmap lookup and fallback shape resolution are injected via callbacks to
@@ -51,24 +59,22 @@ pub struct CursorFrameSample<'a, TShape> {
 pub fn composite_cursor_overlay_frame<'sample, 'img, TShape: Copy, FShape, FBitmap>(
     rgba_data: &mut [u8],
     context: &CursorOverlayContext,
-    camera_only_opacity: f64,
-    zoom_state: ZoomState,
-    sample: CursorFrameSample<'sample, TShape>,
-    fallback_shape: TShape,
+    request: CursorOverlayFrameRequest<'sample, TShape>,
     mut shape_provider: FShape,
     mut bitmap_provider: FBitmap,
 ) where
     FShape: FnMut(TShape, u32) -> Option<DecodedCursorImage>,
     FBitmap: FnMut(&str) -> Option<&'img DecodedCursorImage>,
 {
-    if !should_composite_cursor(camera_only_opacity) {
+    if !should_composite_cursor(request.camera_only_opacity) {
         return;
     }
 
+    let sample = request.sample;
     let Some(cursor_plan) = plan_cursor_geometry(CursorGeometryPlanRequest {
         cursor_x: sample.x,
         cursor_y: sample.y,
-        zoom: zoom_state,
+        zoom: request.zoom_state,
         crop: CursorCropPlan {
             enabled: context.crop_enabled,
             x: context.crop_x,
@@ -107,8 +113,10 @@ pub fn composite_cursor_overlay_frame<'sample, 'img, TShape: Copy, FShape, FBitm
             &frame_bounds,
             cursor_state.x,
             cursor_state.y,
-            context.cursor_scale,
-            cursor_state.opacity,
+            CursorCircleStyle {
+                scale: context.cursor_scale,
+                opacity: cursor_state.opacity,
+            },
         );
         return;
     }
@@ -118,22 +126,22 @@ pub fn composite_cursor_overlay_frame<'sample, 'img, TShape: Copy, FShape, FBitm
     let mut shape_svg = sample
         .cursor_shape
         .and_then(|shape| shape_provider(shape, target_height));
-    let bitmap_cursor = sample
-        .cursor_id
-        .and_then(|cursor_id| bitmap_provider(cursor_id));
+    let bitmap_cursor = sample.cursor_id.and_then(&mut bitmap_provider);
 
     match plan_cursor_raster_source(shape_svg.is_some(), bitmap_cursor.is_some()) {
         CursorRasterSource::SvgShape => {
             let svg_decoded = shape_svg.take().expect("shape svg should exist");
             if context.cursor_motion_blur > 0.0 {
                 composite_cursor_with_motion_blur(
-                    rgba_data,
-                    context.composition_w,
-                    context.composition_h,
-                    &context.video_bounds,
-                    &cursor_state,
-                    &svg_decoded,
-                    1.0,
+                    CursorCompositeInput {
+                        frame_data: rgba_data,
+                        frame_width: context.composition_w,
+                        frame_height: context.composition_h,
+                        video_bounds: &context.video_bounds,
+                        cursor: &cursor_state,
+                        cursor_image: &svg_decoded,
+                        base_scale: 1.0,
+                    },
                     context.cursor_motion_blur,
                 );
             } else {
@@ -153,13 +161,15 @@ pub fn composite_cursor_overlay_frame<'sample, 'img, TShape: Copy, FShape, FBitm
             let bitmap_scale = final_cursor_height / cursor_image.height as f32;
             if context.cursor_motion_blur > 0.0 {
                 composite_cursor_with_motion_blur(
-                    rgba_data,
-                    context.composition_w,
-                    context.composition_h,
-                    &context.video_bounds,
-                    &cursor_state,
-                    cursor_image,
-                    bitmap_scale,
+                    CursorCompositeInput {
+                        frame_data: rgba_data,
+                        frame_width: context.composition_w,
+                        frame_height: context.composition_h,
+                        video_bounds: &context.video_bounds,
+                        cursor: &cursor_state,
+                        cursor_image,
+                        base_scale: bitmap_scale,
+                    },
                     context.cursor_motion_blur,
                 );
             } else {
@@ -175,16 +185,18 @@ pub fn composite_cursor_overlay_frame<'sample, 'img, TShape: Copy, FShape, FBitm
             }
         },
         CursorRasterSource::FallbackArrow => {
-            if let Some(svg_decoded) = shape_provider(fallback_shape, target_height) {
+            if let Some(svg_decoded) = shape_provider(request.fallback_shape, target_height) {
                 if context.cursor_motion_blur > 0.0 {
                     composite_cursor_with_motion_blur(
-                        rgba_data,
-                        context.composition_w,
-                        context.composition_h,
-                        &context.video_bounds,
-                        &cursor_state,
-                        &svg_decoded,
-                        1.0,
+                        CursorCompositeInput {
+                            frame_data: rgba_data,
+                            frame_width: context.composition_w,
+                            frame_height: context.composition_h,
+                            video_bounds: &context.video_bounds,
+                            cursor: &cursor_state,
+                            cursor_image: &svg_decoded,
+                            base_scale: 1.0,
+                        },
                         context.cursor_motion_blur,
                     );
                 } else {
@@ -266,10 +278,12 @@ mod tests {
         composite_cursor_overlay_frame(
             &mut rgba,
             &default_context(CursorType::Auto),
-            1.0,
-            ZoomState::identity(),
-            default_sample(),
-            DummyShape::Arrow,
+            CursorOverlayFrameRequest {
+                camera_only_opacity: 1.0,
+                zoom_state: ZoomState::identity(),
+                sample: default_sample(),
+                fallback_shape: DummyShape::Arrow,
+            },
             |_shape, _target_height| Some(sample_decoded_cursor(12)),
             |_cursor_id| None,
         );
@@ -282,10 +296,12 @@ mod tests {
         composite_cursor_overlay_frame(
             &mut rgba,
             &default_context(CursorType::Circle),
-            0.0,
-            ZoomState::identity(),
-            default_sample(),
-            DummyShape::Arrow,
+            CursorOverlayFrameRequest {
+                camera_only_opacity: 0.0,
+                zoom_state: ZoomState::identity(),
+                sample: default_sample(),
+                fallback_shape: DummyShape::Arrow,
+            },
             |_shape, _target_height| None,
             |_cursor_id| None,
         );
@@ -302,10 +318,12 @@ mod tests {
         composite_cursor_overlay_frame(
             &mut rgba,
             &default_context(CursorType::Auto),
-            0.0,
-            ZoomState::identity(),
-            sample,
-            DummyShape::Arrow,
+            CursorOverlayFrameRequest {
+                camera_only_opacity: 0.0,
+                zoom_state: ZoomState::identity(),
+                sample,
+                fallback_shape: DummyShape::Arrow,
+            },
             |_shape, _target_height| Some(sample_decoded_cursor(12)),
             |_cursor_id| None,
         );

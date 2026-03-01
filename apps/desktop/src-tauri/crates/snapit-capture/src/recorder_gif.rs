@@ -79,9 +79,8 @@ where
         }
         let dims = first_frame.as_ref().map(|(w, h, _)| (*w, *h));
         (capture, dims)
-    } else if crop_region.is_some() {
+    } else if let Some((x, y, w, h)) = crop_region {
         log::debug!("[GIF] Using D3D region capture, monitor={}", monitor_index);
-        let (x, y, w, h) = crop_region.expect("crop_region checked above");
         let capture = CaptureSource::new_region(
             monitor_index,
             (x, y, w, h),
@@ -171,7 +170,7 @@ where
         progress.increment_frame();
 
         let frame_count = progress.get_frame_count();
-        if frame_count % 30 == 0 {
+        if frame_count.is_multiple_of(30) {
             emit_state(RecordingState::Recording {
                 started_at: started_at.to_string(),
                 elapsed_secs: elapsed.as_secs_f64(),

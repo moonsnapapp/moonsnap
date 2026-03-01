@@ -149,12 +149,31 @@ pub fn run_capture_thread_with_lifecycle<
             validate_video_file,
             on_cancelled,
             on_completed,
-            |message| on_error(message),
+            &mut on_error,
         ),
-        Err(panic_payload) => {
-            handle_capture_thread_panic(&*panic_payload, |message| on_error(message))
-        },
+        Err(panic_payload) => handle_capture_thread_panic(&*panic_payload, on_error),
     }
+}
+
+pub struct CaptureThreadLifecycleConfig<
+    FBeforeCapture,
+    FCapture,
+    FWasCancelled,
+    FValidateVideo,
+    FOnCancelled,
+    FOnCompleted,
+    FOnError,
+    FAfterCapture,
+> {
+    pub output_path: std::path::PathBuf,
+    pub before_capture: FBeforeCapture,
+    pub capture: FCapture,
+    pub was_cancelled: FWasCancelled,
+    pub validate_video_file: FValidateVideo,
+    pub on_cancelled: FOnCancelled,
+    pub on_completed: FOnCompleted,
+    pub on_error: FOnError,
+    pub after_capture: FAfterCapture,
 }
 
 /// Spawn a capture thread with standardized panic/result lifecycle handling.
@@ -171,15 +190,16 @@ pub fn spawn_capture_thread_with_lifecycle<
     FOnError,
     FAfterCapture,
 >(
-    output_path: std::path::PathBuf,
-    before_capture: FBeforeCapture,
-    capture: FCapture,
-    was_cancelled: FWasCancelled,
-    validate_video_file: FValidateVideo,
-    on_cancelled: FOnCancelled,
-    on_completed: FOnCompleted,
-    on_error: FOnError,
-    after_capture: FAfterCapture,
+    config: CaptureThreadLifecycleConfig<
+        FBeforeCapture,
+        FCapture,
+        FWasCancelled,
+        FValidateVideo,
+        FOnCancelled,
+        FOnCompleted,
+        FOnError,
+        FAfterCapture,
+    >,
 ) -> std::thread::JoinHandle<()>
 where
     FBeforeCapture: FnOnce() + Send + 'static,
@@ -191,6 +211,18 @@ where
     FOnError: FnMut(String) + Send + 'static,
     FAfterCapture: FnOnce() + Send + 'static,
 {
+    let CaptureThreadLifecycleConfig {
+        output_path,
+        before_capture,
+        capture,
+        was_cancelled,
+        validate_video_file,
+        on_cancelled,
+        on_completed,
+        on_error,
+        after_capture,
+    } = config;
+
     std::thread::spawn(move || {
         before_capture();
         let _cleanup = RunOnDrop::new(after_capture);
@@ -211,6 +243,7 @@ mod tests {
     use super::{
         finalize_capture_thread_result, handle_capture_thread_panic,
         run_capture_thread_with_lifecycle, spawn_capture_thread_with_lifecycle,
+        CaptureThreadLifecycleConfig,
     };
     use std::any::Any;
     use std::path::Path;
@@ -559,32 +592,32 @@ mod tests {
         let after_calls = Arc::new(AtomicU64::new(0));
         let completed = Arc::new(AtomicU64::new(0));
 
-        let handle = spawn_capture_thread_with_lifecycle(
-            output_path.clone(),
-            {
+        let handle = spawn_capture_thread_with_lifecycle(CaptureThreadLifecycleConfig {
+            output_path: output_path.clone(),
+            before_capture: {
                 let before_calls = Arc::clone(&before_calls);
                 move || {
                     before_calls.fetch_add(1, Ordering::Relaxed);
                 }
             },
-            || Ok(1.0),
-            || false,
-            |_| Ok(()),
-            || {},
-            {
+            capture: || Ok(1.0),
+            was_cancelled: || false,
+            validate_video_file: |_| Ok(()),
+            on_cancelled: || {},
+            on_completed: {
                 let completed = Arc::clone(&completed);
                 move |_, _, _| {
                     completed.fetch_add(1, Ordering::Relaxed);
                 }
             },
-            |_| {},
-            {
+            on_error: |_| {},
+            after_capture: {
                 let after_calls = Arc::clone(&after_calls);
                 move || {
                     after_calls.fetch_add(1, Ordering::Relaxed);
                 }
             },
-        );
+        });
 
         handle.join().expect("join capture thread");
         let _ = std::fs::remove_file(&output_path);
@@ -600,27 +633,27 @@ mod tests {
         let after_calls = Arc::new(AtomicU64::new(0));
         let errors = Arc::new(Mutex::new(Vec::<String>::new()));
 
-        let handle = spawn_capture_thread_with_lifecycle(
+        let handle = spawn_capture_thread_with_lifecycle(CaptureThreadLifecycleConfig {
             output_path,
-            || {},
-            || -> Result<f64, String> { Err("thread error test".to_string()) },
-            || false,
-            |_| Ok(()),
-            || {},
-            |_, _, _| {},
-            {
+            before_capture: || {},
+            capture: || -> Result<f64, String> { Err("thread error test".to_string()) },
+            was_cancelled: || false,
+            validate_video_file: |_| Ok(()),
+            on_cancelled: || {},
+            on_completed: |_, _, _| {},
+            on_error: {
                 let errors = Arc::clone(&errors);
                 move |msg| {
                     errors.lock().expect("errors lock").push(msg);
                 }
             },
-            {
+            after_capture: {
                 let after_calls = Arc::clone(&after_calls);
                 move || {
                     after_calls.fetch_add(1, Ordering::Relaxed);
                 }
             },
-        );
+        });
 
         handle.join().expect("join capture thread");
 

@@ -1,5 +1,7 @@
-import { create, type StoreApi } from 'zustand';
+import { createContext, useContext } from 'react';
+import { useStore } from 'zustand';
 import { devtools } from 'zustand/middleware';
+import { createStore, type StoreApi } from 'zustand/vanilla';
 
 // Import slice creators
 import { createPlaybackSlice } from './playbackSlice';
@@ -29,22 +31,114 @@ export type { TrimSlice } from './trimSlice';
 export type VideoEditorStore = StoreApi<VideoEditorState>;
 
 /**
- * Combined video editor store with all feature slices
+ * Build a video editor store instance with all feature slices.
  */
-export const useVideoEditorStore = create<VideoEditorState>()(
-  devtools(
-    (...a) => ({
-      ...createPlaybackSlice(...a),
-      ...createTimelineSlice(...a),
-      ...createSegmentsSlice(...a),
-      ...createExportSlice(...a),
-      ...createProjectSlice(...a),
-      ...createGPUEditorSlice(...a),
-      ...createCaptionSlice(...a),
-      ...createTrimSlice(...a),
-    }),
-    { name: 'VideoEditorStore', enabled: process.env.NODE_ENV === 'development' }
-  )
+const createVideoEditorStoreInstance = (): VideoEditorStore =>
+  createStore<VideoEditorState>()(
+    devtools(
+      (...a) => ({
+        ...createPlaybackSlice(...a),
+        ...createTimelineSlice(...a),
+        ...createSegmentsSlice(...a),
+        ...createExportSlice(...a),
+        ...createProjectSlice(...a),
+        ...createGPUEditorSlice(...a),
+        ...createCaptionSlice(...a),
+        ...createTrimSlice(...a),
+      }),
+      { name: 'VideoEditorStore', enabled: process.env.NODE_ENV === 'development' }
+    )
+  );
+
+const globalVideoEditorStore = createVideoEditorStoreInstance();
+let activeVideoEditorStore: VideoEditorStore = globalVideoEditorStore;
+
+// Context used by isolated video editor windows.
+export const VideoEditorStoreContext = createContext<VideoEditorStore | null>(null);
+
+export function getActiveVideoEditorStore(): VideoEditorStore {
+  return activeVideoEditorStore;
+}
+
+export function setActiveVideoEditorStore(store: VideoEditorStore): void {
+  activeVideoEditorStore = store;
+}
+
+export function resetActiveVideoEditorStore(): void {
+  activeVideoEditorStore = globalVideoEditorStore;
+}
+
+const selectVideoEditorState = (state: VideoEditorState): VideoEditorState => state;
+
+type UseVideoEditorStoreHook = {
+  (): VideoEditorState;
+  <T>(selector: (state: VideoEditorState) => T): T;
+  getState: VideoEditorStore['getState'];
+  setState: VideoEditorStore['setState'];
+  subscribe: VideoEditorStore['subscribe'];
+  getInitialState: VideoEditorStore['getInitialState'];
+};
+
+function useVideoEditorStoreBase(): VideoEditorState;
+function useVideoEditorStoreBase<T>(selector: (state: VideoEditorState) => T): T;
+function useVideoEditorStoreBase<T>(selector?: (state: VideoEditorState) => T): T | VideoEditorState {
+  const contextStore = useContext(VideoEditorStoreContext);
+  const store = contextStore ?? getActiveVideoEditorStore();
+  const resolvedSelector: (state: VideoEditorState) => T | VideoEditorState = selector ?? selectVideoEditorState;
+  return useStore(store, resolvedSelector);
+}
+
+function setActiveVideoEditorState(
+  partial:
+    | VideoEditorState
+    | Partial<VideoEditorState>
+    | ((state: VideoEditorState) => VideoEditorState | Partial<VideoEditorState>),
+  replace?: false
+): void;
+function setActiveVideoEditorState(
+  state: VideoEditorState | ((state: VideoEditorState) => VideoEditorState),
+  replace: true
+): void;
+function setActiveVideoEditorState(
+  state:
+    | VideoEditorState
+    | Partial<VideoEditorState>
+    | ((state: VideoEditorState) => VideoEditorState | Partial<VideoEditorState>),
+  replace?: boolean
+): void {
+  const store = getActiveVideoEditorStore();
+
+  if (replace === true) {
+    store.setState(
+      state as VideoEditorState | ((current: VideoEditorState) => VideoEditorState),
+      true
+    );
+    return;
+  }
+
+  store.setState(state);
+}
+
+const subscribeActiveVideoEditorStore: VideoEditorStore['subscribe'] = (listener) =>
+  getActiveVideoEditorStore().subscribe(listener);
+
+/**
+ * Context-aware video editor store hook.
+ *
+ * - In an isolated window, returns data from the window's local store.
+ * - Outside a provider, falls back to the app-global singleton store.
+ *
+ * Static store methods (`getState`, `setState`, `subscribe`) are preserved
+ * for existing imperative call sites.
+ */
+export const useVideoEditorStore: UseVideoEditorStoreHook = Object.assign(
+  useVideoEditorStoreBase,
+  {
+    getState: () => getActiveVideoEditorStore().getState(),
+    setState: setActiveVideoEditorState,
+    subscribe: subscribeActiveVideoEditorStore,
+    getInitialState: () => getActiveVideoEditorStore().getInitialState(),
+  }
 );
 
 // Re-export utility functions
@@ -90,14 +184,7 @@ export function formatTimeSimple(ms: number): string {
 /**
  * Factory function to create an isolated video editor store.
  * Use this for floating video editor windows that need independent state.
- *
- * Note: For now, this returns the singleton store. Full isolation requires
- * updating all components to use context-based store access.
- *
- * @returns A video editor store instance
  */
 export function createVideoEditorStore(): VideoEditorStore {
-  // TODO: Implement true isolated stores when components are updated to use context
-  // For now, return the singleton to maintain compatibility
-  return useVideoEditorStore;
+  return createVideoEditorStoreInstance();
 }

@@ -20,7 +20,7 @@
 //! ## Adding New Commands
 //!
 //! 1. Add the command function with `#[tauri::command]` in the appropriate module
-//! 2. Register it in `lib.rs` invoke_handler (commands can't be re-exported)
+//! 2. Register it in `commands/registry.rs` (used by `lib.rs`)
 //! 3. Run `cargo test --lib` to generate TypeScript types if using `ts-rs`
 
 pub mod captions;
@@ -31,6 +31,7 @@ pub mod image;
 pub mod keyboard_hook;
 pub mod logging;
 pub mod preview;
+pub mod registry;
 pub mod settings;
 pub mod storage;
 pub mod text_prerender;

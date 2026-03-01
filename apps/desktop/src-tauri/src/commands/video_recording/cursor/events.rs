@@ -229,7 +229,6 @@ pub struct CursorEvent {
     pub event_type: CursorEventType,
     /// ID of the cursor image active at this event (references cursor_images map).
     /// Only set when cursor shape changes or on first event.
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub cursor_id: Option<String>,
 }
 
@@ -250,7 +249,6 @@ pub struct CursorImage {
     pub data_base64: String,
     /// Detected cursor shape (if this is a standard Windows cursor).
     /// When set, the frontend can use SVG instead of the bitmap.
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub cursor_shape: Option<WindowsCursorShape>,
 }
 
@@ -1234,16 +1232,18 @@ fn run_mouse_hook_loop(
         WM_LBUTTONUP, WM_MBUTTONDOWN, WM_MBUTTONUP, WM_MOUSEWHEEL, WM_RBUTTONDOWN, WM_RBUTTONUP,
     };
 
+    type HookData = (
+        Arc<Mutex<SharedCursorData>>,
+        Instant,
+        CaptureRegion,
+        Arc<AtomicBool>,
+        Arc<AtomicU64>,
+    );
+
     // Thread-local storage for hook callback data (includes region for normalization and pause signal)
     // The pause duration is tracked separately in the message loop and passed via AtomicU64
     thread_local! {
-        static HOOK_DATA: RefCell<Option<(
-            Arc<Mutex<SharedCursorData>>,
-            Instant,
-            CaptureRegion,
-            Arc<AtomicBool>,  // is_paused
-            Arc<AtomicU64>,   // total_pause_duration_ms (updated by message loop)
-        )>> = RefCell::new(None);
+        static HOOK_DATA: RefCell<Option<HookData>> = RefCell::new(None);
     }
 
     // Shared pause duration (updated by message loop, read by hook callback)

@@ -118,7 +118,7 @@ pub fn validate_video_file(path: &Path) -> Result<(), String> {
             "format=duration",
             "-of",
             "default=noprint_wrappers=1:nokey=1",
-            &path.to_string_lossy().to_string(),
+            path.to_string_lossy().as_ref(),
         ])
         .output()
         .map_err(|e| format!("Failed to run ffprobe: {}", e))?;
@@ -532,51 +532,62 @@ pub fn is_window_mode(mode: &RecordingMode) -> Option<u32> {
 ///
 /// This creates the VideoProject metadata file that allows the video editor
 /// to load and edit the recording with all its associated files.
-pub fn create_video_project_file(
-    project_folder: &PathBuf,
-    width: u32,
-    height: u32,
-    duration_ms: u64,
-    fps: u32,
-    has_webcam: bool,
-    has_cursor_data: bool,
-    has_system_audio: bool,
-    has_mic_audio: bool,
-) -> Result<(), String> {
+pub struct CreateVideoProjectRequest<'a> {
+    pub project_folder: &'a Path,
+    pub width: u32,
+    pub height: u32,
+    pub duration_ms: u64,
+    pub fps: u32,
+    pub has_webcam: bool,
+    pub has_cursor_data: bool,
+    pub has_system_audio: bool,
+    pub has_mic_audio: bool,
+}
+
+pub fn create_video_project_file(request: CreateVideoProjectRequest<'_>) -> Result<(), String> {
     // Create the VideoProject with relative paths (files are in the same folder)
     let screen_video = "screen.mp4".to_string();
 
-    let mut project = VideoProject::new(&screen_video, width, height, duration_ms, fps);
+    let mut project = VideoProject::new(
+        &screen_video,
+        request.width,
+        request.height,
+        request.duration_ms,
+        request.fps,
+    );
 
     // Set project name from folder name
-    if let Some(folder_name) = project_folder.file_name() {
+    if let Some(folder_name) = request.project_folder.file_name() {
         project.name = folder_name.to_string_lossy().to_string();
     }
 
     // Update sources with relative paths for files that exist
-    if has_webcam {
+    if request.has_webcam {
         project.sources.webcam_video = Some("webcam.mp4".to_string());
         project.webcam.enabled = true;
     }
 
-    if has_cursor_data {
+    if request.has_cursor_data {
         project.sources.cursor_data = Some("cursor.json".to_string());
     }
 
     // Add audio file paths (editor flow keeps separate audio files)
-    if has_system_audio {
+    if request.has_system_audio {
         project.sources.system_audio = Some("system.wav".to_string());
     }
 
-    if has_mic_audio {
+    if request.has_mic_audio {
         project.sources.microphone_audio = Some("mic.wav".to_string());
     }
 
     // Save project.json to the folder
-    let project_file = project_folder.join("project.json");
+    let project_file = request.project_folder.join("project.json");
     project.save(&project_file)?;
 
-    log::info!("[PROJECT] Created project.json in {:?}", project_folder);
+    log::info!(
+        "[PROJECT] Created project.json in {:?}",
+        request.project_folder
+    );
 
     Ok(())
 }

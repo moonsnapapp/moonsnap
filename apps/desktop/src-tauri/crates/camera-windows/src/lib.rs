@@ -589,8 +589,7 @@ impl VideoDevice {
         unsafe {
             // Initialize COM on this thread using MTA (same as Cap)
             let _ = RoInitialize(RO_INIT_MULTITHREADED);
-            MFStartup(MF_VERSION, MFSTARTUP_FULL)
-                .map_err(|e| StartCapturingError::CreateEngine(e))?;
+            MFStartup(MF_VERSION, MFSTARTUP_FULL).map_err(StartCapturingError::CreateEngine)?;
 
             let capture_engine_factory: IMFCaptureEngineClassFactory = CoCreateInstance(
                 &CLSID_MFCaptureEngineClassFactory,
@@ -1000,7 +999,7 @@ static SAMPLE_COUNT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64
 impl IMFCaptureEngineOnSampleCallback_Impl for VideoCallback_Impl {
     fn OnSample(&self, psample: windows_core::Ref<'_, IMFSample>) -> windows_core::Result<()> {
         let count = SAMPLE_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
-        if count <= 3 || count % 60 == 0 {
+        if count <= 3 || count.is_multiple_of(60) {
             eprintln!(
                 "[MF_CALLBACK] OnSample #{}, sample present: {}",
                 count,

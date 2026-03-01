@@ -22,18 +22,13 @@ pub enum GifQualityPreset {
     High,
 }
 /// Output format for recordings.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS, Default)]
 #[serde(rename_all = "lowercase")]
 #[ts(export, export_to = "../../../../src/types/generated/")]
 pub enum RecordingFormat {
+    #[default]
     Mp4,
     Gif,
-}
-
-impl Default for RecordingFormat {
-    fn default() -> Self {
-        Self::Mp4
-    }
 }
 
 /// What to capture.
@@ -213,11 +208,12 @@ impl RecordingSettings {
 ///
 /// NOTE: ts-rs generates TypeScript types from Rust - single source of truth.
 /// The serde attributes ensure JSON serialization matches the generated TS types.
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS, Default)]
 #[serde(tag = "status", rename_all = "camelCase")]
 #[ts(export, export_to = "../../../../src/types/generated/")]
 pub enum RecordingState {
     /// No recording in progress.
+    #[default]
     Idle,
     /// Countdown before recording starts.
     Countdown {
@@ -256,12 +252,6 @@ pub enum RecordingState {
     },
     /// Recording failed.
     Error { message: String },
-}
-
-impl Default for RecordingState {
-    fn default() -> Self {
-        Self::Idle
-    }
 }
 
 /// Full status of the recording system.

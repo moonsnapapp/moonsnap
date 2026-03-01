@@ -61,6 +61,12 @@ impl ShutdownSignal {
     }
 }
 
+impl Default for ShutdownSignal {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Clone for ShutdownSignal {
     fn clone(&self) -> Self {
         Self {

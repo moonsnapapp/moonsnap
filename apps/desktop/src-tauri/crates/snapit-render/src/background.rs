@@ -14,9 +14,10 @@ use super::types::BackgroundType as RenderBackgroundType;
 
 /// Background variant for rendering.
 /// Matches Cap's Background enum structure.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub enum Background {
     /// No background (transparent).
+    #[default]
     None,
     /// Solid color [R, G, B, A] in linear space.
     Color([f32; 4]),
@@ -30,12 +31,6 @@ pub enum Background {
     Wallpaper { path: String },
     /// Custom image background from file path.
     Image { path: String },
-}
-
-impl Default for Background {
-    fn default() -> Self {
-        Self::None
-    }
 }
 
 impl Background {

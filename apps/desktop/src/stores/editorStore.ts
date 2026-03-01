@@ -392,6 +392,8 @@ export { EditorStoreProvider } from './EditorStoreProvider';
 // Store Hook
 // ============================================================================
 
+const selectEditorState = (state: EditorState): EditorState => state;
+
 /**
  * Hook to access the editor store from context.
  * Must be used within an EditorStoreProvider.
@@ -406,6 +408,6 @@ export function useEditorStore<T>(selector?: (state: EditorState) => T): T | Edi
   }
 
   // useStore must be called unconditionally to satisfy React hooks rules
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Function overload implementation requires cast; call-site types are enforced by overload signatures above
-  return useStore(store, (selector ?? ((state: EditorState) => state)) as any);
+  const resolvedSelector: (state: EditorState) => T | EditorState = selector ?? selectEditorState;
+  return useStore(store, resolvedSelector);
 }

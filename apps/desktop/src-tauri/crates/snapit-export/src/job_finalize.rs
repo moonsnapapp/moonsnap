@@ -109,7 +109,7 @@ where
     }
 
     let drain_cpu_work = loop_state
-        .collect_drain_cpu_work(|staging_buf_idx| complete_readback(staging_buf_idx))
+        .collect_drain_cpu_work(&mut complete_readback)
         .await;
     let drained_count = drain_cpu_work.len();
 

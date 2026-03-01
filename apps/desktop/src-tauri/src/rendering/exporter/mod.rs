@@ -19,6 +19,7 @@ use snapit_domain::video_export::{ExportResult, ExportStage};
 use snapit_export::caption_timeline::remap_captions_to_timeline;
 use snapit_export::cursor_overlay::{
     composite_cursor_overlay_frame, CursorFrameSample, CursorOverlayContext,
+    CursorOverlayFrameRequest,
 };
 use snapit_export::export_job::{
     run_export_loop_with_context, ExportLoopDirective, ExportLoopExit,
@@ -45,6 +46,7 @@ use snapit_export::job_finalize::{
     EncoderFinalizeError,
 };
 use snapit_export::job_runner::{ExportJobRunner, ExportJobRunnerConfig, LoopControl};
+use snapit_export::timing::FrameTimingAverages;
 use tauri::{AppHandle, Manager};
 
 /// Request cancellation of the currently running export.
@@ -96,6 +98,52 @@ struct ExportRenderLoopContext<'a> {
     compositor: &'a mut Compositor,
 }
 
+const EXPORT_TIMING_TOTAL_WARN_FACTOR: f64 = 1.10;
+
+fn log_export_timing_window(summary: FrameTimingAverages, fps: u32) {
+    let safe_fps = fps.max(1);
+    let frame_budget_ms = 1000.0 / safe_fps as f64;
+    let compose_ms = summary.gpu_ms + summary.cpu_ms + summary.readback_ms;
+
+    log::info!(
+        "[EXPORT_TIMING] window_frames={} fps={} frame_budget_ms={:.2} decode_ms={:.2} compose_ms={:.2} encode_ms={:.2} total_ms={:.2}",
+        summary.frame_count,
+        safe_fps,
+        frame_budget_ms,
+        summary.decode_ms,
+        compose_ms,
+        summary.encode_ms,
+        summary.total_ms,
+    );
+
+    let total_warn_threshold_ms = frame_budget_ms * EXPORT_TIMING_TOTAL_WARN_FACTOR;
+    if summary.total_ms > total_warn_threshold_ms {
+        log::warn!(
+            "[EXPORT_TIMING_SLOW] stage=total avg_ms={:.2} budget_ms={:.2} threshold_ms={:.2} window_frames={}",
+            summary.total_ms,
+            frame_budget_ms,
+            total_warn_threshold_ms,
+            summary.frame_count
+        );
+    }
+
+    for (stage, stage_ms) in [
+        ("decode", summary.decode_ms),
+        ("compose", compose_ms),
+        ("encode", summary.encode_ms),
+    ] {
+        if stage_ms > frame_budget_ms {
+            log::warn!(
+                "[EXPORT_TIMING_SLOW] stage={} avg_ms={:.2} budget_ms={:.2} window_frames={}",
+                stage,
+                stage_ms,
+                frame_budget_ms,
+                summary.frame_count
+            );
+        }
+    }
+}
+
 /// Apply CPU-based compositing (cursor + pre-rendered text overlays) to a pending frame.
 ///
 /// Extracted from the render loop to enable double-buffered pipeline overlap:
@@ -134,10 +182,12 @@ fn apply_cpu_compositing(pending: &mut PendingCpuWork, ctx: &CpuCompositeCtx) {
     composite_cursor_overlay_frame(
         &mut pending.rgba_data,
         &overlay_ctx,
-        pending.camera_only_opacity,
-        pending.zoom_state,
-        sample,
-        WindowsCursorShape::Arrow,
+        CursorOverlayFrameRequest {
+            camera_only_opacity: pending.camera_only_opacity,
+            zoom_state: pending.zoom_state,
+            sample,
+            fallback_shape: WindowsCursorShape::Arrow,
+        },
         |shape, target_height| {
             get_svg_cursor(shape, target_height).map(|svg_cursor| {
                 super::cursor::DecodedCursorImage {
@@ -367,11 +417,6 @@ pub async fn export_video_gpu(
 
     // Spawn encode task for pipeline parallelism
     let (encode_tx, encode_handle) = spawn_encode_task(stdin);
-
-    // NOTE: Auto zoom generation is disabled. Users must explicitly add zoom regions.
-    // The zoom mode in project.zoom.mode is used to control how existing regions behave,
-    // but we don't auto-generate regions anymore.
-    let project = project;
 
     // Create zoom interpolator
     let zoom_interpolator = ZoomInterpolator::new(&project.zoom);
@@ -682,7 +727,7 @@ pub async fn export_video_gpu(
                 width: c.width,
                 height: c.height,
             });
-            nv12_converter.convert(&screen_frame.data, &video_texture, gpu_crop);
+            nv12_converter.convert(&screen_frame.data, video_texture, gpu_crop);
         }
 
         let render_plan = plan_frame_render(
@@ -758,10 +803,10 @@ pub async fn export_video_gpu(
         // RGBA path: compositor uploads frame_to_render into video_texture.
         compositor
             .composite_with_text_into(
-                &renderer,
-                &video_texture,
+                renderer,
+                video_texture,
                 frame_to_render.as_ref(),
-                &output_texture,
+                output_texture,
                 &render_options,
                 relative_time_ms as f32,
                 &prepared_captions,
@@ -769,11 +814,11 @@ pub async fn export_video_gpu(
             .await;
 
         // Render pre-rendered text overlays on GPU (after video/captions, before readback)
-        compositor.render_text_overlays(&output_texture, &text_overlay_quads);
+        compositor.render_text_overlays(output_texture, &text_overlay_quads);
 
         // Submit readback copy command (non-blocking — GPU will execute asynchronously)
         renderer.submit_readback(
-            &output_texture,
+            output_texture,
             &staging_buffers[loop_state.buf_idx],
             composition_w,
             composition_h,
@@ -786,7 +831,7 @@ pub async fn export_video_gpu(
         // === CPU phase: process frame N-2 (pending_cpu) while GPU works on frame N ===
         if let Some(mut prev) = loop_state.pending_cpu.take() {
             let t_cpu_start = std::time::Instant::now();
-            apply_cpu_compositing(&mut prev, &cpu_ctx);
+            apply_cpu_compositing(&mut prev, cpu_ctx);
             loop_state
                 .timing
                 .add_cpu_us(t_cpu_start.elapsed().as_micros() as u64);
@@ -804,7 +849,7 @@ pub async fn export_video_gpu(
             let sent_count = prev.output_frame_idx + 1;
             job_runner.on_frame_sent(sent_count, |progress| {
                 emit_progress(
-                    &app,
+                    app,
                     progress.stage_progress,
                     ExportStage::Encoding,
                     &format!("Rendering: {}%", progress.percent),
@@ -817,16 +862,7 @@ pub async fn export_video_gpu(
 
         loop_state.output_frame_count += 1;
         if let Some(summary) = loop_state.timing.finish_frame() {
-            log::info!(
-                "[EXPORT] Frame timing (avg over {}): decode={:.1}ms gpu={:.1}ms cpu={:.1}ms readback={:.1}ms encode={:.1}ms total={:.1}ms",
-                summary.frame_count,
-                summary.decode_ms,
-                summary.gpu_ms,
-                summary.cpu_ms,
-                summary.readback_ms,
-                summary.encode_ms,
-                summary.total_ms,
-            );
+            log_export_timing_window(summary, fps);
         }
 
         // Check if we've read back enough frames
@@ -868,6 +904,17 @@ pub async fn export_video_gpu(
         },
     )
     .await;
+
+    let rendered_frames = render_ctx.loop_state.output_frame_count;
+    let dropped_frames = total_output_frames.saturating_sub(rendered_frames);
+    if dropped_frames > 0 && !is_export_cancelled() {
+        log::warn!(
+            "[EXPORT_TIMING_SLOW] stage=output_shortfall dropped_frames={} rendered_frames={} target_frames={}",
+            dropped_frames,
+            rendered_frames,
+            total_output_frames
+        );
+    }
 
     // Check if export was cancelled
     let was_cancelled = is_export_cancelled();

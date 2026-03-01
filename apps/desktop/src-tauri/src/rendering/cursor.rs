@@ -11,7 +11,7 @@ use snapit_render::coord::{Coord, FrameSpace, ScreenUVSpace, Size, ZoomedFrameSp
 use snapit_render::cursor_composite::{
     composite_cursor as composite_cursor_shared,
     composite_cursor_with_motion_blur as composite_cursor_with_motion_blur_shared,
-    CursorCompositeState, DecodedCursorImage as SharedDecodedCursorImage,
+    CursorCompositeInput, CursorCompositeState, DecodedCursorImage as SharedDecodedCursorImage,
     VideoContentBounds as SharedVideoContentBounds,
 };
 use snapit_render::zoom::InterpolatedZoom;
@@ -1185,13 +1185,15 @@ pub fn composite_cursor_with_motion_blur(
     };
 
     composite_cursor_with_motion_blur_shared(
-        frame_data,
-        frame_width,
-        frame_height,
-        video_bounds,
-        &state,
-        cursor_image,
-        base_scale,
+        CursorCompositeInput {
+            frame_data,
+            frame_width,
+            frame_height,
+            video_bounds,
+            cursor: &state,
+            cursor_image,
+            base_scale,
+        },
         motion_blur_amount,
     );
 }

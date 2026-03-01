@@ -90,12 +90,12 @@ impl FfmpegGifEncoder {
         let filter = preset_filter(self.preset);
 
         // Ensure even dimensions for filter compatibility
-        let width = if self.width % 2 != 0 {
+        let width = if !self.width.is_multiple_of(2) {
             self.width - 1
         } else {
             self.width
         };
-        let height = if self.height % 2 != 0 {
+        let height = if !self.height.is_multiple_of(2) {
             self.height - 1
         } else {
             self.height

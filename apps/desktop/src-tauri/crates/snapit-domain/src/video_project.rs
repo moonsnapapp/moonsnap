@@ -326,21 +326,16 @@ pub enum ZoomMode {
 }
 
 /// Per-region zoom mode - controls whether a region follows the cursor or uses a fixed position.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS, Default)]
 #[serde(rename_all = "camelCase")]
 #[ts(export, export_to = "../../../../src/types/generated/")]
 pub enum ZoomRegionMode {
     /// Follow cursor position during playback (like Cap's Auto mode).
     /// The zoom center tracks the interpolated cursor position.
+    #[default]
     Auto,
     /// Fixed position zoom (targetX/targetY determine the zoom center).
     Manual,
-}
-
-impl Default for ZoomRegionMode {
-    fn default() -> Self {
-        ZoomRegionMode::Auto
-    }
 }
 
 /// A zoom region defining when and where to zoom.
@@ -920,7 +915,7 @@ impl Default for BackgroundConfig {
 }
 
 /// Crop configuration for video output.
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS, Default)]
 #[serde(rename_all = "camelCase")]
 #[ts(export, export_to = "../../../../src/types/generated/")]
 pub struct CropConfig {
@@ -940,35 +935,16 @@ pub struct CropConfig {
     pub aspect_ratio: Option<f32>,
 }
 
-impl Default for CropConfig {
-    fn default() -> Self {
-        Self {
-            enabled: false,
-            x: 0,
-            y: 0,
-            width: 0,
-            height: 0,
-            lock_aspect_ratio: false,
-            aspect_ratio: None,
-        }
-    }
-}
-
 /// Composition mode for output canvas.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS, Default)]
 #[serde(rename_all = "camelCase")]
 #[ts(export, export_to = "../../../../src/types/generated/")]
 pub enum CompositionMode {
     /// Auto mode - composition matches video crop dimensions (+ padding).
+    #[default]
     Auto,
     /// Manual mode - user specifies composition aspect ratio.
     Manual,
-}
-
-impl Default for CompositionMode {
-    fn default() -> Self {
-        Self::Auto
-    }
 }
 
 /// Composition configuration for output canvas.
@@ -1086,22 +1062,17 @@ impl Default for SceneConfig {
 // ============================================================================
 
 /// Type of mask effect for hiding sensitive content.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS, Default)]
 #[serde(rename_all = "camelCase")]
 #[ts(export, export_to = "../../../../src/types/generated/")]
 pub enum MaskType {
     /// Gaussian blur effect.
+    #[default]
     Blur,
     /// Mosaic/pixelation effect.
     Pixelate,
     /// Solid color overlay.
     Solid,
-}
-
-impl Default for MaskType {
-    fn default() -> Self {
-        MaskType::Blur
-    }
 }
 
 /// A mask segment for hiding sensitive content.
@@ -1150,20 +1121,12 @@ impl MaskSegment {
 }
 
 /// Mask configuration for the video.
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS, Default)]
 #[serde(rename_all = "camelCase")]
 #[ts(export, export_to = "../../../../src/types/generated/")]
 pub struct MaskConfig {
     /// Mask segments.
     pub segments: Vec<MaskSegment>,
-}
-
-impl Default for MaskConfig {
-    fn default() -> Self {
-        Self {
-            segments: Vec::new(),
-        }
-    }
 }
 
 // ============================================================================
@@ -1195,17 +1158,37 @@ impl<T> XY<T> {
 }
 
 /// Text animation style.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, TS, Default)]
 #[serde(rename_all = "camelCase")]
 #[ts(export, export_to = "../../../../src/types/generated/")]
 pub enum TextAnimation {
     #[default]
-    #[serde(alias = "fadeIn")]
-    #[serde(alias = "fadeOut")]
-    #[serde(alias = "fadeInOut")]
     None,
-    #[serde(alias = "typewriter")]
     TypeWriter,
+}
+
+impl<'de> Deserialize<'de> for TextAnimation {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let value = String::deserialize(deserializer)?;
+        match value.as_str() {
+            "none" | "fadeIn" | "fadeOut" | "fadeInOut" => Ok(Self::None),
+            "typeWriter" | "typewriter" => Ok(Self::TypeWriter),
+            _ => Err(serde::de::Error::unknown_variant(
+                &value,
+                &[
+                    "none",
+                    "typeWriter",
+                    "fadeIn",
+                    "fadeOut",
+                    "fadeInOut",
+                    "typewriter",
+                ],
+            )),
+        }
+    }
 }
 
 const MIN_TYPEWRITER_CHARS_PER_SECOND: f32 = 1.0;
@@ -1390,20 +1373,12 @@ impl Default for TextSegment {
 }
 
 /// Text overlay configuration.
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS, Default)]
 #[serde(rename_all = "camelCase")]
 #[ts(export, export_to = "../../../../src/types/generated/")]
 pub struct TextConfig {
     /// Text overlay segments.
     pub segments: Vec<TextSegment>,
-}
-
-impl Default for TextConfig {
-    fn default() -> Self {
-        Self {
-            segments: Vec::new(),
-        }
-    }
 }
 
 // ============================================================================
@@ -1517,5 +1492,35 @@ impl VideoProject {
             serde_json::from_str(&json).map_err(|e| format!("Failed to parse project: {}", e))?;
 
         Ok(project)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::TextAnimation;
+
+    #[test]
+    fn text_animation_deserializes_legacy_aliases() {
+        let fade_in: TextAnimation = serde_json::from_str("\"fadeIn\"").expect("parse fadeIn");
+        let fade_out: TextAnimation = serde_json::from_str("\"fadeOut\"").expect("parse fadeOut");
+        let fade_in_out: TextAnimation =
+            serde_json::from_str("\"fadeInOut\"").expect("parse fadeInOut");
+        let typewriter: TextAnimation =
+            serde_json::from_str("\"typewriter\"").expect("parse typewriter");
+
+        assert_eq!(fade_in, TextAnimation::None);
+        assert_eq!(fade_out, TextAnimation::None);
+        assert_eq!(fade_in_out, TextAnimation::None);
+        assert_eq!(typewriter, TextAnimation::TypeWriter);
+    }
+
+    #[test]
+    fn text_animation_uses_camel_case_serialization() {
+        let none = serde_json::to_string(&TextAnimation::None).expect("serialize none");
+        let typewriter =
+            serde_json::to_string(&TextAnimation::TypeWriter).expect("serialize typeWriter");
+
+        assert_eq!(none, "\"none\"");
+        assert_eq!(typewriter, "\"typeWriter\"");
     }
 }

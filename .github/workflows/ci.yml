@@ -39,16 +39,12 @@ jobs:
       - name: Run tests
         run: bun run test:run
 
+      - name: Enforce critical desktop coverage
+        run: cd apps/desktop && bun run test:coverage:critical
+
       # Rust checks
       - name: Rust format check
         run: cargo fmt --manifest-path apps/desktop/src-tauri/Cargo.toml -- --check
-
-      # Note: clippy skipped - requires FFmpeg libs which aren't available on CI
-      # Run locally with: cargo clippy --manifest-path apps/desktop/src-tauri/Cargo.toml -- -D warnings
-
-      # Note: Type generation check skipped - requires FFmpeg libs for build
-      # Run locally: cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --lib
-      # Then verify: git diff --exit-code apps/desktop/src/types/generated/
 
   rust-crate-contracts:
     name: Rust Crate Contracts (${{ matrix.crate }})
@@ -72,6 +68,51 @@ jobs:
 
       - name: Test shared crate contract
         run: cargo test -p ${{ matrix.crate }} --lib --manifest-path apps/desktop/src-tauri/Cargo.toml
+
+  rust-desktop-full-checks:
+    name: Rust Desktop Full Checks
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: './apps/desktop/src-tauri -> target'
+
+      - name: Install FFmpeg + LLVM (Windows)
+        shell: pwsh
+        run: |
+          $ffmpegVersion = "7.1"
+          $ffmpegUrl = "https://github.com/GyanD/codexffmpeg/releases/download/$ffmpegVersion/ffmpeg-$ffmpegVersion-full_build-shared.zip"
+          $ffmpegZip = "$env:RUNNER_TEMP\ffmpeg.zip"
+          $ffmpegDir = "$env:RUNNER_TEMP\ffmpeg"
+
+          Write-Host "Downloading FFmpeg $ffmpegVersion..."
+          Invoke-WebRequest -Uri $ffmpegUrl -OutFile $ffmpegZip
+
+          Write-Host "Extracting FFmpeg..."
+          Expand-Archive -Path $ffmpegZip -DestinationPath $ffmpegDir -Force
+
+          $ffmpegPath = Get-ChildItem -Path $ffmpegDir -Directory | Select-Object -First 1
+          echo "FFMPEG_DIR=$($ffmpegPath.FullName)" >> $env:GITHUB_ENV
+          echo "$($ffmpegPath.FullName)\bin" >> $env:GITHUB_PATH
+
+          # ffmpeg-sys-next bindgen requires libclang
+          choco install llvm -y
+          echo "LIBCLANG_PATH=C:\Program Files\LLVM\bin" >> $env:GITHUB_ENV
+
+      - name: Clippy (desktop tauri crate)
+        run: cargo clippy --manifest-path apps/desktop/src-tauri/Cargo.toml -- -D warnings
+
+      - name: Rust lib tests (desktop tauri crate)
+        run: cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --lib
 
   build-web:
     name: Build Web

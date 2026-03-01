@@ -1,6 +1,6 @@
 //! Encoder selection and quality mapping helpers.
 
-use std::path::PathBuf;
+use std::path::Path;
 use std::process::Stdio;
 
 /// Encoder type for video export.
@@ -78,7 +78,7 @@ pub fn select_encoder(
 }
 
 /// Check if NVENC is available by testing an FFmpeg encode invocation.
-pub fn is_nvenc_available(ffmpeg_path: &PathBuf) -> bool {
+pub fn is_nvenc_available(ffmpeg_path: &Path) -> bool {
     // NVENC requires a minimum frame size; 256x256 keeps probe reliable.
     let result = snapit_media::ffmpeg::create_hidden_command(ffmpeg_path)
         .args([
@@ -118,7 +118,7 @@ pub fn is_nvenc_available(ffmpeg_path: &PathBuf) -> bool {
 
 /// Select best encoder after probing runtime NVENC availability.
 pub fn select_encoder_with_probe(
-    ffmpeg_path: &PathBuf,
+    ffmpeg_path: &Path,
     quality: u32,
     prefer_hardware: bool,
     x264_crf: u8,

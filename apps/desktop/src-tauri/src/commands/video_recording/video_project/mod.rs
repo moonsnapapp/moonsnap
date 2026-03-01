@@ -27,11 +27,12 @@ pub mod metadata;
 pub use auto_zoom::apply_auto_zoom_to_project;
 pub use frames::{clear_frame_cache, get_video_frame_cached};
 pub use metadata::{load_video_project_from_file, VideoMetadata};
-use snapit_domain::video_project::*;
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use snapit_domain::video_project::{
+        AutoZoomConfig, CursorConfig, VideoProject, ZoomRegion, ZoomRegionMode, ZoomTransition,
+    };
 
     #[test]
     fn test_video_project_serialization() {

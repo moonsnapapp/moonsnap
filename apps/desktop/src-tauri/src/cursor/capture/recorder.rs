@@ -41,7 +41,6 @@ pub struct Cursor {
     /// Hotspot position (normalized 0-1).
     pub hotspot: XY<f64>,
     /// Cursor shape if detected from system cursor.
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub shape: Option<CursorShape>,
 }
 

@@ -52,27 +52,22 @@ pub fn should_composite_cursor(camera_only_opacity: f64) -> bool {
 pub fn map_cursor_to_crop_if_needed(
     cursor_x: f32,
     cursor_y: f32,
-    crop_enabled: bool,
-    original_width: u32,
-    original_height: u32,
-    crop_x: u32,
-    crop_y: u32,
-    crop_width: u32,
-    crop_height: u32,
+    crop: CursorCropPlan,
 ) -> Option<(f32, f32)> {
-    if !crop_enabled {
+    if !crop.enabled {
         return Some((cursor_x, cursor_y));
     }
-    if original_width == 0 || original_height == 0 || crop_width == 0 || crop_height == 0 {
+    if crop.original_width == 0 || crop.original_height == 0 || crop.width == 0 || crop.height == 0
+    {
         return None;
     }
 
-    let orig_w = original_width as f32;
-    let orig_h = original_height as f32;
-    let crop_x = crop_x as f32;
-    let crop_y = crop_y as f32;
-    let crop_w = crop_width as f32;
-    let crop_h = crop_height as f32;
+    let orig_w = crop.original_width as f32;
+    let orig_h = crop.original_height as f32;
+    let crop_x = crop.x as f32;
+    let crop_y = crop.y as f32;
+    let crop_w = crop.width as f32;
+    let crop_h = crop.height as f32;
 
     let cursor_px_x = cursor_x * orig_w;
     let cursor_px_y = cursor_y * orig_h;
@@ -98,17 +93,8 @@ pub fn cursor_target_height_px(composition_height: u32, cursor_scale: f32) -> f3
 ///
 /// Returns `None` when crop mapping rejects the cursor position.
 pub fn plan_cursor_geometry(request: CursorGeometryPlanRequest) -> Option<CursorGeometryPlan> {
-    let (mapped_x, mapped_y) = map_cursor_to_crop_if_needed(
-        request.cursor_x,
-        request.cursor_y,
-        request.crop.enabled,
-        request.crop.original_width,
-        request.crop.original_height,
-        request.crop.x,
-        request.crop.y,
-        request.crop.width,
-        request.crop.height,
-    )?;
+    let (mapped_x, mapped_y) =
+        map_cursor_to_crop_if_needed(request.cursor_x, request.cursor_y, request.crop)?;
 
     let (zoomed_x, zoomed_y) =
         apply_zoom_to_normalized_point(mapped_x as f64, mapped_y as f64, request.zoom);
@@ -148,8 +134,20 @@ mod tests {
 
     #[test]
     fn crop_mapping_passthrough_when_disabled() {
-        let mapped =
-            map_cursor_to_crop_if_needed(0.3, 0.7, false, 1920, 1080, 100, 100, 800, 600).unwrap();
+        let mapped = map_cursor_to_crop_if_needed(
+            0.3,
+            0.7,
+            CursorCropPlan {
+                enabled: false,
+                x: 100,
+                y: 100,
+                width: 800,
+                height: 600,
+                original_width: 1920,
+                original_height: 1080,
+            },
+        )
+        .unwrap();
         assert!((mapped.0 - 0.3).abs() < 0.0001);
         assert!((mapped.1 - 0.7).abs() < 0.0001);
     }
@@ -163,13 +161,15 @@ mod tests {
         let mapped = map_cursor_to_crop_if_needed(
             cursor_x as f32,
             cursor_y as f32,
-            true,
-            1920,
-            1080,
-            400,
-            200,
-            400,
-            400,
+            CursorCropPlan {
+                enabled: true,
+                x: 400,
+                y: 200,
+                width: 400,
+                height: 400,
+                original_width: 1920,
+                original_height: 1080,
+            },
         )
         .unwrap();
 
@@ -179,7 +179,19 @@ mod tests {
 
     #[test]
     fn crop_mapping_rejects_out_of_bounds_cursor() {
-        let mapped = map_cursor_to_crop_if_needed(0.95, 0.95, true, 1920, 1080, 0, 0, 200, 200);
+        let mapped = map_cursor_to_crop_if_needed(
+            0.95,
+            0.95,
+            CursorCropPlan {
+                enabled: true,
+                x: 0,
+                y: 0,
+                width: 200,
+                height: 200,
+                original_width: 1920,
+                original_height: 1080,
+            },
+        );
         assert!(mapped.is_none());
     }
 

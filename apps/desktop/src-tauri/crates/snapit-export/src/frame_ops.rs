@@ -11,6 +11,12 @@ pub struct FrameContentBounds {
     pub height: f32,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct CursorCircleStyle {
+    pub scale: f32,
+    pub opacity: f32,
+}
+
 /// Extract a cropped region from RGBA frame data.
 ///
 /// Returns the cropped RGBA data with proper row ordering.
@@ -208,17 +214,16 @@ pub fn draw_cursor_circle(
     video_bounds: &FrameContentBounds,
     cursor_x: f32,
     cursor_y: f32,
-    scale: f32,
-    opacity: f32,
+    style: CursorCircleStyle,
 ) {
-    let opacity = opacity.clamp(0.0, 1.0);
+    let opacity = style.opacity.clamp(0.0, 1.0);
     if opacity <= 0.0 {
         return;
     }
 
     let base_radius = 12.0;
-    let radius = base_radius * scale;
-    let border_width = 2.0 * scale;
+    let radius = base_radius * style.scale;
+    let border_width = 2.0 * style.scale;
 
     // Convert normalized position to pixel position within video content area.
     let center_x = video_bounds.x + cursor_x * video_bounds.width;
@@ -356,8 +361,10 @@ mod tests {
             },
             0.5,
             0.5,
-            1.0,
-            1.0,
+            CursorCircleStyle {
+                scale: 1.0,
+                opacity: 1.0,
+            },
         );
 
         let mut has_non_zero = false;

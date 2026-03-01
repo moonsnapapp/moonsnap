@@ -22,6 +22,24 @@ export default [
     files: ["src/**/*.{ts,tsx}"],
   })),
 
+  // Ban `as any` / `<any>` type assertions in desktop source.
+  {
+    files: ["src/**/*.{ts,tsx}"],
+    rules: {
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector: "TSAsExpression > TSAnyKeyword",
+          message: "Do not use `as any`. Use specific types or generics.",
+        },
+        {
+          selector: "TSTypeAssertion > TSAnyKeyword",
+          message: "Do not use `<any>`. Use specific types or generics.",
+        },
+      ],
+    },
+  },
+
   // Test file rules
   ...testFiles,
 

@@ -3,7 +3,7 @@
 use snapit_domain::captions::{CaptionSegment, CaptionSettings};
 use snapit_domain::video_project::TextSegment;
 use snapit_render::caption_layer::prepare_captions;
-use snapit_render::prerendered_text::PreRenderedTextStore;
+use snapit_render::prerendered_text::{PreRenderedTextStore, TextFrameLayout, TextFrameRequest};
 use snapit_render::text::PreparedText;
 use snapit_render::types::{BackgroundStyle, RenderOptions, TextOverlayQuad, WebcamOverlay};
 use snapit_render::ZoomState;
@@ -81,17 +81,19 @@ pub fn build_frame_text_overlay_quads(
     store: &PreRenderedTextStore,
     request: FrameTextOverlayRequest<'_>,
 ) -> Vec<TextOverlayQuad> {
-    store.get_gpu_quads_for_frame(
-        request.frame_time_secs,
-        request.text_segments,
-        request.composition_width,
-        request.composition_height,
-        request.video_frame_x,
-        request.video_frame_y,
-        request.video_frame_width,
-        request.video_frame_height,
-        request.zoom_state,
-    )
+    store.get_gpu_quads_for_frame(TextFrameRequest {
+        frame_time: request.frame_time_secs,
+        segments: request.text_segments,
+        layout: TextFrameLayout {
+            output_w: request.composition_width,
+            output_h: request.composition_height,
+            video_x: request.video_frame_x,
+            video_y: request.video_frame_y,
+            video_w: request.video_frame_width,
+            video_h: request.video_frame_height,
+            zoom: request.zoom_state,
+        },
+    })
 }
 
 #[cfg(test)]

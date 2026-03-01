@@ -117,7 +117,7 @@ where
             cfg.progress_every_frames,
             cfg.started_at,
             actual_elapsed.as_secs_f64(),
-            |state| emit_state(state),
+            &mut emit_state,
         );
     }
 

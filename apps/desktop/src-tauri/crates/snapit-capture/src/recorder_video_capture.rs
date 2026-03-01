@@ -66,12 +66,15 @@ impl CapturePlan {
     }
 }
 
+pub type FirstCaptureFrame = (u32, u32, CapturedFrame);
+pub type CaptureSourceInit = (CaptureSource, Option<FirstCaptureFrame>);
+
 /// Create capture source from a plan and wait for first frame.
 pub fn create_capture_source(
     plan: &CapturePlan,
     fps: u32,
     include_cursor: bool,
-) -> Result<(CaptureSource, Option<(u32, u32, CapturedFrame)>), String> {
+) -> Result<CaptureSourceInit, String> {
     if let Some(wid) = plan.window_id {
         log::debug!("[CAPTURE] Using Scap window capture for hwnd={}", wid);
         let source = CaptureSource::new_window(wid, include_cursor)

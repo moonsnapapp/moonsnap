@@ -50,29 +50,29 @@ A fast, native screen capture and annotation tool for Windows. Built with Tauri 
 
 ```bash
 # Install dependencies
-npm install
+bun install
 
 # Run in development mode
-npm run tauri dev
+bun run tauri:dev
 
 # Run tests
-npm run test:run
+bun run test:run
 
 # Type check
-npx tsc --noEmit
+bun run typecheck
 ```
 
 ### Scripts
 
 | Command | Description |
 |---------|-------------|
-| `npm run dev` | Start Vite dev server |
-| `npm run build` | Build frontend |
-| `npm run tauri dev` | Run app in development |
-| `npm run tauri build` | Build production app |
-| `npm run test` | Run tests in watch mode |
-| `npm run test:run` | Run tests once |
-| `npm run test:coverage` | Run tests with coverage |
+| `bun run dev` | Start all dev pipelines via Turbo |
+| `bun run dev:desktop` | Run desktop app development pipeline |
+| `bun run tauri:dev` | Run Tauri desktop app in development |
+| `bun run tauri:build` | Build production Tauri app |
+| `bun run test` | Run tests via Turbo |
+| `bun run test:run` | Run tests once via Turbo |
+| `bun run typecheck` | Run TypeScript checks via Turbo |
 
 ### Project Structure
 
@@ -117,4 +117,3 @@ Generated types are placed in `src/types/generated/` and re-exported from `src/t
 - **UI Components**: shadcn/ui (Radix UI primitives)
 - **Backend**: Tauri 2, Rust
 - **Build**: Vite 7, Vitest
-

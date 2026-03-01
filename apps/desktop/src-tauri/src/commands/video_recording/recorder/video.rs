@@ -13,6 +13,7 @@ use snapit_capture::audio_multitrack::MultiTrackAudioRecorder;
 use snapit_capture::frame_buffer::FrameBufferPool;
 use snapit_capture::recorder_helpers::{
     create_video_project_file, get_window_rect, make_video_faststart, mux_audio_to_video,
+    CreateVideoProjectRequest,
 };
 use snapit_capture::state::{RecorderCommand, RecordingProgress};
 use snapit_capture::timestamp::Timestamps;
@@ -351,14 +352,16 @@ pub fn run_video_capture(
     let cursor_recording = cursor_event_capture.stop();
 
     let finalize_outcome = snapit_capture::recorder_video_finalize::finalize_video_capture(
-        finalization_plan,
-        was_cancelled,
-        cursor_data_path.is_some(),
-        cursor_recording.events.len(),
-        webcam_output_path.is_some(),
-        screen_video_path.as_path(),
-        system_audio_path.as_deref(),
-        mic_audio_path.as_deref(),
+        snapit_capture::recorder_video_finalize::VideoFinalizeRequest {
+            finalization_plan,
+            was_cancelled,
+            has_cursor_data_path: cursor_data_path.is_some(),
+            cursor_event_count: cursor_recording.events.len(),
+            has_webcam_output: webcam_output_path.is_some(),
+            screen_video_path: screen_video_path.as_path(),
+            system_audio_path: system_audio_path.as_deref(),
+            microphone_audio_path: mic_audio_path.as_deref(),
+        },
         || {
             if let Some(ref path) = cursor_data_path {
                 save_cursor_recording(&cursor_recording, path)
@@ -374,17 +377,17 @@ pub fn run_video_capture(
         |video_path, system_path, mic_path| mux_audio_to_video(video_path, system_path, mic_path),
         |video_path| make_video_faststart(video_path),
         |artifact_flags| {
-            create_video_project_file(
-                output_path,
+            create_video_project_file(CreateVideoProjectRequest {
+                project_folder: output_path.as_path(),
                 width,
                 height,
-                recording_duration.as_millis() as u64,
-                settings.fps,
-                artifact_flags.has_webcam,
-                artifact_flags.has_cursor,
-                artifact_flags.has_system_audio,
-                artifact_flags.has_microphone_audio,
-            )
+                duration_ms: recording_duration.as_millis() as u64,
+                fps: settings.fps,
+                has_webcam: artifact_flags.has_webcam,
+                has_cursor_data: artifact_flags.has_cursor,
+                has_system_audio: artifact_flags.has_system_audio,
+                has_mic_audio: artifact_flags.has_microphone_audio,
+            })
         },
     )?;
 

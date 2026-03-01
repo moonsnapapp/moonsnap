@@ -15,16 +15,20 @@ pub enum VideoFinalizeOutcome {
     Finalized { video_file_size: u64 },
 }
 
+pub struct VideoFinalizeRequest<'a> {
+    pub finalization_plan: FinalizationPlan,
+    pub was_cancelled: bool,
+    pub has_cursor_data_path: bool,
+    pub cursor_event_count: usize,
+    pub has_webcam_output: bool,
+    pub screen_video_path: &'a Path,
+    pub system_audio_path: Option<&'a Path>,
+    pub microphone_audio_path: Option<&'a Path>,
+}
+
 /// Finalize MP4 recording artifacts using callback-driven app/runtime adapters.
 pub fn finalize_video_capture<FPersistCursor, FFinishEncoder, FMux, FFaststart, FProject>(
-    finalization_plan: FinalizationPlan,
-    was_cancelled: bool,
-    has_cursor_data_path: bool,
-    cursor_event_count: usize,
-    has_webcam_output: bool,
-    screen_video_path: &Path,
-    system_audio_path: Option<&Path>,
-    microphone_audio_path: Option<&Path>,
+    request: VideoFinalizeRequest<'_>,
     mut persist_cursor_data: FPersistCursor,
     finish_encoder: FFinishEncoder,
     mut mux_audio_to_video: FMux,
@@ -38,34 +42,34 @@ where
     FFaststart: FnMut(&Path) -> Result<(), String>,
     FProject: FnMut(ProjectArtifactFlags) -> Result<(), String>,
 {
-    if was_cancelled {
+    if request.was_cancelled {
         return Ok(VideoFinalizeOutcome::Cancelled);
     }
 
     let _ = maybe_persist_cursor_data(
-        finalization_plan,
-        has_cursor_data_path,
-        cursor_event_count,
-        || persist_cursor_data(),
+        request.finalization_plan,
+        request.has_cursor_data_path,
+        request.cursor_event_count,
+        &mut persist_cursor_data,
     );
 
     finish_encoder()?;
     let video_file_size = postprocess_screen_video(
-        finalization_plan,
-        screen_video_path,
-        system_audio_path,
-        microphone_audio_path,
-        |video_path, system_path, mic_path| mux_audio_to_video(video_path, system_path, mic_path),
-        |video_path| make_video_faststart(video_path),
+        request.finalization_plan,
+        request.screen_video_path,
+        request.system_audio_path,
+        request.microphone_audio_path,
+        &mut mux_audio_to_video,
+        &mut make_video_faststart,
     )?;
 
-    if finalization_plan.create_project_file {
+    if request.finalization_plan.create_project_file {
         let artifact_flags = build_project_artifact_flags(
-            has_webcam_output,
-            has_cursor_data_path,
-            cursor_event_count,
-            system_audio_path,
-            microphone_audio_path,
+            request.has_webcam_output,
+            request.has_cursor_data_path,
+            request.cursor_event_count,
+            request.system_audio_path,
+            request.microphone_audio_path,
         );
         create_project_file(artifact_flags)?;
     }
@@ -75,7 +79,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::{finalize_video_capture, VideoFinalizeOutcome};
+    use super::{finalize_video_capture, VideoFinalizeOutcome, VideoFinalizeRequest};
     use crate::recorder_finalization::build_finalization_plan;
     use std::path::Path;
     use std::sync::atomic::{AtomicU64, Ordering};
@@ -96,14 +100,16 @@ mod tests {
         let path = temp_file_path("cancelled");
 
         let outcome = finalize_video_capture(
-            build_finalization_plan(false),
-            true,
-            true,
-            3,
-            true,
-            &path,
-            None,
-            None,
+            VideoFinalizeRequest {
+                finalization_plan: build_finalization_plan(false),
+                was_cancelled: true,
+                has_cursor_data_path: true,
+                cursor_event_count: 3,
+                has_webcam_output: true,
+                screen_video_path: &path,
+                system_audio_path: None,
+                microphone_audio_path: None,
+            },
             {
                 let calls = Arc::clone(&calls);
                 move || {
@@ -158,14 +164,16 @@ mod tests {
         let project_calls = Arc::new(AtomicU64::new(0));
 
         let outcome = finalize_video_capture(
-            build_finalization_plan(false),
-            false,
-            true,
-            5,
-            true,
-            &video_path,
-            None,
-            None,
+            VideoFinalizeRequest {
+                finalization_plan: build_finalization_plan(false),
+                was_cancelled: false,
+                has_cursor_data_path: true,
+                cursor_event_count: 5,
+                has_webcam_output: true,
+                screen_video_path: &video_path,
+                system_audio_path: None,
+                microphone_audio_path: None,
+            },
             {
                 let persist_calls = Arc::clone(&persist_calls);
                 move || {
@@ -228,14 +236,16 @@ mod tests {
         let project_calls = Arc::new(AtomicU64::new(0));
 
         let outcome = finalize_video_capture(
-            build_finalization_plan(true),
-            false,
-            false,
-            0,
-            false,
-            &video_path,
-            Some(Path::new("C:/tmp/system.wav")),
-            Some(Path::new("C:/tmp/mic.wav")),
+            VideoFinalizeRequest {
+                finalization_plan: build_finalization_plan(true),
+                was_cancelled: false,
+                has_cursor_data_path: false,
+                cursor_event_count: 0,
+                has_webcam_output: false,
+                screen_video_path: &video_path,
+                system_audio_path: Some(Path::new("C:/tmp/system.wav")),
+                microphone_audio_path: Some(Path::new("C:/tmp/mic.wav")),
+            },
             || Ok(()),
             || Ok(()),
             {

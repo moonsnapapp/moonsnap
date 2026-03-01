@@ -147,79 +147,87 @@ fn start_capture_thread(
     let output_path_clone = output_path.clone();
 
     let _handle = snapit_capture::recorder_capture_lifecycle::spawn_capture_thread_with_lifecycle(
-        output_path_clone,
-        || {
-            // Hide desktop icons if enabled (restored in `after_capture`).
-            hide_desktop_icons();
-        },
-        move || {
-            // Window mode is now handled natively by WGC in run_video_capture/run_gif_capture.
-            match settings.format {
-                RecordingFormat::Mp4 => video::run_video_capture(
-                    &app_for_capture,
-                    &settings,
-                    &output_path,
-                    progress.clone(),
-                    command_rx,
-                    &started_at,
-                ),
-                RecordingFormat::Gif => gif::run_gif_capture(
-                    &app_for_capture,
-                    &settings,
-                    &output_path,
-                    progress.clone(),
-                    command_rx,
-                    &started_at,
-                ),
-            }
-        },
-        || {
-            RECORDING_CONTROLLER
-                .lock()
-                .map(|c| {
-                    c.active
-                        .as_ref()
-                        .map(|a| a.progress.was_cancelled())
-                        .unwrap_or(false)
-                })
-                .unwrap_or(false)
-        },
-        |video_file_path| snapit_capture::recorder_helpers::validate_video_file(video_file_path),
-        move || {
-            if let Ok(mut controller) = RECORDING_CONTROLLER.lock() {
-                controller.reset();
-            }
-            emit_state_change(&app_for_cancelled, &RecordingState::Idle);
-        },
-        move |resolved_output_path, recording_duration, file_size| {
-            if let Ok(mut controller) = RECORDING_CONTROLLER.lock() {
-                controller.complete(resolved_output_path.clone(), recording_duration, file_size);
-            }
+        snapit_capture::recorder_capture_lifecycle::CaptureThreadLifecycleConfig {
+            output_path: output_path_clone,
+            before_capture: || {
+                // Hide desktop icons if enabled (restored in `after_capture`).
+                hide_desktop_icons();
+            },
+            capture: move || {
+                // Window mode is now handled natively by WGC in run_video_capture/run_gif_capture.
+                match settings.format {
+                    RecordingFormat::Mp4 => video::run_video_capture(
+                        &app_for_capture,
+                        &settings,
+                        &output_path,
+                        progress.clone(),
+                        command_rx,
+                        &started_at,
+                    ),
+                    RecordingFormat::Gif => gif::run_gif_capture(
+                        &app_for_capture,
+                        &settings,
+                        &output_path,
+                        progress.clone(),
+                        command_rx,
+                        &started_at,
+                    ),
+                }
+            },
+            was_cancelled: || {
+                RECORDING_CONTROLLER
+                    .lock()
+                    .map(|c| {
+                        c.active
+                            .as_ref()
+                            .map(|a| a.progress.was_cancelled())
+                            .unwrap_or(false)
+                    })
+                    .unwrap_or(false)
+            },
+            validate_video_file: snapit_capture::recorder_helpers::validate_video_file,
+            on_cancelled: move || {
+                if let Ok(mut controller) = RECORDING_CONTROLLER.lock() {
+                    controller.reset();
+                }
+                emit_state_change(&app_for_cancelled, &RecordingState::Idle);
+            },
+            on_completed: move |resolved_output_path: String,
+                                recording_duration: f64,
+                                file_size: u64| {
+                if let Ok(mut controller) = RECORDING_CONTROLLER.lock() {
+                    controller.complete(
+                        resolved_output_path.clone(),
+                        recording_duration,
+                        file_size,
+                    );
+                }
 
-            emit_state_change(
-                &app_for_completed,
-                &RecordingState::Completed {
-                    output_path: resolved_output_path,
-                    duration_secs: recording_duration,
-                    file_size_bytes: file_size,
-                },
-            );
-        },
-        move |error_message| {
-            log::error!("[RECORDING] Failed: {}", error_message);
-            if let Ok(mut controller) = RECORDING_CONTROLLER.lock() {
-                controller.set_error(error_message.clone());
-            }
-            emit_state_change(
-                &app_for_error,
-                &RecordingState::Error {
-                    message: error_message,
-                },
-            );
-        },
-        || {
-            // Always restore desktop icons when recording ends (success, error, or panic).
-            show_desktop_icons();
+                emit_state_change(
+                    &app_for_completed,
+                    &RecordingState::Completed {
+                        output_path: resolved_output_path,
+                        duration_secs: recording_duration,
+                        file_size_bytes: file_size,
+                    },
+                );
+            },
+            on_error: move |error_message: String| {
+                log::error!("[RECORDING] Failed: {}", error_message);
+                if let Ok(mut controller) = RECORDING_CONTROLLER.lock() {
+                    controller.set_error(error_message.clone());
+                }
+                emit_state_change(
+                    &app_for_error,
+                    &RecordingState::Error {
+                        message: error_message,
+                    },
+                );
+            },
+            after_capture: || {
+                // Always restore desktop icons when recording ends (success, error, or panic).
+                show_desktop_icons();
+            },
         },
     );
 }

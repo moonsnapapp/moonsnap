@@ -72,6 +72,26 @@ pub struct PreRenderedTextStore {
     images: HashMap<usize, PreRenderedTextImage>,
 }
 
+/// Frame-space layout shared by CPU/GPU pre-rendered text planning.
+#[derive(Debug, Clone, Copy)]
+pub struct TextFrameLayout {
+    pub output_w: u32,
+    pub output_h: u32,
+    pub video_x: u32,
+    pub video_y: u32,
+    pub video_w: u32,
+    pub video_h: u32,
+    pub zoom: ZoomState,
+}
+
+/// Input payload for pre-rendered text planning at a given frame.
+#[derive(Debug, Clone, Copy)]
+pub struct TextFrameRequest<'a> {
+    pub frame_time: f64,
+    pub segments: &'a [TextSegment],
+    pub layout: TextFrameLayout,
+}
+
 fn calculate_segment_opacity(segment: &TextSegment, frame_time: f64) -> f32 {
     let fade_duration = segment.fade_duration.max(0.0);
     if fade_duration <= 0.0 {
@@ -300,65 +320,56 @@ impl PreRenderedTextStore {
     ///
     /// Returns `TextOverlayQuad`s with positions in NDC and typewriter reveal in UV space.
     /// The GPU shader handles clipping via `discard` â€” no 2-rect split needed.
-    pub fn get_gpu_quads_for_frame(
-        &self,
-        frame_time: f64,
-        segments: &[TextSegment],
-        output_w: u32,
-        output_h: u32,
-        video_x: u32,
-        video_y: u32,
-        video_w: u32,
-        video_h: u32,
-        zoom: ZoomState,
-    ) -> Vec<TextOverlayQuad> {
+    pub fn get_gpu_quads_for_frame(&self, request: TextFrameRequest<'_>) -> Vec<TextOverlayQuad> {
         let mut result = Vec::new();
 
         for (idx, image) in &self.images {
             let idx = *idx;
-            if idx >= segments.len() {
+            if idx >= request.segments.len() {
                 continue;
             }
 
-            let segment = &segments[idx];
+            let segment = &request.segments[idx];
             if !segment.enabled {
                 continue;
             }
-            if frame_time < segment.start || frame_time > segment.end {
+            if request.frame_time < segment.start || request.frame_time > segment.end {
                 continue;
             }
 
-            let opacity = calculate_segment_opacity(segment, frame_time);
+            let opacity = calculate_segment_opacity(segment, request.frame_time);
             if opacity < 0.001 {
                 continue;
             }
 
             // Apply zoom transform to text center (same math as cursor zoom).
             let (zoomed_cx, zoomed_cy) =
-                apply_zoom_to_normalized_point(image.center_x, image.center_y, zoom);
+                apply_zoom_to_normalized_point(image.center_x, image.center_y, request.layout.zoom);
 
             // Scale text image size by zoom factor.
-            let scale = (zoom.scale as f64).max(1.0);
+            let scale = (request.layout.zoom.scale as f64).max(1.0);
             let scaled_w = image.width as f64 * scale;
             let scaled_h = image.height as f64 * scale;
 
             // Map from video-content-relative coords to composition pixel coords.
-            let center_px_x = video_x as f64 + zoomed_cx * video_w as f64;
-            let center_px_y = video_y as f64 + zoomed_cy * video_h as f64;
+            let center_px_x =
+                request.layout.video_x as f64 + zoomed_cx * request.layout.video_w as f64;
+            let center_px_y =
+                request.layout.video_y as f64 + zoomed_cy * request.layout.video_h as f64;
             let left_px = center_px_x - scaled_w / 2.0;
             let top_px = center_px_y - scaled_h / 2.0;
             let right_px = left_px + scaled_w;
             let bottom_px = top_px + scaled_h;
 
             // Convert pixel coords to NDC: x = px / output_w * 2 - 1, y flipped
-            let ndc_left = (left_px / output_w as f64) * 2.0 - 1.0;
-            let ndc_right = (right_px / output_w as f64) * 2.0 - 1.0;
+            let ndc_left = (left_px / request.layout.output_w as f64) * 2.0 - 1.0;
+            let ndc_right = (right_px / request.layout.output_w as f64) * 2.0 - 1.0;
             // NDC y: top of screen = +1, bottom = -1 (wgpu clip space)
-            let ndc_top = 1.0 - (top_px / output_h as f64) * 2.0;
-            let ndc_bottom = 1.0 - (bottom_px / output_h as f64) * 2.0;
+            let ndc_top = 1.0 - (top_px / request.layout.output_h as f64) * 2.0;
+            let ndc_bottom = 1.0 - (bottom_px / request.layout.output_h as f64) * 2.0;
 
             // Typewriter reveal
-            let reveal = calculate_typewriter_reveal(segment, image, frame_time);
+            let reveal = calculate_typewriter_reveal(segment, image, request.frame_time);
             let (
                 typewriter_active,
                 full_reveal_v,
@@ -412,40 +423,29 @@ impl PreRenderedTextStore {
 
     /// Get pre-rendered text images visible at the given frame time.
     /// Returns compositing info with pixel bounds and opacity for each visible segment.
-    pub fn get_for_frame(
-        &self,
-        frame_time: f64,
-        segments: &[TextSegment],
-        output_w: u32,
-        output_h: u32,
-        video_x: u32,
-        video_y: u32,
-        video_w: u32,
-        video_h: u32,
-        zoom: ZoomState,
-    ) -> Vec<TextCompositeInfo> {
+    pub fn get_for_frame(&self, request: TextFrameRequest<'_>) -> Vec<TextCompositeInfo> {
         let mut result = Vec::new();
 
         for (idx, image) in &self.images {
             let idx = *idx;
-            if idx >= segments.len() {
+            if idx >= request.segments.len() {
                 log::warn!(
                     "[PreRenderedText] Segment index {} >= segments.len() {}",
                     idx,
-                    segments.len()
+                    request.segments.len()
                 );
                 continue;
             }
 
-            let segment = &segments[idx];
+            let segment = &request.segments[idx];
             if !segment.enabled {
                 continue;
             }
-            if frame_time < segment.start || frame_time > segment.end {
+            if request.frame_time < segment.start || request.frame_time > segment.end {
                 continue;
             }
 
-            let opacity = calculate_segment_opacity(segment, frame_time);
+            let opacity = calculate_segment_opacity(segment, request.frame_time);
 
             if opacity < 0.001 {
                 continue;
@@ -453,18 +453,20 @@ impl PreRenderedTextStore {
 
             // Apply zoom transform to text center (same math as cursor zoom).
             let (zoomed_cx, zoomed_cy) =
-                apply_zoom_to_normalized_point(image.center_x, image.center_y, zoom);
+                apply_zoom_to_normalized_point(image.center_x, image.center_y, request.layout.zoom);
 
             // Scale text image size by zoom factor.
-            let scale = (zoom.scale as f64).max(1.0);
+            let scale = (request.layout.zoom.scale as f64).max(1.0);
             let scaled_w = (image.width as f64 * scale).round();
             let scaled_h = (image.height as f64 * scale).round();
 
             // Map from video-content-relative coords to composition pixel coords.
             let half_w = scaled_w / 2.0;
             let half_h = scaled_h / 2.0;
-            let center_px_x = video_x as f64 + zoomed_cx * video_w as f64;
-            let center_px_y = video_y as f64 + zoomed_cy * video_h as f64;
+            let center_px_x =
+                request.layout.video_x as f64 + zoomed_cx * request.layout.video_w as f64;
+            let center_px_y =
+                request.layout.video_y as f64 + zoomed_cy * request.layout.video_h as f64;
 
             // Allow negative positions â€” text can overflow edges and gets clipped.
             // When the top-left is negative, skip destination pixels accordingly.
@@ -479,11 +481,11 @@ impl PreRenderedTextStore {
             let dst_y = raw_y.max(0.0) as u32;
             let dst_w = scaled_w_u
                 .saturating_sub(src_offset_x)
-                .min(output_w.saturating_sub(dst_x));
+                .min(request.layout.output_w.saturating_sub(dst_x));
 
             // Typewriter: progressively reveal text line-by-line.
             // Reveal dimensions are in source-image pixels; scale to output.
-            if let Some(reveal) = calculate_typewriter_reveal(segment, image, frame_time) {
+            if let Some(reveal) = calculate_typewriter_reveal(segment, image, request.frame_time) {
                 let s = scale;
                 let reveal_full_h = (reveal.full_height_px as f64 * s).round() as u32;
                 let reveal_last_h = (reveal.last_line_height_px as f64 * s).round() as u32;
@@ -508,8 +510,8 @@ impl PreRenderedTextStore {
                 let tight_src_y = src_offset_y.max(content_start);
                 if reveal_full_h > 0 && tight_src_y < reveal_full_h {
                     let tight_dst_y = dst_y + (tight_src_y - src_offset_y);
-                    let full_dst_h =
-                        (reveal_full_h - tight_src_y).min(output_h.saturating_sub(tight_dst_y));
+                    let full_dst_h = (reveal_full_h - tight_src_y)
+                        .min(request.layout.output_h.saturating_sub(tight_dst_y));
                     if full_dst_h > 0 && dst_w > 0 {
                         result.push(TextCompositeInfo {
                             dst_x,
@@ -529,19 +531,11 @@ impl PreRenderedTextStore {
 
                 // Emit partially-revealed current line
                 if reveal_last_h > 0 {
-                    let line_src_offset_y = if src_offset_y > reveal_last_top {
-                        src_offset_y - reveal_last_top
-                    } else {
-                        0
-                    };
-                    let line_dst_y_offset = if reveal_last_top > src_offset_y {
-                        reveal_last_top - src_offset_y
-                    } else {
-                        0
-                    };
+                    let line_src_offset_y = src_offset_y.saturating_sub(reveal_last_top);
+                    let line_dst_y_offset = reveal_last_top.saturating_sub(src_offset_y);
                     let line_dst_y = dst_y + line_dst_y_offset;
                     let line_dst_h = (reveal_last_h - line_src_offset_y)
-                        .min(output_h.saturating_sub(line_dst_y));
+                        .min(request.layout.output_h.saturating_sub(line_dst_y));
                     let line_src_offset_x = src_offset_x.max(reveal_last_left);
                     let line_dst_x_offset = line_src_offset_x.saturating_sub(src_offset_x);
                     let line_dst_x = dst_x + line_dst_x_offset;
@@ -584,7 +578,7 @@ impl PreRenderedTextStore {
                 let tight_dst_y = dst_y + (tight_src_y - src_offset_y);
                 let tight_dst_h = content_bottom
                     .saturating_sub(tight_src_y)
-                    .min(output_h.saturating_sub(tight_dst_y));
+                    .min(request.layout.output_h.saturating_sub(tight_dst_y));
 
                 if dst_w == 0 || tight_dst_h == 0 {
                     continue;
@@ -627,12 +621,12 @@ fn sample_bilinear(rgba: &[u8], src_w: u32, src_h: u32, sx: f64, sy: f64) -> (f3
     let i11 = y1 as usize * stride + x1 as usize * 4;
 
     let mut out = [0.0f32; 4];
-    for c in 0..4 {
+    for (c, out_channel) in out.iter_mut().enumerate() {
         let c00 = rgba.get(i00 + c).copied().unwrap_or(0) as f32;
         let c10 = rgba.get(i10 + c).copied().unwrap_or(0) as f32;
         let c01 = rgba.get(i01 + c).copied().unwrap_or(0) as f32;
         let c11 = rgba.get(i11 + c).copied().unwrap_or(0) as f32;
-        out[c] = c00 * (1.0 - fx) * (1.0 - fy)
+        *out_channel = c00 * (1.0 - fx) * (1.0 - fy)
             + c10 * fx * (1.0 - fy)
             + c01 * (1.0 - fx) * fy
             + c11 * fx * fy;

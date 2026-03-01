@@ -106,7 +106,7 @@ impl Default for CaptionSettings {
 }
 
 /// Complete caption data for a video.
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS, Default)]
 #[serde(rename_all = "camelCase")]
 #[ts(export, export_to = "../../../../src/types/generated/")]
 pub struct CaptionData {
@@ -114,15 +114,6 @@ pub struct CaptionData {
     pub segments: Vec<CaptionSegment>,
     /// Caption display settings.
     pub settings: CaptionSettings,
-}
-
-impl Default for CaptionData {
-    fn default() -> Self {
-        Self {
-            segments: Vec::new(),
-            settings: CaptionSettings::default(),
-        }
-    }
 }
 
 /// Whisper model information.

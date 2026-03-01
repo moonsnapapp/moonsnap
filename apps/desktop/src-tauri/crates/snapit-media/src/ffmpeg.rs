@@ -2,12 +2,12 @@
 
 use image::DynamicImage;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 /// Create a Command configured to hide the console window on Windows.
 /// This prevents FFmpeg from popping up a black console window during execution.
-pub fn create_hidden_command(program: &PathBuf) -> Command {
+pub fn create_hidden_command(program: &Path) -> Command {
     let mut cmd = Command::new(program);
 
     #[cfg(windows)]
@@ -94,7 +94,7 @@ pub fn find_ffprobe() -> Option<PathBuf> {
 }
 
 /// Test if an ffmpeg binary works by running -version
-fn test_ffmpeg_binary(path: &PathBuf) -> bool {
+fn test_ffmpeg_binary(path: &Path) -> bool {
     let mut cmd = std::process::Command::new(path);
     cmd.arg("-version")
         .stdout(std::process::Stdio::null())
@@ -111,7 +111,7 @@ fn test_ffmpeg_binary(path: &PathBuf) -> bool {
 }
 
 /// Test if an ffprobe binary works by running -version
-fn test_ffprobe_binary(path: &PathBuf) -> bool {
+fn test_ffprobe_binary(path: &Path) -> bool {
     let mut cmd = std::process::Command::new(path);
     cmd.arg("-version")
         .stdout(std::process::Stdio::null())
@@ -156,7 +156,7 @@ fn find_in_system_path(name: &str) -> Option<PathBuf> {
 /// Get video dimensions using bundled ffprobe.
 /// Returns (width, height) if successful.
 #[allow(dead_code)]
-pub fn get_video_dimensions(video_path: &PathBuf) -> Option<(u32, u32)> {
+pub fn get_video_dimensions(video_path: &Path) -> Option<(u32, u32)> {
     let ffprobe_path = find_ffprobe()?;
 
     let output = create_hidden_command(&ffprobe_path)
@@ -169,8 +169,8 @@ pub fn get_video_dimensions(video_path: &PathBuf) -> Option<(u32, u32)> {
             "stream=width,height",
             "-of",
             "csv=p=0:s=x",
-            &video_path.to_string_lossy().to_string(),
         ])
+        .arg(video_path)
         .output()
         .ok()?;
 
@@ -192,26 +192,22 @@ pub fn get_video_dimensions(video_path: &PathBuf) -> Option<(u32, u32)> {
 
 /// Generate thumbnail from video file using bundled ffmpeg.
 /// Returns the thumbnail path if successful.
-pub fn generate_video_thumbnail(
-    video_path: &PathBuf,
-    thumbnail_path: &PathBuf,
-) -> Result<(), String> {
+pub fn generate_video_thumbnail(video_path: &Path, thumbnail_path: &Path) -> Result<(), String> {
     let ffmpeg_path = find_ffmpeg().ok_or_else(|| "ffmpeg not found".to_string())?;
+    let scale_filter = format!("scale={}:-1", THUMBNAIL_SIZE);
 
     // Use ffmpeg to extract a frame at 1 second (or 0 if video is shorter)
     let result = create_hidden_command(&ffmpeg_path)
-        .args([
-            "-y",
-            "-ss",
-            "1",
-            "-i",
-            &video_path.to_string_lossy().to_string(),
-            "-vframes",
-            "1",
-            "-vf",
-            &format!("scale={}:-1", THUMBNAIL_SIZE),
-            &thumbnail_path.to_string_lossy().to_string(),
-        ])
+        .arg("-y")
+        .arg("-ss")
+        .arg("1")
+        .arg("-i")
+        .arg(video_path)
+        .arg("-vframes")
+        .arg("1")
+        .arg("-vf")
+        .arg(scale_filter.as_str())
+        .arg(thumbnail_path)
         .output()
         .map_err(|e| format!("Failed to run ffmpeg: {}", e))?;
 
@@ -221,18 +217,16 @@ pub fn generate_video_thumbnail(
 
     // Try at 0 seconds if 1 second failed (video might be < 1 second)
     let retry_result = create_hidden_command(&ffmpeg_path)
-        .args([
-            "-y",
-            "-ss",
-            "0",
-            "-i",
-            &video_path.to_string_lossy().to_string(),
-            "-vframes",
-            "1",
-            "-vf",
-            &format!("scale={}:-1", THUMBNAIL_SIZE),
-            &thumbnail_path.to_string_lossy().to_string(),
-        ])
+        .arg("-y")
+        .arg("-ss")
+        .arg("0")
+        .arg("-i")
+        .arg(video_path)
+        .arg("-vframes")
+        .arg("1")
+        .arg("-vf")
+        .arg(scale_filter.as_str())
+        .arg(thumbnail_path)
         .output()
         .map_err(|e| format!("Failed to run ffmpeg: {}", e))?;
 
@@ -278,8 +272,8 @@ pub fn generate_thumbnail(image: &DynamicImage) -> Result<DynamicImage, String> 
 
 /// Get video metadata using ffprobe for migration.
 pub fn get_video_metadata_for_migration(
-    ffprobe_path: &PathBuf,
-    video_path: &PathBuf,
+    ffprobe_path: &Path,
+    video_path: &Path,
 ) -> Result<(u32, u32, u64, u32), String> {
     let output = create_hidden_command(ffprobe_path)
         .args([

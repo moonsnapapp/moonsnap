@@ -63,6 +63,17 @@ pub struct CursorCompositeState {
     pub scale: f32,
 }
 
+/// Input bundle for cursor compositing functions.
+pub struct CursorCompositeInput<'a> {
+    pub frame_data: &'a mut [u8],
+    pub frame_width: u32,
+    pub frame_height: u32,
+    pub video_bounds: &'a VideoContentBounds,
+    pub cursor: &'a CursorCompositeState,
+    pub cursor_image: &'a DecodedCursorImage,
+    pub base_scale: f32,
+}
+
 // Motion blur configuration (aligned with existing SnapIt behavior).
 const MOTION_BLUR_SAMPLES: usize = 32;
 const MOTION_BLUR_BASE_TRAIL_SAMPLES: f32 = 19.0;
@@ -208,16 +219,17 @@ pub fn composite_cursor(
 }
 
 /// Composite cursor with motion blur effect onto frame (CPU-based).
-pub fn composite_cursor_with_motion_blur(
-    frame_data: &mut [u8],
-    frame_width: u32,
-    frame_height: u32,
-    video_bounds: &VideoContentBounds,
-    cursor: &CursorCompositeState,
-    cursor_image: &DecodedCursorImage,
-    base_scale: f32,
-    motion_blur_amount: f32,
-) {
+pub fn composite_cursor_with_motion_blur(input: CursorCompositeInput<'_>, motion_blur_amount: f32) {
+    let CursorCompositeInput {
+        frame_data,
+        frame_width,
+        frame_height,
+        video_bounds,
+        cursor,
+        cursor_image,
+        base_scale,
+    } = input;
+
     let motion_blur_amount = motion_blur_amount.clamp(0.0, MOTION_BLUR_MAX_USER_AMOUNT);
     if motion_blur_amount <= 0.0 {
         composite_cursor(
@@ -400,13 +412,15 @@ mod tests {
 
         composite_cursor(&mut frame_no_blur, 64, 64, &bounds, &cursor, &image, 1.0);
         composite_cursor_with_motion_blur(
-            &mut frame_blur_call,
-            64,
-            64,
-            &bounds,
-            &cursor,
-            &image,
-            1.0,
+            CursorCompositeInput {
+                frame_data: &mut frame_blur_call,
+                frame_width: 64,
+                frame_height: 64,
+                video_bounds: &bounds,
+                cursor: &cursor,
+                cursor_image: &image,
+                base_scale: 1.0,
+            },
             1.0,
         );
 

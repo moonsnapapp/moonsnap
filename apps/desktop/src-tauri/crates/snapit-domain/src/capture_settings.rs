@@ -19,19 +19,14 @@ use crate::recording::GifQualityPreset;
 // ============================================================================
 
 /// Image format options for screenshots.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS, Default)]
 #[serde(rename_all = "lowercase")]
 #[ts(export, export_to = "../../../../src/types/generated/")]
 pub enum ScreenshotFormat {
+    #[default]
     Png,
     Jpg,
     Webp,
-}
-
-impl Default for ScreenshotFormat {
-    fn default() -> Self {
-        Self::Png
-    }
 }
 
 /// Settings for screenshot captures.
@@ -63,22 +58,17 @@ impl Default for ScreenshotSettings {
 // ============================================================================
 
 /// Output format for video recordings.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS, Default)]
 #[serde(rename_all = "lowercase")]
 #[ts(export, export_to = "../../../../src/types/generated/")]
 pub enum VideoFormat {
     /// H.264/AAC in MP4 container - most compatible
+    #[default]
     Mp4,
     /// VP9/Opus in WebM container - good for web
     Webm,
     /// H.264 in Matroska container - flexible
     Mkv,
-}
-
-impl Default for VideoFormat {
-    fn default() -> Self {
-        Self::Mp4
-    }
 }
 
 /// Settings for video (MP4) recordings.
@@ -181,7 +171,7 @@ impl Default for GifSettings {
 // ============================================================================
 
 /// All capture settings grouped by mode.
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS, Default)]
 #[serde(rename_all = "camelCase")]
 #[ts(export, export_to = "../../../../src/types/generated/")]
 pub struct CaptureSettings {
@@ -191,16 +181,6 @@ pub struct CaptureSettings {
     pub video: VideoSettings,
     /// GIF recording settings.
     pub gif: GifSettings,
-}
-
-impl Default for CaptureSettings {
-    fn default() -> Self {
-        Self {
-            screenshot: ScreenshotSettings::default(),
-            video: VideoSettings::default(),
-            gif: GifSettings::default(),
-        }
-    }
 }
 
 // ============================================================================

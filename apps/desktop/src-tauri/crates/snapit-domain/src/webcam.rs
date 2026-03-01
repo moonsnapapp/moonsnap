@@ -4,13 +4,14 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 /// Position of the webcam overlay on the recording.
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS, Default)]
 #[serde(tag = "type", rename_all = "camelCase")]
 #[ts(export, export_to = "../../../../src/types/generated/")]
 pub enum WebcamPosition {
     TopLeft,
     TopRight,
     BottomLeft,
+    #[default]
     BottomRight,
     /// Custom position (x, y from top-left of recording).
     Custom {
@@ -19,27 +20,16 @@ pub enum WebcamPosition {
     },
 }
 
-impl Default for WebcamPosition {
-    fn default() -> Self {
-        Self::BottomRight
-    }
-}
-
 /// Size of the webcam overlay.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, TS, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, TS, PartialEq, Eq, Default)]
 #[serde(rename_all = "camelCase")]
 #[ts(export, export_to = "../../../../src/types/generated/")]
 pub enum WebcamSize {
     /// ~15% of recording width.
+    #[default]
     Small,
     /// ~20% of recording width.
     Large,
-}
-
-impl Default for WebcamSize {
-    fn default() -> Self {
-        Self::Small
-    }
 }
 
 impl WebcamSize {
@@ -53,24 +43,19 @@ impl WebcamSize {
 }
 
 /// Shape of the webcam overlay.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, TS, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, TS, PartialEq, Eq, Default)]
 #[serde(rename_all = "camelCase")]
 #[ts(export, export_to = "../../../../src/types/generated/")]
 pub enum WebcamShape {
     /// Circular overlay (common for PiP).
+    #[default]
     Circle,
     /// Rectangular overlay with rounded corners.
     Rectangle,
 }
 
-impl Default for WebcamShape {
-    fn default() -> Self {
-        Self::Circle
-    }
-}
-
 /// Settings for webcam overlay during recording.
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS, Default)]
 #[serde(rename_all = "camelCase")]
 #[ts(export, export_to = "../../../../src/types/generated/")]
 pub struct WebcamSettings {
@@ -86,19 +71,6 @@ pub struct WebcamSettings {
     pub shape: WebcamShape,
     /// Whether to mirror the webcam horizontally (selfie mode).
     pub mirror: bool,
-}
-
-impl Default for WebcamSettings {
-    fn default() -> Self {
-        Self {
-            enabled: false,
-            device_index: 0,
-            position: WebcamPosition::default(),
-            size: WebcamSize::default(),
-            shape: WebcamShape::default(),
-            mirror: false,
-        }
-    }
 }
 
 /// Compute the position and size of the webcam overlay on a frame.

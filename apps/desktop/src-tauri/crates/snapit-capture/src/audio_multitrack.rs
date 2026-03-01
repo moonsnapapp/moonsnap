@@ -37,7 +37,7 @@
 use std::collections::VecDeque;
 use std::fs::File;
 use std::io::BufWriter;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread::{self, JoinHandle};
@@ -59,6 +59,9 @@ const WRITE_QUEUE_SIZE: usize = 100;
 /// Event timeout for WASAPI buffer events (ms).
 /// Lower = more responsive capture, but more CPU. 10-20ms is optimal.
 const EVENT_TIMEOUT_MS: u32 = 15;
+
+type SampleBatchSender = Sender<Vec<f32>>;
+type WriterHandle = JoinHandle<Result<u64, String>>;
 
 /// Multi-track audio recorder that captures system audio and microphone to separate files.
 pub struct MultiTrackAudioRecorder {
@@ -243,6 +246,12 @@ impl MultiTrackAudioRecorder {
     }
 }
 
+impl Default for MultiTrackAudioRecorder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Drop for MultiTrackAudioRecorder {
     fn drop(&mut self) {
         // Ensure threads are stopped
@@ -256,7 +265,7 @@ fn spawn_wav_writer(
     output_path: PathBuf,
     should_stop: Arc<AtomicBool>,
     name: &str,
-) -> Result<(Sender<Vec<f32>>, JoinHandle<Result<u64, String>>), String> {
+) -> Result<(SampleBatchSender, WriterHandle), String> {
     let (tx, rx) = bounded::<Vec<f32>>(WRITE_QUEUE_SIZE);
     let name = name.to_string();
 
@@ -323,7 +332,7 @@ fn spawn_wav_writer(
 /// Record system audio (loopback) to a WAV file.
 /// Uses async write queue to prevent disk I/O from blocking real-time capture.
 fn record_system_audio(
-    output_path: &PathBuf,
+    output_path: &Path,
     should_stop: Arc<AtomicBool>,
     is_paused: Arc<AtomicBool>,
     start_time: Instant,
@@ -331,7 +340,7 @@ fn record_system_audio(
 ) -> Result<(), String> {
     // Spawn async writer thread first
     let (sample_tx, writer_handle) = spawn_wav_writer(
-        output_path.clone(),
+        output_path.to_path_buf(),
         Arc::clone(&should_stop),
         "system-audio",
     )?;
@@ -352,13 +361,11 @@ fn record_system_audio(
             .map_err(|e| format!("Failed to get device collection: {:?}", e))?;
 
         let mut found = None;
-        for device_result in collection.into_iter() {
-            if let Ok(dev) = device_result {
-                if let Ok(dev_id) = dev.get_id() {
-                    if dev_id == *id {
-                        found = Some(dev);
-                        break;
-                    }
+        for dev in collection.into_iter().flatten() {
+            if let Ok(dev_id) = dev.get_id() {
+                if dev_id == *id {
+                    found = Some(dev);
+                    break;
                 }
             }
         }
@@ -506,20 +513,18 @@ fn record_system_audio(
             }
 
             // After long pauses, discard one more buffer for transition artifacts
-            if pause_duration.as_secs() >= 3 {
-                if event_handle.wait_for_event(50).is_ok() {
-                    if capture_client
-                        .read_from_device_to_deque(&mut sample_queue)
-                        .is_ok()
-                        && !sample_queue.is_empty()
-                    {
-                        log::debug!(
-                            "[MULTITRACK] System audio discarded {} bytes of transition audio",
-                            sample_queue.len()
-                        );
-                        sample_queue.clear();
-                    }
-                }
+            if pause_duration.as_secs() >= 3
+                && event_handle.wait_for_event(50).is_ok()
+                && capture_client
+                    .read_from_device_to_deque(&mut sample_queue)
+                    .is_ok()
+                && !sample_queue.is_empty()
+            {
+                log::debug!(
+                    "[MULTITRACK] System audio discarded {} bytes of transition audio",
+                    sample_queue.len()
+                );
+                sample_queue.clear();
             }
 
             if drained_samples > 0 {
@@ -596,14 +601,17 @@ fn record_system_audio(
 /// Record microphone audio to a WAV file.
 /// Uses async write queue to prevent disk I/O from blocking real-time capture.
 fn record_microphone(
-    output_path: &PathBuf,
+    output_path: &Path,
     should_stop: Arc<AtomicBool>,
     is_paused: Arc<AtomicBool>,
     start_time: Instant,
 ) -> Result<(), String> {
     // Spawn async writer thread first
-    let (sample_tx, writer_handle) =
-        spawn_wav_writer(output_path.clone(), Arc::clone(&should_stop), "microphone")?;
+    let (sample_tx, writer_handle) = spawn_wav_writer(
+        output_path.to_path_buf(),
+        Arc::clone(&should_stop),
+        "microphone",
+    )?;
 
     // Initialize COM for this thread
     initialize_mta()
@@ -748,20 +756,18 @@ fn record_microphone(
             }
 
             // After long pauses, discard one more buffer for transition artifacts
-            if pause_duration.as_secs() >= 3 {
-                if event_handle.wait_for_event(50).is_ok() {
-                    if capture_client
-                        .read_from_device_to_deque(&mut sample_queue)
-                        .is_ok()
-                        && !sample_queue.is_empty()
-                    {
-                        log::debug!(
-                            "[MULTITRACK] Microphone discarded {} bytes of transition audio",
-                            sample_queue.len()
-                        );
-                        sample_queue.clear();
-                    }
-                }
+            if pause_duration.as_secs() >= 3
+                && event_handle.wait_for_event(50).is_ok()
+                && capture_client
+                    .read_from_device_to_deque(&mut sample_queue)
+                    .is_ok()
+                && !sample_queue.is_empty()
+            {
+                log::debug!(
+                    "[MULTITRACK] Microphone discarded {} bytes of transition audio",
+                    sample_queue.len()
+                );
+                sample_queue.clear();
             }
 
             if drained_samples > 0 {

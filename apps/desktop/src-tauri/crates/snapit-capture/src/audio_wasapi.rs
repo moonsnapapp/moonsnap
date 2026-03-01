@@ -142,12 +142,10 @@ impl WasapiLoopback {
             .get_device_collection(&Direction::Render)
             .map_err(|e| format!("Failed to get device collection: {:?}", e))?;
 
-        for device_result in collection.into_iter() {
-            if let Ok(device) = device_result {
-                if let Ok(id) = device.get_id() {
-                    if id == target_id {
-                        return Ok(device);
-                    }
+        for device in collection.into_iter().flatten() {
+            if let Ok(id) = device.get_id() {
+                if id == target_id {
+                    return Ok(device);
                 }
             }
         }
@@ -312,20 +310,18 @@ impl WasapiLoopback {
                 // as it may contain transition artifacts
                 if pause_duration.as_secs() >= 3 {
                     // Wait for and discard one more buffer to skip transition artifacts
-                    if self.event_handle.wait_for_event(50).is_ok() {
-                        if self
+                    if self.event_handle.wait_for_event(50).is_ok()
+                        && self
                             .capture_client
                             .read_from_device_to_deque(&mut sample_queue)
                             .is_ok()
-                        {
-                            if !sample_queue.is_empty() {
-                                log::debug!(
-                                    "Discarded {} bytes of transition audio after long pause",
-                                    sample_queue.len()
-                                );
-                                sample_queue.clear();
-                            }
-                        }
+                        && !sample_queue.is_empty()
+                    {
+                        log::debug!(
+                            "Discarded {} bytes of transition audio after long pause",
+                            sample_queue.len()
+                        );
+                        sample_queue.clear();
                     }
                 }
 
@@ -436,22 +432,20 @@ pub fn list_output_devices() -> Result<Vec<AudioOutputDevice>, String> {
         .map_err(|e| format!("Failed to get device collection: {:?}", e))?;
 
     let mut result = Vec::new();
-    for device_result in collection.into_iter() {
-        if let Ok(device) = device_result {
-            let device_id = device.get_id().ok();
-            let is_default = device_id.is_some() && device_id == default_id;
+    for device in collection.into_iter().flatten() {
+        let device_id = device.get_id().ok();
+        let is_default = device_id.is_some() && device_id == default_id;
 
-            let name = device
-                .get_friendlyname()
-                .unwrap_or_else(|_| "Unknown Device".to_string());
+        let name = device
+            .get_friendlyname()
+            .unwrap_or_else(|_| "Unknown Device".to_string());
 
-            if let Some(id) = device_id {
-                result.push(AudioOutputDevice {
-                    id,
-                    name,
-                    is_default,
-                });
-            }
+        if let Some(id) = device_id {
+            result.push(AudioOutputDevice {
+                id,
+                name,
+                is_default,
+            });
         }
     }
 

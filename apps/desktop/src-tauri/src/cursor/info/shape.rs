@@ -5,6 +5,7 @@
 
 use serde::{Deserialize, Serialize};
 use std::fmt;
+use std::str::FromStr;
 use ts_rs::TS;
 
 /// Information about a resolved cursor shape.
@@ -171,6 +172,17 @@ pub enum CursorShapeWindows {
     ArrowCD,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CursorShapeParseError;
+
+impl fmt::Display for CursorShapeParseError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "unknown Windows cursor")
+    }
+}
+
+impl std::error::Error for CursorShapeParseError {}
+
 impl CursorShapeWindows {
     /// Resolve cursor shape to SVG asset and hotspot.
     pub fn resolve(&self) -> Option<ResolvedCursor> {
@@ -247,9 +259,12 @@ impl CursorShapeWindows {
             _ => return None,
         })
     }
+}
 
-    /// Parse from string representation.
-    pub fn from_str(s: &str) -> Result<Self, ()> {
+impl FromStr for CursorShapeWindows {
+    type Err = CursorShapeParseError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
             "Arrow" => Ok(Self::Arrow),
             "IBeam" => Ok(Self::IBeam),
@@ -280,7 +295,7 @@ impl CursorShapeWindows {
             "ScrollSW" => Ok(Self::ScrollSW),
             "ScrollSE" => Ok(Self::ScrollSE),
             "ArrowCD" => Ok(Self::ArrowCD),
-            _ => Err(()),
+            _ => Err(CursorShapeParseError),
         }
     }
 }

@@ -349,7 +349,7 @@ Exported from `index.ts`:
 - `formatTimeSimple(ms)` - Format as `M:SS`
 - `generateZoomRegionId()` - Generate unique zoom region ID
 - `sanitizeProjectForSave(project)` - Ensure ms values are integers for Rust backend
-- `createVideoEditorStore()` - Factory for isolated store instances (placeholder)
+- `createVideoEditorStore()` - Factory for isolated store instances
 
 ## Constants
 

@@ -15,7 +15,7 @@ pub fn maybe_emit_recording_progress<F>(
 where
     F: FnMut(RecordingState),
 {
-    if cadence_frames == 0 || frame_count == 0 || frame_count % cadence_frames != 0 {
+    if cadence_frames == 0 || frame_count == 0 || !frame_count.is_multiple_of(cadence_frames) {
         return false;
     }
 
