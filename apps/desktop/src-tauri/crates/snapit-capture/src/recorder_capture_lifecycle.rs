@@ -259,6 +259,10 @@ mod tests {
         std::env::temp_dir().join(format!("snapit_capture_lifecycle_{}_{}", name, nanos))
     }
 
+    fn validate_ok(_path: &Path) -> Result<(), String> {
+        Ok(())
+    }
+
     #[test]
     fn cancelled_flow_removes_file_and_calls_cancelled_callback() {
         let output_path = temp_path("cancelled.mp4");
@@ -602,7 +606,7 @@ mod tests {
             },
             capture: || Ok(1.0),
             was_cancelled: || false,
-            validate_video_file: |_| Ok(()),
+            validate_video_file: validate_ok,
             on_cancelled: || {},
             on_completed: {
                 let completed = Arc::clone(&completed);
@@ -638,7 +642,7 @@ mod tests {
             before_capture: || {},
             capture: || -> Result<f64, String> { Err("thread error test".to_string()) },
             was_cancelled: || false,
-            validate_video_file: |_| Ok(()),
+            validate_video_file: validate_ok,
             on_cancelled: || {},
             on_completed: |_, _, _| {},
             on_error: {

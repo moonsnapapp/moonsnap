@@ -1,5 +1,5 @@
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 fn main() {
@@ -53,6 +53,7 @@ fn ensure_ffmpeg_binaries() -> Result<(), Box<dyn std::error::Error>> {
                 if ffprobe_src.exists() {
                     fs::copy(&ffprobe_src, &ffprobe_dest)?;
                 }
+                copy_adjacent_windows_dlls(&ffmpeg_src, &binaries_dir)?;
                 return Ok(());
             }
         }
@@ -69,6 +70,7 @@ fn ensure_ffmpeg_binaries() -> Result<(), Box<dyn std::error::Error>> {
         if let Some(system_ffprobe) = find_in_path(ffprobe_name) {
             fs::copy(&system_ffprobe, &ffprobe_dest)?;
         }
+        copy_adjacent_windows_dlls(&system_ffmpeg, &binaries_dir)?;
         return Ok(());
     }
 
@@ -126,4 +128,47 @@ fn find_in_path(name: &str) -> Option<PathBuf> {
             }
             None
         })
+}
+
+#[cfg(target_os = "windows")]
+fn copy_adjacent_windows_dlls(
+    ffmpeg_src: &Path,
+    binaries_dir: &Path,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let Some(source_dir) = ffmpeg_src.parent() else {
+        return Ok(());
+    };
+
+    let mut copied_count = 0_u64;
+    for entry in fs::read_dir(source_dir)? {
+        let entry = entry?;
+        let path = entry.path();
+        let is_dll = path
+            .extension()
+            .and_then(|ext| ext.to_str())
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("dll"));
+
+        if !is_dll {
+            continue;
+        }
+
+        if let Some(file_name) = path.file_name() {
+            fs::copy(&path, binaries_dir.join(file_name))?;
+            copied_count += 1;
+        }
+    }
+
+    println!(
+        "cargo:warning=Copied {} FFmpeg DLL(s) from {:?}",
+        copied_count, source_dir
+    );
+    Ok(())
+}
+
+#[cfg(not(target_os = "windows"))]
+fn copy_adjacent_windows_dlls(
+    _ffmpeg_src: &Path,
+    _binaries_dir: &Path,
+) -> Result<(), Box<dyn std::error::Error>> {
+    Ok(())
 }
