@@ -2,6 +2,15 @@
 
 All notable changes to SnapIt are documented in this file.
 
+## [0.5.7] - 2026-03-02
+
+### Changed
+- Webcam overlay rectangle shape renamed to squircle with proportional border radius.
+
+### Fixed
+- Bundle FFmpeg runtime DLLs on Windows to prevent missing dependency errors.
+- Restore editor state correctly after window remount.
+
 ## [0.5.6] - 2026-02-28
 
 ### Changed

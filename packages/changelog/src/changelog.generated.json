@@ -2,6 +2,25 @@
   "source": "CHANGELOG.md",
   "entries": [
     {
+      "version": "0.5.7",
+      "date": "2026-03-02",
+      "sections": [
+        {
+          "title": "Changed",
+          "items": [
+            "Webcam overlay rectangle shape renamed to squircle with proportional border radius."
+          ]
+        },
+        {
+          "title": "Fixed",
+          "items": [
+            "Bundle FFmpeg runtime DLLs on Windows to prevent missing dependency errors.",
+            "Restore editor state correctly after window remount."
+          ]
+        }
+      ]
+    },
+    {
       "version": "0.5.6",
       "date": "2026-02-28",
       "sections": [
