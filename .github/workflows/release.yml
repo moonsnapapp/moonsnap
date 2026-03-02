@@ -24,7 +24,7 @@ jobs:
       version: ${{ steps.get-version.outputs.version }}
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: actions/setup-node@v4
         with:
           node-version: lts/*
@@ -51,7 +51,7 @@ jobs:
 
       - name: Create release
         id: create-release
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         env:
           RELEASE_BODY: ${{ steps.release-notes.outputs.body }}
         with:
@@ -71,7 +71,7 @@ jobs:
         run: node scripts/build-changelog-json.cjs
 
       - name: Upload changelog asset
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         env:
           RELEASE_ID: ${{ steps.create-release.outputs.result }}
         with:
@@ -123,7 +123,7 @@ jobs:
     runs-on: ${{ matrix.platform }}
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Setup Node
         uses: actions/setup-node@v6
@@ -197,7 +197,7 @@ jobs:
     steps:
       - name: Publish release
         id: publish-release
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         env:
           release_id: ${{ needs.create-release.outputs.release_id }}
         with:
@@ -220,7 +220,7 @@ jobs:
 
     steps:
       - name: Download release assets
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         with:
           script: |
             const fs = require('fs');
@@ -263,7 +263,7 @@ jobs:
           fi
 
       - name: Create release on public repo
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         env:
           RELEASES_PAT: ${{ secrets.RELEASES_PAT }}
         with:
