@@ -26,7 +26,9 @@ if (parsed.entries.length === 0) {
 }
 
 fs.mkdirSync(path.dirname(outPath), { recursive: true });
-fs.writeFileSync(outPath, `${JSON.stringify(parsed, null, 2)}\n`, "utf8");
+const tmpPath = `${outPath}.tmp.${process.pid}`;
+fs.writeFileSync(tmpPath, `${JSON.stringify(parsed, null, 2)}\n`, "utf8");
+fs.renameSync(tmpPath, outPath);
 
 console.log(
   `Generated ${path.relative(ROOT, outPath)} (${parsed.entries.length} entries)`,

@@ -38,6 +38,13 @@ export function VideoEditorProvider({ children }: VideoEditorProviderProps) {
   setActiveVideoEditorStore(storeRef.current);
 
   useEffect(() => {
+    // Re-activate this store on (re-)mount.  This is critical in React StrictMode
+    // where effects are mounted, cleaned up, then mounted again.  Without this,
+    // the cleanup below resets the active store to the global singleton, and the
+    // second mount never restores it — causing imperative getState() calls (e.g.
+    // controls.seek → requestSeek) to hit an empty store with no project.
+    setActiveVideoEditorStore(storeRef.current!);
+
     return () => {
       // Cleanup GPU editor when provider unmounts
       const store = storeRef.current;

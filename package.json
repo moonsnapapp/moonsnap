@@ -13,7 +13,7 @@
     "dev": "bun run changelog:build && turbo dev",
     "dev:desktop": "bun run changelog:build && turbo dev --filter=@snapit/desktop",
     "dev:web": "bun run changelog:build && cd apps/web && bun run dev",
-    "dev:all": "concurrently -k -n desktop,web -c blue,magenta \"bun run tauri:dev\" \"bun run dev:web\"",
+    "dev:all": "bun run changelog:build && concurrently -k -n desktop,web -c blue,magenta \"bun run tauri:dev\" \"bun run dev:web\"",
     "build": "bun run changelog:build && turbo build",
     "lint": "bun run changelog:build && turbo lint",
     "test": "bun run changelog:build && turbo test",
