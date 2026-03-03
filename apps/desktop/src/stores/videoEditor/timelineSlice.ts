@@ -6,10 +6,10 @@ export const DEFAULT_TIMELINE_ZOOM = 0.05; // 50px per second
 export const MIN_ZOOM_PERCENT = 0.1; // 10%
 export const MAX_ZOOM_PERCENT = 2.0; // 200%
 
-const TRACK_LABEL_WIDTH = 80;
+export const TRACK_LABEL_WIDTH = 80;
 
 /** Compute the zoom level where the full timeline exactly fills the viewport. */
-function getFitZoom(project: VideoProject | null, containerWidth: number): number | null {
+export function getFitZoom(project: VideoProject | null, containerWidth: number): number | null {
   if (!project || containerWidth <= 0) return null;
   const durationMs = project.timeline.durationMs;
   if (durationMs <= 0) return null;
@@ -96,8 +96,9 @@ export const createTimelineSlice: SliceCreator<TimelineSlice> = (set, get) => ({
   setTimelineZoom: (zoom) => {
     const { project, timelineContainerWidth } = get();
     const fitZoom = getFitZoom(project, timelineContainerWidth);
-    const min = fitZoom ? fitZoom * MIN_ZOOM_PERCENT : zoom;
-    const max = fitZoom ? fitZoom * MAX_ZOOM_PERCENT : zoom;
+    const base = fitZoom ?? DEFAULT_TIMELINE_ZOOM;
+    const min = base * MIN_ZOOM_PERCENT;
+    const max = base * MAX_ZOOM_PERCENT;
     set({ timelineZoom: Math.max(min, Math.min(max, zoom)) });
   },
 

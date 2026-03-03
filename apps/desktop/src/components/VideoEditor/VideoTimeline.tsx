@@ -24,7 +24,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
-import { useVideoEditorStore, formatTimeSimple, getEffectiveDuration } from '../../stores/videoEditorStore';
+import { useVideoEditorStore, formatTimeSimple, getEffectiveDuration, TRACK_LABEL_WIDTH, getFitZoom } from '../../stores/videoEditorStore';
 import {
   selectExportInPointMs,
   selectExportOutPointMs,
@@ -419,14 +419,12 @@ export function VideoTimeline({ onExport, onResetTrimSegments, onSetInPoint, onS
   const sourceDurationMs = project?.timeline.durationMs ?? 60000;
   const segments = project?.timeline.segments;
   const effectiveDurationMs = getEffectiveDuration(segments ?? [], sourceDurationMs);
-  const trackLabelWidth = 80;
   const durationWidth = effectiveDurationMs * timelineZoom;
-  const timelineWidth = Math.max(durationWidth, containerWidth - trackLabelWidth);
+  const timelineWidth = Math.max(durationWidth, containerWidth - TRACK_LABEL_WIDTH);
 
   // Zoom % relative to fit-to-window (100% = timeline fills viewport)
-  const availableWidth = containerWidth - trackLabelWidth;
-  const fitZoom = availableWidth > 0 && sourceDurationMs > 0 ? availableWidth / sourceDurationMs : 1;
-  const zoomPercent = Math.round((timelineZoom / fitZoom) * 100);
+  const fitZoom = getFitZoom(project, containerWidth);
+  const zoomPercent = fitZoom ? Math.round((timelineZoom / fitZoom) * 100) : 100;
 
   const getTimelineClickTimeMs = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
     const rect = e.currentTarget.getBoundingClientRect();
@@ -724,7 +722,10 @@ export function VideoTimeline({ onExport, onResetTrimSegments, onSetInPoint, onS
   }, [timelineZoom, setTimelineZoom]);
 
   // Mouse wheel: horizontal scroll (default), Ctrl+scroll to zoom, Shift+scroll for vertical
-  // Must use native listener with { passive: false } so preventDefault() works
+  // Uses a ref so the listener doesn't re-attach on every zoom change
+  const timelineZoomRef = useRef(timelineZoom);
+  useEffect(() => { timelineZoomRef.current = timelineZoom; }, [timelineZoom]);
+
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
@@ -733,11 +734,8 @@ export function VideoTimeline({ onExport, onResetTrimSegments, onSetInPoint, onS
       if (e.ctrlKey) {
         e.preventDefault();
         const zoomFactor = 1.15;
-        if (e.deltaY < 0) {
-          setTimelineZoom(timelineZoom * zoomFactor);
-        } else {
-          setTimelineZoom(timelineZoom / zoomFactor);
-        }
+        const current = timelineZoomRef.current;
+        setTimelineZoom(e.deltaY < 0 ? current * zoomFactor : current / zoomFactor);
         return;
       }
 
@@ -753,7 +751,7 @@ export function VideoTimeline({ onExport, onResetTrimSegments, onSetInPoint, onS
 
     el.addEventListener('wheel', onWheel, { passive: false });
     return () => el.removeEventListener('wheel', onWheel);
-  }, [timelineZoom, setTimelineZoom]);
+  }, [setTimelineZoom]);
 
   const handleToggleCutMode = useCallback(() => {
     setSplitMode(!splitMode);

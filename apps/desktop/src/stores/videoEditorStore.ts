@@ -10,6 +10,8 @@ export {
   formatTimeSimple,
   sanitizeProjectForSave,
   DEFAULT_TIMELINE_ZOOM,
+  TRACK_LABEL_WIDTH,
+  getFitZoom,
   // Trim slice exports
   generateTrimSegmentId,
   timelineToSource,
