@@ -188,17 +188,17 @@ describe('timelineSlice', () => {
       expect(useVideoEditorStore.getState().timelineZoom).toBe(0.01);
     });
 
-    it('should clamp zoom to maximum of 0.1', () => {
-      useVideoEditorStore.getState().setTimelineZoom(0.5);
-      expect(useVideoEditorStore.getState().timelineZoom).toBe(0.1);
+    it('should clamp zoom to maximum of 1', () => {
+      useVideoEditorStore.getState().setTimelineZoom(1.5);
+      expect(useVideoEditorStore.getState().timelineZoom).toBe(1);
     });
 
     it('should accept edge values', () => {
       useVideoEditorStore.getState().setTimelineZoom(0.01);
       expect(useVideoEditorStore.getState().timelineZoom).toBe(0.01);
 
-      useVideoEditorStore.getState().setTimelineZoom(0.1);
-      expect(useVideoEditorStore.getState().timelineZoom).toBe(0.1);
+      useVideoEditorStore.getState().setTimelineZoom(1);
+      expect(useVideoEditorStore.getState().timelineZoom).toBe(1);
     });
   });
 
@@ -253,9 +253,9 @@ describe('timelineSlice', () => {
       useVideoEditorStore.getState().fitTimelineToWindow();
 
       const { timelineZoom, timelineScrollLeft } = useVideoEditorStore.getState();
-      // Should calculate a zoom that fits 60 seconds in ~920px (1000 - 80 track label)
+      // Should calculate a zoom that fits 60 seconds in 920px (1000 - 80 track label)
       expect(timelineZoom).toBeGreaterThan(0.01);
-      expect(timelineZoom).toBeLessThanOrEqual(0.1);
+      expect(timelineZoom).toBeLessThanOrEqual(1);
       // Should reset scroll to start
       expect(timelineScrollLeft).toBe(0);
     });

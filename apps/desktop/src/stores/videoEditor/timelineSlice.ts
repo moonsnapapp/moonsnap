@@ -80,7 +80,7 @@ export const createTimelineSlice: SliceCreator<TimelineSlice> = (set, get) => ({
   },
 
   // Timeline view actions
-  setTimelineZoom: (zoom) => set({ timelineZoom: Math.max(0.01, Math.min(0.1, zoom)) }),
+  setTimelineZoom: (zoom) => set({ timelineZoom: Math.max(0.01, Math.min(1, zoom)) }),
 
   setTimelineScrollLeft: (scrollLeft) => set({ timelineScrollLeft: scrollLeft }),
 
@@ -93,14 +93,11 @@ export const createTimelineSlice: SliceCreator<TimelineSlice> = (set, get) => ({
     const durationMs = project.timeline.durationMs;
     if (durationMs <= 0) return;
 
-    // Calculate zoom to fit timeline with 10% buffer (5% each side)
     const trackLabelWidth = 80;
     const availableWidth = timelineContainerWidth - trackLabelWidth;
-    const targetWidth = availableWidth * 0.9; // 90% of available space
-    const fitZoom = targetWidth / durationMs;
+    const fitZoom = availableWidth / durationMs;
 
-    // Clamp to valid zoom range
-    const clampedZoom = Math.max(0.01, Math.min(0.1, fitZoom));
+    const clampedZoom = Math.max(0.01, Math.min(1, fitZoom));
 
     set({
       timelineZoom: clampedZoom,
