@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "SnapIt",
+  "productName": "MoonSnap",
   "version": "0.5.7",
-  "identifier": "com.snapit.app",
+  "identifier": "com.moonsnap.app",
   "build": {
     "beforeDevCommand": "bun run dev",
     "devUrl": "http://localhost:1420",
@@ -28,7 +28,7 @@
     "windows": [
       {
         "label": "library",
-        "title": "SnapIt Library",
+        "title": "MoonSnap Library",
         "width": 1200,
         "height": 800,
         "minWidth": 800,
@@ -75,7 +75,7 @@
     "updater": {
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDE0Njg5MzQ1NTRDQTVDNTAKUldSUVhNcFVSWk5vRkhyR1Qya0lRVTNoYnJ4dnoyeEJPU09LcE4wZ1lXcDdLekZpZTFQSU5qeHUK",
       "endpoints": [
-        "https://github.com/walterlow/snapit-releases/releases/latest/download/latest.json"
+        "https://github.com/walterlow/moonsnap-releases/releases/latest/download/latest.json"
       ]
     },
     "crabcamera": {}

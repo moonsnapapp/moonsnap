@@ -143,7 +143,7 @@ pub(super) fn frame_to_rgba_downsampled(
     dst_height: u32,
     rgba: &mut Vec<u8>,
 ) -> Result<(), String> {
-    use snapit_camera_windows::PixelFormat;
+    use moonsnap_camera_windows::PixelFormat;
 
     let bytes = frame.bytes();
 
@@ -257,7 +257,7 @@ pub(super) fn frame_to_rgba_into(
     frame: &NativeCameraFrame,
     rgba: &mut Vec<u8>,
 ) -> Result<(), String> {
-    use snapit_camera_windows::PixelFormat;
+    use moonsnap_camera_windows::PixelFormat;
 
     let bytes = frame.bytes();
     let width = frame.width as usize;
@@ -325,7 +325,7 @@ pub(super) fn frame_to_rgba_scaled_into(
     max_size: u32,
     rgba: &mut Vec<u8>,
 ) -> Result<(u32, u32), String> {
-    use snapit_camera_windows::PixelFormat;
+    use moonsnap_camera_windows::PixelFormat;
 
     let bytes = frame.bytes();
     let src_width = frame.width as usize;
@@ -523,7 +523,7 @@ pub(super) fn frame_to_rgba_scaled(
     frame: &NativeCameraFrame,
     max_size: u32,
 ) -> Result<(Vec<u8>, u32, u32), String> {
-    use snapit_camera_windows::PixelFormat;
+    use moonsnap_camera_windows::PixelFormat;
 
     let bytes = frame.bytes();
     let src_width = frame.width as usize;

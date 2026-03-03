@@ -1,7 +1,7 @@
 //! Caption transcription and management commands.
 
 pub mod audio;
-use snapit_domain::captions::*;
+use moonsnap_domain::captions::*;
 
 use futures_util::StreamExt;
 use std::path::PathBuf;
@@ -345,7 +345,7 @@ fn process_with_whisper(
 
 /// Find the audio file for transcription.
 ///
-/// SnapIt stores audio separately from video:
+/// MoonSnap stores audio separately from video:
 /// - system.wav: System audio (loopback)
 /// - microphone.wav: Microphone audio
 ///
@@ -425,7 +425,7 @@ pub async fn transcribe_video(
     let temp_dir = tempfile::tempdir().map_err(|e| format!("Failed to create temp dir: {}", e))?;
     let temp_audio = temp_dir.path().join("audio.wav");
 
-    // First, look for separate audio files (SnapIt stores audio separately)
+    // First, look for separate audio files (MoonSnap stores audio separately)
     if let Some(project_audio) = find_project_audio(&video_path_pb) {
         // Emit progress: using project audio
         let _ = app.emit(

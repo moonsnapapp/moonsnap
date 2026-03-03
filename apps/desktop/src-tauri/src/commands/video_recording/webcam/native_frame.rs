@@ -3,7 +3,7 @@
 //! This provides direct access to the camera frame data without intermediate copies,
 //! enabling efficient GPU upload for hardware encoding.
 
-use snapit_camera_windows::{Frame, PixelFormat};
+use moonsnap_camera_windows::{Frame, PixelFormat};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 

@@ -34,8 +34,8 @@ export default defineConfig(async () => ({
   resolve: {
     alias: {
       "@": resolve(__dirname, "./src"),
-      "@snapit/changelog": resolve(__dirname, "../../packages/changelog/src"),
-      "@snapit/ui": resolve(__dirname, "../../packages/ui/src"),
+      "@moonsnap/changelog": resolve(__dirname, "../../packages/changelog/src"),
+      "@moonsnap/ui": resolve(__dirname, "../../packages/ui/src"),
     },
   },
 

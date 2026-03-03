@@ -140,7 +140,7 @@ describe('myStore', () => {
 Stores use consistent keys for browser persistence:
 ```typescript
 // From constants
-STORAGE.SESSION_VIEW_KEY = 'snapit_current_view';
-STORAGE.SESSION_PROJECT_ID_KEY = 'snapit_current_project_id';
-STORAGE.SESSION_VIDEO_PROJECT_PATH_KEY = 'snapit_video_project_path';
+STORAGE.SESSION_VIEW_KEY = 'moonsnap_current_view';
+STORAGE.SESSION_PROJECT_ID_KEY = 'moonsnap_current_project_id';
+STORAGE.SESSION_VIDEO_PROJECT_PATH_KEY = 'moonsnap_video_project_path';
 ```

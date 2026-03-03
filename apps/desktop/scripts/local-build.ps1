@@ -10,7 +10,7 @@ param(
 $ErrorActionPreference = "Stop"
 $ProjectRoot = Split-Path -Parent $PSScriptRoot
 
-Write-Host "=== SnapIt Local Build ===" -ForegroundColor Cyan
+Write-Host "=== MoonSnap Local Build ===" -ForegroundColor Cyan
 
 # Step 1: Ensure FFmpeg DLLs are available
 $binariesDir = Join-Path $ProjectRoot "src-tauri\binaries"
@@ -124,10 +124,10 @@ try {
 Write-Host "`n[4/4] Build complete!" -ForegroundColor Green
 
 if ($Debug) {
-    $exePath = Join-Path $ProjectRoot "src-tauri\target\debug\snapit.exe"
+    $exePath = Join-Path $ProjectRoot "src-tauri\target\debug\moonsnap.exe"
     $bundlePath = $null
 } else {
-    $exePath = Join-Path $ProjectRoot "src-tauri\target\release\snapit.exe"
+    $exePath = Join-Path $ProjectRoot "src-tauri\target\release\moonsnap.exe"
     $bundlePath = Join-Path $ProjectRoot "src-tauri\target\release\bundle\nsis"
 }
 

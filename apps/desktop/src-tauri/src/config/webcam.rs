@@ -4,9 +4,9 @@
 //! Re-exports types from the webcam module for convenience.
 
 use lazy_static::lazy_static;
+use moonsnap_core::error::MoonSnapResult;
+use moonsnap_domain::webcam::{WebcamPosition, WebcamSettings, WebcamShape, WebcamSize};
 use parking_lot::RwLock;
-use snapit_core::error::SnapItResult;
-use snapit_domain::webcam::{WebcamPosition, WebcamSettings, WebcamShape, WebcamSize};
 
 /// Type alias for webcam config (same as WebcamSettings).
 pub type WebcamConfig = WebcamSettings;
@@ -24,13 +24,13 @@ lazy_static! {
 
 /// Get the current webcam settings.
 /// Returns Result for backward compatibility with existing code.
-pub fn get_webcam_settings() -> SnapItResult<WebcamConfig> {
+pub fn get_webcam_settings() -> MoonSnapResult<WebcamConfig> {
     Ok(WEBCAM_CONFIG.read().clone())
 }
 
 /// Check if webcam capture is enabled.
 /// Returns Result for backward compatibility with existing code.
-pub fn is_webcam_enabled() -> SnapItResult<bool> {
+pub fn is_webcam_enabled() -> MoonSnapResult<bool> {
     Ok(WEBCAM_CONFIG.read().enabled)
 }
 
@@ -46,7 +46,7 @@ pub fn get_webcam_size_pixels(frame_width: u32) -> u32 {
 
 /// Get the current webcam settings.
 #[tauri::command]
-pub fn get_webcam_settings_cmd() -> SnapItResult<WebcamConfig> {
+pub fn get_webcam_settings_cmd() -> MoonSnapResult<WebcamConfig> {
     let settings = WEBCAM_CONFIG.read().clone();
     log::debug!(
         "[CONFIG] get_webcam_settings_cmd returning enabled={}",
@@ -64,7 +64,7 @@ pub fn set_webcam_config(config: WebcamConfig) {
 
 /// Set webcam enabled state.
 #[tauri::command]
-pub fn set_webcam_enabled(enabled: bool) -> SnapItResult<()> {
+pub fn set_webcam_enabled(enabled: bool) -> MoonSnapResult<()> {
     log::debug!("[CONFIG] set_webcam_enabled({})", enabled);
     WEBCAM_CONFIG.write().enabled = enabled;
     Ok(())
@@ -72,7 +72,7 @@ pub fn set_webcam_enabled(enabled: bool) -> SnapItResult<()> {
 
 /// Set webcam device index.
 #[tauri::command]
-pub fn set_webcam_device(device_index: usize) -> SnapItResult<()> {
+pub fn set_webcam_device(device_index: usize) -> MoonSnapResult<()> {
     log::debug!("[CONFIG] set_webcam_device({})", device_index);
     WEBCAM_CONFIG.write().device_index = device_index;
     Ok(())
@@ -80,7 +80,7 @@ pub fn set_webcam_device(device_index: usize) -> SnapItResult<()> {
 
 /// Set webcam position.
 #[tauri::command]
-pub fn set_webcam_position(position: WebcamPosition) -> SnapItResult<()> {
+pub fn set_webcam_position(position: WebcamPosition) -> MoonSnapResult<()> {
     log::debug!("[CONFIG] set_webcam_position({:?})", position);
     WEBCAM_CONFIG.write().position = position;
     Ok(())
@@ -88,7 +88,7 @@ pub fn set_webcam_position(position: WebcamPosition) -> SnapItResult<()> {
 
 /// Set webcam size.
 #[tauri::command]
-pub fn set_webcam_size(size: WebcamSize) -> SnapItResult<()> {
+pub fn set_webcam_size(size: WebcamSize) -> MoonSnapResult<()> {
     log::debug!("[CONFIG] set_webcam_size({:?})", size);
     WEBCAM_CONFIG.write().size = size;
     Ok(())
@@ -96,7 +96,7 @@ pub fn set_webcam_size(size: WebcamSize) -> SnapItResult<()> {
 
 /// Set webcam shape.
 #[tauri::command]
-pub fn set_webcam_shape(shape: WebcamShape) -> SnapItResult<()> {
+pub fn set_webcam_shape(shape: WebcamShape) -> MoonSnapResult<()> {
     log::debug!("[CONFIG] set_webcam_shape({:?})", shape);
     WEBCAM_CONFIG.write().shape = shape;
     Ok(())
@@ -104,7 +104,7 @@ pub fn set_webcam_shape(shape: WebcamShape) -> SnapItResult<()> {
 
 /// Set webcam mirror mode.
 #[tauri::command]
-pub fn set_webcam_mirror(mirror: bool) -> SnapItResult<()> {
+pub fn set_webcam_mirror(mirror: bool) -> MoonSnapResult<()> {
     log::debug!("[CONFIG] set_webcam_mirror({})", mirror);
     WEBCAM_CONFIG.write().mirror = mirror;
     Ok(())

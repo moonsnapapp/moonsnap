@@ -47,10 +47,10 @@ Summary: PR1: 46 | PR2: 39 | PR3: 10 | PR4: 16 | UNASSIGNED: 0
 - ` D` apps/desktop/src-tauri/src/rendering/types.rs
 - ` D` apps/desktop/src-tauri/src/rendering/zoom.rs
 - `??` apps/desktop/src-tauri/crates/README.md
-- `??` apps/desktop/src-tauri/crates/snapit-core/
-- `??` apps/desktop/src-tauri/crates/snapit-domain/
-- `??` apps/desktop/src-tauri/crates/snapit-media/
-- `??` apps/desktop/src-tauri/crates/snapit-render/
+- `??` apps/desktop/src-tauri/crates/moonsnap-core/
+- `??` apps/desktop/src-tauri/crates/moonsnap-domain/
+- `??` apps/desktop/src-tauri/crates/moonsnap-media/
+- `??` apps/desktop/src-tauri/crates/moonsnap-render/
 
 ## PR2
 - ` D` apps/desktop/src-tauri/src/commands/video_recording/audio.rs
@@ -91,7 +91,7 @@ Summary: PR1: 46 | PR2: 39 | PR3: 10 | PR4: 16 | UNASSIGNED: 0
 - ` M` apps/desktop/src-tauri/src/config/recording.rs
 - ` M` apps/desktop/src-tauri/src/config/webcam.rs
 - ` M` apps/desktop/src-tauri/src/lib.rs
-- `??` apps/desktop/src-tauri/crates/snapit-capture/
+- `??` apps/desktop/src-tauri/crates/moonsnap-capture/
 
 ## PR3
 - ` M` apps/desktop/src-tauri/src/rendering/cursor.rs
@@ -103,7 +103,7 @@ Summary: PR1: 46 | PR2: 39 | PR3: 10 | PR4: 16 | UNASSIGNED: 0
 - ` M` apps/desktop/src-tauri/src/rendering/exporter/tests.rs
 - ` D` apps/desktop/src-tauri/src/rendering/exporter/webcam.rs
 - ` D` apps/desktop/src-tauri/src/rendering/prerendered_text.rs
-- `??` apps/desktop/src-tauri/crates/snapit-export/
+- `??` apps/desktop/src-tauri/crates/moonsnap-export/
 
 ## PR4
 - ` M` .github/workflows/ci.yml
@@ -130,17 +130,17 @@ Summary: PR1: 46 | PR2: 39 | PR3: 10 | PR4: 16 | UNASSIGNED: 0
 
 ### PR1
 ```bash
-git add apps/desktop/src-tauri/Cargo.toml apps/desktop/src-tauri/Cargo.lock apps/desktop/src-tauri/crates/README.md apps/desktop/src-tauri/crates/snapit-core apps/desktop/src-tauri/crates/snapit-domain apps/desktop/src-tauri/crates/snapit-media apps/desktop/src-tauri/crates/snapit-render apps/desktop/src-tauri/src/error.rs apps/desktop/src-tauri/src/app/tray.rs apps/desktop/src-tauri/src/commands/AGENTS.md apps/desktop/src-tauri/src/commands/captions/mod.rs apps/desktop/src-tauri/src/commands/captions/audio.rs apps/desktop/src-tauri/src/commands/capture/mod.rs apps/desktop/src-tauri/src/commands/capture/fallback.rs apps/desktop/src-tauri/src/commands/text_prerender.rs apps/desktop/src-tauri/src/commands/preview.rs apps/desktop/src-tauri/src/commands/window/capture.rs apps/desktop/src-tauri/src/commands/captions/types.rs apps/desktop/src-tauri/src/commands/capture/types.rs apps/desktop/src-tauri/src/commands/mod.rs apps/desktop/src-tauri/src/commands/capture_settings.rs apps/desktop/src-tauri/src/commands/storage/ffmpeg.rs apps/desktop/src-tauri/src/commands/storage/mod.rs apps/desktop/src-tauri/src/commands/storage/operations.rs apps/desktop/src-tauri/src/commands/storage/tests.rs apps/desktop/src-tauri/src/commands/storage/types.rs apps/desktop/src-tauri/src/rendering/background.rs apps/desktop/src-tauri/src/rendering/caption_layer.rs apps/desktop/src-tauri/src/rendering/caption_parity_test.rs apps/desktop/src-tauri/src/rendering/caption_pixel_test.rs apps/desktop/src-tauri/src/rendering/compositor.rs apps/desktop/src-tauri/src/rendering/coord.rs apps/desktop/src-tauri/src/rendering/decoder.rs apps/desktop/src-tauri/src/rendering/editor_instance.rs apps/desktop/src-tauri/src/rendering/mod.rs apps/desktop/src-tauri/src/rendering/nv12_converter.rs apps/desktop/src-tauri/src/rendering/parity.rs apps/desktop/src-tauri/src/rendering/scene.rs apps/desktop/src-tauri/src/rendering/stream_decoder.rs apps/desktop/src-tauri/src/rendering/text_overlay_layer.rs apps/desktop/src-tauri/src/rendering/text.rs apps/desktop/src-tauri/src/rendering/text_layer.rs apps/desktop/src-tauri/src/rendering/types.rs apps/desktop/src-tauri/src/rendering/zoom.rs apps/desktop/src-tauri/src/preview/mod.rs apps/desktop/src-tauri/src/preview/native_surface.rs
+git add apps/desktop/src-tauri/Cargo.toml apps/desktop/src-tauri/Cargo.lock apps/desktop/src-tauri/crates/README.md apps/desktop/src-tauri/crates/moonsnap-core apps/desktop/src-tauri/crates/moonsnap-domain apps/desktop/src-tauri/crates/moonsnap-media apps/desktop/src-tauri/crates/moonsnap-render apps/desktop/src-tauri/src/error.rs apps/desktop/src-tauri/src/app/tray.rs apps/desktop/src-tauri/src/commands/AGENTS.md apps/desktop/src-tauri/src/commands/captions/mod.rs apps/desktop/src-tauri/src/commands/captions/audio.rs apps/desktop/src-tauri/src/commands/capture/mod.rs apps/desktop/src-tauri/src/commands/capture/fallback.rs apps/desktop/src-tauri/src/commands/text_prerender.rs apps/desktop/src-tauri/src/commands/preview.rs apps/desktop/src-tauri/src/commands/window/capture.rs apps/desktop/src-tauri/src/commands/captions/types.rs apps/desktop/src-tauri/src/commands/capture/types.rs apps/desktop/src-tauri/src/commands/mod.rs apps/desktop/src-tauri/src/commands/capture_settings.rs apps/desktop/src-tauri/src/commands/storage/ffmpeg.rs apps/desktop/src-tauri/src/commands/storage/mod.rs apps/desktop/src-tauri/src/commands/storage/operations.rs apps/desktop/src-tauri/src/commands/storage/tests.rs apps/desktop/src-tauri/src/commands/storage/types.rs apps/desktop/src-tauri/src/rendering/background.rs apps/desktop/src-tauri/src/rendering/caption_layer.rs apps/desktop/src-tauri/src/rendering/caption_parity_test.rs apps/desktop/src-tauri/src/rendering/caption_pixel_test.rs apps/desktop/src-tauri/src/rendering/compositor.rs apps/desktop/src-tauri/src/rendering/coord.rs apps/desktop/src-tauri/src/rendering/decoder.rs apps/desktop/src-tauri/src/rendering/editor_instance.rs apps/desktop/src-tauri/src/rendering/mod.rs apps/desktop/src-tauri/src/rendering/nv12_converter.rs apps/desktop/src-tauri/src/rendering/parity.rs apps/desktop/src-tauri/src/rendering/scene.rs apps/desktop/src-tauri/src/rendering/stream_decoder.rs apps/desktop/src-tauri/src/rendering/text_overlay_layer.rs apps/desktop/src-tauri/src/rendering/text.rs apps/desktop/src-tauri/src/rendering/text_layer.rs apps/desktop/src-tauri/src/rendering/types.rs apps/desktop/src-tauri/src/rendering/zoom.rs apps/desktop/src-tauri/src/preview/mod.rs apps/desktop/src-tauri/src/preview/native_surface.rs
 ```
 
 ### PR2
 ```bash
-git add apps/desktop/src-tauri/crates/snapit-capture apps/desktop/src-tauri/src/commands/video_recording apps/desktop/src-tauri/src/config/recording.rs apps/desktop/src-tauri/src/config/webcam.rs apps/desktop/src-tauri/src/lib.rs
+git add apps/desktop/src-tauri/crates/moonsnap-capture apps/desktop/src-tauri/src/commands/video_recording apps/desktop/src-tauri/src/config/recording.rs apps/desktop/src-tauri/src/config/webcam.rs apps/desktop/src-tauri/src/lib.rs
 ```
 
 ### PR3
 ```bash
-git add apps/desktop/src-tauri/crates/snapit-export apps/desktop/src-tauri/src/rendering/exporter apps/desktop/src-tauri/src/rendering/cursor.rs apps/desktop/src-tauri/src/rendering/prerendered_text.rs
+git add apps/desktop/src-tauri/crates/moonsnap-export apps/desktop/src-tauri/src/rendering/exporter apps/desktop/src-tauri/src/rendering/cursor.rs apps/desktop/src-tauri/src/rendering/prerendered_text.rs
 ```
 
 ### PR4

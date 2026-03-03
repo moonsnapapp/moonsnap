@@ -2,9 +2,9 @@
 
 use crate::preview::{create_frame_ws, PreviewRenderer, ShutdownSignal, WSFrame};
 use crate::rendering::RendererState;
+use moonsnap_domain::captions::{CaptionSegment, CaptionSettings};
+use moonsnap_domain::video_project::VideoProject;
 use parking_lot::Mutex as ParkingMutex;
-use snapit_domain::captions::{CaptionSegment, CaptionSettings};
-use snapit_domain::video_project::VideoProject;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tauri::{command, State, WebviewWindow};

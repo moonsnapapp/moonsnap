@@ -116,7 +116,7 @@ function App() {
 
       {/* Custom Titlebar */}
       <Titlebar
-        title="SnapIt Library"
+        title="MoonSnap Library"
         onCapture={handleShowCaptureToolbar}
         onOpenSettings={handleOpenSettings}
       />

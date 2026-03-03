@@ -1,4 +1,4 @@
-//! Unified logging system for SnapIt.
+//! Unified logging system for MoonSnap.
 //!
 //! Provides persistent file logging for both frontend and backend,
 //! with automatic log rotation and cleanup.
@@ -77,10 +77,10 @@ pub fn init_logging(app: &AppHandle) -> Result<(), String> {
     }
 
     // Log startup
-    log_internal(LogLevel::Info, "SnapIt", "Logging system initialized");
+    log_internal(LogLevel::Info, "MoonSnap", "Logging system initialized");
     log_internal(
         LogLevel::Info,
-        "SnapIt",
+        "MoonSnap",
         &format!("Log directory: {:?}", log_dir),
     );
 
@@ -93,7 +93,7 @@ pub fn init_logging(app: &AppHandle) -> Result<(), String> {
 /// Get the path for the current log file (one per day)
 fn get_current_log_path(log_dir: &PathBuf) -> PathBuf {
     let date = Local::now().format("%Y-%m-%d");
-    log_dir.join(format!("snapit_{}.log", date))
+    log_dir.join(format!("moonsnap_{}.log", date))
 }
 
 /// Clean up old log files, keeping only the most recent MAX_LOG_FILES
@@ -144,7 +144,7 @@ fn check_rotation() {
         if metadata.len() > MAX_LOG_SIZE {
             // Rotate: rename current file with timestamp
             let timestamp = Local::now().format("%Y-%m-%d_%H%M%S");
-            let rotated_path = log_dir.join(format!("snapit_{}.log", timestamp));
+            let rotated_path = log_dir.join(format!("moonsnap_{}.log", timestamp));
             let _ = fs::rename(&current_path, &rotated_path);
 
             // Open new log file

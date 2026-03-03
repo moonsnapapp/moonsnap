@@ -94,12 +94,12 @@ jobs:
       fail-fast: false
       matrix:
         crate:
-          - snapit-core
-          - snapit-domain
-          - snapit-media
-          - snapit-render
-          - snapit-capture
-          - snapit-export
+          - moonsnap-core
+          - moonsnap-domain
+          - moonsnap-media
+          - moonsnap-render
+          - moonsnap-capture
+          - moonsnap-export
 
     steps:
       - uses: actions/checkout@v6
@@ -173,4 +173,4 @@ jobs:
         run: bun install
 
       - name: Build web app
-        run: bun run --filter=@snapit/web build
+        run: bun run --filter=@moonsnap/web build

@@ -15,38 +15,38 @@ mod tests;
 
 use std::path::{Path, PathBuf};
 
-use snapit_domain::video_export::{ExportResult, ExportStage};
-use snapit_export::caption_timeline::remap_captions_to_timeline;
-use snapit_export::cursor_overlay::{
+use moonsnap_domain::video_export::{ExportResult, ExportStage};
+use moonsnap_export::caption_timeline::remap_captions_to_timeline;
+use moonsnap_export::cursor_overlay::{
     composite_cursor_overlay_frame, CursorFrameSample, CursorOverlayContext,
     CursorOverlayFrameRequest,
 };
-use snapit_export::export_job::{
+use moonsnap_export::export_job::{
     run_export_loop_with_context, ExportLoopDirective, ExportLoopExit,
 };
-use snapit_export::export_plan::plan_video_export;
-use snapit_export::frame_composition::{build_frame_composition, FrameCompositionRequest};
-use snapit_export::frame_context::{
+use moonsnap_export::export_plan::plan_video_export;
+use moonsnap_export::frame_composition::{build_frame_composition, FrameCompositionRequest};
+use moonsnap_export::frame_context::{
     build_frame_scene_context, build_frame_timeline_context, should_log_camera_transition_debug,
     should_log_frame_debug,
 };
-use snapit_export::frame_overlays::{
+use moonsnap_export::frame_overlays::{
     build_frame_overlay_plan, build_frame_text_overlay_quads, FrameOverlayRequest,
     FrameTextOverlayRequest,
 };
-use snapit_export::frame_path_plan::{plan_frame_render, CropRectPlan};
-use snapit_export::frame_pipeline_state::{ExportLoopState, PendingCpuWork};
-use snapit_export::frame_prepare::{prepare_base_screen_frame, PrepareFrameRequest};
-use snapit_export::job_control::{
+use moonsnap_export::frame_path_plan::{plan_frame_render, CropRectPlan};
+use moonsnap_export::frame_pipeline_state::{ExportLoopState, PendingCpuWork};
+use moonsnap_export::frame_prepare::{prepare_base_screen_frame, PrepareFrameRequest};
+use moonsnap_export::job_control::{
     is_export_cancelled, request_cancel_export as request_job_cancel, reset_cancel_export,
     FINALIZING_PROGRESS,
 };
-use snapit_export::job_finalize::{
+use moonsnap_export::job_finalize::{
     drain_pipeline_if_needed, finalize_cancelled_export, finalize_completed_export,
     EncoderFinalizeError,
 };
-use snapit_export::job_runner::{ExportJobRunner, ExportJobRunnerConfig, LoopControl};
-use snapit_export::timing::FrameTimingAverages;
+use moonsnap_export::job_runner::{ExportJobRunner, ExportJobRunnerConfig, LoopControl};
+use moonsnap_export::timing::FrameTimingAverages;
 use tauri::{AppHandle, Manager};
 
 /// Request cancellation of the currently running export.
@@ -63,12 +63,12 @@ use super::svg_cursor::get_svg_cursor;
 use crate::commands::text_prerender::PreRenderedTextState;
 use crate::commands::video_recording::cursor::events::load_cursor_recording;
 use crate::commands::video_recording::cursor::events::WindowsCursorShape;
-use snapit_domain::video_project::{CursorType, VideoProject};
-use snapit_render::nv12_converter::{CropRect, Nv12Converter};
-use snapit_render::scene::SceneInterpolator;
-use snapit_render::types::{BackgroundStyle, PixelFormat};
-use snapit_render::webcam_overlay::is_webcam_visible_at;
-use snapit_render::zoom::ZoomInterpolator;
+use moonsnap_domain::video_project::{CursorType, VideoProject};
+use moonsnap_render::nv12_converter::{CropRect, Nv12Converter};
+use moonsnap_render::scene::SceneInterpolator;
+use moonsnap_render::types::{BackgroundStyle, PixelFormat};
+use moonsnap_render::webcam_overlay::is_webcam_visible_at;
+use moonsnap_render::zoom::ZoomInterpolator;
 
 // Re-export submodule functions used externally
 pub use ffmpeg::emit_progress;
@@ -319,7 +319,7 @@ pub async fn export_video_gpu(
     // Compute export-equivalent video content bounds once.
     // Cursor and pre-rendered text overlays must use the exact same frame bounds
     // as compositor composition to keep preview/export parity.
-    let composition_bounds = snapit_render::parity::calculate_composition_bounds(
+    let composition_bounds = moonsnap_render::parity::calculate_composition_bounds(
         video_w as f32,
         video_h as f32,
         padding as f32,

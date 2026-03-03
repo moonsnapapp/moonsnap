@@ -29,7 +29,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
 // ============================================================================
 
 /// Window class name for Win32 registration
-pub const OVERLAY_CLASS_NAME: &str = "SnapItCaptureOverlay";
+pub const OVERLAY_CLASS_NAME: &str = "MoonSnapCaptureOverlay";
 
 /// Minimum drag distance before entering region selection mode
 pub const DRAG_THRESHOLD: i32 = 5;

@@ -4,10 +4,10 @@ description: Run full quality suite (typecheck, lint, test) before push
 user-invocable: true
 ---
 
-Run the complete quality validation suite for SnapIt:
+Run the complete quality validation suite for MoonSnap:
 
 ```bash
-cd E:/snapit && bun run typecheck && bun run lint && bun run test:run
+cd E:/moonsnap && bun run typecheck && bun run lint && bun run test:run
 ```
 
 After running:

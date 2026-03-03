@@ -13,7 +13,7 @@ use std::sync::Arc;
 use tauri::{AppHandle, Manager, WebviewWindowBuilder};
 
 use super::preview::{start_preview, stop_preview};
-use snapit_domain::webcam::{WebcamSettings, WebcamShape, WebcamSize};
+use moonsnap_domain::webcam::{WebcamSettings, WebcamShape, WebcamSize};
 
 /// Control bar height in pixels
 const CONTROL_BAR_HEIGHT: u32 = 40;

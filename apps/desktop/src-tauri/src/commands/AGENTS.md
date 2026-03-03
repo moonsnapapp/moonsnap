@@ -1,6 +1,6 @@
 # Commands - Tauri IPC Handlers
 
-70+ Tauri commands organized by domain, all returning `SnapItResult<T>`.
+70+ Tauri commands organized by domain, all returning `MoonSnapResult<T>`.
 
 ## Structure
 
@@ -43,13 +43,13 @@ commands/
 
 ### Command Signature
 ```rust
-use snapit_core::error::{SnapItError, SnapItResult};
+use moonsnap_core::error::{MoonSnapError, MoonSnapResult};
 
 #[tauri::command]
 pub async fn my_command(
     app: tauri::AppHandle,
     param: ParamType,
-) -> SnapItResult<ReturnType> {
+) -> MoonSnapResult<ReturnType> {
     // Implementation
     Ok(result)
 }
@@ -57,14 +57,14 @@ pub async fn my_command(
 
 ### Error Handling
 ```rust
-use snapit_core::error::{SnapItError, ResultExt};
+use moonsnap_core::error::{MoonSnapError, ResultExt};
 
 // Convert any error with context
 let data = fs::read(&path)
     .context(format!("Failed to read {}", path.display()))?;
 
 // Specific error variants
-return Err(SnapItError::CaptureError("Monitor not found".into()));
+return Err(MoonSnapError::CaptureError("Monitor not found".into()));
 
 // Lock poisoning recovery
 let guard = mutex.lock_or_recover()?;
@@ -99,7 +99,7 @@ guard.is_recording = true;
 ### Async Commands
 ```rust
 #[tauri::command]
-pub async fn start_recording(app: tauri::AppHandle) -> SnapItResult<()> {
+pub async fn start_recording(app: tauri::AppHandle) -> MoonSnapResult<()> {
     // Spawn blocking for CPU-intensive work
     let result = tokio::task::spawn_blocking(|| {
         // Heavy computation
@@ -128,8 +128,8 @@ Commands registered in `lib.rs`:
 
 | Don't | Do Instead |
 |-------|------------|
-| Return `Result<T, String>` | Use `SnapItResult<T>` |
-| Panic in commands | Return `SnapItError` variant |
+| Return `Result<T, String>` | Use `MoonSnapResult<T>` |
+| Panic in commands | Return `MoonSnapError` variant |
 | Block async without spawn_blocking | Use `tokio::task::spawn_blocking` |
 | Skip ts-rs on shared types | Add `#[derive(TS)]` for frontend types |
 | Hardcode paths | Use `app.path()` API |

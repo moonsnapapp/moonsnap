@@ -42,7 +42,7 @@ const bucketRules = [
   {
     bucket: 'PR2',
     test: (p) =>
-      p.startsWith('apps/desktop/src-tauri/crates/snapit-capture/') ||
+      p.startsWith('apps/desktop/src-tauri/crates/moonsnap-capture/') ||
       p.startsWith('apps/desktop/src-tauri/src/commands/video_recording/') ||
       p === 'apps/desktop/src-tauri/src/config/recording.rs' ||
       p === 'apps/desktop/src-tauri/src/config/webcam.rs' ||
@@ -51,7 +51,7 @@ const bucketRules = [
   {
     bucket: 'PR3',
     test: (p) =>
-      p.startsWith('apps/desktop/src-tauri/crates/snapit-export/') ||
+      p.startsWith('apps/desktop/src-tauri/crates/moonsnap-export/') ||
       p.startsWith('apps/desktop/src-tauri/src/rendering/exporter/') ||
       p === 'apps/desktop/src-tauri/src/rendering/prerendered_text.rs' ||
       p === 'apps/desktop/src-tauri/src/rendering/cursor.rs',
@@ -62,10 +62,10 @@ const bucketRules = [
       p === 'apps/desktop/src-tauri/Cargo.toml' ||
       p === 'apps/desktop/src-tauri/Cargo.lock' ||
       p === 'apps/desktop/src-tauri/crates/README.md' ||
-      p.startsWith('apps/desktop/src-tauri/crates/snapit-core/') ||
-      p.startsWith('apps/desktop/src-tauri/crates/snapit-domain/') ||
-      p.startsWith('apps/desktop/src-tauri/crates/snapit-media/') ||
-      p.startsWith('apps/desktop/src-tauri/crates/snapit-render/') ||
+      p.startsWith('apps/desktop/src-tauri/crates/moonsnap-core/') ||
+      p.startsWith('apps/desktop/src-tauri/crates/moonsnap-domain/') ||
+      p.startsWith('apps/desktop/src-tauri/crates/moonsnap-media/') ||
+      p.startsWith('apps/desktop/src-tauri/crates/moonsnap-render/') ||
       p === 'apps/desktop/src-tauri/src/error.rs' ||
       p === 'apps/desktop/src-tauri/src/app/tray.rs' ||
       p === 'apps/desktop/src-tauri/src/commands/AGENTS.md' ||
@@ -113,10 +113,10 @@ const bucketPathspecs = {
     'apps/desktop/src-tauri/Cargo.toml',
     'apps/desktop/src-tauri/Cargo.lock',
     'apps/desktop/src-tauri/crates/README.md',
-    'apps/desktop/src-tauri/crates/snapit-core',
-    'apps/desktop/src-tauri/crates/snapit-domain',
-    'apps/desktop/src-tauri/crates/snapit-media',
-    'apps/desktop/src-tauri/crates/snapit-render',
+    'apps/desktop/src-tauri/crates/moonsnap-core',
+    'apps/desktop/src-tauri/crates/moonsnap-domain',
+    'apps/desktop/src-tauri/crates/moonsnap-media',
+    'apps/desktop/src-tauri/crates/moonsnap-render',
     'apps/desktop/src-tauri/src/error.rs',
     'apps/desktop/src-tauri/src/app/tray.rs',
     'apps/desktop/src-tauri/src/commands/AGENTS.md',
@@ -158,14 +158,14 @@ const bucketPathspecs = {
     'apps/desktop/src-tauri/src/preview/native_surface.rs',
   ],
   PR2: [
-    'apps/desktop/src-tauri/crates/snapit-capture',
+    'apps/desktop/src-tauri/crates/moonsnap-capture',
     'apps/desktop/src-tauri/src/commands/video_recording',
     'apps/desktop/src-tauri/src/config/recording.rs',
     'apps/desktop/src-tauri/src/config/webcam.rs',
     'apps/desktop/src-tauri/src/lib.rs',
   ],
   PR3: [
-    'apps/desktop/src-tauri/crates/snapit-export',
+    'apps/desktop/src-tauri/crates/moonsnap-export',
     'apps/desktop/src-tauri/src/rendering/exporter',
     'apps/desktop/src-tauri/src/rendering/cursor.rs',
     'apps/desktop/src-tauri/src/rendering/prerendered_text.rs',

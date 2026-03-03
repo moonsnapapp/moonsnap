@@ -7,7 +7,7 @@ use lazy_static::lazy_static;
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
 
-use snapit_capture::ffmpeg_gif_encoder::GifQualityPreset;
+use moonsnap_capture::ffmpeg_gif_encoder::GifQualityPreset;
 
 /// Centralized recording configuration.
 ///

@@ -1,8 +1,8 @@
 //! Tauri commands for registering pre-rendered text images from the frontend.
 
+use moonsnap_render::prerendered_text::{LineMetric, PreRenderedTextImage, PreRenderedTextStore};
 use parking_lot::Mutex;
 use serde::Deserialize;
-use snapit_render::prerendered_text::{LineMetric, PreRenderedTextImage, PreRenderedTextStore};
 use std::sync::Arc;
 use tauri::{command, State};
 

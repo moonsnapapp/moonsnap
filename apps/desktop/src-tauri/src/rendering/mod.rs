@@ -8,7 +8,7 @@
 //! - `decoder`: Async video decoder with frame prefetching
 //! - `renderer`: wgpu device/queue management and shader compilation
 //! - `compositor`: Frame compositing pipeline
-//! - `snapit-render`: Shared rendering math/types (background, coord, text, scene, zoom, captions)
+//! - `moonsnap-render`: Shared rendering math/types (background, coord, text, scene, zoom, captions)
 //! - `editor_instance`: Playback state management
 
 pub mod compositor;

@@ -11,13 +11,13 @@ use std::sync::Arc;
 use wgpu::{Device, Queue};
 
 use super::renderer::Renderer;
-use snapit_render::background::{Background, BackgroundLayer};
-use snapit_render::parity::calculate_composition_bounds;
-use snapit_render::prerendered_text::PreRenderedTextStore;
-use snapit_render::text::PreparedText;
-use snapit_render::text_layer::TextLayer;
-use snapit_render::text_overlay_layer::TextOverlayLayer;
-use snapit_render::types::{
+use moonsnap_render::background::{Background, BackgroundLayer};
+use moonsnap_render::parity::calculate_composition_bounds;
+use moonsnap_render::prerendered_text::PreRenderedTextStore;
+use moonsnap_render::text::PreparedText;
+use moonsnap_render::text_layer::TextLayer;
+use moonsnap_render::text_overlay_layer::TextOverlayLayer;
+use moonsnap_render::types::{
     BackgroundStyle, BackgroundType, CornerStyle, DecodedFrame, RenderOptions, TextOverlayQuad,
     WebcamShape,
 };

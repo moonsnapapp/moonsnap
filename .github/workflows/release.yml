@@ -60,7 +60,7 @@ jobs:
               owner: context.repo.owner,
               repo: context.repo.repo,
               tag_name: `v${{ steps.get-version.outputs.version }}`,
-              name: `SnapIt v${{ steps.get-version.outputs.version }}`,
+              name: `MoonSnap v${{ steps.get-version.outputs.version }}`,
               body: process.env.RELEASE_BODY,
               draft: true,
               prerelease: false
@@ -215,7 +215,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: [create-release, build-tauri, publish-release]
     env:
-      PUBLIC_REPO: walterlow/snapit-releases
+      PUBLIC_REPO: walterlow/moonsnap-releases
       VERSION: ${{ needs.create-release.outputs.version }}
 
     steps:
@@ -290,7 +290,7 @@ jobs:
                 owner,
                 repo,
                 tag_name: `v${version}`,
-                name: `SnapIt v${version}`,
+                name: `MoonSnap v${version}`,
                 body: `## Download\n\nDownload the installer for your platform below.\n\n**Windows:** Download the \`.exe\` installer.\n\n---\n\n[View changelog](https://github.com/${owner}/${repo}/releases)`,
                 draft: false,
                 prerelease: false

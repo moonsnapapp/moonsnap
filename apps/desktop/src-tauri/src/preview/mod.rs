@@ -18,11 +18,11 @@ pub use native_surface::{
 use crate::rendering::compositor::Compositor;
 use crate::rendering::renderer::Renderer;
 use log::info;
-use snapit_domain::captions::{CaptionSegment, CaptionSettings};
-use snapit_domain::video_project::{TextAnimation, TextSegment, VideoProject};
-use snapit_render::caption_layer::prepare_captions;
-use snapit_render::text::{parse_color, PreparedText};
-use snapit_render::types::{
+use moonsnap_domain::captions::{CaptionSegment, CaptionSettings};
+use moonsnap_domain::video_project::{TextAnimation, TextSegment, VideoProject};
+use moonsnap_render::caption_layer::prepare_captions;
+use moonsnap_render::text::{parse_color, PreparedText};
+use moonsnap_render::types::{
     BackgroundStyle, BackgroundType, BorderStyle, CornerStyle, DecodedFrame, PixelFormat,
     RenderOptions, ShadowStyle, ZoomState,
 };

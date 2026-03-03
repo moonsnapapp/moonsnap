@@ -1,5 +1,5 @@
 {
-  "name": "@snapit/ui",
+  "name": "@moonsnap/ui",
   "version": "0.0.1",
   "private": true,
   "type": "module",
@@ -40,8 +40,8 @@
     "react-dom": "^19.0.0"
   },
   "devDependencies": {
-    "@snapit/config-eslint": "workspace:*",
-    "@snapit/config-typescript": "workspace:*",
+    "@moonsnap/config-eslint": "workspace:*",
+    "@moonsnap/config-typescript": "workspace:*",
     "@types/react": "^19.2.7",
     "@types/react-dom": "^19.2.3",
     "eslint": "^9.39.2",

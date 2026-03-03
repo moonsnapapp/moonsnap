@@ -1,4 +1,4 @@
-//! Cursor subsystem for SnapIt.
+//! Cursor subsystem for MoonSnap.
 //!
 //! This module provides cursor capture, shape detection, and event handling
 //! following Cap's architecture:

@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { latestRelease } from "@snapit/changelog";
+import { latestRelease } from "@moonsnap/changelog";
 import { getLatestReleaseVersion } from "@/lib/releaseData";
 import {
   RecordIcon,
@@ -42,7 +42,7 @@ export default async function Home() {
               className="text-lg font-semibold tracking-tight"
               style={{ fontFamily: "var(--font-sora)" }}
             >
-              SnapIt
+              MoonSnap
             </span>
           </div>
           <div className="flex items-center gap-6">
@@ -110,7 +110,7 @@ export default async function Home() {
                   <div className="window-dot bg-[#febc2e]" />
                   <div className="window-dot bg-[#28c840]" />
                   <span className="ml-4 text-xs text-[var(--muted)]">
-                    SnapIt Library
+                    MoonSnap Library
                   </span>
                 </div>
                 <div className="relative aspect-video bg-gradient-to-br from-[var(--surface)] to-[var(--background)]">
@@ -228,7 +228,7 @@ export default async function Home() {
               </h2>
               <p className="text-[var(--muted)] mb-8 text-lg">
                 Whether you&apos;re creating tutorials, recording bug reports,
-                or sharing product demos — SnapIt gives you the tools to make
+                or sharing product demos — MoonSnap gives you the tools to make
                 every capture look polished.
               </p>
               <ul className="space-y-4">
@@ -301,14 +301,14 @@ export default async function Home() {
             Ready to start capturing?
           </h2>
           <p className="text-[var(--muted)] mb-10 text-lg">
-            Download SnapIt for free and start recording in seconds.
+            Download MoonSnap for free and start recording in seconds.
             <br />
             No account required.
           </p>
 
           <div className="inline-flex flex-col items-center gap-4">
             <a
-              href="https://github.com/walterlow/snapit-releases/releases/latest"
+              href="https://github.com/walterlow/moonsnap-releases/releases/latest"
               target="_blank"
               rel="noopener noreferrer"
               className="btn-primary flex items-center gap-3 text-lg px-8 py-4"
@@ -337,7 +337,7 @@ export default async function Home() {
               <RecordIcon className="w-3 h-3 text-white" />
             </div>
             <span className="text-sm text-[var(--muted)]">
-              SnapIt © {new Date().getFullYear()}
+              MoonSnap © {new Date().getFullYear()}
             </span>
           </div>
           <div className="flex items-center gap-6">

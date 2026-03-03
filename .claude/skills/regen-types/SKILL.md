@@ -7,7 +7,7 @@ user-invocable: true
 Regenerate TypeScript types from Rust structs using ts-rs:
 
 ```bash
-cargo test --manifest-path E:/snapit/apps/desktop/src-tauri/Cargo.toml --lib
+cargo test --manifest-path E:/moonsnap/apps/desktop/src-tauri/Cargo.toml --lib
 ```
 
 After running:

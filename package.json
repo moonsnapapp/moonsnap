@@ -1,5 +1,5 @@
 {
-  "name": "snapit",
+  "name": "moonsnap",
   "private": true,
   "version": "0.5.7",
   "packageManager": "bun@1.3.6",
@@ -11,7 +11,7 @@
     "changelog:build": "node scripts/build-changelog-json.cjs",
     "changelog:release-notes": "node scripts/get-latest-release-notes.cjs",
     "dev": "bun run changelog:build && turbo dev",
-    "dev:desktop": "bun run changelog:build && turbo dev --filter=@snapit/desktop",
+    "dev:desktop": "bun run changelog:build && turbo dev --filter=@moonsnap/desktop",
     "dev:web": "bun run changelog:build && cd apps/web && bun run dev",
     "dev:all": "bun run changelog:build && concurrently -k -n desktop,web -c blue,magenta \"bun run tauri:dev\" \"bun run dev:web\"",
     "build": "bun run changelog:build && turbo build",

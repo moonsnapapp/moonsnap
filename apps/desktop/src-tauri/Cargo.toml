@@ -1,27 +1,27 @@
 [package]
-name = "snapit"
+name = "moonsnap"
 version = "0.5.7"
 description = "A Snagit-like screen capture and annotation tool"
-authors = ["SnapIt"]
+authors = ["MoonSnap"]
 edition = "2021"
 
 [workspace]
 members = [
     ".",
     "crates/camera-windows",
-    "crates/snapit-capture",
+    "crates/moonsnap-capture",
     "crates/scap-direct3d",
     "crates/scap-targets",
-    "crates/snapit-core",
-    "crates/snapit-domain",
-    "crates/snapit-media",
-    "crates/snapit-render",
-    "crates/snapit-export",
+    "crates/moonsnap-core",
+    "crates/moonsnap-domain",
+    "crates/moonsnap-media",
+    "crates/moonsnap-render",
+    "crates/moonsnap-export",
 ]
 resolver = "2"
 
 [lib]
-name = "snapit_lib"
+name = "moonsnap_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
@@ -68,13 +68,13 @@ scap-direct3d = { path = "crates/scap-direct3d" }
 scap-targets = { path = "crates/scap-targets" }
 
 # Native Windows camera capture (ported from Cap)
-snapit-camera-windows = { path = "crates/camera-windows" }
-snapit-capture = { path = "crates/snapit-capture" }
-snapit-core = { path = "crates/snapit-core" }
-snapit-domain = { path = "crates/snapit-domain" }
-snapit-media = { path = "crates/snapit-media" }
-snapit-render = { path = "crates/snapit-render" }
-snapit-export = { path = "crates/snapit-export" }
+moonsnap-camera-windows = { path = "crates/camera-windows" }
+moonsnap-capture = { path = "crates/moonsnap-capture" }
+moonsnap-core = { path = "crates/moonsnap-core" }
+moonsnap-domain = { path = "crates/moonsnap-domain" }
+moonsnap-media = { path = "crates/moonsnap-media" }
+moonsnap-render = { path = "crates/moonsnap-render" }
+moonsnap-export = { path = "crates/moonsnap-export" }
 
 # Image processing
 image = "0.25"

@@ -5,7 +5,7 @@
 
 use std::sync::Mutex;
 
-use snapit_domain::capture::ScreenRegionSelection;
+use moonsnap_domain::capture::ScreenRegionSelection;
 use tauri::{
     image::Image,
     menu::{Menu, MenuItem, PredefinedMenuItem},
@@ -43,7 +43,7 @@ impl TrayState {
 ///
 /// Returns a `TrayState` that should be managed by the app for dynamic updates.
 pub fn setup_system_tray(app: &App) -> Result<TrayState, Box<dyn std::error::Error>> {
-    let quit = MenuItem::with_id(app, "quit", "Quit SnapIt", true, None::<&str>)?;
+    let quit = MenuItem::with_id(app, "quit", "Quit MoonSnap", true, None::<&str>)?;
     let show_toolbar = MenuItem::with_id(
         app,
         "show_toolbar",

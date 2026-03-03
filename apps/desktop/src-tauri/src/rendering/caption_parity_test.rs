@@ -7,9 +7,9 @@
 
 #[cfg(test)]
 mod tests {
-    use snapit_domain::captions::{CaptionSegment, CaptionSettings, CaptionWord};
-    use snapit_render::caption_layer::prepare_captions;
-    use snapit_render::parity::{layout, scale_factor};
+    use moonsnap_domain::captions::{CaptionSegment, CaptionSettings, CaptionWord};
+    use moonsnap_render::caption_layer::prepare_captions;
+    use moonsnap_render::parity::{layout, scale_factor};
 
     fn make_test_segment() -> CaptionSegment {
         CaptionSegment {

@@ -152,7 +152,7 @@ export const GeneralTab: React.FC = () => {
                 Launch when Windows starts
               </p>
               <p className="text-xs text-[var(--ink-muted)] mt-0.5">
-                SnapIt will start minimized in the system tray
+                MoonSnap will start minimized in the system tray
               </p>
             </div>
             <Switch

@@ -12,8 +12,8 @@ use tokio::fs as async_fs;
 use super::{
     calculate_dir_size, ensure_directories, generate_id, get_app_data_dir, get_captures_dir,
 };
-use snapit_domain::storage::*;
-use snapit_media::ffmpeg::{
+use moonsnap_domain::storage::*;
+use moonsnap_media::ffmpeg::{
     find_ffmpeg, find_ffprobe, generate_gif_thumbnail, generate_thumbnail,
     generate_video_thumbnail, get_video_metadata_for_migration,
 };
@@ -1123,7 +1123,7 @@ pub async fn startup_cleanup(app: AppHandle) -> Result<StartupCleanupResult, Str
     // 0. Pre-create storage directories so first capture isn't slow (fast, do sync)
     ensure_directories(&app)?;
 
-    // Also pre-create the user's save directory (Pictures/SnapIt or custom)
+    // Also pre-create the user's save directory (Pictures/MoonSnap or custom)
     let captures_dir = get_captures_dir(&app)?;
 
     // Get paths for background work
@@ -1143,7 +1143,7 @@ pub async fn startup_cleanup(app: AppHandle) -> Result<StartupCleanupResult, Str
             for entry in entries.flatten() {
                 let path = entry.path();
                 if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-                    if name.starts_with("snapit_capture_") && name.ends_with(".rgba") {
+                    if name.starts_with("moonsnap_capture_") && name.ends_with(".rgba") {
                         if fs::remove_file(&path).is_ok() {
                             temp_files_cleaned += 1;
                         }

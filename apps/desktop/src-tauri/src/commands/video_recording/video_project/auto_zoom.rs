@@ -1,7 +1,7 @@
 //! Auto-zoom generation from cursor recording data.
 
 use crate::commands::video_recording::cursor::{load_cursor_recording, CursorEventType};
-use snapit_domain::video_project::{
+use moonsnap_domain::video_project::{
     AutoZoomConfig, VideoProject, ZoomRegion, ZoomRegionMode, ZoomTransition,
 };
 

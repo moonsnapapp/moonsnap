@@ -7,10 +7,10 @@
 //! exclusively (see TextOverlay.tsx). Only caption preview remains here.
 
 use log::{error, info};
+use moonsnap_domain::captions::{CaptionSegment, CaptionSettings};
+use moonsnap_render::caption_layer::prepare_captions;
+use moonsnap_render::text_layer::TextLayer;
 use parking_lot::Mutex;
-use snapit_domain::captions::{CaptionSegment, CaptionSettings};
-use snapit_render::caption_layer::prepare_captions;
-use snapit_render::text_layer::TextLayer;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU64, Ordering};
 use std::sync::Arc;
@@ -128,7 +128,7 @@ impl NativeCaptionPreview {
             // Register window class (only once)
             static CLASS_REGISTERED: AtomicBool = AtomicBool::new(false);
             if !CLASS_REGISTERED.swap(true, Ordering::SeqCst) {
-                let class_name: Vec<u16> = "SnapItCaptionPreview\0".encode_utf16().collect();
+                let class_name: Vec<u16> = "MoonSnapCaptionPreview\0".encode_utf16().collect();
                 let wc = WNDCLASSW {
                     lpfnWndProc: Some(caption_preview_wnd_proc),
                     lpszClassName: windows::core::PCWSTR(class_name.as_ptr()),
@@ -138,7 +138,7 @@ impl NativeCaptionPreview {
             }
 
             // Create child window
-            let class_name: Vec<u16> = "SnapItCaptionPreview\0".encode_utf16().collect();
+            let class_name: Vec<u16> = "MoonSnapCaptionPreview\0".encode_utf16().collect();
             let child = CreateWindowExW(
                 WS_EX_NOACTIVATE | WS_EX_LAYERED | WS_EX_TRANSPARENT,
                 windows::core::PCWSTR(class_name.as_ptr()),

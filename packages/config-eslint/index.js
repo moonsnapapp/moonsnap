@@ -4,7 +4,7 @@ import reactHooks from "eslint-plugin-react-hooks";
 import reactRefresh from "eslint-plugin-react-refresh";
 
 /**
- * Base ESLint configuration for SnapIt projects
+ * Base ESLint configuration for MoonSnap projects
  */
 export const base = tseslint.config(
   js.configs.recommended,

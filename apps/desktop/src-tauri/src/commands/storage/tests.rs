@@ -5,8 +5,8 @@
 use chrono::Utc;
 
 use super::generate_id;
-use snapit_domain::storage::*;
-use snapit_media::ffmpeg::THUMBNAIL_SIZE;
+use moonsnap_domain::storage::*;
+use moonsnap_media::ffmpeg::THUMBNAIL_SIZE;
 
 #[test]
 fn test_generate_id_format() {
@@ -215,7 +215,7 @@ fn test_storage_stats_serialization() {
         total_size_bytes: 1_073_741_824, // 1 GB
         total_size_mb: 1024.0,
         capture_count: 150,
-        storage_path: "/Users/test/Pictures/SnapIt".to_string(),
+        storage_path: "/Users/test/Pictures/MoonSnap".to_string(),
     };
 
     let json = serde_json::to_string(&stats).expect("Failed to serialize");

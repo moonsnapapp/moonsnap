@@ -18,7 +18,7 @@ interface TitlebarProps {
 }
 
 export const Titlebar: React.FC<TitlebarProps> = ({
-  title = 'SnapIt',
+  title = 'MoonSnap',
   showLogo = true,
   showMaximize = true,
   onClose,

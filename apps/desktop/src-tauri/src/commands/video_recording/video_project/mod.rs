@@ -13,7 +13,7 @@
 //! ```text
 //! video_project/
 //!   mod.rs       - Re-exports and tests
-//!   snapit-domain::video_project - shared type definitions (VideoProject, configs, etc.)
+//!   moonsnap-domain::video_project - shared type definitions (VideoProject, configs, etc.)
 //!   metadata.rs  - Video metadata extraction and project loading
 //!   frames.rs    - Video frame extraction and caching
 //!   auto_zoom.rs - Auto-zoom generation from cursor data
@@ -30,7 +30,7 @@ pub use metadata::{load_video_project_from_file, VideoMetadata};
 
 #[cfg(test)]
 mod tests {
-    use snapit_domain::video_project::{
+    use moonsnap_domain::video_project::{
         AutoZoomConfig, CursorConfig, VideoProject, ZoomRegion, ZoomRegionMode, ZoomTransition,
     };
 

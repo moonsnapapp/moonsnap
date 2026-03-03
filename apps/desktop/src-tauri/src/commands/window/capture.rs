@@ -1,6 +1,6 @@
 //! Capture flow and overlay commands.
 
-use snapit_domain::capture::ScreenRegionSelection;
+use moonsnap_domain::capture::ScreenRegionSelection;
 use std::sync::atomic::Ordering;
 use tauri::{command, AppHandle, Emitter, Manager};
 

@@ -49,7 +49,7 @@ pub use preview_manager::{
 };
 
 #[allow(unused_imports)]
-use snapit_domain::webcam::{compute_webcam_rect, WebcamPosition, WebcamSettings};
+use moonsnap_domain::webcam::{compute_webcam_rect, WebcamPosition, WebcamSettings};
 use std::time::Instant;
 
 /// Webcam frame data ready for compositing.

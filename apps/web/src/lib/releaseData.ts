@@ -1,13 +1,13 @@
-import { changelog as localChangelog } from "@snapit/changelog";
-import type { ChangelogDocument } from "@snapit/changelog";
+import { changelog as localChangelog } from "@moonsnap/changelog";
+import type { ChangelogDocument } from "@moonsnap/changelog";
 
-const RELEASE_REPO = process.env.NEXT_PUBLIC_RELEASE_REPO ?? "walterlow/snapit-releases";
+const RELEASE_REPO = process.env.NEXT_PUBLIC_RELEASE_REPO ?? "walterlow/moonsnap-releases";
 const CHANGELOG_ASSET_NAME = process.env.NEXT_PUBLIC_CHANGELOG_ASSET_NAME ?? "changelog.generated.json";
-const CHANGELOG_REPO = process.env.SNAPIT_CHANGELOG_REPO ?? "walterlow/snapit";
-const CHANGELOG_BRANCH = process.env.SNAPIT_CHANGELOG_BRANCH ?? "main";
+const CHANGELOG_REPO = process.env.MOONSNAP_CHANGELOG_REPO ?? "walterlow/moonsnap";
+const CHANGELOG_BRANCH = process.env.MOONSNAP_CHANGELOG_BRANCH ?? "main";
 const CHANGELOG_FILE_PATH =
-  process.env.SNAPIT_CHANGELOG_FILE_PATH ?? "packages/changelog/src/changelog.generated.json";
-const GITHUB_TOKEN = process.env.SNAPIT_GITHUB_TOKEN;
+  process.env.MOONSNAP_CHANGELOG_FILE_PATH ?? "packages/changelog/src/changelog.generated.json";
+const GITHUB_TOKEN = process.env.MOONSNAP_GITHUB_TOKEN;
 const REVALIDATE_SECONDS = 900;
 
 interface LatestJsonPayload {
@@ -62,7 +62,7 @@ export const getChangelogDocument = async (): Promise<ChangelogDocument> => {
   const url = `https://api.github.com/repos/${CHANGELOG_REPO}/contents/${CHANGELOG_FILE_PATH}?ref=${CHANGELOG_BRANCH}`;
   const headers: Record<string, string> = {
     Accept: "application/vnd.github.raw",
-    "User-Agent": "snapit-web",
+    "User-Agent": "moonsnap-web",
   };
 
   if (GITHUB_TOKEN) {

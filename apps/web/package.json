@@ -1,5 +1,5 @@
 {
-  "name": "@snapit/web",
+  "name": "@moonsnap/web",
   "version": "0.1.0",
   "private": true,
   "scripts": {
@@ -10,15 +10,15 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@snapit/changelog": "workspace:*",
-    "@snapit/ui": "workspace:*",
+    "@moonsnap/changelog": "workspace:*",
+    "@moonsnap/ui": "workspace:*",
     "next": "16.1.6",
     "react": "19.2.3",
     "react-dom": "19.2.3"
   },
   "devDependencies": {
-    "@snapit/config-tailwind": "workspace:*",
-    "@snapit/config-typescript": "workspace:*",
+    "@moonsnap/config-tailwind": "workspace:*",
+    "@moonsnap/config-typescript": "workspace:*",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^22",
     "@types/react": "^19",

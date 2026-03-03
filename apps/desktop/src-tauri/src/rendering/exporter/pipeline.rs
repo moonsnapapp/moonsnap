@@ -10,8 +10,8 @@ use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 
 use crate::rendering::stream_decoder::StreamDecoder;
-use snapit_export::pipeline as shared_pipeline;
-use snapit_render::types::DecodedFrame;
+use moonsnap_export::pipeline as shared_pipeline;
+use moonsnap_render::types::DecodedFrame;
 
 /// Bundle of decoded frames for a single frame index.
 pub type DecodedFrameBundle = shared_pipeline::DecodedFrameBundle<DecodedFrame>;
