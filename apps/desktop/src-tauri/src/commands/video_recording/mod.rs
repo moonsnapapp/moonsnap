@@ -111,7 +111,7 @@ pub fn take_prepared_output_path() -> Option<std::path::PathBuf> {
 /// This initializes webcam and screen capture so recording starts instantly.
 #[command]
 pub fn prewarm_capture() -> Result<(), String> {
-    log::info!("[PREWARM] Pre-warming capture resources...");
+    log::debug!("[PREWARM] Pre-warming capture resources...");
 
     // Pre-warm webcam if enabled
     let webcam_config = WEBCAM_CONFIG.read();
@@ -121,7 +121,7 @@ pub fn prewarm_capture() -> Result<(), String> {
 
     if webcam_enabled {
         if !webcam::is_capture_running() {
-            log::info!(
+            log::debug!(
                 "[PREWARM] Starting webcam capture (device {})",
                 device_index
             );
@@ -129,18 +129,18 @@ pub fn prewarm_capture() -> Result<(), String> {
                 log::warn!("[PREWARM] Webcam pre-warm failed: {}", e);
             }
         } else {
-            log::info!("[PREWARM] Webcam already running");
+            log::debug!("[PREWARM] Webcam already running");
         }
     }
 
     // Pre-warm screen capture (DXGI) - load DLLs in background
-    log::info!("[PREWARM] Touching DXGI...");
+    log::debug!("[PREWARM] Touching DXGI...");
     std::thread::spawn(|| {
         use windows_capture::monitor::Monitor;
         let _ = Monitor::enumerate(); // Loads DirectX DLLs
     });
 
-    log::info!("[PREWARM] Pre-warm complete");
+    log::debug!("[PREWARM] Pre-warm complete");
     Ok(())
 }
 
@@ -153,14 +153,14 @@ pub fn prewarm_capture() -> Result<(), String> {
 /// double-render or StrictMode), it cancels any previous preparation before starting new.
 #[command]
 pub fn prepare_recording(format: RecordingFormat) -> Result<(), String> {
-    log::info!("[PREPARE] Preparing recording resources (background)...");
+    log::debug!("[PREPARE] Preparing recording resources (background)...");
 
     // IMPORTANT: Cancel any existing prepared resources FIRST to avoid race conditions.
     // If prepare_recording is called twice quickly (React double-render), we need to
     // ensure the webcam pipe matches the output path that will actually be used.
     if let Ok(mut prepared) = get_prepared_webcam_pipe().lock() {
         if let Some(old_pipe) = prepared.take() {
-            log::info!("[PREPARE] Cancelling previous webcam pipe to avoid path mismatch");
+            log::debug!("[PREPARE] Cancelling previous webcam pipe to avoid path mismatch");
             old_pipe.cancel();
         }
     }
@@ -168,7 +168,7 @@ pub fn prepare_recording(format: RecordingFormat) -> Result<(), String> {
         if let Some(old_path) = prepared.take() {
             // Don't delete the folder - a background FFmpeg might still be starting up.
             // Just clear the reference; orphaned empty folders are harmless.
-            log::info!(
+            log::debug!(
                 "[PREPARE] Cleared previous output path reference: {:?}",
                 old_path
             );
@@ -181,7 +181,7 @@ pub fn prepare_recording(format: RecordingFormat) -> Result<(), String> {
         ..Default::default()
     };
     let output_path = generate_output_path(&settings)?;
-    log::info!("[PREPARE] Output path: {:?}", output_path);
+    log::debug!("[PREPARE] Output path: {:?}", output_path);
 
     // Store for later use
     if let Ok(mut prepared) = get_prepared_output_path().lock() {
@@ -198,7 +198,7 @@ pub fn prepare_recording(format: RecordingFormat) -> Result<(), String> {
 
         // Spawn FFmpeg in background thread - this is the slow part
         std::thread::spawn(move || {
-            log::info!("[PREPARE] Spawning FFmpeg for webcam: {:?}", webcam_path);
+            log::debug!("[PREPARE] Spawning FFmpeg for webcam: {:?}", webcam_path);
 
             match webcam::WebcamEncoderPipe::new(webcam_path) {
                 Ok(pipe) => {
@@ -214,14 +214,14 @@ pub fn prepare_recording(format: RecordingFormat) -> Result<(), String> {
                         if let Ok(mut prepared) = get_prepared_webcam_pipe().lock() {
                             // Double-check no other pipe was stored while we were checking
                             if let Some(existing) = prepared.take() {
-                                log::info!("[PREPARE] Cancelling superseded pipe");
+                                log::debug!("[PREPARE] Cancelling superseded pipe");
                                 existing.cancel();
                             }
                             *prepared = Some(pipe);
                         }
-                        log::info!("[PREPARE] FFmpeg spawned and ready");
+                        log::debug!("[PREPARE] FFmpeg spawned and ready");
                     } else {
-                        log::info!(
+                        log::debug!(
                             "[PREPARE] Discarding stale webcam pipe (path changed): {:?}",
                             expected_output_path
                         );
@@ -235,20 +235,20 @@ pub fn prepare_recording(format: RecordingFormat) -> Result<(), String> {
         });
     }
 
-    log::info!("[PREPARE] Recording preparation initiated");
+    log::debug!("[PREPARE] Recording preparation initiated");
     Ok(())
 }
 
 /// Stop pre-warmed resources (called when toolbar closes without recording).
 #[command]
 pub fn stop_prewarm() {
-    log::info!("[PREWARM] Stopping pre-warmed resources");
+    log::debug!("[PREWARM] Stopping pre-warmed resources");
 
     // Cancel any prepared webcam pipe
     if let Ok(mut prepared) = get_prepared_webcam_pipe().lock() {
         if let Some(pipe) = prepared.take() {
             pipe.cancel();
-            log::info!("[PREWARM] Cancelled prepared webcam pipe");
+            log::debug!("[PREWARM] Cancelled prepared webcam pipe");
         }
     }
 
@@ -328,7 +328,7 @@ pub async fn start_gpu_webcam_preview(
     shape: WebcamShape,
     mirror: bool,
 ) -> Result<(), String> {
-    log::info!(
+    log::debug!(
         "[WEBCAM] start_gpu_webcam_preview(device_index={}, size={:?}, shape={:?}, mirror={})",
         device_index,
         size,
@@ -386,7 +386,7 @@ pub async fn start_gpu_webcam_preview(
 /// Stop GPU-accelerated webcam preview.
 #[command]
 pub fn stop_gpu_webcam_preview() {
-    log::info!("[WEBCAM] stop_gpu_webcam_preview()");
+    log::debug!("[WEBCAM] stop_gpu_webcam_preview()");
     webcam::stop_gpu_preview();
 }
 
@@ -424,7 +424,7 @@ pub async fn update_gpu_webcam_preview_settings(
 /// Uses the CameraPreviewManager to ensure only ONE preview exists at a time.
 #[command]
 pub async fn show_camera_preview(app: tauri::AppHandle, device_index: usize) -> Result<(), String> {
-    log::info!(
+    log::debug!(
         "[WEBCAM] show_camera_preview(device_index={})",
         device_index
     );
@@ -436,7 +436,7 @@ pub async fn show_camera_preview(app: tauri::AppHandle, device_index: usize) -> 
 /// Stops GPU preview and destroys the window.
 #[command]
 pub fn hide_camera_preview(app: tauri::AppHandle) {
-    log::info!("[WEBCAM] hide_camera_preview()");
+    log::debug!("[WEBCAM] hide_camera_preview()");
     webcam::hide_camera_preview(&app);
 }
 
@@ -447,7 +447,7 @@ pub fn hide_camera_preview(app: tauri::AppHandle) {
 /// so all frontend windows can update their state.
 #[command]
 pub fn close_webcam_from_preview(app: tauri::AppHandle) {
-    log::info!("[WEBCAM] close_webcam_from_preview() - user closed preview");
+    log::debug!("[WEBCAM] close_webcam_from_preview()");
 
     // Disable webcam in config FIRST
     crate::config::webcam::WEBCAM_CONFIG.write().enabled = false;
@@ -469,7 +469,7 @@ pub fn is_camera_preview_showing() -> bool {
 /// Notify that preview window was closed (called from window event listener).
 #[command]
 pub fn notify_preview_window_closed() {
-    log::info!("[WEBCAM] notify_preview_window_closed()");
+    log::debug!("[WEBCAM] notify_preview_window_closed()");
     webcam::on_preview_window_close();
 }
 
@@ -858,8 +858,7 @@ pub async fn start_recording(
     app: AppHandle,
     settings: RecordingSettings,
 ) -> Result<StartRecordingResult, String> {
-    // Debug: Log the recording mode to verify coordinates
-    log::info!(
+    log::debug!(
         "[RECORDING] start_recording called with mode: {:?}",
         settings.mode
     );
@@ -912,7 +911,7 @@ pub async fn start_recording(
         })
     };
 
-    log::info!("[RECORDING] Using output path: {:?}", output_path);
+    log::debug!("[RECORDING] Using output path: {:?}", output_path);
 
     // Start recording via controller
     recorder::start_recording(app, settings.clone(), output_path).await?;

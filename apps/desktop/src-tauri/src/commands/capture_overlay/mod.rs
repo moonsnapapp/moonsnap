@@ -104,7 +104,7 @@ pub async fn show_capture_overlay(
     preselect_monitor: Option<usize>,
     preselect_window: Option<isize>,
 ) -> Result<Option<OverlayResult>, String> {
-    log::info!("[show_capture_overlay] Called with capture_type: {:?}, source_mode: {:?}, preselect_monitor: {:?}, preselect_window: {:?}", 
+    log::debug!("[show_capture_overlay] capture_type: {:?}, source_mode: {:?}, preselect_monitor: {:?}, preselect_window: {:?}",
         capture_type, source_mode, preselect_monitor, preselect_window);
 
     let app_clone = app.clone();
@@ -114,7 +114,7 @@ pub async fn show_capture_overlay(
     // Get virtual screen bounds (spans all monitors)
     let (x, y, width, height) = get_virtual_screen_bounds();
     let bounds = Rect::from_xywh(x, y, width, height);
-    log::info!(
+    log::debug!(
         "[show_capture_overlay] Virtual screen bounds: x={}, y={}, w={}, h={}",
         x,
         y,
@@ -144,7 +144,7 @@ pub async fn show_capture_overlay(
         None
     };
 
-    log::info!(
+    log::debug!(
         "[show_capture_overlay] Preselect bounds: {:?}, window_title: {:?}, monitor_name: {:?}",
         preselect_bounds,
         preselect_window_title,
@@ -200,7 +200,7 @@ fn bring_window_to_front(hwnd: isize) {
         let _ = SetForegroundWindow(hwnd);
     }
 
-    log::info!("[Overlay] Brought window to foreground");
+    log::debug!("[Overlay] Brought window to foreground");
 }
 
 /// Get a window's title by HWND.
@@ -245,7 +245,7 @@ fn run_overlay(
     preselect_monitor_index: Option<usize>,
     preselect_monitor_name: Option<String>,
 ) -> Result<Option<OverlayResult>, String> {
-    log::info!("[run_overlay] Starting overlay for {:?} with mode {:?}, preselect: {:?}, window: {:?}/{:?}, monitor: {:?}/{:?}",
+    log::debug!("[run_overlay] Starting overlay for {:?} with mode {:?}, preselect: {:?}, window: {:?}/{:?}, monitor: {:?}/{:?}",
         capture_type, overlay_mode, preselect_bounds,
         preselect_window_id, preselect_window_title,
         preselect_monitor_index, preselect_monitor_name);
@@ -340,8 +340,8 @@ fn run_overlay(
             adj.is_locked = true; // Lock preselected display/window bounds
             adj.bounds = local_bounds;
             adj.original_bounds = local_bounds;
-            log::info!(
-                "[run_overlay] Starting in locked adjustment mode with bounds: {:?}",
+            log::debug!(
+                "[run_overlay] Locked adjustment mode with bounds: {:?}",
                 local_bounds
             );
             adj
@@ -413,7 +413,7 @@ fn run_overlay(
                         "monitorName": state.preselected_monitor_name
                     }),
                 );
-                log::info!(
+                log::debug!(
                     "[run_overlay] Confirmed selection: source_type={}, window={:?}, monitor={:?}",
                     source_type,
                     state.preselected_window_title,
@@ -428,7 +428,7 @@ fn run_overlay(
             let ex_style = GetWindowLongW(hwnd, GWL_EXSTYLE);
             let new_style = ex_style | WS_EX_TRANSPARENT.0 as i32 | WS_EX_LAYERED.0 as i32;
             SetWindowLongW(hwnd, GWL_EXSTYLE, new_style);
-            log::info!("[run_overlay] Made overlay click-through for locked preselection");
+            log::debug!("[run_overlay] Made overlay click-through for locked preselection");
         }
 
         // Show window
@@ -450,7 +450,7 @@ fn run_overlay(
             // (WS_EX_NOACTIVATE and WS_EX_TRANSPARENT windows don't receive keyboard messages)
             let esc_pressed = (GetAsyncKeyState(0x1B) as u16 & 0x8000) != 0;
             if esc_pressed && !esc_was_pressed {
-                log::info!("[Overlay] ESC pressed, cancelling overlay");
+                log::debug!("[Overlay] ESC pressed, cancelling overlay");
                 state.cancel();
             }
             esc_was_pressed = esc_pressed;
@@ -579,21 +579,18 @@ fn run_overlay(
 
         // If cancelled (no result), reset toolbar to startup state and show it
         if result.is_none() {
-            log::info!("[Overlay] Result is None (cancelled), resetting toolbar to startup state");
+            log::debug!("[Overlay] Cancelled, resetting toolbar to startup state");
             // Emit reset event so frontend resets selectionConfirmed=false
             let _ = state.app_handle.emit("reset-to-startup", ());
 
             let app_handle = state.app_handle.clone();
             tauri::async_runtime::spawn(async move {
-                log::info!("[Overlay] Spawned task to show startup toolbar");
                 if let Err(e) = crate::commands::window::show_startup_toolbar(app_handle).await {
                     log::error!("Failed to show startup toolbar after cancel: {}", e);
-                } else {
-                    log::info!("[Overlay] show_startup_toolbar completed successfully");
                 }
             });
         } else {
-            log::info!("[Overlay] Result is Some (confirmed), not showing startup toolbar");
+            log::debug!("[Overlay] Selection confirmed");
         }
 
         // Cleanup
@@ -611,11 +608,8 @@ fn run_overlay(
 /// Used by picker panels to show visual feedback while hovering items.
 #[command]
 pub async fn start_highlight_preview() -> Result<(), String> {
-    log::info!("[start_highlight_preview] Starting preview overlay");
-
     // Check if already active
     if PREVIEW_ACTIVE.load(Ordering::SeqCst) {
-        log::info!("[start_highlight_preview] Preview already active");
         return Ok(());
     }
 
@@ -631,26 +625,22 @@ pub async fn start_highlight_preview() -> Result<(), String> {
     // Get virtual screen bounds
     let (x, y, width, height) = get_virtual_screen_bounds();
     let bounds = Rect::from_xywh(x, y, width, height);
-    log::info!("[start_highlight_preview] Bounds: {:?}", bounds);
+    log::debug!("[start_highlight_preview] Bounds: {:?}", bounds);
 
     // Spawn on tokio blocking thread pool (better managed than raw thread)
     // Don't await - let it run in background
     tokio::task::spawn_blocking(move || {
-        log::info!("[start_highlight_preview] Thread started, calling run_preview_overlay");
         if let Err(e) = run_preview_overlay(bounds) {
             log::error!("[start_highlight_preview] Preview overlay error: {}", e);
         }
-        log::info!("[start_highlight_preview] Thread finished");
     });
-
-    log::info!("[start_highlight_preview] Returning Ok");
     Ok(())
 }
 
 /// Stop the highlight preview overlay.
 #[command]
 pub async fn stop_highlight_preview() -> Result<(), String> {
-    log::info!("[stop_highlight_preview] Stopping preview overlay");
+    log::debug!("[stop_highlight_preview] Stopping preview overlay");
     PREVIEW_SHOULD_STOP.store(true, Ordering::SeqCst);
     // Clear any highlights
     commands::clear_highlights();
@@ -667,16 +657,12 @@ pub async fn is_highlight_preview_active() -> bool {
 fn run_preview_overlay(bounds: Rect) -> Result<(), String> {
     use windows::Win32::System::Com::{CoInitializeEx, CoUninitialize, COINIT_MULTITHREADED};
 
-    log::info!("[run_preview_overlay] Starting");
-
     // Set active flag
     if PREVIEW_ACTIVE.swap(true, Ordering::SeqCst) {
-        log::info!("[run_preview_overlay] Already running, exiting");
         return Ok(()); // Already running
     }
 
     // Initialize COM for this thread (required for D3D11/DirectComposition)
-    log::info!("[run_preview_overlay] Initializing COM");
     unsafe {
         let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
     }
@@ -689,17 +675,15 @@ fn run_preview_overlay(bounds: Rect) -> Result<(), String> {
             unsafe {
                 CoUninitialize();
             }
-            log::info!("[run_preview_overlay] Preview overlay stopped");
+            log::debug!("[run_preview_overlay] Preview overlay stopped");
         }
     }
     let _guard = PreviewGuard;
 
     // Register window class if needed
-    log::info!("[run_preview_overlay] Registering window class");
     register_overlay_class()?;
 
     unsafe {
-        log::info!("[run_preview_overlay] Getting module handle");
         let hinstance =
             GetModuleHandleW(None).map_err(|e| format!("Failed to get module handle: {:?}", e))?;
 
@@ -718,7 +702,6 @@ fn run_preview_overlay(bounds: Rect) -> Result<(), String> {
                 | 0x00000020, // WS_EX_TRANSPARENT
         );
 
-        log::info!("[run_preview_overlay] Creating window");
         let hwnd = CreateWindowExW(
             ex_style,
             PCWSTR(class_name.as_ptr()),
@@ -736,24 +719,19 @@ fn run_preview_overlay(bounds: Rect) -> Result<(), String> {
         .map_err(|e| format!("Failed to create preview window: {:?}", e))?;
 
         // Initialize graphics
-        log::info!("[run_preview_overlay] Creating D3D11 device");
         let d3d_device =
             d3d::create_device().map_err(|e| format!("Failed to create D3D11 device: {:?}", e))?;
 
-        log::info!("[run_preview_overlay] Creating swap chain");
         let swap_chain = d3d::create_swap_chain(&d3d_device, bounds.width(), bounds.height())
             .map_err(|e| format!("Failed to create swap chain: {:?}", e))?;
 
-        log::info!("[run_preview_overlay] Creating DirectComposition");
         let compositor_resources = compositor::create_compositor(&d3d_device, hwnd, &swap_chain)
             .map_err(|e| format!("Failed to create DirectComposition: {:?}", e))?;
 
-        log::info!("[run_preview_overlay] Creating D2D resources");
         let d2d_resources = d2d::create_resources(&d3d_device)
             .map_err(|e| format!("Failed to create D2D resources: {:?}", e))?;
 
         // Show window
-        log::info!("[run_preview_overlay] Showing window");
         let _ = ShowWindow(hwnd, SW_SHOW);
 
         // Preview render loop - no message handling, just render highlights

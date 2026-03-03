@@ -167,7 +167,7 @@ fn monitor_microphone(
     let device_name = device
         .get_friendlyname()
         .unwrap_or_else(|_| "Unknown".to_string());
-    log::info!("[AUDIO_MONITOR] Monitoring microphone: '{}'", device_name);
+    log::debug!("[AUDIO_MONITOR] Monitoring microphone: '{}'", device_name);
 
     // Get audio client
     let mut audio_client = match device.get_iaudioclient() {
@@ -224,7 +224,7 @@ fn monitor_microphone(
     }
 
     is_active.store(true, Ordering::SeqCst);
-    log::info!("[AUDIO_MONITOR] Microphone monitoring started");
+    log::debug!("[AUDIO_MONITOR] Microphone monitoring started");
 
     // Capture buffer
     let mut sample_queue: VecDeque<u8> = VecDeque::with_capacity(48000 * 4);
@@ -258,7 +258,7 @@ fn monitor_microphone(
     if let Ok(mut lvl) = level.lock() {
         *lvl = 0.0;
     }
-    log::info!("[AUDIO_MONITOR] Microphone monitoring stopped");
+    log::debug!("[AUDIO_MONITOR] Microphone monitoring stopped");
 }
 
 /// Monitor system audio levels (WASAPI loopback).
@@ -302,7 +302,7 @@ fn monitor_system_audio(
     let device_name = device
         .get_friendlyname()
         .unwrap_or_else(|_| "Unknown".to_string());
-    log::info!("[AUDIO_MONITOR] Monitoring system audio: '{}'", device_name);
+    log::debug!("[AUDIO_MONITOR] Monitoring system audio: '{}'", device_name);
 
     // Get audio client
     let mut audio_client = match device.get_iaudioclient() {
@@ -362,7 +362,7 @@ fn monitor_system_audio(
     }
 
     is_active.store(true, Ordering::SeqCst);
-    log::info!("[AUDIO_MONITOR] System audio monitoring started");
+    log::debug!("[AUDIO_MONITOR] System audio monitoring started");
 
     // Capture buffer
     let mut sample_queue: VecDeque<u8> = VecDeque::with_capacity(48000 * 4);
@@ -396,7 +396,7 @@ fn monitor_system_audio(
     if let Ok(mut lvl) = level.lock() {
         *lvl = 0.0;
     }
-    log::info!("[AUDIO_MONITOR] System audio monitoring stopped");
+    log::debug!("[AUDIO_MONITOR] System audio monitoring stopped");
 }
 
 /// Start audio level monitoring.

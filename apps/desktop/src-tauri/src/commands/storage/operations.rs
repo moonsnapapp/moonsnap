@@ -1228,8 +1228,8 @@ pub async fn startup_cleanup(app: AppHandle) -> Result<StartupCleanupResult, Str
             }
         }
 
-        log::info!(
-            "Startup cleanup complete: {} temp files, {} thumbnails, {} videos migrated",
+        log::debug!(
+            "Startup cleanup: {} temp files, {} thumbnails, {} videos migrated",
             temp_files_cleaned,
             thumbnails_regenerated,
             videos_migrated

@@ -77,7 +77,7 @@ pub fn get_webcam_devices() -> Result<Vec<WebcamDevice>, String> {
         })
         .collect();
 
-    log::info!("[WEBCAM] Enumerated {} devices", result.len());
+    log::debug!("[WEBCAM] Enumerated {} devices", result.len());
     Ok(result)
 }
 

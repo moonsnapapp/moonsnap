@@ -323,11 +323,9 @@ pub async fn set_capture_toolbar_ignore_cursor(
 /// Different from capture toolbar which appears during region selection.
 #[command]
 pub async fn show_startup_toolbar(app: AppHandle) -> Result<(), String> {
-    log::info!("[show_startup_toolbar] Called");
-
     // Check if window already exists
     if let Some(window) = app.get_webview_window(CAPTURE_TOOLBAR_LABEL) {
-        log::info!("[show_startup_toolbar] Window already exists, bringing to front");
+        log::debug!("[show_startup_toolbar] Window already exists, bringing to front");
 
         // Use Windows API to forcefully bring window to front
         #[cfg(target_os = "windows")]
@@ -367,7 +365,7 @@ pub async fn show_startup_toolbar(app: AppHandle) -> Result<(), String> {
         return Ok(());
     }
 
-    log::info!("[show_startup_toolbar] Window does not exist, creating new one");
+    log::debug!("[show_startup_toolbar] Creating new window");
 
     // Get primary monitor info for centering
     let monitors = app
@@ -393,8 +391,8 @@ pub async fn show_startup_toolbar(app: AppHandle) -> Result<(), String> {
     let x = monitor_pos.x + (monitor_size.width as i32 - initial_width as i32) / 2;
     let y = monitor_pos.y + monitor_size.height as i32 - initial_height as i32 - 100; // 100px from bottom
 
-    log::info!(
-        "[show_startup_toolbar] Creating window at position ({}, {}) with size {}x{}",
+    log::debug!(
+        "[show_startup_toolbar] Position ({}, {}), size {}x{}",
         x,
         y,
         initial_width,
@@ -417,8 +415,6 @@ pub async fn show_startup_toolbar(app: AppHandle) -> Result<(), String> {
         .build()
         .map_err(|e| format!("Failed to create startup toolbar window: {}", e))?;
 
-    log::info!("[show_startup_toolbar] Window created successfully");
-
     // Set position/size using physical coordinates
     set_physical_bounds(&window, x, y, initial_width, initial_height)?;
 
@@ -431,7 +427,7 @@ pub async fn show_startup_toolbar(app: AppHandle) -> Result<(), String> {
         .set_focus()
         .map_err(|e| format!("Failed to focus toolbar: {}", e))?;
 
-    log::info!("[show_startup_toolbar] Window shown and focused");
+    log::info!("[show_startup_toolbar] Toolbar ready");
 
     Ok(())
 }
