@@ -1,4 +1,4 @@
-import { memo, useCallback, useRef, useEffect, useState, useMemo } from 'react';
+import { memo, useCallback, useRef, useEffect, useLayoutEffect, useState, useMemo } from 'react';
 import { convertFileSrc } from '@tauri-apps/api/core';
 import { resolveResource } from '@tauri-apps/api/path';
 import { TEXT_ANIMATION } from '../../constants';
@@ -302,6 +302,7 @@ export function GPUVideoPreview({ isActive = true }: GPUVideoPreviewProps) {
   const systemAudioRef = useRef<HTMLAudioElement>(null);
   const micAudioRef = useRef<HTMLAudioElement>(null);
   const typewriterAudioRef = useRef<HTMLAudioElement>(null);
+  const compositionWrapperRef = useRef<HTMLDivElement>(null);
   const [videoError, setVideoError] = useState<string | null>(null);
   const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
   const [previewAreaSize, setPreviewAreaSize] = useState({ width: 0, height: 0 });
@@ -330,9 +331,16 @@ export function GPUVideoPreview({ isActive = true }: GPUVideoPreviewProps) {
 
   const webcamOverlayOpacity = getRegularCameraTransitionOpacity(scene);
 
-  // Track container + preview area sizes.
-  // Throttled to ~10fps during active resize to avoid expensive canvas
-  // re-renders in overlay children on every animation frame.
+  // --- Resize tracking with CSS-transform fast path ---
+  // Between throttle ticks, scale the composition wrapper via GPU-composited
+  // CSS transform (instant, zero React re-renders). The real state update
+  // fires at ~10fps, triggering a full render at the correct size.
+  // useLayoutEffect clears the transform synchronously after React commits
+  // the new layout, preventing any visual flash.
+  // (compositeRef/lastPreviewAreaRef sync effects are after usePreviewStyles below)
+  const compositeRef = useRef({ width: 0, height: 0 });
+  const lastPreviewAreaRef = useRef({ width: 0, height: 0 });
+
   useEffect(() => {
     const container = containerRef.current;
     const previewArea = previewAreaRef.current;
@@ -361,6 +369,29 @@ export function GPUVideoPreview({ isActive = true }: GPUVideoPreviewProps) {
     const schedule = () => {
       // Skip if an update is already pending (leading+trailing throttle)
       if (rafId !== null || trailingId !== null) return;
+
+      // Apply CSS transform for instant visual feedback between throttle ticks
+      const wrapper = compositionWrapperRef.current;
+      const comp = compositeRef.current;
+      const last = lastPreviewAreaRef.current;
+      if (wrapper && comp.width > 0 && last.width > 0 && last.height > 0) {
+        const pw = previewArea.clientWidth;
+        const ph = previewArea.clientHeight;
+        const dpr = window.devicePixelRatio || 1;
+        // DPR cap: never render more CSS pixels than the source contains
+        const maxW = Math.ceil(comp.width / dpr);
+        const maxH = Math.ceil(comp.height / dpr);
+        // Fit scale = min(widthRatio, heightRatio), clamped by DPR cap
+        const oldFitW = Math.min(last.width, maxW) / comp.width;
+        const oldFitH = Math.min(last.height, maxH) / comp.height;
+        const newFitW = Math.min(pw, maxW) / comp.width;
+        const newFitH = Math.min(ph, maxH) / comp.height;
+        const oldFit = Math.min(oldFitW, oldFitH);
+        const newFit = Math.min(newFitW, newFitH);
+        if (oldFit > 0) {
+          wrapper.style.transform = `scale(${newFit / oldFit})`;
+        }
+      }
 
       const elapsed = performance.now() - lastFlushTime;
       if (elapsed >= THROTTLE_MS) {
@@ -458,6 +489,20 @@ export function GPUVideoPreview({ isActive = true }: GPUVideoPreviewProps) {
     containerSize,
     previewAreaSize,
   });
+
+  // Sync composite dimensions to ref for the CSS-transform resize fast path
+  useEffect(() => {
+    compositeRef.current = { width: compositeWidth, height: compositeHeight };
+  }, [compositeWidth, compositeHeight]);
+
+  // After React renders with new sizes, clear the CSS transform and record
+  // the rendered preview area size so the next transform delta is correct.
+  useLayoutEffect(() => {
+    if (compositionWrapperRef.current) {
+      compositionWrapperRef.current.style.transform = '';
+    }
+    lastPreviewAreaRef.current = { width: previewAreaSize.width, height: previewAreaSize.height };
+  }, [previewAreaSize.width, previewAreaSize.height]);
 
   // Resolve wallpaper URL
   useEffect(() => {
@@ -578,6 +623,7 @@ export function GPUVideoPreview({ isActive = true }: GPUVideoPreviewProps) {
 
       {/* Outer wrapper for background */}
       <div
+        ref={compositionWrapperRef}
         className="relative overflow-hidden"
         style={{
           width: compositionSize.width,
