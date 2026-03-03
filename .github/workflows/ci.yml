@@ -98,7 +98,6 @@ jobs:
           - moonsnap-domain
           - moonsnap-media
           - moonsnap-render
-          - moonsnap-export
 
     steps:
       - uses: actions/checkout@v6
@@ -115,10 +114,16 @@ jobs:
         run: cargo test -p ${{ matrix.crate }} --lib --manifest-path apps/desktop/src-tauri/Cargo.toml
 
   rust-crate-contracts-windows:
-    name: Rust Crate Contracts (moonsnap-capture)
+    name: Rust Crate Contracts (${{ matrix.crate }})
     needs: changes
     if: needs.changes.outputs.rust == 'true' || needs.changes.outputs.ci == 'true'
     runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        crate:
+          - moonsnap-capture
+          - moonsnap-export
 
     steps:
       - uses: actions/checkout@v6
@@ -132,7 +137,7 @@ jobs:
           workspaces: './apps/desktop/src-tauri -> target'
 
       - name: Test shared crate contract
-        run: cargo test -p moonsnap-capture --lib --manifest-path apps/desktop/src-tauri/Cargo.toml
+        run: cargo test -p ${{ matrix.crate }} --lib --manifest-path apps/desktop/src-tauri/Cargo.toml
 
   rust-desktop-full-checks:
     name: Rust Desktop Full Checks
