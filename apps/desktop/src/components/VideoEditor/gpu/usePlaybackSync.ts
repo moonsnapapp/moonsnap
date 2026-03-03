@@ -8,7 +8,7 @@
  */
 
 import { useEffect, useCallback, useRef } from 'react';
-import { useVideoEditorStore, findSegmentAtSourceTime } from '../../../stores/videoEditorStore';
+import { useVideoEditorStore, findSegmentAtSourceTime, getEffectiveDuration } from '../../../stores/videoEditorStore';
 import { selectLastSeekToken } from '../../../stores/videoEditor/selectors';
 import { usePlaybackControls, initPlaybackEngine } from '../../../hooks/usePlaybackEngine';
 import { useTimelineToSourceTime } from '../../../hooks/useTimelineSourceTime';
@@ -108,7 +108,16 @@ export function usePlaybackSync(options: PlaybackSyncOptions): PlaybackSyncResul
 
     const onEnded = () => {
       controls.stopRAFLoop();
-      useVideoEditorStore.getState().setIsPlaying(false);
+      // Snap playhead to the exact end — the browser fires `ended` before the
+      // next RAF callback, so the RAF loop never reads the final position.
+      const state = useVideoEditorStore.getState();
+      const segments = state.project?.timeline.segments;
+      const sourceDuration = state.project?.timeline.durationMs ?? 0;
+      const endTime = segments && segments.length > 0
+        ? getEffectiveDuration(segments, sourceDuration)
+        : sourceDuration;
+      state.setCurrentTime(endTime);
+      state.setIsPlaying(false);
     };
 
     const onError = (e: Event) => {
