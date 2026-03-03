@@ -22,12 +22,12 @@ use super::decoder::VideoDecoder;
 use super::renderer::Renderer;
 use super::svg_cursor::render_svg_cursor_to_extent;
 use crate::commands::video_recording::cursor::events::load_cursor_recording;
-use snapit_domain::video_project::VideoProject;
-use snapit_render::types::{
+use moonsnap_domain::video_project::VideoProject;
+use moonsnap_render::types::{
     BackgroundStyle, EditorInstanceInfo, PlaybackEvent, PlaybackState, RenderOptions, RenderedFrame,
 };
-use snapit_render::webcam_overlay::{build_webcam_overlay, is_webcam_visible_at};
-use snapit_render::zoom::ZoomInterpolator;
+use moonsnap_render::webcam_overlay::{build_webcam_overlay, is_webcam_visible_at};
+use moonsnap_render::zoom::ZoomInterpolator;
 
 /// Events sent from playback loop to main thread.
 enum PlaybackCommand {

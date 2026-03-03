@@ -102,7 +102,7 @@ function parseChangelogMarkdown(markdown) {
  * @returns {string}
  */
 function renderReleaseMarkdown(entry) {
-  const lines = [`## SnapIt v${entry.version} (${entry.date})`, ""];
+  const lines = [`## MoonSnap v${entry.version} (${entry.date})`, ""];
 
   for (const section of entry.sections) {
     if (section.items.length === 0) {

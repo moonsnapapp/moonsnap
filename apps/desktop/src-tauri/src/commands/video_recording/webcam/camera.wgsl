@@ -1,6 +1,6 @@
 //! Webcam preview shader - renders camera texture with shape masking.
 //!
-//! Adapted from Cap's camera.wgsl for SnapIt's webcam preview window.
+//! Adapted from Cap's camera.wgsl for MoonSnap's webcam preview window.
 //! Supports circle and rectangle shapes with anti-aliased edges.
 
 struct StateUniforms {

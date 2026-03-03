@@ -22,7 +22,7 @@ const sora = Sora({
 });
 
 export const metadata: Metadata = {
-  title: "SnapIt - Screen Capture & Recording Made Beautiful",
+  title: "MoonSnap - Screen Capture & Recording Made Beautiful",
   description:
     "Capture screenshots, record videos, and create stunning GIFs with the most elegant screen recording tool for Windows.",
   keywords: [
@@ -35,7 +35,7 @@ export const metadata: Metadata = {
     "desktop app",
   ],
   openGraph: {
-    title: "SnapIt - Screen Capture & Recording Made Beautiful",
+    title: "MoonSnap - Screen Capture & Recording Made Beautiful",
     description:
       "Capture screenshots, record videos, and create stunning GIFs with the most elegant screen recording tool for Windows.",
     type: "website",

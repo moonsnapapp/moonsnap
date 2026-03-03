@@ -270,7 +270,7 @@ fn spawn_ffmpeg(
     width: u32,
     height: u32,
 ) -> Result<(ChildStdin, Child), String> {
-    let ffmpeg_path = snapit_media::ffmpeg::find_ffmpeg().ok_or("FFmpeg not found")?;
+    let ffmpeg_path = moonsnap_media::ffmpeg::find_ffmpeg().ok_or("FFmpeg not found")?;
 
     // Cap output resolution to 1280 width (like Cap does)
     const MAX_OUTPUT_WIDTH: u32 = 1280;
@@ -293,7 +293,7 @@ fn spawn_ffmpeg(
         output_path
     );
 
-    let mut cmd = snapit_media::ffmpeg::create_hidden_command(&ffmpeg_path);
+    let mut cmd = moonsnap_media::ffmpeg::create_hidden_command(&ffmpeg_path);
     cmd.args(["-y", "-f", "image2pipe", "-framerate", "30", "-i", "pipe:0"]);
 
     // Add scale filter if needed (with bilinear for quality)
@@ -332,7 +332,7 @@ fn spawn_ffmpeg(
 
 /// Remux video with correct FPS to match target duration.
 fn remux_with_correct_fps(output_path: &PathBuf, target_fps: f64) -> Result<(), String> {
-    let ffmpeg_path = snapit_media::ffmpeg::find_ffmpeg().ok_or("FFmpeg not found")?;
+    let ffmpeg_path = moonsnap_media::ffmpeg::find_ffmpeg().ok_or("FFmpeg not found")?;
 
     // Rename original to temp
     let temp_path = output_path.with_extension("temp.mp4");
@@ -349,7 +349,7 @@ fn remux_with_correct_fps(output_path: &PathBuf, target_fps: f64) -> Result<(), 
         target_fps
     );
 
-    let output = snapit_media::ffmpeg::create_hidden_command(&ffmpeg_path)
+    let output = moonsnap_media::ffmpeg::create_hidden_command(&ffmpeg_path)
         .args([
             "-y",
             "-itsscale",

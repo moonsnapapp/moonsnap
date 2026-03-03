@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { settingsLogger } from '@/utils/logger';
 
-const FEEDBACK_API = 'https://snapit-feedback.walterlow88.workers.dev/feedback';
+const FEEDBACK_API = 'https://moonsnap-feedback.walterlow88.workers.dev/feedback';
 
 type SubmitStatus = 'idle' | 'submitting' | 'success' | 'error';
 

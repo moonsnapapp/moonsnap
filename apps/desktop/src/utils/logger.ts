@@ -1,5 +1,5 @@
 /**
- * Unified logging system for SnapIt frontend.
+ * Unified logging system for MoonSnap frontend.
  * 
  * In dev mode:
  * - Intercepts all console.* calls and sends to backend

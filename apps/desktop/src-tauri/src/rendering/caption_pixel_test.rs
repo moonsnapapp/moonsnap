@@ -7,9 +7,9 @@
 mod tests {
     use crate::rendering::renderer::Renderer;
     use image::{ImageBuffer, Rgba};
-    use snapit_domain::captions::{CaptionSegment, CaptionSettings, CaptionWord};
-    use snapit_render::caption_layer::prepare_captions;
-    use snapit_render::text_layer::TextLayer;
+    use moonsnap_domain::captions::{CaptionSegment, CaptionSettings, CaptionWord};
+    use moonsnap_render::caption_layer::prepare_captions;
+    use moonsnap_render::text_layer::TextLayer;
     use std::path::PathBuf;
 
     fn make_test_segment() -> CaptionSegment {

@@ -3,20 +3,20 @@
 use std::path::{Path, PathBuf};
 use std::process::{Child, Stdio};
 
-use snapit_domain::video_export::{ExportProgress, ExportStage};
-use snapit_export::encoder_selection::select_encoder_with_probe;
-use snapit_export::ffmpeg_plan::{
+use moonsnap_domain::video_export::{ExportProgress, ExportStage};
+use moonsnap_export::encoder_selection::select_encoder_with_probe;
+use moonsnap_export::ffmpeg_plan::{
     build_encoder_args, collect_source_audio_segments, prepare_audio_input_request,
     EncoderArgsBuildRequest,
 };
-use snapit_export::temp_file::stage_embedded_temp_file;
+use moonsnap_export::temp_file::stage_embedded_temp_file;
 use tauri::{AppHandle, Emitter};
 
-use snapit_domain::video_project::{ExportFormat, VideoProject};
+use moonsnap_domain::video_project::{ExportFormat, VideoProject};
 
 const TYPEWRITER_LOOP_AUDIO_BYTES: &[u8] =
     include_bytes!("../../../../public/sounds/fast_typing_loop_001.wav");
-const TYPEWRITER_LOOP_AUDIO_FILE_NAME: &str = "snapit_fast_typing_loop_001.wav";
+const TYPEWRITER_LOOP_AUDIO_FILE_NAME: &str = "moonsnap_fast_typing_loop_001.wav";
 
 fn ensure_typewriter_loop_sound_file() -> Result<PathBuf, String> {
     stage_embedded_temp_file(TYPEWRITER_LOOP_AUDIO_FILE_NAME, TYPEWRITER_LOOP_AUDIO_BYTES)
@@ -30,7 +30,7 @@ pub fn start_ffmpeg_encoder(
     height: u32,
     fps: u32,
 ) -> Result<Child, String> {
-    let ffmpeg_path = snapit_media::ffmpeg::find_ffmpeg().ok_or("FFmpeg not found")?;
+    let ffmpeg_path = moonsnap_media::ffmpeg::find_ffmpeg().ok_or("FFmpeg not found")?;
 
     // Track audio inputs for filter graph. Input 0 is always video (stdin).
     let audio_input_request = prepare_audio_input_request(project, 1, || {
@@ -44,7 +44,7 @@ pub fn start_ffmpeg_encoder(
             &ffmpeg_path,
             project.export.quality,
             prefer_hardware,
-            snapit_export::ffmpeg_plan::quality_to_crf(project.export.quality),
+            moonsnap_export::ffmpeg_plan::quality_to_crf(project.export.quality),
         );
         log::info!(
             "[EXPORT] Encoder: {} (preset: {}, {}: {})",
@@ -72,7 +72,7 @@ pub fn start_ffmpeg_encoder(
 
     log::info!("[EXPORT] FFmpeg encoder: ffmpeg {}", args.join(" "));
 
-    snapit_media::ffmpeg::create_hidden_command(&ffmpeg_path)
+    moonsnap_media::ffmpeg::create_hidden_command(&ffmpeg_path)
         .args(&args)
         .stdin(Stdio::piped())
         .stdout(Stdio::null())

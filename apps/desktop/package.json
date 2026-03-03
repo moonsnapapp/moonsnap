@@ -1,5 +1,5 @@
 {
-  "name": "@snapit/desktop",
+  "name": "@moonsnap/desktop",
   "private": true,
   "version": "0.5.7",
   "type": "module",
@@ -26,8 +26,8 @@
     "version": "node scripts/sync-version.cjs && git add src-tauri/tauri.conf.json src-tauri/Cargo.toml src-tauri/Cargo.lock"
   },
   "dependencies": {
-    "@snapit/changelog": "workspace:*",
-    "@snapit/ui": "workspace:*",
+    "@moonsnap/changelog": "workspace:*",
+    "@moonsnap/ui": "workspace:*",
     "@radix-ui/react-alert-dialog": "^1.1.15",
     "@radix-ui/react-context-menu": "^2.2.16",
     "@radix-ui/react-dialog": "^1.1.15",
@@ -79,9 +79,9 @@
     "zustand": "^5.0.9"
   },
   "devDependencies": {
-    "@snapit/config-eslint": "workspace:*",
-    "@snapit/config-tailwind": "workspace:*",
-    "@snapit/config-typescript": "workspace:*",
+    "@moonsnap/config-eslint": "workspace:*",
+    "@moonsnap/config-tailwind": "workspace:*",
+    "@moonsnap/config-typescript": "workspace:*",
     "@tailwindcss/postcss": "^4.1.18",
     "@tauri-apps/cli": "^2.9.6",
     "@testing-library/jest-dom": "^6.9.1",

@@ -6,15 +6,15 @@
 use crate::commands::video_recording::cursor::events::{
     CursorEvent, CursorEventType, CursorImage, CursorRecording, WindowsCursorShape,
 };
-use snapit_domain::video_project::CursorConfig;
-use snapit_render::coord::{Coord, FrameSpace, ScreenUVSpace, Size, ZoomedFrameSpace};
-use snapit_render::cursor_composite::{
+use moonsnap_domain::video_project::CursorConfig;
+use moonsnap_render::coord::{Coord, FrameSpace, ScreenUVSpace, Size, ZoomedFrameSpace};
+use moonsnap_render::cursor_composite::{
     composite_cursor as composite_cursor_shared,
     composite_cursor_with_motion_blur as composite_cursor_with_motion_blur_shared,
     CursorCompositeInput, CursorCompositeState, DecodedCursorImage as SharedDecodedCursorImage,
     VideoContentBounds as SharedVideoContentBounds,
 };
-use snapit_render::zoom::InterpolatedZoom;
+use moonsnap_render::zoom::InterpolatedZoom;
 use std::collections::HashMap;
 
 // ============================================================================

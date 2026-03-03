@@ -1,4 +1,4 @@
-# Rust formatting configuration for SnapIt
+# Rust formatting configuration for MoonSnap
 # https://rust-lang.github.io/rustfmt/
 
 # Use Rust 2021 edition style

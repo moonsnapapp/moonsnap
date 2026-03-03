@@ -1,5 +1,5 @@
 {
-  "name": "@snapit/config-typescript",
+  "name": "@moonsnap/config-typescript",
   "version": "0.0.1",
   "private": true,
   "files": ["base.json", "react.json"]

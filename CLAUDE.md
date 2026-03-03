@@ -1,4 +1,4 @@
-# SnapIt Development Notes
+# MoonSnap Development Notes
 
 ## Quick Reference
 
@@ -25,7 +25,7 @@ cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --lib
 ## Structure (Monorepo)
 
 ```
-snapit/
+moonsnap/
 ├── apps/desktop/           # Main Tauri app
 │   ├── src/                # React frontend (TypeScript)
 │   │   ├── components/     # UI components

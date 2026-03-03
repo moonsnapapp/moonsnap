@@ -90,8 +90,8 @@ describe('captureStore', () => {
     it('should show cached data immediately on first load', async () => {
       // Setup cache
       const cachedCaptures = [createTestCapture({ id: 'cached1' })];
-      localStorage.setItem('snapit_library_cache', JSON.stringify(cachedCaptures));
-      localStorage.setItem('snapit_library_cache_timestamp', Date.now().toString());
+      localStorage.setItem('moonsnap_library_cache', JSON.stringify(cachedCaptures));
+      localStorage.setItem('moonsnap_library_cache_timestamp', Date.now().toString());
 
       // Backend returns different data
       const freshCaptures = [createTestCapture({ id: 'fresh1' })];
@@ -117,8 +117,8 @@ describe('captureStore', () => {
       // Setup old cache (6 minutes ago)
       const cachedCaptures = [createTestCapture()];
       const oldTimestamp = Date.now() - 6 * 60 * 1000;
-      localStorage.setItem('snapit_library_cache', JSON.stringify(cachedCaptures));
-      localStorage.setItem('snapit_library_cache_timestamp', oldTimestamp.toString());
+      localStorage.setItem('moonsnap_library_cache', JSON.stringify(cachedCaptures));
+      localStorage.setItem('moonsnap_library_cache_timestamp', oldTimestamp.toString());
 
       mockInvoke.mockResolvedValue([]);
 
@@ -282,7 +282,7 @@ describe('captureStore', () => {
       );
 
       // Check localStorage was updated
-      const cached = localStorage.getItem('snapit_library_cache');
+      const cached = localStorage.getItem('moonsnap_library_cache');
       expect(cached).toBeTruthy();
       const parsedCache = JSON.parse(cached!);
       expect(parsedCache.some((c: CaptureListItem) => c.id === 'new1')).toBe(true);
@@ -295,7 +295,7 @@ describe('captureStore', () => {
 
       await useCaptureStore.getState().toggleFavorite('cap1');
 
-      const cached = localStorage.getItem('snapit_library_cache');
+      const cached = localStorage.getItem('moonsnap_library_cache');
       const parsedCache = JSON.parse(cached!);
       expect(parsedCache[0].favorite).toBe(true);
     });

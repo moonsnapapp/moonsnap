@@ -14,8 +14,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use crossbeam_channel::Receiver;
-use snapit_capture::desktop_icons::{hide_desktop_icons, show_desktop_icons};
-use snapit_capture::state::{RecorderCommand, RecordingProgress, RECORDING_CONTROLLER};
+use moonsnap_capture::desktop_icons::{hide_desktop_icons, show_desktop_icons};
+use moonsnap_capture::state::{RecorderCommand, RecordingProgress, RECORDING_CONTROLLER};
 use tauri::AppHandle;
 
 use super::{emit_state_change, RecordingFormat, RecordingSettings, RecordingState};
@@ -57,7 +57,7 @@ pub async fn start_recording(
         // Use tauri's async runtime instead of tokio::spawn to ensure the task
         // persists across async boundaries
         tauri::async_runtime::spawn(async move {
-            let cancelled = snapit_capture::recorder_countdown::run_recording_countdown(
+            let cancelled = moonsnap_capture::recorder_countdown::run_recording_countdown(
                 settings_clone.countdown_secs,
                 Duration::from_millis(150),
                 || {
@@ -146,8 +146,8 @@ fn start_capture_thread(
     let app_for_error = app.clone();
     let output_path_clone = output_path.clone();
 
-    let _handle = snapit_capture::recorder_capture_lifecycle::spawn_capture_thread_with_lifecycle(
-        snapit_capture::recorder_capture_lifecycle::CaptureThreadLifecycleConfig {
+    let _handle = moonsnap_capture::recorder_capture_lifecycle::spawn_capture_thread_with_lifecycle(
+        moonsnap_capture::recorder_capture_lifecycle::CaptureThreadLifecycleConfig {
             output_path: output_path_clone,
             before_capture: || {
                 // Hide desktop icons if enabled (restored in `after_capture`).
@@ -185,7 +185,7 @@ fn start_capture_thread(
                     })
                     .unwrap_or(false)
             },
-            validate_video_file: snapit_capture::recorder_helpers::validate_video_file,
+            validate_video_file: moonsnap_capture::recorder_helpers::validate_video_file,
             on_cancelled: move || {
                 if let Ok(mut controller) = RECORDING_CONTROLLER.lock() {
                     controller.reset();

@@ -8,8 +8,8 @@ use std::sync::Arc;
 use tauri::{AppHandle, Manager, State};
 
 use crate::rendering::{EditorInstance, RendererState};
-use snapit_domain::video_project::VideoProject;
-use snapit_render::types::{EditorInstanceInfo, PlaybackState, RenderedFrame};
+use moonsnap_domain::video_project::VideoProject;
+use moonsnap_render::types::{EditorInstanceInfo, PlaybackState, RenderedFrame};
 
 /// Global state for managing editor instances.
 pub struct EditorState {

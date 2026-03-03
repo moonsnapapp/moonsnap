@@ -13,7 +13,7 @@ Generate or update the CHANGELOG.md entry for the upcoming release by analyzing 
 ### 1. Determine the version range
 
 ```bash
-cd E:/snapit
+cd E:/moonsnap
 
 # Get the latest version tag and the current version from package.json
 LATEST_TAG=$(git tag --sort=-version:refname | head -1)
@@ -25,7 +25,7 @@ echo "Current package.json version: $CURRENT_VERSION"
 ### 2. Gather commits since the last tag
 
 ```bash
-cd E:/snapit
+cd E:/moonsnap
 LATEST_TAG=$(git tag --sort=-version:refname | head -1)
 
 # Show commits since the last tag (these are unreleased changes)
@@ -41,7 +41,7 @@ git log "$(git tag --sort=-version:refname | sed -n '2p')"..HEAD --oneline --no-
 
 ### 3. Read the existing CHANGELOG.md
 
-Read `E:/snapit/CHANGELOG.md` to understand the current entries and writing style.
+Read `E:/moonsnap/CHANGELOG.md` to understand the current entries and writing style.
 
 ### 4. Generate the changelog entry
 
@@ -76,7 +76,7 @@ Classify each commit into Keep a Changelog sections:
 - After editing CHANGELOG.md, rebuild the JSON:
 
 ```bash
-cd E:/snapit && node scripts/build-changelog-json.cjs
+cd E:/moonsnap && node scripts/build-changelog-json.cjs
 ```
 
 ### 7. Show the result
@@ -93,7 +93,7 @@ Review and clean up existing CHANGELOG.md entries by removing or rewriting non-u
 
 #### 1. Read the full CHANGELOG.md
 
-Read `E:/snapit/CHANGELOG.md` and examine every entry.
+Read `E:/moonsnap/CHANGELOG.md` and examine every entry.
 
 #### 2. Identify non-user-facing items
 
@@ -129,7 +129,7 @@ When an entry describes a real user-facing improvement but uses developer langua
 Edit CHANGELOG.md with all removals and rewrites, then rebuild the JSON:
 
 ```bash
-cd E:/snapit && node scripts/build-changelog-json.cjs
+cd E:/moonsnap && node scripts/build-changelog-json.cjs
 ```
 
 #### 6. Show a summary

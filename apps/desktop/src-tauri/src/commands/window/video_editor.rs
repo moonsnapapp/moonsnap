@@ -60,7 +60,7 @@ pub async fn show_video_editor_window(
         .unwrap_or("Video Editor");
 
     let window = WebviewWindowBuilder::new(&app, &label, url)
-        .title(format!("{} - SnapIt", filename))
+        .title(format!("{} - MoonSnap", filename))
         .inner_size(1400.0, 900.0)
         .min_inner_size(800.0, 600.0)
         .resizable(true)

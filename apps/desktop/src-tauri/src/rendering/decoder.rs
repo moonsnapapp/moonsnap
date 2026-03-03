@@ -10,15 +10,15 @@ use std::path::Path;
 use std::sync::Arc;
 use tokio::sync::mpsc;
 
-use snapit_render::types::{DecodedFrame, PixelFormat};
+use moonsnap_render::types::{DecodedFrame, PixelFormat};
 
 /// Number of frames to prefetch ahead of playback position.
-/// Configurable via SNAPIT_PREFETCH_COUNT env var (default: 5).
+/// Configurable via MOONSNAP_PREFETCH_COUNT env var (default: 5).
 static PREFETCH_COUNT: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
 
 fn prefetch_count() -> usize {
     *PREFETCH_COUNT.get_or_init(|| {
-        std::env::var("SNAPIT_PREFETCH_COUNT")
+        std::env::var("MOONSNAP_PREFETCH_COUNT")
             .ok()
             .and_then(|v| v.parse().ok())
             .unwrap_or(5)
@@ -358,10 +358,10 @@ fn decode_frame_ffmpeg(
 
     // Find FFmpeg
     let ffmpeg_path =
-        snapit_media::ffmpeg::find_ffmpeg().ok_or_else(|| "FFmpeg not found".to_string())?;
+        moonsnap_media::ffmpeg::find_ffmpeg().ok_or_else(|| "FFmpeg not found".to_string())?;
 
     // Use FFmpeg to extract frame as raw RGBA with explicit scaling to target dimensions
-    let output = snapit_media::ffmpeg::create_hidden_command(&ffmpeg_path)
+    let output = moonsnap_media::ffmpeg::create_hidden_command(&ffmpeg_path)
         .args([
             "-ss",
             &format!("{:.3}", timestamp_secs),

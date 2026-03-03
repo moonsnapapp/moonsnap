@@ -8,7 +8,7 @@ use std::io::{BufReader, Read};
 use std::path::Path;
 use std::process::{Child, Command, Stdio};
 
-use snapit_render::types::{DecodedFrame, PixelFormat};
+use moonsnap_render::types::{DecodedFrame, PixelFormat};
 
 /// BufReader capacity for FFmpeg stdout pipe (2MB).
 /// Reduces syscall count for ~8MB/frame reads from thousands to ~4.
@@ -92,7 +92,7 @@ impl StreamDecoder {
 
     /// Start the decoder with a single FFmpeg process.
     pub fn start(&mut self, path: &Path) -> Result<(), String> {
-        let ffmpeg_path = snapit_media::ffmpeg::find_ffmpeg().ok_or("FFmpeg not found")?;
+        let ffmpeg_path = moonsnap_media::ffmpeg::find_ffmpeg().ok_or("FFmpeg not found")?;
 
         let pix_fmt = match self.pixel_format {
             PixelFormat::Rgba => "rgba",

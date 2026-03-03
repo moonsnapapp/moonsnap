@@ -29,7 +29,7 @@ pub async fn show_settings_window(app: AppHandle, tab: Option<String>) -> Result
 
     // Create settings window - centered, resizable, with custom titlebar
     let window = WebviewWindowBuilder::new(&app, SETTINGS_WINDOW_LABEL, url)
-        .title("SnapIt Settings")
+        .title("MoonSnap Settings")
         .inner_size(560.0, 600.0)
         .min_inner_size(480.0, 400.0)
         .resizable(true)

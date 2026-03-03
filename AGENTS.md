@@ -1,4 +1,4 @@
-# AGENTS.md - SnapIt Development Guide
+# AGENTS.md - MoonSnap Development Guide
 
 > For agentic coding assistants working on this Tauri + React + Rust codebase.
 
@@ -15,7 +15,7 @@ Screen capture & annotation tool for Windows. Tauri 2 + React 19 + Rust + wgpu G
 ## Structure
 
 ```
-snapit/
+moonsnap/
 ├── src/                        # React frontend (TypeScript)
 │   ├── components/
 │   │   ├── Editor/             # Canvas annotation editor (Konva) [AGENTS.md]
@@ -32,7 +32,7 @@ snapit/
 │   ├── src/
 │   │   ├── commands/           # 70+ Tauri handlers [AGENTS.md]
 │   │   ├── rendering/          # wgpu GPU pipeline [AGENTS.md]
-│   │   ├── error.rs            # SnapItError + SnapItResult
+│   │   ├── error.rs            # MoonSnapError + MoonSnapResult
 │   │   └── lib.rs              # App setup, tray, plugins
 │   └── capabilities/           # Window permissions
 └── public/                     # Static assets
@@ -43,7 +43,7 @@ snapit/
 | Task | Location | Notes |
 |------|----------|-------|
 | Add annotation tool | `src/components/Editor/shapes/` | Follow ShapeRenderer pattern |
-| Add Tauri command | `src-tauri/src/commands/` | Return `SnapItResult<T>` |
+| Add Tauri command | `src-tauri/src/commands/` | Return `MoonSnapResult<T>` |
 | Add shared type | Rust file with `#[derive(TS)]` | Run `cargo test --lib` |
 | Add UI component | `src/components/ui/` | Use shadcn/ui CLI |
 | Add store | `src/stores/` | Use devtools middleware |
@@ -95,13 +95,13 @@ if (history.length > STORAGE.HISTORY_LIMIT)
 
 ### Rust
 
-**Error handling**: Always use `SnapItResult<T>` and `SnapItError` variants
+**Error handling**: Always use `MoonSnapResult<T>` and `MoonSnapError` variants
 ```rust
-use crate::error::{SnapItError, SnapItResult};
+use crate::error::{MoonSnapError, MoonSnapResult};
 
 #[tauri::command]
-pub async fn my_command() -> SnapItResult<MyType> {
-    Err(SnapItError::CaptureError("reason".into()))
+pub async fn my_command() -> MoonSnapResult<MyType> {
+    Err(MoonSnapError::CaptureError("reason".into()))
 }
 ```
 
@@ -242,7 +242,7 @@ The cursor overlay must apply the same CSS transform as the video for zoom to wo
 ## Logging
 
 Backend (Rust) logs are written to:
-- **Windows**: `%APPDATA%/com.snapit.app/logs/` (e.g., `C:\Users\<user>\AppData\Roaming\com.snapit.app\logs\`)
+- **Windows**: `%APPDATA%/com.moonsnap.app/logs/` (e.g., `C:\Users\<user>\AppData\Roaming\com.moonsnap.app\logs\`)
 - Logs include timestamps and are rotated automatically
 - Use `log::info!`, `log::debug!`, `log::warn!`, `log::error!` in Rust code
 - Both console output and file logging are enabled via `tauri-plugin-log`

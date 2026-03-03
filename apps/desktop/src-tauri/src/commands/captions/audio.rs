@@ -5,7 +5,7 @@
 use std::path::Path;
 use std::process::Stdio;
 
-use snapit_media::ffmpeg::{create_hidden_command, find_ffmpeg, find_ffprobe};
+use moonsnap_media::ffmpeg::{create_hidden_command, find_ffmpeg, find_ffprobe};
 
 /// Check if a video file contains an audio stream.
 ///

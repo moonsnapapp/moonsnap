@@ -454,7 +454,7 @@ export const ShortcutInput: React.FC<ShortcutInputProps> = ({
       {conflictStatus === 'internal_conflict' && (
         <p className="text-xs text-red-500 flex items-center gap-1">
           <AlertTriangle className="w-3 h-3" />
-          This shortcut is already used by another SnapIt action
+          This shortcut is already used by another MoonSnap action
         </p>
       )}
       {conflictStatus === 'available' && hasPendingChanges && (

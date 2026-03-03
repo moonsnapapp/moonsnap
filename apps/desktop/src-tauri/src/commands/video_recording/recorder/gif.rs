@@ -1,11 +1,11 @@
 //! App-layer wrapper for GIF capture.
-//! Canonical capture engine implementation lives in `snapit-capture`.
+//! Canonical capture engine implementation lives in `moonsnap-capture`.
 
 use std::path::PathBuf;
 use std::sync::Arc;
 
 use crossbeam_channel::Receiver;
-use snapit_capture::state::{RecorderCommand, RecordingProgress};
+use moonsnap_capture::state::{RecorderCommand, RecordingProgress};
 use tauri::AppHandle;
 
 use super::super::{emit_state_change, RecordingSettings};
@@ -19,7 +19,7 @@ pub fn run_gif_capture(
     command_rx: Receiver<RecorderCommand>,
     started_at: &str,
 ) -> Result<f64, String> {
-    snapit_capture::recorder_gif::run_gif_capture(
+    moonsnap_capture::recorder_gif::run_gif_capture(
         settings,
         output_path,
         progress,

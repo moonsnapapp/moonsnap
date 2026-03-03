@@ -1,5 +1,5 @@
 import React from 'react';
-import { changelog } from '@snapit/changelog';
+import { changelog } from '@moonsnap/changelog';
 
 const formatReleaseDate = (value: string): string => {
   const parsedDate = new Date(`${value}T00:00:00`);

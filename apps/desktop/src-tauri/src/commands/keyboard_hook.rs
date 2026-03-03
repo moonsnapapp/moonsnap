@@ -272,7 +272,7 @@ fn create_message_window() -> Result<HWND, String> {
         let hinstance =
             GetModuleHandleW(None).map_err(|e| format!("GetModuleHandleW failed: {}", e))?;
 
-        let class_name = windows::core::w!("SnapItHotkeyClass");
+        let class_name = windows::core::w!("MoonSnapHotkeyClass");
 
         let wc = WNDCLASSW {
             style: CS_HREDRAW | CS_VREDRAW,
@@ -290,7 +290,7 @@ fn create_message_window() -> Result<HWND, String> {
         let hwnd = CreateWindowExW(
             WINDOW_EX_STYLE::default(),
             class_name,
-            windows::core::w!("SnapIt Hotkey Window"),
+            windows::core::w!("MoonSnap Hotkey Window"),
             WS_OVERLAPPED,
             0,
             0,

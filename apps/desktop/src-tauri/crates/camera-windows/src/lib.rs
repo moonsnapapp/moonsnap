@@ -1,6 +1,6 @@
 //! Windows camera capture using Media Foundation
 //!
-//! Adapted from Cap's camera-windows crate for SnapIt.
+//! Adapted from Cap's camera-windows crate for MoonSnap.
 //! Provides device enumeration, format negotiation, and frame capture via callbacks.
 
 #![cfg(windows)]

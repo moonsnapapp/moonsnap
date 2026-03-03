@@ -205,7 +205,7 @@ impl WebcamCaptureService {
 
     /// Run the capture loop (blocking - call from a thread).
     pub fn run(self) -> Result<(), String> {
-        use snapit_camera_windows::{FormatPreference, PixelFormat};
+        use moonsnap_camera_windows::{FormatPreference, PixelFormat};
 
         let device = get_device_by_index(self.device_index)?;
 
@@ -443,7 +443,7 @@ pub fn is_capture_running() -> bool {
 
 /// Enumerate available webcam devices using native API.
 pub fn enumerate_devices() -> Result<Vec<(usize, String)>, String> {
-    let devices = snapit_camera_windows::get_devices()
+    let devices = moonsnap_camera_windows::get_devices()
         .map_err(|e| format!("Failed to enumerate devices: {}", e))?;
 
     let result: Vec<(usize, String)> = devices

@@ -45,7 +45,7 @@ pub async fn show_capture_toolbar(
     // Create window hidden - frontend will configure size/position and show it
     // Uses custom titlebar like the main library window (decorations: false, transparent: true)
     let window = WebviewWindowBuilder::new(&app, CAPTURE_TOOLBAR_LABEL, url)
-        .title("SnapIt Capture")
+        .title("MoonSnap Capture")
         .transparent(true)
         .decorations(false)
         .maximizable(false)
@@ -404,7 +404,7 @@ pub async fn show_startup_toolbar(app: AppHandle) -> Result<(), String> {
     // Create window - visible immediately, frontend will resize after measuring
     // Uses custom titlebar like the main library window (decorations: false, transparent: true)
     let window = WebviewWindowBuilder::new(&app, CAPTURE_TOOLBAR_LABEL, url)
-        .title("SnapIt Capture")
+        .title("MoonSnap Capture")
         .transparent(true)
         .decorations(false)
         .maximizable(false)

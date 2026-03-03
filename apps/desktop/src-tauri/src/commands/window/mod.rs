@@ -1,4 +1,4 @@
-//! Window management commands for SnapIt.
+//! Window management commands for MoonSnap.
 //!
 //! ## Architecture
 //!

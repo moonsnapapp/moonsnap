@@ -39,7 +39,7 @@ impl Renderer {
         // Request device and queue
         let (device, queue) = adapter
             .request_device(&wgpu::DeviceDescriptor {
-                label: Some("SnapIt Video Renderer"),
+                label: Some("MoonSnap Video Renderer"),
                 required_features: wgpu::Features::empty(),
                 required_limits: wgpu::Limits::default(),
                 memory_hints: wgpu::MemoryHints::Performance,

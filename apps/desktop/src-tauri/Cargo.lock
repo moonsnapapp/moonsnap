@@ -3789,6 +3789,174 @@ dependencies = [
 ]
 
 [[package]]
+name = "moonsnap"
+version = "0.5.7"
+dependencies = [
+ "axum",
+ "base64 0.22.1",
+ "bezier_easing",
+ "bytemuck",
+ "chrono",
+ "cpal",
+ "crossbeam-channel",
+ "device_query",
+ "dirs 5.0.1",
+ "env_logger",
+ "ffmpeg-next",
+ "ffmpeg-sidecar",
+ "flume",
+ "font-kit",
+ "futures",
+ "futures-util",
+ "glyphon",
+ "hound",
+ "image",
+ "lazy_static",
+ "log",
+ "lru",
+ "moonsnap-camera-windows",
+ "moonsnap-capture",
+ "moonsnap-core",
+ "moonsnap-domain",
+ "moonsnap-export",
+ "moonsnap-media",
+ "moonsnap-render",
+ "nokhwa",
+ "parking_lot",
+ "pollster",
+ "proptest",
+ "rand 0.8.5",
+ "raw-window-handle",
+ "reqwest",
+ "resvg",
+ "rstest",
+ "scap-direct3d",
+ "scap-targets",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-autostart",
+ "tauri-plugin-clipboard-manager",
+ "tauri-plugin-dialog",
+ "tauri-plugin-fs",
+ "tauri-plugin-global-shortcut",
+ "tauri-plugin-opener",
+ "tauri-plugin-process",
+ "tauri-plugin-single-instance",
+ "tauri-plugin-store",
+ "tauri-plugin-updater",
+ "tauri-plugin-window-state",
+ "tempfile",
+ "thiserror 1.0.69",
+ "tokio",
+ "tokio-util",
+ "ts-rs",
+ "urlencoding",
+ "uuid",
+ "wasapi",
+ "wgpu",
+ "whisper-rs",
+ "windows 0.58.0",
+ "windows-capture",
+ "windows-core 0.58.0",
+ "xcap",
+]
+
+[[package]]
+name = "moonsnap-camera-windows"
+version = "0.1.0"
+dependencies = [
+ "parking_lot",
+ "thiserror 1.0.69",
+ "tracing",
+ "windows 0.60.0",
+ "windows-core 0.60.1",
+]
+
+[[package]]
+name = "moonsnap-capture"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "cpal",
+ "crossbeam-channel",
+ "hound",
+ "image",
+ "lazy_static",
+ "log",
+ "moonsnap-domain",
+ "moonsnap-media",
+ "proptest",
+ "scap-direct3d",
+ "scap-targets",
+ "serde",
+ "serde_json",
+ "wasapi",
+ "windows 0.58.0",
+]
+
+[[package]]
+name = "moonsnap-core"
+version = "0.1.0"
+dependencies = [
+ "image",
+ "serde",
+ "serde_json",
+ "thiserror 1.0.69",
+]
+
+[[package]]
+name = "moonsnap-domain"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "rand 0.8.5",
+ "serde",
+ "serde_json",
+ "ts-rs",
+]
+
+[[package]]
+name = "moonsnap-export"
+version = "0.1.0"
+dependencies = [
+ "log",
+ "moonsnap-domain",
+ "moonsnap-media",
+ "moonsnap-render",
+ "tokio",
+]
+
+[[package]]
+name = "moonsnap-media"
+version = "0.1.0"
+dependencies = [
+ "ffmpeg-sidecar",
+ "image",
+ "log",
+ "serde_json",
+]
+
+[[package]]
+name = "moonsnap-render"
+version = "0.1.0"
+dependencies = [
+ "bezier_easing",
+ "bytemuck",
+ "glyphon",
+ "image",
+ "log",
+ "moonsnap-domain",
+ "proptest",
+ "serde",
+ "tokio",
+ "ts-rs",
+ "wgpu",
+]
+
+[[package]]
 name = "moxcms"
 version = "0.7.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6331,174 +6499,6 @@ name = "smol_str"
 version = "0.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "dd538fb6910ac1099850255cf94a94df6551fbdd602454387d0adb2d1ca6dead"
-
-[[package]]
-name = "snapit"
-version = "0.5.7"
-dependencies = [
- "axum",
- "base64 0.22.1",
- "bezier_easing",
- "bytemuck",
- "chrono",
- "cpal",
- "crossbeam-channel",
- "device_query",
- "dirs 5.0.1",
- "env_logger",
- "ffmpeg-next",
- "ffmpeg-sidecar",
- "flume",
- "font-kit",
- "futures",
- "futures-util",
- "glyphon",
- "hound",
- "image",
- "lazy_static",
- "log",
- "lru",
- "nokhwa",
- "parking_lot",
- "pollster",
- "proptest",
- "rand 0.8.5",
- "raw-window-handle",
- "reqwest",
- "resvg",
- "rstest",
- "scap-direct3d",
- "scap-targets",
- "serde",
- "serde_json",
- "sha2",
- "snapit-camera-windows",
- "snapit-capture",
- "snapit-core",
- "snapit-domain",
- "snapit-export",
- "snapit-media",
- "snapit-render",
- "tauri",
- "tauri-build",
- "tauri-plugin-autostart",
- "tauri-plugin-clipboard-manager",
- "tauri-plugin-dialog",
- "tauri-plugin-fs",
- "tauri-plugin-global-shortcut",
- "tauri-plugin-opener",
- "tauri-plugin-process",
- "tauri-plugin-single-instance",
- "tauri-plugin-store",
- "tauri-plugin-updater",
- "tauri-plugin-window-state",
- "tempfile",
- "thiserror 1.0.69",
- "tokio",
- "tokio-util",
- "ts-rs",
- "urlencoding",
- "uuid",
- "wasapi",
- "wgpu",
- "whisper-rs",
- "windows 0.58.0",
- "windows-capture",
- "windows-core 0.58.0",
- "xcap",
-]
-
-[[package]]
-name = "snapit-camera-windows"
-version = "0.1.0"
-dependencies = [
- "parking_lot",
- "thiserror 1.0.69",
- "tracing",
- "windows 0.60.0",
- "windows-core 0.60.1",
-]
-
-[[package]]
-name = "snapit-capture"
-version = "0.1.0"
-dependencies = [
- "chrono",
- "cpal",
- "crossbeam-channel",
- "hound",
- "image",
- "lazy_static",
- "log",
- "proptest",
- "scap-direct3d",
- "scap-targets",
- "serde",
- "serde_json",
- "snapit-domain",
- "snapit-media",
- "wasapi",
- "windows 0.58.0",
-]
-
-[[package]]
-name = "snapit-core"
-version = "0.1.0"
-dependencies = [
- "image",
- "serde",
- "serde_json",
- "thiserror 1.0.69",
-]
-
-[[package]]
-name = "snapit-domain"
-version = "0.1.0"
-dependencies = [
- "chrono",
- "rand 0.8.5",
- "serde",
- "serde_json",
- "ts-rs",
-]
-
-[[package]]
-name = "snapit-export"
-version = "0.1.0"
-dependencies = [
- "log",
- "snapit-domain",
- "snapit-media",
- "snapit-render",
- "tokio",
-]
-
-[[package]]
-name = "snapit-media"
-version = "0.1.0"
-dependencies = [
- "ffmpeg-sidecar",
- "image",
- "log",
- "serde_json",
-]
-
-[[package]]
-name = "snapit-render"
-version = "0.1.0"
-dependencies = [
- "bezier_easing",
- "bytemuck",
- "glyphon",
- "image",
- "log",
- "proptest",
- "serde",
- "snapit-domain",
- "tokio",
- "ts-rs",
- "wgpu",
-]
 
 [[package]]
 name = "socket2"

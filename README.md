@@ -1,4 +1,4 @@
-# SnapIt
+# MoonSnap
 
 A fast, native screen capture and annotation tool for Windows. Built with Tauri 2, React 19, and Rust.
 
@@ -77,7 +77,7 @@ bun run typecheck
 ### Project Structure
 
 ```
-snapit/
+moonsnap/
 ├── src/                    # React frontend
 │   ├── components/         # UI components
 │   │   ├── Editor/         # Canvas annotation editor

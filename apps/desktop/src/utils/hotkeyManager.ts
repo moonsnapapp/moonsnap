@@ -828,7 +828,7 @@ export async function checkShortcutConflict(
   shortcut: string,
   excludeId?: string
 ): Promise<'available' | 'conflict' | 'internal_conflict' | 'error'> {
-  // First check internal conflicts (within SnapIt)
+  // First check internal conflicts (within MoonSnap)
   if (hasInternalConflict(shortcut, excludeId)) {
     return 'internal_conflict';
   }
@@ -839,7 +839,7 @@ export async function checkShortcutConflict(
     const alreadyRegistered = await isRegistered(shortcut);
     
     if (alreadyRegistered) {
-      // Already registered by SnapIt - available
+      // Already registered by MoonSnap - available
       return 'available';
     }
 

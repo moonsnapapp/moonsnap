@@ -313,7 +313,7 @@ export interface GeneralSettings {
   defaultSaveDir: string | null;
   imageFormat: ImageFormat;
   jpgQuality: number; // 0-100
-  allowOverride: boolean; // Allow SnapIt to override shortcuts registered by other apps
+  allowOverride: boolean; // Allow MoonSnap to override shortcuts registered by other apps
   theme: Theme; // App color theme
 }
 

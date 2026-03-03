@@ -54,7 +54,7 @@ pub struct WebcamDevice {
 
 /// Get a list of available webcam devices using native Media Foundation.
 pub fn get_webcam_devices() -> Result<Vec<WebcamDevice>, String> {
-    let devices = snapit_camera_windows::get_devices()
+    let devices = moonsnap_camera_windows::get_devices()
         .map_err(|e| format!("Failed to enumerate webcam devices: {}", e))?;
 
     let result: Vec<WebcamDevice> = devices
@@ -84,7 +84,7 @@ pub fn get_webcam_devices() -> Result<Vec<WebcamDevice>, String> {
 /// Query supported resolutions from a device's format list.
 /// Max resolution is capped at 1080p for performance.
 fn query_supported_resolutions(
-    device: &snapit_camera_windows::VideoDevice,
+    device: &moonsnap_camera_windows::VideoDevice,
 ) -> SupportedResolutions {
     let formats = device.formats();
 
@@ -141,8 +141,8 @@ fn query_supported_resolutions(
 }
 
 /// Get a specific device by index.
-pub fn get_device_by_index(index: usize) -> Result<snapit_camera_windows::VideoDevice, String> {
-    let devices = snapit_camera_windows::get_devices()
+pub fn get_device_by_index(index: usize) -> Result<moonsnap_camera_windows::VideoDevice, String> {
+    let devices = moonsnap_camera_windows::get_devices()
         .map_err(|e| format!("Failed to enumerate webcam devices: {}", e))?;
 
     devices

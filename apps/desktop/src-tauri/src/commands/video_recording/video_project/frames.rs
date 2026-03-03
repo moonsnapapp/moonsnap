@@ -25,7 +25,7 @@ pub fn extract_video_frame(
     timestamp_ms: u64,
     max_width: Option<u32>,
 ) -> Result<String, String> {
-    let ffmpeg_path = snapit_media::ffmpeg::find_ffmpeg()
+    let ffmpeg_path = moonsnap_media::ffmpeg::find_ffmpeg()
         .ok_or_else(|| "FFmpeg not found. Ensure FFmpeg is installed.".to_string())?;
 
     // Convert milliseconds to FFmpeg time format (HH:MM:SS.mmm)
@@ -61,7 +61,7 @@ pub fn extract_video_frame(
 
     args.push("-".to_string()); // Output to stdout
 
-    let output = snapit_media::ffmpeg::create_hidden_command(&ffmpeg_path)
+    let output = moonsnap_media::ffmpeg::create_hidden_command(&ffmpeg_path)
         .args(&args)
         .output()
         .map_err(|e| format!("Failed to run FFmpeg: {}", e))?;

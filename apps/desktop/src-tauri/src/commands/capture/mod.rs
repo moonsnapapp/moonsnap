@@ -7,7 +7,7 @@
 
 pub mod fallback;
 
-use snapit_domain::capture::{
+use moonsnap_domain::capture::{
     CaptureResult, FastCaptureResult, MonitorInfo, RegionSelection, ScreenRegionSelection,
     VirtualScreenBounds, WindowInfo,
 };
@@ -273,8 +273,8 @@ fn try_get_window_info(
         let app_name = get_process_name(process_id);
         let app_lower = app_name.to_lowercase();
 
-        // Filter out our own SnapIt windows
-        if app_lower.contains("snapit") {
+        // Filter out our own MoonSnap windows
+        if app_lower.contains("moonsnap") {
             return None;
         }
 
@@ -399,7 +399,7 @@ fn write_rgba_to_temp_file(rgba_data: &[u8], width: u32, height: u32) -> Result<
         .map(|d| d.as_millis())
         .unwrap_or(0);
 
-    let file_name = format!("snapit_capture_{}_{}.rgba", timestamp, std::process::id());
+    let file_name = format!("moonsnap_capture_{}_{}.rgba", timestamp, std::process::id());
     let file_path = temp_dir.join(file_name);
 
     let mut file = std::fs::File::create(&file_path)

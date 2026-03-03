@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to SnapIt are documented in this file.
+All notable changes to MoonSnap are documented in this file.
 
 ## [0.5.7] - 2026-03-02
 

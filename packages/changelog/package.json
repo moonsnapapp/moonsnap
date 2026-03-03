@@ -1,5 +1,5 @@
 {
-  "name": "@snapit/changelog",
+  "name": "@moonsnap/changelog",
   "private": true,
   "version": "0.0.1",
   "type": "module",
@@ -13,7 +13,7 @@
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
-    "@snapit/config-typescript": "workspace:*",
+    "@moonsnap/config-typescript": "workspace:*",
     "typescript": "~5.8.3"
   }
 }

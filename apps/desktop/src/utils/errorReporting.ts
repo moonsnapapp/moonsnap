@@ -1,5 +1,5 @@
 /**
- * Unified error reporting for SnapIt frontend.
+ * Unified error reporting for MoonSnap frontend.
  *
  * Provides consistent error handling that:
  * - Always logs to persistent file via the logger (developer-friendly, full details)

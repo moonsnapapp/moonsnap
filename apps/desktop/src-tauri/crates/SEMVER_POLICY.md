@@ -1,13 +1,13 @@
-# SnapIt Shared Crates SemVer Policy
+# MoonSnap Shared Crates SemVer Policy
 
 This policy applies to:
 
-- `snapit-core`
-- `snapit-domain`
-- `snapit-media`
-- `snapit-render`
-- `snapit-capture`
-- `snapit-export`
+- `moonsnap-core`
+- `moonsnap-domain`
+- `moonsnap-media`
+- `moonsnap-render`
+- `moonsnap-capture`
+- `moonsnap-export`
 
 ## Current Phase (0.x)
 
@@ -17,7 +17,7 @@ Versioning rules while pre-1.0:
 
 1. Patch (`0.x.y`): bug fixes, refactors, test/docs changes, and behavior-preserving internal changes.
 2. Minor (`0.x+1.0`): any public API surface change (additive or breaking).
-3. Keep shared crate versions aligned across the `snapit-*` crate set unless there is a clear reason not to.
+3. Keep shared crate versions aligned across the `moonsnap-*` crate set unless there is a clear reason not to.
 
 This conservative rule makes dependency updates explicit for consumers while APIs are still stabilizing.
 
@@ -32,14 +32,14 @@ After stabilizing shared APIs and first external consumers:
 ## Required Checks Before Version Bumps
 
 1. Run crate contract tests:
-   - `cargo test -p snapit-core --lib`
-   - `cargo test -p snapit-domain --lib`
-   - `cargo test -p snapit-media --lib`
-   - `cargo test -p snapit-render --lib`
-   - `cargo test -p snapit-capture --lib`
-   - `cargo test -p snapit-export --lib`
+   - `cargo test -p moonsnap-core --lib`
+   - `cargo test -p moonsnap-domain --lib`
+   - `cargo test -p moonsnap-media --lib`
+   - `cargo test -p moonsnap-render --lib`
+   - `cargo test -p moonsnap-capture --lib`
+   - `cargo test -p moonsnap-export --lib`
 2. Run app integration sanity:
-   - `cargo test -p snapit --lib`
+   - `cargo test -p moonsnap --lib`
 3. Confirm TS typegen path checks:
    - `bun run check:ts-rs-paths`
 4. Update changelog/release notes and crate READMEs for any API-facing changes.

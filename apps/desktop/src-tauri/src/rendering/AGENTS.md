@@ -126,7 +126,7 @@ pub struct RenderedFrame {
 ### Editor Instance Lifecycle
 ```rust
 // Tauri command creates instance
-pub fn create_editor_instance(project: VideoProject) -> SnapItResult<EditorInstanceInfo> {
+pub fn create_editor_instance(project: VideoProject) -> MoonSnapResult<EditorInstanceInfo> {
     let instance = EditorInstance::new(project)?;
     let id = generate_id();
     INSTANCES.lock()?.insert(id.clone(), instance);
@@ -134,7 +134,7 @@ pub fn create_editor_instance(project: VideoProject) -> SnapItResult<EditorInsta
 }
 
 // Frame rendering
-pub fn editor_render_frame(instance_id: String, timestamp_ms: u64) -> SnapItResult<RenderedFrame> {
+pub fn editor_render_frame(instance_id: String, timestamp_ms: u64) -> MoonSnapResult<RenderedFrame> {
     let instances = INSTANCES.lock()?;
     let instance = instances.get(&instance_id)?;
     instance.render_frame(timestamp_ms)

@@ -8,8 +8,8 @@
 //!   +-- operations.rs (Tauri command handlers)
 //!   +-- tests.rs (unit tests)
 //!
-//! Shared types now come from `snapit-domain::storage`.
-//! Shared FFmpeg utilities now come from `snapit-media::ffmpeg`.
+//! Shared types now come from `moonsnap-domain::storage`.
+//! Shared FFmpeg utilities now come from `moonsnap-media::ffmpeg`.
 //! ```
 
 pub mod operations;
@@ -26,7 +26,7 @@ use tauri::{AppHandle, Manager};
 // Shared Helper Functions
 // ============================================================================
 
-/// Get the user's configured save directory from settings, falling back to Pictures/SnapIt
+/// Get the user's configured save directory from settings, falling back to Pictures/MoonSnap
 pub(crate) fn get_captures_dir(app: &AppHandle) -> Result<PathBuf, String> {
     let app_data_dir = get_app_data_dir(app)?;
     let settings_path = app_data_dir.join("settings.json");
@@ -51,19 +51,19 @@ pub(crate) fn get_captures_dir(app: &AppHandle) -> Result<PathBuf, String> {
         }
     }
 
-    // Fallback to Pictures/SnapIt
+    // Fallback to Pictures/MoonSnap
     let pictures_dir = app
         .path()
         .picture_dir()
         .map_err(|e| format!("Failed to get pictures directory: {}", e))?;
-    let snapit_path = pictures_dir.join("SnapIt");
+    let moonsnap_path = pictures_dir.join("MoonSnap");
 
-    if !snapit_path.exists() {
-        fs::create_dir_all(&snapit_path)
-            .map_err(|e| format!("Failed to create SnapIt directory: {}", e))?;
+    if !moonsnap_path.exists() {
+        fs::create_dir_all(&moonsnap_path)
+            .map_err(|e| format!("Failed to create MoonSnap directory: {}", e))?;
     }
 
-    Ok(snapit_path)
+    Ok(moonsnap_path)
 }
 
 /// Get the app data directory.

@@ -1,4 +1,4 @@
-import { preset } from "@snapit/config-tailwind";
+import { preset } from "@moonsnap/config-tailwind";
 
 /** @type {import('tailwindcss').Config} */
 export default {

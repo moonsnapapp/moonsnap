@@ -9,14 +9,14 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use crossbeam_channel::Receiver;
-use snapit_capture::audio_multitrack::MultiTrackAudioRecorder;
-use snapit_capture::frame_buffer::FrameBufferPool;
-use snapit_capture::recorder_helpers::{
+use moonsnap_capture::audio_multitrack::MultiTrackAudioRecorder;
+use moonsnap_capture::frame_buffer::FrameBufferPool;
+use moonsnap_capture::recorder_helpers::{
     create_video_project_file, get_window_rect, make_video_faststart, mux_audio_to_video,
     CreateVideoProjectRequest,
 };
-use snapit_capture::state::{RecorderCommand, RecordingProgress};
-use snapit_capture::timestamp::Timestamps;
+use moonsnap_capture::state::{RecorderCommand, RecordingProgress};
+use moonsnap_capture::timestamp::Timestamps;
 use tauri::AppHandle;
 use windows_capture::encoder::{
     AudioSettingsBuilder, ContainerSettingsBuilder, VideoEncoder, VideoSettingsBuilder,
@@ -56,13 +56,13 @@ pub fn run_video_capture(
     );
 
     let finalization_plan =
-        snapit_capture::recorder_finalization::build_finalization_plan(settings.quick_capture);
+        moonsnap_capture::recorder_finalization::build_finalization_plan(settings.quick_capture);
     let webcam_enabled_for_editor = if settings.quick_capture {
         false
     } else {
         get_webcam_settings().map(|s| s.enabled).unwrap_or(false)
     };
-    let output_paths = snapit_capture::recorder_output_paths::plan_video_output_paths(
+    let output_paths = moonsnap_capture::recorder_output_paths::plan_video_output_paths(
         output_path.as_path(),
         settings.quick_capture,
         webcam_enabled_for_editor,
@@ -71,7 +71,7 @@ pub fn run_video_capture(
     let webcam_output_path: Option<PathBuf> = output_paths.webcam_output_path;
 
     let capture_plan =
-        snapit_capture::recorder_video_capture::CapturePlan::from_mode(&settings.mode);
+        moonsnap_capture::recorder_video_capture::CapturePlan::from_mode(&settings.mode);
 
     // Create capture source based on mode
     // All modes use Scap for consistent timestamp handling and native crop support.
@@ -83,14 +83,14 @@ pub fn run_video_capture(
     // separately via the cursor overlay in the video editor, which allows for
     // customization (size, style, visibility) and proper zoom tracking.
     let (capture_source, first_frame) =
-        snapit_capture::recorder_video_capture::create_capture_source(
+        moonsnap_capture::recorder_video_capture::create_capture_source(
             &capture_plan,
             settings.fps,
             false,
         )?;
 
     let first_frame_dims = first_frame.as_ref().map(|(w, h, _)| (*w, *h));
-    let (width, height) = snapit_capture::recorder_video_capture::resolve_capture_dimensions(
+    let (width, height) = moonsnap_capture::recorder_video_capture::resolve_capture_dimensions(
         &capture_plan,
         first_frame_dims,
         (capture_source.width(), capture_source.height()),
@@ -136,11 +136,11 @@ pub fn run_video_capture(
     // Uses the camera feed subscription system for zero-copy frame sharing.
     let device_index = get_webcam_settings().map(|s| s.device_index).unwrap_or(0);
     let webcam_encoder: Option<FeedWebcamEncoder> =
-        snapit_capture::recorder_webcam_lifecycle::maybe_start_webcam_encoder(
+        moonsnap_capture::recorder_webcam_lifecycle::maybe_start_webcam_encoder(
             webcam_output_path.as_deref(),
             device_index,
             |idx| {
-                snapit_capture::recorder_webcam_feed::prepare_webcam_feed(
+                moonsnap_capture::recorder_webcam_feed::prepare_webcam_feed(
                     idx,
                     |inner_idx| start_global_feed(inner_idx),
                     || global_feed_dimensions(),
@@ -170,7 +170,7 @@ pub fn run_video_capture(
     // - Quick capture: output_path is a FILE (e.g., recording.mp4), so put audio as siblings
     // - Editor flow: output_path is a FOLDER, so put audio files inside
     let (system_audio_path, mic_audio_path) =
-        snapit_capture::recorder_audio_paths::plan_audio_artifact_paths(
+        moonsnap_capture::recorder_audio_paths::plan_audio_artifact_paths(
             output_path.as_path(),
             settings.quick_capture,
             settings.audio.capture_system_audio,
@@ -232,7 +232,7 @@ pub fn run_video_capture(
     // Get region for cursor capture (region mode, window mode, or monitor mode)
     // Cursor coordinates need to be normalized relative to the capture region,
     // so we need the region's screen-space bounds.
-    let cursor_region = snapit_capture::recorder_cursor_region::resolve_cursor_region(
+    let cursor_region = moonsnap_capture::recorder_cursor_region::resolve_cursor_region(
         &settings.mode,
         capture_plan.monitor_offset,
         |window_id| get_window_rect(window_id),
@@ -255,14 +255,15 @@ pub fn run_video_capture(
     // cursor to appear ahead of video. We skip these stale frames.
     // Scap uses SystemTime (UNIX_EPOCH-based), stored in timestamps.system_time_100ns()
     let start_system_time = timestamps.system_time_100ns();
-    let _first_frame_sync = snapit_capture::recorder_first_frame::wait_for_first_frame_after_start(
-        || capture_source.get_frame(50).map(|f| f.timestamp_100ns),
-        start_system_time,
-        10,
-    );
+    let _first_frame_sync =
+        moonsnap_capture::recorder_first_frame::wait_for_first_frame_after_start(
+            || capture_source.get_frame(50).map(|f| f.timestamp_100ns),
+            start_system_time,
+            10,
+        );
 
-    let loop_result = snapit_capture::recorder_video_loop::run_video_capture_loop(
-        snapit_capture::recorder_video_loop::VideoCaptureLoopConfig {
+    let loop_result = moonsnap_capture::recorder_video_loop::run_video_capture_loop(
+        moonsnap_capture::recorder_video_loop::VideoCaptureLoopConfig {
             command_rx: &command_rx,
             progress: progress.as_ref(),
             should_stop: should_stop.as_ref(),
@@ -278,7 +279,7 @@ pub fn run_video_capture(
         },
         |timeout_ms| {
             capture_source.get_frame(timeout_ms).map(|f| {
-                snapit_capture::recorder_video_loop::VideoLoopFrame {
+                moonsnap_capture::recorder_video_loop::VideoLoopFrame {
                     data: f.data,
                     hardware_timestamp_100ns: f.timestamp_100ns,
                 }
@@ -333,7 +334,7 @@ pub fn run_video_capture(
 
     // Finish webcam encoder BEFORE stopping capture service
     // Pass the actual recording duration so webcam syncs perfectly with screen
-    snapit_capture::recorder_webcam_lifecycle::finalize_webcam_encoder(
+    moonsnap_capture::recorder_webcam_lifecycle::finalize_webcam_encoder(
         webcam_encoder,
         webcam_output_path.as_deref(),
         was_cancelled,
@@ -351,8 +352,8 @@ pub fn run_video_capture(
     let _ = multitrack_audio.stop();
     let cursor_recording = cursor_event_capture.stop();
 
-    let finalize_outcome = snapit_capture::recorder_video_finalize::finalize_video_capture(
-        snapit_capture::recorder_video_finalize::VideoFinalizeRequest {
+    let finalize_outcome = moonsnap_capture::recorder_video_finalize::finalize_video_capture(
+        moonsnap_capture::recorder_video_finalize::VideoFinalizeRequest {
             finalization_plan,
             was_cancelled,
             has_cursor_data_path: cursor_data_path.is_some(),
@@ -395,7 +396,7 @@ pub fn run_video_capture(
     // The webcam encoder remuxes with correct FPS to match screen duration.
     if matches!(
         finalize_outcome,
-        snapit_capture::recorder_video_finalize::VideoFinalizeOutcome::Cancelled
+        moonsnap_capture::recorder_video_finalize::VideoFinalizeOutcome::Cancelled
     ) {
         return Ok(recording_duration.as_secs_f64());
     }

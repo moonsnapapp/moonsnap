@@ -26,7 +26,7 @@ use self::frame_conversion::{
 };
 use super::feed::{start_global_feed, stop_global_feed, subscribe_global, Subscription};
 use super::NativeCameraFrame;
-use snapit_domain::webcam::{WebcamShape, WebcamSize};
+use moonsnap_domain::webcam::{WebcamShape, WebcamSize};
 
 /// Preview window size constants
 pub const MIN_PREVIEW_SIZE: f32 = 120.0;
@@ -906,7 +906,7 @@ impl Renderer {
     }
 
     fn render_frame(&mut self, frame: &NativeCameraFrame) -> Result<(), String> {
-        use snapit_camera_windows::PixelFormat;
+        use moonsnap_camera_windows::PixelFormat;
 
         // For preview, downsample to max 320px to reduce upload bandwidth.
         // Full 1080p = 3MB+, 320px = ~150KB per frame (20x smaller!)

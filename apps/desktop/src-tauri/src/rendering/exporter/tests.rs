@@ -2,15 +2,15 @@
 
 #![cfg(test)]
 
-use snapit_domain::captions::{CaptionSegment, CaptionSettings};
-use snapit_domain::video_project::{
+use moonsnap_domain::captions::{CaptionSegment, CaptionSettings};
+use moonsnap_domain::video_project::{
     AudioTrackSettings, CornerStyle, CursorConfig, ExportConfig, MaskConfig, SceneConfig,
     ShadowConfig, TextConfig, TimelineState, VideoProject, VideoSources, WebcamBorder,
     WebcamConfig, WebcamOverlayPosition, WebcamOverlayShape, ZoomConfig,
 };
-use snapit_export::frame_path_plan::can_use_nv12_fast_path;
-use snapit_render::types::{DecodedFrame, PixelFormat, RenderOptions, ZoomState};
-use snapit_render::webcam_overlay::build_webcam_overlay;
+use moonsnap_export::frame_path_plan::can_use_nv12_fast_path;
+use moonsnap_render::types::{DecodedFrame, PixelFormat, RenderOptions, ZoomState};
+use moonsnap_render::webcam_overlay::build_webcam_overlay;
 
 #[test]
 fn test_nv12_fast_path_requires_even_source_dimensions() {

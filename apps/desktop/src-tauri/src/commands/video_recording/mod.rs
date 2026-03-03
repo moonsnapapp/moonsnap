@@ -17,7 +17,7 @@
 //! ```text
 //! mod.rs (public API, commands)
 //!   |
-//!   +-- snapit-domain::recording (RecordingFormat, RecordingSettings, etc.)
+//!   +-- moonsnap-domain::recording (RecordingFormat, RecordingSettings, etc.)
 //!   +-- recorder.rs (core recording logic)
 //!   +-- state.rs (RecordingController state machine)
 //!   +-- webcam/ (webcam capture and encoding)
@@ -45,23 +45,23 @@ use tauri::{command, AppHandle, Emitter, Manager};
 // ============================================================================
 
 // Types (from types.rs)
-use snapit_capture::recording_runtime::get_scap_display_bounds;
-use snapit_domain::recording::{
+use moonsnap_capture::recording_runtime::get_scap_display_bounds;
+use moonsnap_domain::recording::{
     AudioInputDevice, AudioOutputDevice, RecordingFormat, RecordingSettings, RecordingState,
     RecordingStatus, StartRecordingResult,
 };
 
 // Recording state
-use snapit_capture::state::RECORDING_CONTROLLER;
+use moonsnap_capture::state::RECORDING_CONTROLLER;
 
 // Webcam config - re-export only what's actually used
 use crate::config::webcam::{get_webcam_settings, WEBCAM_CONFIG};
-use snapit_domain::webcam::{WebcamShape, WebcamSize};
+use moonsnap_domain::webcam::{WebcamShape, WebcamSize};
 
 // Video editor types
 pub use cursor::CursorRecording;
-use snapit_domain::video_export::ExportResult;
-use snapit_domain::video_project::{AudioWaveform, AutoZoomConfig, VideoProject};
+use moonsnap_domain::video_export::ExportResult;
+use moonsnap_domain::video_project::{AudioWaveform, AutoZoomConfig, VideoProject};
 pub use video_project::{
     apply_auto_zoom_to_project, clear_frame_cache, get_video_frame_cached,
     load_video_project_from_file,
@@ -476,7 +476,7 @@ pub fn notify_preview_window_closed() {
 /// Get available audio output devices (speakers/headphones) for system audio capture.
 #[command]
 pub fn list_audio_output_devices() -> Result<Vec<AudioOutputDevice>, String> {
-    snapit_capture::audio_wasapi::list_output_devices()
+    moonsnap_capture::audio_wasapi::list_output_devices()
 }
 
 /// Get available audio input devices (microphones).
@@ -868,7 +868,7 @@ pub async fn start_recording(
     settings.validate();
 
     // Check if FFmpeg is available (required for video/audio muxing and GIF encoding)
-    if snapit_media::ffmpeg::find_ffmpeg().is_none() {
+    if moonsnap_media::ffmpeg::find_ffmpeg().is_none() {
         return Err(
             "FFmpeg is not available. Please wait for it to download or restart the app."
                 .to_string(),
@@ -992,7 +992,7 @@ pub async fn load_video_project(video_path: String) -> Result<VideoProject, Stri
 ///   Saves to `project.json` in the same folder, with relative paths.
 ///
 /// For legacy flat file projects:
-///   Saves alongside the video with `.snapit` extension.
+///   Saves alongside the video with `.moonsnap` extension.
 #[command]
 pub async fn save_video_project(mut project: VideoProject) -> Result<(), String> {
     let video_path = std::path::Path::new(&project.sources.screen_video);
@@ -1042,8 +1042,8 @@ pub async fn save_video_project(mut project: VideoProject) -> Result<(), String>
         }
     }
 
-    // Legacy: save alongside video with .snapit extension
-    let project_path = video_path.with_extension("snapit");
+    // Legacy: save alongside video with .moonsnap extension
+    let project_path = video_path.with_extension("moonsnap");
     project.updated_at = chrono::Utc::now().to_rfc3339();
     project.save(&project_path)
 }
@@ -1116,7 +1116,7 @@ pub async fn extract_audio_waveform(
     let sps = samples_per_second.unwrap_or(100);
 
     let ffmpeg_path =
-        snapit_media::ffmpeg::find_ffmpeg().ok_or_else(|| "FFmpeg not found".to_string())?;
+        moonsnap_media::ffmpeg::find_ffmpeg().ok_or_else(|| "FFmpeg not found".to_string())?;
 
     // Get audio duration via ffprobe
     let ffprobe_name = if cfg!(windows) {
@@ -1161,7 +1161,7 @@ pub async fn extract_audio_waveform(
     }
 
     // Extract audio as raw PCM samples (mono, f32)
-    let output = snapit_media::ffmpeg::create_hidden_command(&ffmpeg_path)
+    let output = moonsnap_media::ffmpeg::create_hidden_command(&ffmpeg_path)
         .args([
             "-i",
             &audio_path,
@@ -1254,7 +1254,7 @@ pub async fn export_video(
     output_path: String,
 ) -> Result<ExportResult, String> {
     // Check if FFmpeg is available (required for video encoding)
-    if snapit_media::ffmpeg::find_ffmpeg().is_none() {
+    if moonsnap_media::ffmpeg::find_ffmpeg().is_none() {
         return Err(
             "FFmpeg is not available. Please wait for it to download or restart the app."
                 .to_string(),
@@ -1305,8 +1305,8 @@ pub fn cancel_export() {
 /// true if NVENC is available, false otherwise
 #[command]
 pub async fn check_nvenc_available() -> Result<bool, String> {
-    let ffmpeg_path = snapit_media::ffmpeg::find_ffmpeg().ok_or("FFmpeg not found")?;
-    Ok(snapit_export::encoder_selection::is_nvenc_available(
+    let ffmpeg_path = moonsnap_media::ffmpeg::find_ffmpeg().ok_or("FFmpeg not found")?;
+    Ok(moonsnap_export::encoder_selection::is_nvenc_available(
         &ffmpeg_path,
     ))
 }

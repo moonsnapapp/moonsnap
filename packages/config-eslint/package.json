@@ -1,5 +1,5 @@
 {
-  "name": "@snapit/config-eslint",
+  "name": "@moonsnap/config-eslint",
   "version": "0.0.1",
   "private": true,
   "type": "module",
