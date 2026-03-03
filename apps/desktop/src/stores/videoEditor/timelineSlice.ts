@@ -1,7 +1,20 @@
+import type { VideoProject } from '@/types';
 import type { SliceCreator, TrackVisibility, HoveredTrack, DragEdge } from './types';
 import { getEffectiveDuration } from './trimSlice';
 
 export const DEFAULT_TIMELINE_ZOOM = 0.05; // 50px per second
+export const MIN_ZOOM_PERCENT = 0.1; // 10%
+export const MAX_ZOOM_PERCENT = 2.0; // 200%
+
+const TRACK_LABEL_WIDTH = 80;
+
+/** Compute the zoom level where the full timeline exactly fills the viewport. */
+function getFitZoom(project: VideoProject | null, containerWidth: number): number | null {
+  if (!project || containerWidth <= 0) return null;
+  const durationMs = project.timeline.durationMs;
+  if (durationMs <= 0) return null;
+  return (containerWidth - TRACK_LABEL_WIDTH) / durationMs;
+}
 
 /**
  * Timeline view state and actions for timeline UI control
@@ -80,7 +93,13 @@ export const createTimelineSlice: SliceCreator<TimelineSlice> = (set, get) => ({
   },
 
   // Timeline view actions
-  setTimelineZoom: (zoom) => set({ timelineZoom: Math.max(0.01, Math.min(1, zoom)) }),
+  setTimelineZoom: (zoom) => {
+    const { project, timelineContainerWidth } = get();
+    const fitZoom = getFitZoom(project, timelineContainerWidth);
+    const min = fitZoom ? fitZoom * MIN_ZOOM_PERCENT : zoom;
+    const max = fitZoom ? fitZoom * MAX_ZOOM_PERCENT : zoom;
+    set({ timelineZoom: Math.max(min, Math.min(max, zoom)) });
+  },
 
   setTimelineScrollLeft: (scrollLeft) => set({ timelineScrollLeft: scrollLeft }),
 
@@ -88,20 +107,12 @@ export const createTimelineSlice: SliceCreator<TimelineSlice> = (set, get) => ({
 
   fitTimelineToWindow: () => {
     const { project, timelineContainerWidth } = get();
-    if (!project || timelineContainerWidth <= 0) return;
-
-    const durationMs = project.timeline.durationMs;
-    if (durationMs <= 0) return;
-
-    const trackLabelWidth = 80;
-    const availableWidth = timelineContainerWidth - trackLabelWidth;
-    const fitZoom = availableWidth / durationMs;
-
-    const clampedZoom = Math.max(0.01, Math.min(1, fitZoom));
+    const fitZoom = getFitZoom(project, timelineContainerWidth);
+    if (!fitZoom) return;
 
     set({
-      timelineZoom: clampedZoom,
-      timelineScrollLeft: 0, // Reset scroll to start
+      timelineZoom: fitZoom,
+      timelineScrollLeft: 0,
     });
   },
 

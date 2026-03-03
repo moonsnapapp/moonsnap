@@ -21,6 +21,7 @@ import { isTextInputTarget } from '../utils/keyboard';
  * - Ctrl+-: Zoom out timeline
  * - Ctrl+=: Zoom in timeline
  * - Ctrl+E: Export
+ * - Z: Fit timeline to window
  * - I: Set in point at playhead
  * - O: Set out point at playhead
  */
@@ -41,6 +42,7 @@ interface UseVideoEditorShortcutsProps {
   onExport: () => void;
   onUndoTrim?: () => void;
   onRedoTrim?: () => void;
+  onFitTimeline?: () => void;
   onSetInPoint?: () => void;
   onSetOutPoint?: () => void;
 }
@@ -61,6 +63,7 @@ export function useVideoEditorShortcuts({
   onExport,
   onUndoTrim,
   onRedoTrim,
+  onFitTimeline,
   onSetInPoint,
   onSetOutPoint,
 }: UseVideoEditorShortcutsProps) {
@@ -141,6 +144,11 @@ export function useVideoEditorShortcuts({
           e.preventDefault();
           onDeleteSelected();
           break;
+        case 'z':
+        case 'Z':
+          e.preventDefault();
+          onFitTimeline?.();
+          break;
         case 'i':
         case 'I':
           e.preventDefault();
@@ -176,6 +184,7 @@ export function useVideoEditorShortcuts({
     onExport,
     onUndoTrim,
     onRedoTrim,
+    onFitTimeline,
     onSetInPoint,
     onSetOutPoint,
   ]);

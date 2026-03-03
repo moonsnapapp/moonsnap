@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { useVideoEditorStore, DEFAULT_TIMELINE_ZOOM } from './index';
+import { useVideoEditorStore, DEFAULT_TIMELINE_ZOOM, MIN_ZOOM_PERCENT, MAX_ZOOM_PERCENT } from './index';
 import type { VideoProject } from '../../types';
 
 // Helper to create a minimal test project
@@ -178,27 +178,41 @@ describe('timelineSlice', () => {
   });
 
   describe('timeline zoom', () => {
+    // fitZoom for 60s video in 1080px container = (1080-80)/60000 ≈ 0.01667
+    const setupProjectForZoom = () => {
+      const project = createTestProject({
+        timeline: { durationMs: 60000, inPoint: 0, outPoint: 60000, speed: 1.0 },
+      });
+      useVideoEditorStore.setState({ project, timelineContainerWidth: 1080 });
+      // fitZoom = 1000 / 60000
+      return 1000 / 60000;
+    };
+
     it('should set timeline zoom', () => {
-      useVideoEditorStore.getState().setTimelineZoom(0.08);
-      expect(useVideoEditorStore.getState().timelineZoom).toBe(0.08);
+      const fitZoom = setupProjectForZoom();
+      useVideoEditorStore.getState().setTimelineZoom(fitZoom);
+      expect(useVideoEditorStore.getState().timelineZoom).toBeCloseTo(fitZoom);
     });
 
-    it('should clamp zoom to minimum of 0.01', () => {
-      useVideoEditorStore.getState().setTimelineZoom(0.001);
-      expect(useVideoEditorStore.getState().timelineZoom).toBe(0.01);
+    it('should clamp zoom to 10% of fit zoom', () => {
+      const fitZoom = setupProjectForZoom();
+      useVideoEditorStore.getState().setTimelineZoom(fitZoom * 0.01); // way below 10%
+      expect(useVideoEditorStore.getState().timelineZoom).toBeCloseTo(fitZoom * MIN_ZOOM_PERCENT);
     });
 
-    it('should clamp zoom to maximum of 1', () => {
-      useVideoEditorStore.getState().setTimelineZoom(1.5);
-      expect(useVideoEditorStore.getState().timelineZoom).toBe(1);
+    it('should clamp zoom to 200% of fit zoom', () => {
+      const fitZoom = setupProjectForZoom();
+      useVideoEditorStore.getState().setTimelineZoom(fitZoom * 10); // way above 200%
+      expect(useVideoEditorStore.getState().timelineZoom).toBeCloseTo(fitZoom * MAX_ZOOM_PERCENT);
     });
 
     it('should accept edge values', () => {
-      useVideoEditorStore.getState().setTimelineZoom(0.01);
-      expect(useVideoEditorStore.getState().timelineZoom).toBe(0.01);
+      const fitZoom = setupProjectForZoom();
+      useVideoEditorStore.getState().setTimelineZoom(fitZoom * MIN_ZOOM_PERCENT);
+      expect(useVideoEditorStore.getState().timelineZoom).toBeCloseTo(fitZoom * MIN_ZOOM_PERCENT);
 
-      useVideoEditorStore.getState().setTimelineZoom(1);
-      expect(useVideoEditorStore.getState().timelineZoom).toBe(1);
+      useVideoEditorStore.getState().setTimelineZoom(fitZoom * MAX_ZOOM_PERCENT);
+      expect(useVideoEditorStore.getState().timelineZoom).toBeCloseTo(fitZoom * MAX_ZOOM_PERCENT);
     });
   });
 
@@ -253,9 +267,9 @@ describe('timelineSlice', () => {
       useVideoEditorStore.getState().fitTimelineToWindow();
 
       const { timelineZoom, timelineScrollLeft } = useVideoEditorStore.getState();
-      // Should calculate a zoom that fits 60 seconds in 920px (1000 - 80 track label)
-      expect(timelineZoom).toBeGreaterThan(0.01);
-      expect(timelineZoom).toBeLessThanOrEqual(1);
+      // Should calculate exact fit zoom: (1000 - 80) / 60000
+      const expectedFitZoom = 920 / 60000;
+      expect(timelineZoom).toBeCloseTo(expectedFitZoom);
       // Should reset scroll to start
       expect(timelineScrollLeft).toBe(0);
     });

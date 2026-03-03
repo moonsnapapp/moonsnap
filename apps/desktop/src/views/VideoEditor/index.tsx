@@ -64,6 +64,7 @@ import {
   selectTogglePlayback,
   selectUndoTrim,
   selectUpdateExportConfig,
+  selectFitTimelineToWindow,
 } from '../../stores/videoEditor/selectors';
 import { useVideoEditorShortcuts } from '../../hooks/useVideoEditorShortcuts';
 import { VideoEditorToolbar } from './VideoEditorToolbar';
@@ -125,6 +126,7 @@ export const VideoEditorView = forwardRef<VideoEditorViewRef, VideoEditorViewPro
   const selectZoomRegion = useVideoEditorStore(selectSelectZoomRegion);
   const timelineZoom = useVideoEditorStore(selectTimelineZoom);
   const setTimelineZoom = useVideoEditorStore(selectSetTimelineZoom);
+  const fitTimelineToWindow = useVideoEditorStore(selectFitTimelineToWindow);
   const selectedZoomRegionId = useVideoEditorStore(selectSelectedZoomRegionId);
   const deleteZoomRegion = useVideoEditorStore(selectDeleteZoomRegion);
   const selectedSceneSegmentId = useVideoEditorStore(selectSelectedSceneSegmentId);
@@ -274,6 +276,7 @@ export const VideoEditorView = forwardRef<VideoEditorViewRef, VideoEditorViewPro
     onExport: () => {}, // Will be wired to handleExport after it's defined
     onUndoTrim: handleUndoTrim,
     onRedoTrim: handleRedoTrim,
+    onFitTimeline: fitTimelineToWindow,
     onSetInPoint: handleSetInPoint,
     onSetOutPoint: handleSetOutPoint,
   });

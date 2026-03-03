@@ -144,7 +144,7 @@ export const useVideoEditorStore: UseVideoEditorStoreHook = Object.assign(
 // Re-export utility functions
 export { generateZoomRegionId } from './segmentsSlice';
 export { sanitizeProjectForSave } from './projectSlice';
-export { DEFAULT_TIMELINE_ZOOM } from './timelineSlice';
+export { DEFAULT_TIMELINE_ZOOM, MIN_ZOOM_PERCENT, MAX_ZOOM_PERCENT } from './timelineSlice';
 export { DEFAULT_CAPTION_SETTINGS } from './captionSlice';
 export {
   generateTrimSegmentId,

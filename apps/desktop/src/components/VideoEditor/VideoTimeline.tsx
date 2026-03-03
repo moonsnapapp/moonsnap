@@ -423,6 +423,11 @@ export function VideoTimeline({ onExport, onResetTrimSegments, onSetInPoint, onS
   const durationWidth = effectiveDurationMs * timelineZoom;
   const timelineWidth = Math.max(durationWidth, containerWidth - trackLabelWidth);
 
+  // Zoom % relative to fit-to-window (100% = timeline fills viewport)
+  const availableWidth = containerWidth - trackLabelWidth;
+  const fitZoom = availableWidth > 0 && sourceDurationMs > 0 ? availableWidth / sourceDurationMs : 1;
+  const zoomPercent = Math.round((timelineZoom / fitZoom) * 100);
+
   const getTimelineClickTimeMs = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
     const rect = e.currentTarget.getBoundingClientRect();
     const x = e.clientX - rect.left;
@@ -718,22 +723,36 @@ export function VideoTimeline({ onExport, onResetTrimSegments, onSetInPoint, onS
     setTimelineZoom(timelineZoom / 1.5);
   }, [timelineZoom, setTimelineZoom]);
 
-  // Ctrl + Mouse wheel to zoom timeline
-  const handleWheel = useCallback((e: React.WheelEvent) => {
-    if (!e.ctrlKey) return;
+  // Mouse wheel: horizontal scroll (default), Ctrl+scroll to zoom, Shift+scroll for vertical
+  // Must use native listener with { passive: false } so preventDefault() works
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
 
-    e.preventDefault();
+    const onWheel = (e: WheelEvent) => {
+      if (e.ctrlKey) {
+        e.preventDefault();
+        const zoomFactor = 1.15;
+        if (e.deltaY < 0) {
+          setTimelineZoom(timelineZoom * zoomFactor);
+        } else {
+          setTimelineZoom(timelineZoom / zoomFactor);
+        }
+        return;
+      }
 
-    // Zoom factor - smaller for smoother zooming
-    const zoomFactor = 1.15;
+      // Shift+scroll: let browser handle vertical scroll naturally
+      if (e.shiftKey) return;
 
-    if (e.deltaY < 0) {
-      // Scroll up = zoom in
-      setTimelineZoom(timelineZoom * zoomFactor);
-    } else {
-      // Scroll down = zoom out
-      setTimelineZoom(timelineZoom / zoomFactor);
-    }
+      // Default scroll: convert vertical to horizontal
+      if (e.deltaY !== 0) {
+        e.preventDefault();
+        el.scrollLeft += e.deltaY;
+      }
+    };
+
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => el.removeEventListener('wheel', onWheel);
   }, [timelineZoom, setTimelineZoom]);
 
   const handleToggleCutMode = useCallback(() => {
@@ -967,7 +986,7 @@ export function VideoTimeline({ onExport, onResetTrimSegments, onSetInPoint, onS
               </Tooltip>
 
               <span className="text-[10px] text-[var(--ink-subtle)] font-mono w-12 text-center">
-                {Math.round(timelineZoom * 1000)}px/s
+                {zoomPercent}%
               </span>
 
               <Tooltip>
@@ -988,7 +1007,10 @@ export function VideoTimeline({ onExport, onResetTrimSegments, onSetInPoint, onS
                   </button>
                 </TooltipTrigger>
                 <TooltipContent side="bottom">
-                  <p className="text-xs">Fit Timeline to Window</p>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs">Fit Timeline to Window</span>
+                    <kbd className="kbd text-[10px] px-1.5 py-0.5">Z</kbd>
+                  </div>
                 </TooltipContent>
               </Tooltip>
             </div>
@@ -1079,7 +1101,6 @@ export function VideoTimeline({ onExport, onResetTrimSegments, onSetInPoint, onS
           ref={scrollRef}
           className={`flex-1 min-w-0 overflow-x-auto overflow-y-auto ${splitMode ? 'cursor-crosshair' : ''}`}
           onScroll={handleScroll}
-          onWheel={handleWheel}
           onMouseMove={handleTimelineMouseMove}
           onMouseLeave={handleTimelineMouseLeave}
         >
