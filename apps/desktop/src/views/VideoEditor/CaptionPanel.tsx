@@ -723,19 +723,41 @@ export function CaptionPanel({ videoPath }: CaptionPanelProps) {
     const host = captionPreviewHostRef.current;
     if (!host) return;
 
+    const THROTTLE_MS = 100;
+    let rafId: number | null = null;
+    let trailingId: ReturnType<typeof setTimeout> | null = null;
+    let lastFlushTime = 0;
+
     const updateWidth = () => {
+      rafId = null;
+      lastFlushTime = performance.now();
       const nextWidth = Math.floor(host.clientWidth);
       if (nextWidth > 0) {
-        setCaptionPreviewDisplayWidth(nextWidth);
+        setCaptionPreviewDisplayWidth((prev) => (prev === nextWidth ? prev : nextWidth));
       }
     };
 
     updateWidth();
 
-    const observer = new ResizeObserver(() => updateWidth());
+    const observer = new ResizeObserver(() => {
+      if (rafId !== null || trailingId !== null) return;
+      const elapsed = performance.now() - lastFlushTime;
+      if (elapsed >= THROTTLE_MS) {
+        rafId = requestAnimationFrame(updateWidth);
+      } else {
+        trailingId = setTimeout(() => {
+          trailingId = null;
+          rafId = requestAnimationFrame(updateWidth);
+        }, THROTTLE_MS - elapsed);
+      }
+    });
     observer.observe(host);
 
-    return () => observer.disconnect();
+    return () => {
+      if (rafId !== null) cancelAnimationFrame(rafId);
+      if (trailingId !== null) clearTimeout(trailingId);
+      observer.disconnect();
+    };
   }, [isEditorOpen]);
 
   const parsedEditingStart = Number.parseFloat(editingStart);

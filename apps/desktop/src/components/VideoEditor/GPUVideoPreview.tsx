@@ -330,42 +330,61 @@ export function GPUVideoPreview({ isActive = true }: GPUVideoPreviewProps) {
 
   const webcamOverlayOpacity = getRegularCameraTransitionOpacity(scene);
 
-  // Track container size
+  // Track container + preview area sizes.
+  // Throttled to ~10fps during active resize to avoid expensive canvas
+  // re-renders in overlay children on every animation frame.
   useEffect(() => {
     const container = containerRef.current;
-    if (!container) return;
-
-    const observer = new ResizeObserver((entries) => {
-      const entry = entries[0];
-      if (entry) {
-        setContainerSize({
-          width: entry.contentRect.width,
-          height: entry.contentRect.height,
-        });
-      }
-    });
-
-    observer.observe(container);
-    return () => observer.disconnect();
-  }, []);
-
-  // Track preview area size
-  useEffect(() => {
     const previewArea = previewAreaRef.current;
-    if (!previewArea) return;
+    if (!container || !previewArea) return;
 
-    const observer = new ResizeObserver((entries) => {
-      const entry = entries[0];
-      if (entry) {
-        setPreviewAreaSize({
-          width: entry.contentRect.width,
-          height: entry.contentRect.height,
-        });
+    const THROTTLE_MS = 100;
+    let rafId: number | null = null;
+    let trailingId: ReturnType<typeof setTimeout> | null = null;
+    let lastFlushTime = 0;
+
+    const flush = () => {
+      rafId = null;
+      lastFlushTime = performance.now();
+      const cw = container.clientWidth;
+      const ch = container.clientHeight;
+      const pw = previewArea.clientWidth;
+      const ph = previewArea.clientHeight;
+      setContainerSize((prev) =>
+        prev.width === cw && prev.height === ch ? prev : { width: cw, height: ch }
+      );
+      setPreviewAreaSize((prev) =>
+        prev.width === pw && prev.height === ph ? prev : { width: pw, height: ph }
+      );
+    };
+
+    const schedule = () => {
+      // Skip if an update is already pending (leading+trailing throttle)
+      if (rafId !== null || trailingId !== null) return;
+
+      const elapsed = performance.now() - lastFlushTime;
+      if (elapsed >= THROTTLE_MS) {
+        rafId = requestAnimationFrame(flush);
+      } else {
+        trailingId = setTimeout(() => {
+          trailingId = null;
+          rafId = requestAnimationFrame(flush);
+        }, THROTTLE_MS - elapsed);
       }
-    });
+    };
 
+    // Initial measurement (synchronous so first paint is correct)
+    flush();
+
+    const observer = new ResizeObserver(schedule);
+    observer.observe(container);
     observer.observe(previewArea);
-    return () => observer.disconnect();
+
+    return () => {
+      if (rafId !== null) cancelAnimationFrame(rafId);
+      if (trailingId !== null) clearTimeout(trailingId);
+      observer.disconnect();
+    };
   }, []);
 
   // Convert file paths to URLs
