@@ -59,6 +59,11 @@ class PlaybackEngine {
           if (nextSegment) {
             // Jump to the start of the next segment
             this.videoElement.currentTime = nextSegment.sourceStartMs / 1000;
+            // Update store immediately and trigger audio seek via requestSeek
+            const newTimelineTime = sourceToTimeline(nextSegment.sourceStartMs, segments);
+            if (newTimelineTime !== null) {
+              useVideoEditorStore.getState().requestSeek(newTimelineTime);
+            }
           } else {
             // No more segments - we've reached the end
             const effectiveDuration = getEffectiveDuration(segments, sourceDurationMs);

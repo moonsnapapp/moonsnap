@@ -8,7 +8,7 @@
  */
 
 import { useEffect, useCallback, useRef } from 'react';
-import { useVideoEditorStore } from '../../../stores/videoEditorStore';
+import { useVideoEditorStore, findSegmentAtSourceTime } from '../../../stores/videoEditorStore';
 import { selectLastSeekToken } from '../../../stores/videoEditor/selectors';
 import { usePlaybackControls, initPlaybackEngine } from '../../../hooks/usePlaybackEngine';
 import { useTimelineToSourceTime } from '../../../hooks/useTimelineSourceTime';
@@ -295,6 +295,22 @@ export function usePlaybackSync(options: PlaybackSyncOptions): PlaybackSyncResul
     const handleTimeUpdate = () => {
       const driftSec = masterAudio.currentTime - video.currentTime;
       if (Math.abs(driftSec) > PLAYBACK_AUDIO_RESYNC_THRESHOLD_SEC) {
+        // Check if video is in a valid segment (e.g. RAF loop just jumped over a deleted region).
+        // If so, sync audio TO video instead of pulling video back into deleted content.
+        const segments = useVideoEditorStore.getState().project?.timeline.segments;
+        if (segments && segments.length > 0) {
+          const videoInValidSegment = findSegmentAtSourceTime(video.currentTime * 1000, segments);
+          if (videoInValidSegment) {
+            masterAudio.currentTime = video.currentTime;
+            const otherAudio = masterAudio === systemAudioRef.current
+              ? micAudioRef.current
+              : systemAudioRef.current;
+            if (otherAudio) {
+              otherAudio.currentTime = video.currentTime;
+            }
+            return;
+          }
+        }
         video.currentTime = masterAudio.currentTime;
       }
     };
