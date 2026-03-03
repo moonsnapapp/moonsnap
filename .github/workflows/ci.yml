@@ -157,6 +157,7 @@ jobs:
         uses: swatinem/rust-cache@v2
         with:
           workspaces: './apps/desktop/src-tauri -> target'
+          prefix-key: 'v2'
 
       - name: Cache FFmpeg
         id: cache-ffmpeg
