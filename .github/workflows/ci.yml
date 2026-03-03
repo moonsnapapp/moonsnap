@@ -52,7 +52,7 @@ jobs:
     name: Check
     needs: changes
     if: needs.changes.outputs.frontend == 'true' || needs.changes.outputs.rust == 'true' || needs.changes.outputs.ci == 'true'
-    runs-on: windows-latest
+    runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v6
@@ -89,7 +89,7 @@ jobs:
     name: Rust Crate Contracts (${{ matrix.crate }})
     needs: changes
     if: needs.changes.outputs.rust == 'true' || needs.changes.outputs.ci == 'true'
-    runs-on: windows-latest
+    runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
@@ -98,7 +98,6 @@ jobs:
           - moonsnap-domain
           - moonsnap-media
           - moonsnap-render
-          - moonsnap-capture
           - moonsnap-export
 
     steps:
@@ -107,8 +106,33 @@ jobs:
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: './apps/desktop/src-tauri -> target'
+
       - name: Test shared crate contract
         run: cargo test -p ${{ matrix.crate }} --lib --manifest-path apps/desktop/src-tauri/Cargo.toml
+
+  rust-crate-contracts-windows:
+    name: Rust Crate Contracts (moonsnap-capture)
+    needs: changes
+    if: needs.changes.outputs.rust == 'true' || needs.changes.outputs.ci == 'true'
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: './apps/desktop/src-tauri -> target'
+
+      - name: Test shared crate contract
+        run: cargo test -p moonsnap-capture --lib --manifest-path apps/desktop/src-tauri/Cargo.toml
 
   rust-desktop-full-checks:
     name: Rust Desktop Full Checks
@@ -129,27 +153,51 @@ jobs:
         with:
           workspaces: './apps/desktop/src-tauri -> target'
 
-      - name: Install FFmpeg + LLVM (Windows)
+      - name: Cache FFmpeg
+        id: cache-ffmpeg
+        uses: actions/cache@v4
+        with:
+          path: C:\ffmpeg
+          key: ffmpeg-windows-7.1
+
+      - name: Download FFmpeg
+        if: steps.cache-ffmpeg.outputs.cache-hit != 'true'
         shell: pwsh
         run: |
           $ffmpegVersion = "7.1"
           $ffmpegUrl = "https://github.com/GyanD/codexffmpeg/releases/download/$ffmpegVersion/ffmpeg-$ffmpegVersion-full_build-shared.zip"
           $ffmpegZip = "$env:RUNNER_TEMP\ffmpeg.zip"
-          $ffmpegDir = "$env:RUNNER_TEMP\ffmpeg"
 
           Write-Host "Downloading FFmpeg $ffmpegVersion..."
           Invoke-WebRequest -Uri $ffmpegUrl -OutFile $ffmpegZip
 
           Write-Host "Extracting FFmpeg..."
-          Expand-Archive -Path $ffmpegZip -DestinationPath $ffmpegDir -Force
+          Expand-Archive -Path $ffmpegZip -DestinationPath "$env:RUNNER_TEMP\ffmpeg-extract" -Force
 
-          $ffmpegPath = Get-ChildItem -Path $ffmpegDir -Directory | Select-Object -First 1
-          echo "FFMPEG_DIR=$($ffmpegPath.FullName)" >> $env:GITHUB_ENV
-          echo "$($ffmpegPath.FullName)\bin" >> $env:GITHUB_PATH
+          $ffmpegPath = Get-ChildItem -Path "$env:RUNNER_TEMP\ffmpeg-extract" -Directory | Select-Object -First 1
+          Move-Item -Path $ffmpegPath.FullName -Destination "C:\ffmpeg" -Force
 
-          # ffmpeg-sys-next bindgen requires libclang
-          choco install llvm -y
-          echo "LIBCLANG_PATH=C:\Program Files\LLVM\bin" >> $env:GITHUB_ENV
+      - name: Set FFmpeg env
+        shell: pwsh
+        run: |
+          echo "FFMPEG_DIR=C:\ffmpeg" >> $env:GITHUB_ENV
+          echo "C:\ffmpeg\bin" >> $env:GITHUB_PATH
+
+      - name: Cache LLVM
+        id: cache-llvm
+        uses: actions/cache@v4
+        with:
+          path: C:\Program Files\LLVM
+          key: llvm-windows-latest
+
+      - name: Install LLVM
+        if: steps.cache-llvm.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: choco install llvm -y
+
+      - name: Set LLVM env
+        shell: pwsh
+        run: echo "LIBCLANG_PATH=C:\Program Files\LLVM\bin" >> $env:GITHUB_ENV
 
       - name: Clippy (desktop tauri crate)
         run: cargo clippy --manifest-path apps/desktop/src-tauri/Cargo.toml -- -D warnings
