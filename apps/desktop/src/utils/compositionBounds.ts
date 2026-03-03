@@ -63,6 +63,26 @@ export function calculateCompositionOutputSize(
   };
 }
 
+/**
+ * Compute the uniform fit scale for fitting a composition into a preview area,
+ * capped so physical pixels never exceed the source composition resolution.
+ *
+ * On HiDPI screens this avoids rendering more pixels than the source contains.
+ * Example: 1920×1080 source on DPR 2 → max 960×540 CSS = 1920×1080 physical.
+ */
+export function computeDPRCappedFitScale(
+  areaWidth: number,
+  areaHeight: number,
+  compositionWidth: number,
+  compositionHeight: number,
+): number {
+  if (areaWidth <= 0 || areaHeight <= 0 || compositionWidth <= 0 || compositionHeight <= 0) return 0;
+  const dpr = window.devicePixelRatio || 1;
+  const effectiveW = Math.min(areaWidth, Math.ceil(compositionWidth / dpr));
+  const effectiveH = Math.min(areaHeight, Math.ceil(compositionHeight / dpr));
+  return Math.min(effectiveW / compositionWidth, effectiveH / compositionHeight);
+}
+
 export function calculateFrameBoundsInComposition(
   videoWidth: number,
   videoHeight: number,

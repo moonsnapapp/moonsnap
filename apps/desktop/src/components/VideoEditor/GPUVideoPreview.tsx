@@ -13,6 +13,7 @@ import {
   selectScreenVideoPath,
 } from '../../stores/videoEditor/selectors';
 import { videoEditorLogger } from '../../utils/logger';
+import { computeDPRCappedFitScale } from '../../utils/compositionBounds';
 import { hasEnabledCrop } from '../../utils/videoContentDimensions';
 import { hasActiveTypewriterSound } from '../../utils/textSegmentAnimation';
 import { usePreviewOrPlaybackTime } from '../../hooks/usePlaybackEngine';
@@ -375,19 +376,10 @@ export function GPUVideoPreview({ isActive = true }: GPUVideoPreviewProps) {
       const comp = compositeRef.current;
       const last = lastPreviewAreaRef.current;
       if (wrapper && comp.width > 0 && last.width > 0 && last.height > 0) {
-        const pw = previewArea.clientWidth;
-        const ph = previewArea.clientHeight;
-        const dpr = window.devicePixelRatio || 1;
-        // DPR cap: never render more CSS pixels than the source contains
-        const maxW = Math.ceil(comp.width / dpr);
-        const maxH = Math.ceil(comp.height / dpr);
-        // Fit scale = min(widthRatio, heightRatio), clamped by DPR cap
-        const oldFitW = Math.min(last.width, maxW) / comp.width;
-        const oldFitH = Math.min(last.height, maxH) / comp.height;
-        const newFitW = Math.min(pw, maxW) / comp.width;
-        const newFitH = Math.min(ph, maxH) / comp.height;
-        const oldFit = Math.min(oldFitW, oldFitH);
-        const newFit = Math.min(newFitW, newFitH);
+        const oldFit = computeDPRCappedFitScale(last.width, last.height, comp.width, comp.height);
+        const newFit = computeDPRCappedFitScale(
+          previewArea.clientWidth, previewArea.clientHeight, comp.width, comp.height,
+        );
         if (oldFit > 0) {
           wrapper.style.transform = `scale(${newFit / oldFit})`;
         }

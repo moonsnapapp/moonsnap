@@ -178,6 +178,8 @@ export function usePreviewStyles(options: PreviewStylesOptions): PreviewStylesRe
   // resolution. On high-DPI displays this avoids rendering more pixels than the
   // source video contains, which is pure waste (no extra detail exists).
   // Example: 1920x1080 source on DPR 2 → max 960x540 CSS = 1920x1080 physical.
+  // DPR cap formula here must stay in sync with computeDPRCappedFitScale
+  // in compositionBounds.ts (used by the CSS-transform resize fast path).
   const fittedComposition = useMemo(
     () => {
       const dpr = window.devicePixelRatio || 1;
