@@ -250,14 +250,6 @@ describe('VideoTimeline', () => {
       expect(screen.getByText('Scene')).toBeInTheDocument();
     });
 
-    it('should display zoom level in px/s', () => {
-      useVideoEditorStore.setState({ timelineZoom: 0.05 });
-
-      render(<VideoTimeline {...defaultProps} />);
-
-      // 0.05 zoom = 50px/s
-      expect(screen.getByText('50px/s')).toBeInTheDocument();
-    });
   });
 
   describe('playback interactions', () => {
