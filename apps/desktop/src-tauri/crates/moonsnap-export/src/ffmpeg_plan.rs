@@ -4,6 +4,8 @@ use moonsnap_domain::video_project::{ExportFormat, TextAnimation, VideoProject};
 
 use crate::encoder_selection::{EncoderConfig, EncoderType};
 
+const TYPEWRITER_SOUND_MIN_TAIL_TRIM_SECS: f64 = 0.10;
+
 /// Audio input info for building ffmpeg filter.
 #[derive(Debug, Clone)]
 pub struct AudioInput {
@@ -91,6 +93,19 @@ where
     })
 }
 
+/// Count characters after normalising whitespace the same way the canvas
+/// text renderer does (collapse runs of whitespace into single spaces,
+/// drop leading/trailing whitespace).  This keeps sound timing aligned
+/// with the visual character reveal.
+fn count_rendered_chars(content: &str) -> usize {
+    content
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .chars()
+        .count()
+}
+
 fn calculate_typewriter_typing_window_secs(
     segment_start_sec: f64,
     segment_end_sec: f64,
@@ -153,7 +168,14 @@ fn calculate_typewriter_sound_end_sec(
         reveal_duration_sec
     };
 
-    (segment_start_sec + capped_reveal_duration_sec).min(segment_end_sec)
+    // Stop sound slightly before reveal completion:
+    // - at least one keystroke interval, and
+    // - at least a small fixed trim for very fast typing speeds.
+    let keystroke_interval_sec = 1.0 / chars_per_second;
+    let stop_buffer_sec = keystroke_interval_sec.max(TYPEWRITER_SOUND_MIN_TAIL_TRIM_SECS);
+    let adjusted_duration = (capped_reveal_duration_sec - stop_buffer_sec).max(0.0);
+
+    (segment_start_sec + adjusted_duration).min(segment_end_sec)
 }
 
 /// Collect timeline-space segments where typewriter loop sound should be active.
@@ -169,7 +191,7 @@ pub fn collect_typewriter_sound_segments(project: &VideoProject) -> Vec<AudioSeg
         })
         .filter_map(|segment| {
             let start_sec = segment.start.max(0.0);
-            let total_chars = segment.content.chars().count();
+            let total_chars = count_rendered_chars(&segment.content);
             let end_sec = calculate_typewriter_sound_end_sec(
                 start_sec,
                 segment.end.max(start_sec),
@@ -631,6 +653,14 @@ mod tests {
         assert!(args.contains(&"foo".to_string()));
         assert!(args.contains(&"aac".to_string()));
         assert!(args.contains(&"192k".to_string()));
+    }
+
+    #[test]
+    fn typewriter_sound_end_uses_minimum_tail_trim_for_fast_typing() {
+        let end = calculate_typewriter_sound_end_sec(0.0, 5.0, 0.0, 60.0, 20);
+
+        // 20 / 60 = 0.3333s reveal, minus max(1/60, 0.10) = 0.10s trim.
+        assert!((end - 0.2333333333).abs() < 0.00001);
     }
 
     #[test]

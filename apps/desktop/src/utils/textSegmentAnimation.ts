@@ -73,9 +73,24 @@ export function getTypewriterCharsPerSecond(segment: TextSegment): number {
   );
 }
 
+/**
+ * Count the characters that the renderer will actually reveal.
+ *
+ * The canvas text renderer normalises whitespace (collapses runs of
+ * whitespace into single spaces, drops leading/trailing whitespace) before
+ * word-wrapping and counting graphemes per line.  The sound-timing code
+ * must use the same count; otherwise the sound end-time drifts from the
+ * visual reveal end-time — especially noticeable on longer texts where
+ * more whitespace characters are collapsed.
+ */
+function countRenderedGraphemes(content: string): number {
+  const normalized = content.split(/\s+/).filter(Boolean).join(' ');
+  return splitGraphemes(normalized).length;
+}
+
 export function getEffectiveTypewriterCharsPerSecond(segment: TextSegment): number {
   const requested = getTypewriterCharsPerSecond(segment);
-  const totalChars = splitGraphemes(segment.content ?? '').length;
+  const totalChars = countRenderedGraphemes(segment.content ?? '');
   if (totalChars === 0) {
     return requested;
   }
@@ -95,7 +110,8 @@ export function getAnimatedTextContent(segment: TextSegment, timeSec: number): s
     return content;
   }
 
-  const graphemes = splitGraphemes(content);
+  const normalized = content.split(/\s+/).filter(Boolean).join(' ');
+  const graphemes = splitGraphemes(normalized);
   if (graphemes.length === 0) {
     return '';
   }
@@ -112,7 +128,7 @@ export function getTypewriterTypingEndSec(segment: TextSegment): number {
     return segment.end;
   }
 
-  const totalChars = splitGraphemes(segment.content ?? '').length;
+  const totalChars = countRenderedGraphemes(segment.content ?? '');
   if (totalChars === 0) {
     return segment.start;
   }
@@ -127,8 +143,17 @@ export function getTypewriterTypingEndSec(segment: TextSegment): number {
   const cappedRevealDurationSec = typingWindowSec > 0
     ? Math.min(revealDurationSec, typingWindowSec)
     : revealDurationSec;
+  // Stop sound slightly before reveal completion so it feels tighter.
+  // Use at least one keystroke interval, plus a minimum floor for
+  // very fast typing where 1/cps becomes too small to hide tails.
+  const keystrokeIntervalSec = 1 / charsPerSecond;
+  const stopBufferSec = Math.max(
+    keystrokeIntervalSec,
+    TEXT_ANIMATION.TYPEWRITER_SOUND_MIN_TAIL_TRIM_SEC,
+  );
+  const adjustedDuration = Math.max(0, cappedRevealDurationSec - stopBufferSec);
 
-  return Math.min(segment.end, segment.start + Math.max(0, cappedRevealDurationSec));
+  return Math.min(segment.end, segment.start + adjustedDuration);
 }
 
 export function isTypewriterSoundEnabled(segment: TextSegment): boolean {

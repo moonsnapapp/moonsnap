@@ -68,6 +68,20 @@ describe('textSegmentAnimation', () => {
     expect(getTypewriterCharsPerSecond(fastSegment)).toBe(60);
   });
 
+  it('applies a minimum sound tail trim for very fast typing speeds', () => {
+    const segment: TextSegment = {
+      ...baseSegment,
+      start: 0,
+      end: 5,
+      content: '01234567890123456789',
+      animation: 'typeWriter',
+      typewriterCharsPerSecond: 60,
+    };
+
+    // 20 / 60 = 0.3333s reveal, minus max(1/60, 0.10) = 0.10s trim.
+    expect(getTypewriterTypingEndSec(segment)).toBeCloseTo(0.233333, 5);
+  });
+
   it('auto-boosts typing speed so full text appears before fade-out window', () => {
     const segment: TextSegment = {
       ...baseSegment,
@@ -84,7 +98,7 @@ describe('textSegmentAnimation', () => {
     expect(getAnimatedTextContent(segment, 1.5)).toBe('0123456789');
   });
 
-  it('preserves whitespace characters in typewriter pacing', () => {
+  it('normalises whitespace for typewriter pacing to match renderer', () => {
     const segment: TextSegment = {
       ...baseSegment,
       start: 0,
@@ -94,9 +108,11 @@ describe('textSegmentAnimation', () => {
       typewriterCharsPerSecond: 5,
     };
 
-    // 15 graphemes / 5 chars/s = 3.0s.
-    expect(getTypewriterTypingEndSec(segment)).toBeCloseTo(3.0, 5);
-    expect(getAnimatedTextContent(segment, 3.1)).toBe('Hello   \n\tworld');
+    // Renderer collapses whitespace: "Hello   \n\tworld" → "Hello world" (11 graphemes)
+    // 11 / 5 chars/s = 2.2s reveal, minus one keystroke (0.2s) = 2.0s sound end
+    expect(getTypewriterTypingEndSec(segment)).toBeCloseTo(2.0, 5);
+    // But all chars are still revealed by 2.2s
+    expect(getAnimatedTextContent(segment, 2.3)).toBe('Hello world');
   });
 
   it('reveals extended grapheme clusters as single typing units', () => {
@@ -109,7 +125,8 @@ describe('textSegmentAnimation', () => {
       typewriterCharsPerSecond: 1,
     };
 
-    expect(getTypewriterTypingEndSec(segment)).toBeCloseTo(2, 5);
+    // 2 graphemes / 1 cps = 2s reveal, minus one keystroke (1s) = 1s sound end
+    expect(getTypewriterTypingEndSec(segment)).toBeCloseTo(1, 5);
     expect(getAnimatedTextContent(segment, 0.9)).toBe('');
     expect(getAnimatedTextContent(segment, 1.1)).toBe('👨‍👩‍👧‍👦');
     expect(getAnimatedTextContent(segment, 2.1)).toBe('👨‍👩‍👧‍👦!');
@@ -149,10 +166,11 @@ describe('textSegmentAnimation', () => {
       },
     ];
 
-    // "Hi" at 2 chars/sec finishes after 1 second (at t=2), so sound should stop there.
-    expect(getTypewriterTypingEndSec(segments[0])).toBe(2);
-    expect(hasActiveTypewriterSound(segments, 1.5)).toBe(true);
-    expect(hasActiveTypewriterSound(segments, 2.2)).toBe(false);
+    // "Hi" at 2 chars/sec: reveal = 2/2 = 1s, minus one keystroke (0.5s) = 0.5s sound
+    // Sound plays from t=1 to t=1.5
+    expect(getTypewriterTypingEndSec(segments[0])).toBe(1.5);
+    expect(hasActiveTypewriterSound(segments, 1.25)).toBe(true);
+    expect(hasActiveTypewriterSound(segments, 1.6)).toBe(false);
     expect(hasActiveTypewriterSound(segments, 3.5)).toBe(false);
     expect(hasActiveTypewriterSound(segments, 4.5)).toBe(false);
   });
