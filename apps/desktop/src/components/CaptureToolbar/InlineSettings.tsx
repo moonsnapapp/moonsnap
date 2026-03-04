@@ -446,7 +446,7 @@ export const SettingsCol3: React.FC<SettingsColProps> = ({ mode }) => {
           checked={webcamSettings.enabled}
           onCheckedChange={(checked) => {
             if (!isPro) {
-              window.open('https://polar.sh/moonsnap', '_blank');
+              window.open('https://buy.polar.sh/polar_cl_WDZB2ld3wEqqWTOustdiNZHASOHMOz4lxlsZ03VjJfx', '_blank');
               return;
             }
             setEnabled(checked);

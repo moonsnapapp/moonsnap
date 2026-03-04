@@ -27,6 +27,7 @@ pub enum LicenseStatus {
 #[serde(rename_all = "camelCase")]
 pub struct LicenseCache {
     pub license_key: Option<String>,
+    pub activation_id: Option<String>,
     pub status: LicenseStatus,
     pub licensed_version: Option<u32>,
     pub device_id: String,
@@ -34,6 +35,9 @@ pub struct LicenseCache {
     pub last_validated: Option<DateTime<Utc>>,
     pub trial_started: DateTime<Utc>,
     pub trial_expires: DateTime<Utc>,
+    pub seats_used: Option<u32>,
+    pub seats_limit: Option<u32>,
+    pub device_name: Option<String>,
 }
 
 /// License info exposed to the frontend via Tauri commands.
@@ -44,6 +48,9 @@ pub struct LicenseInfo {
     pub status: LicenseStatus,
     pub trial_days_left: Option<i64>,
     pub licensed_version: Option<u32>,
+    pub seats_used: Option<u32>,
+    pub seats_limit: Option<u32>,
+    pub device_name: Option<String>,
 }
 
 /// Result of a license activation attempt.
@@ -74,6 +81,7 @@ mod tests {
     fn test_license_cache_roundtrip() {
         let cache = LicenseCache {
             license_key: None,
+            activation_id: None,
             status: LicenseStatus::Trial,
             licensed_version: None,
             device_id: "test-device".to_string(),
@@ -81,6 +89,9 @@ mod tests {
             last_validated: None,
             trial_started: chrono::Utc::now(),
             trial_expires: chrono::Utc::now() + chrono::Duration::days(14),
+            seats_used: None,
+            seats_limit: None,
+            device_name: None,
         };
 
         let json = serde_json::to_string(&cache).unwrap();
@@ -96,6 +107,9 @@ mod tests {
             status: LicenseStatus::Trial,
             trial_days_left: Some(10),
             licensed_version: None,
+            seats_used: None,
+            seats_limit: None,
+            device_name: None,
         };
 
         let json = serde_json::to_string(&info).unwrap();

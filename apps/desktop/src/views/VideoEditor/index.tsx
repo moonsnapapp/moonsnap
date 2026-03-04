@@ -431,6 +431,16 @@ export const VideoEditorView = forwardRef<VideoEditorViewRef, VideoEditorViewPro
   const handleExport = useCallback(async () => {
     if (!project) return;
 
+    // Pro feature gate: export requires a license
+    const { isPro } = await import('../../stores/licenseStore').then(m => {
+      const store = m.useLicenseStore.getState();
+      return { isPro: store.isPro() };
+    });
+    if (!isPro) {
+      window.open('https://buy.polar.sh/polar_cl_WDZB2ld3wEqqWTOustdiNZHASOHMOz4lxlsZ03VjJfx', '_blank');
+      return;
+    }
+
     // Stop playback before exporting
     useVideoEditorStore.getState().setIsPlaying(false);
 

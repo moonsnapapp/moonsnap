@@ -75,6 +75,7 @@ mod tests {
     fn test_cache() -> LicenseCache {
         LicenseCache {
             license_key: None,
+            activation_id: None,
             status: LicenseStatus::Trial,
             licensed_version: None,
             device_id: "test-device-id".to_string(),
@@ -82,6 +83,9 @@ mod tests {
             last_validated: None,
             trial_started: chrono::Utc::now(),
             trial_expires: chrono::Utc::now() + chrono::Duration::days(14),
+            seats_used: None,
+            seats_limit: None,
+            device_name: None,
         }
     }
 

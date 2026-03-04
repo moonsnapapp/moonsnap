@@ -29,7 +29,7 @@ const STATUS_CONFIG: Record<LicenseStatus, { icon: React.ReactNode; label: strin
 };
 
 export const LicenseTab: React.FC = () => {
-  const { status, trialDaysLeft, isLoading, fetchStatus, activate, deactivate } = useLicenseStore();
+  const { status, trialDaysLeft, seatsUsed, seatsLimit, deviceName, isLoading, fetchStatus, activate, deactivate } = useLicenseStore();
   const [licenseKey, setLicenseKey] = useState('');
   const [activationMessage, setActivationMessage] = useState<{ text: string; success: boolean } | null>(null);
 
@@ -49,7 +49,8 @@ export const LicenseTab: React.FC = () => {
 
   const handleDeactivate = async () => {
     setActivationMessage(null);
-    await deactivate();
+    const result = await deactivate();
+    setActivationMessage({ text: result.message, success: result.success });
   };
 
   const statusConfig = STATUS_CONFIG[status];
@@ -78,6 +79,22 @@ export const LicenseTab: React.FC = () => {
               )}
             </div>
           </div>
+          {status === 'pro' && (seatsUsed != null || deviceName) && (
+            <div className="mt-3 pt-3 border-t border-[var(--polar-frost)] space-y-1.5">
+              {deviceName && (
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-[var(--ink-muted)]">This device</span>
+                  <span className="text-xs text-[var(--ink-black)] font-medium">{deviceName}</span>
+                </div>
+              )}
+              {seatsUsed != null && seatsLimit != null && (
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-[var(--ink-muted)]">Seats</span>
+                  <span className="text-xs text-[var(--ink-black)] font-medium">{seatsUsed} / {seatsLimit}</span>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </section>
 
@@ -127,7 +144,7 @@ export const LicenseTab: React.FC = () => {
 
             <div className="pt-2 border-t border-[var(--polar-frost)]">
               <a
-                href="https://polar.sh/moonsnap"
+                href="https://buy.polar.sh/polar_cl_WDZB2ld3wEqqWTOustdiNZHASOHMOz4lxlsZ03VjJfx"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="inline-flex items-center gap-1.5 text-sm text-[var(--coral-400)] hover:text-[var(--coral-500)] transition-colors"
@@ -166,6 +183,15 @@ export const LicenseTab: React.FC = () => {
                 {isLoading ? 'Deactivating...' : 'Deactivate'}
               </Button>
             </div>
+            {activationMessage && (
+              <p
+                className={`text-xs mt-2 ${
+                  activationMessage.success ? 'text-emerald-500' : 'text-red-500'
+                }`}
+              >
+                {activationMessage.text}
+              </p>
+            )}
           </div>
         </section>
       )}

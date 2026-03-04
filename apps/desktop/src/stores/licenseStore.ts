@@ -12,17 +12,23 @@ interface LicenseInfoRuntime {
   status: LicenseStatus;
   trialDaysLeft: number | null;
   licensedVersion: number | null;
+  seatsUsed: number | null;
+  seatsLimit: number | null;
+  deviceName: string | null;
 }
 
 interface LicenseState {
   status: LicenseStatus;
   trialDaysLeft: number | null;
   licensedVersion: number | null;
+  seatsUsed: number | null;
+  seatsLimit: number | null;
+  deviceName: string | null;
   isLoading: boolean;
 
   fetchStatus: () => Promise<void>;
   activate: (key: string) => Promise<ActivationResult>;
-  deactivate: () => Promise<void>;
+  deactivate: () => Promise<ActivationResult>;
   isPro: () => boolean;
 }
 
@@ -32,6 +38,9 @@ export const useLicenseStore = create<LicenseState>()(
       status: 'trial' as LicenseStatus,
       trialDaysLeft: null,
       licensedVersion: null,
+      seatsUsed: null,
+      seatsLimit: null,
+      deviceName: null,
       isLoading: false,
 
       fetchStatus: async () => {
@@ -43,6 +52,9 @@ export const useLicenseStore = create<LicenseState>()(
             status: info.status,
             trialDaysLeft: info.trialDaysLeft,
             licensedVersion: info.licensedVersion,
+            seatsUsed: info.seatsUsed,
+            seatsLimit: info.seatsLimit,
+            deviceName: info.deviceName,
             isLoading: false,
           });
         } catch (e) {
@@ -71,10 +83,13 @@ export const useLicenseStore = create<LicenseState>()(
         try {
           await invoke('deactivate_license');
           await get().fetchStatus();
+          set({ isLoading: false });
+          return { success: true, message: 'License deactivated successfully' };
         } catch (e) {
           console.error('Failed to deactivate license:', e);
+          set({ isLoading: false });
+          return { success: false, message: String(e) };
         }
-        set({ isLoading: false });
       },
 
       isPro: () => {

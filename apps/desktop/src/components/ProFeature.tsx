@@ -23,7 +23,7 @@ export function ProFeature({ children, featureName }: ProFeatureProps) {
         <button
           className="mt-2 px-3 py-1 text-xs font-medium text-white bg-[var(--coral-500)] hover:bg-[var(--coral-600)] rounded-md transition-colors"
           onClick={() => {
-            window.open('https://polar.sh/moonsnap', '_blank');
+            window.open('https://buy.polar.sh/polar_cl_WDZB2ld3wEqqWTOustdiNZHASOHMOz4lxlsZ03VjJfx', '_blank');
           }}
         >
           Upgrade to Pro

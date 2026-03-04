@@ -895,27 +895,11 @@ pub fn webcam_recording_stop() -> Result<(), String> {
 pub async fn start_recording(
     app: AppHandle,
     settings: RecordingSettings,
-    license: tauri::State<'_, crate::commands::license::LicenseState>,
 ) -> Result<StartRecordingResult, String> {
     log::debug!(
         "[RECORDING] start_recording called with mode: {:?}",
         settings.mode
     );
-
-    // Pro feature gate: video recording and GIF recording require a license
-    {
-        let feature = match settings.format {
-            RecordingFormat::Mp4 => "video_recording",
-            RecordingFormat::Gif => "gif_export",
-        };
-        let guard = license.cache.read();
-        if let Some(ref cache) = *guard {
-            let status =
-                crate::license::validation::resolve_status(cache, env!("CARGO_PKG_VERSION"));
-            crate::license::feature_gate::require_pro(&status)
-                .map_err(|e| format!("{} (feature: {})", e, feature))?;
-        }
-    }
 
     let mut settings = settings;
     settings.validate();

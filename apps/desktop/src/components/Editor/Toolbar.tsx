@@ -110,6 +110,10 @@ export const Toolbar: React.FC<ToolbarProps> = ({
   }, []);
 
   const handleCopy = async () => {
+    if (!isPro) {
+      window.open('https://buy.polar.sh/polar_cl_WDZB2ld3wEqqWTOustdiNZHASOHMOz4lxlsZ03VjJfx', '_blank');
+      return;
+    }
     await onCopy();
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
@@ -171,7 +175,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
                     <button
                       onClick={() => {
                         if (needsPro) {
-                          window.open('https://polar.sh/moonsnap', '_blank');
+                          window.open('https://buy.polar.sh/polar_cl_WDZB2ld3wEqqWTOustdiNZHASOHMOz4lxlsZ03VjJfx', '_blank');
                           return;
                         }
                         onToolChange(tool.id);
@@ -203,7 +207,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
                 disabled={isCopying}
                 className={`glass-btn ${buttonSize} ${
                   copied ? 'glass-btn--success' : ''
-                } disabled:opacity-50 disabled:cursor-not-allowed`}
+                } ${!isPro ? 'opacity-50' : ''} disabled:opacity-50 disabled:cursor-not-allowed`}
               >
                 {isCopying ? (
                   <Loader2 className={`${iconSize} animate-spin`} />
@@ -212,11 +216,12 @@ export const Toolbar: React.FC<ToolbarProps> = ({
                 ) : (
                   <Copy className={iconSize} />
                 )}
+                {!isPro && <Lock size={8} className="absolute top-0.5 right-0.5 opacity-60" />}
               </button>
             </TooltipTrigger>
             <TooltipContent side="top">
               <div className="flex items-center gap-2">
-                <span className="text-xs">{isCopying ? 'Copying...' : copied ? 'Copied!' : 'Copy'}</span>
+                <span className="text-xs">{!isPro ? 'Copy (Pro)' : isCopying ? 'Copying...' : copied ? 'Copied!' : 'Copy'}</span>
                 <kbd className="kbd text-[10px] px-1.5 py-0.5">Ctrl+C</kbd>
               </div>
             </TooltipContent>
@@ -229,19 +234,24 @@ export const Toolbar: React.FC<ToolbarProps> = ({
                 <DropdownMenuTrigger asChild>
                   <button
                     disabled={isSaving}
-                    className={`glass-btn ${buttonSize} disabled:opacity-50`}
+                    onClick={!isPro ? (e: React.MouseEvent) => {
+                      e.preventDefault();
+                      window.open('https://buy.polar.sh/polar_cl_WDZB2ld3wEqqWTOustdiNZHASOHMOz4lxlsZ03VjJfx', '_blank');
+                    } : undefined}
+                    className={`glass-btn ${buttonSize} ${!isPro ? 'opacity-50' : ''} disabled:opacity-50`}
                   >
                     {isSaving ? (
                       <Loader2 className={`${iconSize} animate-spin`} />
                     ) : (
                       <Save className={iconSize} />
                     )}
+                    {!isPro && <Lock size={8} className="absolute top-0.5 right-0.5 opacity-60" />}
                   </button>
                 </DropdownMenuTrigger>
               </TooltipTrigger>
               <TooltipContent side="top">
                 <div className="flex items-center gap-2">
-                  <span className="text-xs">{isSaving ? 'Saving...' : 'Save'}</span>
+                  <span className="text-xs">{!isPro ? 'Save (Pro)' : isSaving ? 'Saving...' : 'Save'}</span>
                   <kbd className="kbd text-[10px] px-1.5 py-0.5">Ctrl+E</kbd>
                 </div>
               </TooltipContent>

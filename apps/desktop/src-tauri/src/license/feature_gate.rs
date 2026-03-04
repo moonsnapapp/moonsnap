@@ -22,10 +22,10 @@ pub fn require_pro(status: &LicenseStatus) -> Result<(), String> {
     match status {
         LicenseStatus::Pro | LicenseStatus::Trial => Ok(()),
         LicenseStatus::Free => Err(
-            "This feature requires MoonSnap Pro. Upgrade at https://polar.sh/moonsnap".to_string(),
+            "This feature requires MoonSnap Pro. Upgrade at https://buy.polar.sh/polar_cl_WDZB2ld3wEqqWTOustdiNZHASOHMOz4lxlsZ03VjJfx".to_string(),
         ),
         LicenseStatus::Expired => Err(
-            "Your license has expired. Please reconnect to the internet to re-validate, or upgrade at https://polar.sh/moonsnap".to_string(),
+            "Your license has expired. Please reconnect to the internet to re-validate, or upgrade at https://buy.polar.sh/polar_cl_WDZB2ld3wEqqWTOustdiNZHASOHMOz4lxlsZ03VjJfx".to_string(),
         ),
     }
 }
