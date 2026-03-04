@@ -9,6 +9,7 @@ import {
   Camera,
   MessageSquare,
   FileText,
+  Key,
 } from 'lucide-react';
 import { Titlebar } from '@/components/Titlebar/Titlebar';
 import { ShortcutsTab } from '@/components/Settings/ShortcutsTab';
@@ -16,6 +17,7 @@ import { GeneralTab } from '@/components/Settings/GeneralTab';
 import { ScreenshotsTab } from '@/components/Settings/ScreenshotsTab';
 import { FeedbackTab } from '@/components/Settings/FeedbackTab';
 import { ChangelogTab } from '@/components/Settings/ChangelogTab';
+import { LicenseTab } from '@/components/Settings/LicenseTab';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { useTheme } from '@/hooks/useTheme';
 import { useUpdater } from '@/hooks/useUpdater';
@@ -26,7 +28,8 @@ type SettingsSection =
   | 'recordings'
   | 'screenshots'
   | 'feedback'
-  | 'changelog';
+  | 'changelog'
+  | 'license';
 
 interface SidebarItem {
   id: SettingsSection;
@@ -41,6 +44,7 @@ const sidebarItems: SidebarItem[] = [
   { id: 'screenshots', label: 'Screenshots', icon: <Camera className="w-4 h-4" /> },
   { id: 'feedback', label: 'Feedback', icon: <MessageSquare className="w-4 h-4" /> },
   { id: 'changelog', label: 'Changelog', icon: <FileText className="w-4 h-4" /> },
+  { id: 'license', label: 'License', icon: <Key className="w-4 h-4" /> },
 ];
 
 // Placeholder components for sections not yet implemented
@@ -135,6 +139,8 @@ const SettingsWindow: React.FC = () => {
         return <FeedbackTab />;
       case 'changelog':
         return <ChangelogTab />;
+      case 'license':
+        return <LicenseTab />;
       default:
         return <GeneralTab />;
     }
