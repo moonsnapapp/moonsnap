@@ -63,6 +63,7 @@ const SceneModeRenderer = memo(function SceneModeRenderer({
   backgroundPadding = 0,
   rounding = 0,
   frameStyle,
+  frameBorderOverlayStyle,
   shadowStyle,
   cropConfig,
 }: {
@@ -89,6 +90,7 @@ const SceneModeRenderer = memo(function SceneModeRenderer({
   backgroundPadding?: number;
   rounding?: number;
   frameStyle?: React.CSSProperties;
+  frameBorderOverlayStyle?: React.CSSProperties | null;
   shadowStyle?: React.CSSProperties;
   cropConfig?: CropConfig;
 }) {
@@ -263,6 +265,9 @@ const SceneModeRenderer = memo(function SceneModeRenderer({
             displayHeight={containerHeight}
           />
         )}
+
+        {/* Squircle border overlay — rendered on top so it isn't covered by video */}
+        {frameBorderOverlayStyle && <div style={frameBorderOverlayStyle} />}
 
         </div>
       </div>
@@ -466,6 +471,7 @@ export function GPUVideoPreview({ isActive = true }: GPUVideoPreviewProps) {
     hasFrameStyling,
     frameStyle,
     frameShadowStyle,
+    frameBorderOverlayStyle,
     compositionSize,
     frameDisplaySize,
     frameOffset,
@@ -705,6 +711,7 @@ export function GPUVideoPreview({ isActive = true }: GPUVideoPreviewProps) {
               backgroundPadding={backgroundConfig?.padding ?? 0}
               rounding={backgroundConfig?.rounding ?? 0}
               frameStyle={frameStyle}
+              frameBorderOverlayStyle={frameBorderOverlayStyle}
               shadowStyle={frameShadowStyle}
             />
           ) : (

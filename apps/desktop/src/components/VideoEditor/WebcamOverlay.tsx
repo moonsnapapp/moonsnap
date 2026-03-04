@@ -8,6 +8,7 @@ import {
 } from '../../stores/videoEditor/selectors';
 import { useWebCodecsPreview } from '../../hooks/useWebCodecsPreview';
 import { webcamLogger } from '../../utils/logger';
+import { generateSquircleClipPath } from '../../utils/squircle';
 import type { WebcamConfig, VisibilitySegment, CornerStyle } from '../../types';
 
 interface WebcamOverlayProps {
@@ -90,95 +91,6 @@ function getPositionStyle(
     default:
       return { bottom: margin, right: margin };
   }
-}
-
-/**
- * Generate a superellipse (squircle) clip-path polygon.
- * Uses the parametric form: x = a * sign(cos(t)) * |cos(t)|^(2/n)
- * where n=4 for squircle (Cap uses power=4 in their shader).
- *
- * @param rounding - Rounding percentage (0-100), controls how much the corners are rounded
- * @param width - Width of the element in pixels (for aspect ratio calculation)
- * @param height - Height of the element in pixels (for aspect ratio calculation)
- * @param numPoints - Number of points per corner for smoothness
- */
-function generateSquircleClipPath(
-  rounding: number,
-  width: number = 100,
-  height: number = 100,
-  numPoints: number = 16
-): string {
-  // At 0% rounding, it's a rectangle; at 100%, it's a full squircle
-  // The rounding controls the "inset" of the superellipse from the corners
-  const radiusFactor = (rounding / 100) * 0.5; // 0 to 0.5
-
-  if (radiusFactor <= 0.01) {
-    // Nearly rectangular, use simple polygon
-    return 'polygon(0% 0%, 100% 0%, 100% 100%, 0% 100%)';
-  }
-
-  const points: string[] = [];
-  const n = 4; // Superellipse power (4 = squircle, like Cap)
-  const exp = 2 / n; // = 0.5 for n=4
-
-  // For non-square elements, we want circular corners (same pixel radius in both directions)
-  // Use the smaller dimension to calculate radius, then convert to percentages
-  const minDim = Math.min(width, height);
-  const radiusPx = radiusFactor * minDim; // radius in pixels (based on smaller dimension)
-
-  // Convert to percentages for clip-path
-  const rx = (radiusPx / width) * 100; // radius as percentage of width
-  const ry = (radiusPx / height) * 100; // radius as percentage of height
-
-  // Helper to calculate superellipse point
-  const superellipsePoint = (t: number): { x: number; y: number } => {
-    const cosT = Math.cos(t);
-    const sinT = Math.sin(t);
-    const x = Math.sign(cosT) * Math.pow(Math.abs(cosT), exp);
-    const y = Math.sign(sinT) * Math.pow(Math.abs(sinT), exp);
-    return { x, y };
-  };
-
-  // Generate points for each corner
-  // We generate a quarter arc for each corner
-
-  // Top-right corner (t: -PI/2 to 0)
-  for (let i = 0; i <= numPoints; i++) {
-    const t = -Math.PI / 2 + (Math.PI / 2) * (i / numPoints);
-    const p = superellipsePoint(t);
-    const x = 100 - rx + p.x * rx;
-    const y = ry + p.y * ry;
-    points.push(`${x.toFixed(2)}% ${y.toFixed(2)}%`);
-  }
-
-  // Bottom-right corner (t: 0 to PI/2)
-  for (let i = 1; i <= numPoints; i++) {
-    const t = (Math.PI / 2) * (i / numPoints);
-    const p = superellipsePoint(t);
-    const x = 100 - rx + p.x * rx;
-    const y = 100 - ry + p.y * ry;
-    points.push(`${x.toFixed(2)}% ${y.toFixed(2)}%`);
-  }
-
-  // Bottom-left corner (t: PI/2 to PI)
-  for (let i = 1; i <= numPoints; i++) {
-    const t = Math.PI / 2 + (Math.PI / 2) * (i / numPoints);
-    const p = superellipsePoint(t);
-    const x = rx + p.x * rx;
-    const y = 100 - ry + p.y * ry;
-    points.push(`${x.toFixed(2)}% ${y.toFixed(2)}%`);
-  }
-
-  // Top-left corner (t: PI to 3*PI/2)
-  for (let i = 1; i <= numPoints; i++) {
-    const t = Math.PI + (Math.PI / 2) * (i / numPoints);
-    const p = superellipsePoint(t);
-    const x = rx + p.x * rx;
-    const y = ry + p.y * ry;
-    points.push(`${x.toFixed(2)}% ${y.toFixed(2)}%`);
-  }
-
-  return `polygon(${points.join(', ')})`;
 }
 
 /**
@@ -420,13 +332,29 @@ export const WebcamOverlay = memo(function WebcamOverlay({
     [config.shape, config.rounding, config.cornerStyle, webcamWidth, webcamHeight]
   );
 
-  // Border style
+  // Border: for polygon clip-path shapes, use an overlay div with inset
+  // box-shadow (rendered on top so video doesn't cover it). For circle/rectangle,
+  // CSS border works fine since there's no polygon clip.
+  const usesPolygonClip = (config.shape === 'roundedRectangle') ||
+    (config.shape === 'source' && config.rounding > 2);
+
   const borderStyle = useMemo((): React.CSSProperties => {
     if (!config.border.enabled) return {};
     return {
       border: `${config.border.width}px solid ${config.border.color}`,
     };
   }, [config.border]);
+
+  const borderOverlayStyle = useMemo((): React.CSSProperties | null => {
+    if (!config.border.enabled || !usesPolygonClip) return null;
+    return {
+      position: 'absolute',
+      inset: 0,
+      pointerEvents: 'none',
+      zIndex: 1,
+      boxShadow: `inset 0 0 0 ${config.border.width}px ${config.border.color}`, // tauri-shadow-allow
+    };
+  }, [config.border, usesPolygonClip]);
 
   // Shadow filter - single slider controls everything
   const shadowFilter = useMemo(
@@ -526,6 +454,8 @@ export const WebcamOverlay = memo(function WebcamOverlay({
             }}
           />
         )}
+        {/* Squircle border overlay — on top so video doesn't cover it */}
+        {borderOverlayStyle && <div style={borderOverlayStyle} />}
       </div>
     </div>
   );

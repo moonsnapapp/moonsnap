@@ -17,6 +17,7 @@ import {
 } from '@/utils/compositionBounds';
 import { hasVideoBackgroundFrameStyling } from '@/utils/backgroundFrameStyling';
 import { getContentDimensionsFromCrop } from '@/utils/videoContentDimensions';
+import { generateSquircleClipPathFromRadius } from '@/utils/squircle';
 
 interface PreviewStylesOptions {
   /** Background configuration */
@@ -43,6 +44,8 @@ interface PreviewStylesResult {
   frameShadowStyle: React.CSSProperties;
   /** Combined frame style for SceneModeRenderer */
   frameStyle: React.CSSProperties;
+  /** Border overlay style for squircle mode (rendered as a separate div on top of content) */
+  frameBorderOverlayStyle: React.CSSProperties | null;
   /** Preview scale factor */
   previewScale: number;
   /** Composition size including padding */
@@ -274,6 +277,9 @@ export function usePreviewStyles(options: PreviewStylesOptions): PreviewStylesRe
     [frameOutputBounds.width, frameOutputBounds.height]
   );
 
+  const isSquircle = backgroundConfig?.roundingType === 'squircle' &&
+    (backgroundConfig?.rounding ?? 0) > 0;
+
   // Frame clipping style (rounding, border)
   const frameClipStyle = useMemo((): React.CSSProperties => {
     if (!backgroundConfig) return {};
@@ -283,10 +289,14 @@ export function usePreviewStyles(options: PreviewStylesOptions): PreviewStylesRe
     const scaledRounding = backgroundConfig.rounding * previewScale;
 
     if (scaledRounding > 0) {
-      if (backgroundConfig.roundingType === 'squircle') {
-        style.clipPath = `inset(0 round ${scaledRounding * 1.2}px / ${scaledRounding}px)`;
-        style.borderRadius = `${scaledRounding * 1.2}px / ${scaledRounding}px`;
+      if (isSquircle && frameDisplaySize.width > 0 && frameDisplaySize.height > 0) {
+        style.clipPath = generateSquircleClipPathFromRadius(
+          scaledRounding,
+          frameDisplaySize.width,
+          frameDisplaySize.height
+        );
       } else {
+        // Standard rounded corners, or fallback before layout is measured
         style.clipPath = `inset(0 round ${scaledRounding}px)`;
         style.borderRadius = scaledRounding;
       }
@@ -300,7 +310,28 @@ export function usePreviewStyles(options: PreviewStylesOptions): PreviewStylesRe
     }
 
     return style;
-  }, [backgroundConfig, previewScale]);
+  }, [backgroundConfig, previewScale, frameDisplaySize.width, frameDisplaySize.height, isSquircle]);
+
+  // Squircle border overlay — rendered as an absolute-positioned div on top of
+  // the video content so it isn't covered by the video element. The parent's
+  // polygon clip-path clips this overlay, so the inset box-shadow follows the
+  // squircle shape exactly.
+  const frameBorderOverlayStyle = useMemo((): React.CSSProperties | null => {
+    if (!isSquircle || !backgroundConfig?.border?.enabled || (backgroundConfig.border.opacity ?? 0) <= 0) {
+      return null;
+    }
+    const scaledBorderWidth = backgroundConfig.border.width * previewScale;
+    if (scaledBorderWidth <= 0) return null;
+    const borderOpacity = backgroundConfig.border.opacity / 100;
+    const borderColor = hexToRgba(backgroundConfig.border.color, borderOpacity);
+    return {
+      position: 'absolute',
+      inset: 0,
+      pointerEvents: 'none',
+      zIndex: 5,
+      boxShadow: `inset 0 0 0 ${scaledBorderWidth}px ${borderColor}`, // tauri-shadow-allow
+    };
+  }, [isSquircle, backgroundConfig?.border, previewScale]);
 
   // Frame shadow style (drop-shadow filter)
   const frameShadowStyle = useMemo((): React.CSSProperties => {
@@ -334,6 +365,7 @@ export function usePreviewStyles(options: PreviewStylesOptions): PreviewStylesRe
     frameClipStyle,
     frameShadowStyle,
     frameStyle,
+    frameBorderOverlayStyle,
     previewScale,
     compositionSize,
     frameDisplaySize,
