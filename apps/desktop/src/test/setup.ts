@@ -98,3 +98,17 @@ HTMLCanvasElement.prototype.getContext = vi.fn(() => mockCanvasContext) as unkno
 // Mock URL.createObjectURL
 URL.createObjectURL = vi.fn(() => 'blob:mock-url');
 URL.revokeObjectURL = vi.fn();
+
+// Node 22+ ships a built-in localStorage that requires --localstorage-file.
+// When the path is invalid, the object exists but its methods throw/are missing.
+// Replace it with a simple in-memory implementation so tests can use it.
+const localStorageMap = new Map<string, string>();
+const storageMock: Storage = {
+  getItem: (key: string) => localStorageMap.get(key) ?? null,
+  setItem: (key: string, value: string) => { localStorageMap.set(key, value); },
+  removeItem: (key: string) => { localStorageMap.delete(key); },
+  clear: () => { localStorageMap.clear(); },
+  get length() { return localStorageMap.size; },
+  key: (index: number) => [...localStorageMap.keys()][index] ?? null,
+};
+Object.defineProperty(globalThis, 'localStorage', { value: storageMock, writable: true });
