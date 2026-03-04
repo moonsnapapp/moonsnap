@@ -11,7 +11,6 @@ use crate::license::{
 
 const CACHE_FILENAME: &str = "license.dat";
 const TRIAL_DAYS: i64 = 7;
-const METADATA_REFRESH_RETRY_COOLDOWN_SECS: i64 = 30;
 
 /// Managed state holding the current license cache in memory.
 pub struct LicenseState {
@@ -19,7 +18,6 @@ pub struct LicenseState {
     pub encryption_key: [u8; 32],
     pub cache_path: PathBuf,
     pub device_id: String,
-    pub metadata_refresh_next_attempt: Arc<RwLock<Option<chrono::DateTime<chrono::Utc>>>>,
 }
 
 impl LicenseState {
@@ -56,24 +54,12 @@ impl LicenseState {
             encryption_key,
             cache_path,
             device_id,
-            metadata_refresh_next_attempt: Arc::new(RwLock::new(None)),
         }
     }
 }
 
 fn app_version() -> String {
     env!("CARGO_PKG_VERSION").to_string()
-}
-
-fn set_metadata_refresh_cooldown(state: &LicenseState) {
-    let mut guard = state.metadata_refresh_next_attempt.write();
-    *guard =
-        Some(chrono::Utc::now() + chrono::Duration::seconds(METADATA_REFRESH_RETRY_COOLDOWN_SECS));
-}
-
-fn clear_metadata_refresh_cooldown(state: &LicenseState) {
-    let mut guard = state.metadata_refresh_next_attempt.write();
-    *guard = None;
 }
 
 async fn validate_and_refresh_cache(
@@ -116,61 +102,13 @@ async fn validate_and_refresh_cache(
 }
 
 #[tauri::command]
-pub async fn get_license_status(
-    state: tauri::State<'_, LicenseState>,
-) -> Result<LicenseInfo, String> {
-    let (mut cache_snapshot, key, activation_id) = {
-        let guard = state.cache.read();
-        let cache = guard.as_ref().ok_or("License not initialized")?;
-        (
-            cache.clone(),
-            cache.license_key.clone(),
-            cache.activation_id.clone(),
-        )
-    };
+pub fn get_license_status(state: tauri::State<'_, LicenseState>) -> Result<LicenseInfo, String> {
+    let guard = state.cache.read();
+    let cache = guard.as_ref().ok_or("License not initialized")?;
 
-    let needs_metadata_refresh = cache_snapshot.status == LicenseStatus::Pro
-        && (cache_snapshot.seats_used.is_none()
-            || cache_snapshot.seats_limit.is_none()
-            || cache_snapshot.device_name.is_none());
-    let refresh_allowed = {
-        let guard = state.metadata_refresh_next_attempt.read();
-        guard.map_or(true, |next| chrono::Utc::now() >= next)
-    };
-
-    if needs_metadata_refresh && refresh_allowed {
-        if let Some(key) = key {
-            if let Some(info) = validate_and_refresh_cache(&key, activation_id.as_deref()).await {
-                let metadata_complete = info.seats_used.is_some()
-                    && info.seats_limit.is_some()
-                    && info.device_name.is_some();
-                let now = chrono::Utc::now();
-                let mut guard = state.cache.write();
-                if let Some(ref mut c) = *guard {
-                    c.last_validated = Some(now);
-                    c.seats_used = info.seats_used;
-                    c.seats_limit = info.seats_limit;
-                    c.device_name = info.device_name;
-
-                    if let Err(e) = cache::save_cache(&state.cache_path, &state.encryption_key, c) {
-                        log::error!("Failed to save refreshed license cache: {}", e);
-                    }
-                    cache_snapshot = c.clone();
-                }
-                if metadata_complete {
-                    clear_metadata_refresh_cooldown(&state);
-                } else {
-                    set_metadata_refresh_cooldown(&state);
-                }
-            } else {
-                set_metadata_refresh_cooldown(&state);
-            }
-        }
-    }
-
-    let effective_status = validation::resolve_status(&cache_snapshot, &app_version());
-    let trial_days = if cache_snapshot.status == LicenseStatus::Trial {
-        Some(validation::trial_days_left(&cache_snapshot))
+    let effective_status = validation::resolve_status(cache, &app_version());
+    let trial_days = if cache.status == LicenseStatus::Trial {
+        Some(validation::trial_days_left(cache))
     } else {
         None
     };
@@ -178,10 +116,10 @@ pub async fn get_license_status(
     Ok(LicenseInfo {
         status: effective_status,
         trial_days_left: trial_days,
-        licensed_version: cache_snapshot.licensed_version,
-        seats_used: cache_snapshot.seats_used,
-        seats_limit: cache_snapshot.seats_limit,
-        device_name: cache_snapshot.device_name.clone(),
+        licensed_version: cache.licensed_version,
+        seats_used: cache.seats_used,
+        seats_limit: cache.seats_limit,
+        device_name: cache.device_name.clone(),
     })
 }
 
@@ -213,8 +151,8 @@ pub async fn activate_license(
                     .unwrap_or(1),
             );
             c.activated_at = Some(now);
-            // Only stamp successful validation time when validate call succeeds.
-            c.last_validated = validation.as_ref().map(|_| now);
+            // Activation succeeded online; start 24h revalidation window now.
+            c.last_validated = Some(now);
             c.seats_used = None;
             c.seats_limit = None;
             c.device_name = None;
@@ -222,12 +160,6 @@ pub async fn activate_license(
                 c.seats_used = info.seats_used;
                 c.seats_limit = info.seats_limit;
                 c.device_name = info.device_name.clone();
-            }
-
-            if c.seats_used.is_some() && c.seats_limit.is_some() && c.device_name.is_some() {
-                clear_metadata_refresh_cooldown(&state);
-            } else {
-                set_metadata_refresh_cooldown(&state);
             }
 
             if let Err(e) = cache::save_cache(&state.cache_path, &state.encryption_key, c) {
@@ -272,7 +204,6 @@ pub async fn deactivate_license(state: tauri::State<'_, LicenseState>) -> Result
         c.seats_used = None;
         c.seats_limit = None;
         c.device_name = None;
-        clear_metadata_refresh_cooldown(&state);
         if let Err(e) = cache::save_cache(&state.cache_path, &state.encryption_key, c) {
             log::error!("Failed to save license cache after deactivation: {}", e);
         }
@@ -313,9 +244,18 @@ pub async fn background_revalidation(
         let needs_validation = {
             let guard = cache_state.read();
             guard.as_ref().map_or(false, |c| {
-                c.status == LicenseStatus::Pro
-                    && c.last_validated
-                        .map_or(true, |last| (chrono::Utc::now() - last).num_hours() >= 24)
+                if c.status != LicenseStatus::Pro {
+                    return false;
+                }
+                let now = chrono::Utc::now();
+                if let Some(last) = c.last_validated {
+                    (now - last).num_hours() >= 24
+                } else if let Some(activated_at) = c.activated_at {
+                    (now - activated_at).num_hours() >= 24
+                } else {
+                    // Legacy cache without timestamps: validate on next tick.
+                    true
+                }
             })
         };
 
