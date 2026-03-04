@@ -17,7 +17,7 @@ import {
 } from '@/utils/compositionBounds';
 import { hasVideoBackgroundFrameStyling } from '@/utils/backgroundFrameStyling';
 import { getContentDimensionsFromCrop } from '@/utils/videoContentDimensions';
-import { generateSquircleClipPathFromRadius } from '@/utils/squircle';
+import { generateSquircleClipPathFromRadius, generateSquircleBorderClipPath } from '@/utils/squircle';
 
 interface PreviewStylesOptions {
   /** Background configuration */
@@ -302,7 +302,7 @@ export function usePreviewStyles(options: PreviewStylesOptions): PreviewStylesRe
       }
     }
 
-    if (backgroundConfig.border?.enabled && backgroundConfig.border.opacity > 0) {
+    if (backgroundConfig.border?.enabled && backgroundConfig.border.opacity > 0 && !isSquircle) {
       const scaledBorderWidth = backgroundConfig.border.width * previewScale;
       if (scaledBorderWidth <= 0) return style;
       const borderOpacity = backgroundConfig.border.opacity / 100;
@@ -312,26 +312,42 @@ export function usePreviewStyles(options: PreviewStylesOptions): PreviewStylesRe
     return style;
   }, [backgroundConfig, previewScale, frameDisplaySize.width, frameDisplaySize.height, isSquircle]);
 
-  // Squircle border overlay — rendered as an absolute-positioned div on top of
-  // the video content so it isn't covered by the video element. The parent's
-  // polygon clip-path clips this overlay, so the inset box-shadow follows the
-  // squircle shape exactly.
+  // Squircle border overlay — extends OUTWARD from the video frame. Positioned
+  // outside the clipped frame div (in the shadow wrapper) so it isn't clipped.
+  // Uses a ring-shaped path(evenodd) where the outer edge is a larger squircle
+  // and the inner edge matches the frame's squircle boundary.
   const frameBorderOverlayStyle = useMemo((): React.CSSProperties | null => {
     if (!isSquircle || !backgroundConfig?.border?.enabled || (backgroundConfig.border.opacity ?? 0) <= 0) {
       return null;
     }
     const scaledBorderWidth = backgroundConfig.border.width * previewScale;
-    if (scaledBorderWidth <= 0) return null;
+    const scaledRounding = backgroundConfig.rounding * previewScale;
+    if (scaledBorderWidth <= 0 || frameDisplaySize.width <= 0 || frameDisplaySize.height <= 0) return null;
     const borderOpacity = backgroundConfig.border.opacity / 100;
     const borderColor = hexToRgba(backgroundConfig.border.color, borderOpacity);
+
+    // The overlay extends beyond the frame by borderWidth on each side
+    const overlayWidth = frameDisplaySize.width + 2 * scaledBorderWidth;
+    const overlayHeight = frameDisplaySize.height + 2 * scaledBorderWidth;
+    const outerRadius = scaledRounding + scaledBorderWidth;
+
     return {
       position: 'absolute',
-      inset: 0,
+      top: -scaledBorderWidth,
+      left: -scaledBorderWidth,
+      width: overlayWidth,
+      height: overlayHeight,
       pointerEvents: 'none',
-      zIndex: 5,
-      boxShadow: `inset 0 0 0 ${scaledBorderWidth}px ${borderColor}`, // tauri-shadow-allow
+      zIndex: -1,
+      backgroundColor: borderColor,
+      clipPath: generateSquircleBorderClipPath(
+        outerRadius,
+        scaledBorderWidth,
+        overlayWidth,
+        overlayHeight
+      ),
     };
-  }, [isSquircle, backgroundConfig?.border, previewScale]);
+  }, [isSquircle, backgroundConfig?.border, backgroundConfig?.rounding, previewScale, frameDisplaySize.width, frameDisplaySize.height]);
 
   // Frame shadow style (drop-shadow filter)
   const frameShadowStyle = useMemo((): React.CSSProperties => {
