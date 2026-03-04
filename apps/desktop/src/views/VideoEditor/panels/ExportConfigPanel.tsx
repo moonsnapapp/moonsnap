@@ -2,13 +2,14 @@
  * ExportConfigPanel - Format, FPS, resolution, crop, and audio settings.
  */
 import { useMemo } from 'react';
-import { Crop, X } from 'lucide-react';
+import { Crop, X, Lock } from 'lucide-react';
 import { Button } from '../../../components/ui/button';
 import { AudioControlsPanel } from './AudioControlsPanel';
 import type { VideoProject, ExportConfig, ExportFormat, AudioTrackSettings } from '../../../types';
 import { calculateCompositionOutputSize } from '@/utils/compositionBounds';
 import { hasVideoBackgroundFrameStyling } from '@/utils/backgroundFrameStyling';
 import { getContentDimensionsFromCrop } from '@/utils/videoContentDimensions';
+import { useLicenseStore } from '@/stores/licenseStore';
 
 export interface ExportConfigPanelProps {
   project: VideoProject;
@@ -18,6 +19,8 @@ export interface ExportConfigPanelProps {
 }
 
 export function ExportConfigPanel({ project, onUpdateExportConfig, onUpdateAudioConfig, onOpenCropDialog }: ExportConfigPanelProps) {
+  const isPro = useLicenseStore((s) => s.isPro());
+
   const outputResolution = useMemo(() => {
     const crop = project.export.crop;
     const bg = project.export.background;
@@ -55,8 +58,16 @@ export function ExportConfigPanel({ project, onUpdateExportConfig, onUpdateAudio
         >
           <option value="mp4">MP4</option>
           <option value="webm">WebM</option>
-          <option value="gif">GIF</option>
+          <option value="gif" disabled={!isPro}>
+            {isPro ? 'GIF' : 'GIF (Pro)'}
+          </option>
         </select>
+        {!isPro && project.export.format === 'gif' && (
+          <div className="flex items-center gap-1.5 mt-1.5 text-xs text-[var(--coral-500)]">
+            <Lock size={12} />
+            <span>GIF export requires MoonSnap Pro</span>
+          </div>
+        )}
       </div>
 
       {/* FPS */}

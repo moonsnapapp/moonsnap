@@ -9,7 +9,7 @@
 
 import React, { useEffect } from 'react';
 import * as Tooltip from '@radix-ui/react-tooltip';
-import { Camera, RefreshCw } from 'lucide-react';
+import { Camera, RefreshCw, Lock } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
 import {
   Select,
@@ -21,6 +21,7 @@ import {
 import { useCaptureSettingsStore } from '@/stores/captureSettingsStore';
 import { useWebcamSettingsStore } from '@/stores/webcamSettingsStore';
 import { useAudioInputStore } from '@/stores/audioInputStore';
+import { useLicenseStore } from '@/stores/licenseStore';
 import type { CaptureType, VideoFormat } from '@/types';
 import type { WebcamSize, WebcamShape, WebcamPosition } from '@/types/generated';
 
@@ -421,6 +422,7 @@ export const SettingsCol3: React.FC<SettingsColProps> = ({ mode }) => {
     setSize,
     setShape,
   } = useWebcamSettingsStore();
+  const isPro = useLicenseStore((s) => s.isPro());
 
   // Load devices when webcam is enabled
   useEffect(() => {
@@ -439,9 +441,17 @@ export const SettingsCol3: React.FC<SettingsColProps> = ({ mode }) => {
       <div className="glass-inline-group">
         <Camera size={12} className="opacity-60" />
         <span className="glass-inline-label">Webcam</span>
+        {!isPro && <Lock size={10} className="opacity-50" />}
         <Switch
           checked={webcamSettings.enabled}
-          onCheckedChange={(checked) => setEnabled(checked)}
+          onCheckedChange={(checked) => {
+            if (!isPro) {
+              window.open('https://polar.sh/moonsnap', '_blank');
+              return;
+            }
+            setEnabled(checked);
+          }}
+          disabled={!isPro}
         />
       </div>
       {webcamSettings.enabled && (

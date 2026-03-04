@@ -27,6 +27,7 @@ import {
   selectUpdateZoomRegion,
 } from '../../stores/videoEditor/selectors';
 import { BackgroundSettings } from '../../components/VideoEditor/BackgroundSettings';
+import { ProFeature } from '../../components/ProFeature';
 import { ZoomRegionConfig } from './ZoomRegionConfig';
 import { MaskSegmentConfig } from './MaskSegmentConfig';
 import { TextSegmentConfig } from './TextSegmentConfig';
@@ -207,10 +208,12 @@ export function VideoEditorSidebar({ project, onOpenCropDialog }: VideoEditorSid
         {/* Webcam Tab */}
         {activeTab === 'webcam' && project?.sources.webcamVideo && (
           <div className="p-4">
-            <WebcamConfigPanel
-              project={project}
-              onUpdateWebcamConfig={updateWebcamConfig}
-            />
+            <ProFeature featureName="Webcam Overlay">
+              <WebcamConfigPanel
+                project={project}
+                onUpdateWebcamConfig={updateWebcamConfig}
+              />
+            </ProFeature>
           </div>
         )}
 
@@ -224,12 +227,14 @@ export function VideoEditorSidebar({ project, onOpenCropDialog }: VideoEditorSid
         {/* Background/Style Tab */}
         {activeTab === 'background' && project && (
           <div className="p-4">
-            <BackgroundSettings
-              background={project.export.background}
-              onUpdate={(updates) => updateExportConfig({
-                background: { ...project.export.background, ...updates }
-              })}
-            />
+            <ProFeature featureName="Custom Backgrounds">
+              <BackgroundSettings
+                background={project.export.background}
+                onUpdate={(updates) => updateExportConfig({
+                  background: { ...project.export.background, ...updates }
+                })}
+              />
+            </ProFeature>
           </div>
         )}
 
