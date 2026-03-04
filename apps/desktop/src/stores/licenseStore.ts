@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { devtools } from 'zustand/middleware';
 import { invoke } from '@tauri-apps/api/core';
-import type { LicenseInfo, LicenseStatus, ActivationResult } from '../types/generated';
+import type { LicenseStatus, ActivationResult } from '../types/generated';
 
 /**
  * Runtime shape of LicenseInfo from Tauri invoke.
