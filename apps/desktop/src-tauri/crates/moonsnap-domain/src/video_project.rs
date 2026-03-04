@@ -878,7 +878,7 @@ pub struct BackgroundConfig {
     /// Inset value (pixels).
     #[serde(default)]
     pub inset: u32,
-    /// Corner rounding radius (0-100 pixels).
+    /// Corner rounding radius (0-200 pixels).
     #[serde(default)]
     pub rounding: f32,
     /// Corner rounding style (squircle or rounded).

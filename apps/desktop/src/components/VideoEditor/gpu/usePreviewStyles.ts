@@ -277,8 +277,7 @@ export function usePreviewStyles(options: PreviewStylesOptions): PreviewStylesRe
     [frameOutputBounds.width, frameOutputBounds.height]
   );
 
-  const isSquircle = backgroundConfig?.roundingType === 'squircle' &&
-    (backgroundConfig?.rounding ?? 0) > 0;
+  const isSquircle = backgroundConfig?.roundingType === 'squircle';
 
   // Frame clipping style (rounding, border)
   const frameClipStyle = useMemo((): React.CSSProperties => {

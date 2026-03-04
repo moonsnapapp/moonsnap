@@ -154,7 +154,7 @@ function BorderDetails({
         <Slider
           value={[width]}
           onValueChange={([value]) => onWidthChange(value)}
-          min={1}
+          min={5}
           max={20}
           step={1}
         />

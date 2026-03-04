@@ -142,7 +142,7 @@ export function CornerRadiusSection({
         value={[value]}
         onValueChange={([next]) => onValueChange(next)}
         min={0}
-        max={100}
+        max={200}
         step={2}
       />
       <div className="flex gap-1 mt-2">

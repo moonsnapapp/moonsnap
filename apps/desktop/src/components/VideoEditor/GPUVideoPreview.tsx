@@ -268,8 +268,12 @@ const SceneModeRenderer = memo(function SceneModeRenderer({
 
         </div>
 
-        {/* Squircle border overlay — outside the clipped frame so border extends outward */}
-        {frameBorderOverlayStyle && <div style={frameBorderOverlayStyle} />}
+        {/* Squircle border overlay — outside the clipped frame so border extends outward.
+            Apply the same zoom transform so the border follows the frame during zoom. */}
+        {frameBorderOverlayStyle && <div style={{
+          ...frameBorderOverlayStyle,
+          ...(showScreen ? zoomStyle : {}),
+        }} />}
       </div>
 
       {/* Fullscreen webcam - outside the frame wrapper */}
