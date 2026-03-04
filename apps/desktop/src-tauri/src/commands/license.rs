@@ -157,3 +157,59 @@ pub fn check_pro_feature(
     let status = validation::resolve_status(cache, &app_version());
     Ok(feature_gate::require_pro(&status).is_ok())
 }
+
+/// Background task: re-validate license every 7 days.
+///
+/// Checks hourly whether the license needs re-validation. If the last
+/// validation was more than 7 days ago, contacts Polar.sh to confirm
+/// the license is still valid. On failure, marks the license as expired.
+/// Network errors are silently retried on the next hourly tick.
+pub async fn background_revalidation(
+    cache_state: Arc<RwLock<Option<LicenseCache>>>,
+    encryption_key: [u8; 32],
+    cache_path: PathBuf,
+) {
+    loop {
+        tokio::time::sleep(tokio::time::Duration::from_secs(3600)).await; // Check hourly
+
+        let needs_validation = {
+            let guard = cache_state.read();
+            guard.as_ref().map_or(false, |c| {
+                c.status == LicenseStatus::Pro
+                    && c.last_validated
+                        .map_or(true, |last| (chrono::Utc::now() - last).num_days() >= 7)
+            })
+        };
+
+        if needs_validation {
+            let key = {
+                let guard = cache_state.read();
+                guard.as_ref().and_then(|c| c.license_key.clone())
+            };
+
+            if let Some(key) = key {
+                match validation::validate_online(&key).await {
+                    Ok(true) => {
+                        let mut guard = cache_state.write();
+                        if let Some(ref mut c) = *guard {
+                            c.last_validated = Some(chrono::Utc::now());
+                            let _ = cache::save_cache(&cache_path, &encryption_key, c);
+                            log::info!("License re-validated successfully");
+                        }
+                    },
+                    Ok(false) => {
+                        let mut guard = cache_state.write();
+                        if let Some(ref mut c) = *guard {
+                            c.status = LicenseStatus::Expired;
+                            let _ = cache::save_cache(&cache_path, &encryption_key, c);
+                            log::warn!("License validation failed — key revoked");
+                        }
+                    },
+                    Err(e) => {
+                        log::warn!("License re-validation network error (will retry): {}", e);
+                    },
+                }
+            }
+        }
+    }
+}
