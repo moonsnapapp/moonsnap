@@ -141,6 +141,12 @@ pub fn run() {
             // Initialize native caption preview state for zero-latency caption preview
             app.manage(commands::preview::NativeCaptionPreviewState::new());
 
+            // Initialize license state
+            let app_data_dir = app.path().app_data_dir().map_err(|e| {
+                Box::<dyn std::error::Error>::from(format!("Failed to get app data dir: {}", e))
+            })?;
+            app.manage(commands::license::LicenseState::new(app_data_dir));
+
             // Set window icon on library window (kept for when it's shown via tray)
             if let Some(window) = app.get_webview_window("library") {
                 // Set the taskbar icon

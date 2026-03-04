@@ -241,6 +241,11 @@ macro_rules! tauri_command_handler {
             crate::commands::captions::transcribe_caption_segment,
             crate::commands::captions::save_caption_data,
             crate::commands::captions::load_caption_data,
+            // License commands
+            crate::commands::license::get_license_status,
+            crate::commands::license::activate_license,
+            crate::commands::license::deactivate_license,
+            crate::commands::license::check_pro_feature,
             // Parity commands (preview/export CSS sync)
             crate::rendering::parity::get_parity_layout,
             crate::rendering::parity::get_composition_bounds,
