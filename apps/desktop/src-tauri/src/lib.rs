@@ -35,6 +35,7 @@ pub mod app;
 mod commands;
 pub mod config;
 pub mod cursor;
+pub mod license;
 pub mod preview;
 pub mod rendering;
 

@@ -122,3 +122,8 @@ export type { CaptionData } from './CaptionData';
 export type { WhisperModelInfo } from './WhisperModelInfo';
 export type { DownloadProgress } from './DownloadProgress';
 export type { TranscriptionProgress } from './TranscriptionProgress';
+
+// License types
+export type { ActivationResult } from './ActivationResult';
+export type { LicenseInfo } from './LicenseInfo';
+export type { LicenseStatus } from './LicenseStatus';
