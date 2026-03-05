@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import { useShapeDrawing } from './useShapeDrawing';
 import type { CanvasShape, Tool } from '../types';
+import { EDITOR_TEXT, getEditorTextDefaultBoxHeight, getEditorTextDragBoxHeight } from '../utils/editorText';
 
 // Mock Konva
 vi.mock('konva', () => ({
@@ -190,13 +191,9 @@ describe('useShapeDrawing', () => {
         result.current.handleDrawingMouseDown(event);
       });
 
-      expect(result.current.isDrawing).toBe(false);
-
-      act(() => {
-        result.current.handleDrawingMouseMove({ x: 110, y: 110 });
-      });
-
       expect(result.current.isDrawing).toBe(true);
+      expect(props.history.takeSnapshot).toHaveBeenCalled();
+      expect(props.onShapesChange).toHaveBeenCalled();
     });
 
     it('should start drawing for highlight tool', () => {
@@ -663,6 +660,60 @@ describe('useShapeDrawing', () => {
       expect(blur.type).toBe('blur');
       expect(blur.blurType).toBe('pixelate');
       expect(blur.blurAmount).toBe(20);
+    });
+
+    it('should create a default text box on click without drag', () => {
+      const props = createMockProps({ selectedTool: 'text', fontSize: 16, strokeColor: '#112233' });
+      const { result } = renderHook(() => useShapeDrawing(props));
+
+      const event = createMockKonvaEvent(props.stageRef);
+      act(() => {
+        result.current.handleDrawingMouseDown(event);
+      });
+
+      act(() => {
+        result.current.handleDrawingMouseUp();
+      });
+
+      const createdShapes = props.onShapesChange.mock.calls.at(-1)![0];
+      const textShape = createdShapes[0];
+
+      expect(textShape.type).toBe('text');
+      expect(textShape.x).toBe(100);
+      expect(textShape.y).toBe(100);
+      expect(textShape.width).toBe(EDITOR_TEXT.DEFAULT_BOX_WIDTH);
+      expect(textShape.height).toBe(getEditorTextDefaultBoxHeight(16));
+      expect(textShape.fontSize).toBe(16);
+      expect(textShape.fontFamily).toBe(EDITOR_TEXT.DEFAULT_FONT_FAMILY);
+      expect(textShape.fontStyle).toBe(EDITOR_TEXT.DEFAULT_FONT_STYLE);
+      expect(textShape.textDecoration).toBe(EDITOR_TEXT.DEFAULT_TEXT_DECORATION);
+      expect(textShape.align).toBe(EDITOR_TEXT.DEFAULT_ALIGN);
+      expect(textShape.verticalAlign).toBe(EDITOR_TEXT.DEFAULT_VERTICAL_ALIGN);
+      expect(textShape.wrap).toBe(EDITOR_TEXT.DEFAULT_WRAP);
+      expect(textShape.lineHeight).toBe(EDITOR_TEXT.DEFAULT_LINE_HEIGHT);
+      expect(textShape.fill).toBe('#112233');
+      expect(props.onToolChange).toHaveBeenCalledWith('select');
+    });
+
+    it('should enforce minimum text width and drag height while drawing', () => {
+      const props = createMockProps({ selectedTool: 'text', fontSize: 16 });
+      const { result } = renderHook(() => useShapeDrawing(props));
+
+      const event = createMockKonvaEvent(props.stageRef);
+      act(() => {
+        result.current.handleDrawingMouseDown(event);
+      });
+
+      act(() => {
+        result.current.handleDrawingMouseMove({ x: 104, y: 104 });
+      });
+
+      const createdShapes = props.onShapesChange.mock.calls.at(-1)![0];
+      const textShape = createdShapes[0];
+
+      expect(textShape.type).toBe('text');
+      expect(textShape.width).toBe(EDITOR_TEXT.MIN_BOX_WIDTH);
+      expect(textShape.height).toBe(getEditorTextDragBoxHeight(16));
     });
   });
 

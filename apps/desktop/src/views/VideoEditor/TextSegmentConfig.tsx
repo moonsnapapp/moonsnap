@@ -2,11 +2,12 @@
  * TextSegmentConfig - Configuration panel for text segments.
  * Uses Cap's simplified model: content, center positioning, size, basic font properties.
  */
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { Italic } from 'lucide-react';
 import { TEXT_ANIMATION } from '@/constants';
 import { videoEditorLogger } from '@/utils/logger';
+import { getSystemFonts, getSystemFontsSnapshot } from '@/utils/systemFonts';
 import { getTypewriterCharsPerSecond, normalizeTextAnimation } from '@/utils/textSegmentAnimation';
 import { Slider } from '../../components/ui/slider';
 import type { TextAnimation, TextSegment } from '../../types';
@@ -44,8 +45,11 @@ const ANIMATION_OPTIONS: Array<{ value: TextAnimation; label: string }> = [
 ];
 
 export function TextSegmentConfig({ segment, onUpdate, onDelete, onDone }: TextSegmentConfigProps) {
+  const cachedFonts = getSystemFontsSnapshot();
   // System fonts state - start with defaults + current font
-  const [systemFonts, setSystemFonts] = useState<string[]>([]);
+  const [systemFonts, setSystemFonts] = useState<string[]>(() => cachedFonts ?? []);
+  const [isLoadingFonts, setIsLoadingFonts] = useState(false);
+  const [hasRequestedFonts, setHasRequestedFonts] = useState(() => cachedFonts !== null);
   // Available font weights for the selected font
   const [availableWeights, setAvailableWeights] = useState<number[]>([400, 700]);
   // Collapse legacy fade variants into a single "Default" mode in the UI.
@@ -65,18 +69,25 @@ export function TextSegmentConfig({ segment, onUpdate, onDelete, onDone }: TextS
     return fonts;
   }, [systemFonts, segment.fontFamily]);
 
-  // Fetch system fonts on mount
-  useEffect(() => {
-    invoke<string[]>('get_system_fonts')
+  const ensureSystemFontsLoaded = useCallback(() => {
+    if (hasRequestedFonts) return;
+
+    setHasRequestedFonts(true);
+    setIsLoadingFonts(true);
+    getSystemFonts()
       .then((fonts) => {
-        if (fonts && fonts.length > 0) {
+        if (fonts.length > 0) {
           setSystemFonts(fonts);
         }
       })
       .catch((err) => {
         videoEditorLogger.warn('Failed to load system fonts:', err);
+        setHasRequestedFonts(false);
+      })
+      .finally(() => {
+        setIsLoadingFonts(false);
       });
-  }, []);
+  }, [hasRequestedFonts]);
 
   // Fetch available weights when font family changes
   useEffect(() => {
@@ -143,8 +154,13 @@ export function TextSegmentConfig({ segment, onUpdate, onDelete, onDone }: TextS
         <select
           value={segment.fontFamily}
           onChange={(e) => onUpdate({ fontFamily: e.target.value })}
+          onFocus={ensureSystemFontsLoaded}
+          onPointerDown={ensureSystemFontsLoaded}
           className="w-full h-8 bg-[var(--polar-mist)] border border-[var(--glass-border)] rounded-md text-sm text-[var(--ink-dark)] px-2"
         >
+          {isLoadingFonts && systemFonts.length === 0 && (
+            <option value={segment.fontFamily}>Loading fonts...</option>
+          )}
           {fontFamilies.map((font) => (
             <option key={font} value={font} style={{ fontFamily: font }}>
               {font}

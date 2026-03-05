@@ -1,5 +1,14 @@
 import { useState, useCallback, useRef } from 'react';
 import type { CanvasShape } from '../types';
+import {
+  EDITOR_TEXT,
+  getEditorTextDecoration,
+  getEditorTextDefaultBoxHeight,
+  getEditorTextFontFamily,
+  getEditorTextFontStyle,
+  normalizeEditorTextAlign,
+  normalizeEditorTextVerticalAlign,
+} from '../utils/editorText';
 
 interface UseTextEditingProps {
   shapes: CanvasShape[];
@@ -95,6 +104,8 @@ export const useTextEditing = ({
     const shape = shapes.find(s => s.id === editingTextId);
     if (!shape) return null;
 
+    const fontSize = shape.fontSize ?? EDITOR_TEXT.DEFAULT_FONT_SIZE;
+
     // Get container bounds
     const containerRect = containerRef.current.getBoundingClientRect();
 
@@ -105,15 +116,15 @@ export const useTextEditing = ({
     return {
       left: screenX,
       top: screenY,
-      width: (shape.width || 100) * zoom,
-      height: (shape.height || 50) * zoom,
-      fontSize: (shape.fontSize || 36) * zoom,
-      fontFamily: shape.fontFamily || 'Arial',
-      fontStyle: shape.fontStyle || 'normal',
-      textDecoration: shape.textDecoration || '',
-      align: shape.align || 'left',
-      verticalAlign: shape.verticalAlign || 'top',
-      color: shape.fill || '#000',
+      width: (shape.width || EDITOR_TEXT.DEFAULT_BOX_WIDTH) * zoom,
+      height: (shape.height || getEditorTextDefaultBoxHeight(fontSize)) * zoom,
+      fontSize: fontSize * zoom,
+      fontFamily: getEditorTextFontFamily(shape.fontFamily),
+      fontStyle: getEditorTextFontStyle(shape.fontStyle),
+      textDecoration: getEditorTextDecoration(shape.textDecoration),
+      align: normalizeEditorTextAlign(shape.align),
+      verticalAlign: normalizeEditorTextVerticalAlign(shape.verticalAlign),
+      color: shape.fill || EDITOR_TEXT.DEFAULT_COLOR,
     };
   }, [editingTextId, shapes, position, zoom, containerRef]);
 

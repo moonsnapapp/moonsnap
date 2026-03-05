@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from 'react';
-import { invoke } from '@tauri-apps/api/core';
 import {
   Check,
   Bold,
@@ -13,7 +12,20 @@ import {
 import { useEditorStore } from '../../../stores/editorStore';
 import { useEditorHistory } from '../../../hooks/useEditorHistory';
 import { DEFAULT_FONT_FAMILIES, type CanvasShape } from '../../../types';
+import {
+  getEditorTextDecoration,
+  getEditorTextFontFamily,
+  getEditorTextFontStyle,
+  isEditorTextStyleBold,
+  isEditorTextStyleItalic,
+  normalizeEditorTextAlign,
+  normalizeEditorTextVerticalAlign,
+  toggleEditorTextFontStyle,
+  type EditorTextAlign,
+  type EditorTextVerticalAlign,
+} from '../../../utils/editorText';
 import { editorLogger } from '@/utils/logger';
+import { getSystemFonts, getSystemFontsSnapshot } from '@/utils/systemFonts';
 import { Slider } from '@/components/ui/slider';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
@@ -46,56 +58,71 @@ export const TextToolSettings: React.FC<TextToolSettingsProps> = ({
   const { recordAction } = useEditorHistory();
 
   // System fonts state
-  const [systemFonts, setSystemFonts] = useState<string[]>([...DEFAULT_FONT_FAMILIES]);
+  const [systemFonts, setSystemFonts] = useState<string[]>(
+    () => getSystemFontsSnapshot() ?? [...DEFAULT_FONT_FAMILIES]
+  );
   const [fontComboboxOpen, setFontComboboxOpen] = useState(false);
+  const [isLoadingFonts, setIsLoadingFonts] = useState(false);
 
-  // Fetch system fonts on mount
+  // Load system fonts lazily when the font picker is opened.
   useEffect(() => {
-    invoke<string[]>('get_system_fonts')
+    if (!fontComboboxOpen) return;
+    const cached = getSystemFontsSnapshot();
+    if (cached) {
+      if (systemFonts !== cached) {
+        setSystemFonts(cached);
+      }
+      return;
+    }
+
+    let cancelled = false;
+    setIsLoadingFonts(true);
+    getSystemFonts()
       .then((fonts) => {
-        if (fonts && fonts.length > 0) {
+        if (!cancelled && fonts.length > 0) {
           setSystemFonts(fonts);
         }
       })
       .catch((err) => {
         editorLogger.warn('Failed to load system fonts:', err);
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setIsLoadingFonts(false);
+        }
       });
-  }, []);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [fontComboboxOpen, systemFonts]);
 
   const currentFontSize = textShape?.fontSize || fontSize;
-  const currentFontFamily = textShape?.fontFamily || 'Arial';
-  const currentFontStyle = textShape?.fontStyle || 'normal';
-  const currentTextDecoration = textShape?.textDecoration || '';
-  const currentAlign = textShape?.align || 'left';
+  const currentFontFamily = getEditorTextFontFamily(textShape?.fontFamily);
+  const currentFontStyle = getEditorTextFontStyle(textShape?.fontStyle);
+  const currentTextDecoration = getEditorTextDecoration(textShape?.textDecoration);
+  const currentAlign = normalizeEditorTextAlign(textShape?.align);
   const currentTextStroke = textShape?.stroke || 'transparent';
   const currentTextStrokeWidth = textShape?.strokeWidth || 0;
-  const currentVerticalAlign = textShape?.verticalAlign || 'top';
+  const currentVerticalAlign = normalizeEditorTextVerticalAlign(textShape?.verticalAlign);
 
-  const isBold = currentFontStyle.includes('bold');
-  const isItalic = currentFontStyle.includes('italic');
+  const isBold = isEditorTextStyleBold(currentFontStyle);
+  const isItalic = isEditorTextStyleItalic(currentFontStyle);
   const isUnderline = currentTextDecoration === 'underline';
 
   const toggleBold = () => {
-    let newStyle = currentFontStyle;
-    if (isBold) {
-      newStyle = newStyle.replace('bold', '').trim() || 'normal';
-    } else {
-      newStyle = newStyle === 'normal' ? 'bold' : `bold ${newStyle}`;
-    }
     if (textShape) {
-      recordAction(() => updateShape(textShape.id, { fontStyle: newStyle }));
+      recordAction(() => updateShape(textShape.id, {
+        fontStyle: toggleEditorTextFontStyle(currentFontStyle, 'bold'),
+      }));
     }
   };
 
   const toggleItalic = () => {
-    let newStyle = currentFontStyle;
-    if (isItalic) {
-      newStyle = newStyle.replace('italic', '').trim() || 'normal';
-    } else {
-      newStyle = newStyle === 'normal' ? 'italic' : `${newStyle} italic`;
-    }
     if (textShape) {
-      recordAction(() => updateShape(textShape.id, { fontStyle: newStyle }));
+      recordAction(() => updateShape(textShape.id, {
+        fontStyle: toggleEditorTextFontStyle(currentFontStyle, 'italic'),
+      }));
     }
   };
 
@@ -106,13 +133,13 @@ export const TextToolSettings: React.FC<TextToolSettingsProps> = ({
     }
   };
 
-  const setAlignment = (align: string) => {
+  const setAlignment = (align: EditorTextAlign) => {
     if (textShape) {
       recordAction(() => updateShape(textShape.id, { align }));
     }
   };
 
-  const setVerticalAlignment = (verticalAlign: string) => {
+  const setVerticalAlignment = (verticalAlign: EditorTextVerticalAlign) => {
     if (textShape) {
       recordAction(() => updateShape(textShape.id, { verticalAlign }));
     }
@@ -135,35 +162,37 @@ export const TextToolSettings: React.FC<TextToolSettingsProps> = ({
               <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--ink-muted)]" />
             </button>
           </PopoverTrigger>
-          <PopoverContent className="p-0 w-[var(--radix-popover-trigger-width)]" align="start">
-            <Command>
-              <CommandInput placeholder="Search fonts..." className="h-9" />
-              <CommandList>
-                <CommandEmpty>No font found.</CommandEmpty>
-                <CommandGroup>
-                  {systemFonts.map((font) => (
-                    <CommandItem
-                      key={font}
-                      value={font}
-                      onSelect={() => {
-                        if (textShape) {
-                          recordAction(() => updateShape(textShape.id, { fontFamily: font }));
-                        }
-                        setFontComboboxOpen(false);
-                      }}
-                      style={{ fontFamily: font }}
-                      className="text-sm"
-                    >
-                      <Check
-                        className={`mr-2 h-4 w-4 ${currentFontFamily === font ? 'opacity-100' : 'opacity-0'}`}
-                      />
-                      {font}
-                    </CommandItem>
-                  ))}
-                </CommandGroup>
-              </CommandList>
-            </Command>
-          </PopoverContent>
+          {fontComboboxOpen && (
+            <PopoverContent className="p-0 w-[var(--radix-popover-trigger-width)]" align="start">
+              <Command>
+                <CommandInput placeholder="Search fonts..." className="h-9" />
+                <CommandList>
+                  <CommandEmpty>{isLoadingFonts ? 'Loading fonts...' : 'No font found.'}</CommandEmpty>
+                  <CommandGroup>
+                    {systemFonts.map((font) => (
+                      <CommandItem
+                        key={font}
+                        value={font}
+                        onSelect={() => {
+                          if (textShape) {
+                            recordAction(() => updateShape(textShape.id, { fontFamily: font }));
+                          }
+                          setFontComboboxOpen(false);
+                        }}
+                        style={{ fontFamily: font }}
+                        className="text-sm"
+                      >
+                        <Check
+                          className={`mr-2 h-4 w-4 ${currentFontFamily === font ? 'opacity-100' : 'opacity-0'}`}
+                        />
+                        {font}
+                      </CommandItem>
+                    ))}
+                  </CommandGroup>
+                </CommandList>
+              </Command>
+            </PopoverContent>
+          )}
         </Popover>
       </div>
 

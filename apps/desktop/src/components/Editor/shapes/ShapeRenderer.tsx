@@ -30,6 +30,7 @@ interface ShapeRendererProps {
   onTransformEnd: (shapeId: string, e: Konva.KonvaEventObject<Event>) => void;
   onArrowEndpointDragEnd: (shapeId: string, newPoints: number[]) => void;
   onTextStartEdit: (shapeId: string, currentText: string) => void;
+  onTextMouseDown?: (shapeId: string, e: Konva.KonvaEventObject<MouseEvent>) => void;
   /** Take snapshot before starting an edit action */
   takeSnapshot: () => void;
   /** Commit snapshot after completing an edit action */
@@ -58,6 +59,7 @@ const MemoizedShape = React.memo<{
   onTransformEnd: (shapeId: string, e: Konva.KonvaEventObject<Event>) => void;
   onArrowEndpointDragEnd: (shapeId: string, newPoints: number[]) => void;
   onTextStartEdit: (shapeId: string, currentText: string) => void;
+  onTextMouseDown?: (shapeId: string, e: Konva.KonvaEventObject<MouseEvent>) => void;
   takeSnapshot: () => void;
   commitSnapshot: () => void;
 }>(({
@@ -79,6 +81,7 @@ const MemoizedShape = React.memo<{
   onTransformEnd,
   onArrowEndpointDragEnd,
   onTextStartEdit,
+  onTextMouseDown,
   takeSnapshot,
   commitSnapshot,
 }) => {
@@ -121,6 +124,11 @@ const MemoizedShape = React.memo<{
   const handleTextStartEdit = useCallback(() => {
     onTextStartEdit(shape.id, shape.text || '');
   }, [onTextStartEdit, shape.id, shape.text]);
+
+  const handleTextMouseDown = useCallback((e: Konva.KonvaEventObject<MouseEvent>) => {
+    if (isPanning || shape.isBackground || shape.type !== 'text') return;
+    onTextMouseDown?.(shape.id, e);
+  }, [isPanning, shape.isBackground, shape.type, onTextMouseDown, shape.id]);
 
   const commonProps = useMemo(() => ({
     shape,
@@ -185,6 +193,7 @@ const MemoizedShape = React.memo<{
           isActivelyDrawing={isActivelyDrawing}
           isEditing={isEditingTextShape}
           zoom={zoom}
+          onMouseDown={handleTextMouseDown}
           onStartEdit={handleTextStartEdit}
         />
       );
@@ -223,6 +232,7 @@ export const ShapeRenderer: React.FC<ShapeRendererProps> = React.memo(({
   onTransformEnd,
   onArrowEndpointDragEnd,
   onTextStartEdit,
+  onTextMouseDown,
   takeSnapshot,
   commitSnapshot,
 }) => {
@@ -255,6 +265,7 @@ export const ShapeRenderer: React.FC<ShapeRendererProps> = React.memo(({
           onTransformEnd={onTransformEnd}
           onArrowEndpointDragEnd={onArrowEndpointDragEnd}
           onTextStartEdit={onTextStartEdit}
+          onTextMouseDown={onTextMouseDown}
           takeSnapshot={takeSnapshot}
           commitSnapshot={commitSnapshot}
         />

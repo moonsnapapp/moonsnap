@@ -1,4 +1,11 @@
 import React, { useEffect, useRef, useCallback } from 'react';
+import {
+  getEditorTextDecoration,
+  getEditorTextVerticalAlignJustifyContent,
+  isEditorTextStyleBold,
+  isEditorTextStyleItalic,
+  normalizeEditorTextAlign,
+} from '../../../utils/editorText';
 
 interface TextEditorOverlayProps {
   position: {
@@ -21,8 +28,7 @@ interface TextEditorOverlayProps {
 }
 
 /**
- * Fixed-position contenteditable overlay for inline text editing
- * Supports vertical alignment via flexbox
+ * Fixed-position contenteditable overlay for inline text editing.
  */
 export const TextEditorOverlay: React.FC<TextEditorOverlayProps> = React.memo(({
   position,
@@ -118,18 +124,8 @@ export const TextEditorOverlay: React.FC<TextEditorOverlayProps> = React.memo(({
 
   if (!position) return null;
 
-  // Map fontStyle to CSS
-  const isBold = position.fontStyle.includes('bold');
-  const isItalic = position.fontStyle.includes('italic');
-
-  // Map verticalAlign to flexbox
-  const getVerticalAlign = (vAlign: string) => {
-    switch (vAlign) {
-      case 'middle': return 'center';
-      case 'bottom': return 'flex-end';
-      default: return 'flex-start';
-    }
-  };
+  const isBold = isEditorTextStyleBold(position.fontStyle);
+  const isItalic = isEditorTextStyleItalic(position.fontStyle);
 
   return (
     <div
@@ -155,16 +151,14 @@ export const TextEditorOverlay: React.FC<TextEditorOverlayProps> = React.memo(({
         fontFamily: position.fontFamily,
         fontWeight: isBold ? 'bold' : 'normal',
         fontStyle: isItalic ? 'italic' : 'normal',
-        textDecoration: position.textDecoration || 'none',
-        textAlign: position.align as 'left' | 'center' | 'right',
+        textDecoration: getEditorTextDecoration(position.textDecoration) || 'none',
+        textAlign: normalizeEditorTextAlign(position.align),
         color: position.color,
         padding: '4px',
         lineHeight: 1.2,
-        // Use flexbox for vertical alignment
         display: 'flex',
         flexDirection: 'column',
-        justifyContent: getVerticalAlign(position.verticalAlign),
-        // Show border to match gizmo
+        justifyContent: getEditorTextVerticalAlignJustifyContent(position.verticalAlign),
         border: '1px dashed #3B82F6',
         outline: 'none',
         boxShadow: 'none',

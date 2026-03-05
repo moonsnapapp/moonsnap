@@ -1,8 +1,16 @@
-import React, { useRef, useMemo } from 'react';
+import React, { useRef, useMemo, useCallback } from 'react';
 import { Group, Rect, Text } from 'react-konva';
 import Konva from 'konva';
 import type { CanvasShape } from '../../../types';
 import { useShapeCursor } from '../../../hooks/useShapeCursor';
+import {
+  EDITOR_TEXT,
+  getEditorTextDecoration,
+  getEditorTextFontFamily,
+  getEditorTextFontStyle,
+  normalizeEditorTextAlign,
+  normalizeEditorTextVerticalAlign,
+} from '../../../utils/editorText';
 
 interface TextShapeProps {
   shape: CanvasShape;
@@ -13,6 +21,7 @@ interface TextShapeProps {
   zoom: number;
   onSelect: (e?: Konva.KonvaEventObject<MouseEvent | TouchEvent>) => void;
   onClick: (e: Konva.KonvaEventObject<MouseEvent>) => void;
+  onMouseDown: (e: Konva.KonvaEventObject<MouseEvent>) => void;
   onDragStart: (e: Konva.KonvaEventObject<DragEvent>) => void;
   onDragEnd: (e: Konva.KonvaEventObject<DragEvent>) => void;
   onTransformStart: () => void;
@@ -32,6 +41,7 @@ export const TextShape: React.FC<TextShapeProps> = React.memo(({
   isEditing,
   zoom,
   onClick,
+  onMouseDown,
   onSelect,
   onDragStart,
   onDragEnd,
@@ -54,6 +64,9 @@ export const TextShape: React.FC<TextShapeProps> = React.memo(({
   // Memoize zoom-dependent values to avoid new references every render
   const borderStrokeWidth = 1 / zoom;
   const borderDash = useMemo(() => [4 / zoom, 4 / zoom], [zoom]);
+  const handleClick = useCallback((e: Konva.KonvaEventObject<MouseEvent>) => {
+    onClick(e);
+  }, [onClick]);
 
   return (
     <Group
@@ -66,8 +79,11 @@ export const TextShape: React.FC<TextShapeProps> = React.memo(({
       rotation={shape.rotation}
       scaleX={shape.scaleX}
       scaleY={shape.scaleY}
-      draggable={isDraggable && !isEditing}
-      onClick={onClick}
+      // Text dragging is handled manually in EditorCanvas for lower-latency first-frame updates.
+      draggable={false}
+      dragDistance={0}
+      onClick={handleClick}
+      onMouseDown={onMouseDown}
       onTap={onSelect}
       onDblClick={onStartEdit}
       onDblTap={onStartEdit}
@@ -77,6 +93,19 @@ export const TextShape: React.FC<TextShapeProps> = React.memo(({
       onTransformEnd={onTransformEnd}
       {...cursorHandlers}
     >
+      {/* Lightweight hit area for selection/dragging.
+          Avoids expensive glyph hit-testing on the Text node at drag start. */}
+      <Rect
+        name="text-hit-area"
+        x={0}
+        y={0}
+        width={width}
+        height={height}
+        fill="transparent"
+        strokeEnabled={false}
+        perfectDrawEnabled={false}
+      />
+
       {/* Bounding box border - always rendered, visibility toggled to avoid
           expensive Konva node mount/unmount on every select/deselect */}
       <Rect
@@ -101,20 +130,22 @@ export const TextShape: React.FC<TextShapeProps> = React.memo(({
           width={width}
           height={height}
           text={displayText}
-          fontSize={shape.fontSize || 36}
-          fontFamily={shape.fontFamily || 'Arial'}
-          fontStyle={shape.fontStyle || 'normal'}
-          textDecoration={shape.textDecoration || ''}
-          align={shape.align || 'left'}
-          verticalAlign={shape.verticalAlign || 'top'}
-          wrap={shape.wrap || 'word'}
-          lineHeight={shape.lineHeight || 1.2}
+          fontSize={shape.fontSize || EDITOR_TEXT.DEFAULT_FONT_SIZE}
+          fontFamily={getEditorTextFontFamily(shape.fontFamily)}
+          fontStyle={getEditorTextFontStyle(shape.fontStyle)}
+          textDecoration={getEditorTextDecoration(shape.textDecoration)}
+          align={normalizeEditorTextAlign(shape.align)}
+          verticalAlign={normalizeEditorTextVerticalAlign(shape.verticalAlign)}
+          wrap={shape.wrap || EDITOR_TEXT.DEFAULT_WRAP}
+          lineHeight={shape.lineHeight || EDITOR_TEXT.DEFAULT_LINE_HEIGHT}
           fill={shape.fill}
           stroke={shape.stroke}
           strokeWidth={shape.strokeWidth || 0}
           opacity={textOpacity}
           visible={!isEditing}
           padding={4}
+          listening={false}
+          perfectDrawEnabled={false}
         />
       )}
     </Group>

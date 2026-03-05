@@ -50,7 +50,17 @@ interface EditorCanvasProps {
 }
 
 const PIXEL_SNAP_EPSILON = 0.02;
+const TEXT_MANUAL_DRAG_EPSILON = 0.01;
 type ClipContext = Parameters<NonNullable<Konva.GroupConfig['clipFunc']>>[0];
+
+interface ManualTextDragState {
+  shapeId: string;
+  node: Konva.Node;
+  startPointer: { x: number; y: number };
+  startPosition: { x: number; y: number };
+  activated: boolean;
+  drewFirstFrame: boolean;
+}
 
 function snapInsideStart(value: number): number {
   const rounded = Math.round(value);
@@ -118,6 +128,9 @@ export const EditorCanvas = React.memo(forwardRef<EditorCanvasRef, EditorCanvasP
 
   // Track device pixel ratio for crisp HiDPI rendering
   const [pixelRatio, setPixelRatio] = useState(() => window.devicePixelRatio || 1);
+  const isShapeDraggingRef = useRef(false);
+  const preTextDragHideRef = useRef(false);
+  const manualTextDragRef = useRef<ManualTextDragState | null>(null);
 
   // Update pixelRatio when DPI changes (e.g., window moved between monitors)
   useEffect(() => {
@@ -488,19 +501,25 @@ export const EditorCanvas = React.memo(forwardRef<EditorCanvasRef, EditorCanvasP
     return getSelectionBounds(shapes, selectedIds);
   }, [shapes, selectedIds]);
 
-  // Check if any selected shape requires proportional scaling
+  // Fast lookup maps for selection/transformer paths.
+  const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds]);
+  const shapeById = useMemo(() => new Map(shapes.map((shape) => [shape.id, shape] as const)), [shapes]);
+
+  // Check if any selected shape requires proportional scaling.
   const hasProportionalShape = useMemo(() => {
-    return selectedIds.some((id) => {
-      const shape = shapes.find((s) => s.id === id);
-      return shape?.type === 'step';
-    });
-  }, [selectedIds, shapes]);
+    for (const id of selectedIds) {
+      if (shapeById.get(id)?.type === 'step') {
+        return true;
+      }
+    }
+    return false;
+  }, [selectedIds, shapeById]);
 
   // Reset rotation of all selected shapes to 0
   const handleResetRotation = React.useCallback(() => {
     history.takeSnapshot();
     const updatedShapes = shapes.map((s) => {
-      if (!selectedIds.includes(s.id)) return s;
+      if (!selectedSet.has(s.id)) return s;
       return { ...s, rotation: 0 };
     });
     onShapesChange(updatedShapes);
@@ -509,14 +528,14 @@ export const EditorCanvas = React.memo(forwardRef<EditorCanvasRef, EditorCanvasP
     const tr = transformerRef.current;
     if (tr) {
       tr.nodes().forEach((node) => {
-        if (selectedIds.includes(node.id())) {
+        if (selectedSet.has(node.id())) {
           node.rotation(0);
         }
       });
       tr.getLayer()?.batchDraw();
     }
     history.commitSnapshot();
-  }, [shapes, selectedIds, onShapesChange, history]);
+  }, [history, onShapesChange, selectedSet, shapes]);
 
   // Disable image smoothing for crisp 1:1 pixel rendering at 100% zoom
   useEffect(() => {
@@ -540,7 +559,7 @@ export const EditorCanvas = React.memo(forwardRef<EditorCanvasRef, EditorCanvasP
     if (!transformerRef.current || !layerRef.current) return;
 
     // Hide transformer while drawing, editing text, or not in select mode
-    if (drawing.isDrawing || textEditing.editingTextId || selectedTool !== 'select') {
+    if (drawing.isDrawing || textEditing.editingTextId || selectedTool !== 'select' || isShapeDraggingRef.current) {
       transformerRef.current.nodes([]);
       transformerRef.current.getLayer()?.batchDraw();
       return;
@@ -551,7 +570,7 @@ export const EditorCanvas = React.memo(forwardRef<EditorCanvasRef, EditorCanvasP
     const nodes = selectedIds
       .filter((id) => {
         if (isMultiSelect) return true;
-        const shape = shapes.find((s) => s.id === id);
+        const shape = shapeById.get(id);
         return shape && shape.type !== 'arrow' && shape.type !== 'line';
       })
       .map((id) => layerRef.current!.findOne(`#${id}`))
@@ -559,7 +578,7 @@ export const EditorCanvas = React.memo(forwardRef<EditorCanvasRef, EditorCanvasP
 
     transformerRef.current.nodes(nodes);
     transformerRef.current.getLayer()?.batchDraw();
-  }, [selectedIds, shapes, drawing.isDrawing, textEditing.editingTextId, selectedTool]);
+  }, [drawing.isDrawing, selectedIds, selectedTool, shapeById, textEditing.editingTextId]);
 
   // Handle mouse events
   const handleMouseDown = React.useCallback(
@@ -603,6 +622,42 @@ export const EditorCanvas = React.memo(forwardRef<EditorCanvasRef, EditorCanvasP
     [drawing, selectedTool, setSelectedIds, marquee, stageRef, navigation, textEditing.editingTextId]
   );
 
+  const updateManualTextDrag = React.useCallback((pointer: { x: number; y: number }): boolean => {
+    const manualTextDrag = manualTextDragRef.current;
+    if (!manualTextDrag) return false;
+
+    const dx = pointer.x - manualTextDrag.startPointer.x;
+    const dy = pointer.y - manualTextDrag.startPointer.y;
+    if (Math.abs(dx) <= TEXT_MANUAL_DRAG_EPSILON && Math.abs(dy) <= TEXT_MANUAL_DRAG_EPSILON) {
+      return true;
+    }
+
+    if (!manualTextDrag.activated) {
+      manualTextDrag.activated = true;
+      isShapeDraggingRef.current = true;
+
+      // Defer transformer hide to actual movement to keep mousedown path minimal.
+      const tr = transformerRef.current;
+      if (tr?.visible()) {
+        tr.visible(false);
+        preTextDragHideRef.current = true;
+      }
+    }
+
+    manualTextDrag.node.position({
+      x: manualTextDrag.startPosition.x + dx,
+      y: manualTextDrag.startPosition.y + dy,
+    });
+
+    const dragLayer = manualTextDrag.node.getLayer();
+    if (dragLayer) {
+      manualTextDrag.drewFirstFrame = true;
+      dragLayer.batchDraw();
+    }
+
+    return true;
+  }, []);
+
   const handleMouseMove = React.useCallback(
     (_e: Konva.KonvaEventObject<MouseEvent>) => {
       const stage = stageRef.current;
@@ -612,6 +667,10 @@ export const EditorCanvas = React.memo(forwardRef<EditorCanvasRef, EditorCanvasP
       if (!screenPos) return;
 
       const pos = navigation.getCanvasPosition(screenPos);
+
+      if (updateManualTextDrag(pos)) {
+        return;
+      }
 
       // Drawing move (also handles pending → drawing transition on drag threshold)
       if (drawing.isDrawing || (selectedTool !== 'move' && selectedTool !== 'select' && selectedTool !== 'crop' && selectedTool !== 'background')) {
@@ -624,22 +683,162 @@ export const EditorCanvas = React.memo(forwardRef<EditorCanvasRef, EditorCanvasP
         marquee.updateMarquee(pos);
       }
     },
-    [drawing, marquee, navigation, stageRef, selectedTool]
+    [drawing, marquee, navigation, stageRef, selectedTool, updateManualTextDrag]
   );
-
-  const handleMouseUp = React.useCallback(() => {
-    // Finish drawing or click-to-place (always call — it no-ops when idle)
-    drawing.handleDrawingMouseUp();
-
-    // Finish marquee
-    if (marquee.isMarqueeSelecting) {
-      marquee.finishMarquee();
-    }
-  }, [drawing, marquee]);
 
   const handleShapeSelect = React.useCallback((id: string) => {
     setSelectedIds([id]);
   }, [setSelectedIds]);
+
+  const shapeDragStart = transform.handleShapeDragStart;
+  const shapeDragEnd = transform.handleShapeDragEnd;
+  const commitManualDragDelta = transform.commitManualDragDelta;
+
+  const reattachTransformerToSelection = React.useCallback(() => {
+    const tr = transformerRef.current;
+    const layer = layerRef.current;
+    if (!tr || !layer || drawing.isDrawing || textEditing.editingTextId || selectedTool !== 'select') return;
+
+    const selectedNow = selectedIds;
+    const isMultiSelect = selectedNow.length > 1;
+    const nodes = selectedNow
+      .filter((shapeId) => {
+        if (isMultiSelect) return true;
+        const shape = shapeById.get(shapeId);
+        return shape && shape.type !== 'arrow' && shape.type !== 'line';
+      })
+      .map((shapeId) => layer.findOne(`#${shapeId}`))
+      .filter((node): node is Konva.Node => node !== null && node !== undefined);
+
+    tr.nodes(nodes);
+    tr.getLayer()?.batchDraw();
+  }, [drawing.isDrawing, selectedIds, selectedTool, shapeById, textEditing.editingTextId]);
+
+  const handleTextMouseDown = React.useCallback((shapeId: string, e: Konva.KonvaEventObject<MouseEvent>) => {
+    if (e.evt?.button !== 0 || selectedTool !== 'select') return;
+    if (textEditing.editingTextId === shapeId) return;
+    if (selectedIds.length > 1) return;
+    // Preserve double-click editing path.
+    if (e.evt.detail >= 2) return;
+
+    // Keep stage handlers out of this path and run manual drag for selected text.
+    e.cancelBubble = true;
+
+    // Ensure first-gesture drag works even when the shape was not selected yet.
+    if (!selectedSet.has(shapeId) || selectedIds.length !== 1) {
+      setSelectedIds([shapeId]);
+    }
+
+    const dragNode = e.currentTarget as Konva.Node | null;
+    const stage = stageRef.current;
+    const screenPos = stage?.getPointerPosition();
+    if (!dragNode || !screenPos) return;
+
+    manualTextDragRef.current = {
+      shapeId,
+      node: dragNode,
+      startPointer: navigation.getCanvasPosition(screenPos),
+      startPosition: { x: dragNode.x(), y: dragNode.y() },
+      activated: false,
+      drewFirstFrame: false,
+    };
+  }, [navigation, selectedIds.length, selectedSet, selectedTool, setSelectedIds, stageRef, textEditing.editingTextId]);
+
+  const handleMouseUp = React.useCallback(() => {
+    const manualTextDrag = manualTextDragRef.current;
+    if (manualTextDrag) {
+      manualTextDragRef.current = null;
+      const wasDragging = manualTextDrag.activated;
+      isShapeDraggingRef.current = false;
+      preTextDragHideRef.current = false;
+
+      const dx = manualTextDrag.node.x() - manualTextDrag.startPosition.x;
+      const dy = manualTextDrag.node.y() - manualTextDrag.startPosition.y;
+      if (wasDragging && (Math.abs(dx) > TEXT_MANUAL_DRAG_EPSILON || Math.abs(dy) > TEXT_MANUAL_DRAG_EPSILON)) {
+        commitManualDragDelta(manualTextDrag.shapeId, dx, dy);
+      }
+
+      if (wasDragging) {
+        requestAnimationFrame(() => {
+          const tr = transformerRef.current;
+          if (tr) {
+            tr.visible(true);
+          }
+          reattachTransformerToSelection();
+        });
+      }
+      return;
+    }
+
+    // Finish drawing or click-to-place (always call - it no-ops when idle)
+    drawing.handleDrawingMouseUp();
+    // Finish marquee
+    if (marquee.isMarqueeSelecting) {
+      marquee.finishMarquee();
+    }
+    // Restore transformer if we hid it for a forced text drag that never started.
+    if (preTextDragHideRef.current && !isShapeDraggingRef.current) {
+      preTextDragHideRef.current = false;
+      const tr = transformerRef.current;
+      if (tr) {
+        tr.visible(true);
+      }
+    }
+  }, [commitManualDragDelta, drawing, marquee, reattachTransformerToSelection]);
+
+  useEffect(() => {
+    const handleWindowMouseMove = (evt: MouseEvent) => {
+      if (!manualTextDragRef.current) return;
+      const stage = stageRef.current;
+      if (!stage) return;
+
+      const rect = stage.container().getBoundingClientRect();
+      const pointer = navigation.getCanvasPosition({
+        x: evt.clientX - rect.left,
+        y: evt.clientY - rect.top,
+      });
+
+      updateManualTextDrag(pointer);
+    };
+
+    const handleWindowMouseUp = () => {
+      if (!manualTextDragRef.current) return;
+      handleMouseUp();
+    };
+
+    window.addEventListener('mousemove', handleWindowMouseMove, true);
+    window.addEventListener('mouseup', handleWindowMouseUp, true);
+
+    return () => {
+      window.removeEventListener('mousemove', handleWindowMouseMove, true);
+      window.removeEventListener('mouseup', handleWindowMouseUp, true);
+    };
+  }, [handleMouseUp, navigation, stageRef, updateManualTextDrag]);
+
+  const handleShapeDragStart = React.useCallback((id: string, e: Konva.KonvaEventObject<DragEvent>) => {
+    // Hide transformer during drag to reduce overlay work on text-heavy scenes.
+    if (e.evt?.button !== 1) {
+      isShapeDraggingRef.current = true;
+      preTextDragHideRef.current = false;
+      const tr = transformerRef.current;
+      if (tr) {
+        tr.visible(false);
+      }
+    }
+    shapeDragStart(id, e);
+  }, [shapeDragStart]);
+
+  const handleShapeDragEnd = React.useCallback((id: string, e: Konva.KonvaEventObject<DragEvent>) => {
+    shapeDragEnd(id, e);
+    isShapeDraggingRef.current = false;
+    requestAnimationFrame(() => {
+      const tr = transformerRef.current;
+      if (tr) {
+        tr.visible(true);
+      }
+      reattachTransformerToSelection();
+    });
+  }, [shapeDragEnd, reattachTransformerToSelection]);
 
   // Composition box dimensions (for CSS preview background)
   // Simple calculation: content size + padding on each side, scaled by zoom
@@ -855,12 +1054,13 @@ export const EditorCanvas = React.memo(forwardRef<EditorCanvasRef, EditorCanvasP
                   editingTextId={textEditing.editingTextId}
                   onShapeClick={transform.handleShapeClick}
                   onShapeSelect={handleShapeSelect}
-                  onDragStart={transform.handleShapeDragStart}
-                  onDragEnd={transform.handleShapeDragEnd}
+                  onDragStart={handleShapeDragStart}
+                  onDragEnd={handleShapeDragEnd}
                   onArrowDragEnd={transform.handleArrowDragEnd}
                   onTransformStart={transform.handleTransformStart}
                   onTransformEnd={transform.handleTransformEnd}
                   onArrowEndpointDragEnd={transform.handleArrowEndpointDragEnd}
+                  onTextMouseDown={handleTextMouseDown}
                   onTextStartEdit={textEditing.startEditing}
                   takeSnapshot={history.takeSnapshot}
                   commitSnapshot={history.commitSnapshot}
@@ -927,7 +1127,7 @@ export const EditorCanvas = React.memo(forwardRef<EditorCanvasRef, EditorCanvasP
               onDragStart={() => history.takeSnapshot()}
               onDragEnd={(dx, dy) => {
                 const updatedShapes = shapes.map((shape) => {
-                  if (!selectedIds.includes(shape.id)) return shape;
+                  if (!selectedSet.has(shape.id)) return shape;
                   if (['pen', 'arrow', 'line'].includes(shape.type) && shape.points && shape.points.length >= 2) {
                     // Reset node position (was moved imperatively during drag)
                     const node = layerRef.current?.findOne(`#${shape.id}`);
@@ -979,7 +1179,7 @@ export const EditorCanvas = React.memo(forwardRef<EditorCanvasRef, EditorCanvasP
               // Convert scale to dimensions in real-time to prevent stroke scaling during resize
               const nodes = transformerRef.current?.nodes() || [];
               nodes.forEach(node => {
-                const shape = shapes.find(s => s.id === node.id());
+                const shape = shapeById.get(node.id());
                 if (!shape) return;
 
                 const scaleX = node.scaleX();
@@ -1065,7 +1265,7 @@ export const EditorCanvas = React.memo(forwardRef<EditorCanvasRef, EditorCanvasP
 
               nodes.forEach(node => {
                 const shapeId = node.id();
-                const shape = shapes.find(s => s.id === shapeId);
+                const shape = shapeById.get(shapeId);
                 if (!shape) return;
 
                 const scaleX = node.scaleX();
