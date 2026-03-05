@@ -1,6 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
+import React from 'react';
 import { useKeyboardShortcuts } from './useKeyboardShortcuts';
+import { EditorStoreContext } from '../stores/EditorStoreProvider';
+import { createEditorStore } from '../stores/editorStore';
 import type { CanvasShape } from '../types';
 
 // Mock nanoid
@@ -24,6 +27,24 @@ function createTestShape(overrides: Partial<CanvasShape> = {}): CanvasShape {
   };
 }
 
+// Wrapper that provides the EditorStoreContext
+function createWrapper() {
+  const store = createEditorStore();
+  return function Wrapper({ children }: { children: React.ReactNode }) {
+    return React.createElement(
+      EditorStoreContext.Provider,
+      { value: store },
+      children
+    );
+  };
+}
+
+const defaultProps = {
+  getCanvasPosition: (screenPos: { x: number; y: number }) => screenPos,
+  containerSize: { width: 800, height: 600 },
+  setSelectedTool: vi.fn(),
+};
+
 describe('useKeyboardShortcuts', () => {
   const mockSetSelectedIds = vi.fn();
   const mockOnShapesChange = vi.fn();
@@ -42,7 +63,9 @@ describe('useKeyboardShortcuts', () => {
           shapes: [],
           onShapesChange: mockOnShapesChange,
           recordAction: mockRecordAction,
-        })
+          ...defaultProps,
+        }),
+        { wrapper: createWrapper() }
       );
 
       expect(result.current.isShiftHeld).toBe(false);
@@ -75,7 +98,9 @@ describe('useKeyboardShortcuts', () => {
           shapes: [shape1, shape2],
           onShapesChange: mockOnShapesChange,
           recordAction: mockRecordAction,
-        })
+          ...defaultProps,
+        }),
+        { wrapper: createWrapper() }
       );
 
       act(() => {
@@ -97,7 +122,9 @@ describe('useKeyboardShortcuts', () => {
           shapes: [shape1],
           onShapesChange: mockOnShapesChange,
           recordAction: mockRecordAction,
-        })
+          ...defaultProps,
+        }),
+        { wrapper: createWrapper() }
       );
 
       act(() => {
@@ -117,7 +144,9 @@ describe('useKeyboardShortcuts', () => {
           shapes: [shape1],
           onShapesChange: mockOnShapesChange,
           recordAction: mockRecordAction,
-        })
+          ...defaultProps,
+        }),
+        { wrapper: createWrapper() }
       );
 
       act(() => {
@@ -140,7 +169,9 @@ describe('useKeyboardShortcuts', () => {
           shapes: [shape1, shape2],
           onShapesChange: mockOnShapesChange,
           recordAction: mockRecordAction,
-        })
+          ...defaultProps,
+        }),
+        { wrapper: createWrapper() }
       );
 
       act(() => {
@@ -158,7 +189,9 @@ describe('useKeyboardShortcuts', () => {
           shapes: [],
           onShapesChange: mockOnShapesChange,
           recordAction: mockRecordAction,
-        })
+          ...defaultProps,
+        }),
+        { wrapper: createWrapper() }
       );
 
       act(() => {
@@ -180,7 +213,9 @@ describe('useKeyboardShortcuts', () => {
           shapes: [shape1],
           onShapesChange: mockOnShapesChange,
           recordAction: mockRecordAction,
-        })
+          ...defaultProps,
+        }),
+        { wrapper: createWrapper() }
       );
 
       act(() => {
@@ -205,7 +240,9 @@ describe('useKeyboardShortcuts', () => {
           shapes: [shape1],
           onShapesChange: mockOnShapesChange,
           recordAction: mockRecordAction,
-        })
+          ...defaultProps,
+        }),
+        { wrapper: createWrapper() }
       );
 
       act(() => {
@@ -226,7 +263,9 @@ describe('useKeyboardShortcuts', () => {
           shapes: [shape1, shape2],
           onShapesChange: mockOnShapesChange,
           recordAction: mockRecordAction,
-        })
+          ...defaultProps,
+        }),
+        { wrapper: createWrapper() }
       );
 
       act(() => {
@@ -249,7 +288,9 @@ describe('useKeyboardShortcuts', () => {
           shapes: [shape1],
           onShapesChange: mockOnShapesChange,
           recordAction: mockRecordAction,
-        })
+          ...defaultProps,
+        }),
+        { wrapper: createWrapper() }
       );
 
       // Create an input element and focus it
@@ -284,7 +325,9 @@ describe('useKeyboardShortcuts', () => {
           shapes: [],
           onShapesChange: mockOnShapesChange,
           recordAction: mockRecordAction,
-        })
+          ...defaultProps,
+        }),
+        { wrapper: createWrapper() }
       );
 
       unmount();
