@@ -91,12 +91,19 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
     updateShape,
   } = useEditorStore();
 
-  const { recordAction } = useEditorHistory();
+  const { recordAction, takeSnapshot, commitSnapshot } = useEditorHistory();
 
   // Get selected shapes
   const selectedShapes = shapes.filter(s => selectedIds.includes(s.id));
   const hasSelection = selectedShapes.length > 0;
   const singleSelection = selectedShapes.length === 1 ? selectedShapes[0] : null;
+
+  // When a stroke-bearing shape is selected, show its strokeWidth (reflects undo);
+  // otherwise fall back to the global tool setting.
+  const strokeWidthShapes = ['arrow', 'line', 'rect', 'circle', 'pen'];
+  const selectedStrokeShape = singleSelection && strokeWidthShapes.includes(singleSelection.type)
+    ? singleSelection : null;
+  const displayedStrokeWidth = selectedStrokeShape?.strokeWidth ?? strokeWidth;
 
   // Default fallback color when both stroke and fill would be transparent
   const FALLBACK_COLOR = '#1A1A1A';
@@ -171,20 +178,43 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
     }
   };
 
-  // Handle stroke width change - updates global state and selected shapes
+  // Track whether a snapshot has been taken for the current slider drag
+  const strokeWidthSnapshotTaken = React.useRef(false);
+
+  // Handle stroke width change - updates global state and selected shapes live (no undo per tick)
   const handleStrokeWidthChange = (width: number) => {
+    // Take snapshot once at the start of a drag
+    if (hasSelection && !strokeWidthSnapshotTaken.current) {
+      takeSnapshot();
+      strokeWidthSnapshotTaken.current = true;
+    }
+
     onStrokeWidthChange(width);
 
-    // Update selected shapes
     if (hasSelection) {
-      recordAction(() => {
-        selectedShapes.forEach(shape => {
-          if (shape.type === 'arrow' || shape.type === 'line' || shape.type === 'rect' || shape.type === 'circle' || shape.type === 'pen') {
-            updateShape(shape.id, { strokeWidth: width });
-          }
-        });
+      selectedShapes.forEach(shape => {
+        if (shape.type === 'arrow' || shape.type === 'line' || shape.type === 'rect' || shape.type === 'circle' || shape.type === 'pen') {
+          updateShape(shape.id, { strokeWidth: width });
+        }
       });
     }
+  };
+
+  // Commit the single undo entry when the slider drag ends
+  const handleStrokeWidthCommit = (width: number) => {
+    onStrokeWidthChange(width);
+
+    if (hasSelection) {
+      selectedShapes.forEach(shape => {
+        if (shape.type === 'arrow' || shape.type === 'line' || shape.type === 'rect' || shape.type === 'circle' || shape.type === 'pen') {
+          updateShape(shape.id, { strokeWidth: width });
+        }
+      });
+      if (strokeWidthSnapshotTaken.current) {
+        commitSnapshot();
+      }
+    }
+    strokeWidthSnapshotTaken.current = false;
   };
 
   // Handle blur type change - updates global state and selected blur shapes
@@ -597,11 +627,12 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
                   <Minus className="w-3.5 h-3.5" />
                   Stroke Width
                 </Label>
-                <span className="text-xs text-[var(--ink-dark)] font-mono">{strokeWidth}px</span>
+                <span className="text-xs text-[var(--ink-dark)] font-mono">{displayedStrokeWidth}px</span>
               </div>
               <Slider
-                value={[strokeWidth]}
+                value={[displayedStrokeWidth]}
                 onValueChange={([value]) => handleStrokeWidthChange(value)}
+                onValueCommit={([value]) => handleStrokeWidthCommit(value)}
                 min={1}
                 max={20}
                 step={1}
