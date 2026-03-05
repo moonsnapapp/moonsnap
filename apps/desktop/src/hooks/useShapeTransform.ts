@@ -21,6 +21,8 @@ interface UseShapeTransformProps {
   cropRegion: { x: number; y: number; width: number; height: number } | null;
   /** Setter for crop region */
   setCropRegion: (region: { x: number; y: number; width: number; height: number } | null) => void;
+  /** Whether user has manually expanded crop — prevents auto-shrink */
+  cropUserExpanded: boolean;
 }
 
 interface UseShapeTransformReturn {
@@ -48,6 +50,7 @@ export const useShapeTransform = ({
   originalImageSize,
   cropRegion,
   setCropRegion,
+  cropUserExpanded,
 }: UseShapeTransformProps): UseShapeTransformReturn => {
   const { takeSnapshot, commitSnapshot } = history;
   const selectedIdsRef = useRef(selectedIds);
@@ -60,18 +63,18 @@ export const useShapeTransform = ({
   const maybeExpandBounds = useCallback(
     (updatedShapes: CanvasShape[]) => {
       if (!canvasBounds || !originalImageSize) return;
-      const expanded = expandBoundsForShapes(canvasBounds, updatedShapes, originalImageSize);
+      const expanded = expandBoundsForShapes(canvasBounds, updatedShapes, originalImageSize, cropUserExpanded);
       if (expanded) {
         setCanvasBounds(expanded);
       }
       if (cropRegion) {
-        const expandedCrop = expandCropRegionForShapes(cropRegion, updatedShapes);
+        const expandedCrop = expandCropRegionForShapes(cropRegion, updatedShapes, cropUserExpanded);
         if (expandedCrop) {
           setCropRegion(expandedCrop);
         }
       }
     },
-    [canvasBounds, originalImageSize, setCanvasBounds, cropRegion, setCropRegion]
+    [canvasBounds, originalImageSize, setCanvasBounds, cropRegion, setCropRegion, cropUserExpanded]
   );
 
   // Pause history at drag start to batch all drag updates

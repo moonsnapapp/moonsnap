@@ -72,6 +72,7 @@ export interface CropRegionAnnotation {
   y: number;
   width: number;
   height: number;
+  cropUserExpanded?: boolean;
 }
 
 // Union type for all annotation types

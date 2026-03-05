@@ -29,7 +29,7 @@ const PropertiesPanel = React.lazy(() =>
 
 import type Konva from 'konva';
 import type { EditorCanvasRef } from '@/components/Editor/EditorCanvas';
-import type { Tool, CanvasShape, Annotation, CropBoundsAnnotation, CompositorSettingsAnnotation } from '@/types';
+import type { Tool, CanvasShape, Annotation, CropBoundsAnnotation, CropRegionAnnotation, CompositorSettingsAnnotation } from '@/types';
 import { isCropBoundsAnnotation, isCropRegionAnnotation, isCompositorSettingsAnnotation, DEFAULT_COMPOSITOR_SETTINGS } from '@/types';
 import { ensureBackgroundShape } from '@/utils/canvasGeometry';
 import { toast } from 'sonner';
@@ -310,6 +310,9 @@ const ImageEditorWindow: React.FC = () => {
                 width: cropRegionAnn.width,
                 height: cropRegionAnn.height,
               });
+              if (cropRegionAnn.cropUserExpanded) {
+                store.getState().setCropUserExpanded(true);
+              }
             } else if (cropBoundsAnn) {
               store.getState().setCropRegion({
                 x: -cropBoundsAnn.imageOffsetX,
@@ -495,14 +498,16 @@ const ImageEditorWindow: React.FC = () => {
 
       // Add crop region annotation if set
       if (cropRegion) {
-        annotations.push({
+        const cropAnn: CropRegionAnnotation = {
           id: '__crop_region__',
           type: '__crop_region__',
           x: cropRegion.x,
           y: cropRegion.y,
           width: cropRegion.width,
           height: cropRegion.height,
-        });
+          cropUserExpanded: state.cropUserExpanded || undefined,
+        };
+        annotations.push(cropAnn);
       }
 
       // Add compositor settings annotation (always save to preserve state)

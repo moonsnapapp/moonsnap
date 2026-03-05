@@ -151,6 +151,8 @@ export const EditorCanvas = React.memo(forwardRef<EditorCanvasRef, EditorCanvasP
   const originalImageSize = useEditorStore((state) => state.originalImageSize);
   const cropRegion = useEditorStore((state) => state.cropRegion);
   const setCropRegion = useEditorStore((state) => state.setCropRegion);
+  const cropUserExpanded = useEditorStore((state) => state.cropUserExpanded);
+  const setCropUserExpanded = useEditorStore((state) => state.setCropUserExpanded);
 
   // Context-aware history actions for undo/redo
   const history = useEditorHistory();
@@ -353,6 +355,7 @@ export const EditorCanvas = React.memo(forwardRef<EditorCanvasRef, EditorCanvasP
     originalImageSize,
     cropRegion,
     setCropRegion,
+    cropUserExpanded,
   });
 
   // Font size state for text tool
@@ -401,6 +404,7 @@ export const EditorCanvas = React.memo(forwardRef<EditorCanvasRef, EditorCanvasP
     backgroundShape,
     originalImageSize,
     history,
+    setCropUserExpanded,
   });
 
   // Reset target: exact background image bounds (pixel-aligned).
@@ -943,11 +947,11 @@ export const EditorCanvas = React.memo(forwardRef<EditorCanvasRef, EditorCanvasP
 
                 // Auto-extend canvas and crop region if shapes moved beyond bounds
                 if (canvasBounds && originalImageSize) {
-                  const expanded = expandBoundsForShapes(canvasBounds, updatedShapes, originalImageSize);
+                  const expanded = expandBoundsForShapes(canvasBounds, updatedShapes, originalImageSize, cropUserExpanded);
                   if (expanded) setCanvasBounds(expanded);
                 }
                 if (cropRegion) {
-                  const expandedCrop = expandCropRegionForShapes(cropRegion, updatedShapes);
+                  const expandedCrop = expandCropRegionForShapes(cropRegion, updatedShapes, cropUserExpanded);
                   if (expandedCrop) setCropRegion(expandedCrop);
                 }
 
@@ -1181,11 +1185,11 @@ export const EditorCanvas = React.memo(forwardRef<EditorCanvasRef, EditorCanvasP
 
                 // Auto-extend canvas and crop region if shapes moved beyond bounds
                 if (canvasBounds && originalImageSize) {
-                  const expanded = expandBoundsForShapes(canvasBounds, updatedShapes, originalImageSize);
+                  const expanded = expandBoundsForShapes(canvasBounds, updatedShapes, originalImageSize, cropUserExpanded);
                   if (expanded) setCanvasBounds(expanded);
                 }
                 if (cropRegion) {
-                  const expandedCrop = expandCropRegionForShapes(cropRegion, updatedShapes);
+                  const expandedCrop = expandCropRegionForShapes(cropRegion, updatedShapes, cropUserExpanded);
                   if (expandedCrop) setCropRegion(expandedCrop);
                 }
               }
@@ -1242,6 +1246,7 @@ export const EditorCanvas = React.memo(forwardRef<EditorCanvasRef, EditorCanvasP
                 // Fit to the known target bounds directly (avoids stale closure)
                 navigation.handleFitToRect(minCropResetBounds);
               }
+              setCropUserExpanded(false);
             }}
             onCommit={() => {
               onToolChange('move');

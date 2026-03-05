@@ -51,6 +51,8 @@ export interface EditorState {
 
   // Crop region for export-only bounds (null = no crop, export uses canvasBounds)
   cropRegion: { x: number; y: number; width: number; height: number } | null;
+  // True when user has manually expanded crop via crop tool — prevents auto-shrink
+  cropUserExpanded: boolean;
 
   // History state (now part of store for better observability)
   history: HistoryState;
@@ -78,6 +80,7 @@ export interface EditorState {
   setOriginalImageSize: (size: { width: number; height: number }) => void;
   resetCanvasBounds: () => void;
   setCropRegion: (region: { x: number; y: number; width: number; height: number } | null) => void;
+  setCropUserExpanded: (expanded: boolean) => void;
 
   // History actions (internal, called via exported functions)
   _takeSnapshot: () => void;
@@ -122,6 +125,7 @@ export const createEditorStore = () => create<EditorState>()(
   canvasBounds: null,
   originalImageSize: null,
   cropRegion: null,
+  cropUserExpanded: false,
 
   // History state - now part of Zustand for better observability
   history: {
@@ -158,6 +162,7 @@ export const createEditorStore = () => create<EditorState>()(
     canvasBounds: null,
     originalImageSize: null,
     cropRegion: null,
+    cropUserExpanded: false,
   }),
   setCompositorSettings: (settings) => {
     set((state) => ({
@@ -185,6 +190,7 @@ export const createEditorStore = () => create<EditorState>()(
   setCanvasBounds: (bounds) => set({ canvasBounds: bounds }),
   setOriginalImageSize: (size) => set({ originalImageSize: size }),
   setCropRegion: (region) => set({ cropRegion: region }),
+  setCropUserExpanded: (expanded) => set({ cropUserExpanded: expanded }),
   resetCanvasBounds: () => {
     const { originalImageSize } = get();
     if (originalImageSize) {
@@ -203,7 +209,7 @@ export const createEditorStore = () => create<EditorState>()(
 
   // History actions
   _takeSnapshot: () => {
-    const { history, shapes, canvasBounds, cropRegion } = get();
+    const { history, shapes, canvasBounds, cropRegion, cropUserExpanded } = get();
     if (history.pendingSnapshot) return; // Already have a pending snapshot
 
     // Store lightweight references — shapes are immutable so the current
@@ -216,6 +222,7 @@ export const createEditorStore = () => create<EditorState>()(
           shapes,
           canvasBounds: canvasBounds ? { ...canvasBounds } : null,
           cropRegion: cropRegion ? { ...cropRegion } : null,
+          cropUserExpanded,
           estimatedBytes: 0,
         },
       },
@@ -223,15 +230,16 @@ export const createEditorStore = () => create<EditorState>()(
   },
 
   _commitSnapshot: () => {
-    const { history, shapes, canvasBounds, cropRegion } = get();
+    const { history, shapes, canvasBounds, cropRegion, cropUserExpanded } = get();
     if (!history.pendingSnapshot) return;
 
     const prev = history.pendingSnapshot;
     const shapesChanged = haveShapesChanged(prev.shapes, shapes);
     const boundsChanged = haveBoundsChanged(prev.canvasBounds, canvasBounds);
     const cropChanged = JSON.stringify(prev.cropRegion) !== JSON.stringify(cropRegion);
+    const expandedChanged = prev.cropUserExpanded !== cropUserExpanded;
 
-    if (shapesChanged || boundsChanged || cropChanged) {
+    if (shapesChanged || boundsChanged || cropChanged || expandedChanged) {
       // Structural sharing deferred from _takeSnapshot for performance.
       // Compute it now (drag end is not latency-sensitive).
       const lastSnapshotShapes = history.undoStack.length > 0
@@ -242,7 +250,8 @@ export const createEditorStore = () => create<EditorState>()(
         shapes: sharedShapes,
         canvasBounds: prev.canvasBounds,
         cropRegion: prev.cropRegion,
-        estimatedBytes: estimateSnapshotSize({ shapes: sharedShapes, canvasBounds: prev.canvasBounds, cropRegion: prev.cropRegion }),
+        cropUserExpanded: prev.cropUserExpanded,
+        estimatedBytes: estimateSnapshotSize({ shapes: sharedShapes, canvasBounds: prev.canvasBounds, cropRegion: prev.cropRegion, cropUserExpanded: prev.cropUserExpanded }),
       };
 
       const newUndoStack = [...history.undoStack, committed];
@@ -284,7 +293,7 @@ export const createEditorStore = () => create<EditorState>()(
   },
 
   _undo: () => {
-    const { history, shapes, canvasBounds, cropRegion } = get();
+    const { history, shapes, canvasBounds, cropRegion, cropUserExpanded } = get();
     if (history.undoStack.length === 0) return false;
 
     // Save current state to redo stack with structural sharing
@@ -293,6 +302,7 @@ export const createEditorStore = () => create<EditorState>()(
       shapes: createShapesSnapshot(shapes, lastSnapshot?.shapes ?? null),
       canvasBounds: canvasBounds ? { ...canvasBounds } : null,
       cropRegion: cropRegion ? { ...cropRegion } : null,
+      cropUserExpanded,
     };
     const newRedoStack = [
       ...history.redoStack,
@@ -310,6 +320,7 @@ export const createEditorStore = () => create<EditorState>()(
       shapes: snapshot.shapes,
       canvasBounds: snapshot.canvasBounds,
       cropRegion: snapshot.cropRegion,
+      cropUserExpanded: snapshot.cropUserExpanded,
       history: {
         undoStack: newUndoStack,
         redoStack: newRedoStack,
@@ -323,7 +334,7 @@ export const createEditorStore = () => create<EditorState>()(
   },
 
   _redo: () => {
-    const { history, shapes, canvasBounds, cropRegion } = get();
+    const { history, shapes, canvasBounds, cropRegion, cropUserExpanded } = get();
     if (history.redoStack.length === 0) return false;
 
     // Save current state to undo stack with structural sharing
@@ -334,6 +345,7 @@ export const createEditorStore = () => create<EditorState>()(
       shapes: createShapesSnapshot(shapes, lastSnapshot?.shapes ?? null),
       canvasBounds: canvasBounds ? { ...canvasBounds } : null,
       cropRegion: cropRegion ? { ...cropRegion } : null,
+      cropUserExpanded,
     };
     const newUndoStack = [
       ...history.undoStack,
@@ -351,6 +363,7 @@ export const createEditorStore = () => create<EditorState>()(
       shapes: snapshot.shapes,
       canvasBounds: snapshot.canvasBounds,
       cropRegion: snapshot.cropRegion,
+      cropUserExpanded: snapshot.cropUserExpanded,
       history: {
         undoStack: newUndoStack,
         redoStack: newRedoStack,

@@ -10,6 +10,7 @@ export interface HistorySnapshot {
   shapes: CanvasShape[];
   canvasBounds: CanvasBounds | null;
   cropRegion: { x: number; y: number; width: number; height: number } | null;
+  cropUserExpanded: boolean;
   estimatedBytes: number;
 }
 

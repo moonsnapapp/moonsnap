@@ -547,6 +547,7 @@ export const expandBoundsForShapes = (
   currentBounds: CanvasBounds,
   shapes: CanvasShape[],
   originalImageSize: { width: number; height: number },
+  expandOnly = false,
 ): CanvasBounds | null => {
   // Find background shape to use as base region
   const bgShape = shapes.find(s => s.id === BACKGROUND_SHAPE_ID);
@@ -563,6 +564,16 @@ export const expandBoundsForShapes = (
     minY = 0;
     maxX = originalImageSize.width;
     maxY = originalImageSize.height;
+  }
+
+  // When expandOnly, include current bounds so we never shrink
+  if (expandOnly) {
+    const curX = -currentBounds.imageOffsetX;
+    const curY = -currentBounds.imageOffsetY;
+    minX = Math.min(minX, curX);
+    minY = Math.min(minY, curY);
+    maxX = Math.max(maxX, curX + currentBounds.width);
+    maxY = Math.max(maxY, curY + currentBounds.height);
   }
 
   // Union with image shapes only — drawing elements don't expand the canvas
@@ -606,6 +617,7 @@ export const expandBoundsForShapes = (
 export const expandCropRegionForShapes = (
   currentCrop: { x: number; y: number; width: number; height: number },
   shapes: CanvasShape[],
+  expandOnly = false,
 ): { x: number; y: number; width: number; height: number } | null => {
   // Start with background shape bounds (or 0,0 fallback)
   const bgShape = shapes.find(s => s.id === BACKGROUND_SHAPE_ID);
@@ -620,6 +632,14 @@ export const expandCropRegionForShapes = (
     minY = currentCrop.y;
     maxX = currentCrop.x + currentCrop.width;
     maxY = currentCrop.y + currentCrop.height;
+  }
+
+  // When expandOnly, include current crop so we never shrink
+  if (expandOnly) {
+    minX = Math.min(minX, currentCrop.x);
+    minY = Math.min(minY, currentCrop.y);
+    maxX = Math.max(maxX, currentCrop.x + currentCrop.width);
+    maxY = Math.max(maxY, currentCrop.y + currentCrop.height);
   }
 
   // Union with non-background image shapes only — drawing elements don't expand crop

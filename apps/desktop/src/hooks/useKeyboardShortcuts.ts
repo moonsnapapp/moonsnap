@@ -48,18 +48,19 @@ export const useKeyboardShortcuts = ({
   const originalImageSize = useEditorStore((s) => s.originalImageSize);
   const cropRegion = useEditorStore((s) => s.cropRegion);
   const setCropRegion = useEditorStore((s) => s.setCropRegion);
+  const cropUserExpanded = useEditorStore((s) => s.cropUserExpanded);
 
   /** Recalculate canvas bounds and crop region to fit shapes */
   const recalcBounds = useCallback((updatedShapes: CanvasShape[]) => {
     if (canvasBounds && originalImageSize) {
-      const expanded = expandBoundsForShapes(canvasBounds, updatedShapes, originalImageSize);
+      const expanded = expandBoundsForShapes(canvasBounds, updatedShapes, originalImageSize, cropUserExpanded);
       if (expanded) setCanvasBounds(expanded);
     }
     if (cropRegion) {
-      const newCrop = expandCropRegionForShapes(cropRegion, updatedShapes);
+      const newCrop = expandCropRegionForShapes(cropRegion, updatedShapes, cropUserExpanded);
       if (newCrop) setCropRegion(newCrop);
     }
-  }, [canvasBounds, setCanvasBounds, originalImageSize, cropRegion, setCropRegion]);
+  }, [canvasBounds, setCanvasBounds, originalImageSize, cropRegion, setCropRegion, cropUserExpanded]);
 
   // Delete selected shapes handler (protects background shape)
   const handleDelete = useCallback(() => {
