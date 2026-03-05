@@ -86,16 +86,16 @@ const MemoizedShape = React.memo<{
 
   // Stable callbacks that reference shape.id
   const handleSelect = useCallback((e?: Konva.KonvaEventObject<MouseEvent | TouchEvent>) => {
-    if (isPanning) return;
+    if (isPanning || shape.isBackground) return;
     const evt = e?.evt as MouseEvent | undefined;
     if (evt?.button === 1) return;
     onShapeSelect(shape.id);
-  }, [isPanning, onShapeSelect, shape.id]);
+  }, [isPanning, onShapeSelect, shape.id, shape.isBackground]);
 
   const handleClick = useCallback((e: Konva.KonvaEventObject<MouseEvent>) => {
-    if (isPanning) return;
+    if (isPanning || shape.isBackground) return;
     onShapeClick(shape.id, e);
-  }, [isPanning, onShapeClick, shape.id]);
+  }, [isPanning, onShapeClick, shape.id, shape.isBackground]);
 
   const handleDragStart = useCallback((e: Konva.KonvaEventObject<DragEvent>) => {
     if (isPanning) return;
@@ -238,8 +238,8 @@ export const ShapeRenderer: React.FC<ShapeRendererProps> = React.memo(({
         <MemoizedShape
           key={shape.id}
           shape={shape}
-          isSelected={selectedSet.has(shape.id)}
-          isDraggable={isDraggable}
+          isSelected={!shape.isBackground && selectedSet.has(shape.id)}
+          isDraggable={!shape.isBackground && isDraggable}
           isPanning={isPanning}
           isDrawing={isDrawing}
           isLastShape={shape.id === lastShapeId}

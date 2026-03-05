@@ -73,7 +73,7 @@ const ImageEditorContent: React.FC<{
   const strokeWidth = useEditorStore((s) => s.strokeWidth);
   const setStrokeWidth = useEditorStore((s) => s.setStrokeWidth);
 
-  const [selectedTool, setSelectedTool] = useState<Tool>('select');
+  const [selectedTool, setSelectedTool] = useState<Tool>('move');
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
 

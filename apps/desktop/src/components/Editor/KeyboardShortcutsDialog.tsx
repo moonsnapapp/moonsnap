@@ -17,6 +17,7 @@ interface KeyboardShortcutsDialogProps {
 }
 
 const TOOL_SHORTCUTS = [
+  { key: 'M', action: 'Move' },
   { key: 'V', action: 'Select' },
   { key: 'C', action: 'Crop' },
   { key: 'A', action: 'Arrow' },

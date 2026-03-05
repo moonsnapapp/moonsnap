@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef } from 'react';
 import Konva from 'konva';
 import type { CanvasShape, CanvasBounds } from '../types';
 import type { EditorHistoryActions } from './useEditorHistory';
-import { expandBoundsForShapes } from '../utils/canvasGeometry';
+import { expandBoundsForShapes, expandCropRegionForShapes } from '../utils/canvasGeometry';
 
 interface UseShapeTransformProps {
   shapes: CanvasShape[];
@@ -17,6 +17,10 @@ interface UseShapeTransformProps {
   setCanvasBounds: (bounds: CanvasBounds | null) => void;
   /** Original image dimensions */
   originalImageSize: { width: number; height: number } | null;
+  /** Current crop region for auto-extend */
+  cropRegion: { x: number; y: number; width: number; height: number } | null;
+  /** Setter for crop region */
+  setCropRegion: (region: { x: number; y: number; width: number; height: number } | null) => void;
 }
 
 interface UseShapeTransformReturn {
@@ -42,6 +46,8 @@ export const useShapeTransform = ({
   canvasBounds,
   setCanvasBounds,
   originalImageSize,
+  cropRegion,
+  setCropRegion,
 }: UseShapeTransformProps): UseShapeTransformReturn => {
   const { takeSnapshot, commitSnapshot } = history;
   const selectedIdsRef = useRef(selectedIds);
@@ -50,7 +56,7 @@ export const useShapeTransform = ({
     selectedIdsRef.current = selectedIds;
   }, [selectedIds]);
 
-  /** Try to expand canvas bounds to fit all shapes after a drag/transform */
+  /** Try to expand canvas bounds and crop region to fit all shapes after a drag/transform */
   const maybeExpandBounds = useCallback(
     (updatedShapes: CanvasShape[]) => {
       if (!canvasBounds || !originalImageSize) return;
@@ -58,8 +64,14 @@ export const useShapeTransform = ({
       if (expanded) {
         setCanvasBounds(expanded);
       }
+      if (cropRegion) {
+        const expandedCrop = expandCropRegionForShapes(cropRegion, updatedShapes);
+        if (expandedCrop) {
+          setCropRegion(expandedCrop);
+        }
+      }
     },
-    [canvasBounds, originalImageSize, setCanvasBounds]
+    [canvasBounds, originalImageSize, setCanvasBounds, cropRegion, setCropRegion]
   );
 
   // Pause history at drag start to batch all drag updates
@@ -212,15 +224,16 @@ export const useShapeTransform = ({
     [shapes, onShapesChange, commitSnapshot, maybeExpandBounds]
   );
 
-  // Handle arrow endpoint drag end - update state only at the end
+  // Handle arrow endpoint drag end - update state and expand bounds
   const handleArrowEndpointDragEnd = useCallback(
     (shapeId: string, newPoints: number[]) => {
       const updatedShapes = shapes.map(s =>
         s.id === shapeId ? { ...s, points: newPoints } : s
       );
       onShapesChange(updatedShapes);
+      maybeExpandBounds(updatedShapes);
     },
-    [shapes, onShapesChange]
+    [shapes, onShapesChange, maybeExpandBounds]
   );
 
   return {

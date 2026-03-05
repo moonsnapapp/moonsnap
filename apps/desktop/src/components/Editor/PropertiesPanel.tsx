@@ -1,6 +1,7 @@
 import React from 'react';
 import {
   Sparkles,
+  Hand,
   MousePointer2,
   Minus,
   Type,
@@ -46,6 +47,7 @@ const HIGHLIGHT_PRESETS_DATA = [
 
 // Tool display info
 const TOOL_INFO: Record<Tool, { icon: React.ElementType; label: string }> = {
+  move: { icon: Hand, label: 'Move' },
   select: { icon: MousePointer2, label: 'Select' },
   crop: { icon: Crop, label: 'Crop' },
   arrow: { icon: MoveUpRight, label: 'Arrow' },
@@ -346,6 +348,13 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
 
     return (
       <div className="space-y-5">
+        {/* Move Tool - show tip */}
+        {effectiveTool === 'move' && (
+          <div className="text-xs text-[var(--ink-muted)] leading-relaxed">
+            Drag to pan the canvas. Use scroll to zoom. Press V to select shapes.
+          </div>
+        )}
+
         {/* Select Tool - show tip */}
         {effectiveTool === 'select' && (
           <div className="text-xs text-[var(--ink-muted)] leading-relaxed">

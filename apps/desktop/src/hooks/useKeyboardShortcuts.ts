@@ -2,6 +2,8 @@ import { useEffect, useState, useCallback } from 'react';
 import { nanoid } from 'nanoid';
 import type { CanvasShape, Tool } from '../types';
 import { isTextInputTarget } from '../utils/keyboard';
+import { expandBoundsForShapes, expandCropRegionForShapes } from '../utils/canvasGeometry';
+import { useEditorStore } from '../stores/editorStore';
 
 interface UseKeyboardShortcutsProps {
   selectedIds: string[];
@@ -41,6 +43,23 @@ export const useKeyboardShortcuts = ({
   setSelectedTool,
 }: UseKeyboardShortcutsProps): UseKeyboardShortcutsReturn => {
   const [isShiftHeld, setIsShiftHeld] = useState(false);
+  const canvasBounds = useEditorStore((s) => s.canvasBounds);
+  const setCanvasBounds = useEditorStore((s) => s.setCanvasBounds);
+  const originalImageSize = useEditorStore((s) => s.originalImageSize);
+  const cropRegion = useEditorStore((s) => s.cropRegion);
+  const setCropRegion = useEditorStore((s) => s.setCropRegion);
+
+  /** Recalculate canvas bounds and crop region to fit shapes */
+  const recalcBounds = useCallback((updatedShapes: CanvasShape[]) => {
+    if (canvasBounds && originalImageSize) {
+      const expanded = expandBoundsForShapes(canvasBounds, updatedShapes, originalImageSize);
+      if (expanded) setCanvasBounds(expanded);
+    }
+    if (cropRegion) {
+      const newCrop = expandCropRegionForShapes(cropRegion, updatedShapes);
+      if (newCrop) setCropRegion(newCrop);
+    }
+  }, [canvasBounds, setCanvasBounds, originalImageSize, cropRegion, setCropRegion]);
 
   // Delete selected shapes handler (protects background shape)
   const handleDelete = useCallback(() => {
@@ -53,12 +72,13 @@ export const useKeyboardShortcuts = ({
     });
     if (deletableIds.length === 0) return;
 
+    const newShapes = shapes.filter((shape) => !deletableIds.includes(shape.id));
     recordAction(() => {
-      const newShapes = shapes.filter((shape) => !deletableIds.includes(shape.id));
       onShapesChange(newShapes);
     });
     setSelectedIds([]);
-  }, [selectedIds, shapes, onShapesChange, setSelectedIds, recordAction]);
+    recalcBounds(newShapes);
+  }, [selectedIds, shapes, onShapesChange, setSelectedIds, recordAction, recalcBounds]);
 
   // Select all shapes handler (includes background for consistency — user can move it too)
   const handleSelectAll = useCallback(() => {

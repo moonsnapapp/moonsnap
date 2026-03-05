@@ -2,8 +2,8 @@ import { useState, useCallback, useEffect, useLayoutEffect, useRef } from 'react
 import Konva from 'konva';
 import type { CompositorSettings, Tool, CanvasBounds } from '../types';
 
-const MIN_ZOOM = 0.3;  // 30%
-const MAX_ZOOM = 2;    // 200%
+const MIN_ZOOM_FLOOR = 0.05;  // Absolute minimum (5%)
+const MAX_ZOOM = 2;           // 200%
 const ZOOM_STEP = 0.05; // 5% per wheel tick
 const VIEW_PADDING = 48;
 
@@ -22,6 +22,8 @@ interface UseCanvasNavigationProps {
   setCanvasBounds: (bounds: CanvasBounds) => void;
   setOriginalImageSize: (size: { width: number; height: number }) => void;
   selectedTool: Tool;
+  /** Full bounding box of all content (background + shapes), may extend beyond canvasBounds */
+  cropRegion: { x: number; y: number; width: number; height: number } | null;
   fitVisibleBounds?: { x: number; y: number; width: number; height: number } | null;
   compositorBgRef?: React.RefObject<HTMLDivElement | null>;
 }
@@ -37,6 +39,7 @@ interface UseCanvasNavigationReturn {
   handleZoomIn: () => void;
   handleZoomOut: () => void;
   handleFitToSize: () => void;
+  handleFitToRect: (rect: { x: number; y: number; width: number; height: number }) => void;
   handleActualSize: () => void;
   handleWheel: (e: Konva.KonvaEventObject<WheelEvent>) => void;
   getCanvasPosition: (screenPos: { x: number; y: number }) => { x: number; y: number };
@@ -60,6 +63,7 @@ export const useCanvasNavigation = ({
   setCanvasBounds,
   setOriginalImageSize,
   selectedTool,
+  cropRegion,
   fitVisibleBounds,
   compositorBgRef,
 }: UseCanvasNavigationProps): UseCanvasNavigationReturn => {
@@ -187,9 +191,20 @@ export const useCanvasNavigation = ({
     );
   }, [canvasBounds, image]);
 
-  // Get content dimensions (respects crop bounds)
+  // Get content dimensions — uses cropRegion (full bounding box of all shapes + background)
+  // when it extends beyond canvasBounds, so fit-to-frame includes transparent expansion areas.
   const getContentDimensions = useCallback(() => {
     if (!image) return { width: 0, height: 0, cropX: 0, cropY: 0 };
+
+    // If cropRegion is available, it represents the true visible extent of all content.
+    if (cropRegion) {
+      return {
+        width: cropRegion.width,
+        height: cropRegion.height,
+        cropX: cropRegion.x,
+        cropY: cropRegion.y,
+      };
+    }
 
     const hasCrop = isCropApplied();
     return {
@@ -198,7 +213,7 @@ export const useCanvasNavigation = ({
       cropX: hasCrop ? -canvasBounds!.imageOffsetX : 0,
       cropY: hasCrop ? -canvasBounds!.imageOffsetY : 0,
     };
-  }, [image, canvasBounds, isCropApplied]);
+  }, [image, canvasBounds, isCropApplied, cropRegion]);
 
   // Visible pixel bounds (typically background image extents), used for F-key framing.
   const getVisiblePixelDimensions = useCallback(() => {
@@ -215,6 +230,18 @@ export const useCanvasNavigation = ({
 
     return getContentDimensions();
   }, [image, fitVisibleBounds, getContentDimensions]);
+
+  // Dynamic min zoom: ensures you can always zoom out to see the full content
+  const minZoom = (() => {
+    const { width, height } = getContentDimensions();
+    if (width === 0 || height === 0 || containerSize.width === 0 || containerSize.height === 0) {
+      return MIN_ZOOM_FLOOR;
+    }
+    const availableWidth = containerSize.width - VIEW_PADDING * 2;
+    const availableHeight = containerSize.height - VIEW_PADDING * 2;
+    const fitZoom = Math.min(availableWidth / width, availableHeight / height) * 0.5;
+    return Math.max(MIN_ZOOM_FLOOR, fitZoom);
+  })();
 
   // Transform screen position to canvas position
   const getCanvasPosition = useCallback(
@@ -298,6 +325,22 @@ export const useCanvasNavigation = ({
     return { zoom: fitZoom, position: { x, y } };
   }, [image, containerSize, getCompositionSize, getContentDimensions, getVisiblePixelDimensions]);
 
+  // Compute fit for an explicit rect (bypasses closure staleness)
+  const calculateFitForRect = useCallback((rect: { x: number; y: number; width: number; height: number }) => {
+    const availableWidth = containerSize.width - VIEW_PADDING * 2;
+    const availableHeight = containerSize.height - VIEW_PADDING * 2;
+
+    const compositionSize = getCompositionSize(rect.width, rect.height);
+    const scaleX = availableWidth / compositionSize.width;
+    const scaleY = availableHeight / compositionSize.height;
+    const fitZoom = Math.min(scaleX, scaleY, 1) * 0.9;
+
+    const x = (containerSize.width - rect.width * fitZoom) / 2 - rect.x * fitZoom;
+    const y = (containerSize.height - rect.height * fitZoom) / 2 - rect.y * fitZoom;
+
+    return { zoom: fitZoom, position: { x, y } };
+  }, [containerSize, getCompositionSize]);
+
   // Fit to size handler - debounced to prevent multiple fits per frame
   const handleFitToSize = useCallback(() => {
     if (fitRequestRef.current) {
@@ -312,6 +355,19 @@ export const useCanvasNavigation = ({
       fitRequestRef.current = null;
     });
   }, [calculateFitToSize]);
+
+  // Fit to an explicit rect (used when caller knows the target bounds ahead of state flush)
+  const handleFitToRect = useCallback((rect: { x: number; y: number; width: number; height: number }) => {
+    if (fitRequestRef.current) {
+      cancelAnimationFrame(fitRequestRef.current);
+    }
+    fitRequestRef.current = requestAnimationFrame(() => {
+      const fit = calculateFitForRect(rect);
+      setZoom(fit.zoom);
+      setPosition(fit.position);
+      fitRequestRef.current = null;
+    });
+  }, [calculateFitForRect]);
 
   // Fit to visible pixels handler (used by F-key event).
   const handleFitToVisiblePixels = useCallback(() => {
@@ -442,7 +498,7 @@ export const useCanvasNavigation = ({
   // Zoom out handler
   const handleZoomOut = useCallback(() => {
     setZoom((prevZoom) => {
-      const newZoom = Math.max(prevZoom - ZOOM_STEP, MIN_ZOOM);
+      const newZoom = Math.max(prevZoom - ZOOM_STEP, minZoom);
       if (image) {
         const { width, height, cropX, cropY } = getContentDimensions();
         const x = (containerSize.width - width * newZoom) / 2 - cropX * newZoom;
@@ -451,7 +507,7 @@ export const useCanvasNavigation = ({
       }
       return newZoom;
     });
-  }, [image, containerSize, getContentDimensions]);
+  }, [image, containerSize, getContentDimensions, minZoom]);
 
   // Actual size (100% zoom) handler
   const handleActualSize = useCallback(() => {
@@ -480,7 +536,7 @@ export const useCanvasNavigation = ({
   ) => {
     const currentZoom = stage.scaleX();
     const currentPos = stage.position();
-    const newZoom = Math.min(Math.max(targetZoom, MIN_ZOOM), MAX_ZOOM);
+    const newZoom = Math.min(Math.max(targetZoom, minZoom), MAX_ZOOM);
 
     // Skip if zoom didn't change or hit limits
     if (newZoom === currentZoom) return null;
@@ -513,7 +569,7 @@ export const useCanvasNavigation = ({
     }
 
     return { zoom: newZoom, position: { x: newX, y: newY } };
-  }, [compositorBgRef, compositorSettings.enabled]);
+  }, [compositorBgRef, compositorSettings.enabled, minZoom]);
 
   // Momentum animation loop
   const runMomentum = useCallback(() => {
@@ -610,6 +666,7 @@ export const useCanvasNavigation = ({
     handleZoomIn,
     handleZoomOut,
     handleFitToSize,
+    handleFitToRect,
     handleActualSize,
     handleWheel,
     getCanvasPosition,

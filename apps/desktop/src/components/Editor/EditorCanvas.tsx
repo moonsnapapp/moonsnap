@@ -34,7 +34,7 @@ import { TextEditorOverlay } from './overlays/TextEditorOverlay';
 import { CropOverlay } from './overlays/CropOverlay';
 
 // Utility functions
-import { getSelectionBounds, expandBoundsForShapes, ensureBackgroundShape, BACKGROUND_SHAPE_ID, createCheckerPattern } from '../../utils/canvasGeometry';
+import { getSelectionBounds, expandBoundsForShapes, expandCropRegionForShapes, ensureBackgroundShape, BACKGROUND_SHAPE_ID, createCheckerPattern } from '../../utils/canvasGeometry';
 
 interface EditorCanvasProps {
   imageData: string;
@@ -299,6 +299,7 @@ export const EditorCanvas = React.memo(forwardRef<EditorCanvasRef, EditorCanvasP
     setCanvasBounds,
     setOriginalImageSize,
     selectedTool,
+    cropRegion,
     fitVisibleBounds: fitToCenterBounds,
     compositorBgRef,
   });
@@ -316,7 +317,7 @@ export const EditorCanvas = React.memo(forwardRef<EditorCanvasRef, EditorCanvasP
     setSelectedTool: onToolChange,
   });
 
-  // Middle mouse panning hook
+  // Middle mouse panning hook (also handles left-click pan in move tool)
   const pan = useMiddleMousePan({
     position: navigation.position,
     setPosition: (pos) => navigation.setPosition(pos),
@@ -327,6 +328,7 @@ export const EditorCanvas = React.memo(forwardRef<EditorCanvasRef, EditorCanvasP
     renderedPositionRef: navigation.renderedPositionRef,
     renderedZoomRef: navigation.renderedZoomRef,
     transformCoeffsRef: navigation.transformCoeffsRef,
+    leftClickPan: selectedTool === 'move',
   });
 
   // Text editing hook
@@ -348,6 +350,8 @@ export const EditorCanvas = React.memo(forwardRef<EditorCanvasRef, EditorCanvasP
     canvasBounds,
     setCanvasBounds,
     originalImageSize,
+    cropRegion,
+    setCropRegion,
   });
 
   // Font size state for text tool
@@ -583,7 +587,7 @@ export const EditorCanvas = React.memo(forwardRef<EditorCanvasRef, EditorCanvasP
       const pos = navigation.getCanvasPosition(screenPos);
 
       // Drawing move (also handles pending → drawing transition on drag threshold)
-      if (drawing.isDrawing || (selectedTool !== 'select' && selectedTool !== 'crop' && selectedTool !== 'background')) {
+      if (drawing.isDrawing || (selectedTool !== 'move' && selectedTool !== 'select' && selectedTool !== 'crop' && selectedTool !== 'background')) {
         drawing.handleDrawingMouseMove(pos);
         return;
       }
@@ -689,13 +693,13 @@ export const EditorCanvas = React.memo(forwardRef<EditorCanvasRef, EditorCanvasP
     <div
       ref={navigation.containerRef}
       className={`h-full w-full overflow-hidden relative${
-        selectedTool !== 'select' && selectedTool !== 'crop' && selectedTool !== 'background'
+        selectedTool !== 'move' && selectedTool !== 'select' && selectedTool !== 'crop' && selectedTool !== 'background'
           ? ' drawing-tool-active'
           : ''
       }`}
       style={{
         backgroundColor: 'var(--polar-mist)',
-        cursor: pan.isPanning ? 'grabbing' : undefined,
+        cursor: pan.isPanning ? 'grabbing' : selectedTool === 'move' ? 'grab' : undefined,
       }}
       onMouseDown={pan.handleMiddleMouseDown}
       onMouseMove={pan.handleMiddleMouseMove}
@@ -914,12 +918,14 @@ export const EditorCanvas = React.memo(forwardRef<EditorCanvasRef, EditorCanvasP
                 });
                 onShapesChange(updatedShapes);
 
-                // Auto-extend canvas if shapes moved beyond bounds
+                // Auto-extend canvas and crop region if shapes moved beyond bounds
                 if (canvasBounds && originalImageSize) {
                   const expanded = expandBoundsForShapes(canvasBounds, updatedShapes, originalImageSize);
-                  if (expanded) {
-                    setCanvasBounds(expanded);
-                  }
+                  if (expanded) setCanvasBounds(expanded);
+                }
+                if (cropRegion) {
+                  const expandedCrop = expandCropRegionForShapes(cropRegion, updatedShapes);
+                  if (expandedCrop) setCropRegion(expandedCrop);
                 }
 
                 history.commitSnapshot();
@@ -1119,12 +1125,14 @@ export const EditorCanvas = React.memo(forwardRef<EditorCanvasRef, EditorCanvasP
                 });
                 onShapesChange(updatedShapes);
 
-                // Auto-extend canvas if shapes moved beyond bounds
+                // Auto-extend canvas and crop region if shapes moved beyond bounds
                 if (canvasBounds && originalImageSize) {
                   const expanded = expandBoundsForShapes(canvasBounds, updatedShapes, originalImageSize);
-                  if (expanded) {
-                    setCanvasBounds(expanded);
-                  }
+                  if (expanded) setCanvasBounds(expanded);
+                }
+                if (cropRegion) {
+                  const expandedCrop = expandCropRegionForShapes(cropRegion, updatedShapes);
+                  if (expandedCrop) setCropRegion(expandedCrop);
                 }
               }
 
@@ -1150,11 +1158,8 @@ export const EditorCanvas = React.memo(forwardRef<EditorCanvasRef, EditorCanvasP
             height={displayBounds.height}
             isModified={artboardModified}
             onCancel={() => {
-              // Reset artboard to original image dimensions
-              if (originalImageSize) {
-                setCropRegion({ x: 0, y: 0, width: originalImageSize.width, height: originalImageSize.height });
-              }
-              onToolChange('select');
+              // Just exit crop mode — retain the current crop as-is
+              onToolChange('move');
             }}
             onReset={() => {
               if (minCropResetBounds && canvasBounds) {
@@ -1175,10 +1180,16 @@ export const EditorCanvas = React.memo(forwardRef<EditorCanvasRef, EditorCanvasP
               }
               if (minCropResetBounds) {
                 setCropRegion(minCropResetBounds);
-                navigation.handleFitToSize();
+                // Fit to the known target bounds directly (avoids stale closure)
+                navigation.handleFitToRect(minCropResetBounds);
               }
             }}
-            onCommit={() => onToolChange('select')}
+            onCommit={() => {
+              onToolChange('move');
+              // Explicitly fit after crop commit (the useEffect also fires, but this
+              // ensures the rAF runs after React has processed the tool change).
+              navigation.handleFitToSize();
+            }}
           />
         );
       })()}

@@ -567,3 +567,56 @@ export const expandBoundsForShapes = (
     imageOffsetY: -newOffsetY,
   };
 };
+
+/**
+ * Compute the minimum crop region that fits all shapes (including background).
+ * Returns null if the crop region is already correct.
+ */
+export const expandCropRegionForShapes = (
+  currentCrop: { x: number; y: number; width: number; height: number },
+  shapes: CanvasShape[],
+): { x: number; y: number; width: number; height: number } | null => {
+  // Start with background shape bounds (or 0,0 fallback)
+  const bgShape = shapes.find(s => s.id === BACKGROUND_SHAPE_ID);
+  let minX: number, minY: number, maxX: number, maxY: number;
+  if (bgShape) {
+    minX = bgShape.x ?? 0;
+    minY = bgShape.y ?? 0;
+    maxX = minX + (bgShape.width ?? 0);
+    maxY = minY + (bgShape.height ?? 0);
+  } else {
+    minX = currentCrop.x;
+    minY = currentCrop.y;
+    maxX = currentCrop.x + currentCrop.width;
+    maxY = currentCrop.y + currentCrop.height;
+  }
+
+  // Union with all non-background shape bounds
+  for (const shape of shapes) {
+    if (shape.isBackground) continue;
+    const bounds = getShapeBounds(shape);
+    minX = Math.min(minX, bounds.x);
+    minY = Math.min(minY, bounds.y);
+    maxX = Math.max(maxX, bounds.x + bounds.width);
+    maxY = Math.max(maxY, bounds.y + bounds.height);
+  }
+
+  const newCrop = {
+    x: Math.floor(minX),
+    y: Math.floor(minY),
+    width: Math.ceil(maxX - Math.floor(minX)),
+    height: Math.ceil(maxY - Math.floor(minY)),
+  };
+
+  // Check if anything changed
+  if (
+    newCrop.x === currentCrop.x &&
+    newCrop.y === currentCrop.y &&
+    newCrop.width === currentCrop.width &&
+    newCrop.height === currentCrop.height
+  ) {
+    return null;
+  }
+
+  return newCrop;
+};

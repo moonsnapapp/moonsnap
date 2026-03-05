@@ -17,6 +17,7 @@ import {
   CommandSeparator,
 } from '@/components/ui/command';
 import {
+  Hand,
   MousePointer,
   Crop,
   MoveRight,
@@ -74,6 +75,7 @@ interface CommandItem {
 }
 
 const TOOL_ICONS: Record<Tool, React.ReactNode> = {
+  move: <Hand className="h-4 w-4" />,
   select: <MousePointer className="h-4 w-4" />,
   crop: <Crop className="h-4 w-4" />,
   arrow: <MoveRight className="h-4 w-4" />,
@@ -89,6 +91,7 @@ const TOOL_ICONS: Record<Tool, React.ReactNode> = {
 };
 
 const TOOL_SHORTCUTS: Partial<Record<Tool, string>> = {
+  move: 'M',
   select: 'V',
   crop: 'C',
   arrow: 'A',
@@ -104,6 +107,7 @@ const TOOL_SHORTCUTS: Partial<Record<Tool, string>> = {
 };
 
 const TOOL_LABELS: Record<Tool, string> = {
+  move: 'Move',
   select: 'Select',
   crop: 'Crop',
   arrow: 'Arrow',
