@@ -26,8 +26,8 @@ import { BackgroundSettings, BlurToolSettings, TextToolSettings } from './proper
 
 // Color presets for quick selection
 const COLOR_PRESETS = [
-  '#EF4444', '#F97316', '#F97066', '#22C55E',
-  '#3B82F6', '#8B5CF6', '#EC4899', '#FFFFFF', '#1A1A1A',
+  '#EF4444', '#F97316', '#22C55E', '#3B82F6',
+  '#8B5CF6', '#EC4899', '#FFFFFF', '#1A1A1A',
 ];
 
 // Quick style presets per tool type

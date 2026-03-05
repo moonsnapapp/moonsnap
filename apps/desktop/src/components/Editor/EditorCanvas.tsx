@@ -32,6 +32,7 @@ import { ZoomControls } from './overlays/ZoomControls';
 import { CropControls } from './overlays/CropControls';
 import { TextEditorOverlay } from './overlays/TextEditorOverlay';
 import { CropOverlay } from './overlays/CropOverlay';
+import { ResetRotationButton } from './overlays/ResetRotationButton';
 
 // Utility functions
 import { getSelectionBounds, expandBoundsForShapes, expandCropRegionForShapes, ensureBackgroundShape, BACKGROUND_SHAPE_ID, createCheckerPattern } from '../../utils/canvasGeometry';
@@ -491,6 +492,28 @@ export const EditorCanvas = React.memo(forwardRef<EditorCanvasRef, EditorCanvasP
     });
   }, [selectedIds, shapes]);
 
+  // Reset rotation of all selected shapes to 0
+  const handleResetRotation = React.useCallback(() => {
+    history.takeSnapshot();
+    const updatedShapes = shapes.map((s) => {
+      if (!selectedIds.includes(s.id)) return s;
+      return { ...s, rotation: 0 };
+    });
+    onShapesChange(updatedShapes);
+
+    // Also reset rotation on the Konva nodes so the Transformer updates
+    const tr = transformerRef.current;
+    if (tr) {
+      tr.nodes().forEach((node) => {
+        if (selectedIds.includes(node.id())) {
+          node.rotation(0);
+        }
+      });
+      tr.getLayer()?.batchDraw();
+    }
+    history.commitSnapshot();
+  }, [shapes, selectedIds, onShapesChange, history]);
+
   // Disable image smoothing for crisp 1:1 pixel rendering at 100% zoom
   useEffect(() => {
     const layer = layerRef.current;
@@ -949,14 +972,16 @@ export const EditorCanvas = React.memo(forwardRef<EditorCanvasRef, EditorCanvasP
             }}
             onTransformStart={() => history.takeSnapshot()}
             onTransform={() => {
-              // For text shapes, convert scale to width/height in real-time to prevent stretching
+              // Convert scale to dimensions in real-time to prevent stroke scaling during resize
               const nodes = transformerRef.current?.nodes() || [];
               nodes.forEach(node => {
                 const shape = shapes.find(s => s.id === node.id());
-                if (shape?.type === 'text') {
-                  const scaleX = node.scaleX();
-                  const scaleY = node.scaleY();
+                if (!shape) return;
 
+                const scaleX = node.scaleX();
+                const scaleY = node.scaleY();
+
+                if (shape.type === 'text') {
                   // Read current dimensions from node (not React state)
                   const currentWidth = node.width();
                   const currentHeight = node.height();
@@ -991,6 +1016,35 @@ export const EditorCanvas = React.memo(forwardRef<EditorCanvasRef, EditorCanvasP
                     textContent.x(newWidth < 0 ? newWidth : 0);
                     textContent.y(newHeight < 0 ? newHeight : 0);
                   }
+                } else if (scaleX !== 1 || scaleY !== 1) {
+                  // All other shapes: reset scale to 1 and adjust geometry
+                  // This prevents stroke width from visually scaling during resize
+                  if (shape.type === 'circle') {
+                    const ellipse = node as unknown as Konva.Ellipse;
+                    ellipse.radiusX(ellipse.radiusX() * Math.abs(scaleX));
+                    ellipse.radiusY(ellipse.radiusY() * Math.abs(scaleY));
+                  } else if (shape.type === 'step') {
+                    const circle = (node as Konva.Group).findOne('Circle') as Konva.Circle | undefined;
+                    if (circle) {
+                      const avgScale = (Math.abs(scaleX) + Math.abs(scaleY)) / 2;
+                      circle.radius(circle.radius() * avgScale);
+                    }
+                  } else if ((shape.type === 'pen' || shape.type === 'arrow' || shape.type === 'line') && shape.points) {
+                    const line = node.className === 'Group'
+                      ? (node as Konva.Group).findOne('Line, Arrow') as Konva.Line | undefined
+                      : node as Konva.Line;
+                    if (line) {
+                      const pts = line.points();
+                      const scaled = pts.map((v, i) => v * (i % 2 === 0 ? scaleX : scaleY));
+                      line.points(scaled);
+                    }
+                  } else {
+                    // rect, highlight, image, blur: width/height based
+                    node.width(node.width() * scaleX);
+                    node.height(node.height() * scaleY);
+                  }
+                  node.scaleX(1);
+                  node.scaleY(1);
                 }
               });
             }}
@@ -1138,6 +1192,11 @@ export const EditorCanvas = React.memo(forwardRef<EditorCanvasRef, EditorCanvasP
 
               history.commitSnapshot();
             }}
+          />
+          <ResetRotationButton
+            transformerRef={transformerRef}
+            zoom={navigation.zoom}
+            onReset={handleResetRotation}
           />
         </Layer>
       </Stage>

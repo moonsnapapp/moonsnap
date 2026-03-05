@@ -1,7 +1,8 @@
 import * as React from 'react';
 import Wheel from '@uiw/react-color-wheel';
 import Alpha from '@uiw/react-color-alpha';
-import { hsvaToHex, hexToHsva, hsvaToRgbaString, rgbaStringToHsva } from '@uiw/color-convert';
+import Hue from '@uiw/react-color-hue';
+import { hsvaToHex, hexToHsva, hsvaToRgbaString, rgbaStringToHsva, hsvaToHslaString } from '@uiw/color-convert';
 import { X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -21,9 +22,20 @@ interface ColorPickerProps {
   showTransparent?: boolean;
 }
 
+// Pointer style override to vertically center the 18px dot on a 12px bar
+const SLIDER_POINTER_PROPS = {
+  fillProps: {
+    style: {
+      width: 14,
+      height: 14,
+      transform: 'translate(-7px, -1px)',
+    },
+  },
+} as const;
+
 const DEFAULT_PRESETS = [
-  '#EF4444', '#F97316', '#F97066', '#22C55E',
-  '#3B82F6', '#8B5CF6', '#EC4899', '#FFFFFF', '#1A1A1A',
+  '#EF4444', '#F97316', '#22C55E', '#3B82F6',
+  '#8B5CF6', '#EC4899', '#FFFFFF', '#1A1A1A',
 ];
 
 const safeColorToHsva = (color: string): HsvaColor => {
@@ -124,6 +136,14 @@ export const ColorPicker: React.FC<ColorPickerProps> = ({
     }
   }, [isDragging]);
 
+  // Factory for HSV slider handlers: maps Alpha's 0-1 `a` value to a HSVA key with optional scale
+  const handleHsvaSlider = React.useCallback((key: keyof HsvaColor, scale = 1) =>
+    (val: { a: number } | { h: number }) => {
+      const raw = 'h' in val ? val.h : val.a * scale;
+      setLocalHsva(prev => ({ ...prev, [key]: raw }));
+      if (!isDragging) setIsDragging(true);
+    }, [isDragging]);
+
   // Handle alpha slider change
   const handleAlphaChange = React.useCallback((newAlpha: { a: number }) => {
     setLocalHsva(prev => ({ ...prev, ...newAlpha }));
@@ -216,8 +236,61 @@ export const ColorPicker: React.FC<ColorPickerProps> = ({
             width={180}
             height={180}
           />
-          {/* Opacity Slider */}
+          {/* Hue Slider */}
           <div className="mt-3">
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-xs text-[var(--ink-muted)]">Hue</span>
+              <span className="text-xs font-mono text-[var(--ink-muted)]">
+                {Math.round(displayHsva.h)}°
+              </span>
+            </div>
+            <Hue
+              hue={displayHsva.h}
+              onChange={handleHsvaSlider('h')}
+              pointerProps={SLIDER_POINTER_PROPS}
+              width={180}
+              height={12}
+              radius={6}
+            />
+          </div>
+          {/* Saturation Slider */}
+          <div className="mt-2">
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-xs text-[var(--ink-muted)]">Saturation</span>
+              <span className="text-xs font-mono text-[var(--ink-muted)]">
+                {Math.round(displayHsva.s)}%
+              </span>
+            </div>
+            <Alpha
+              hsva={{ ...displayHsva, a: displayHsva.s / 100 }}
+              onChange={handleHsvaSlider('s', 100)}
+              background={`linear-gradient(to right, ${hsvaToHslaString({ ...displayHsva, s: 0 })}, ${hsvaToHslaString({ ...displayHsva, s: 100 })})`}
+              pointerProps={SLIDER_POINTER_PROPS}
+              width={180}
+              height={12}
+              radius={6}
+            />
+          </div>
+          {/* Value (Brightness) Slider */}
+          <div className="mt-2">
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-xs text-[var(--ink-muted)]">Brightness</span>
+              <span className="text-xs font-mono text-[var(--ink-muted)]">
+                {Math.round(displayHsva.v)}%
+              </span>
+            </div>
+            <Alpha
+              hsva={{ ...displayHsva, a: displayHsva.v / 100 }}
+              onChange={handleHsvaSlider('v', 100)}
+              background={`linear-gradient(to right, ${hsvaToHslaString({ ...displayHsva, v: 0 })}, ${hsvaToHslaString({ ...displayHsva, v: 100 })})`}
+              pointerProps={SLIDER_POINTER_PROPS}
+              width={180}
+              height={12}
+              radius={6}
+            />
+          </div>
+          {/* Opacity Slider */}
+          <div className="mt-2">
             <div className="flex items-center justify-between mb-1">
               <span className="text-xs text-[var(--ink-muted)]">Opacity</span>
               <span className="text-xs font-mono text-[var(--ink-muted)]">
@@ -227,6 +300,7 @@ export const ColorPicker: React.FC<ColorPickerProps> = ({
             <Alpha
               hsva={displayHsva}
               onChange={handleAlphaChange}
+              pointerProps={SLIDER_POINTER_PROPS}
               width={180}
               height={12}
               radius={6}

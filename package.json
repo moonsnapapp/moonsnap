@@ -48,5 +48,8 @@
     "apps/desktop/src-tauri/**/*.rs": [
       "cargo fmt --manifest-path apps/desktop/src-tauri/Cargo.toml --"
     ]
+  },
+  "dependencies": {
+    "@uiw/react-color-hue": "2.9.5"
   }
 }
