@@ -115,7 +115,6 @@ export const LineShape: React.FC<LineShapeProps> = React.memo(({
         points={points}
         stroke={shape.stroke}
         strokeWidth={shape.strokeWidth}
-        strokeScaleEnabled={false}
         lineCap="round"
         lineJoin="round"
         hitStrokeWidth={hitStrokeWidth}

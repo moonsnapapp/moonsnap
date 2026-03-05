@@ -81,27 +81,7 @@ export function exportCanvas(
   const savedScale = { x: stage.scaleX(), y: stage.scaleY() };
   const savedPosition = { x: stage.x(), y: stage.y() };
 
-  // Shapes render with strokeScaleEnabled={false} in the editor so stroke thickness
-  // appears in screen space (affected by zoom). We reset stage scale for export,
-  // so compensate by baking the zoom factor into stroke width temporarily.
-  const zoomScale = savedScale.x || 1;
-  const strokeNodes = layer.find((node) => {
-    const hasStrokeWidth = typeof (node as Konva.Shape).strokeWidth === 'function';
-    if (!hasStrokeWidth) return false;
-    const strokeScaleEnabled = (node as Konva.Shape).strokeScaleEnabled?.();
-    return strokeScaleEnabled === false;
-  }) as Konva.Shape[];
-  const originalStrokeWidths = new Map<Konva.Shape, number>();
-
-  strokeNodes.forEach((node) => {
-    const currentStrokeWidth = node.strokeWidth();
-    originalStrokeWidths.set(node, currentStrokeWidth);
-
-    if (zoomScale !== 0) {
-      node.strokeWidth(currentStrokeWidth / zoomScale);
-    }
-  });
-
+  // Reset stage transform to 1:1 for pixel-accurate export
   stage.scale({ x: 1, y: 1 });
   stage.position({ x: 0, y: 0 });
 
@@ -139,9 +119,6 @@ export function exportCanvas(
   // Restore all removed nodes back to their original positions
   stage.scale(savedScale);
   stage.position(savedPosition);
-  originalStrokeWidths.forEach((strokeWidth, node) => {
-    node.strokeWidth(strokeWidth);
-  });
 
   for (const { node, parent, index } of removedNodes) {
     if (index >= 0 && parent.children && index < parent.children.length) {
