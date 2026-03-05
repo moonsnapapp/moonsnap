@@ -36,6 +36,7 @@ import { ResetRotationButton } from './overlays/ResetRotationButton';
 
 // Utility functions
 import { getSelectionBounds, expandBoundsForShapes, expandCropRegionForShapes, ensureBackgroundShape, BACKGROUND_SHAPE_ID, createCheckerPattern } from '../../utils/canvasGeometry';
+import { EDITOR_TEXT, getEditorTextResizeDimensions } from '../../utils/editorText';
 
 interface EditorCanvasProps {
   imageData: string;
@@ -1186,39 +1187,23 @@ export const EditorCanvas = React.memo(forwardRef<EditorCanvasRef, EditorCanvasP
                 const scaleY = node.scaleY();
 
                 if (shape.type === 'text') {
-                  // Read current dimensions from node (not React state)
-                  const currentWidth = node.width();
-                  const currentHeight = node.height();
-
-                  // Allow negative dimensions for crossover (like rect behavior)
-                  // Don't clamp to minimum during drag - only at the end
-                  const newWidth = currentWidth * scaleX;
-                  const newHeight = currentHeight * scaleY;
-
-                  // Update Group dimensions and reset scale
-                  node.width(newWidth);
-                  node.height(newHeight);
-                  node.scaleX(1);
-                  node.scaleY(1);
-
-                  // Also update child elements with absolute values for rendering
                   const group = node as Konva.Group;
-                  const border = group.findOne('.text-box-border');
                   const textContent = group.findOne('.text-content');
-                  const absWidth = Math.abs(newWidth);
-                  const absHeight = Math.abs(newHeight);
-                  if (border) {
-                    border.width(absWidth);
-                    border.height(absHeight);
-                    // Offset for negative dimensions
-                    border.x(newWidth < 0 ? newWidth : 0);
-                    border.y(newHeight < 0 ? newHeight : 0);
-                  }
+
                   if (textContent) {
-                    textContent.width(absWidth);
-                    textContent.height(absHeight);
-                    textContent.x(newWidth < 0 ? newWidth : 0);
-                    textContent.y(newHeight < 0 ? newHeight : 0);
+                    const { width: liveWidth, height: liveHeight } = getEditorTextResizeDimensions(
+                      shape.width,
+                      shape.height,
+                      scaleX,
+                      scaleY
+                    );
+
+                    textContent.width(Math.max(EDITOR_TEXT.MIN_BOX_WIDTH, Math.abs(liveWidth)));
+                    textContent.height(Math.max(EDITOR_TEXT.MIN_BOX_HEIGHT, Math.abs(liveHeight)));
+                    textContent.scaleX(scaleX === 0 ? 1 : 1 / scaleX);
+                    textContent.scaleY(scaleY === 0 ? 1 : 1 / scaleY);
+                    textContent.x(0);
+                    textContent.y(0);
                   }
                 } else if (scaleX !== 1 || scaleY !== 1) {
                   // All other shapes: reset scale to 1 and adjust geometry
@@ -1293,20 +1278,35 @@ export const EditorCanvas = React.memo(forwardRef<EditorCanvasRef, EditorCanvasP
                     height: node.height(),
                   };
                 } else if (shape.type === 'text') {
-                  // Text: normalize negative dimensions
-                  const rawWidth = node.width();
-                  const rawHeight = node.height();
+                  // Text: let Konva own the live scale during the gesture, then
+                  // normalize the box dimensions once at the end.
+                  const { width: rawWidth, height: rawHeight } = getEditorTextResizeDimensions(
+                    node.width(),
+                    node.height(),
+                    scaleX,
+                    scaleY
+                  );
                   let finalX = node.x();
                   let finalY = node.y();
-                  const finalWidth = Math.max(50, Math.abs(rawWidth));
-                  const finalHeight = Math.max(24, Math.abs(rawHeight));
+                  const finalWidth = Math.max(EDITOR_TEXT.MIN_BOX_WIDTH, Math.abs(rawWidth));
+                  const finalHeight = Math.max(EDITOR_TEXT.MIN_BOX_HEIGHT, Math.abs(rawHeight));
                   if (rawWidth < 0) finalX += rawWidth;
                   if (rawHeight < 0) finalY += rawHeight;
 
+                  node.scaleX(1);
+                  node.scaleY(1);
+
                   // Reset child positions
                   if (node instanceof Konva.Group) {
+                    const hitArea = node.findOne('.text-hit-area');
                     const border = node.findOne('.text-box-border');
                     const textContent = node.findOne('.text-content');
+                    if (hitArea) {
+                      hitArea.x(0);
+                      hitArea.y(0);
+                      hitArea.width(finalWidth);
+                      hitArea.height(finalHeight);
+                    }
                     if (border) {
                       border.x(0);
                       border.y(0);
@@ -1318,6 +1318,8 @@ export const EditorCanvas = React.memo(forwardRef<EditorCanvasRef, EditorCanvasP
                       textContent.y(0);
                       textContent.width(finalWidth);
                       textContent.height(finalHeight);
+                      textContent.scaleX(1);
+                      textContent.scaleY(1);
                     }
                   }
                   node.x(finalX);

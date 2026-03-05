@@ -125,6 +125,21 @@ export function getEditorTextDefaultBoxHeight(fontSize: number): number {
   );
 }
 
+export function getEditorTextResizeDimensions(
+  width: number | undefined,
+  height: number | undefined,
+  scaleX: number,
+  scaleY: number
+): { width: number; height: number } {
+  const baseWidth = Math.max(Math.abs(width ?? EDITOR_TEXT.MIN_BOX_WIDTH), EDITOR_TEXT.MIN_BOX_WIDTH);
+  const baseHeight = Math.max(Math.abs(height ?? EDITOR_TEXT.MIN_BOX_HEIGHT), EDITOR_TEXT.MIN_BOX_HEIGHT);
+
+  return {
+    width: baseWidth * scaleX,
+    height: baseHeight * scaleY,
+  };
+}
+
 export function createEditorTextShape({
   id,
   x,

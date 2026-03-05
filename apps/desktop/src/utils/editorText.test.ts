@@ -5,6 +5,7 @@ import {
   createEditorDragTextShape,
   getEditorTextDefaultBoxHeight,
   getEditorTextDragBoxHeight,
+  getEditorTextResizeDimensions,
   getEditorTextVerticalAlignJustifyContent,
   normalizeEditorTextFontStyle,
   toggleEditorTextFontStyle,
@@ -57,5 +58,22 @@ describe('editorText', () => {
     expect(getEditorTextVerticalAlignJustifyContent('top')).toBe('flex-start');
     expect(getEditorTextVerticalAlignJustifyContent('middle')).toBe('center');
     expect(getEditorTextVerticalAlignJustifyContent('bottom')).toBe('flex-end');
+  });
+
+  it('derives live resize dimensions from the original text box size', () => {
+    const firstPass = getEditorTextResizeDimensions(100, 40, 1.1, 1.25);
+    const secondPass = getEditorTextResizeDimensions(100, 40, 1.2, 1.5);
+
+    expect(firstPass.width).toBeCloseTo(110);
+    expect(firstPass.height).toBeCloseTo(50);
+    expect(secondPass.width).toBeCloseTo(120);
+    expect(secondPass.height).toBeCloseTo(60);
+  });
+
+  it('falls back to text minimums when resize inputs are missing', () => {
+    expect(getEditorTextResizeDimensions(undefined, undefined, 1, 1)).toEqual({
+      width: EDITOR_TEXT.MIN_BOX_WIDTH,
+      height: EDITOR_TEXT.MIN_BOX_HEIGHT,
+    });
   });
 });

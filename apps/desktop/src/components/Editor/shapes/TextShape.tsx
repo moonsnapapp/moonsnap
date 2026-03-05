@@ -30,12 +30,11 @@ interface TextShapeProps {
 }
 
 // Minimum dimensions for text box
-const MIN_WIDTH = 50;
-const MIN_HEIGHT = 24;
+const MIN_WIDTH = EDITOR_TEXT.MIN_BOX_WIDTH;
+const MIN_HEIGHT = EDITOR_TEXT.MIN_BOX_HEIGHT;
 
 export const TextShape: React.FC<TextShapeProps> = React.memo(({
   shape,
-  isSelected,
   isDraggable,
   isActivelyDrawing,
   isEditing,
@@ -117,7 +116,7 @@ export const TextShape: React.FC<TextShapeProps> = React.memo(({
         stroke="#3B82F6"
         strokeWidth={borderStrokeWidth}
         dash={borderDash}
-        visible={(isSelected && !isEditing) || isActivelyDrawing}
+        visible={isActivelyDrawing}
         listening={false}
       />
 
