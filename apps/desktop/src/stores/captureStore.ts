@@ -256,7 +256,12 @@ export const useCaptureStore = create<CaptureState>()(
   searchQuery: '',
   filterFavorites: false,
   filterTags: [],
-  filterMediaTypes: [],
+  filterMediaTypes: (() => {
+    try {
+      const stored = localStorage.getItem('library:filterMediaTypes');
+      return stored ? JSON.parse(stored) : [];
+    } catch { return []; }
+  })(),
   view: 'library',
 
   loadCaptures: async () => {
@@ -622,7 +627,7 @@ export const useCaptureStore = create<CaptureState>()(
   setSearchQuery: (query: string) => set({ searchQuery: query }),
   setFilterFavorites: (value: boolean) => set({ filterFavorites: value }),
   setFilterTags: (tags: string[]) => set({ filterTags: tags }),
-  setFilterMediaTypes: (types: string[]) => set({ filterMediaTypes: types }),
+  setFilterMediaTypes: (types: string[]) => { localStorage.setItem('library:filterMediaTypes', JSON.stringify(types)); set({ filterMediaTypes: types }); },
   setSkipStagger: (value: boolean) => set({ skipStagger: value }),
   clearCurrentProject: () => {
     clearEditorSession();

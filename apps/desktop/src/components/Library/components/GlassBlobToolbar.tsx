@@ -30,6 +30,8 @@ interface GlassBlobToolbarProps {
   onDeleteSelected: () => void;
   onClearSelection: () => void;
   onOpenLibraryFolder: () => void;
+  activeFilterCount?: number;
+  onClearAllFilters?: () => void;
 }
 
 export const GlassBlobToolbar: React.FC<GlassBlobToolbarProps> = ({
@@ -46,6 +48,8 @@ export const GlassBlobToolbar: React.FC<GlassBlobToolbarProps> = ({
   onDeleteSelected,
   onClearSelection,
   onOpenLibraryFolder,
+  activeFilterCount = 0,
+  onClearAllFilters,
 }) => {
   const [searchExpanded, setSearchExpanded] = useState(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
@@ -194,6 +198,26 @@ export const GlassBlobToolbar: React.FC<GlassBlobToolbarProps> = ({
             <p className="text-xs">GIFs</p>
           </TooltipContent>
         </Tooltip>
+
+        {/* Clear all filters indicator */}
+        {activeFilterCount > 0 && onClearAllFilters && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                onClick={onClearAllFilters}
+                className="cloud-btn cloud-btn--small cloud-btn--active relative"
+              >
+                <X className="w-[15px] h-[15px]" />
+                <span className="absolute -top-1 -right-1 min-w-[14px] h-[14px] rounded-full bg-[var(--coral-500)] text-white text-[9px] font-bold flex items-center justify-center leading-none px-0.5">
+                  {activeFilterCount}
+                </span>
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="top">
+              <p className="text-xs">Clear All Filters</p>
+            </TooltipContent>
+          </Tooltip>
+        )}
 
         {/* Selection actions - appended on right */}
         {selectedCount > 0 && (
