@@ -11,6 +11,7 @@ import {
   selectCursorRecording,
   selectAudioConfig,
   selectScreenVideoPath,
+  selectTogglePlayback,
 } from '../../stores/videoEditor/selectors';
 import { videoEditorLogger } from '../../utils/logger';
 import { computeDPRCappedFitScale } from '../../utils/compositionBounds';
@@ -34,39 +35,258 @@ import {
   usePreviewStyles,
   usePlaybackSync,
 } from './gpu';
-import type { SceneSegment, SceneMode, WebcamConfig, ZoomRegion, CursorRecording, CursorConfig, MaskSegment, TextSegment, CropConfig } from '../../types';
+import type { SceneSegment, SceneMode, WebcamConfig, ZoomRegion, CursorRecording, CursorConfig, MaskSegment, TextSegment, CropConfig, AudioTrackSettings } from '../../types';
 
-/**
- * Scene mode aware renderer that shows/hides content based on current scene mode.
- */
-const SceneModeRenderer = memo(function SceneModeRenderer({
+const PlaybackSyncController = memo(function PlaybackSyncController({
   videoRef,
+  systemAudioRef,
+  micAudioRef,
   videoSrc,
-  zoomRegions,
-  cursorRecording,
-  cursorConfig,
+  systemAudioSrc,
+  micAudioSrc,
+  audioConfig,
+  durationMs,
+  isPlaying,
+  onVideoError,
+}: {
+  videoRef: React.RefObject<HTMLVideoElement | null>;
+  systemAudioRef: React.RefObject<HTMLAudioElement | null>;
+  micAudioRef: React.RefObject<HTMLAudioElement | null>;
+  videoSrc: string | null;
+  systemAudioSrc: string | null;
+  micAudioSrc: string | null;
+  audioConfig: AudioTrackSettings | undefined;
+  durationMs: number | undefined;
+  isPlaying: boolean;
+  onVideoError: (message: string) => void;
+}) {
+  const previewTimeMs = useVideoEditorStore(selectPreviewTimeMs);
+  const currentTimeMs = useVideoEditorStore(selectCurrentTimeMs);
+
+  usePlaybackSync({
+    videoRef,
+    systemAudioRef,
+    micAudioRef,
+    videoSrc,
+    systemAudioSrc,
+    micAudioSrc,
+    audioConfig,
+    durationMs,
+    isPlaying,
+    previewTimeMs,
+    currentTimeMs,
+    onVideoError,
+  });
+
+  return null;
+});
+
+const TypewriterAudioController = memo(function TypewriterAudioController({
+  typewriterAudioRef,
+  isActive,
+  isPlaying,
+  audioConfig,
+  textSegments,
+}: {
+  typewriterAudioRef: React.RefObject<HTMLAudioElement | null>;
+  isActive: boolean;
+  isPlaying: boolean;
+  audioConfig: AudioTrackSettings | undefined;
+  textSegments: TextSegment[] | undefined;
+}) {
+  const currentTimeMs = usePreviewOrPlaybackTime();
+  const shouldPlayTypewriterAudio = useMemo(
+    () => hasActiveTypewriterSound(textSegments, currentTimeMs / 1000),
+    [textSegments, currentTimeMs]
+  );
+
+  useEffect(() => {
+    const audio = typewriterAudioRef.current;
+    if (!audio || !isActive) {
+      return;
+    }
+
+    audio.volume = audioConfig?.systemMuted ? 0 : (audioConfig?.systemVolume ?? 1);
+  }, [audioConfig?.systemMuted, audioConfig?.systemVolume, isActive, typewriterAudioRef]);
+
+  useEffect(() => {
+    const audio = typewriterAudioRef.current;
+    if (!audio || !isActive) {
+      return;
+    }
+
+    const shouldPlay = isPlaying && shouldPlayTypewriterAudio;
+    if (shouldPlay) {
+      if (audio.paused) {
+        audio.play().catch((error) => {
+          videoEditorLogger.warn('Typewriter audio play failed:', error);
+        });
+      }
+      return;
+    }
+
+    if (!audio.paused) {
+      audio.pause();
+    }
+    if (audio.currentTime !== 0) {
+      audio.currentTime = 0;
+    }
+  }, [isPlaying, isActive, shouldPlayTypewriterAudio, typewriterAudioRef]);
+
+  return null;
+});
+
+const SceneAwareWebcamOverlay = memo(function SceneAwareWebcamOverlay({
   webcamVideoPath,
-  webcamConfig,
-  sceneSegments,
-  defaultSceneMode,
+  config,
   containerWidth,
   containerHeight,
-  frameRenderWidth,
-  frameRenderHeight,
-  compositionRenderHeight,
+  renderWidth,
+  sceneSegments,
+  defaultSceneMode,
+}: {
+  webcamVideoPath: string;
+  config: WebcamConfig;
+  containerWidth: number;
+  containerHeight: number;
+  renderWidth: number;
+  sceneSegments: SceneSegment[] | undefined;
+  defaultSceneMode: SceneMode;
+}) {
+  const currentTimeMs = usePreviewOrPlaybackTime();
+  const scene = useInterpolatedScene(sceneSegments, defaultSceneMode, currentTimeMs);
+  const sceneOpacity = getRegularCameraTransitionOpacity(scene);
+
+  return (
+    <WebcamOverlay
+      webcamVideoPath={webcamVideoPath}
+      config={config}
+      containerWidth={containerWidth}
+      containerHeight={containerHeight}
+      renderWidth={renderWidth}
+      sceneOpacity={sceneOpacity}
+    />
+  );
+});
+
+const ZoomTransformController = memo(function ZoomTransformController({
+  frameRef,
+  borderOverlayRef,
+  zoomRegions,
+  cursorRecording,
+  backgroundPadding,
+  rounding,
   videoWidth,
   videoHeight,
-  maskSegments,
-  textSegments,
-  isPlaying,
-  onVideoClick,
-  backgroundPadding = 0,
-  rounding = 0,
-  frameStyle,
-  frameBorderOverlayStyle,
-  shadowStyle,
+}: {
+  frameRef: React.RefObject<HTMLDivElement | null>;
+  borderOverlayRef: React.RefObject<HTMLDivElement | null>;
+  zoomRegions: ZoomRegion[] | undefined;
+  cursorRecording: CursorRecording | null | undefined;
+  backgroundPadding: number;
+  rounding: number;
+  videoWidth: number;
+  videoHeight: number;
+}) {
+  const currentTimeMs = usePreviewOrPlaybackTime();
+  const toSourceTime = useTimelineToSourceTime();
+  const sourceTimeMs = useMemo(
+    () => toSourceTime(currentTimeMs),
+    [currentTimeMs, toSourceTime]
+  );
+  const zoomStyle = useZoomPreview(zoomRegions, currentTimeMs, cursorRecording, {
+    backgroundPadding,
+    rounding,
+    videoWidth,
+    videoHeight,
+    cursorTimeMs: sourceTimeMs,
+  });
+
+  useLayoutEffect(() => {
+    const applyStyle = (element: HTMLDivElement | null) => {
+      if (!element) {
+        return;
+      }
+      element.style.transform = zoomStyle.transform;
+      element.style.transformOrigin = zoomStyle.transformOrigin;
+    };
+
+    applyStyle(frameRef.current);
+    applyStyle(borderOverlayRef.current);
+  }, [borderOverlayRef, frameRef, zoomStyle]);
+
+  return null;
+});
+
+const MaskOverlayController = memo(function MaskOverlayController({
+  segments,
+  previewWidth,
+  previewHeight,
+  videoElement,
+  videoWidth,
+  videoHeight,
   cropConfig,
 }: {
+  segments: MaskSegment[] | undefined;
+  previewWidth: number;
+  previewHeight: number;
+  videoElement: HTMLVideoElement | null;
+  videoWidth: number;
+  videoHeight: number;
+  cropConfig?: CropConfig;
+}) {
+  const currentTimeMs = usePreviewOrPlaybackTime();
+
+  if (!segments || segments.length === 0 || previewWidth <= 0 || previewHeight <= 0) {
+    return null;
+  }
+
+  return (
+    <MaskOverlay
+      segments={segments}
+      currentTimeMs={currentTimeMs}
+      previewWidth={previewWidth}
+      previewHeight={previewHeight}
+      videoElement={videoElement}
+      videoWidth={videoWidth}
+      videoHeight={videoHeight}
+      cropConfig={cropConfig}
+    />
+  );
+});
+
+const TextOverlayController = memo(function TextOverlayController({
+  segments,
+  renderWidth,
+  renderHeight,
+  displayWidth,
+  displayHeight,
+}: {
+  segments: TextSegment[] | undefined;
+  renderWidth: number;
+  renderHeight: number;
+  displayWidth: number;
+  displayHeight: number;
+}) {
+  const currentTimeMs = usePreviewOrPlaybackTime();
+
+  if (!segments || segments.length === 0 || displayWidth <= 0 || displayHeight <= 0) {
+    return null;
+  }
+
+  return (
+    <TextOverlay
+      segments={segments}
+      currentTimeMs={currentTimeMs}
+      renderWidth={renderWidth}
+      renderHeight={renderHeight}
+      displayWidth={displayWidth}
+      displayHeight={displayHeight}
+    />
+  );
+});
+
+type SceneModeRendererProps = {
   videoRef: React.RefObject<HTMLVideoElement | null>;
   videoSrc: string | null | undefined;
   zoomRegions: ZoomRegion[] | undefined;
@@ -93,7 +313,157 @@ const SceneModeRenderer = memo(function SceneModeRenderer({
   frameBorderOverlayStyle?: React.CSSProperties | null;
   shadowStyle?: React.CSSProperties;
   cropConfig?: CropConfig;
-}) {
+};
+
+const StaticSceneModeRenderer = memo(function StaticSceneModeRenderer({
+  videoRef,
+  videoSrc,
+  defaultSceneMode,
+  isPlaying,
+  onVideoClick,
+  zoomRegions,
+  cursorRecording,
+  containerWidth,
+  containerHeight,
+  frameRenderWidth,
+  frameRenderHeight,
+  shadowStyle,
+  frameStyle,
+  frameBorderOverlayStyle,
+  backgroundPadding = 0,
+  rounding = 0,
+  maskSegments,
+  textSegments,
+  cropConfig,
+  videoWidth,
+  videoHeight,
+}: SceneModeRendererProps) {
+  const originalVideoPath = useVideoEditorStore(selectScreenVideoPath);
+  const frameOpacity = defaultSceneMode === 'cameraOnly' ? 0 : 1;
+  const frameRef = useRef<HTMLDivElement>(null);
+  const borderOverlayRef = useRef<HTMLDivElement>(null);
+
+  const videoCropStyle: React.CSSProperties = useMemo(() => {
+    if (!hasEnabledCrop(cropConfig) || !cropConfig) {
+      return {};
+    }
+
+    const overflowX = videoWidth - cropConfig.width;
+    const overflowY = videoHeight - cropConfig.height;
+
+    const posX = overflowX > 0 ? (cropConfig.x / overflowX) * 100 : 50;
+    const posY = overflowY > 0 ? (cropConfig.y / overflowY) * 100 : 50;
+
+    return {
+      objectFit: 'cover' as const,
+      objectPosition: `${posX}% ${posY}%`,
+    };
+  }, [cropConfig, videoHeight, videoWidth]);
+
+  return (
+    <div
+      className="flex items-center justify-center"
+      style={{
+        position: 'relative',
+        width: '100%',
+        height: '100%',
+        ...shadowStyle,
+      }}
+    >
+      <ZoomTransformController
+        frameRef={frameRef}
+        borderOverlayRef={borderOverlayRef}
+        zoomRegions={zoomRegions}
+        cursorRecording={cursorRecording}
+        backgroundPadding={backgroundPadding}
+        rounding={rounding}
+        videoWidth={videoWidth}
+        videoHeight={videoHeight}
+      />
+      <div
+        ref={frameRef}
+        style={{
+          position: 'relative',
+          overflow: 'hidden',
+          ...frameStyle,
+          opacity: frameOpacity,
+          visibility: frameOpacity < 0.01 ? 'hidden' : 'visible',
+          width: '100%',
+          height: '100%',
+        }}
+      >
+        {videoSrc && (
+          <VideoNoZoom
+            videoRef={videoRef}
+            videoSrc={videoSrc}
+            onVideoClick={onVideoClick}
+            hidden={false}
+            cropStyle={videoCropStyle}
+          />
+        )}
+
+        {originalVideoPath && !isPlaying && (
+          <WebCodecsCanvasNoZoom
+            videoPath={originalVideoPath}
+            cropStyle={videoCropStyle}
+          />
+        )}
+
+        <MaskOverlayController
+          segments={maskSegments}
+          previewWidth={containerWidth}
+          previewHeight={containerHeight}
+          videoElement={videoRef.current}
+          videoWidth={videoWidth}
+          videoHeight={videoHeight}
+          cropConfig={cropConfig}
+        />
+
+        <TextOverlayController
+          segments={textSegments}
+          renderWidth={frameRenderWidth}
+          renderHeight={frameRenderHeight}
+          displayWidth={containerWidth}
+          displayHeight={containerHeight}
+        />
+      </div>
+
+      {frameBorderOverlayStyle && <div ref={borderOverlayRef} style={frameBorderOverlayStyle} />}
+    </div>
+  );
+});
+
+/**
+ * Scene mode aware renderer that shows/hides content based on current scene mode.
+ */
+const DynamicSceneModeRenderer = memo(function DynamicSceneModeRenderer({
+  videoRef,
+  videoSrc,
+  zoomRegions,
+  cursorRecording,
+  cursorConfig,
+  webcamVideoPath,
+  webcamConfig,
+  sceneSegments,
+  defaultSceneMode,
+  containerWidth,
+  containerHeight,
+  frameRenderWidth,
+  frameRenderHeight,
+  compositionRenderHeight,
+  videoWidth,
+  videoHeight,
+  maskSegments,
+  textSegments,
+  isPlaying,
+  onVideoClick,
+  backgroundPadding = 0,
+  rounding = 0,
+  frameStyle,
+  frameBorderOverlayStyle,
+  shadowStyle,
+  cropConfig,
+}: SceneModeRendererProps) {
   const currentTimeMs = usePreviewOrPlaybackTime();
   const toSourceTime = useTimelineToSourceTime();
   const scene = useInterpolatedScene(sceneSegments, defaultSceneMode, currentTimeMs);
@@ -108,11 +478,6 @@ const SceneModeRenderer = memo(function SceneModeRenderer({
   const cameraOnlyOpacity = getCameraOnlyTransitionOpacity(scene);
 
   const originalVideoPath = useVideoEditorStore(selectScreenVideoPath);
-
-  // Diagnostic: log scene mode renderer state
-  useEffect(() => {
-    console.warn('[EDITOR-DIAG] SceneModeRenderer mounted, videoSrc:', !!videoSrc, 'originalVideoPath:', originalVideoPath, 'isPlaying:', isPlaying);
-  }, [videoSrc, originalVideoPath, isPlaying]);
 
   const zoomStyle = useZoomPreview(zoomRegions, currentTimeMs, cursorRecording, {
     backgroundPadding,
@@ -302,6 +667,20 @@ const SceneModeRenderer = memo(function SceneModeRenderer({
   );
 });
 
+const SceneModeRenderer = memo(function SceneModeRenderer(props: SceneModeRendererProps) {
+  const hasSceneModeFeatures = Boolean(
+    props.webcamVideoPath ||
+    props.cursorRecording ||
+    (props.sceneSegments?.length ?? 0) > 0
+  );
+
+  if (!hasSceneModeFeatures) {
+    return <StaticSceneModeRenderer {...props} />;
+  }
+
+  return <DynamicSceneModeRenderer {...props} />;
+});
+
 /**
  * Main video preview component.
  * Optimized to minimize re-renders during playback.
@@ -323,34 +702,14 @@ export function GPUVideoPreview({ isActive = true }: GPUVideoPreviewProps) {
   const [previewAreaSize, setPreviewAreaSize] = useState({ width: 0, height: 0 });
   const [wallpaperUrl, setWallpaperUrl] = useState<string | null>(null);
 
-  // Diagnostic: log when GPUVideoPreview mounts
-  useEffect(() => {
-    console.warn('[EDITOR-DIAG] GPUVideoPreview mounted, isActive:', isActive);
-    return () => console.warn('[EDITOR-DIAG] GPUVideoPreview unmounted');
-  }, [isActive]);
-
-
   // Use selectors for stable subscriptions
   const project = useVideoEditorStore(selectProject);
   const isPlaying = useVideoEditorStore(selectIsPlaying);
-  const previewTimeMs = useVideoEditorStore(selectPreviewTimeMs);
-  const currentTimeMs = useVideoEditorStore(selectCurrentTimeMs);
   const cursorRecording = useVideoEditorStore(selectCursorRecording);
   const audioConfig = useVideoEditorStore(selectAudioConfig);
+  const togglePlayback = useVideoEditorStore(selectTogglePlayback);
   const effectiveIsPlaying = isPlaying && isActive;
-
-  // Get effective time for scene interpolation
-  const effectiveTimeMs = previewTimeMs !== null ? previewTimeMs : currentTimeMs;
-  const effectiveTimeSec = effectiveTimeMs / 1000;
-
-  // Get interpolated scene for webcam overlay opacity
-  const scene = useInterpolatedScene(
-    project?.scene?.segments,
-    project?.scene?.defaultMode ?? 'default',
-    effectiveTimeMs
-  );
-
-  const webcamOverlayOpacity = getRegularCameraTransitionOpacity(scene);
+  const handleVideoError = useCallback((msg: string) => setVideoError(msg || null), []);
 
   // --- Resize tracking with CSS-transform fast path ---
   // Between throttle ticks, scale the composition wrapper via GPU-composited
@@ -432,11 +791,9 @@ export function GPUVideoPreview({ isActive = true }: GPUVideoPreviewProps) {
 
   // Convert file paths to URLs
   const videoSrc = useMemo(() => {
-    const src = project?.sources.screenVideo
+    return project?.sources.screenVideo
       ? convertFileSrc(project.sources.screenVideo)
       : null;
-    console.warn('[EDITOR-DIAG] videoSrc:', src ? 'set' : 'null', 'screenVideo:', project?.sources.screenVideo ?? 'null');
-    return src;
   }, [project?.sources.screenVideo]);
 
   const systemAudioSrc = useMemo(() => {
@@ -456,11 +813,6 @@ export function GPUVideoPreview({ isActive = true }: GPUVideoPreviewProps) {
   }, [project?.sources.microphoneAudio]);
 
   const typewriterAudioSrc = TEXT_ANIMATION.TYPEWRITER_SOUND_LOOP_PATH;
-  const shouldPlayTypewriterAudio = useMemo(
-    () => hasActiveTypewriterSound(project?.text?.segments, effectiveTimeSec),
-    [project?.text?.segments, effectiveTimeSec]
-  );
-
   // Get aspect ratio from project
   const aspectRatio = useMemo(() => {
     return project?.sources.originalWidth && project?.sources.originalHeight
@@ -508,8 +860,7 @@ export function GPUVideoPreview({ isActive = true }: GPUVideoPreviewProps) {
   // Sync composite dimensions to ref for the CSS-transform resize fast path
   useEffect(() => {
     compositeRef.current = { width: compositeWidth, height: compositeHeight };
-    console.warn(`[EDITOR-DIAG] compositeSize: ${compositeWidth}x${compositeHeight}, containerSize: ${containerSize.width}x${containerSize.height}, previewAreaSize: ${previewAreaSize.width}x${previewAreaSize.height}`);
-  }, [compositeWidth, compositeHeight, containerSize, previewAreaSize]);
+  }, [compositeWidth, compositeHeight]);
 
   // After React renders with new sizes, clear the CSS transform and record
   // the rendered preview area size so the next transform delta is correct.
@@ -543,57 +894,28 @@ export function GPUVideoPreview({ isActive = true }: GPUVideoPreviewProps) {
     return () => { cancelled = true; };
   }, [backgroundConfig?.bgType, backgroundConfig?.wallpaper]);
 
-  // Use extracted playback sync hook
-  const { handleVideoClick } = usePlaybackSync({
-    videoRef,
-    systemAudioRef,
-    micAudioRef,
-    videoSrc,
-    systemAudioSrc,
-    micAudioSrc,
-    audioConfig,
-    durationMs: project?.timeline.durationMs,
-    isPlaying: effectiveIsPlaying,
-    previewTimeMs,
-    currentTimeMs,
-    onVideoError: useCallback((msg: string) => setVideoError(msg || null), []),
-  });
-
-  useEffect(() => {
-    const audio = typewriterAudioRef.current;
-    if (!audio || !isActive) {
-      return;
-    }
-
-    audio.volume = audioConfig?.systemMuted ? 0 : (audioConfig?.systemVolume ?? 1);
-  }, [audioConfig?.systemMuted, audioConfig?.systemVolume, isActive]);
-
-  useEffect(() => {
-    const audio = typewriterAudioRef.current;
-    if (!audio || !isActive) {
-      return;
-    }
-
-    const shouldPlay = effectiveIsPlaying && shouldPlayTypewriterAudio;
-    if (shouldPlay) {
-      if (audio.paused) {
-        audio.play().catch((error) => {
-          videoEditorLogger.warn('Typewriter audio play failed:', error);
-        });
-      }
-      return;
-    }
-
-    if (!audio.paused) {
-      audio.pause();
-    }
-    if (audio.currentTime !== 0) {
-      audio.currentTime = 0;
-    }
-  }, [effectiveIsPlaying, isActive, shouldPlayTypewriterAudio]);
-
   return (
     <div ref={previewAreaRef} className="flex items-center justify-center h-full bg-[var(--polar-snow)] overflow-hidden">
+      <PlaybackSyncController
+        videoRef={videoRef}
+        systemAudioRef={systemAudioRef}
+        micAudioRef={micAudioRef}
+        videoSrc={videoSrc}
+        systemAudioSrc={systemAudioSrc}
+        micAudioSrc={micAudioSrc}
+        audioConfig={audioConfig}
+        durationMs={project?.timeline.durationMs}
+        isPlaying={effectiveIsPlaying}
+        onVideoError={handleVideoError}
+      />
+      <TypewriterAudioController
+        typewriterAudioRef={typewriterAudioRef}
+        isActive={isActive}
+        isPlaying={effectiveIsPlaying}
+        audioConfig={audioConfig}
+        textSegments={project?.text?.segments}
+      />
+
       {/* Hidden audio elements */}
       {isActive && systemAudioSrc && (
         <audio
@@ -725,7 +1047,7 @@ export function GPUVideoPreview({ isActive = true }: GPUVideoPreviewProps) {
               maskSegments={project?.mask?.segments}
               textSegments={project?.text?.segments}
               isPlaying={effectiveIsPlaying}
-              onVideoClick={handleVideoClick}
+              onVideoClick={togglePlayback}
               backgroundPadding={backgroundConfig?.padding ?? 0}
               rounding={backgroundConfig?.rounding ?? 0}
               frameStyle={frameStyle}
@@ -755,13 +1077,14 @@ export function GPUVideoPreview({ isActive = true }: GPUVideoPreviewProps) {
 
         {/* Webcam overlay */}
         {isActive && project?.sources.webcamVideo && project?.webcam && compositionSize.width > 0 && (
-          <WebcamOverlay
+          <SceneAwareWebcamOverlay
             webcamVideoPath={project.sources.webcamVideo}
             config={project.webcam}
             containerWidth={compositionSize.width}
             containerHeight={compositionSize.height}
             renderWidth={compositeWidth}
-            sceneOpacity={webcamOverlayOpacity}
+            sceneSegments={project.scene?.segments}
+            defaultSceneMode={project.scene?.defaultMode ?? 'default'}
           />
         )}
 

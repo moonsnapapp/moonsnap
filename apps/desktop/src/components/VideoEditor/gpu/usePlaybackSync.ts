@@ -51,6 +51,7 @@ interface PlaybackSyncResult {
 
 // Keep playback smooth without audible "rewind" artifacts from backward seeks.
 const PLAYBACK_AUDIO_RESYNC_THRESHOLD_SEC = 0.5;
+const PLAYBACK_SEEK_START_FALLBACK_MS = 250;
 
 /**
  * Hook for managing playback synchronization between video and audio elements.
@@ -129,7 +130,6 @@ export function usePlaybackSync(options: PlaybackSyncOptions): PlaybackSyncResul
 
     const onLoadedData = () => {
       onVideoError(''); // Clear any previous error
-      console.warn(`[EDITOR-DIAG] Video loadeddata fired: ${video.videoWidth}x${video.videoHeight}, duration=${video.duration}s, hasSeparateAudio=${hasSeparateAudio}`);
       // Mute video if we have separate audio files (editor flow)
       if (hasSeparateAudio) {
         video.volume = 0;
@@ -140,41 +140,14 @@ export function usePlaybackSync(options: PlaybackSyncOptions): PlaybackSyncResul
       }
     };
 
-    // Seek performance monitoring
-    let seekStartTime = 0;
-    const onSeeking = () => {
-      seekStartTime = performance.now();
-    };
-    const onSeeked = () => {
-      const elapsed = performance.now() - seekStartTime;
-      if (elapsed > 100) {
-        console.warn(`[SEEK-PERF] Video seek took ${elapsed.toFixed(0)}ms (target: ${video.currentTime.toFixed(2)}s)`);
-      }
-    };
-
-    const onCanPlay = () => {
-      console.warn(`[EDITOR-DIAG] Video canplay fired: readyState=${video.readyState}, networkState=${video.networkState}`);
-    };
-    const onStalled = () => {
-      console.warn(`[EDITOR-DIAG] Video stalled! readyState=${video.readyState}, networkState=${video.networkState}, currentTime=${video.currentTime}`);
-    };
-
     video.addEventListener('ended', onEnded);
     video.addEventListener('error', onError);
     video.addEventListener('loadeddata', onLoadedData);
-    video.addEventListener('canplay', onCanPlay);
-    video.addEventListener('stalled', onStalled);
-    video.addEventListener('seeking', onSeeking);
-    video.addEventListener('seeked', onSeeked);
 
     return () => {
       video.removeEventListener('ended', onEnded);
       video.removeEventListener('error', onError);
       video.removeEventListener('loadeddata', onLoadedData);
-      video.removeEventListener('canplay', onCanPlay);
-      video.removeEventListener('stalled', onStalled);
-      video.removeEventListener('seeking', onSeeking);
-      video.removeEventListener('seeked', onSeeked);
     };
   }, [controls, audioConfig, hasSeparateAudio, onVideoError, videoRef]);
 
@@ -185,9 +158,16 @@ export function usePlaybackSync(options: PlaybackSyncOptions): PlaybackSyncResul
 
     let cancelled = false;
     let seekedHandler: (() => void) | null = null;
+    let fallbackTimerId: ReturnType<typeof setTimeout> | null = null;
+    let hasStartedPlayback = false;
 
     const startPlayback = () => {
-      if (cancelled) return;
+      if (cancelled || hasStartedPlayback) return;
+      hasStartedPlayback = true;
+      if (fallbackTimerId !== null) {
+        clearTimeout(fallbackTimerId);
+        fallbackTimerId = null;
+      }
       if (video.paused) {
         video.play().catch(e => {
           if (e.name === 'AbortError') return;
@@ -212,6 +192,11 @@ export function usePlaybackSync(options: PlaybackSyncOptions): PlaybackSyncResul
         };
         video.addEventListener('seeked', seekedHandler, { once: true });
         video.currentTime = targetTimeSec;
+        fallbackTimerId = setTimeout(() => {
+          if (!cancelled) {
+            startPlayback();
+          }
+        }, PLAYBACK_SEEK_START_FALLBACK_MS);
 
         // Some browsers apply currentTime immediately and may not dispatch seeked.
         if (Math.abs(video.currentTime - targetTimeSec) <= 0.001) {
@@ -233,6 +218,9 @@ export function usePlaybackSync(options: PlaybackSyncOptions): PlaybackSyncResul
 
     return () => {
       cancelled = true;
+      if (fallbackTimerId !== null) {
+        clearTimeout(fallbackTimerId);
+      }
       if (seekedHandler) {
         video.removeEventListener('seeked', seekedHandler);
       }

@@ -183,10 +183,18 @@ export const WebcamOverlay = memo(function WebcamOverlay({
   const currentTimeMs = usePreviewOrPlaybackTime();
   const isPlaying = useVideoEditorStore(selectIsPlaying);
   const previewTimeMs = useVideoEditorStore(selectPreviewTimeMs);
+  const [shouldInitWebCodecs, setShouldInitWebCodecs] = useState(false);
 
   // WebCodecs preview for instant scrubbing
-  const { getFrame, prefetchAround, isReady: webCodecsReady } = useWebCodecsPreview(webcamVideoPath);
+  const webCodecsVideoPath = shouldInitWebCodecs ? webcamVideoPath : null;
+  const { getFrame, prefetchAround, isReady: webCodecsReady } = useWebCodecsPreview(webCodecsVideoPath);
   const [hasFrame, setHasFrame] = useState(false);
+
+  useEffect(() => {
+    if (!shouldInitWebCodecs && previewTimeMs !== null) {
+      setShouldInitWebCodecs(true);
+    }
+  }, [previewTimeMs, shouldInitWebCodecs]);
 
   // Track native video dimensions for "source" shape
   const [videoDimensions, setVideoDimensions] = useState<{ width: number; height: number } | null>(null);

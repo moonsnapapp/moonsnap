@@ -73,16 +73,11 @@ export function useWebCodecsWorker(
       return;
     }
 
-    const workerInitStart = performance.now();
-    console.time('[EDITOR-INIT] WebCodecs worker ready');
-
     worker.onmessage = (event: MessageEvent<WorkerToMainMessage>) => {
       const msg = event.data;
 
       switch (msg.type) {
         case 'ready':
-          console.timeEnd('[EDITOR-INIT] WebCodecs worker ready');
-          console.log(`[EDITOR-INIT] WebCodecs worker took ${(performance.now() - workerInitStart).toFixed(0)}ms`);
           setState({
             isReady: true,
             error: null,
@@ -95,7 +90,6 @@ export function useWebCodecsWorker(
           break;
 
         case 'init-error':
-          console.timeEnd('[EDITOR-INIT] WebCodecs worker ready');
           setState((s) => ({ ...s, error: msg.error, isReady: false }));
           videoEditorLogger.error('[WebCodecsWorker] Init error:', msg.error);
           break;

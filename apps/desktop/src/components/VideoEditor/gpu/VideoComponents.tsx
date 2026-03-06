@@ -33,17 +33,21 @@ export const WebCodecsCanvasNoZoom = memo(function WebCodecsCanvasNoZoom({
   const lastDrawnTimeRef = useRef<number | null>(null);
   const rafIdRef = useRef<number>(0);
   const [hasFrame, setHasFrame] = useState(false);
+  const [shouldInitDecoder, setShouldInitDecoder] = useState(false);
 
   const previewTimeMs = useVideoEditorStore(selectPreviewTimeMs);
   const isPlaying = useVideoEditorStore(selectIsPlaying);
   const getSourceTime = useTimelineToSourceTime();
-  const { getFrame, prefetchAround, isReady } = useWebCodecsPreview(videoPath);
+  const decoderVideoPath = shouldInitDecoder ? videoPath : null;
+  const { getFrame, prefetchAround, isReady } = useWebCodecsPreview(decoderVideoPath);
 
-  // Diagnostic: log when WebCodecsCanvasNoZoom mounts
+  // Avoid opening a second media pipeline during editor startup.
+  // The decoder is only useful while scrubbing preview frames.
   useEffect(() => {
-    console.warn('[EDITOR-DIAG] WebCodecsCanvasNoZoom mounted, videoPath:', videoPath, 'isReady:', isReady);
-    return () => console.warn('[EDITOR-DIAG] WebCodecsCanvasNoZoom unmounted');
-  }, [videoPath, isReady]);
+    if (!shouldInitDecoder && previewTimeMs !== null) {
+      setShouldInitDecoder(true);
+    }
+  }, [previewTimeMs, shouldInitDecoder]);
 
   // Prefetch frames when preview position changes (use source time).
   // Skip when hovering tracks — only prefetch for ruler scrubbing.

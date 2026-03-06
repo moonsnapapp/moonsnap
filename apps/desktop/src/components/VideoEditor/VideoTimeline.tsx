@@ -67,6 +67,8 @@ const PLAYHEAD_COLOR = 'var(--warning, #F59E0B)';
 const PLAYHEAD_GLOW = 'rgba(245, 158, 11, 0.35)';
 const PLAYHEAD_BORDER = 'rgba(245, 158, 11, 0.55)';
 const CUT_SCRUBBER_COLOR = 'var(--coral-500, #F04438)';
+const HOVER_PREVIEW_MIN_POINTER_DELTA_PX = 2;
+const HOVER_PREVIEW_RESUME_AFTER_RESIZE_MS = TIMING.RESIZE_DEBOUNCE_MS * 2;
 
 /**
  * Preview scrubber - ghost playhead that follows mouse when not playing.
@@ -350,6 +352,9 @@ export function VideoTimeline({ onExport, onResetTrimSegments, onSetInPoint, onS
   const previewRafRef = useRef<number | null>(null);
   const pendingPreviewTimeRef = useRef<number | null>(null);
   const lastPreviewTimeRef = useRef<number | null>(null);
+  const lastHoverPointerRef = useRef<{ x: number; y: number } | null>(null);
+  const hoverPreviewResumeAtRef = useRef<number>(performance.now() + HOVER_PREVIEW_RESUME_AFTER_RESIZE_MS);
+  const hasMeasuredTimelineRef = useRef(false);
   const [containerWidth, setContainerWidth] = useState(0);
 
   // Measure container width and sync to store (debounced to avoid resize lag)
@@ -362,6 +367,17 @@ export function VideoTimeline({ onExport, onResetTrimSegments, onSetInPoint, onS
     const updateWidth = (width: number) => {
       setContainerWidth(width);
       setTimelineContainerWidth(width);
+      hoverPreviewResumeAtRef.current = performance.now() + HOVER_PREVIEW_RESUME_AFTER_RESIZE_MS;
+      if (hasMeasuredTimelineRef.current) {
+        pendingPreviewTimeRef.current = null;
+        lastPreviewTimeRef.current = null;
+        lastHoverPointerRef.current = null;
+        if (useVideoEditorStore.getState().previewTimeMs !== null) {
+          setPreviewTime(null);
+        }
+      } else {
+        hasMeasuredTimelineRef.current = true;
+      }
     };
 
     const observer = new ResizeObserver((entries) => {
@@ -483,6 +499,34 @@ export function VideoTimeline({ onExport, onResetTrimSegments, onSetInPoint, onS
       }
       return;
     }
+
+    if (performance.now() < hoverPreviewResumeAtRef.current) {
+      return;
+    }
+
+    const pointer = { x: e.clientX, y: e.clientY };
+    const lastPointer = lastHoverPointerRef.current;
+    lastHoverPointerRef.current = pointer;
+    const nativeEvent = e.nativeEvent as MouseEvent;
+    const movementMagnitude = Math.max(
+      Math.abs(nativeEvent.movementX ?? 0),
+      Math.abs(nativeEvent.movementY ?? 0)
+    );
+
+    // Ignore the first hover event and any zero-delta event caused by the
+    // timeline mounting underneath a stationary pointer. Those synthetic hover
+    // updates were triggering expensive seeks during editor startup.
+    if (
+      lastPointer === null ||
+      (
+        movementMagnitude < HOVER_PREVIEW_MIN_POINTER_DELTA_PX &&
+        Math.abs(lastPointer.x - pointer.x) < HOVER_PREVIEW_MIN_POINTER_DELTA_PX &&
+        Math.abs(lastPointer.y - pointer.y) < HOVER_PREVIEW_MIN_POINTER_DELTA_PX
+      )
+    ) {
+      return;
+    }
+
     const scrollContainer = scrollRef.current;
     if (!scrollContainer) return;
 
@@ -518,6 +562,7 @@ export function VideoTimeline({ onExport, onResetTrimSegments, onSetInPoint, onS
     }
     pendingPreviewTimeRef.current = null;
     lastPreviewTimeRef.current = null;
+    lastHoverPointerRef.current = null;
     setPreviewTime(null);
   }, [setPreviewTime]);
 
