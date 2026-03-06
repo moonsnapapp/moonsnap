@@ -216,6 +216,9 @@ function ScreenshotPreviewWindow() {
         onMouseLeave={() => setIsHovered(false)}
         style={{
           width: '100%',
+          height: '100%',
+          display: 'flex',
+          flexDirection: 'column' as const,
           background: 'var(--card)',
           borderRadius: 12,
           overflow: 'hidden',
@@ -236,16 +239,20 @@ function ScreenshotPreviewWindow() {
           style={{
             position: 'relative',
             width: '100%',
+            flex: 1,
+            minHeight: 0,
             overflow: 'hidden',
             background: 'var(--polar-snow)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
           }}
         >
           <canvas
             ref={canvasRef}
             style={{
-              width: '100%',
-              height: 'auto',
-              maxHeight: 160,
+              maxWidth: '100%',
+              maxHeight: '100%',
               objectFit: 'contain',
               display: 'block',
             }}
