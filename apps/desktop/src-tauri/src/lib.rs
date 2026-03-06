@@ -80,7 +80,9 @@ pub fn run() {
             // Show the startup toolbar (or bring it to front if already visible)
             let app_handle = app.clone();
             tauri::async_runtime::spawn(async move {
-                if let Err(e) = commands::window::toolbar::show_startup_toolbar(app_handle).await {
+                if let Err(e) =
+                    commands::window::toolbar::show_startup_toolbar(app_handle, None, None).await
+                {
                     log::error!("Failed to show startup toolbar on second instance: {}", e);
                 }
             });
@@ -179,7 +181,9 @@ pub fn run() {
             // Show floating startup toolbar on app launch
             let app_handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
-                if let Err(e) = commands::window::toolbar::show_startup_toolbar(app_handle).await {
+                if let Err(e) =
+                    commands::window::toolbar::show_startup_toolbar(app_handle, None, None).await
+                {
                     log::error!("Failed to show startup toolbar: {}", e);
                 }
             });

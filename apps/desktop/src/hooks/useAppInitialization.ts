@@ -21,12 +21,18 @@ import { createErrorHandler } from '../utils/errorReporting';
 import { settingsLogger } from '../utils/logger';
 
 interface UseAppInitializationProps {
+  /** Handler for opening the capture toolbar shortcut */
+  openCaptureToolbar: () => Promise<void>;
   /** Handler for new capture shortcut */
   triggerNewCapture: () => Promise<void>;
   /** Handler for fullscreen capture shortcut */
   triggerFullscreenCapture: () => Promise<void>;
   /** Handler for all monitors capture shortcut */
   triggerAllMonitorsCapture: () => Promise<void>;
+  /** Handler for video recording shortcut */
+  triggerVideoCapture: () => Promise<void>;
+  /** Handler for GIF recording shortcut */
+  triggerGifCapture: () => Promise<void>;
 }
 
 /**
@@ -34,9 +40,12 @@ interface UseAppInitializationProps {
  * Must be called once at the app root level.
  */
 export function useAppInitialization({
+  openCaptureToolbar,
   triggerNewCapture,
   triggerFullscreenCapture,
   triggerAllMonitorsCapture,
+  triggerVideoCapture,
+  triggerGifCapture,
 }: UseAppInitializationProps) {
   const { loadCaptures, restoreEditorSession } = useCaptureStore();
 
@@ -67,9 +76,12 @@ export function useAppInitialization({
   // Initialize settings and register shortcuts (non-blocking)
   useEffect(() => {
     // Set up shortcut handlers IMMEDIATELY (synchronous, no blocking)
+    setShortcutHandler('open_capture_toolbar', openCaptureToolbar);
     setShortcutHandler('new_capture', triggerNewCapture);
     setShortcutHandler('fullscreen_capture', triggerFullscreenCapture);
     setShortcutHandler('all_monitors_capture', triggerAllMonitorsCapture);
+    setShortcutHandler('record_video', triggerVideoCapture);
+    setShortcutHandler('record_gif', triggerGifCapture);
 
     // Defer heavy initialization to after first paint for responsive UI
     const initSettings = async () => {
@@ -96,7 +108,14 @@ export function useAppInitialization({
     } else {
       setTimeout(initSettings, 0);
     }
-  }, [triggerNewCapture, triggerFullscreenCapture, triggerAllMonitorsCapture]);
+  }, [
+    openCaptureToolbar,
+    triggerNewCapture,
+    triggerFullscreenCapture,
+    triggerAllMonitorsCapture,
+    triggerVideoCapture,
+    triggerGifCapture,
+  ]);
 
   // Sync recording state with backend on window focus
   // This handles edge cases where frontend/backend state may drift

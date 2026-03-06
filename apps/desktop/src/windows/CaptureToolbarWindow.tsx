@@ -13,7 +13,7 @@
  * - useWebcamCoordination: Webcam preview lifecycle
  */
 
-import React, { useEffect, useState, useCallback, useRef } from 'react';
+import React, { useEffect, useCallback, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { emit, listen, once } from '@tauri-apps/api/event';
 import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
@@ -21,7 +21,10 @@ import { Toaster } from 'sonner';
 import { Titlebar } from '../components/Titlebar/Titlebar';
 import { CaptureToolbar } from '../components/CaptureToolbar/CaptureToolbar';
 import type { CaptureSource } from '../components/CaptureToolbar/SourceSelector';
-import { useCaptureSettingsStore } from '../stores/captureSettingsStore';
+import {
+  useCaptureSettingsStore,
+  type CaptureSourceMode,
+} from '../stores/captureSettingsStore';
 import { useWebcamSettingsStore } from '../stores/webcamSettingsStore';
 import { useSettingsStore } from '../stores/settingsStore';
 import { useTheme } from '../hooks/useTheme';
@@ -29,7 +32,13 @@ import { useRecordingEvents } from '../hooks/useRecordingEvents';
 import { useSelectionEvents } from '../hooks/useSelectionEvents';
 import { useWebcamCoordination } from '../hooks/useWebcamCoordination';
 import { useToolbarPositioning } from '../hooks/useToolbarPositioning';
+import type { CaptureType } from '../types';
 import { toolbarLogger } from '../utils/logger';
+
+interface StartupToolbarContext {
+  captureType?: CaptureType;
+  sourceMode?: CaptureSourceMode;
+}
 
 const CaptureToolbarWindow: React.FC = () => {
   // No URL params - toolbar always starts in "startup" state (no selection)
@@ -47,16 +56,15 @@ const CaptureToolbarWindow: React.FC = () => {
   const {
     settings,
     activeMode: captureType,
+    sourceMode: captureSource,
     isInitialized,
     loadSettings,
     setActiveMode: setCaptureType,
+    setSourceMode: setCaptureSource,
   } = useCaptureSettingsStore();
 
   // Webcam settings
   const { settings: webcamSettings } = useWebcamSettingsStore();
-
-  // UI state
-  const [captureSource, setCaptureSource] = useState<CaptureSource>('area');
 
   // Load settings on mount
   useEffect(() => {
@@ -100,6 +108,8 @@ const CaptureToolbarWindow: React.FC = () => {
     countdownSeconds,
     recordingInitiatedRef,
   } = useRecordingEvents();
+
+  const pendingStartupContextRef = useRef<StartupToolbarContext | null>(null);
 
   // Selection bounds tracking
   const {
@@ -421,7 +431,7 @@ const CaptureToolbarWindow: React.FC = () => {
         await currentWindow.show();
       }
     }
-  }, [selectionConfirmed, captureType]);
+  }, [selectionConfirmed, captureType, setCaptureSource]);
 
   const handleOpenSettings = useCallback(() => {
     useSettingsStore.getState().openSettingsModal();
@@ -439,6 +449,42 @@ const CaptureToolbarWindow: React.FC = () => {
       setCaptureType(newMode);
     }
   }, [mode, setCaptureType]);
+
+  const applyStartupToolbarContext = useCallback((context: StartupToolbarContext) => {
+    if (mode !== 'selection') return;
+
+    if (context.captureType) {
+      setCaptureType(context.captureType);
+    }
+
+    if (context.sourceMode) {
+      setCaptureSource(context.sourceMode);
+    }
+  }, [mode, setCaptureSource, setCaptureType]);
+
+  useEffect(() => {
+    const unlisten = listen<StartupToolbarContext>('startup-toolbar-context', (event) => {
+      if (!isInitialized) {
+        pendingStartupContextRef.current = event.payload;
+        return;
+      }
+
+      applyStartupToolbarContext(event.payload);
+    });
+
+    return () => {
+      unlisten.then((fn) => fn()).catch(() => {});
+    };
+  }, [applyStartupToolbarContext, isInitialized]);
+
+  useEffect(() => {
+    if (!isInitialized || !pendingStartupContextRef.current) {
+      return;
+    }
+
+    applyStartupToolbarContext(pendingStartupContextRef.current);
+    pendingStartupContextRef.current = null;
+  }, [applyStartupToolbarContext, isInitialized]);
 
   const handleTitlebarClose = useCallback(async () => {
     // Cancel overlay when toolbar is closed

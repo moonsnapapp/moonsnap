@@ -328,10 +328,19 @@ export interface AppSettings {
 
 // Default shortcut configurations
 export const DEFAULT_SHORTCUTS: Record<string, ShortcutConfig> = {
+  open_capture_toolbar: {
+    id: 'open_capture_toolbar',
+    name: 'Open Capture Toolbar',
+    description: 'Open the floating capture launcher',
+    defaultShortcut: 'Ctrl+Shift+Space',
+    currentShortcut: 'Ctrl+Shift+Space',
+    status: 'pending',
+    useHook: true,
+  },
   new_capture: {
     id: 'new_capture',
-    name: 'New Capture',
-    description: 'Capture a window or region of the screen',
+    name: 'New Screenshot',
+    description: 'Start an area screenshot flow',
     defaultShortcut: 'PrintScreen',
     currentShortcut: 'PrintScreen',
     status: 'pending',
@@ -339,8 +348,8 @@ export const DEFAULT_SHORTCUTS: Record<string, ShortcutConfig> = {
   },
   fullscreen_capture: {
     id: 'fullscreen_capture',
-    name: 'Fullscreen Capture',
-    description: 'Capture the current monitor',
+    name: 'Current Display',
+    description: 'Capture the current display',
     defaultShortcut: 'Shift+PrintScreen',
     currentShortcut: 'Shift+PrintScreen',
     status: 'pending',
@@ -348,10 +357,28 @@ export const DEFAULT_SHORTCUTS: Record<string, ShortcutConfig> = {
   },
   all_monitors_capture: {
     id: 'all_monitors_capture',
-    name: 'All Monitors',
-    description: 'Capture all monitors combined',
+    name: 'All Displays',
+    description: 'Capture all displays combined',
     defaultShortcut: 'Ctrl+PrintScreen',
     currentShortcut: 'Ctrl+PrintScreen',
+    status: 'pending',
+    useHook: true,
+  },
+  record_video: {
+    id: 'record_video',
+    name: 'Record Video…',
+    description: 'Open the capture toolbar in Video mode',
+    defaultShortcut: 'Ctrl+Alt+R',
+    currentShortcut: 'Ctrl+Alt+R',
+    status: 'pending',
+    useHook: true,
+  },
+  record_gif: {
+    id: 'record_gif',
+    name: 'Record GIF…',
+    description: 'Open the capture toolbar in GIF mode',
+    defaultShortcut: 'Ctrl+Alt+G',
+    currentShortcut: 'Ctrl+Alt+G',
     status: 'pending',
     useHook: true,
   },

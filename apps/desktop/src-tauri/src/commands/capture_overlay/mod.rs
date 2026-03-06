@@ -585,7 +585,9 @@ fn run_overlay(
 
             let app_handle = state.app_handle.clone();
             tauri::async_runtime::spawn(async move {
-                if let Err(e) = crate::commands::window::show_startup_toolbar(app_handle).await {
+                if let Err(e) =
+                    crate::commands::window::show_startup_toolbar(app_handle, None, None).await
+                {
                     log::error!("Failed to show startup toolbar after cancel: {}", e);
                 }
             });

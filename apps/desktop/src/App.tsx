@@ -34,13 +34,23 @@ function App() {
   const [showShortcuts, setShowShortcuts] = useState(false);
 
   // Capture actions for shortcuts
-  const { triggerNewCapture, triggerFullscreenCapture, triggerAllMonitorsCapture } = useCaptureActions();
-
-  // App initialization (settings, shortcuts, cleanup)
-  useAppInitialization({
+  const {
+    openCaptureToolbar,
     triggerNewCapture,
     triggerFullscreenCapture,
     triggerAllMonitorsCapture,
+    triggerVideoCapture,
+    triggerGifCapture,
+  } = useCaptureActions();
+
+  // App initialization (settings, shortcuts, cleanup)
+  useAppInitialization({
+    openCaptureToolbar,
+    triggerNewCapture,
+    triggerFullscreenCapture,
+    triggerAllMonitorsCapture,
+    triggerVideoCapture,
+    triggerGifCapture,
   });
 
   const isGifRecordingPath = useCallback(
@@ -131,8 +141,8 @@ function App() {
 
   // Show capture toolbar window (startup mode)
   const handleShowCaptureToolbar = useCallback(async () => {
-    await invoke('show_startup_toolbar');
-  }, []);
+    await openCaptureToolbar();
+  }, [openCaptureToolbar]);
 
   return (
     <div className="h-screen w-screen flex flex-col bg-[var(--polar-snow)] overflow-hidden">

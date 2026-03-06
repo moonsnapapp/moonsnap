@@ -321,8 +321,36 @@ pub async fn set_capture_toolbar_ignore_cursor(
 /// Show the startup toolbar window (floating, centered on primary monitor).
 /// This is the main toolbar shown on app startup for initiating captures.
 /// Different from capture toolbar which appears during region selection.
+fn emit_startup_toolbar_context(
+    app: &AppHandle,
+    capture_type: Option<String>,
+    source_mode: Option<String>,
+) {
+    if capture_type.is_none() && source_mode.is_none() {
+        return;
+    }
+
+    let app_handle = app.clone();
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
+        if let Some(window) = app_handle.get_webview_window(CAPTURE_TOOLBAR_LABEL) {
+            let _ = window.emit(
+                "startup-toolbar-context",
+                serde_json::json!({
+                    "captureType": capture_type,
+                    "sourceMode": source_mode,
+                }),
+            );
+        }
+    });
+}
+
 #[command]
-pub async fn show_startup_toolbar(app: AppHandle) -> Result<(), String> {
+pub async fn show_startup_toolbar(
+    app: AppHandle,
+    capture_type: Option<String>,
+    source_mode: Option<String>,
+) -> Result<(), String> {
     // Check if window already exists
     if let Some(window) = app.get_webview_window(CAPTURE_TOOLBAR_LABEL) {
         log::debug!("[show_startup_toolbar] Window already exists, bringing to front");
@@ -362,6 +390,7 @@ pub async fn show_startup_toolbar(app: AppHandle) -> Result<(), String> {
         window
             .set_focus()
             .map_err(|e| format!("Failed to focus toolbar: {}", e))?;
+        emit_startup_toolbar_context(&app, capture_type, source_mode);
         return Ok(());
     }
 
@@ -426,6 +455,8 @@ pub async fn show_startup_toolbar(app: AppHandle) -> Result<(), String> {
     window
         .set_focus()
         .map_err(|e| format!("Failed to focus toolbar: {}", e))?;
+
+    emit_startup_toolbar_context(&app, capture_type, source_mode);
 
     log::info!("[show_startup_toolbar] Toolbar ready");
 

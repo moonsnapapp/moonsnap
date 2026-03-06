@@ -1,5 +1,5 @@
 import React, { useCallback } from 'react';
-import { Scan, Monitor, ScreenShare, Check, AlertTriangle } from 'lucide-react';
+import { Scan, Monitor, ScreenShare, Check, AlertTriangle, Video, Film } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { ShortcutInput } from './ShortcutInput';
@@ -8,9 +8,12 @@ import { updateShortcut, hasInternalConflict, setAllowOverride } from '@/utils/h
 import type { ShortcutConfig } from '@/types';
 
 const SHORTCUT_ICONS: Record<string, React.ReactNode> = {
+  open_capture_toolbar: <Scan className="w-5 h-5" />,
   new_capture: <Scan className="w-5 h-5" />,
   fullscreen_capture: <Monitor className="w-5 h-5" />,
   all_monitors_capture: <ScreenShare className="w-5 h-5" />,
+  record_video: <Video className="w-5 h-5" />,
+  record_gif: <Film className="w-5 h-5" />,
 };
 
 interface ShortcutItemProps {

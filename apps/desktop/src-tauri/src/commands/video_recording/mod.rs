@@ -1463,6 +1463,20 @@ pub fn emit_state_change(app: &AppHandle, state: &RecordingState) {
     if let Ok(json) = serde_json::to_string(state) {
         log::debug!("[EMIT] recording-state-changed: {}", json);
     }
+
+    #[cfg(desktop)]
+    {
+        if let Ok(tray_state) = app.state::<Mutex<crate::TrayState>>().lock() {
+            let format = RECORDING_CONTROLLER.lock().ok().and_then(|controller| {
+                controller.settings.as_ref().map(|settings| settings.format)
+            });
+
+            if let Err(error) = tray_state.update_recording_state(state, format) {
+                log::warn!("Failed to update tray recording state: {}", error);
+            }
+        }
+    }
+
     let _ = app.emit("recording-state-changed", state);
 }
 // ============================================================================

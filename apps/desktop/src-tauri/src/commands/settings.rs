@@ -21,6 +21,9 @@ pub fn update_tray_shortcut(
             .map_err(|e| format!("Failed to lock tray state: {}", e))?;
 
         match shortcut_id.as_str() {
+            "open_capture_toolbar" => tray
+                .update_open_capture_toolbar_text(&display_text)
+                .map_err(|e| format!("Failed to update capture toolbar text: {}", e))?,
             "new_capture" => tray
                 .update_new_capture_text(&display_text)
                 .map_err(|e| format!("Failed to update new capture text: {}", e))?,
@@ -30,6 +33,12 @@ pub fn update_tray_shortcut(
             "all_monitors_capture" => tray
                 .update_all_monitors_text(&display_text)
                 .map_err(|e| format!("Failed to update all monitors text: {}", e))?,
+            "record_video" => tray
+                .update_record_video_text(&display_text)
+                .map_err(|e| format!("Failed to update record video text: {}", e))?,
+            "record_gif" => tray
+                .update_record_gif_text(&display_text)
+                .map_err(|e| format!("Failed to update record GIF text: {}", e))?,
             _ => {}, // Ignore unknown shortcut IDs
         }
     }
