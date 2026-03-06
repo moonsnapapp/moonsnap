@@ -209,8 +209,8 @@ export const useShapeDrawing = ({
 
       const pos = getCanvasPosition(screenPos);
 
-      // Move and select tools don't draw
-      if (selectedTool === 'move' || selectedTool === 'select') return false;
+      // Select tool doesn't draw
+      if (selectedTool === 'select') return false;
 
       // Click-to-place tools
       if (selectedTool === 'steps') {

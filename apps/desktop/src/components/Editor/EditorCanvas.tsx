@@ -344,7 +344,7 @@ export const EditorCanvas = React.memo(forwardRef<EditorCanvasRef, EditorCanvasP
     renderedPositionRef: navigation.renderedPositionRef,
     renderedZoomRef: navigation.renderedZoomRef,
     transformCoeffsRef: navigation.transformCoeffsRef,
-    leftClickPan: selectedTool === 'move',
+    leftClickPan: false,
   });
 
   // Text editing hook
@@ -673,7 +673,7 @@ export const EditorCanvas = React.memo(forwardRef<EditorCanvasRef, EditorCanvasP
       }
 
       // Drawing move (also handles pending → drawing transition on drag threshold)
-      if (drawing.isDrawing || (selectedTool !== 'move' && selectedTool !== 'select' && selectedTool !== 'crop' && selectedTool !== 'background')) {
+      if (drawing.isDrawing || (selectedTool !== 'select' && selectedTool !== 'crop' && selectedTool !== 'background')) {
         drawing.handleDrawingMouseMove(pos);
         return;
       }
@@ -919,13 +919,13 @@ export const EditorCanvas = React.memo(forwardRef<EditorCanvasRef, EditorCanvasP
     <div
       ref={navigation.containerRef}
       className={`h-full w-full overflow-hidden relative${
-        selectedTool !== 'move' && selectedTool !== 'select' && selectedTool !== 'crop' && selectedTool !== 'background'
+        selectedTool !== 'select' && selectedTool !== 'crop' && selectedTool !== 'background'
           ? ' drawing-tool-active'
           : ''
       }`}
       style={{
         backgroundColor: 'var(--polar-mist)',
-        cursor: pan.isPanning ? 'grabbing' : selectedTool === 'move' ? 'grab' : undefined,
+        cursor: pan.isPanning ? 'grabbing' : undefined,
       }}
       onMouseDown={pan.handleMiddleMouseDown}
       onMouseMove={pan.handleMiddleMouseMove}
@@ -1417,7 +1417,7 @@ export const EditorCanvas = React.memo(forwardRef<EditorCanvasRef, EditorCanvasP
             isModified={artboardModified}
             onCancel={() => {
               // Just exit crop mode — retain the current crop as-is
-              onToolChange('move');
+              onToolChange('select');
             }}
             onReset={() => {
               if (minCropResetBounds && canvasBounds) {
@@ -1444,7 +1444,7 @@ export const EditorCanvas = React.memo(forwardRef<EditorCanvasRef, EditorCanvasP
               setCropUserExpanded(false);
             }}
             onCommit={() => {
-              onToolChange('move');
+              onToolChange('select');
               // Explicitly fit after crop commit (the useEffect also fires, but this
               // ensures the rAF runs after React has processed the tool change).
               navigation.handleFitToSize();

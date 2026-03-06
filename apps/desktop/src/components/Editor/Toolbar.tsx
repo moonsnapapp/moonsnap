@@ -1,6 +1,5 @@
 import {
   MousePointer2,
-  Hand,
   MoveUpRight,
   Minus,
   Square,
@@ -59,7 +58,6 @@ interface ToolbarProps {
 const PRO_TOOLS: Set<Tool> = new Set(['blur', 'background']);
 
 const toolDefs: { id: Tool; Icon: typeof MousePointer2; label: string; shortcut: string }[] = [
-  { id: 'move', Icon: Hand, label: 'Move', shortcut: 'M' },
   { id: 'select', Icon: MousePointer2, label: 'Select', shortcut: 'V' },
   { id: 'crop', Icon: Crop, label: 'Crop/Expand', shortcut: 'C' },
   { id: 'arrow', Icon: MoveUpRight, label: 'Arrow', shortcut: 'A' },

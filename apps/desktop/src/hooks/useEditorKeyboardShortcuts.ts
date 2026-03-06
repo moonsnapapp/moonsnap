@@ -6,7 +6,6 @@ import { isTextInputTarget } from '../utils/keyboard';
  * Tool shortcuts mapping (single keys, no modifiers)
  */
 const TOOL_SHORTCUTS: Record<string, Tool> = {
-  m: 'move',
   v: 'select',
   c: 'crop',
   a: 'arrow',
@@ -128,13 +127,20 @@ export const useEditorKeyboardShortcuts = ({
         return;
       }
 
+      // Shift+G: Quick toggle compositor on/off without switching tool
+      if (e.key === 'G' && e.shiftKey) {
+        e.preventDefault();
+        onToggleCompositor();
+        return;
+      }
+
       // G: Toggle background tool and compositor
       if (e.key.toLowerCase() === 'g') {
         e.preventDefault();
         // If already on background tool, toggle the effect off and switch to select
         if (selectedTool === 'background') {
           onToggleCompositor();
-          onToolChange('move');
+          onToolChange('select');
         } else {
           // Switch to background tool and enable effect
           onToolChange('background');
@@ -152,7 +158,7 @@ export const useEditorKeyboardShortcuts = ({
         return;
       }
 
-      // Escape: deselect shapes first, then switch to move tool
+      // Escape: deselect shapes first, then switch to select tool
       if (e.key === 'Escape') {
         e.preventDefault();
         // Priority 1: Deselect shapes if any are selected
@@ -160,9 +166,9 @@ export const useEditorKeyboardShortcuts = ({
           onDeselect();
           return;
         }
-        // Priority 2: Switch to move tool if on different tool
-        if (selectedTool !== 'move') {
-          onToolChange('move');
+        // Priority 2: Switch to select tool if on different tool
+        if (selectedTool !== 'select') {
+          onToolChange('select');
           return;
         }
         return;
