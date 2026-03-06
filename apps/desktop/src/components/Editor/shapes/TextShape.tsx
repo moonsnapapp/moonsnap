@@ -105,6 +105,21 @@ export const TextShape: React.FC<TextShapeProps> = React.memo(({
         perfectDrawEnabled={false}
       />
 
+      {/* Text background fill */}
+      {shape.textBackground && shape.textBackground !== 'transparent' && (
+        <Rect
+          name="text-background"
+          x={0}
+          y={0}
+          width={width}
+          height={height}
+          fill={shape.textBackground}
+          cornerRadius={4}
+          listening={false}
+          perfectDrawEnabled={false}
+        />
+      )}
+
       {/* Bounding box border - always rendered, visibility toggled to avoid
           expensive Konva node mount/unmount on every select/deselect */}
       <Rect

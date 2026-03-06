@@ -105,6 +105,7 @@ export const TextToolSettings: React.FC<TextToolSettingsProps> = ({
   const currentTextStroke = textShape?.stroke || 'transparent';
   const currentTextStrokeWidth = textShape?.strokeWidth || 0;
   const currentVerticalAlign = normalizeEditorTextVerticalAlign(textShape?.verticalAlign);
+  const currentTextBackground = textShape?.textBackground || 'transparent';
 
   const isBold = isEditorTextStyleBold(currentFontStyle);
   const isItalic = isEditorTextStyleItalic(currentFontStyle);
@@ -339,6 +340,22 @@ export const TextToolSettings: React.FC<TextToolSettingsProps> = ({
             Bottom
           </button>
         </div>
+      </div>
+
+      {/* Text Background Color */}
+      <Separator className="bg-[var(--polar-frost)]" />
+      <div className="space-y-3">
+        <Label className="text-xs text-[var(--ink-muted)] uppercase tracking-wide font-medium">Background Color</Label>
+        <ColorPicker
+          value={currentTextBackground === 'transparent' ? '#FFFFFF' : currentTextBackground}
+          onChange={(color) => {
+            if (textShape) {
+              recordAction(() => updateShape(textShape.id, { textBackground: color }));
+            }
+          }}
+          presets={COLOR_PRESETS}
+          showTransparent
+        />
       </div>
 
       {/* Text Stroke - show for text tool and selected text shapes */}

@@ -1181,22 +1181,30 @@ export const EditorCanvas = React.memo(forwardRef<EditorCanvasRef, EditorCanvasP
 
                 if (shape.type === 'text') {
                   const group = node as Konva.Group;
-                  const textContent = group.findOne('.text-content');
+                  const { width: liveWidth, height: liveHeight } = getEditorTextResizeDimensions(
+                    shape.width,
+                    shape.height,
+                    scaleX,
+                    scaleY
+                  );
+                  const w = Math.max(EDITOR_TEXT.MIN_BOX_WIDTH, Math.abs(liveWidth));
+                  const h = Math.max(EDITOR_TEXT.MIN_BOX_HEIGHT, Math.abs(liveHeight));
+                  const invSx = scaleX === 0 ? 1 : 1 / scaleX;
+                  const invSy = scaleY === 0 ? 1 : 1 / scaleY;
 
-                  if (textContent) {
-                    const { width: liveWidth, height: liveHeight } = getEditorTextResizeDimensions(
-                      shape.width,
-                      shape.height,
-                      scaleX,
-                      scaleY
-                    );
-
-                    textContent.width(Math.max(EDITOR_TEXT.MIN_BOX_WIDTH, Math.abs(liveWidth)));
-                    textContent.height(Math.max(EDITOR_TEXT.MIN_BOX_HEIGHT, Math.abs(liveHeight)));
-                    textContent.scaleX(scaleX === 0 ? 1 : 1 / scaleX);
-                    textContent.scaleY(scaleY === 0 ? 1 : 1 / scaleY);
-                    textContent.x(0);
-                    textContent.y(0);
+                  // Counter-scale all child rects so they resize without distortion
+                  for (const child of [
+                    group.findOne('.text-content'),
+                    group.findOne('.text-background'),
+                    group.findOne('.text-hit-area'),
+                  ]) {
+                    if (!child) continue;
+                    child.width(w);
+                    child.height(h);
+                    child.scaleX(invSx);
+                    child.scaleY(invSy);
+                    child.x(0);
+                    child.y(0);
                   }
                 } else if (scaleX !== 1 || scaleY !== 1) {
                   // All other shapes: reset scale to 1 and adjust geometry
@@ -1289,30 +1297,21 @@ export const EditorCanvas = React.memo(forwardRef<EditorCanvasRef, EditorCanvasP
                   node.scaleX(1);
                   node.scaleY(1);
 
-                  // Reset child positions
+                  // Reset all child positions/scales to final dimensions
                   if (node instanceof Konva.Group) {
-                    const hitArea = node.findOne('.text-hit-area');
-                    const border = node.findOne('.text-box-border');
-                    const textContent = node.findOne('.text-content');
-                    if (hitArea) {
-                      hitArea.x(0);
-                      hitArea.y(0);
-                      hitArea.width(finalWidth);
-                      hitArea.height(finalHeight);
-                    }
-                    if (border) {
-                      border.x(0);
-                      border.y(0);
-                      border.width(finalWidth);
-                      border.height(finalHeight);
-                    }
-                    if (textContent) {
-                      textContent.x(0);
-                      textContent.y(0);
-                      textContent.width(finalWidth);
-                      textContent.height(finalHeight);
-                      textContent.scaleX(1);
-                      textContent.scaleY(1);
+                    for (const child of [
+                      node.findOne('.text-hit-area'),
+                      node.findOne('.text-box-border'),
+                      node.findOne('.text-background'),
+                      node.findOne('.text-content'),
+                    ]) {
+                      if (!child) continue;
+                      child.x(0);
+                      child.y(0);
+                      child.width(finalWidth);
+                      child.height(finalHeight);
+                      child.scaleX(1);
+                      child.scaleY(1);
                     }
                   }
                   node.x(finalX);

@@ -30,6 +30,7 @@ interface TextareaPosition {
   align: string;
   verticalAlign: string;
   color: string;
+  textBackground: string;
 }
 
 interface UseTextEditingReturn {
@@ -141,6 +142,7 @@ export const useTextEditing = ({
       align: normalizeEditorTextAlign(shape.align),
       verticalAlign: normalizeEditorTextVerticalAlign(shape.verticalAlign),
       color: shape.fill || EDITOR_TEXT.DEFAULT_COLOR,
+      textBackground: shape.textBackground || 'transparent',
     };
   }, [editingTextId, shapes, position, zoom, containerRef]);
 

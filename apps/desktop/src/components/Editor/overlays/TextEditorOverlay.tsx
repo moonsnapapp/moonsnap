@@ -20,6 +20,7 @@ interface TextEditorOverlayProps {
     align: string;
     verticalAlign: string;
     color: string;
+    textBackground: string;
   } | null;
   value: string;
   onChange: (value: string) => void;
@@ -172,7 +173,8 @@ export const TextEditorOverlay: React.FC<TextEditorOverlayProps> = React.memo(({
         border: '1px dashed #3B82F6',
         outline: 'none',
         boxShadow: 'none',
-        background: 'transparent',
+        background: position.textBackground && position.textBackground !== 'transparent' ? position.textBackground : 'transparent',
+        borderRadius: position.textBackground && position.textBackground !== 'transparent' ? '4px' : undefined,
         caretColor: position.color,
       }}
     />

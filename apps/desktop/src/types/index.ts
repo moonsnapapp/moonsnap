@@ -200,6 +200,7 @@ export interface CanvasShape {
   blurType?: BlurType;
   blurAmount?: number;
   imageSrc?: string; // base64 data URL for pasted images
+  textBackground?: string; // Background color for text shapes
   isBackground?: boolean; // true for the original screenshot background shape
   rotation?: number;
   scaleX?: number;

@@ -14,6 +14,7 @@ export const EDITOR_TEXT = {
   DEFAULT_WRAP: 'word',
   DEFAULT_LINE_HEIGHT: 1.2,
   DEFAULT_COLOR: '#000000',
+  DEFAULT_TEXT_BACKGROUND: '#FFFFFF',
 } as const;
 
 export type EditorTextFontToken = 'bold' | 'italic';
@@ -168,6 +169,7 @@ export function createEditorTextShape({
     fill: color,
     stroke: undefined,
     strokeWidth: 0,
+    textBackground: EDITOR_TEXT.DEFAULT_TEXT_BACKGROUND,
   };
 }
 
