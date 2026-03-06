@@ -273,13 +273,21 @@ export function usePlaybackSync(options: PlaybackSyncOptions): PlaybackSyncResul
     }
   }, [isPlaying, getSourceTime, micAudioRef, systemAudioRef]);
 
-  // Seek audio when preview time or current time changes
+  // Seek audio when preview time or current time changes.
+  // Skip seeking when hovering over tracks (hoveredTrack !== null) since that's
+  // just for segment preview indicators — only seek when scrubbing the ruler.
   useEffect(() => {
     const timelineTime = !isPlaying && previewTimeMs !== null ? previewTimeMs : currentTimeMs;
     const sourceTime = getSourceTime(timelineTime);
     const seekTokenChanged = lastSeekTokenRef.current !== lastSeekToken;
     if (seekTokenChanged) {
       lastSeekTokenRef.current = lastSeekToken;
+    }
+
+    // When previewTimeMs is set from track hover (not ruler), skip expensive audio seeking
+    if (!isPlaying && previewTimeMs !== null && !seekTokenChanged) {
+      const hoveredTrack = useVideoEditorStore.getState().hoveredTrack;
+      if (hoveredTrack !== null) return;
     }
 
     const syncAudio = (audio: HTMLAudioElement | null) => {
@@ -328,10 +336,17 @@ export function usePlaybackSync(options: PlaybackSyncOptions): PlaybackSyncResul
     return () => masterAudio.removeEventListener('timeupdate', handleTimeUpdate);
   }, [isPlaying, systemAudioRef, micAudioRef, videoRef]);
 
-  // Seek video when preview time or current time changes
+  // Seek video when preview time or current time changes.
+  // Skip seeking when hovering over tracks — only seek for ruler scrubbing or playhead changes.
   useEffect(() => {
     const video = videoRef.current;
     if (!video || isPlaying) return;
+
+    // When previewTimeMs comes from track hover, skip expensive video seeking
+    if (previewTimeMs !== null) {
+      const hoveredTrack = useVideoEditorStore.getState().hoveredTrack;
+      if (hoveredTrack !== null) return;
+    }
 
     const timelineTime = previewTimeMs !== null ? previewTimeMs : currentTimeMs;
     const sourceTime = getSourceTime(timelineTime);
