@@ -9,7 +9,6 @@ import { useFastImage } from '../../hooks/useFastImage';
 import type { Tool, CanvasShape } from '../../types';
 import { useEditorStore } from '../../stores/editorStore';
 import { useEditorHistory } from '../../hooks/useEditorHistory';
-import { CompositorBackground } from './CompositorBackground';
 import { CompositorCssPreview } from './CompositorCssPreview';
 import { KonvaBackgroundLayer } from './KonvaBackgroundLayer';
 
@@ -1034,15 +1033,9 @@ export const EditorCanvas = React.memo(forwardRef<EditorCanvasRef, EditorCanvasP
                     listening={false}
                   />
                 )}
-                {/* Inner clip background — named for export removal so compositor.ts can detect transparency */}
-                {compositorSettings.enabled && (
-                  <CompositorBackground
-                    name="compositor-bg"
-                    settings={compositorSettings}
-                    bounds={{ x: clipX, y: clipY, width: clipW, height: clipH }}
-                    borderRadius={0}
-                  />
-                )}
+                {/* Inner clip background — only needed when compositor is off (checkerboard above handles it).
+                   When compositor is enabled, the CSS preview div behind the canvas provides the background
+                   seamlessly — transparent Konva pixels let it show through without doubled gradients. */}
                 {/* Render shapes (background image is now the first shape) */}
                 <ShapeRenderer
                   shapes={shapes}

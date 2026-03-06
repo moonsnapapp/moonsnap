@@ -315,8 +315,11 @@ export async function compositeImage(
         tempCtx.clip();
       }
 
-      // Fill with background (for transparent areas)
-      drawBackground(tempCtx, settings, sourceWidth, sourceHeight, backgroundImage);
+      // Fill with background behind content (only when opaque — matches border-radius clip).
+      // When transparent, skip so the composition-wide background shows through seamlessly.
+      if (!transparentEdges) {
+        drawBackground(tempCtx, settings, sourceWidth, sourceHeight, backgroundImage);
+      }
 
       // Draw source content
       tempCtx.drawImage(workingCanvas, 0, 0);
