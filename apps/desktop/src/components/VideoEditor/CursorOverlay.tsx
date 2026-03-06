@@ -8,7 +8,9 @@
  */
 
 import { memo, useRef, useEffect, useState, useCallback, useMemo } from 'react';
+import { CURSOR } from '../../constants';
 import { useCursorInterpolation } from '../../hooks/useCursorInterpolation';
+import { getZoomScaleAt } from '../../hooks/useZoomPreview';
 import { usePreviewOrPlaybackTime } from '../../hooks/usePlaybackEngine';
 import { useTimelineToSourceTime } from '../../hooks/useTimelineSourceTime';
 import { WINDOWS_CURSORS, DEFAULT_CURSOR, type CursorDefinition } from '../../constants/cursors';
@@ -241,7 +243,7 @@ export const CursorOverlay = memo(function CursorOverlay({
   compositionRenderHeight,
   videoWidth,
   videoHeight: actualVideoHeight,
-  zoomRegions: _zoomRegions,
+  zoomRegions,
   backgroundPadding: _backgroundPadding = 0,
   rounding: _rounding = 0,
   cropConfig,
@@ -264,11 +266,20 @@ export const CursorOverlay = memo(function CursorOverlay({
   // This counter is included in render useEffect deps to ensure canvas redraws after SVG load
   const [imageLoadCounter, forceUpdate] = useState(0);
   const triggerUpdate = useCallback(() => forceUpdate((n) => n + 1), []);
+  const currentZoomScale = useMemo(
+    () => getZoomScaleAt(zoomRegions, currentTimeMs),
+    [zoomRegions, currentTimeMs]
+  );
+  const getPreviewZoomScale = useCallback(() => currentZoomScale, [currentZoomScale]);
 
   // Get interpolated cursor data
   const { getCursorAt, hasCursorData, cursorImages } = useCursorInterpolation(
     cursorRecording,
-    cursorConfig?.hideWhenIdle ?? true
+    {
+      hideWhenIdle: cursorConfig?.hideWhenIdle ?? true,
+      dampening: cursorConfig?.dampening ?? CURSOR.DAMPENING_DEFAULT,
+      getZoomScale: currentZoomScale > 1.001 ? getPreviewZoomScale : null,
+    }
   );
 
   // Default cursor shape fallback when shape detection fails.

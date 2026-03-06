@@ -1515,6 +1515,7 @@ fn create_migration_project_json(
             "visible": true,
             "cursorType": "auto",
             "scale": 1.0,
+            "dampening": 0.5,
             "motionBlur": 0.0,
             "clickHighlight": {
                 "enabled": true,

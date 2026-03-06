@@ -152,7 +152,7 @@ fn apply_cpu_compositing(pending: &mut PendingCpuWork, ctx: &CpuCompositeCtx) {
     let Some(cursor_interp) = ctx.cursor_interpolator else {
         return;
     };
-    let cursor = cursor_interp.get_cursor_at(pending.source_time_ms);
+    let cursor = cursor_interp.get_cursor_at(pending.source_time_ms, pending.zoom_state.scale);
     let overlay_ctx = CursorOverlayContext {
         composition_w: ctx.composition_w,
         composition_h: ctx.composition_h,
@@ -653,6 +653,7 @@ pub async fn export_video_gpu(
         // can be ahead/behind encoded frame pacing by up to ~1 frame per cut boundary.
         // Frame-index timing stays locked to what is actually encoded.
         // Use source_time_ms for recorded data (cursor position).
+        let zoom_scale_for_cursor = zoom_interpolator.get_zoom_at(relative_time_ms).scale;
         let frame_scene = build_frame_scene_context(
             relative_time_ms,
             source_time_ms,
@@ -660,7 +661,7 @@ pub async fn export_video_gpu(
             scene_interpolator,
             |source_time_ms| {
                 cpu_ctx.cursor_interpolator.map(|interp| {
-                    let cursor = interp.get_cursor_at(source_time_ms);
+                    let cursor = interp.get_cursor_at(source_time_ms, zoom_scale_for_cursor);
                     (cursor.x as f64, cursor.y as f64)
                 })
             },

@@ -1,11 +1,13 @@
 /**
- * useCursorInterpolation - Raw cursor interpolation for video preview/export parity.
+ * useCursorInterpolation - Cursor interpolation for preview playback.
  *
- * Smooth movement has been removed. Cursor position is interpolated linearly
- * between recorded move events.
+ * Base sampling remains raw linear interpolation between recorded move events.
+ * Preview callers can optionally enable zoom-adaptive smoothing so abrupt
+ * cursor jumps feel less harsh when the frame is magnified.
  */
 
 import { useMemo, useCallback } from 'react';
+import { CURSOR } from '../constants';
 import type { CursorRecording, CursorEvent } from '../types';
 
 interface XY {
@@ -35,9 +37,42 @@ const CURSOR_IDLE_FADE_DURATION_MS = 300;
 // Normalized units: 0.0015 ~= ~3px at 1920px width.
 const CURSOR_ACTIVITY_MOVE_DEADZONE = 0.0015;
 const CURSOR_ACTIVITY_MOVE_DEADZONE_SQ = CURSOR_ACTIVITY_MOVE_DEADZONE * CURSOR_ACTIVITY_MOVE_DEADZONE;
+const CURSOR_SMOOTHING_MIN_ZOOM = 1.15;
+const CURSOR_SMOOTHING_MAX_ZOOM = 2.0;
+const CURSOR_SMOOTHING_MAX_WINDOW_MS = 72;
+const CURSOR_SMOOTHING_MIN_WINDOW_MS = 12;
+const CURSOR_SMOOTHING_OVERDRIVE_WINDOW_MS = 56;
+const CURSOR_SMOOTHING_SAMPLE_OFFSETS = [-1, -0.5, 0, 0.5, 1] as const;
+const CURSOR_SMOOTHING_SAMPLE_WEIGHTS = [0.12, 0.2, 0.36, 0.2, 0.12] as const;
+const CURSOR_SMOOTHING_VELOCITY_DELTA_RATIO = 0.35;
+const CURSOR_SMOOTHING_MIN_VELOCITY_DELTA_MS = 8;
+const CURSOR_CATCHUP_RESPONSE_START = 0.0025;
+const CURSOR_CATCHUP_RESPONSE_END = 0.045;
+const CURSOR_CATCHUP_BASE_STRENGTH = 0.3;
+const CURSOR_CATCHUP_OVERDRIVE_STRENGTH = 0.18;
+
+export interface CursorInterpolationOptions {
+  hideWhenIdle?: boolean;
+  /** Cursor smoothing amount (0 = linear, 1 = fully smooth). */
+  dampening?: number;
+  /**
+   * Returns the active preview zoom scale for the current frame.
+   * When scale > 1, cursor motion is progressively smoothed to avoid
+   * amplified shake in high-zoom playback.
+   */
+  getZoomScale?: ((timeMs: number) => number | null | undefined) | null;
+}
 
 function getCursorClickScale(_events: CursorEvent[], _timeMs: number): number {
   return 1.0;
+}
+
+function smoothstep(low: number, high: number, value: number): number {
+  if (high <= low) {
+    return value >= high ? 1 : 0;
+  }
+  const t = Math.max(0, Math.min(1, (value - low) / (high - low)));
+  return t * t * (3 - 2 * t);
 }
 
 function isCursorActivityEvent(event: CursorEvent): boolean {
@@ -145,17 +180,16 @@ function getSegmentVelocity(curr: CursorEvent, next: CursorEvent): XY {
   };
 }
 
-function interpolateRawAtTime(
-  moveEvents: CursorEvent[],
-  originalEvents: CursorEvent[],
-  timeMs: number,
-  cursorId: string | null,
-  opacity: number
-): InterpolatedCursor {
-  const scale = getCursorClickScale(originalEvents, timeMs);
+interface RawCursorMotion {
+  x: number;
+  y: number;
+  velocityX: number;
+  velocityY: number;
+}
 
+function sampleRawCursorMotionAtTime(moveEvents: CursorEvent[], timeMs: number): RawCursorMotion {
   if (moveEvents.length === 0) {
-    return { x: 0.5, y: 0.5, velocityX: 0, velocityY: 0, cursorId, opacity, scale };
+    return { x: 0.5, y: 0.5, velocityX: 0, velocityY: 0 };
   }
 
   if (timeMs <= moveEvents[0].timestampMs) {
@@ -166,9 +200,6 @@ function interpolateRawAtTime(
       y: moveEvents[0].y,
       velocityX: velocity.x,
       velocityY: velocity.y,
-      cursorId,
-      opacity,
-      scale,
     };
   }
 
@@ -181,9 +212,6 @@ function interpolateRawAtTime(
       y: last.y,
       velocityX: velocity.x,
       velocityY: velocity.y,
-      cursorId,
-      opacity,
-      scale,
     };
   }
 
@@ -199,9 +227,6 @@ function interpolateRawAtTime(
       y: curr.y + (next.y - curr.y) * t,
       velocityX: velocity.x,
       velocityY: velocity.y,
-      cursorId,
-      opacity,
-      scale,
     };
   }
 
@@ -210,6 +235,138 @@ function interpolateRawAtTime(
     y: last.y,
     velocityX: 0,
     velocityY: 0,
+  };
+}
+
+function getAdaptiveSmoothingStrength(
+  getZoomScale: CursorInterpolationOptions['getZoomScale'],
+  dampening: number,
+  timeMs: number
+): number {
+  if (!getZoomScale || dampening <= 0) {
+    return 0;
+  }
+
+  const zoomScale = getZoomScale(timeMs) ?? 1;
+  if (!Number.isFinite(zoomScale) || zoomScale <= CURSOR_SMOOTHING_MIN_ZOOM) {
+    return 0;
+  }
+
+  const zoomFactor = smoothstep(CURSOR_SMOOTHING_MIN_ZOOM, CURSOR_SMOOTHING_MAX_ZOOM, zoomScale);
+  const baseDampening = Math.min(1, dampening);
+  return zoomFactor * baseDampening;
+}
+
+function getAdaptiveSmoothingWindowMs(
+  getZoomScale: CursorInterpolationOptions['getZoomScale'],
+  dampening: number,
+  timeMs: number
+): number {
+  if (!getZoomScale || dampening <= 0) {
+    return CURSOR_SMOOTHING_MIN_WINDOW_MS;
+  }
+
+  const zoomScale = getZoomScale(timeMs) ?? 1;
+  if (!Number.isFinite(zoomScale) || zoomScale <= CURSOR_SMOOTHING_MIN_ZOOM) {
+    return CURSOR_SMOOTHING_MIN_WINDOW_MS;
+  }
+
+  const zoomFactor = smoothstep(CURSOR_SMOOTHING_MIN_ZOOM, CURSOR_SMOOTHING_MAX_ZOOM, zoomScale);
+  const overdrive = Math.max(0, dampening - 1);
+  return (
+    CURSOR_SMOOTHING_MIN_WINDOW_MS +
+    (CURSOR_SMOOTHING_MAX_WINDOW_MS - CURSOR_SMOOTHING_MIN_WINDOW_MS) * zoomFactor +
+    CURSOR_SMOOTHING_OVERDRIVE_WINDOW_MS * zoomFactor * overdrive
+  );
+}
+
+function getSmoothedCursorMotionAtTime(
+  moveEvents: CursorEvent[],
+  timeMs: number,
+  getZoomScale: CursorInterpolationOptions['getZoomScale'],
+  dampening: number
+): RawCursorMotion {
+  const rawMotion = sampleRawCursorMotionAtTime(moveEvents, timeMs);
+  const smoothingStrength = getAdaptiveSmoothingStrength(getZoomScale, dampening, timeMs);
+
+  if (smoothingStrength <= 0 || moveEvents.length < 3) {
+    return rawMotion;
+  }
+
+  const windowMs = getAdaptiveSmoothingWindowMs(getZoomScale, dampening, timeMs);
+
+  let totalWeight = 0;
+  let accumulatedX = 0;
+  let accumulatedY = 0;
+
+  for (let i = 0; i < CURSOR_SMOOTHING_SAMPLE_OFFSETS.length; i += 1) {
+    const weight = CURSOR_SMOOTHING_SAMPLE_WEIGHTS[i];
+    const sampleTimeMs = timeMs + CURSOR_SMOOTHING_SAMPLE_OFFSETS[i] * windowMs;
+    const sample = sampleRawCursorMotionAtTime(moveEvents, sampleTimeMs);
+    totalWeight += weight;
+    accumulatedX += sample.x * weight;
+    accumulatedY += sample.y * weight;
+  }
+
+  if (totalWeight <= 0) {
+    return rawMotion;
+  }
+
+  const averagedX = accumulatedX / totalWeight;
+  const averagedY = accumulatedY / totalWeight;
+  const derivativeDeltaMs = Math.max(
+    CURSOR_SMOOTHING_MIN_VELOCITY_DELTA_MS,
+    windowMs * CURSOR_SMOOTHING_VELOCITY_DELTA_RATIO
+  );
+  const before = sampleRawCursorMotionAtTime(moveEvents, timeMs - derivativeDeltaMs);
+  const after = sampleRawCursorMotionAtTime(moveEvents, timeMs + derivativeDeltaMs);
+  const derivativeScale = 1000 / Math.max(derivativeDeltaMs * 2, 1);
+  const averagedVelocityX = (after.x - before.x) * derivativeScale;
+  const averagedVelocityY = (after.y - before.y) * derivativeScale;
+  const smoothedX = rawMotion.x + (averagedX - rawMotion.x) * smoothingStrength;
+  const smoothedY = rawMotion.y + (averagedY - rawMotion.y) * smoothingStrength;
+  const smoothedVelocityX =
+    rawMotion.velocityX + (averagedVelocityX - rawMotion.velocityX) * smoothingStrength;
+  const smoothedVelocityY =
+    rawMotion.velocityY + (averagedVelocityY - rawMotion.velocityY) * smoothingStrength;
+  const responseDistance = Math.hypot(smoothedX - rawMotion.x, smoothedY - rawMotion.y);
+  const responseFactor = smoothstep(
+    CURSOR_CATCHUP_RESPONSE_START,
+    CURSOR_CATCHUP_RESPONSE_END,
+    responseDistance
+  );
+  const overdrive = Math.max(0, dampening - 1);
+  const catchupStrength = Math.min(
+    0.65,
+    smoothingStrength *
+      responseFactor *
+      (CURSOR_CATCHUP_BASE_STRENGTH + CURSOR_CATCHUP_OVERDRIVE_STRENGTH * overdrive)
+  );
+
+  return {
+    x: smoothedX + (rawMotion.x - smoothedX) * catchupStrength,
+    y: smoothedY + (rawMotion.y - smoothedY) * catchupStrength,
+    velocityX: smoothedVelocityX + (rawMotion.velocityX - smoothedVelocityX) * catchupStrength,
+    velocityY: smoothedVelocityY + (rawMotion.velocityY - smoothedVelocityY) * catchupStrength,
+  };
+}
+
+function interpolateRawAtTime(
+  moveEvents: CursorEvent[],
+  originalEvents: CursorEvent[],
+  timeMs: number,
+  cursorId: string | null,
+  opacity: number,
+  getZoomScale: CursorInterpolationOptions['getZoomScale'],
+  dampening: number
+): InterpolatedCursor {
+  const scale = getCursorClickScale(originalEvents, timeMs);
+  const motion = getSmoothedCursorMotionAtTime(moveEvents, timeMs, getZoomScale, dampening);
+  return {
+    x: motion.x,
+    y: motion.y,
+    velocityX: motion.velocityX,
+    velocityY: motion.velocityY,
     cursorId,
     opacity,
     scale,
@@ -235,8 +392,22 @@ function getFallbackCursorId(cursorRecording: CursorRecording | null | undefined
  */
 export function useCursorInterpolation(
   cursorRecording: CursorRecording | null | undefined,
-  hideWhenIdle = true
+  hideWhenIdleOrOptions: boolean | CursorInterpolationOptions = true
 ) {
+  const options = useMemo<CursorInterpolationOptions>(() => {
+    if (typeof hideWhenIdleOrOptions === 'boolean') {
+      return { hideWhenIdle: hideWhenIdleOrOptions };
+    }
+    return hideWhenIdleOrOptions;
+  }, [hideWhenIdleOrOptions]);
+
+  const hideWhenIdle = options.hideWhenIdle ?? true;
+  const dampening = Math.max(
+    CURSOR.DAMPENING_MIN,
+    Math.min(CURSOR.DAMPENING_MAX, options.dampening ?? 0)
+  );
+  const getZoomScale = options.getZoomScale ?? null;
+
   const originalEvents = useMemo(() => {
     const events = cursorRecording?.events ?? [];
     if (events.length < 2) {
@@ -270,9 +441,27 @@ export function useCursorInterpolation(
       const opacity = hideWhenIdle
         ? getCursorIdleOpacity(activityEvents, adjustedTimeMs)
         : 1.0;
-      return interpolateRawAtTime(rawMoveEvents, originalEvents, adjustedTimeMs, cursorId, opacity);
+      return interpolateRawAtTime(
+        rawMoveEvents,
+        originalEvents,
+        adjustedTimeMs,
+        cursorId,
+        opacity,
+        getZoomScale,
+        dampening
+      );
     },
-    [rawMoveEvents, originalEvents, cursorIdEvents, activityEvents, fallbackCursorId, videoStartOffsetMs, hideWhenIdle]
+    [
+      rawMoveEvents,
+      originalEvents,
+      cursorIdEvents,
+      activityEvents,
+      fallbackCursorId,
+      videoStartOffsetMs,
+      hideWhenIdle,
+      getZoomScale,
+      dampening,
+    ]
   );
 
   return {
@@ -306,5 +495,13 @@ export function getRawCursorAt(
     ? getCursorIdleOpacity(activityEvents, adjustedTimeMs)
     : 1.0;
 
-  return interpolateRawAtTime(moveEvents, originalEvents, adjustedTimeMs, cursorId, opacity);
+  return interpolateRawAtTime(
+    moveEvents,
+    originalEvents,
+    adjustedTimeMs,
+    cursorId,
+    opacity,
+    null,
+    0
+  );
 }

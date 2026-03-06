@@ -462,14 +462,16 @@ import type {
   VideoProject as GeneratedVideoProject,
 } from './generated';
 
-// Smooth movement settings were removed. Keep the app-level type aligned even when
-// generated files are temporarily stale before ts-rs regeneration.
+// Keep the app-level cursor type aligned even when generated files are temporarily
+// stale before ts-rs regeneration.
 export type CursorConfig = Omit<
   GeneratedCursorConfig,
   'smoothMovement' | 'animationStyle' | 'tension' | 'mass' | 'friction'
 > & {
   // Cursor fade-out when idle (Screen Studio-like behavior).
   hideWhenIdle?: boolean;
+  // Zoom-adaptive cursor smoothing strength (0 = linear, 1 = smooth).
+  dampening?: number;
 };
 
 // Text animation style for text overlay segments.

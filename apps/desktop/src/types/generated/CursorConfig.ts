@@ -19,6 +19,10 @@ cursorType: CursorType,
  */
 scale: number, 
 /**
+ * Zoom-adaptive cursor smoothing amount (0.0 = linear, 1.0 = smooth).
+ */
+dampening: number, 
+/**
  * Motion blur amount (0.0 = none, 1.0 = maximum).
  */
 motionBlur: number, 

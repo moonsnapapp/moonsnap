@@ -2,6 +2,7 @@ import { memo, useCallback, useRef, useEffect, useLayoutEffect, useState, useMem
 import { convertFileSrc } from '@tauri-apps/api/core';
 import { resolveResource } from '@tauri-apps/api/path';
 import { TEXT_ANIMATION } from '../../constants';
+import { CURSOR } from '../../constants';
 import { useVideoEditorStore } from '../../stores/videoEditorStore';
 import {
   selectProject,
@@ -174,6 +175,7 @@ const ZoomTransformController = memo(function ZoomTransformController({
   borderOverlayRef,
   zoomRegions,
   cursorRecording,
+  cursorConfig,
   backgroundPadding,
   rounding,
   videoWidth,
@@ -183,6 +185,7 @@ const ZoomTransformController = memo(function ZoomTransformController({
   borderOverlayRef: React.RefObject<HTMLDivElement | null>;
   zoomRegions: ZoomRegion[] | undefined;
   cursorRecording: CursorRecording | null | undefined;
+  cursorConfig: CursorConfig | undefined;
   backgroundPadding: number;
   rounding: number;
   videoWidth: number;
@@ -199,6 +202,7 @@ const ZoomTransformController = memo(function ZoomTransformController({
     rounding,
     videoWidth,
     videoHeight,
+    cursorDampening: cursorConfig?.dampening ?? CURSOR.DAMPENING_DEFAULT,
     cursorTimeMs: sourceTimeMs,
   });
 
@@ -323,6 +327,7 @@ const StaticSceneModeRenderer = memo(function StaticSceneModeRenderer({
   onVideoClick,
   zoomRegions,
   cursorRecording,
+  cursorConfig,
   containerWidth,
   containerHeight,
   frameRenderWidth,
@@ -375,6 +380,7 @@ const StaticSceneModeRenderer = memo(function StaticSceneModeRenderer({
         borderOverlayRef={borderOverlayRef}
         zoomRegions={zoomRegions}
         cursorRecording={cursorRecording}
+        cursorConfig={cursorConfig}
         backgroundPadding={backgroundPadding}
         rounding={rounding}
         videoWidth={videoWidth}
@@ -484,6 +490,7 @@ const DynamicSceneModeRenderer = memo(function DynamicSceneModeRenderer({
     rounding,
     videoWidth,
     videoHeight,
+    cursorDampening: cursorConfig?.dampening ?? CURSOR.DAMPENING_DEFAULT,
     cursorTimeMs: sourceTimeMs,
   });
 
