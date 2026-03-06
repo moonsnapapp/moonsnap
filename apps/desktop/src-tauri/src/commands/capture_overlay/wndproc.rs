@@ -248,6 +248,9 @@ fn handle_mouse_up(state_ptr: *mut OverlayState) -> LRESULT {
                             // Area mode smart-select: adopt hovered window bounds as a region-sized area.
                             // This keeps sourceType="area" and shows dimensions in the toolbar.
                             handle_window_sized_area_selection(state, win.bounds);
+                        } else {
+                            // Click on empty desktop: capture the full monitor
+                            handle_monitor_selection(state);
                         }
                     }
                 },
