@@ -14,9 +14,18 @@ pub(super) fn focus_existing_window(app: &AppHandle, label: &str) -> Result<(), 
         return Err("Window not found".to_string());
     };
 
+    show_maximized_and_focus_window(&window)?;
+
+    Ok(())
+}
+
+pub(super) fn show_maximized_and_focus_window(window: &tauri::WebviewWindow) -> Result<(), String> {
     window
         .show()
         .map_err(|e| format!("Failed to show window: {}", e))?;
+    window
+        .maximize()
+        .map_err(|e| format!("Failed to maximize window: {}", e))?;
     window
         .set_focus()
         .map_err(|e| format!("Failed to focus window: {}", e))?;

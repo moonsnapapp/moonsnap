@@ -9,6 +9,7 @@ use tauri::{command, AppHandle, Manager, WebviewUrl, WebviewWindowBuilder};
 
 use super::editor_windows::{
     find_path_by_label, focus_or_remove_stale_window, generate_window_label, remove_path_by_label,
+    show_maximized_and_focus_window,
 };
 
 /// Image editor window label prefix
@@ -65,6 +66,7 @@ pub async fn show_image_editor_window(
         .min_inner_size(800.0, 600.0)
         .resizable(true)
         .maximizable(true)
+        .maximized(true)
         .transparent(true)
         .decorations(false)
         .always_on_top(false)
@@ -80,7 +82,7 @@ pub async fn show_image_editor_window(
     editors_map.insert(capture_path.clone(), label.clone());
 
     // Show the window - capture path is in URL query params
-    let _ = window.show();
+    show_maximized_and_focus_window(&window)?;
 
     Ok(label)
 }
