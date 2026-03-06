@@ -90,6 +90,8 @@ export const useShapeDrawing = ({
     shapeId: string;
     rect: Konva.Rect | null;
     textNode: Konva.Text | null;
+    hitArea: Konva.Rect | null;
+    background: Konva.Rect | null;
   } | null>(null);
   const textDragMovedRef = useRef(false);
 
@@ -462,6 +464,8 @@ export const useShapeDrawing = ({
               shapeId: liveShape.id,
               rect: group.findOne('.text-box-border') as Konva.Rect | null,
               textNode: group.findOne('.text-content') as Konva.Text | null,
+              hitArea: group.findOne('.text-hit-area') as Konva.Rect | null,
+              background: group.findOne('.text-background') as Konva.Rect | null,
             };
             liveTextNodesRef.current = cache;
           }
@@ -478,13 +482,11 @@ export const useShapeDrawing = ({
           }
           group.x(x);
           group.y(y);
-          if (cache.rect) {
-            cache.rect.width(width);
-            cache.rect.height(height);
-          }
-          if (cache.textNode) {
-            cache.textNode.width(width);
-            cache.textNode.height(height);
+          for (const child of [cache.rect, cache.textNode, cache.hitArea, cache.background]) {
+            if (child) {
+              child.width(width);
+              child.height(height);
+            }
           }
           liveShapeRef.current = { ...liveShape, x, y, width, height };
           break;

@@ -3,7 +3,7 @@ import type { CanvasShape } from '../types';
 export const EDITOR_TEXT = {
   MIN_BOX_WIDTH: 50,
   MIN_BOX_HEIGHT: 30,
-  DEFAULT_BOX_WIDTH: 200,
+  DEFAULT_BOX_WIDTH: 320,
   DEFAULT_HEIGHT_MULTIPLIER: 1.5,
   DEFAULT_FONT_SIZE: 36,
   DEFAULT_FONT_FAMILY: 'Arial',
