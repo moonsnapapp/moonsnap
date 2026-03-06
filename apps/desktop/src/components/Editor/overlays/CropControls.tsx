@@ -23,11 +23,11 @@ export const CropControls: React.FC<CropControlsProps> = React.memo(({
   onCommit,
 }) => {
   return (
-    <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-2 bg-[var(--card)] rounded-xl p-2 border border-[var(--polar-frost)] shadow-lg z-10">
+    <div className="absolute bottom-4 flex items-center gap-1 bg-[var(--card)] rounded-xl p-1 border border-[var(--polar-frost)] shadow-lg z-10 animate-in fade-in slide-in-from-right-4 duration-200" style={{ left: 'calc(50% + 0.5rem)' }}>
       <span className="text-xs text-[var(--ink-muted)] px-2 font-mono">
         {Math.round(width)} × {Math.round(height)}
       </span>
-      <div className="w-px h-4 bg-[var(--polar-frost)]" />
+      <div className="w-px h-4 bg-[var(--polar-frost)] mx-1" />
       <button
         onClick={onCancel}
         className="p-1.5 hover:bg-red-500/30 bg-red-500/20 rounded-lg transition-colors"

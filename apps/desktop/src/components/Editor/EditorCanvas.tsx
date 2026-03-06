@@ -1471,6 +1471,7 @@ export const EditorCanvas = React.memo(forwardRef<EditorCanvasRef, EditorCanvasP
         onZoomOut={navigation.handleZoomOut}
         onFitToSize={navigation.handleFitToSize}
         onActualSize={navigation.handleActualSize}
+        cropActive={selectedTool === 'crop'}
       />
     </div>
   );
