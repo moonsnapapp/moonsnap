@@ -52,8 +52,12 @@ macro_rules! tauri_command_handler {
             crate::commands::window::image_editor::show_image_editor_window,
             crate::commands::window::image_editor::close_image_editor_window,
             crate::commands::window::image_editor::get_image_editor_capture_path,
+            // Window commands - screenshot preview
+            crate::commands::window::screenshot_preview::show_screenshot_preview,
+            crate::commands::window::screenshot_preview::close_screenshot_preview,
             // Image commands
             crate::commands::image::copy_image_to_clipboard,
+            crate::commands::image::copy_rgba_to_clipboard,
             // Storage commands
             crate::commands::storage::operations::save_capture,
             crate::commands::storage::operations::save_capture_from_file,

@@ -15,7 +15,7 @@ import type { ImageFormat } from '@/types';
 export const ScreenshotsTab: React.FC = () => {
   const { settings, updateGeneralSettings } = useSettingsStore();
   const { general } = settings;
-  const { copyToClipboardAfterCapture, setCopyToClipboardAfterCapture } = useCaptureSettingsStore();
+  const { copyToClipboardAfterCapture, setCopyToClipboardAfterCapture, showPreviewAfterCapture, setShowPreviewAfterCapture } = useCaptureSettingsStore();
 
   const handleFormatChange = (format: ImageFormat) => {
     updateGeneralSettings({ imageFormat: format });
@@ -88,6 +88,22 @@ export const ScreenshotsTab: React.FC = () => {
           Behavior
         </h3>
         <div className="p-4 rounded-lg bg-[var(--polar-ice)] border border-[var(--polar-frost)] space-y-4">
+          {/* Show floating preview */}
+          <div className="flex items-center justify-between">
+            <div>
+              <label className="text-sm text-[var(--ink-black)] block">
+                Show floating preview after capture
+              </label>
+              <p className="text-xs text-[var(--ink-muted)] mt-0.5">
+                Display a mini preview with quick actions
+              </p>
+            </div>
+            <Switch
+              checked={showPreviewAfterCapture}
+              onCheckedChange={setShowPreviewAfterCapture}
+            />
+          </div>
+
           {/* Copy to Clipboard */}
           <div className="flex items-center justify-between">
             <div>

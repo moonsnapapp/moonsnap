@@ -49,27 +49,32 @@ function App() {
       onRecordingComplete: loadCaptures,
       onThumbnailReady: useCaptureStore.getState().updateCaptureThumbnail,
       onCaptureCompleteFast: async (data: { file_path: string; width: number; height: number }) => {
-        // Open editor immediately with RGBA file (fast path - no waiting for save)
-        invoke('show_image_editor_window', { capturePath: data.file_path }).catch((error) => {
-          logger.error('Failed to open image editor:', error);
-        });
+        const showPreview = useCaptureSettingsStore.getState().showPreviewAfterCapture;
 
-        // Save to library in background (don't block editor)
+        if (showPreview) {
+          // Show mini preview with quick actions
+          invoke('show_screenshot_preview', {
+            filePath: data.file_path,
+            width: data.width,
+            height: data.height,
+          }).catch((error) => {
+            // Fallback: open editor directly if preview fails
+            logger.error('Failed to show preview, opening editor:', error);
+            invoke('show_image_editor_window', { capturePath: data.file_path }).catch(() => {});
+          });
+        } else {
+          // Open editor directly (old behavior)
+          invoke('show_image_editor_window', { capturePath: data.file_path }).catch((error) => {
+            logger.error('Failed to open image editor:', error);
+          });
+        }
+
+        // Save to library in background (don't block preview)
         saveNewCaptureFromFile(data.file_path, data.width, data.height, 'region', {}, { silent: true })
           .then(async ({ imagePath, id: projectId }) => {
-            // Notify editor window of the saved project ID and permanent path
+            // Notify editor/preview windows of the saved project ID and permanent path
             const { emit } = await import('@tauri-apps/api/event');
             await emit('capture-saved', { originalPath: data.file_path, imagePath, projectId });
-
-            // Copy to clipboard after save completes (if enabled)
-            const copyToClipboard = useCaptureSettingsStore.getState().copyToClipboardAfterCapture;
-            if (copyToClipboard) {
-              try {
-                await invoke('copy_image_to_clipboard', { path: imagePath });
-              } catch (error) {
-                logger.error('Failed to copy to clipboard:', error);
-              }
-            }
           })
           .catch((error) => {
             logger.error('Failed to save capture:', error);

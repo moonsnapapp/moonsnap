@@ -10,7 +10,6 @@
 import { useEffect } from 'react';
 import { listen } from '@tauri-apps/api/event';
 import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
-import { toast } from 'sonner';
 import { useSettingsStore } from '../stores/settingsStore';
 import { libraryLogger } from '../utils/logger';
 
@@ -126,13 +125,11 @@ export function useAppEventListeners(callbacks: AppEventCallbacks) {
       )
     );
 
-    // Fast capture complete (file path)
+    // Fast capture complete (file path) - show mini preview
     unlisteners.push(
       listen<{ file_path: string; width: number; height: number }>(
         'capture-complete-fast',
         async (event) => {
-          // Show toast immediately - don't wait for save to complete
-          toast.success('Screenshot captured');
           try {
             await callbacks.onCaptureCompleteFast(event.payload);
           } catch {

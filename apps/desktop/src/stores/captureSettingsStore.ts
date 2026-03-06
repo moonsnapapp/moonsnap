@@ -77,6 +77,9 @@ interface CaptureSettingsState {
   // Copy to clipboard after screenshot capture
   copyToClipboardAfterCapture: boolean;
 
+  // Show floating preview panel after screenshot capture
+  showPreviewAfterCapture: boolean;
+
   // Actions - Settings management
   loadSettings: () => Promise<void>;
   saveSettings: () => Promise<void>;
@@ -86,6 +89,9 @@ interface CaptureSettingsState {
 
   // Actions - Clipboard
   setCopyToClipboardAfterCapture: (value: boolean) => void;
+
+  // Actions - Preview
+  setShowPreviewAfterCapture: (value: boolean) => void;
 
   // Actions - Mode
   setActiveMode: (mode: CaptureType) => void;
@@ -113,6 +119,7 @@ export const useCaptureSettingsStore = create<CaptureSettingsState>((set, get) =
   activeMode: 'video',
   sourceMode: 'area',
   copyToClipboardAfterCapture: true,
+  showPreviewAfterCapture: true,
 
   loadSettings: async () => {
     set({ isLoading: true });
@@ -123,6 +130,7 @@ export const useCaptureSettingsStore = create<CaptureSettingsState>((set, get) =
       const savedActiveMode = await store.get<CaptureType>('activeMode');
       const savedSourceMode = await store.get<CaptureSourceMode>('sourceMode');
       const savedCopyToClipboard = await store.get<boolean>('copyToClipboardAfterCapture');
+      const savedShowPreview = await store.get<boolean>('showPreviewAfterCapture');
 
       // Merge with defaults (in case new settings were added)
       const settings: CaptureSettings = {
@@ -147,6 +155,7 @@ export const useCaptureSettingsStore = create<CaptureSettingsState>((set, get) =
         activeMode: savedActiveMode || 'video',
         sourceMode: savedSourceMode || 'area',
         copyToClipboardAfterCapture: savedCopyToClipboard ?? true,
+        showPreviewAfterCapture: savedShowPreview ?? true,
         isLoading: false,
         isInitialized: true,
       });
@@ -157,6 +166,7 @@ export const useCaptureSettingsStore = create<CaptureSettingsState>((set, get) =
         activeMode: 'video',
         sourceMode: 'area',
         copyToClipboardAfterCapture: true,
+        showPreviewAfterCapture: true,
         isLoading: false,
         isInitialized: true,
       });
@@ -164,13 +174,14 @@ export const useCaptureSettingsStore = create<CaptureSettingsState>((set, get) =
   },
 
   saveSettings: async () => {
-    const { settings, activeMode, sourceMode, copyToClipboardAfterCapture } = get();
+    const { settings, activeMode, sourceMode, copyToClipboardAfterCapture, showPreviewAfterCapture } = get();
     try {
       const store = await getStore();
       await store.set('captureSettings', settings);
       await store.set('activeMode', activeMode);
       await store.set('sourceMode', sourceMode);
       await store.set('copyToClipboardAfterCapture', copyToClipboardAfterCapture);
+      await store.set('showPreviewAfterCapture', showPreviewAfterCapture);
       await store.save();
     } catch (error) {
       settingsLogger.error('Failed to save capture settings:', error);
@@ -197,6 +208,13 @@ export const useCaptureSettingsStore = create<CaptureSettingsState>((set, get) =
   setCopyToClipboardAfterCapture: (value) => {
     set({ copyToClipboardAfterCapture: value });
     // Auto-save when clipboard setting changes
+    get().saveSettings().catch(
+      createErrorHandler({ operation: 'save capture settings', silent: true })
+    );
+  },
+
+  setShowPreviewAfterCapture: (value) => {
+    set({ showPreviewAfterCapture: value });
     get().saveSettings().catch(
       createErrorHandler({ operation: 'save capture settings', silent: true })
     );
@@ -303,6 +321,7 @@ export const useCaptureSettingsStore = create<CaptureSettingsState>((set, get) =
       activeMode: 'video',
       sourceMode: 'area',
       copyToClipboardAfterCapture: true,
+      showPreviewAfterCapture: true,
     });
     get().saveSettings().catch(
       createErrorHandler({ operation: 'save capture settings', silent: true })
