@@ -55,6 +55,9 @@ macro_rules! tauri_command_handler {
             // Window commands - screenshot preview
             crate::commands::window::screenshot_preview::show_screenshot_preview,
             crate::commands::window::screenshot_preview::close_screenshot_preview,
+            // Window commands - recording preview
+            crate::commands::window::recording_preview::show_recording_preview,
+            crate::commands::window::recording_preview::close_recording_preview,
             // Image commands
             crate::commands::image::copy_image_to_clipboard,
             crate::commands::image::copy_rgba_to_clipboard,

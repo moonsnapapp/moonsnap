@@ -46,7 +46,20 @@ function App() {
   // Consolidated event listener callbacks
   const eventCallbacks = useMemo(
     () => ({
-      onRecordingComplete: loadCaptures,
+      onRecordingComplete: (data: { outputPath: string; durationSecs: number; fileSizeBytes: number }) => {
+        loadCaptures();
+
+        // Show floating recording preview
+        if (data.outputPath) {
+          invoke('show_recording_preview', {
+            outputPath: data.outputPath,
+            durationSecs: data.durationSecs,
+            fileSizeBytes: data.fileSizeBytes,
+          }).catch((error) => {
+            logger.error('Failed to show recording preview:', error);
+          });
+        }
+      },
       onThumbnailReady: useCaptureStore.getState().updateCaptureThumbnail,
       onCaptureCompleteFast: async (data: { file_path: string; width: number; height: number }) => {
         const showPreview = useCaptureSettingsStore.getState().showPreviewAfterCapture;

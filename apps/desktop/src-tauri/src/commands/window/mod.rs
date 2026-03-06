@@ -14,6 +14,7 @@ pub mod capture;
 pub(crate) mod editor_windows;
 pub mod image_editor;
 pub mod recording;
+pub mod recording_preview;
 pub mod screenshot_preview;
 pub mod settings;
 pub mod toolbar;

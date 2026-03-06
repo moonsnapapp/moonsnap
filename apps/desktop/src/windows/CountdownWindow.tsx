@@ -1,39 +1,63 @@
 /**
  * CountdownWindow - Full-screen countdown overlay before recording starts.
- * 
+ *
  * Shows a large animated countdown (3-2-1) centered on screen.
- * Listens to recording-state-changed events to get countdown values.
+ * Self-driven timer from URL params - no dependency on backend events for display.
+ * Listens to recording-state-changed only for early cancellation/close.
  */
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { emit, listen } from '@tauri-apps/api/event';
 import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
 import { recordingLogger } from '../utils/logger';
 import type { RecordingState } from '../types';
 
 const CountdownWindow: React.FC = () => {
-  const [count, setCount] = useState<number | null>(null);
+  const params = new URLSearchParams(window.location.search);
+  const totalSecs = parseInt(params.get('secs') || '3', 10);
 
+  const [count, setCount] = useState<number | null>(null);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Self-driven countdown timer - starts immediately on mount
+  // Emits countdown ticks so the toolbar stays in sync
+  useEffect(() => {
+    setCount(totalSecs);
+    emit('countdown-tick', { secondsRemaining: totalSecs }).catch(() => {});
+
+    timerRef.current = setInterval(() => {
+      setCount((prev) => {
+        if (prev === null || prev <= 1) {
+          if (timerRef.current) clearInterval(timerRef.current);
+          return 0;
+        }
+        const next = prev - 1;
+        emit('countdown-tick', { secondsRemaining: next }).catch(() => {});
+        return next;
+      });
+    }, 1000);
+
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+    };
+  }, [totalSecs]);
+
+  // Listen for recording state changes to close on cancel/error/recording-start
   useEffect(() => {
     let unlisten: (() => void) | null = null;
     const currentWindow = getCurrentWebviewWindow();
 
     const setup = async () => {
-      // NOTE: RecordingState is a discriminated union - TypeScript narrows the type
-      // based on `status`, so we can access fields directly without runtime checks.
       unlisten = await listen<RecordingState>('recording-state-changed', (event) => {
         const state = event.payload;
 
-        if (state.status === 'countdown') {
-          // TypeScript knows `state` has `secondsRemaining` here
-          setCount(state.secondsRemaining);
-        } else if (state.status === 'recording' || state.status === 'idle' || state.status === 'error') {
-          // Countdown finished or cancelled - close this window
+        if (state.status === 'recording' || state.status === 'idle' || state.status === 'error') {
+          // Recording started or was cancelled - close this window
           currentWindow.close().catch((e) => recordingLogger.error('Failed to close countdown window:', e));
         }
       });
 
-      // Signal that we're ready to receive events
+      // Signal that we're ready (listener registered for cancellation detection)
       await emit('countdown-window-ready');
     };
 

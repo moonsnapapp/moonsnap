@@ -270,6 +270,7 @@ const CaptureToolbarWindow: React.FC = () => {
             y: bounds.y,
             width: bounds.width,
             height: bounds.height,
+            countdownSecs: countdownSecs,
           });
 
           await countdownReady;

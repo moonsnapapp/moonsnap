@@ -3,7 +3,7 @@
   "identifier": "desktop-capability",
   "description": "Desktop capability for MoonSnap screen capture",
   "platforms": ["windows"],
-  "windows": ["library", "overlay_*", "recording-border", "countdown", "capture-toolbar", "webcam-preview", "settings", "video-editor-*", "image-editor-*", "screenshot-preview"],
+  "windows": ["library", "overlay_*", "recording-border", "countdown", "capture-toolbar", "webcam-preview", "settings", "video-editor-*", "image-editor-*", "screenshot-preview", "recording-preview"],
   "permissions": [
     "core:default",
     "core:window:default",

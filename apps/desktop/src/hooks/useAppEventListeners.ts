@@ -18,9 +18,15 @@ interface ThumbnailReadyEvent {
   thumbnailPath: string;
 }
 
+interface RecordingCompleteData {
+  outputPath: string;
+  durationSecs: number;
+  fileSizeBytes: number;
+}
+
 interface AppEventCallbacks {
   /** Called when a recording completes - should refresh the library */
-  onRecordingComplete: () => void;
+  onRecordingComplete: (data: RecordingCompleteData) => void;
   /** Called when a thumbnail is generated for a capture */
   onThumbnailReady: (captureId: string, thumbnailPath: string) => void;
   /** Called when a fast capture completes (file path) */
@@ -51,12 +57,16 @@ export function useAppEventListeners(callbacks: AppEventCallbacks) {
 
     // Recording state changes - refresh library when complete
     unlisteners.push(
-      listen<{ status: string }>('recording-state-changed', (event) => {
+      listen<{ status: string; outputPath?: string; durationSecs?: number; fileSizeBytes?: number }>('recording-state-changed', (event) => {
         if (event.payload.status === 'completed') {
           libraryLogger.info('Recording completed, refreshing library...');
           // Small delay to ensure file is fully written
           const t1 = setTimeout(() => {
-            callbacks.onRecordingComplete();
+            callbacks.onRecordingComplete({
+              outputPath: event.payload.outputPath ?? '',
+              durationSecs: event.payload.durationSecs ?? 0,
+              fileSizeBytes: event.payload.fileSizeBytes ?? 0,
+            });
           }, 500);
           timeoutIds.push(t1);
         }
