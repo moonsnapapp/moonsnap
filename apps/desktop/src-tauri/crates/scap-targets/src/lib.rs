@@ -4,6 +4,8 @@ pub mod bounds;
 mod win;
 
 #[cfg(windows)]
+pub use win::get_window_capture_bounds;
+#[cfg(windows)]
 pub use win::{DisplayImpl, WindowImpl};
 
 use bounds::*;

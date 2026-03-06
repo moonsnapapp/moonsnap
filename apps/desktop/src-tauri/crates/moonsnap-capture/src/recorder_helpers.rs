@@ -461,8 +461,7 @@ pub fn get_video_duration(ffprobe_path: &PathBuf, video_path: &PathBuf) -> Resul
 #[cfg(target_os = "windows")]
 pub fn get_window_rect(window_id: u32) -> Result<(i32, i32, u32, u32), String> {
     use windows::Win32::{
-        Foundation::{HWND, RECT},
-        Graphics::Dwm::{DwmGetWindowAttribute, DWMWA_EXTENDED_FRAME_BOUNDS},
+        Foundation::HWND,
         UI::WindowsAndMessaging::{IsIconic, IsWindowVisible},
     };
 
@@ -478,24 +477,19 @@ pub fn get_window_rect(window_id: u32) -> Result<(i32, i32, u32, u32), String> {
             return Err("Window is minimized".to_string());
         }
 
-        // Get window bounds using DWM (excludes shadow, includes titlebar)
-        let mut rect = RECT::default();
-        DwmGetWindowAttribute(
-            hwnd,
-            DWMWA_EXTENDED_FRAME_BOUNDS,
-            &mut rect as *mut RECT as *mut std::ffi::c_void,
-            std::mem::size_of::<RECT>() as u32,
-        )
-        .map_err(|e| format!("Failed to get window bounds: {:?}", e))?;
+        let bounds = scap_targets::get_window_capture_bounds(hwnd)
+            .ok_or_else(|| "Failed to get window capture bounds".to_string())?;
+        let position = bounds.position();
+        let size = bounds.size();
 
-        let width = (rect.right - rect.left) as u32;
-        let height = (rect.bottom - rect.top) as u32;
+        let width = size.width() as u32;
+        let height = size.height() as u32;
 
         if width < 10 || height < 10 {
             return Err("Window is too small".to_string());
         }
 
-        Ok((rect.left, rect.top, width, height))
+        Ok((position.x() as i32, position.y() as i32, width, height))
     }
 }
 

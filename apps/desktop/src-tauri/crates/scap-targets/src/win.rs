@@ -5,7 +5,10 @@ use windows::{
     Win32::{
         Foundation::{CloseHandle, BOOL, HWND, LPARAM, POINT, RECT, TRUE},
         Graphics::{
-            Dwm::{DwmGetWindowAttribute, DWMWA_EXTENDED_FRAME_BOUNDS},
+            Dwm::{
+                DwmGetWindowAttribute, DWMWA_EXTENDED_FRAME_BOUNDS,
+                DWMWA_VISIBLE_FRAME_BORDER_THICKNESS,
+            },
             Gdi::{
                 EnumDisplayDevicesW, EnumDisplayMonitors, EnumDisplaySettingsW, GetMonitorInfoW,
                 MonitorFromPoint, MonitorFromWindow, DEVMODEW, DISPLAY_DEVICEW,
@@ -32,6 +35,69 @@ use windows::{
 };
 
 use crate::bounds::{LogicalSize, PhysicalBounds, PhysicalPosition, PhysicalSize};
+
+pub fn get_window_capture_bounds(hwnd: HWND) -> Option<PhysicalBounds> {
+    let mut rect = RECT::default();
+
+    unsafe {
+        let dwm_result = DwmGetWindowAttribute(
+            hwnd,
+            DWMWA_EXTENDED_FRAME_BOUNDS,
+            (&raw mut rect).cast(),
+            mem::size_of::<RECT>() as u32,
+        );
+
+        if dwm_result.is_err() && GetWindowRect(hwnd, &mut rect).is_err() {
+            return None;
+        }
+    }
+
+    inset_visible_frame_bounds(rect, get_visible_border_thickness(hwnd))
+}
+
+fn get_visible_border_thickness(hwnd: HWND) -> i32 {
+    unsafe {
+        let mut thickness: u32 = 0;
+        let result = DwmGetWindowAttribute(
+            hwnd,
+            DWMWA_VISIBLE_FRAME_BORDER_THICKNESS,
+            (&raw mut thickness).cast(),
+            mem::size_of::<u32>() as u32,
+        );
+
+        if result.is_ok() && thickness > 0 {
+            return thickness as i32;
+        }
+
+        const BASE_DPI: f64 = 96.0;
+        let dpi = match GetDpiForWindow(hwnd) {
+            0 => BASE_DPI as u32,
+            value => value,
+        } as f64;
+
+        ((dpi / BASE_DPI).round() as i32).max(1)
+    }
+}
+
+fn inset_visible_frame_bounds(mut rect: RECT, border: i32) -> Option<PhysicalBounds> {
+    if border > 0 {
+        rect.left += border;
+        rect.right -= border;
+        rect.bottom -= border;
+    }
+
+    if rect.right <= rect.left || rect.bottom <= rect.top {
+        return None;
+    }
+
+    Some(PhysicalBounds::new(
+        PhysicalPosition::new(rect.left as f64, rect.top as f64),
+        PhysicalSize::new(
+            (rect.right - rect.left) as f64,
+            (rect.bottom - rect.top) as f64,
+        ),
+    ))
+}
 
 #[derive(Clone, Copy)]
 pub struct DisplayImpl(pub HMONITOR);
@@ -301,7 +367,7 @@ impl WindowImpl {
                 self.0,
                 DWMWA_EXTENDED_FRAME_BOUNDS,
                 (&raw mut rect).cast(),
-                size_of::<RECT>() as u32,
+                mem::size_of::<RECT>() as u32,
             )
             .ok()?;
 
@@ -320,27 +386,7 @@ impl WindowImpl {
     }
 
     pub fn physical_bounds(&self) -> Option<PhysicalBounds> {
-        let mut rect = RECT::default();
-        unsafe {
-            DwmGetWindowAttribute(
-                self.0,
-                DWMWA_EXTENDED_FRAME_BOUNDS,
-                (&raw mut rect).cast(),
-                size_of::<RECT>() as u32,
-            )
-            .ok()?;
-
-            Some(PhysicalBounds {
-                position: PhysicalPosition {
-                    x: rect.left as f64,
-                    y: rect.top as f64,
-                },
-                size: PhysicalSize {
-                    width: (rect.right - rect.left) as f64,
-                    height: (rect.bottom - rect.top) as f64,
-                },
-            })
-        }
+        get_window_capture_bounds(self.0)
     }
 
     pub fn physical_size(&self) -> Option<PhysicalSize> {
@@ -412,5 +458,39 @@ fn is_window_valid(hwnd: HWND, current_process_id: u32) -> bool {
         }
 
         true
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn inset_visible_frame_bounds_trims_side_and_bottom_borders() {
+        let rect = RECT {
+            left: 100,
+            top: 200,
+            right: 500,
+            bottom: 700,
+        };
+
+        let bounds = inset_visible_frame_bounds(rect, 2).expect("bounds should remain valid");
+
+        assert_eq!(bounds.position().x(), 102.0);
+        assert_eq!(bounds.position().y(), 200.0);
+        assert_eq!(bounds.size().width(), 396.0);
+        assert_eq!(bounds.size().height(), 498.0);
+    }
+
+    #[test]
+    fn inset_visible_frame_bounds_rejects_inverted_rects() {
+        let rect = RECT {
+            left: 10,
+            top: 20,
+            right: 12,
+            bottom: 22,
+        };
+
+        assert!(inset_visible_frame_bounds(rect, 2).is_none());
     }
 }
