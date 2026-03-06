@@ -79,6 +79,15 @@ export function useAppEventListeners(callbacks: AppEventCallbacks) {
       })
     );
 
+    // Reload capture settings when changed from another window (e.g. settings)
+    unlisteners.push(
+      listen('capture-settings-changed', () => {
+        import('../stores/captureSettingsStore').then(({ useCaptureSettingsStore }) => {
+          useCaptureSettingsStore.getState().loadSettings();
+        });
+      })
+    );
+
     // Update capture toolbar bounds from D2D overlay
     // If toolbar exists, confirm selection and update; if not, let Rust create it
     unlisteners.push(

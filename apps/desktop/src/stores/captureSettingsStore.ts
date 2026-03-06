@@ -183,6 +183,9 @@ export const useCaptureSettingsStore = create<CaptureSettingsState>((set, get) =
       await store.set('copyToClipboardAfterCapture', copyToClipboardAfterCapture);
       await store.set('showPreviewAfterCapture', showPreviewAfterCapture);
       await store.save();
+      // Notify other windows to reload capture settings
+      const { emit } = await import('@tauri-apps/api/event');
+      await emit('capture-settings-changed');
     } catch (error) {
       settingsLogger.error('Failed to save capture settings:', error);
       throw error;

@@ -88,20 +88,28 @@ export const ScreenshotsTab: React.FC = () => {
           Behavior
         </h3>
         <div className="p-4 rounded-lg bg-[var(--polar-ice)] border border-[var(--polar-frost)] space-y-4">
-          {/* Show floating preview */}
-          <div className="flex items-center justify-between">
-            <div>
-              <label className="text-sm text-[var(--ink-black)] block">
-                Show floating preview after capture
-              </label>
-              <p className="text-xs text-[var(--ink-muted)] mt-0.5">
-                Display a mini preview with quick actions
-              </p>
-            </div>
-            <Switch
-              checked={showPreviewAfterCapture}
-              onCheckedChange={setShowPreviewAfterCapture}
-            />
+          {/* After capture action */}
+          <div>
+            <label className="text-sm text-[var(--ink-black)] mb-2 block">
+              After capture
+            </label>
+            <Select
+              value={showPreviewAfterCapture ? 'preview' : 'editor'}
+              onValueChange={(value) => setShowPreviewAfterCapture(value === 'preview')}
+            >
+              <SelectTrigger className="w-full max-w-[240px] bg-[var(--card)] border-[var(--polar-frost)] text-[var(--ink-black)]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="preview">Floating preview</SelectItem>
+                <SelectItem value="editor">Open editor instantly</SelectItem>
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-[var(--ink-muted)] mt-1">
+              {showPreviewAfterCapture
+                ? 'Show a mini preview with copy, edit, and delete actions'
+                : 'Open the image editor immediately after capture'}
+            </p>
           </div>
 
           {/* Copy to Clipboard */}
