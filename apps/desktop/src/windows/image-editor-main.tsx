@@ -12,9 +12,9 @@ ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
   <React.StrictMode>
     <ImageEditorWindow />
     <Toaster
-      position="bottom-right"
+      position="top-center"
+      theme="system"
       toastOptions={{
-        className: 'glass-toast',
         duration: 3000,
       }}
     />
