@@ -397,6 +397,11 @@ async fn load_project_item(
     let content = async_fs::read_to_string(&project_file).await.ok()?;
     let project: CaptureProject = serde_json::from_str(&content).ok()?;
 
+    // Skip metadata-only sidecars (created for video/media favorites/tags)
+    if project.original_image.is_empty() {
+        return None;
+    }
+
     let thumbnail_path = thumbnails_dir
         .join(format!("{}_thumb.png", &project.id))
         .to_string_lossy()
