@@ -121,7 +121,7 @@ export const CaptureToolbar: React.FC<CaptureToolbarProps> = ({
   const isBusy = isRecording || isStarting || isProcessing; // Disable controls during capture
 
   // Get audio settings for level meters
-  const { settings } = useCaptureSettingsStore();
+  const { settings, afterRecordingAction } = useCaptureSettingsStore();
   const micDeviceIndex = settings.video.microphoneDeviceIndex;
   const isMicEnabled = micDeviceIndex !== null;
   const isSystemAudioEnabled = settings.video.captureSystemAudio;
@@ -344,10 +344,10 @@ export const CaptureToolbar: React.FC<CaptureToolbarProps> = ({
         <button
           onClick={onCapture}
           className="glass-capture-btn-hardware"
-          title={captureType === 'screenshot' ? 'Take screenshot' : (isVideoMode && settings.video.quickCapture ? 'Start quick recording' : 'Start recording')}
+          title={captureType === 'screenshot' ? 'Take screenshot' : (isVideoMode && afterRecordingAction === 'save' ? 'Start quick recording' : 'Start recording')}
           disabled={!selectionConfirmed}
         >
-          {isVideoMode && settings.video.quickCapture && (
+          {isVideoMode && afterRecordingAction === 'save' && (
             <Zap size={10} strokeWidth={2.5} className="glass-capture-btn-zap" />
           )}
           <Circle size={14} fill="currentColor" strokeWidth={0} />

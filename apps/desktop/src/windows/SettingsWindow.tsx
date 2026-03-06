@@ -14,11 +14,13 @@ import {
 import { Titlebar } from '@/components/Titlebar/Titlebar';
 import { ShortcutsTab } from '@/components/Settings/ShortcutsTab';
 import { GeneralTab } from '@/components/Settings/GeneralTab';
+import { RecordingsTab } from '@/components/Settings/RecordingsTab';
 import { ScreenshotsTab } from '@/components/Settings/ScreenshotsTab';
 import { FeedbackTab } from '@/components/Settings/FeedbackTab';
 import { ChangelogTab } from '@/components/Settings/ChangelogTab';
 import { LicenseTab } from '@/components/Settings/LicenseTab';
 import { useSettingsStore } from '@/stores/settingsStore';
+import { useCaptureSettingsStore } from '@/stores/captureSettingsStore';
 import { useTheme } from '@/hooks/useTheme';
 import { useUpdater } from '@/hooks/useUpdater';
 
@@ -47,13 +49,6 @@ const sidebarItems: SidebarItem[] = [
   { id: 'license', label: 'License', icon: <Key className="w-4 h-4" /> },
 ];
 
-// Placeholder components for sections not yet implemented
-const PlaceholderSection: React.FC<{ title: string }> = ({ title }) => (
-  <div className="flex items-center justify-center h-full text-(--ink-muted)">
-    <p>{title} settings coming soon...</p>
-  </div>
-);
-
 /**
  * SettingsWindow - Dedicated window for application settings.
  */
@@ -62,6 +57,7 @@ const SettingsWindow: React.FC = () => {
   const [appVersion, setAppVersion] = useState<string>('');
   const [isCheckingUpdates, setIsCheckingUpdates] = useState(false);
   const { loadSettings, saveSettings, isInitialized } = useSettingsStore();
+  const { loadSettings: loadCaptureSettings, isInitialized: captureSettingsInitialized } = useCaptureSettingsStore();
   const { available, version, checkForUpdates, downloadAndInstall, downloading } = useUpdater(false);
 
   // Apply theme
@@ -87,6 +83,13 @@ const SettingsWindow: React.FC = () => {
       loadSettings();
     }
   }, [isInitialized, loadSettings]);
+
+  // Load capture settings on mount (for Recordings/Screenshots tabs)
+  useEffect(() => {
+    if (!captureSettingsInitialized) {
+      loadCaptureSettings();
+    }
+  }, [captureSettingsInitialized, loadCaptureSettings]);
 
   // Save settings when window is about to close
   useEffect(() => {
@@ -132,7 +135,7 @@ const SettingsWindow: React.FC = () => {
       case 'shortcuts':
         return <ShortcutsTab />;
       case 'recordings':
-        return <PlaceholderSection title="Recordings" />;
+        return <RecordingsTab />;
       case 'screenshots':
         return <ScreenshotsTab />;
       case 'feedback':

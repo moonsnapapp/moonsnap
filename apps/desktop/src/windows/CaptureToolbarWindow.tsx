@@ -209,8 +209,9 @@ const CaptureToolbarWindow: React.FC = () => {
         const fps = captureType === 'video' ? settings.video.fps : settings.gif.fps;
         const quality = captureType === 'video' ? settings.video.quality : 80;
         const gifQualityPreset = settings.gif.qualityPreset;
-        const quickCapture = captureType === 'video' ? settings.video.quickCapture : true; // GIF is always "quick"
-        // Quick capture skips countdown for faster recording start
+        const afterRecordingAction = useCaptureSettingsStore.getState().afterRecordingAction;
+        const quickCapture = captureType === 'video' ? afterRecordingAction === 'save' : true; // GIF is always "quick"
+        // Quick capture (save mode) skips countdown for faster recording start
         const countdownSecs = quickCapture ? 0 : (captureType === 'video' ? settings.video.countdownSecs : settings.gif.countdownSecs);
         // For video: if quick capture, use user's cursor preference; if editor flow, always capture without cursor
         // For GIF: always use user's cursor preference (GIF is always quick capture)

@@ -49,15 +49,32 @@ function App() {
       onRecordingComplete: (data: { outputPath: string; durationSecs: number; fileSizeBytes: number }) => {
         loadCaptures();
 
-        // Show floating recording preview
         if (data.outputPath) {
-          invoke('show_recording_preview', {
-            outputPath: data.outputPath,
-            durationSecs: data.durationSecs,
-            fileSizeBytes: data.fileSizeBytes,
-          }).catch((error) => {
-            logger.error('Failed to show recording preview:', error);
-          });
+          const action = useCaptureSettingsStore.getState().afterRecordingAction;
+
+          if (action === 'editor') {
+            // Open editor directly
+            const hasExtension = /\.\w+$/.test(data.outputPath);
+            const videoPath = hasExtension ? data.outputPath : `${data.outputPath}/screen.mp4`;
+            invoke('show_video_editor_window', { projectPath: videoPath }).catch((error) => {
+              logger.error('Failed to open video editor:', error);
+              // Fallback to floating preview
+              invoke('show_recording_preview', {
+                outputPath: data.outputPath,
+                durationSecs: data.durationSecs,
+                fileSizeBytes: data.fileSizeBytes,
+              }).catch(() => {});
+            });
+          } else {
+            // Show floating recording preview
+            invoke('show_recording_preview', {
+              outputPath: data.outputPath,
+              durationSecs: data.durationSecs,
+              fileSizeBytes: data.fileSizeBytes,
+            }).catch((error) => {
+              logger.error('Failed to show recording preview:', error);
+            });
+          }
         }
       },
       onThumbnailReady: useCaptureStore.getState().updateCaptureThumbnail,
