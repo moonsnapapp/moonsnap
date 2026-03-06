@@ -168,7 +168,9 @@ export function useGPURenderer(options: UseGPURendererOptions = {}): UseGPURende
    */
   const initPreview = useCallback(async (): Promise<boolean> => {
     try {
+      console.time('[EDITOR-INIT] GPU init_preview');
       await invoke('init_preview');
+      console.timeEnd('[EDITOR-INIT] GPU init_preview');
 
       if (isMountedRef.current) {
         setDeviceState(prev => ({

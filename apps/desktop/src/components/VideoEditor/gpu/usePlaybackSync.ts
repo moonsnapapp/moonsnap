@@ -129,6 +129,7 @@ export function usePlaybackSync(options: PlaybackSyncOptions): PlaybackSyncResul
 
     const onLoadedData = () => {
       onVideoError(''); // Clear any previous error
+      console.warn(`[EDITOR-DIAG] Video loadeddata fired: ${video.videoWidth}x${video.videoHeight}, duration=${video.duration}s, hasSeparateAudio=${hasSeparateAudio}`);
       // Mute video if we have separate audio files (editor flow)
       if (hasSeparateAudio) {
         video.volume = 0;
@@ -139,14 +140,41 @@ export function usePlaybackSync(options: PlaybackSyncOptions): PlaybackSyncResul
       }
     };
 
+    // Seek performance monitoring
+    let seekStartTime = 0;
+    const onSeeking = () => {
+      seekStartTime = performance.now();
+    };
+    const onSeeked = () => {
+      const elapsed = performance.now() - seekStartTime;
+      if (elapsed > 100) {
+        console.warn(`[SEEK-PERF] Video seek took ${elapsed.toFixed(0)}ms (target: ${video.currentTime.toFixed(2)}s)`);
+      }
+    };
+
+    const onCanPlay = () => {
+      console.warn(`[EDITOR-DIAG] Video canplay fired: readyState=${video.readyState}, networkState=${video.networkState}`);
+    };
+    const onStalled = () => {
+      console.warn(`[EDITOR-DIAG] Video stalled! readyState=${video.readyState}, networkState=${video.networkState}, currentTime=${video.currentTime}`);
+    };
+
     video.addEventListener('ended', onEnded);
     video.addEventListener('error', onError);
     video.addEventListener('loadeddata', onLoadedData);
+    video.addEventListener('canplay', onCanPlay);
+    video.addEventListener('stalled', onStalled);
+    video.addEventListener('seeking', onSeeking);
+    video.addEventListener('seeked', onSeeked);
 
     return () => {
       video.removeEventListener('ended', onEnded);
       video.removeEventListener('error', onError);
       video.removeEventListener('loadeddata', onLoadedData);
+      video.removeEventListener('canplay', onCanPlay);
+      video.removeEventListener('stalled', onStalled);
+      video.removeEventListener('seeking', onSeeking);
+      video.removeEventListener('seeked', onSeeked);
     };
   }, [controls, audioConfig, hasSeparateAudio, onVideoError, videoRef]);
 

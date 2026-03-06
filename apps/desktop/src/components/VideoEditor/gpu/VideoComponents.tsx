@@ -39,6 +39,12 @@ export const WebCodecsCanvasNoZoom = memo(function WebCodecsCanvasNoZoom({
   const getSourceTime = useTimelineToSourceTime();
   const { getFrame, prefetchAround, isReady } = useWebCodecsPreview(videoPath);
 
+  // Diagnostic: log when WebCodecsCanvasNoZoom mounts
+  useEffect(() => {
+    console.warn('[EDITOR-DIAG] WebCodecsCanvasNoZoom mounted, videoPath:', videoPath, 'isReady:', isReady);
+    return () => console.warn('[EDITOR-DIAG] WebCodecsCanvasNoZoom unmounted');
+  }, [videoPath, isReady]);
+
   // Prefetch frames when preview position changes (use source time).
   // Skip when hovering tracks — only prefetch for ruler scrubbing.
   useEffect(() => {

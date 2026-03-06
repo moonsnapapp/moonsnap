@@ -243,11 +243,21 @@ export function usePlaybackControls() {
     // Sync video element
     const videoElement = engine.getVideoElement();
     if (videoElement) {
+      const t0 = performance.now();
       videoElement.currentTime = sourceTimeMs / 1000;
+      const t1 = performance.now();
+      if (t1 - t0 > 5) {
+        console.warn(`[SEEK-PERF] videoElement.currentTime setter took ${(t1 - t0).toFixed(1)}ms`);
+      }
     }
 
     // Update store with timeline time (not source time)
+    const t2 = performance.now();
     useVideoEditorStore.getState().requestSeek(clampedTimelineTime);
+    const t3 = performance.now();
+    if (t3 - t2 > 5) {
+      console.warn(`[SEEK-PERF] requestSeek(store update) took ${(t3 - t2).toFixed(1)}ms`);
+    }
   }, [engine]);
 
   const toggle = useCallback(() => {

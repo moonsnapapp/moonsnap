@@ -1403,8 +1403,20 @@ fn migrate_legacy_video(
     };
 
     // Create project.json
-    let project =
-        create_migration_project_json(&stem, width, height, duration_ms, fps, &folder_path);
+    // Note: For quick capture videos with embedded audio, we intentionally leave
+    // systemAudio as null — the <video> element plays its own embedded audio.
+    // Setting systemAudio to "screen.mp4" would create a redundant <audio> element
+    // loading the same file, causing triple asset protocol load and UI hangs.
+    let has_system_audio = folder_path.join("system.wav").exists();
+    let project = create_migration_project_json(
+        &stem,
+        width,
+        height,
+        duration_ms,
+        fps,
+        &folder_path,
+        has_system_audio,
+    );
     let project_file = folder_path.join("project.json");
     fs::write(&project_file, project)
         .map_err(|e| format!("Failed to write project.json: {}", e))?;
@@ -1433,10 +1445,20 @@ fn create_migration_project_json(
     duration_ms: u64,
     fps: u32,
     folder_path: &PathBuf,
+    has_system_audio_file: bool,
 ) -> String {
     let now = chrono::Utc::now().to_rfc3339();
     let has_webcam = folder_path.join("webcam.mp4").exists();
     let has_cursor = folder_path.join("cursor.json").exists();
+
+    // System audio: only set when a separate WAV file exists (editor flow).
+    // Quick capture videos have audio muxed into screen.mp4 — leave null so
+    // the <video> element plays its own embedded audio directly.
+    let system_audio: Option<&str> = if has_system_audio_file {
+        Some("system.wav")
+    } else {
+        None
+    };
 
     // Use serde_json to create a proper VideoProject-compatible JSON
     let sources = serde_json::json!({
@@ -1444,7 +1466,7 @@ fn create_migration_project_json(
         "webcamVideo": if has_webcam { Some("webcam.mp4") } else { None::<&str> },
         "cursorData": if has_cursor { Some("cursor.json") } else { None::<&str> },
         "audioFile": null,
-        "systemAudio": null,
+        "systemAudio": system_audio,
         "microphoneAudio": null,
         "backgroundMusic": null,
         "originalWidth": width,

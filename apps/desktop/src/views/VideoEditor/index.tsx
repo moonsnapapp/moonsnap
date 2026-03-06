@@ -109,6 +109,33 @@ export const VideoEditorView = forwardRef<VideoEditorViewRef, VideoEditorViewPro
   { onBack, hideTopBar, isActive = true },
   ref
 ) {
+  // Long-task detector: logs when the main thread is blocked for >50ms
+  useEffect(() => {
+    if (typeof PerformanceObserver === 'undefined') return;
+    try {
+      const obs = new PerformanceObserver((list) => {
+        for (const entry of list.getEntries()) {
+          console.warn(`[LONG-TASK] Main thread blocked for ${entry.duration.toFixed(0)}ms (name: ${entry.name})`);
+        }
+      });
+      obs.observe({ type: 'longtask', buffered: true });
+      return () => obs.disconnect();
+    } catch {
+      // longtask not supported in all browsers
+    }
+  }, []);
+
+  // Heartbeat: check if main thread is responsive every 2s for the first 15s
+  useEffect(() => {
+    let count = 0;
+    const id = setInterval(() => {
+      count++;
+      console.warn(`[EDITOR-DIAG] Heartbeat #${count} - main thread alive at ${Date.now()}`);
+      if (count >= 7) clearInterval(id);
+    }, 2000);
+    return () => clearInterval(id);
+  }, []);
+
   const { setView } = useCaptureStore();
   const project = useVideoEditorStore(selectProject);
   const isPlaying = useVideoEditorStore(selectIsPlaying);
@@ -155,6 +182,11 @@ export const VideoEditorView = forwardRef<VideoEditorViewRef, VideoEditorViewPro
   // Crop dialog state
   const [isCropDialogOpen, setIsCropDialogOpen] = useState(false);
   const lastUserActivityAtRef = useRef(Date.now());
+
+  // Diagnostic: log when VideoEditorView renders
+  useEffect(() => {
+    console.warn('[EDITOR-DIAG] VideoEditorView mounted, project:', project?.id ?? 'null', 'isActive:', isActive);
+  }, [project?.id, isActive]);
 
 
   // Keyboard shortcut handlers

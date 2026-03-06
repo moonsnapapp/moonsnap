@@ -331,6 +331,39 @@ pub fn get_video_metadata_for_migration(
     Ok((width, height, duration_ms, fps))
 }
 
+/// Check whether a video file contains an audio stream.
+///
+/// Uses ffprobe to probe audio streams. Returns false on any error.
+pub fn video_has_audio_stream(ffprobe_path: &Path, video_path: &Path) -> bool {
+    let result = create_hidden_command(ffprobe_path)
+        .args([
+            "-v",
+            "quiet",
+            "-print_format",
+            "json",
+            "-show_streams",
+            "-select_streams",
+            "a",
+        ])
+        .arg(video_path)
+        .output();
+
+    match result {
+        Ok(output) if output.status.success() => {
+            let json_str = String::from_utf8_lossy(&output.stdout);
+            if let Ok(json) = serde_json::from_str::<serde_json::Value>(&json_str) {
+                json["streams"]
+                    .as_array()
+                    .map(|s| !s.is_empty())
+                    .unwrap_or(false)
+            } else {
+                false
+            }
+        },
+        _ => false,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

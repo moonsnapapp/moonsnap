@@ -109,6 +109,11 @@ const SceneModeRenderer = memo(function SceneModeRenderer({
 
   const originalVideoPath = useVideoEditorStore(selectScreenVideoPath);
 
+  // Diagnostic: log scene mode renderer state
+  useEffect(() => {
+    console.warn('[EDITOR-DIAG] SceneModeRenderer mounted, videoSrc:', !!videoSrc, 'originalVideoPath:', originalVideoPath, 'isPlaying:', isPlaying);
+  }, [videoSrc, originalVideoPath, isPlaying]);
+
   const zoomStyle = useZoomPreview(zoomRegions, currentTimeMs, cursorRecording, {
     backgroundPadding,
     rounding,
@@ -318,6 +323,12 @@ export function GPUVideoPreview({ isActive = true }: GPUVideoPreviewProps) {
   const [previewAreaSize, setPreviewAreaSize] = useState({ width: 0, height: 0 });
   const [wallpaperUrl, setWallpaperUrl] = useState<string | null>(null);
 
+  // Diagnostic: log when GPUVideoPreview mounts
+  useEffect(() => {
+    console.warn('[EDITOR-DIAG] GPUVideoPreview mounted, isActive:', isActive);
+    return () => console.warn('[EDITOR-DIAG] GPUVideoPreview unmounted');
+  }, [isActive]);
+
 
   // Use selectors for stable subscriptions
   const project = useVideoEditorStore(selectProject);
@@ -421,9 +432,11 @@ export function GPUVideoPreview({ isActive = true }: GPUVideoPreviewProps) {
 
   // Convert file paths to URLs
   const videoSrc = useMemo(() => {
-    return project?.sources.screenVideo
+    const src = project?.sources.screenVideo
       ? convertFileSrc(project.sources.screenVideo)
       : null;
+    console.warn('[EDITOR-DIAG] videoSrc:', src ? 'set' : 'null', 'screenVideo:', project?.sources.screenVideo ?? 'null');
+    return src;
   }, [project?.sources.screenVideo]);
 
   const systemAudioSrc = useMemo(() => {
@@ -495,7 +508,8 @@ export function GPUVideoPreview({ isActive = true }: GPUVideoPreviewProps) {
   // Sync composite dimensions to ref for the CSS-transform resize fast path
   useEffect(() => {
     compositeRef.current = { width: compositeWidth, height: compositeHeight };
-  }, [compositeWidth, compositeHeight]);
+    console.warn(`[EDITOR-DIAG] compositeSize: ${compositeWidth}x${compositeHeight}, containerSize: ${containerSize.width}x${containerSize.height}, previewAreaSize: ${previewAreaSize.width}x${previewAreaSize.height}`);
+  }, [compositeWidth, compositeHeight, containerSize, previewAreaSize]);
 
   // After React renders with new sizes, clear the CSS transform and record
   // the rendered preview area size so the next transform delta is correct.

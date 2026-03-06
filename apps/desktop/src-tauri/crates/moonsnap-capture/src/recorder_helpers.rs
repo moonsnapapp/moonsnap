@@ -241,6 +241,8 @@ pub fn mux_audio_to_video(
                     "aac",
                     "-b:a",
                     "192k",
+                    "-movflags",
+                    "+faststart",
                     &video_path.to_string_lossy(),
                 ])
                 .output()
@@ -260,6 +262,8 @@ pub fn mux_audio_to_video(
                     "aac",
                     "-b:a",
                     "192k",
+                    "-movflags",
+                    "+faststart",
                     &video_path.to_string_lossy(),
                 ])
                 .output()
@@ -279,6 +283,8 @@ pub fn mux_audio_to_video(
                     "aac",
                     "-b:a",
                     "192k",
+                    "-movflags",
+                    "+faststart",
                     &video_path.to_string_lossy(),
                 ])
                 .output()

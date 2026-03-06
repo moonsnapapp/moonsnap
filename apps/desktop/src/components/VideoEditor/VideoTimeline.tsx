@@ -1123,7 +1123,7 @@ export function VideoTimeline({ onExport, onResetTrimSegments, onSetInPoint, onS
                 durationMs={sourceDurationMs}
                 timelineZoom={timelineZoom}
                 width={timelineWidth}
-                audioPath={project.sources.systemAudio ?? project.sources.microphoneAudio ?? project.sources.screenVideo ?? undefined}
+                audioPath={project.sources.systemAudio ?? project.sources.microphoneAudio ?? undefined}
               />
             )}
 
