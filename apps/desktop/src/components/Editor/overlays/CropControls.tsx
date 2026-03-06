@@ -11,7 +11,7 @@ interface CropControlsProps {
 }
 
 /**
- * Crop control buttons - bottom left corner
+ * Crop control buttons - bottom center
  * Shows dimensions and action buttons during crop mode
  */
 export const CropControls: React.FC<CropControlsProps> = React.memo(({
@@ -23,17 +23,17 @@ export const CropControls: React.FC<CropControlsProps> = React.memo(({
   onCommit,
 }) => {
   return (
-    <div className="absolute bottom-4 left-4 flex items-center gap-2 bg-[var(--card)] rounded-xl p-2 border border-[var(--polar-frost)] shadow-lg z-10">
+    <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-2 bg-[var(--card)] rounded-xl p-2 border border-[var(--polar-frost)] shadow-lg z-10">
       <span className="text-xs text-[var(--ink-muted)] px-2 font-mono">
         {Math.round(width)} × {Math.round(height)}
       </span>
       <div className="w-px h-4 bg-[var(--polar-frost)]" />
       <button
         onClick={onCancel}
-        className="p-1.5 hover:bg-red-100 rounded-lg transition-colors group"
+        className="p-1.5 hover:bg-red-500/30 bg-red-500/20 rounded-lg transition-colors"
         title="Cancel (switch tool)"
       >
-        <X size={16} className="text-[var(--ink-muted)] group-hover:text-red-500 transition-colors" />
+        <X size={16} className="text-red-400" />
       </button>
       {isModified && (
         <button
@@ -46,10 +46,10 @@ export const CropControls: React.FC<CropControlsProps> = React.memo(({
       )}
       <button
         onClick={onCommit}
-        className="p-1.5 hover:bg-emerald-100 bg-emerald-50 rounded-lg transition-colors"
+        className="p-1.5 hover:bg-emerald-500/30 bg-emerald-500/20 rounded-lg transition-colors"
         title="Apply crop"
       >
-        <Check size={16} className="text-emerald-600" />
+        <Check size={16} className="text-emerald-400" />
       </button>
     </div>
   );
