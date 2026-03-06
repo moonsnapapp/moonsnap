@@ -1,5 +1,5 @@
 import React from 'react';
-import { Check, X } from 'lucide-react';
+import { Check, X, RotateCcw } from 'lucide-react';
 
 interface CropControlsProps {
   width: number;
@@ -38,10 +38,10 @@ export const CropControls: React.FC<CropControlsProps> = React.memo(({
       {isModified && (
         <button
           onClick={onReset}
-          className="px-2 py-1 text-xs text-[var(--ink-muted)] hover:bg-[var(--polar-frost)] hover:text-[var(--ink-dark)] rounded-lg transition-colors"
+          className="p-1.5 hover:bg-amber-500/30 bg-amber-500/20 rounded-lg transition-colors"
           title="Reset to minimum bounds"
         >
-          Reset
+          <RotateCcw size={16} className="text-amber-400" />
         </button>
       )}
       <button
