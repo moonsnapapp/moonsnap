@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, act } from '@testing-library/react';
 import { VideoTimeline } from './VideoTimeline';
 import { useVideoEditorStore } from '../../stores/videoEditorStore';
-import { setInvokeResponse } from '../../test/mocks/tauri';
+import { mockInvoke, setInvokeResponse } from '../../test/mocks/tauri';
 import type { VideoProject, AudioWaveform } from '../../types';
 
 // Create a minimal mock project for testing
@@ -248,6 +248,30 @@ describe('VideoTimeline', () => {
       });
 
       expect(screen.getByText('Scene')).toBeInTheDocument();
+    });
+
+    it('should use screen video for waveform when audio is embedded in quick capture', async () => {
+      useVideoEditorStore.setState({
+        project: createMockProject(),
+        trackVisibility: {
+          video: true,
+          text: true,
+          mask: true,
+          zoom: true,
+          scene: true,
+        },
+      });
+
+      await act(async () => {
+        render(<VideoTimeline {...defaultProps} />);
+      });
+
+      expect(mockInvoke).toHaveBeenCalledWith(
+        'extract_audio_waveform',
+        expect.objectContaining({
+          audioPath: '/path/to/screen.mp4',
+        })
+      );
     });
 
   });

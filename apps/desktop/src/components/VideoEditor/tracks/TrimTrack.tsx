@@ -1,6 +1,7 @@
 import { memo, useCallback, useMemo, useRef, useEffect, useState } from 'react';
 import { GripVertical, Film } from 'lucide-react';
 import { invoke } from '@tauri-apps/api/core';
+import { WAVEFORM } from '../../../constants';
 import type { TrimSegment, AudioWaveform } from '../../../types';
 import {
   useVideoEditorStore,
@@ -26,6 +27,19 @@ interface TrimTrackProps {
   audioPath?: string;
 }
 
+const WAVEFORM_VISUAL_PERCENTILE = 0.98;
+const WAVEFORM_RESPONSE_GAMMA = 0.72;
+const WAVEFORM_MIN_VISIBLE_HEIGHT = 0.06;
+
+function shapeWaveformLevel(level: number): number {
+  if (level <= 0) {
+    return 0;
+  }
+
+  const curved = Math.pow(level, WAVEFORM_RESPONSE_GAMMA);
+  return WAVEFORM_MIN_VISIBLE_HEIGHT + curved * (1 - WAVEFORM_MIN_VISIBLE_HEIGHT);
+}
+
 /**
  * Hook to load waveform data and calculate global visual gain
  */
@@ -42,18 +56,24 @@ function useWaveform(audioPath: string | undefined) {
       try {
         const data = await invoke<AudioWaveform>('extract_audio_waveform', {
           audioPath,
-          samplesPerSecond: 100,
+          samplesPerSecond: WAVEFORM.DEFAULT_SAMPLES_PER_SECOND,
         });
 
         if (!cancelled) {
-          // Calculate global peak amplitude for consistent visualization
-          let peakAmplitude = 0;
-          for (const sample of data.samples) {
-            const abs = Math.abs(sample);
-            if (abs > peakAmplitude) peakAmplitude = abs;
-          }
-          // Visual boost - normalize to peak
-          const gain = peakAmplitude > 0.01 ? Math.min(1 / peakAmplitude, 10) : 10;
+          const sortedAmplitudes = data.samples
+            .map((sample) => Math.abs(sample))
+            .sort((a, b) => a - b);
+          const percentileIndex = Math.max(
+            0,
+            Math.min(
+              sortedAmplitudes.length - 1,
+              Math.floor(sortedAmplitudes.length * WAVEFORM_VISUAL_PERCENTILE)
+            )
+          );
+          const referenceAmplitude = sortedAmplitudes[percentileIndex] ?? 0;
+          const gain = referenceAmplitude > 0.01
+            ? Math.min(1 / referenceAmplitude, 12)
+            : 12;
 
           setWaveform(data);
           setVisualGain(gain);
@@ -82,6 +102,8 @@ const TRIM_COLORS = {
   hover: 'var(--coral-300)',
   text: 'var(--coral-400)',
 };
+const SEGMENT_WAVEFORM_BOTTOM_PADDING_PX = 2;
+const SEGMENT_WAVEFORM_TOP_PADDING_PX = 3;
 
 /**
  * Individual trim segment component with drag handles.
@@ -339,40 +361,41 @@ const SegmentWaveform = memo(function SegmentWaveform({
 
     if (segmentSamples.length === 0) return;
 
-    const centerY = height / 2;
-    const maxAmplitude = height / 2 - 2;
+    const baselineY = height - SEGMENT_WAVEFORM_BOTTOM_PADDING_PX;
+    const maxAmplitude = Math.max(1, height - SEGMENT_WAVEFORM_TOP_PADDING_PX - SEGMENT_WAVEFORM_BOTTOM_PADDING_PX);
 
     // Calculate samples per pixel
     const samplesPerPixel = segmentSamples.length / width;
 
     // Create gradient
     const gradient = ctx.createLinearGradient(0, 0, 0, height);
-    gradient.addColorStop(0, 'rgba(249, 112, 102, 0.7)'); // coral-400
-    gradient.addColorStop(0.5, 'rgba(240, 68, 56, 0.5)'); // coral-500
-    gradient.addColorStop(1, 'rgba(249, 112, 102, 0.7)');
+    gradient.addColorStop(0, 'rgba(251, 146, 60, 0.55)'); // orange-400
+    gradient.addColorStop(0.65, 'rgba(249, 112, 102, 0.4)'); // coral-400
+    gradient.addColorStop(1, 'rgba(240, 68, 56, 0.18)'); // coral-500
 
     ctx.fillStyle = gradient;
     ctx.beginPath();
-    ctx.moveTo(0, centerY);
+    ctx.moveTo(0, baselineY);
 
-    // Draw top half - use global visualGain for consistent scaling
+    // Draw a bottom-anchored half waveform for a cleaner timeline shape.
     for (let x = 0; x < width; x++) {
       const sampleIndex = Math.floor(x * samplesPerPixel);
       const sample = segmentSamples[Math.min(sampleIndex, segmentSamples.length - 1)];
-      const amplitude = Math.min(Math.abs(sample) * visualGain, 1) * maxAmplitude;
-      ctx.lineTo(x, centerY - amplitude);
+      const normalizedLevel = Math.min(Math.abs(sample) * visualGain, 1);
+      const amplitude = shapeWaveformLevel(normalizedLevel) * maxAmplitude;
+      ctx.lineTo(x, baselineY - amplitude);
     }
 
-    // Draw bottom half (mirror)
-    for (let x = width - 1; x >= 0; x--) {
-      const sampleIndex = Math.floor(x * samplesPerPixel);
-      const sample = segmentSamples[Math.min(sampleIndex, segmentSamples.length - 1)];
-      const amplitude = Math.min(Math.abs(sample) * visualGain, 1) * maxAmplitude;
-      ctx.lineTo(x, centerY + amplitude);
-    }
-
+    ctx.lineTo(width, baselineY);
     ctx.closePath();
     ctx.fill();
+
+    ctx.strokeStyle = 'rgba(249, 112, 102, 0.2)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(0, baselineY + 0.5);
+    ctx.lineTo(width, baselineY + 0.5);
+    ctx.stroke();
   }, [waveform, visualGain, sourceStartMs, sourceEndMs, sourceDurationMs, width, height]);
 
   return (
