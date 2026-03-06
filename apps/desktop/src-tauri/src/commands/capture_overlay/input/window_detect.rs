@@ -11,7 +11,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
     GWL_EXSTYLE, GWL_STYLE, GW_HWNDNEXT, WS_CHILD, WS_EX_APPWINDOW, WS_EX_TOOLWINDOW,
 };
 
-use crate::commands::capture_overlay::types::{DetectedWindow, Rect, WS_EX_NOREDIRECTIONBITMAP};
+use crate::commands::capture_overlay::types::{DetectedWindow, Rect};
 
 /// Get the topmost valid window at a screen point.
 ///
@@ -66,7 +66,6 @@ pub fn get_window_at_point(screen_x: i32, screen_y: i32, exclude: HWND) -> Optio
 /// - Invisible windows
 /// - Child windows
 /// - Tool windows (unless they have WS_EX_APPWINDOW)
-/// - DirectComposition windows (WS_EX_NOREDIRECTIONBITMAP)
 /// - Very small windows (< 50x50)
 fn validate_window(hwnd: HWND, exclude: HWND) -> Option<DetectedWindow> {
     unsafe {
@@ -91,11 +90,6 @@ fn validate_window(hwnd: HWND, exclude: HWND) -> Option<DetectedWindow> {
 
         // Skip tool windows (unless they have WS_EX_APPWINDOW)
         if (ex_style & WS_EX_TOOLWINDOW.0) != 0 && (ex_style & WS_EX_APPWINDOW.0) == 0 {
-            return None;
-        }
-
-        // Skip DirectComposition windows (like our overlay)
-        if (ex_style & WS_EX_NOREDIRECTIONBITMAP) != 0 {
             return None;
         }
 
