@@ -36,6 +36,7 @@ macro_rules! tauri_command_handler {
             crate::commands::window::toolbar::close_capture_toolbar,
             crate::commands::window::toolbar::bring_capture_toolbar_to_front,
             crate::commands::window::toolbar::resize_capture_toolbar,
+            crate::commands::window::toolbar::consume_capture_toolbar_bootstrap,
             crate::commands::window::toolbar::set_capture_toolbar_bounds,
             crate::commands::window::toolbar::set_capture_toolbar_position,
             crate::commands::window::toolbar::set_capture_toolbar_ignore_cursor,

@@ -280,6 +280,28 @@ body {
   background-clip: text;
 }
 
+/* Pricing card */
+.pricing-card {
+  transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.pricing-card:hover {
+  transform: translateY(-4px);
+}
+
+.pricing-card-pro {
+  box-shadow:
+    0 0 40px -10px rgba(255, 77, 77, 0.15),
+    0 25px 50px -20px rgba(0, 0, 0, 0.5);
+}
+
+.pricing-card-pro:hover {
+  border-color: rgba(255, 77, 77, 0.6);
+  box-shadow:
+    0 0 60px -10px rgba(255, 77, 77, 0.25),
+    0 30px 60px -20px rgba(0, 0, 0, 0.6);
+}
+
 /* Grid pattern background */
 .grid-pattern {
   background-image:

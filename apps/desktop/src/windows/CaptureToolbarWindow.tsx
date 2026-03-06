@@ -29,13 +29,31 @@ import { useWebcamSettingsStore } from '../stores/webcamSettingsStore';
 import { useSettingsStore } from '../stores/settingsStore';
 import { useTheme } from '../hooks/useTheme';
 import { useRecordingEvents } from '../hooks/useRecordingEvents';
-import { useSelectionEvents } from '../hooks/useSelectionEvents';
+import { repositionToolbar, useSelectionEvents } from '../hooks/useSelectionEvents';
 import { useWebcamCoordination } from '../hooks/useWebcamCoordination';
 import { useToolbarPositioning } from '../hooks/useToolbarPositioning';
 import type { CaptureType } from '../types';
 import { toolbarLogger } from '../utils/logger';
 
 interface StartupToolbarContext {
+  captureType?: CaptureType;
+  sourceMode?: CaptureSourceMode;
+}
+
+interface ToolbarSelectionBootstrap {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  sourceType?: 'area' | 'window' | 'display';
+  windowId?: number | null;
+  sourceTitle?: string | null;
+  monitorName?: string | null;
+  monitorIndex?: number | null;
+}
+
+interface CaptureToolbarBootstrapPayload {
+  selection?: ToolbarSelectionBootstrap | null;
   captureType?: CaptureType;
   sourceMode?: CaptureSourceMode;
 }
@@ -116,10 +134,30 @@ const CaptureToolbarWindow: React.FC = () => {
     selectionBounds,
     selectionBoundsRef,
     selectionConfirmed,
+    confirmSelection,
+    resetSelection,
   } = useSelectionEvents();
 
+  const handleWindowSized = useCallback(async () => {
+    if (!selectionConfirmed) {
+      return;
+    }
+
+    try {
+      await repositionToolbar(selectionBoundsRef.current);
+    } catch (e) {
+      toolbarLogger.error('Failed to reposition toolbar after resize:', e);
+    }
+  }, [selectionConfirmed, selectionBoundsRef]);
+
   // Measure content and resize window to fit
-  useToolbarPositioning({ containerRef, contentRef, selectionConfirmed, mode });
+  useToolbarPositioning({
+    containerRef,
+    contentRef,
+    selectionConfirmed,
+    mode,
+    onWindowSized: handleWindowSized,
+  });
 
   // Manage webcam preview based on capture type
   // - Open when in video mode with webcam enabled
@@ -485,6 +523,46 @@ const CaptureToolbarWindow: React.FC = () => {
     applyStartupToolbarContext(pendingStartupContextRef.current);
     pendingStartupContextRef.current = null;
   }, [applyStartupToolbarContext, isInitialized]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const applyBootstrap = async () => {
+      try {
+        const bootstrap = await invoke<CaptureToolbarBootstrapPayload | null>('consume_capture_toolbar_bootstrap');
+        if (cancelled || !bootstrap) {
+          return;
+        }
+
+        if (bootstrap.selection) {
+          await confirmSelection(bootstrap.selection);
+        } else {
+          resetSelection();
+        }
+
+        if (bootstrap.captureType || bootstrap.sourceMode) {
+          const context: StartupToolbarContext = {
+            captureType: bootstrap.captureType,
+            sourceMode: bootstrap.sourceMode,
+          };
+
+          if (!isInitialized) {
+            pendingStartupContextRef.current = context;
+          } else {
+            applyStartupToolbarContext(context);
+          }
+        }
+      } catch (e) {
+        toolbarLogger.error('Failed to consume toolbar bootstrap:', e);
+      }
+    };
+
+    void applyBootstrap();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [applyStartupToolbarContext, confirmSelection, isInitialized, resetSelection]);
 
   const handleTitlebarClose = useCallback(async () => {
     // Cancel overlay when toolbar is closed

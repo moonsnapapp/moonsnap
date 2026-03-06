@@ -19,11 +19,21 @@ interface UseToolbarPositioningOptions {
   selectionConfirmed?: boolean;
   /** Toolbar mode - triggers remeasure when mode changes (selection/recording/etc) */
   mode?: string;
+  /** Called after the native window size has been updated */
+  onWindowSized?: () => void | Promise<void>;
 }
 
-export function useToolbarPositioning({ containerRef, contentRef, selectionConfirmed, mode }: UseToolbarPositioningOptions): void {
+export function useToolbarPositioning({
+  containerRef,
+  contentRef,
+  selectionConfirmed,
+  mode,
+  onWindowSized,
+}: UseToolbarPositioningOptions): void {
   const windowShownRef = useRef(false);
   const lastSizeRef = useRef({ width: 0, height: 0 });
+  const rafIdRef = useRef<number | null>(null);
+  const retryTimerRef = useRef<number | null>(null);
 
   const measureTargetSize = useCallback(() => {
     const container = containerRef.current;
@@ -61,58 +71,103 @@ export function useToolbarPositioning({ containerRef, contentRef, selectionConfi
     };
   }, [containerRef, contentRef]);
 
+  const resizeWindow = useCallback(async (width: number, height: number, force = false) => {
+    if (!force && width === lastSizeRef.current.width && height === lastSizeRef.current.height) {
+      return false;
+    }
+    lastSizeRef.current = { width, height };
+
+    const windowWidth = Math.ceil(width) + 1;
+    const windowHeight = Math.ceil(height) + 1;
+
+    try {
+      await invoke('resize_capture_toolbar', {
+        width: windowWidth,
+        height: windowHeight,
+      });
+
+      if (onWindowSized) {
+        await onWindowSized();
+      }
+
+      const currentWindow = getCurrentWebviewWindow();
+      const isVisible = await currentWindow.isVisible().catch(() => windowShownRef.current);
+      if (!windowShownRef.current || !isVisible) {
+        await currentWindow.show();
+        windowShownRef.current = true;
+      }
+
+      return true;
+    } catch (e) {
+      toolbarLogger.error('Failed to resize toolbar:', e);
+      return false;
+    }
+  }, [onWindowSized]);
+
+  const clearScheduledMeasure = useCallback(() => {
+    if (rafIdRef.current !== null) {
+      cancelAnimationFrame(rafIdRef.current);
+      rafIdRef.current = null;
+    }
+    if (retryTimerRef.current !== null) {
+      clearTimeout(retryTimerRef.current);
+      retryTimerRef.current = null;
+    }
+  }, []);
+
+  const scheduleMeasure = useCallback((attempts = 4, force = false) => {
+    clearScheduledMeasure();
+
+    const runAttempt = (remainingAttempts: number) => {
+      rafIdRef.current = requestAnimationFrame(() => {
+        rafIdRef.current = null;
+
+        const measuredSize = measureTargetSize();
+        const hasSize = Boolean(measuredSize && measuredSize.width > 0 && measuredSize.height > 0);
+
+        if (measuredSize && hasSize) {
+          void resizeWindow(measuredSize.width, measuredSize.height, force && remainingAttempts === attempts);
+        }
+
+        if (remainingAttempts > 1) {
+          retryTimerRef.current = window.setTimeout(() => {
+            retryTimerRef.current = null;
+            runAttempt(remainingAttempts - 1);
+          }, hasSize ? 140 : 50);
+        }
+      });
+    };
+
+    runAttempt(attempts);
+  }, [clearScheduledMeasure, measureTargetSize, resizeWindow]);
+
   // Measure content and resize window
   useEffect(() => {
     const container = containerRef.current;
     const content = contentRef.current;
     if (!container || !content) return;
 
-    const resizeWindow = async (width: number, height: number) => {
-      // Skip if size hasn't changed
-      if (width === lastSizeRef.current.width && height === lastSizeRef.current.height) {
-        return;
-      }
-      lastSizeRef.current = { width, height };
+    scheduleMeasure(5, true);
 
-      // Add 1px buffer to prevent sub-pixel rounding issues
-      const windowWidth = Math.ceil(width) + 1;
-      const windowHeight = Math.ceil(height) + 1;
-
-      try {
-        await invoke('resize_capture_toolbar', {
-          width: windowWidth,
-          height: windowHeight,
-        });
-
-        // Show window on first resize
-        if (!windowShownRef.current) {
-          const currentWindow = getCurrentWebviewWindow();
-          await currentWindow.show();
-          windowShownRef.current = true;
-        }
-      } catch (e) {
-        toolbarLogger.error('Failed to resize toolbar:', e);
-      }
-    };
-
-    // Initial measurement - width must fit both titlebar controls and toolbar content
-    const initialSize = measureTargetSize();
-    if (initialSize && initialSize.width > 0 && initialSize.height > 0) {
-      resizeWindow(initialSize.width, initialSize.height);
+    const fonts = document.fonts;
+    if (fonts?.ready) {
+      void fonts.ready.then(() => {
+        scheduleMeasure(3, true);
+      });
     }
 
     // Watch for size changes on both elements
     const observer = new ResizeObserver(() => {
-      const measuredSize = measureTargetSize();
-      if (measuredSize && measuredSize.width > 0 && measuredSize.height > 0) {
-        resizeWindow(measuredSize.width, measuredSize.height);
-      }
+      scheduleMeasure(3);
     });
 
     observer.observe(container);
     observer.observe(content);
-    return () => observer.disconnect();
-  }, [containerRef, contentRef, measureTargetSize]);
+    return () => {
+      observer.disconnect();
+      clearScheduledMeasure();
+    };
+  }, [clearScheduledMeasure, containerRef, contentRef, scheduleMeasure]);
 
   // Force remeasure when selection state or mode changes (content swaps)
   useEffect(() => {
@@ -120,26 +175,11 @@ export function useToolbarPositioning({ containerRef, contentRef, selectionConfi
     const content = contentRef.current;
     if (!container || !content) return;
 
-    let cancelled = false;
-
-    // Wait for CSS transition to complete (200ms) plus buffer before measuring
-    // This ensures we measure the final size, not mid-transition values
-    const timeoutId = setTimeout(() => {
-      if (cancelled) return;
-      const measuredSize = measureTargetSize();
-      if (measuredSize && measuredSize.width > 0 && measuredSize.height > 0) {
-        // Reset last size to force update
-        lastSizeRef.current = { width: 0, height: 0 };
-        // Trigger resize
-        const windowWidth = Math.ceil(measuredSize.width) + 1;
-        const windowHeight = Math.ceil(measuredSize.height) + 1;
-        invoke('resize_capture_toolbar', { width: windowWidth, height: windowHeight }).catch((e) => toolbarLogger.error('Failed to resize toolbar:', e));
-      }
-    }, 220);
+    lastSizeRef.current = { width: 0, height: 0 };
+    scheduleMeasure(5, true);
 
     return () => {
-      cancelled = true;
-      clearTimeout(timeoutId);
+      clearScheduledMeasure();
     };
-  }, [selectionConfirmed, mode, containerRef, contentRef, measureTargetSize]);
+  }, [clearScheduledMeasure, containerRef, contentRef, mode, scheduleMeasure, selectionConfirmed]);
 }

@@ -6,7 +6,7 @@
  * - confirm-selection: User confirmed selection (from preselection flow)
  */
 
-import { useEffect, useState, useRef } from 'react';
+import { useCallback, useEffect, useState, useRef } from 'react';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { invoke } from '@tauri-apps/api/core';
 import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
@@ -43,6 +43,10 @@ interface UseSelectionEventsReturn {
   selectionConfirmed: boolean;
   /** Set selection confirmed state */
   setSelectionConfirmed: (confirmed: boolean) => void;
+  /** Apply a confirmed selection payload from overlay/bootstrap */
+  confirmSelection: (bounds: SelectionBounds) => Promise<void>;
+  /** Reset selection state back to startup mode */
+  resetSelection: () => void;
 }
 
 
@@ -52,7 +56,7 @@ const MARGIN = 8;
  * Calculate and apply toolbar position based on selection bounds.
  * Positions toolbar below selection (preferred) or above if doesn't fit.
  */
-async function repositionToolbar(selection: SelectionBounds): Promise<void> {
+export async function repositionToolbar(selection: SelectionBounds): Promise<void> {
   // Get actual window size
   const currentWindow = getCurrentWebviewWindow();
   const outerSize = await currentWindow.outerSize();
@@ -128,6 +132,26 @@ export function useSelectionEvents(): UseSelectionEventsReturn {
   // Selection confirmed state - starts false (startup mode)
   const [selectionConfirmed, setSelectionConfirmed] = useState(false);
 
+  const resetSelection = useCallback(() => {
+    setSelectionConfirmed(false);
+    setSelectionBounds(DEFAULT_BOUNDS);
+    selectionBoundsRef.current = DEFAULT_BOUNDS;
+  }, []);
+
+  const confirmSelection = useCallback(async (bounds: SelectionBounds) => {
+    setSelectionBounds(bounds);
+    selectionBoundsRef.current = bounds;
+    setSelectionConfirmed(true);
+
+    // Pre-spawn FFmpeg for webcam so recording starts instantly.
+    // Use actual capture format (gif or mp4) to generate correct output path.
+    const currentMode = useCaptureSettingsStore.getState().activeMode;
+    const format = currentMode === 'gif' ? 'gif' : 'mp4';
+    invoke('prepare_recording', { format }).catch((e) => {
+      toolbarLogger.warn('Failed to prepare recording:', e);
+    });
+  }, []);
+
   // Listen for selection updates (bounds changes during drag/resize)
   useEffect(() => {
     let unlistenSelection: UnlistenFn | null = null;
@@ -154,39 +178,13 @@ export function useSelectionEvents(): UseSelectionEventsReturn {
 
     const setup = async () => {
       // Selection confirmed (from overlay) - repositions toolbar
-      unlistenConfirm = await listen<SelectionBounds>('confirm-selection', async (event) => {
-        const bounds = event.payload;
-        setSelectionBounds(bounds);
-        selectionBoundsRef.current = bounds;
-        setSelectionConfirmed(true);
-
-        // Pre-spawn FFmpeg for webcam so recording starts instantly
-        // This runs in parallel with repositioning - don't await
-        // Use actual capture format (gif or mp4) to generate correct output path
-        // Get current state inside callback to avoid stale closure
-        const currentMode = useCaptureSettingsStore.getState().activeMode;
-        const format = currentMode === 'gif' ? 'gif' : 'mp4';
-        invoke('prepare_recording', { format }).catch((e) => {
-          toolbarLogger.warn('Failed to prepare recording:', e);
-        });
-
-        // Wait for React to re-render and resize hook to run, then reposition
-        // This ensures the window size is updated AFTER DimensionSelect renders
-        await new Promise(resolve => setTimeout(resolve, 200));
-
-        // Reposition toolbar for the new selection
-        try {
-          await repositionToolbar(bounds);
-        } catch (e) {
-          toolbarLogger.error('Failed to reposition toolbar:', e);
-        }
+      unlistenConfirm = await listen<SelectionBounds>('confirm-selection', (event) => {
+        void confirmSelection(event.payload);
       });
 
       // Reset to startup state (overlay cancelled)
       unlistenReset = await listen('reset-to-startup', () => {
-        setSelectionConfirmed(false);
-        setSelectionBounds({ x: 0, y: 0, width: 0, height: 0 });
-        selectionBoundsRef.current = { x: 0, y: 0, width: 0, height: 0 };
+        resetSelection();
       });
     };
 
@@ -196,12 +194,30 @@ export function useSelectionEvents(): UseSelectionEventsReturn {
       unlistenConfirm?.();
       unlistenReset?.();
     };
-  }, []);
+  }, [confirmSelection, resetSelection]);
+
+  useEffect(() => {
+    if (!selectionConfirmed || selectionBounds.width <= 0 || selectionBounds.height <= 0) {
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      void repositionToolbar(selectionBounds).catch((e) => {
+        toolbarLogger.error('Failed to reposition toolbar:', e);
+      });
+    }, 0);
+
+    return () => {
+      clearTimeout(timeoutId);
+    };
+  }, [selectionBounds, selectionConfirmed]);
 
   return {
     selectionBounds,
     selectionBoundsRef,
     selectionConfirmed,
     setSelectionConfirmed,
+    confirmSelection,
+    resetSelection,
   };
 }

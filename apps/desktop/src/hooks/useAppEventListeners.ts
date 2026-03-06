@@ -139,7 +139,17 @@ export function useAppEventListeners(callbacks: AppEventCallbacks) {
           // Toolbar doesn't exist - create it via Rust command
           // This ensures consistent window creation
           const { invoke } = await import('@tauri-apps/api/core');
-          await invoke('show_capture_toolbar', { x, y, width, height });
+          await invoke('show_capture_toolbar', {
+            x,
+            y,
+            width,
+            height,
+            sourceType,
+            windowId,
+            sourceTitle,
+            monitorIndex,
+            monitorName,
+          });
         }
       )
     );
