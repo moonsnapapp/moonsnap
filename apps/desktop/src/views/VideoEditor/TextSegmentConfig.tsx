@@ -310,18 +310,6 @@ export function TextSegmentConfig({ segment, onUpdate, onDelete, onDone }: TextS
         </div>
       )}
 
-      {/* Position info */}
-      <div className="pt-3 border-t border-[var(--glass-border)]">
-        <div className="text-xs">
-          <span className="text-[var(--ink-subtle)]">Center Position</span>
-          <p className="text-[var(--ink-dark)] font-mono mt-0.5">
-            {Math.round(segment.center.x * 100)}%, {Math.round(segment.center.y * 100)}%
-          </p>
-        </div>
-        <p className="text-[10px] text-[var(--ink-faint)] mt-2">
-          Drag the text on the preview to reposition
-        </p>
-      </div>
     </div>
   );
 }
