@@ -38,7 +38,7 @@ interface UseTextEditingReturn {
   textareaRef: React.RefObject<HTMLTextAreaElement | null>;
   startEditing: (shapeId: string, currentText: string) => void;
   handleTextChange: (value: string) => void;
-  handleSaveTextEdit: () => void;
+  handleSaveTextEdit: (measuredHeight?: number) => void;
   handleCancelTextEdit: () => void;
   getTextareaPosition: () => TextareaPosition | null;
 }
@@ -69,27 +69,43 @@ export const useTextEditing = ({
     setEditingTextValue(value);
   }, []);
 
-  // Save text edit
-  const handleSaveTextEdit = useCallback(() => {
+  // Save text edit, optionally resizing the shape to fit measured content height
+  const handleSaveTextEdit = useCallback((measuredHeight?: number) => {
     if (!editingTextId) return;
 
     const currentShape = shapes.find((s) => s.id === editingTextId);
     const nextText = editingTextValue;
 
-    // Avoid shape-array churn when blur/save doesn't actually change text.
-    if (!currentShape || (currentShape.text || '') === nextText) {
+    if (!currentShape) {
+      setEditingTextId(null);
+      setEditingTextValue('');
+      return;
+    }
+
+    // Convert measured pixel height (screen space) back to canvas space
+    const newHeight = measuredHeight != null && zoom > 0
+      ? Math.max(measuredHeight / zoom, EDITOR_TEXT.MIN_BOX_HEIGHT)
+      : undefined;
+
+    const textChanged = (currentShape.text || '') !== nextText;
+    const heightChanged = newHeight != null && Math.abs((currentShape.height || 0) - newHeight) > 1;
+
+    // Avoid shape-array churn when nothing actually changed.
+    if (!textChanged && !heightChanged) {
       setEditingTextId(null);
       setEditingTextValue('');
       return;
     }
 
     const updatedShapes = shapes.map((s) =>
-      s.id === editingTextId ? { ...s, text: nextText } : s
+      s.id === editingTextId
+        ? { ...s, text: nextText, ...(heightChanged ? { height: newHeight } : {}) }
+        : s
     );
     onShapesChange(updatedShapes);
     setEditingTextId(null);
     setEditingTextValue('');
-  }, [editingTextId, editingTextValue, shapes, onShapesChange]);
+  }, [editingTextId, editingTextValue, shapes, onShapesChange, zoom]);
 
   // Cancel text edit
   const handleCancelTextEdit = useCallback(() => {

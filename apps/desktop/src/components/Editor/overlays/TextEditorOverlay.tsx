@@ -23,7 +23,7 @@ interface TextEditorOverlayProps {
   } | null;
   value: string;
   onChange: (value: string) => void;
-  onSave: () => void;
+  onSave: (measuredHeight?: number) => void;
   onCancel: () => void;
 }
 
@@ -103,16 +103,26 @@ export const TextEditorOverlay: React.FC<TextEditorOverlayProps> = React.memo(({
     e.stopPropagation();
   }, []);
 
+  // Measure the scrollHeight and pass it to onSave so the shape can be resized
+  const saveWithMeasurement = useCallback(() => {
+    const el = editorRef.current;
+    if (el) {
+      onSave(el.scrollHeight);
+    } else {
+      onSave();
+    }
+  }, [onSave]);
+
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     e.stopPropagation();
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      onSave();
+      saveWithMeasurement();
     } else if (e.key === 'Escape') {
       e.preventDefault();
       onCancel();
     }
-  }, [onSave, onCancel]);
+  }, [saveWithMeasurement, onCancel]);
 
   const handleInput = useCallback((e: React.FormEvent<HTMLDivElement>) => {
     const target = e.target as HTMLDivElement;
@@ -139,14 +149,14 @@ export const TextEditorOverlay: React.FC<TextEditorOverlayProps> = React.memo(({
       onKeyPress={stopPropagation}
       onMouseDown={stopPropagation}
       onClick={stopPropagation}
-      onBlur={onSave}
+      onBlur={saveWithMeasurement}
       data-placeholder="Type here..."
-      className="fixed z-[9999] whitespace-pre-wrap break-words overflow-auto empty:before:content-[attr(data-placeholder)] empty:before:text-gray-400 empty:before:pointer-events-none"
+      className="fixed z-[9999] whitespace-pre-wrap break-words overflow-visible empty:before:content-[attr(data-placeholder)] empty:before:text-gray-400 empty:before:pointer-events-none"
       style={{
         left: position.left,
         top: position.top,
         width: position.width,
-        height: position.height,
+        minHeight: position.height,
         fontSize: position.fontSize,
         fontFamily: position.fontFamily,
         fontWeight: isBold ? 'bold' : 'normal',
