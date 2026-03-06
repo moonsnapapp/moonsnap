@@ -116,6 +116,7 @@ export function VideoEditorSidebar({ project, onOpenCropDialog }: VideoEditorSid
             {selectedSceneSegmentId && (() => {
               const segment = project.scene.segments.find(s => s.id === selectedSceneSegmentId);
               if (!segment) return null;
+              const isRedundantDefaultSegment = segment.mode === 'default';
               return (
                 <div className="space-y-4">
                   <div className="flex items-center justify-between">
@@ -141,12 +142,19 @@ export function VideoEditorSidebar({ project, onOpenCropDialog }: VideoEditorSid
                   <div className="space-y-3 pt-2">
                     <div>
                       <span className="text-xs text-[var(--ink-muted)] block mb-2">Mode</span>
+                      {isRedundantDefaultSegment && (
+                        <p className="mb-2 text-xs text-[var(--ink-subtle)]">
+                          This segment already matches the default scene mode. Delete it to remove the redundant override.
+                        </p>
+                      )}
                       <select
-                        value={segment.mode}
+                        value={isRedundantDefaultSegment ? '' : segment.mode}
                         onChange={(e) => updateSceneSegment(selectedSceneSegmentId, { mode: e.target.value as SceneMode })}
                         className="w-full h-8 bg-[var(--polar-mist)] border border-[var(--glass-border)] rounded-md text-sm text-[var(--ink-dark)] px-2"
                       >
-                        <option value="default">Screen + Webcam</option>
+                        {isRedundantDefaultSegment && (
+                          <option value="" disabled>No override selected</option>
+                        )}
                         <option value="cameraOnly">Camera Only</option>
                         <option value="screenOnly">Screen Only</option>
                       </select>

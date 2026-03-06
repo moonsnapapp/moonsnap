@@ -20,7 +20,7 @@ import {
 } from '../../../stores/videoEditor/selectors';
 import { createTextSegmentId } from '../../../utils/textSegmentId';
 import { measureTextSize } from '../../../utils/textMeasure';
-import type { DragEdge } from './BaseTrack';
+import type { DragEdge, SegmentTooltipPlacement } from './BaseTrack';
 
 /**
  * TextTrack uses seconds for time values (matching Cap's model),
@@ -39,6 +39,7 @@ interface TextTrackProps {
   durationMs: number;
   timelineZoom: number;
   width: number;
+  tooltipPlacement?: SegmentTooltipPlacement;
 }
 
 // Default segment duration when adding new text (3 seconds)
@@ -103,6 +104,7 @@ const TextSegmentItem = memo(function TextSegmentItem({
   onUpdate,
   onDelete,
   onDragStart,
+  tooltipPlacement = 'below',
 }: {
   segment: TextSegment;
   segmentId: string;
@@ -113,6 +115,7 @@ const TextSegmentItem = memo(function TextSegmentItem({
   onUpdate: (id: string, updates: Partial<TextSegment>) => void;
   onDelete: (id: string) => void;
   onDragStart: (dragging: boolean, edge?: DragEdge) => void;
+  tooltipPlacement?: SegmentTooltipPlacement;
 }) {
   const elementRef = useRef<HTMLDivElement>(null);
   const tooltipRef = useRef<HTMLDivElement>(null);
@@ -217,6 +220,9 @@ const TextSegmentItem = memo(function TextSegmentItem({
     e.stopPropagation();
     onDelete(segmentId);
   }, [onDelete, segmentId]);
+  const tooltipClassName = tooltipPlacement === 'above'
+    ? 'absolute -top-6 left-1/2 -translate-x-1/2 bg-[var(--glass-bg-solid)] border border-[var(--glass-border)] text-[var(--ink-dark)] text-[10px] px-2 py-0.5 rounded whitespace-nowrap z-20 shadow-sm'
+    : 'absolute -bottom-6 left-1/2 -translate-x-1/2 bg-[var(--glass-bg-solid)] border border-[var(--glass-border)] text-[var(--ink-dark)] text-[10px] px-2 py-0.5 rounded whitespace-nowrap z-20 shadow-sm';
 
   return (
     <div
@@ -282,7 +288,7 @@ const TextSegmentItem = memo(function TextSegmentItem({
       {isSelected && (
         <div
           ref={tooltipRef}
-          className="absolute -bottom-6 left-1/2 -translate-x-1/2 bg-[var(--glass-bg-solid)] border border-[var(--glass-border)] text-[var(--ink-dark)] text-[10px] px-2 py-0.5 rounded whitespace-nowrap z-20 shadow-sm"
+          className={tooltipClassName}
         >
           {formatTimeSimple(segment.start * 1000)} - {formatTimeSimple(segment.end * 1000)}
         </div>
@@ -301,6 +307,7 @@ export const TextTrackContent = memo(function TextTrackContent({
   durationMs,
   timelineZoom,
   width,
+  tooltipPlacement = 'below',
 }: TextTrackProps) {
   const selectedTextSegmentId = useVideoEditorStore(selectSelectedTextSegmentId);
   const previewTimeMs = useVideoEditorStore(selectPreviewTimeMs);
@@ -440,6 +447,7 @@ export const TextTrackContent = memo(function TextTrackContent({
             onUpdate={updateTextSegment}
             onDelete={deleteTextSegment}
             onDragStart={setDraggingTextSegment}
+            tooltipPlacement={tooltipPlacement}
           />
         );
       })}

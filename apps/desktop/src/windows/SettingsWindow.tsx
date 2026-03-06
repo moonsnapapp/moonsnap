@@ -115,6 +115,17 @@ const SettingsWindow: React.FC = () => {
     };
   }, []);
 
+  // Keep capture settings tabs in sync with changes from other windows.
+  useEffect(() => {
+    const unlisten = listen('capture-settings-changed', () => {
+      void loadCaptureSettings();
+    });
+
+    return () => {
+      unlisten.then((fn) => fn()).catch(() => {});
+    };
+  }, [loadCaptureSettings]);
+
   // Handle Escape key
   useEffect(() => {
     const handleKeyDown = async (e: KeyboardEvent) => {

@@ -10,6 +10,7 @@ import {
   getSegmentTimelinePosition,
   getEffectiveDuration,
 } from '../../../stores/videoEditorStore';
+import type { SegmentTooltipPlacement } from './BaseTrack';
 import {
   selectDeleteTrimSegment,
   selectSelectTrimSegment,
@@ -25,6 +26,7 @@ interface TrimTrackProps {
   timelineZoom: number;
   width: number;
   audioPath?: string;
+  tooltipPlacement?: SegmentTooltipPlacement;
 }
 
 const WAVEFORM_VISUAL_PERCENTILE = 0.98;
@@ -122,6 +124,7 @@ const TrimSegmentItem = memo(function TrimSegmentItem({
   onDragStart,
   waveform,
   visualGain,
+  tooltipPlacement = 'below',
 }: {
   segment: TrimSegment;
   segmentIndex: number;
@@ -135,6 +138,7 @@ const TrimSegmentItem = memo(function TrimSegmentItem({
   onDragStart: (dragging: boolean, edge?: 'start' | 'end' | 'move') => void;
   waveform: AudioWaveform | null;
   visualGain: number;
+  tooltipPlacement?: SegmentTooltipPlacement;
 }) {
   const elementRef = useRef<HTMLDivElement>(null);
   const tooltipRef = useRef<HTMLDivElement>(null);
@@ -231,6 +235,9 @@ const TrimSegmentItem = memo(function TrimSegmentItem({
     },
     [onDelete, segment.id]
   );
+  const tooltipClassName = tooltipPlacement === 'above'
+    ? 'absolute -top-6 left-1/2 -translate-x-1/2 bg-[var(--glass-bg-solid)] border border-[var(--glass-border)] text-[var(--ink-dark)] text-[10px] px-2 py-0.5 rounded whitespace-nowrap z-20 shadow-sm'
+    : 'absolute -bottom-6 left-1/2 -translate-x-1/2 bg-[var(--glass-bg-solid)] border border-[var(--glass-border)] text-[var(--ink-dark)] text-[10px] px-2 py-0.5 rounded whitespace-nowrap z-20 shadow-sm';
 
   return (
     <div
@@ -303,7 +310,7 @@ const TrimSegmentItem = memo(function TrimSegmentItem({
       {isSelected && (
         <div
           ref={tooltipRef}
-          className="absolute -bottom-6 left-1/2 -translate-x-1/2 bg-[var(--glass-bg-solid)] border border-[var(--glass-border)] text-[var(--ink-dark)] text-[10px] px-2 py-0.5 rounded whitespace-nowrap z-20 shadow-sm"
+          className={tooltipClassName}
         >
           {formatTimeSimple(segmentDuration)}
         </div>
@@ -417,6 +424,7 @@ export const TrimTrackContent = memo(function TrimTrackContent({
   timelineZoom,
   width,
   audioPath,
+  tooltipPlacement = 'below',
 }: TrimTrackProps) {
   const selectedTrimSegmentId = useVideoEditorStore(selectSelectedTrimSegmentId);
   const { waveform, visualGain } = useWaveform(audioPath);
@@ -495,6 +503,7 @@ export const TrimTrackContent = memo(function TrimTrackContent({
           onDragStart={handleDragStart}
           waveform={waveform}
           visualGain={visualGain}
+          tooltipPlacement={tooltipPlacement}
         />
       ))}
 

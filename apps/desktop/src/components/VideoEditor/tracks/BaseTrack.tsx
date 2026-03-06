@@ -8,6 +8,7 @@ import { formatTimeSimple } from '../../../stores/videoEditorStore';
 
 /** Drag edge for resize/move operations */
 export type DragEdge = 'start' | 'end' | 'move';
+export type SegmentTooltipPlacement = 'above' | 'below';
 
 /** Internal drag state stored in ref to avoid re-renders during drag */
 interface DragState {
@@ -60,6 +61,8 @@ export interface BaseSegmentItemProps<T extends BaseSegment> {
   dataAttribute?: string;
   /** Additional className for the segment container */
   className?: string;
+  /** Where to render the selected-segment tooltip */
+  tooltipPlacement?: SegmentTooltipPlacement;
 }
 
 // ============================================================================
@@ -215,6 +218,7 @@ export const BaseSegmentItem = memo(function BaseSegmentItem<T extends BaseSegme
   textColor,
   dataAttribute = 'data-segment',
   className = '',
+  tooltipPlacement = 'below',
 }: BaseSegmentItemProps<T>) {
   const elementRef = useRef<HTMLDivElement>(null);
   const tooltipRef = useRef<HTMLDivElement>(null);
@@ -246,6 +250,9 @@ export const BaseSegmentItem = memo(function BaseSegmentItem<T extends BaseSegme
 
   // Build the data attribute props object
   const dataAttributeProps = { [dataAttribute]: true };
+  const tooltipClassName = tooltipPlacement === 'above'
+    ? 'absolute -top-6 left-1/2 -translate-x-1/2 bg-[var(--glass-bg-solid)] border border-[var(--glass-border)] text-[var(--ink-dark)] text-[10px] px-2 py-0.5 rounded whitespace-nowrap z-20 shadow-sm'
+    : 'absolute -bottom-6 left-1/2 -translate-x-1/2 bg-[var(--glass-bg-solid)] border border-[var(--glass-border)] text-[var(--ink-dark)] text-[10px] px-2 py-0.5 rounded whitespace-nowrap z-20 shadow-sm';
 
   return (
     <div
@@ -310,7 +317,7 @@ export const BaseSegmentItem = memo(function BaseSegmentItem<T extends BaseSegme
       {isSelected && (
         <div
           ref={tooltipRef}
-          className="absolute -bottom-6 left-1/2 -translate-x-1/2 bg-[var(--glass-bg-solid)] border border-[var(--glass-border)] text-[var(--ink-dark)] text-[10px] px-2 py-0.5 rounded whitespace-nowrap z-20 shadow-sm"
+          className={tooltipClassName}
         >
           {formatTimeSimple(segment.startMs)} - {formatTimeSimple(segment.endMs)}
         </div>

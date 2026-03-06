@@ -439,6 +439,19 @@ export function VideoTimeline({ onExport, onResetTrimSegments, onSetInPoint, onS
   const effectiveDurationMs = getEffectiveDuration(segments ?? [], sourceDurationMs);
   const durationWidth = effectiveDurationMs * timelineZoom;
   const timelineWidth = Math.max(durationWidth, containerWidth - TRACK_LABEL_WIDTH);
+  const hasVideoTrack = trackVisibility.video;
+  const hasTextTrack = !!project && trackVisibility.text;
+  const hasZoomTrack = !!project && trackVisibility.zoom;
+  const hasSceneTrack = !!project && !!project.sources.webcamVideo && trackVisibility.scene;
+  const hasMaskTrack = !!project && trackVisibility.mask;
+  const lastVisibleTrack =
+    ([
+      hasVideoTrack ? 'video' : null,
+      hasTextTrack ? 'text' : null,
+      hasZoomTrack ? 'zoom' : null,
+      hasSceneTrack ? 'scene' : null,
+      hasMaskTrack ? 'mask' : null,
+    ].filter(Boolean).at(-1) ?? null) as 'video' | 'text' | 'zoom' | 'scene' | 'mask' | null;
 
   // Zoom % relative to fit-to-window (100% = timeline fills viewport)
   const fitZoom = getFitZoom(project, containerWidth);
@@ -1091,7 +1104,7 @@ export function VideoTimeline({ onExport, onResetTrimSegments, onSetInPoint, onS
           <div className="h-8 border-b border-[var(--glass-border)]" />
 
           {/* Video label */}
-          {trackVisibility.video && (
+          {hasVideoTrack && (
             <div className="h-12 border-b border-[var(--glass-border)] flex items-center justify-center">
               <div className="flex items-center gap-1.5 text-[var(--ink-dark)]">
                 <Film className="w-3.5 h-3.5" />
@@ -1101,7 +1114,7 @@ export function VideoTimeline({ onExport, onResetTrimSegments, onSetInPoint, onS
           )}
 
           {/* Text label */}
-          {project && trackVisibility.text && (
+          {hasTextTrack && (
             <div className="h-12 border-b border-[var(--glass-border)] flex items-center justify-center">
               <div className="flex items-center gap-1.5 text-[var(--ink-dark)]">
                 <Type className="w-3.5 h-3.5" />
@@ -1111,7 +1124,7 @@ export function VideoTimeline({ onExport, onResetTrimSegments, onSetInPoint, onS
           )}
 
           {/* Zoom label */}
-          {project && trackVisibility.zoom && (
+          {hasZoomTrack && (
             <div className="h-12 border-b border-[var(--glass-border)] flex items-center justify-center">
               <div className="flex items-center gap-1.5 text-[var(--ink-dark)]">
                 <ZoomIn className="w-3.5 h-3.5" />
@@ -1121,7 +1134,7 @@ export function VideoTimeline({ onExport, onResetTrimSegments, onSetInPoint, onS
           )}
 
           {/* Scene label */}
-          {project && project.sources.webcamVideo && trackVisibility.scene && (
+          {hasSceneTrack && (
             <div className="h-12 border-b border-[var(--glass-border)] flex items-center justify-center">
               <div className="flex items-center gap-1.5 text-[var(--ink-dark)]">
                 <Video className="w-3.5 h-3.5" />
@@ -1131,7 +1144,7 @@ export function VideoTimeline({ onExport, onResetTrimSegments, onSetInPoint, onS
           )}
 
           {/* Mask label */}
-          {project && trackVisibility.mask && (
+          {hasMaskTrack && (
             <div className="h-12 border-b border-[var(--glass-border)] flex items-center justify-center">
               <div className="flex items-center gap-1.5 text-[var(--ink-dark)]">
                 <EyeOff className="w-3.5 h-3.5" />
@@ -1144,7 +1157,7 @@ export function VideoTimeline({ onExport, onResetTrimSegments, onSetInPoint, onS
         {/* Scrollable Timeline Content */}
         <div
           ref={scrollRef}
-          className={`flex-1 min-w-0 overflow-x-auto overflow-y-auto ${splitMode ? 'cursor-crosshair' : ''}`}
+          className={`flex-1 min-w-0 overflow-x-auto overflow-y-hidden ${splitMode ? 'cursor-crosshair' : ''}`}
           onScroll={handleScroll}
           onMouseMove={handleTimelineMouseMove}
           onMouseLeave={handleTimelineMouseLeave}
@@ -1164,12 +1177,13 @@ export function VideoTimeline({ onExport, onResetTrimSegments, onSetInPoint, onS
             />
 
             {/* Video Track Content (Trim Segments) */}
-            {trackVisibility.video && project && (
+            {hasVideoTrack && project && (
               <TrimTrackContent
                 segments={project.timeline.segments}
                 durationMs={sourceDurationMs}
                 timelineZoom={timelineZoom}
                 width={timelineWidth}
+                tooltipPlacement={lastVisibleTrack === 'video' ? 'above' : 'below'}
                 audioPath={
                   project.sources.systemAudio ??
                   project.sources.microphoneAudio ??
@@ -1180,43 +1194,47 @@ export function VideoTimeline({ onExport, onResetTrimSegments, onSetInPoint, onS
             )}
 
             {/* Text Track Content */}
-            {project && trackVisibility.text && (
+            {hasTextTrack && project && (
               <TextTrackContent
                 segments={project.text.segments}
                 durationMs={effectiveDurationMs}
                 timelineZoom={timelineZoom}
                 width={timelineWidth}
+                tooltipPlacement={lastVisibleTrack === 'text' ? 'above' : 'below'}
               />
             )}
 
             {/* Zoom Track Content */}
-            {project && trackVisibility.zoom && (
+            {hasZoomTrack && project && (
               <ZoomTrackContent
                 regions={project.zoom.regions}
                 durationMs={effectiveDurationMs}
                 timelineZoom={timelineZoom}
                 width={timelineWidth}
+                tooltipPlacement={lastVisibleTrack === 'zoom' ? 'above' : 'below'}
               />
             )}
 
             {/* Scene Track Content */}
-            {project && project.sources.webcamVideo && trackVisibility.scene && (
+            {hasSceneTrack && project && (
               <SceneTrackContent
                 segments={project.scene.segments}
                 defaultMode={project.scene.defaultMode}
                 durationMs={effectiveDurationMs}
                 timelineZoom={timelineZoom}
                 width={timelineWidth}
+                tooltipPlacement={lastVisibleTrack === 'scene' ? 'above' : 'below'}
               />
             )}
 
             {/* Mask Track Content */}
-            {project && trackVisibility.mask && (
+            {hasMaskTrack && project && (
               <MaskTrackContent
                 segments={project.mask.segments}
                 durationMs={effectiveDurationMs}
                 timelineZoom={timelineZoom}
                 width={timelineWidth}
+                tooltipPlacement={lastVisibleTrack === 'mask' ? 'above' : 'below'}
               />
             )}
 

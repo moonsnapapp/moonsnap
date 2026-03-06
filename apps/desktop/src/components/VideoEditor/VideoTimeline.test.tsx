@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, act } from '@testing-library/react';
 import { VideoTimeline } from './VideoTimeline';
+import { VideoEditorTimeline } from '../../views/VideoEditor/VideoEditorTimeline';
 import { useVideoEditorStore } from '../../stores/videoEditorStore';
 import { mockInvoke, setInvokeResponse } from '../../test/mocks/tauri';
 import type { VideoProject, AudioWaveform } from '../../types';
@@ -248,6 +249,167 @@ describe('VideoTimeline', () => {
       });
 
       expect(screen.getByText('Scene')).toBeInTheDocument();
+    });
+
+    it('should show scene mode labels inside scene segments', async () => {
+      useVideoEditorStore.setState({
+        project: createMockProject({
+          sources: {
+            screenVideo: '/path/to/screen.mp4',
+            webcamVideo: '/path/to/webcam.mp4',
+            systemAudio: null,
+            microphoneAudio: null,
+            cursorRecording: null,
+          },
+          scene: {
+            defaultMode: 'default',
+            segments: [
+              {
+                id: 'scene-1',
+                startMs: 0,
+                endMs: 3000,
+                mode: 'cameraOnly',
+              },
+            ],
+          },
+        }),
+        trackVisibility: {
+          video: true,
+          text: true,
+          mask: true,
+          zoom: true,
+          scene: true,
+        },
+      });
+
+      await act(async () => {
+        render(<VideoTimeline {...defaultProps} />);
+      });
+
+      expect(screen.getByText('Camera Only')).toBeInTheDocument();
+    });
+
+    it('should not show a label for default scene segments', async () => {
+      useVideoEditorStore.setState({
+        project: createMockProject({
+          sources: {
+            screenVideo: '/path/to/screen.mp4',
+            webcamVideo: '/path/to/webcam.mp4',
+            systemAudio: null,
+            microphoneAudio: null,
+            cursorRecording: null,
+          },
+          scene: {
+            defaultMode: 'default',
+            segments: [
+              {
+                id: 'scene-default',
+                startMs: 0,
+                endMs: 3000,
+                mode: 'default',
+              },
+            ],
+          },
+        }),
+        trackVisibility: {
+          video: true,
+          text: true,
+          mask: true,
+          zoom: true,
+          scene: true,
+        },
+      });
+
+      await act(async () => {
+        render(<VideoTimeline {...defaultProps} />);
+      });
+
+      expect(screen.queryByText('Screen + Webcam')).not.toBeInTheDocument();
+    });
+
+    it('should render screen-only scene segments with the green scene styling', async () => {
+      useVideoEditorStore.setState({
+        project: createMockProject({
+          sources: {
+            screenVideo: '/path/to/screen.mp4',
+            webcamVideo: '/path/to/webcam.mp4',
+            systemAudio: null,
+            microphoneAudio: null,
+            cursorRecording: null,
+          },
+          scene: {
+            defaultMode: 'default',
+            segments: [
+              {
+                id: 'scene-screen-only',
+                startMs: 0,
+                endMs: 3000,
+                mode: 'screenOnly',
+              },
+            ],
+          },
+        }),
+        trackVisibility: {
+          video: true,
+          text: true,
+          mask: true,
+          zoom: true,
+          scene: true,
+        },
+      });
+
+      let container: HTMLElement;
+      await act(async () => {
+        const result = render(<VideoTimeline {...defaultProps} />);
+        container = result.container;
+      });
+
+      expect(screen.getByText('Screen Only')).toBeInTheDocument();
+
+      const sceneSegment = container!.querySelector('[data-segment]') as HTMLElement | null;
+      expect(sceneSegment).toBeInTheDocument();
+      expect(sceneSegment?.style.backgroundColor).toBe('var(--track-scene-default-bg)');
+      expect(sceneSegment?.style.borderColor).toBe('var(--track-scene-default-border)');
+    });
+
+    it('should render the selected bottom-track mask tooltip above the segment', async () => {
+      useVideoEditorStore.setState({
+        project: createMockProject({
+          mask: {
+            segments: [
+              {
+                id: 'mask-1',
+                startMs: 0,
+                endMs: 3000,
+                x: 0.25,
+                y: 0.25,
+                width: 0.25,
+                height: 0.25,
+                maskType: 'blur',
+                intensity: 50,
+                feather: 10,
+                color: '#000000',
+              },
+            ],
+          },
+        }),
+        selectedMaskSegmentId: 'mask-1',
+        trackVisibility: {
+          video: true,
+          text: true,
+          mask: true,
+          zoom: true,
+          scene: false,
+        },
+      });
+
+      await act(async () => {
+        render(<VideoTimeline {...defaultProps} />);
+      });
+
+      const tooltip = screen.getByText('0:00 - 0:03');
+      expect(tooltip.className).toContain('-top-6');
+      expect(tooltip.className).not.toContain('-bottom-6');
     });
 
     it('should use screen video for waveform when audio is embedded in quick capture', async () => {
@@ -651,6 +813,22 @@ describe('VideoTimeline', () => {
   });
 
   describe('scroll handling', () => {
+    it('should hide vertical overflow on the timeline scroll container', async () => {
+      useVideoEditorStore.setState({
+        project: createMockProject(),
+      });
+
+      let container: HTMLElement;
+      await act(async () => {
+        const result = render(<VideoTimeline {...defaultProps} />);
+        container = result.container;
+      });
+
+      const scrollContainer = container!.querySelector('.overflow-x-auto') as HTMLDivElement | null;
+      expect(scrollContainer).toBeInTheDocument();
+      expect(scrollContainer?.className).toContain('overflow-y-hidden');
+    });
+
     it('should update scroll position in store when scrolling', async () => {
       useVideoEditorStore.setState({
         project: createMockProject(),
@@ -730,6 +908,39 @@ describe('VideoTimeline', () => {
         expect(useVideoEditorStore.getState().currentTimeMs).toBeGreaterThanOrEqual(4990);
         expect(useVideoEditorStore.getState().currentTimeMs).toBeLessThanOrEqual(5010);
       }
+    });
+  });
+
+  describe('timeline wrapper sizing', () => {
+    it('should grow the wrapper when all five timeline tracks are visible', async () => {
+      useVideoEditorStore.setState({
+        project: createMockProject({
+          sources: {
+            screenVideo: '/path/to/screen.mp4',
+            webcamVideo: '/path/to/webcam.mp4',
+            systemAudio: null,
+            microphoneAudio: null,
+            cursorRecording: null,
+          },
+        }),
+        trackVisibility: {
+          video: true,
+          text: true,
+          mask: true,
+          zoom: true,
+          scene: true,
+        },
+      });
+
+      let container: HTMLElement;
+      await act(async () => {
+        const result = render(<VideoEditorTimeline onExport={vi.fn()} />);
+        container = result.container;
+      });
+
+      const wrapper = container!.firstElementChild as HTMLDivElement | null;
+      expect(wrapper).toBeInTheDocument();
+      expect(wrapper?.style.height).toBe('330px');
     });
   });
 });

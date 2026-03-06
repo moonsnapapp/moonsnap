@@ -15,7 +15,7 @@
 
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { emit, once } from '@tauri-apps/api/event';
+import { emit, listen, once } from '@tauri-apps/api/event';
 import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
 import { Toaster } from 'sonner';
 import { Titlebar } from '../components/Titlebar/Titlebar';
@@ -64,6 +64,17 @@ const CaptureToolbarWindow: React.FC = () => {
       loadSettings();
     }
   }, [isInitialized, loadSettings]);
+
+  // Keep quick settings in sync when another window updates capture settings.
+  useEffect(() => {
+    const unlisten = listen('capture-settings-changed', () => {
+      void loadSettings();
+    });
+
+    return () => {
+      unlisten.then((fn) => fn()).catch(() => {});
+    };
+  }, [loadSettings]);
 
   // Pre-warm capture resources when toolbar appears
   // This initializes webcam and screen capture so recording starts instantly

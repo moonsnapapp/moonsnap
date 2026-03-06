@@ -15,7 +15,7 @@ import {
   selectSetHoveredTrack,
   selectUpdateSceneSegment,
 } from '../../../stores/videoEditor/selectors';
-import type { DragEdge } from './BaseTrack';
+import type { DragEdge, SegmentTooltipPlacement } from './BaseTrack';
 import { useSegmentDrag } from './BaseTrack';
 
 interface SceneTrackProps {
@@ -24,6 +24,7 @@ interface SceneTrackProps {
   durationMs: number;
   timelineZoom: number;
   width?: number;
+  tooltipPlacement?: SegmentTooltipPlacement;
 }
 
 // Generate unique IDs for segments
@@ -48,9 +49,9 @@ const SCENE_MODE_VARS: Record<SceneMode, { bg: string; border: string; text: str
     text: 'var(--track-scene-camera-text)',
   },
   screenOnly: {
-    bg: 'var(--track-scene-screen-bg)',
-    border: 'var(--track-scene-screen-border)',
-    text: 'var(--track-scene-screen-text)',
+    bg: 'var(--track-scene-default-bg)',
+    border: 'var(--track-scene-default-border)',
+    text: 'var(--track-scene-default-text)',
   },
 };
 
@@ -58,6 +59,12 @@ const SCENE_MODE_ICONS: Record<SceneMode, typeof Camera> = {
   default: Video,
   cameraOnly: Camera,
   screenOnly: Monitor,
+};
+
+const SCENE_MODE_LABELS: Record<SceneMode, string | null> = {
+  default: null,
+  cameraOnly: 'Camera Only',
+  screenOnly: 'Screen Only',
 };
 
 /**
@@ -76,6 +83,7 @@ const SceneSegmentItem = memo(function SceneSegmentItem({
   onUpdate,
   onDelete,
   onDragStart,
+  tooltipPlacement = 'below',
 }: {
   segment: SceneSegment;
   isSelected: boolean;
@@ -85,6 +93,7 @@ const SceneSegmentItem = memo(function SceneSegmentItem({
   onUpdate: (id: string, updates: Partial<SceneSegment>) => void;
   onDelete: (id: string) => void;
   onDragStart: (dragging: boolean, edge?: DragEdge) => void;
+  tooltipPlacement?: SegmentTooltipPlacement;
 }) {
   const elementRef = useRef<HTMLDivElement>(null);
   const tooltipRef = useRef<HTMLDivElement>(null);
@@ -93,6 +102,7 @@ const SceneSegmentItem = memo(function SceneSegmentItem({
   const segmentWidth = (segment.endMs - segment.startMs) * timelineZoom;
   const vars = SCENE_MODE_VARS[segment.mode];
   const Icon = SCENE_MODE_ICONS[segment.mode];
+  const modeLabel = SCENE_MODE_LABELS[segment.mode];
 
   const handleClick = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
@@ -115,6 +125,9 @@ const SceneSegmentItem = memo(function SceneSegmentItem({
     e.stopPropagation();
     onDelete(segment.id);
   }, [onDelete, segment.id]);
+  const tooltipClassName = tooltipPlacement === 'above'
+    ? 'absolute -top-6 left-1/2 -translate-x-1/2 bg-[var(--glass-bg-solid)] border border-[var(--glass-border)] text-[var(--ink-dark)] text-[10px] px-2 py-0.5 rounded whitespace-nowrap z-20 shadow-sm'
+    : 'absolute -bottom-6 left-1/2 -translate-x-1/2 bg-[var(--glass-bg-solid)] border border-[var(--glass-border)] text-[var(--ink-dark)] text-[10px] px-2 py-0.5 rounded whitespace-nowrap z-20 shadow-sm';
 
   return (
     <div
@@ -146,9 +159,17 @@ const SceneSegmentItem = memo(function SceneSegmentItem({
         onPointerDown={(e) => handlePointerDown(e, 'move')}
       >
         {segmentWidth > 60 && (
-          <div className="flex items-center gap-1" style={{ color: vars.text }}>
+          <div
+            className="flex min-w-0 items-center gap-1 overflow-hidden"
+            style={{ color: vars.text }}
+          >
             <GripVertical className="w-3 h-3" />
             <Icon className="w-3 h-3" />
+            {segmentWidth > 100 && modeLabel && (
+              <span className="truncate text-[10px] font-medium leading-none">
+                {modeLabel}
+              </span>
+            )}
           </div>
         )}
       </div>
@@ -175,7 +196,7 @@ const SceneSegmentItem = memo(function SceneSegmentItem({
       {isSelected && (
         <div
           ref={tooltipRef}
-          className="absolute -bottom-6 left-1/2 -translate-x-1/2 bg-[var(--glass-bg-solid)] border border-[var(--glass-border)] text-[var(--ink-dark)] text-[10px] px-2 py-0.5 rounded whitespace-nowrap z-20 shadow-sm"
+          className={tooltipClassName}
         >
           {formatTimeSimple(segment.startMs)} - {formatTimeSimple(segment.endMs)}
         </div>
@@ -284,6 +305,7 @@ export const SceneTrack = memo(function SceneTrack({
   defaultMode,
   durationMs,
   timelineZoom,
+  tooltipPlacement = 'below',
 }: SceneTrackProps) {
   const selectSceneSegment = useVideoEditorStore(selectSelectSceneSegment);
   const addSceneSegment = useVideoEditorStore(selectAddSceneSegment);
@@ -364,6 +386,7 @@ export const SceneTrack = memo(function SceneTrack({
             onUpdate={updateSceneSegment}
             onDelete={deleteSceneSegment}
             onDragStart={setDraggingSceneSegment}
+            tooltipPlacement={tooltipPlacement}
           />
         ))}
 
@@ -399,6 +422,7 @@ export const SceneTrackContent = memo(function SceneTrackContent({
   durationMs,
   timelineZoom,
   width,
+  tooltipPlacement = 'below',
 }: SceneTrackProps) {
   const selectSceneSegment = useVideoEditorStore(selectSelectSceneSegment);
   const addSceneSegment = useVideoEditorStore(selectAddSceneSegment);
@@ -466,6 +490,7 @@ export const SceneTrackContent = memo(function SceneTrackContent({
           onUpdate={updateSceneSegment}
           onDelete={deleteSceneSegment}
           onDragStart={setDraggingSceneSegment}
+          tooltipPlacement={tooltipPlacement}
         />
       ))}
 
