@@ -33,6 +33,14 @@ updatedAt: string,
  */
 name: string, 
 /**
+ * Original on-disk filename preserved for quick-share/save defaults.
+ */
+originalFileName: string | null, 
+/**
+ * Whether this recording originated from the quick capture flow.
+ */
+quickCapture: boolean, 
+/**
  * Source files for this project.
  */
 sources: VideoSources, 

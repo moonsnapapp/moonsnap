@@ -386,6 +386,7 @@ pub fn run_video_capture(
                 height,
                 duration_ms: recording_duration.as_millis() as u64,
                 fps: settings.fps,
+                quick_capture: settings.quick_capture,
                 has_webcam: artifact_flags.has_webcam,
                 has_cursor_data: artifact_flags.has_cursor,
                 has_system_audio: artifact_flags.has_system_audio,

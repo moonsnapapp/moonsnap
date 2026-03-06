@@ -201,6 +201,7 @@ function createPlaceholderCapture(
     has_annotations: false,
     tags: [],
     favorite: false,
+    quick_capture: false,
     is_missing: false,
   };
 }
@@ -218,6 +219,7 @@ function createCaptureFromResponse(result: SaveCaptureResponse): CaptureListItem
     has_annotations: result.project.annotations.length > 0,
     tags: result.project.tags,
     favorite: result.project.favorite,
+    quick_capture: false,
     is_missing: false,
   };
 }

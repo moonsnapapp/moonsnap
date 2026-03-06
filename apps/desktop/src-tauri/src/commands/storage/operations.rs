@@ -431,6 +431,7 @@ async fn load_project_item(
         has_annotations: !project.annotations.is_empty(),
         tags: project.tags,
         favorite: project.favorite,
+        quick_capture: false,
         is_missing,
     })
 }
@@ -484,7 +485,7 @@ async fn load_video_project_folder(
         };
 
     // Try to read metadata from project.json, fall back to file metadata
-    let (created_at, updated_at, dimensions, json_tags, json_favorite) =
+    let (created_at, updated_at, dimensions, json_tags, json_favorite, json_quick_capture) =
         if async_fs::try_exists(&project_json).await.unwrap_or(false) {
             if let Ok(content) = async_fs::read_to_string(&project_json).await {
                 if let Ok(project) = serde_json::from_str::<serde_json::Value>(&content) {
@@ -522,7 +523,11 @@ async fn load_video_project_folder(
                         .get("favorite")
                         .and_then(|v| v.as_bool())
                         .unwrap_or(false);
-                    (created, updated, dims, tags, fav)
+                    let quick_capture = project
+                        .get("quickCapture")
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(false);
+                    (created, updated, dims, tags, fav, quick_capture)
                 } else {
                     (
                         Utc::now(),
@@ -532,6 +537,7 @@ async fn load_video_project_folder(
                             height: 0,
                         },
                         Vec::new(),
+                        false,
                         false,
                     )
                 }
@@ -544,6 +550,7 @@ async fn load_video_project_folder(
                         height: 0,
                     },
                     Vec::new(),
+                    false,
                     false,
                 )
             }
@@ -567,6 +574,7 @@ async fn load_video_project_folder(
                     height: 0,
                 },
                 Vec::new(),
+                false,
                 false,
             )
         };
@@ -625,6 +633,7 @@ async fn load_video_project_folder(
         has_annotations: false,
         tags: final_tags,
         favorite: final_favorite,
+        quick_capture: json_quick_capture,
         is_missing: false,
     })
 }
@@ -773,6 +782,7 @@ async fn load_media_item(
         has_annotations: false,
         tags: sidecar_tags,
         favorite: sidecar_favorite,
+        quick_capture: capture_type == "video" || capture_type == "gif",
         is_missing: false,
     })
 }
@@ -1358,6 +1368,11 @@ fn migrate_legacy_video(
         .and_then(|s| s.to_str())
         .ok_or("Invalid video path")?
         .to_string();
+    let original_file_name = video_path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or("Invalid video filename")?
+        .to_string();
 
     // Create the project folder
     let folder_path = captures_dir.join(&stem);
@@ -1410,6 +1425,7 @@ fn migrate_legacy_video(
     let has_system_audio = folder_path.join("system.wav").exists();
     let project = create_migration_project_json(
         &stem,
+        &original_file_name,
         width,
         height,
         duration_ms,
@@ -1440,6 +1456,7 @@ fn migrate_legacy_video(
 /// Create a minimal project.json for a migrated video.
 fn create_migration_project_json(
     id: &str,
+    original_file_name: &str,
     width: u32,
     height: u32,
     duration_ms: u64,
@@ -1480,6 +1497,8 @@ fn create_migration_project_json(
         "createdAt": now,
         "updatedAt": now,
         "name": id,
+        "originalFileName": original_file_name,
+        "quickCapture": true,
         "sources": sources,
         "timeline": {
             "durationMs": duration_ms,

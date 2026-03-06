@@ -544,6 +544,7 @@ pub struct CreateVideoProjectRequest<'a> {
     pub height: u32,
     pub duration_ms: u64,
     pub fps: u32,
+    pub quick_capture: bool,
     pub has_webcam: bool,
     pub has_cursor_data: bool,
     pub has_system_audio: bool,
@@ -561,10 +562,17 @@ pub fn create_video_project_file(request: CreateVideoProjectRequest<'_>) -> Resu
         request.duration_ms,
         request.fps,
     );
+    project.quick_capture = request.quick_capture;
 
     // Set project name from folder name
     if let Some(folder_name) = request.project_folder.file_name() {
-        project.name = folder_name.to_string_lossy().to_string();
+        let folder_name = folder_name.to_string_lossy().to_string();
+        project.name = folder_name.clone();
+        project.original_file_name = if request.quick_capture {
+            Some(format!("{}.mp4", folder_name))
+        } else {
+            None
+        };
     }
 
     // Update sources with relative paths for files that exist

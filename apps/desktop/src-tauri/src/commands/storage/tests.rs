@@ -196,6 +196,7 @@ fn test_capture_list_item_serialization() {
         has_annotations: false,
         tags: vec![],
         favorite: false,
+        quick_capture: false,
         is_missing: false,
     };
 

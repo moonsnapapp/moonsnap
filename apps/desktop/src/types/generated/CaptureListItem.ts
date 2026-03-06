@@ -6,6 +6,10 @@ import type { Dimensions } from "./Dimensions";
  */
 export type CaptureListItem = { id: string, created_at: string, updated_at: string, capture_type: string, dimensions: Dimensions, thumbnail_path: string, image_path: string, has_annotations: boolean, tags: Array<string>, favorite: boolean, 
 /**
+ * Whether this media came from the quick capture flow.
+ */
+quick_capture: boolean, 
+/**
  * True if the original image file is missing from disk
  */
 is_missing: boolean, };

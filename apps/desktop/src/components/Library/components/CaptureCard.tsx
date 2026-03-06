@@ -37,6 +37,7 @@ export const CaptureCard: React.FC<CaptureCardProps> = memo(
     const isPlaceholder = capture.id.startsWith('temp_');
     const isMissing = capture.is_missing;
     const isMedia = isVideoOrGif(capture.capture_type);
+    const isQuickVideo = capture.capture_type === 'video' && Boolean(capture.quick_capture);
     const hasThumbnail = capture.thumbnail_path && capture.thumbnail_path.length > 0;
 
     // Use cached URL to avoid repeated convertFileSrc calls
@@ -137,8 +138,15 @@ export const CaptureCard: React.FC<CaptureCardProps> = memo(
               
               {/* Media type badge for videos/gifs */}
               {isMedia && !isMissing && (
-                <div className="absolute bottom-3 left-3 px-2 py-1 rounded-md bg-black/70 text-white text-[10px] font-medium uppercase">
-                  {capture.capture_type}
+                <div className="absolute bottom-3 left-3 flex items-center gap-2">
+                  <div className="px-2 py-1 rounded-md bg-black/70 text-white text-[10px] font-medium uppercase">
+                    {capture.capture_type}
+                  </div>
+                  {isQuickVideo && (
+                    <div className="px-2 py-1 rounded-md bg-[var(--coral-400)]/90 text-white text-[10px] font-medium">
+                      Quick Capture
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -200,6 +208,9 @@ export const CaptureCard: React.FC<CaptureCardProps> = memo(
                         ? capture.capture_type.toUpperCase()
                         : `${capture.dimensions.width} × ${capture.dimensions.height}`}
                   </span>
+                  {isQuickVideo && (
+                    <span className="pill-coral text-[10px]">Ready to share</span>
+                  )}
                   {/* Display up to 2 tags */}
                   {!isPlaceholder && capture.tags.slice(0, 2).map(tag => (
                     <TagChip key={tag} tag={tag} size="sm" />
@@ -251,6 +262,7 @@ export const CaptureCard: React.FC<CaptureCardProps> = memo(
           favorite={capture.favorite}
           isMissing={isMissing}
           captureType={capture.capture_type}
+          quickCapture={capture.quick_capture}
           onCopyToClipboard={onCopyToClipboard}
           onOpenInFolder={onOpenInFolder}
           onToggleFavorite={onToggleFavorite}

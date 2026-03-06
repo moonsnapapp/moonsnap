@@ -224,6 +224,13 @@ fn load_video_project_from_folder(folder_path: &std::path::Path) -> Result<Video
     let mut project: VideoProject = serde_json::from_str(&content)
         .map_err(|e| format!("Failed to parse project.json: {}", e))?;
 
+    if project.quick_capture && project.original_file_name.is_none() {
+        project.original_file_name = folder_path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .map(|name| format!("{}.mp4", name));
+    }
+
     // Resolve relative paths to absolute paths
     // The sources contain relative paths like "screen.mp4", "webcam.mp4", etc.
     // We need to convert them to absolute paths for the video editor to use
@@ -279,6 +286,7 @@ fn load_video_project_legacy(video_path: &std::path::Path) -> Result<VideoProjec
         metadata.duration_ms,
         metadata.fps,
     );
+    project.quick_capture = true;
 
     // Check for associated files
     let base_path = video_path.with_extension("");

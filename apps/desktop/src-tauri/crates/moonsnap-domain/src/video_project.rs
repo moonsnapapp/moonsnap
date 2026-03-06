@@ -31,6 +31,12 @@ pub struct VideoProject {
     pub updated_at: String,
     /// Project name (usually derived from filename).
     pub name: String,
+    /// Original on-disk filename preserved for quick-share/save defaults.
+    #[serde(default)]
+    pub original_file_name: Option<String>,
+    /// Whether this recording originated from the quick capture flow.
+    #[serde(default)]
+    pub quick_capture: bool,
     /// Source files for this project.
     pub sources: VideoSources,
     /// Timeline editing state.
@@ -1410,6 +1416,10 @@ impl VideoProject {
                 .file_stem()
                 .map(|s| s.to_string_lossy().to_string())
                 .unwrap_or_else(|| "Untitled".to_string()),
+            original_file_name: PathBuf::from(screen_video_path)
+                .file_name()
+                .map(|s| s.to_string_lossy().to_string()),
+            quick_capture: false,
             sources: VideoSources {
                 screen_video: screen_video_path.to_string(),
                 webcam_video: None,

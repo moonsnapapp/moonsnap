@@ -49,6 +49,7 @@ import {
   selectTrackVisibility,
 } from '../../stores/videoEditor/selectors';
 import { usePlaybackTime, usePlaybackControls, getPlaybackState } from '../../hooks/usePlaybackEngine';
+import { getVideoPrimaryActionLabel } from '../../utils/videoExportMode';
 import { TimelineRuler } from './TimelineRuler';
 import { ZoomTrackContent, SceneTrackContent, MaskTrackContent, TextTrackContent, TrimTrackContent } from './tracks';
 import { TrackManager } from './TrackManager';
@@ -342,6 +343,7 @@ export function VideoTimeline({ onExport, onResetTrimSegments, onSetInPoint, onS
   const fitTimelineToWindow = useVideoEditorStore(selectFitTimelineToWindow);
   const setExportInPoint = useVideoEditorStore(selectSetExportInPoint);
   const setExportOutPoint = useVideoEditorStore(selectSetExportOutPoint);
+  const exportActionLabel = getVideoPrimaryActionLabel(project);
 
   const [draggingIOMarker, setDraggingIOMarker] = useState<'in' | 'out' | null>(null);
 
@@ -1067,12 +1069,12 @@ export function VideoTimeline({ onExport, onResetTrimSegments, onSetInPoint, onS
                   className="btn-coral h-8 px-3 rounded-md flex items-center gap-1.5"
                 >
                   <Download className="w-3.5 h-3.5" />
-                  <span className="text-xs font-medium">Export</span>
+                  <span className="text-xs font-medium">{exportActionLabel}</span>
                 </Button>
               </TooltipTrigger>
               <TooltipContent side="bottom">
                 <div className="flex items-center gap-2">
-                  <span className="text-xs">Export Video</span>
+                  <span className="text-xs">{exportActionLabel}</span>
                   <kbd className="kbd text-[10px] px-1.5 py-0.5">Ctrl+E</kbd>
                 </div>
               </TooltipContent>

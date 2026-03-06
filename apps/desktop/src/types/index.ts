@@ -115,6 +115,7 @@ export interface CaptureListItem {
   has_annotations: boolean;
   tags: string[];
   favorite: boolean;
+  quick_capture?: boolean;
   /** True if the original image file is missing from disk */
   is_missing: boolean;
 }
@@ -491,9 +492,11 @@ export type TextConfig = Omit<GeneratedTextConfig, 'segments'> & {
 };
 
 // Keep VideoProject aligned with app-level CursorConfig/TextConfig extensions.
-export type VideoProject = Omit<GeneratedVideoProject, 'cursor' | 'text'> & {
+export type VideoProject = Omit<GeneratedVideoProject, 'cursor' | 'text' | 'originalFileName'> & {
   cursor: CursorConfig;
   text: TextConfig;
+  originalFileName?: string | null;
+  quickCapture?: boolean;
 };
 
 // GPU Video Editor types (wgpu-accelerated rendering)

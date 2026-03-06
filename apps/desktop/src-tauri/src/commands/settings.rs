@@ -209,3 +209,34 @@ pub async fn open_file_with_default_app(path: String) -> Result<(), String> {
 
     Ok(())
 }
+
+/// Copy a file to a user-selected destination without re-encoding.
+#[tauri::command]
+pub async fn save_copy_of_file(
+    source_path: String,
+    destination_path: String,
+) -> Result<(), String> {
+    tokio::task::spawn_blocking(move || {
+        let source = std::path::PathBuf::from(&source_path);
+        let destination = std::path::PathBuf::from(&destination_path);
+
+        if !source.exists() {
+            return Err(format!("Source file not found: {}", source_path));
+        }
+
+        if source == destination {
+            return Ok(());
+        }
+
+        if let Some(parent) = destination.parent() {
+            std::fs::create_dir_all(parent)
+                .map_err(|e| format!("Failed to create destination folder: {}", e))?;
+        }
+
+        std::fs::copy(&source, &destination).map_err(|e| format!("Failed to copy file: {}", e))?;
+
+        Ok(())
+    })
+    .await
+    .map_err(|e| format!("Copy task panicked: {}", e))?
+}

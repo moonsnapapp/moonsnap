@@ -11,6 +11,7 @@ interface CaptureContextMenuProps {
   favorite: boolean;
   isMissing?: boolean;
   captureType?: string;
+  quickCapture?: boolean;
   onCopyToClipboard: () => void;
   onOpenInFolder: () => void;
   onToggleFavorite: () => void;
@@ -27,6 +28,7 @@ export const CaptureContextMenu: React.FC<CaptureContextMenuProps> = ({
   favorite,
   isMissing = false,
   captureType,
+  quickCapture = false,
   onCopyToClipboard,
   onOpenInFolder,
   onToggleFavorite,
@@ -57,7 +59,7 @@ export const CaptureContextMenu: React.FC<CaptureContextMenuProps> = ({
           className={isMissing ? 'opacity-50 cursor-not-allowed' : ''}
         >
           <Film className="w-4 h-4 mr-2" />
-          Edit Video
+          {quickCapture ? 'Open Quick Capture' : 'Edit Video'}
         </ContextMenuItem>
       )}
       {!isMedia && (
