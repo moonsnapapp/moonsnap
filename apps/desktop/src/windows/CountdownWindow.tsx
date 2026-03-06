@@ -6,7 +6,7 @@
  */
 
 import React, { useEffect, useState } from 'react';
-import { listen } from '@tauri-apps/api/event';
+import { emit, listen } from '@tauri-apps/api/event';
 import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
 import { recordingLogger } from '../utils/logger';
 import type { RecordingState } from '../types';
@@ -23,7 +23,7 @@ const CountdownWindow: React.FC = () => {
       // based on `status`, so we can access fields directly without runtime checks.
       unlisten = await listen<RecordingState>('recording-state-changed', (event) => {
         const state = event.payload;
-        
+
         if (state.status === 'countdown') {
           // TypeScript knows `state` has `secondsRemaining` here
           setCount(state.secondsRemaining);
@@ -32,6 +32,9 @@ const CountdownWindow: React.FC = () => {
           currentWindow.close().catch((e) => recordingLogger.error('Failed to close countdown window:', e));
         }
       });
+
+      // Signal that we're ready to receive events
+      await emit('countdown-window-ready');
     };
 
     setup();

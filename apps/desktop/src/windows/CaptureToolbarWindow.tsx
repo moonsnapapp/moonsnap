@@ -15,7 +15,7 @@
 
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { emit } from '@tauri-apps/api/event';
+import { emit, once } from '@tauri-apps/api/event';
 import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
 import { Toaster } from 'sonner';
 import { Titlebar } from '../components/Titlebar/Titlebar';
@@ -255,12 +255,24 @@ const CaptureToolbarWindow: React.FC = () => {
         await emit('recording-format', formatStr);
 
         if (countdownSecs > 0) {
+          // Wait for countdown window to signal its event listener is ready
+          // before starting recording (which emits countdown events)
+          const countdownReady = new Promise<void>((resolve) => {
+            const timeout = setTimeout(resolve, 2000); // Fallback timeout
+            once('countdown-window-ready', () => {
+              clearTimeout(timeout);
+              resolve();
+            });
+          });
+
           await invoke('show_countdown_window', {
             x: bounds.x,
             y: bounds.y,
             width: bounds.width,
             height: bounds.height,
           });
+
+          await countdownReady;
         }
 
         // Determine recording mode based on sourceType

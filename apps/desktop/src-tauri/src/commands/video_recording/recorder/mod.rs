@@ -59,7 +59,7 @@ pub async fn start_recording(
         tauri::async_runtime::spawn(async move {
             let cancelled = moonsnap_capture::recorder_countdown::run_recording_countdown(
                 settings_clone.countdown_secs,
-                Duration::from_millis(150),
+                Duration::ZERO, // Frontend waits for countdown window ready signal
                 || {
                     matches!(
                         command_rx_clone.try_recv(),
