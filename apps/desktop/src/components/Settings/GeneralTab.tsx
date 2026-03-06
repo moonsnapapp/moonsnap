@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
+import { emit } from '@tauri-apps/api/event';
 import { open } from '@tauri-apps/plugin-dialog';
 import { FolderOpen, ExternalLink, Sun, Moon, Monitor, FileText } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -44,7 +45,6 @@ export const GeneralTab: React.FC = () => {
       }
     };
     initDefaultSaveDir();
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- Intentionally run once on mount only
   }, []);
 
   const handleAutostartChange = async (enabled: boolean) => {
@@ -84,6 +84,9 @@ export const GeneralTab: React.FC = () => {
 
   const handleThemeChange = (theme: Theme) => {
     updateGeneralSettings({ theme });
+    emit('theme-changed', { theme }).catch((error) => {
+      settingsLogger.error('Failed to emit theme-changed:', error);
+    });
   };
 
   return (
