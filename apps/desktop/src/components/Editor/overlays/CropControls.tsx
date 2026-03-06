@@ -62,7 +62,10 @@ export const CropControls: React.FC<CropControlsProps> = React.memo(({
               </button>
             </TooltipTrigger>
             <TooltipContent side="top">
-              <span className="text-xs">Reset to minimum bounds</span>
+              <div className="flex items-center gap-2">
+                <span className="text-xs">Reset</span>
+                <kbd className="kbd text-[10px] px-1.5 py-0.5">R</kbd>
+              </div>
             </TooltipContent>
           </Tooltip>
         )}

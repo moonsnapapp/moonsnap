@@ -438,6 +438,37 @@ export const EditorCanvas = React.memo(forwardRef<EditorCanvasRef, EditorCanvasP
     return null;
   }, [backgroundShape, originalImageSize]);
 
+  // Reset crop to minimum bounds (background image extents)
+  const handleCropReset = React.useCallback(() => {
+    if (minCropResetBounds && canvasBounds) {
+      const minCanvasBoundsForReset = {
+        width: minCropResetBounds.width,
+        height: minCropResetBounds.height,
+        imageOffsetX: -minCropResetBounds.x,
+        imageOffsetY: -minCropResetBounds.y,
+      };
+      const boundsChanged =
+        minCanvasBoundsForReset.width !== canvasBounds.width ||
+        minCanvasBoundsForReset.height !== canvasBounds.height ||
+        minCanvasBoundsForReset.imageOffsetX !== canvasBounds.imageOffsetX ||
+        minCanvasBoundsForReset.imageOffsetY !== canvasBounds.imageOffsetY;
+      if (boundsChanged) {
+        setCanvasBounds(minCanvasBoundsForReset);
+      }
+    }
+    if (minCropResetBounds) {
+      setCropRegion(minCropResetBounds);
+      navigation.handleFitToRect(minCropResetBounds);
+    }
+    setCropUserExpanded(false);
+  }, [minCropResetBounds, canvasBounds, setCanvasBounds, setCropRegion, setCropUserExpanded, navigation]);
+
+  // Listen for crop-reset event (R key in crop mode)
+  useEffect(() => {
+    const handler = () => handleCropReset();
+    window.addEventListener('crop-reset', handler);
+    return () => window.removeEventListener('crop-reset', handler);
+  }, [handleCropReset]);
 
   // Check if source image has transparent pixels (only recalculated when image changes).
   const imageHasAlpha = useMemo(() => {
@@ -1418,30 +1449,7 @@ export const EditorCanvas = React.memo(forwardRef<EditorCanvasRef, EditorCanvasP
               // Just exit crop mode — retain the current crop as-is
               onToolChange('select');
             }}
-            onReset={() => {
-              if (minCropResetBounds && canvasBounds) {
-                const minCanvasBoundsForReset = {
-                  width: minCropResetBounds.width,
-                  height: minCropResetBounds.height,
-                  imageOffsetX: -minCropResetBounds.x,
-                  imageOffsetY: -minCropResetBounds.y,
-                };
-                const boundsChanged =
-                  minCanvasBoundsForReset.width !== canvasBounds.width ||
-                  minCanvasBoundsForReset.height !== canvasBounds.height ||
-                  minCanvasBoundsForReset.imageOffsetX !== canvasBounds.imageOffsetX ||
-                  minCanvasBoundsForReset.imageOffsetY !== canvasBounds.imageOffsetY;
-                if (boundsChanged) {
-                  setCanvasBounds(minCanvasBoundsForReset);
-                }
-              }
-              if (minCropResetBounds) {
-                setCropRegion(minCropResetBounds);
-                // Fit to the known target bounds directly (avoids stale closure)
-                navigation.handleFitToRect(minCropResetBounds);
-              }
-              setCropUserExpanded(false);
-            }}
+            onReset={handleCropReset}
             onCommit={() => {
               onToolChange('select');
               // Explicitly fit after crop commit (the useEffect also fires, but this

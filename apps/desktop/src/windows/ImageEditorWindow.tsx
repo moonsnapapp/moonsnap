@@ -116,6 +116,11 @@ const ImageEditorContent: React.FC<{
     window.dispatchEvent(new CustomEvent('fit-to-center'));
   }, [handleToolChange]);
 
+  // Crop reset handler - dispatch event for EditorCanvas to handle
+  const handleCropReset = useCallback(() => {
+    window.dispatchEvent(new CustomEvent('crop-reset'));
+  }, []);
+
   // Handle shapes change
   const handleShapesChange = useCallback((newShapes: CanvasShape[]) => {
     setShapes(newShapes);
@@ -169,6 +174,7 @@ const ImageEditorContent: React.FC<{
     onDeselect: handleDeselect,
     onFitToCenter: handleFitToCenter,
     onCropCommit: handleCropCommit,
+    onCropReset: handleCropReset,
   });
 
   return (
