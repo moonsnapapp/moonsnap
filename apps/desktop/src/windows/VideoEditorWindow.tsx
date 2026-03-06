@@ -28,6 +28,12 @@ import { videoEditorLogger } from '@/utils/logger';
  */
 const SAVE_WAIT_TIMEOUT_MS = 5000;
 const SAVE_WAIT_POLL_MS = 50;
+const GIF_EDITOR_UNAVAILABLE_MESSAGE =
+  'GIF editing is not available in the video editor yet. Open the GIF in your default app for now.';
+
+function isGifPath(path: string): boolean {
+  return path.toLowerCase().endsWith('.gif');
+}
 
 const VideoEditorWindow: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
@@ -67,6 +73,10 @@ const VideoEditorWindow: React.FC = () => {
     setError(null);
 
     try {
+      if (isGifPath(path)) {
+        throw new Error(GIF_EDITOR_UNAVAILABLE_MESSAGE);
+      }
+
       console.time('[EDITOR-INIT] load_video_project');
       videoEditorLogger.info('Loading video project:', path);
       const videoProject = await invoke<VideoProject>('load_video_project', {

@@ -109,6 +109,14 @@ function RecordingPreviewWindow() {
     }
   }, [outputPath]);
 
+  const handleOpenMedia = useCallback(async () => {
+    try {
+      await invoke('open_file_with_default_app', { path: outputPath });
+    } catch {
+      // Ignore
+    }
+  }, [outputPath]);
+
   const handleDelete = useCallback(async () => {
     try {
       // Extract project ID (folder name) from the output path
@@ -179,19 +187,33 @@ function RecordingPreviewWindow() {
             background: '#000',
           }}
         >
-          <video
-            src={videoSrc}
-            muted
-            playsInline
-            preload="auto"
-            style={{
-              width: '100%',
-              height: 'auto',
-              maxHeight: 160,
-              objectFit: 'contain',
-              display: 'block',
-            }}
-          />
+          {isGif ? (
+            <img
+              src={videoSrc}
+              alt=""
+              style={{
+                width: '100%',
+                height: 'auto',
+                maxHeight: 160,
+                objectFit: 'contain',
+                display: 'block',
+              }}
+            />
+          ) : (
+            <video
+              src={videoSrc}
+              muted
+              playsInline
+              preload="auto"
+              style={{
+                width: '100%',
+                height: 'auto',
+                maxHeight: 160,
+                objectFit: 'contain',
+                display: 'block',
+              }}
+            />
+          )}
           {/* Duration badge */}
           <div
             style={{
@@ -267,9 +289,15 @@ function RecordingPreviewWindow() {
             <FolderIcon />
           </ActionButton>
 
-          <ActionButton onClick={handleOpenEditor} title="Open in editor">
-            <EditIcon />
-          </ActionButton>
+          {isGif ? (
+            <ActionButton onClick={handleOpenMedia} title="Open GIF">
+              <PlayIcon />
+            </ActionButton>
+          ) : (
+            <ActionButton onClick={handleOpenEditor} title="Open in editor">
+              <EditIcon />
+            </ActionButton>
+          )}
         </div>
 
         {/* Auto-dismiss progress bar */}
@@ -362,6 +390,14 @@ function FolderIcon() {
   return (
     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <path d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2" />
+    </svg>
+  );
+}
+
+function PlayIcon() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <polygon points="5 3 19 12 5 21 5 3" />
     </svg>
   );
 }

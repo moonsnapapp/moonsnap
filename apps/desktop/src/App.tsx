@@ -43,6 +43,11 @@ function App() {
     triggerAllMonitorsCapture,
   });
 
+  const isGifRecordingPath = useCallback(
+    (path: string) => path.toLowerCase().endsWith('.gif'),
+    []
+  );
+
   // Consolidated event listener callbacks
   const eventCallbacks = useMemo(
     () => ({
@@ -51,8 +56,9 @@ function App() {
 
         if (data.outputPath) {
           const action = useCaptureSettingsStore.getState().afterRecordingAction;
+          const isGif = isGifRecordingPath(data.outputPath);
 
-          if (action === 'editor') {
+          if (action === 'editor' && !isGif) {
             // Open editor directly
             const hasExtension = /\.\w+$/.test(data.outputPath);
             const videoPath = hasExtension ? data.outputPath : `${data.outputPath}/screen.mp4`;
@@ -112,7 +118,7 @@ function App() {
       },
       onCaptureDeleted: loadCaptures,
     }),
-    [loadCaptures, saveNewCaptureFromFile]
+    [isGifRecordingPath, loadCaptures, saveNewCaptureFromFile]
   );
 
   // Consolidated Tauri event listeners

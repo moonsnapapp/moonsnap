@@ -108,6 +108,10 @@ function isCacheStale(timestamp: number): boolean {
   return Date.now() - timestamp > STORAGE.CACHE_MAX_AGE_MS;
 }
 
+function isGifPath(path: string): boolean {
+  return path.toLowerCase().endsWith('.gif');
+}
+
 interface CaptureState {
   // Library state
   captures: CaptureListItem[];
@@ -680,6 +684,11 @@ export const useCaptureStore = create<CaptureState>()(
       }
     } else if (session.view === 'videoEditor' && session.videoProjectPath) {
       try {
+        if (isGifPath(session.videoProjectPath)) {
+          clearEditorSession();
+          return false;
+        }
+
         // Load video project and set it in video editor store
         const { useVideoEditorStore } = await import('./videoEditorStore');
         const project = await invoke('load_video_project', { videoPath: session.videoProjectPath });
