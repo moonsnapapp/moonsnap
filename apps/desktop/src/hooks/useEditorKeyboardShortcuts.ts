@@ -33,6 +33,7 @@ interface UseEditorKeyboardShortcutsProps {
   onShowShortcuts: () => void;
   onDeselect: () => void;
   onFitToCenter: () => void;
+  onCropCommit: () => void;
 }
 
 interface UseEditorKeyboardShortcutsReturn {
@@ -65,6 +66,7 @@ export const useEditorKeyboardShortcuts = ({
   onShowShortcuts,
   onDeselect,
   onFitToCenter,
+  onCropCommit,
 }: UseEditorKeyboardShortcutsProps): UseEditorKeyboardShortcutsReturn => {
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
 
@@ -114,6 +116,13 @@ export const useEditorKeyboardShortcuts = ({
       if ((e.ctrlKey || e.metaKey) && e.key === 'c') {
         e.preventDefault();
         onCopy();
+        return;
+      }
+
+      // Space/Enter: commit crop when crop tool is active
+      if (selectedTool === 'crop' && (e.key === ' ' || e.key === 'Enter')) {
+        e.preventDefault();
+        onCropCommit();
         return;
       }
 
@@ -197,6 +206,7 @@ export const useEditorKeyboardShortcuts = ({
     onShowShortcuts,
     onDeselect,
     onFitToCenter,
+    onCropCommit,
   ]);
 
   return {

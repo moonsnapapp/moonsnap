@@ -110,6 +110,12 @@ const ImageEditorContent: React.FC<{
     setSelectedTool(newTool);
   }, [selectedTool, setSelectedIds, setStrokeColor]);
 
+  // Crop commit handler - switch to select tool and fit
+  const handleCropCommit = useCallback(() => {
+    handleToolChange('select');
+    window.dispatchEvent(new CustomEvent('fit-to-center'));
+  }, [handleToolChange]);
+
   // Handle shapes change
   const handleShapesChange = useCallback((newShapes: CanvasShape[]) => {
     setShapes(newShapes);
@@ -162,6 +168,7 @@ const ImageEditorContent: React.FC<{
     onShowShortcuts: handleShowShortcuts,
     onDeselect: handleDeselect,
     onFitToCenter: handleFitToCenter,
+    onCropCommit: handleCropCommit,
   });
 
   return (

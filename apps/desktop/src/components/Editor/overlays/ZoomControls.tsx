@@ -13,6 +13,8 @@ interface ZoomControlsProps {
   onZoomOut: () => void;
   onFitToSize: () => void;
   onActualSize: () => void;
+  /** Canvas dimensions to display (width × height) */
+  dimensions?: { width: number; height: number } | null;
   /** When true, shift left to make room for crop controls */
   cropActive?: boolean;
 }
@@ -26,6 +28,7 @@ export const ZoomControls: React.FC<ZoomControlsProps> = React.memo(({
   onZoomOut,
   onFitToSize,
   onActualSize,
+  dimensions,
   cropActive = false,
 }) => {
   return (
@@ -96,6 +99,14 @@ export const ZoomControls: React.FC<ZoomControlsProps> = React.memo(({
             <span className="text-xs">Actual Size (100%)</span>
           </TooltipContent>
         </Tooltip>
+        {dimensions && (
+          <>
+            <div className="w-px h-4 bg-[var(--polar-frost)] mx-1" />
+            <span className="px-2 text-xs text-[var(--ink-muted)] font-mono whitespace-nowrap">
+              {Math.round(dimensions.width)} × {Math.round(dimensions.height)}
+            </span>
+          </>
+        )}
       </div>
     </TooltipProvider>
   );

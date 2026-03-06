@@ -39,6 +39,7 @@ const ACTION_SHORTCUTS = [
   { key: 'Ctrl+C', action: 'Copy' },
   { key: 'Esc', action: 'Deselect' },
   { key: 'F', action: 'Fit to center' },
+  { key: 'Enter / Space', action: 'Apply crop (in crop mode)' },
   { key: '?', action: 'Show shortcuts' },
 ];
 
