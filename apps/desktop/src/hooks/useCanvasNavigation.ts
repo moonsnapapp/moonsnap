@@ -69,7 +69,6 @@ export const useCanvasNavigation = ({
 }: UseCanvasNavigationProps): UseCanvasNavigationReturn => {
   const containerRef = useRef<HTMLDivElement>(null);
   const resizeTimeoutRef = useRef<number | null>(null);
-  const prevContainerSizeRef = useRef({ width: 0, height: 0 });
   const prevToolRef = useRef(selectedTool);
   const prevPaddingRef = useRef(compositorSettings.padding);
   const prevBoundsRef = useRef<CanvasBounds | null>(null);
@@ -384,16 +383,6 @@ export const useCanvasNavigation = ({
     });
   }, [calculateFitToSize]);
 
-  // Recenter canvas (keeps current zoom, just updates position)
-  const recenterCanvas = useCallback(() => {
-    if (!image) return;
-
-    const { width, height, cropX, cropY } = getContentDimensions();
-    const x = (containerSize.width - width * zoom) / 2 - cropX * zoom;
-    const y = (containerSize.height - height * zoom) / 2 - cropY * zoom;
-    setPosition({ x, y });
-  }, [image, containerSize, zoom, getContentDimensions]);
-
   // Initial fit and resize handling
   useEffect(() => {
     if (image && containerSize.width > 0 && containerSize.height > 0) {
@@ -409,9 +398,6 @@ export const useCanvasNavigation = ({
         });
       }
 
-      const prevSize = prevContainerSizeRef.current;
-      const hasChanged = prevSize.width !== containerSize.width || prevSize.height !== containerSize.height;
-
       if (isInitialFit) {
         // Initial load - calculate and apply fit synchronously to avoid flash
         const fit = calculateFitToSize();
@@ -422,14 +408,11 @@ export const useCanvasNavigation = ({
           requestAnimationFrame(() => setIsReady(true));
         }
         setIsInitialFit(false);
-      } else if (hasChanged) {
-        // On resize - just recenter, keep current zoom
-        recenterCanvas();
       }
-
-      prevContainerSizeRef.current = containerSize;
+      // On resize: keep current zoom and position to avoid disrupting the user.
+      // Users can press F to fit-to-frame manually.
     }
-  }, [image, containerSize, isInitialFit, calculateFitToSize, recenterCanvas, canvasBounds, setCanvasBounds, setOriginalImageSize]);
+  }, [image, containerSize, isInitialFit, calculateFitToSize, canvasBounds, setCanvasBounds, setOriginalImageSize]);
 
   // Fit when exiting crop mode
   useEffect(() => {
