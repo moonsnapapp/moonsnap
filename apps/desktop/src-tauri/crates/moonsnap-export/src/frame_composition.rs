@@ -144,6 +144,7 @@ mod tests {
             updated_at: "2024-01-01T00:00:00Z".to_string(),
             name: "test".to_string(),
             original_file_name: None,
+            quick_capture: false,
             sources: VideoSources {
                 screen_video: "/tmp/screen.mp4".to_string(),
                 webcam_video: Some("/tmp/webcam.mp4".to_string()),

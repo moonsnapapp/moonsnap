@@ -484,6 +484,12 @@ export const VideoEditorView = forwardRef<VideoEditorViewRef, VideoEditorViewPro
       return;
     }
 
+    if (project.export.fps !== project.sources.fps) {
+      toast.info(`Export uses source frame rate (${project.sources.fps} fps)`, {
+        description: 'Frame-rate conversion is not supported yet.',
+      });
+    }
+
     // Pro feature gate: export requires a license
     const { isPro } = await import('../../stores/licenseStore').then(m => {
       const store = m.useLicenseStore.getState();

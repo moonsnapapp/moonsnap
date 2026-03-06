@@ -35,6 +35,7 @@ pub struct AudioSegment {
 pub struct AudioInputBuildRequest {
     pub start_input_index: usize,
     pub system_audio_path: Option<String>,
+    pub embedded_audio_path: Option<String>,
     pub microphone_audio_path: Option<String>,
     pub typewriter_loop_audio_path: Option<String>,
     pub typewriter_windows: Vec<AudioSegment>,
@@ -68,6 +69,15 @@ where
         .as_ref()
         .filter(|p| std::path::Path::new(p).exists())
         .cloned();
+    let embedded_audio_path = if system_audio_path.is_none() && microphone_audio_path.is_none() {
+        if std::path::Path::new(&project.sources.screen_video).exists() {
+            Some(project.sources.screen_video.clone())
+        } else {
+            None
+        }
+    } else {
+        None
+    };
 
     let typewriter_windows = if !project.audio.system_muted && project.audio.system_volume > 0.0 {
         collect_typewriter_sound_segments(project)
@@ -83,6 +93,7 @@ where
     Ok(AudioInputBuildRequest {
         start_input_index,
         system_audio_path,
+        embedded_audio_path,
         microphone_audio_path,
         typewriter_loop_audio_path,
         typewriter_windows,
@@ -414,6 +425,16 @@ pub fn build_audio_input_args(request: &AudioInputBuildRequest) -> (Vec<String>,
             });
             next_input_index += 1;
         }
+    } else if let Some(ref embedded_audio_path) = request.embedded_audio_path {
+        if !request.system_muted {
+            args.extend(["-i".to_string(), embedded_audio_path.clone()]);
+            audio_inputs.push(AudioInput {
+                input_index: next_input_index,
+                volume: request.system_volume,
+                source: AudioInputSource::SourceTrack,
+            });
+            next_input_index += 1;
+        }
     }
 
     // Add microphone audio if available and not muted.
@@ -716,6 +737,7 @@ mod tests {
         let req = AudioInputBuildRequest {
             start_input_index: 1,
             system_audio_path: Some("system.wav".to_string()),
+            embedded_audio_path: None,
             microphone_audio_path: Some("mic.wav".to_string()),
             typewriter_loop_audio_path: None,
             typewriter_windows: Vec::new(),
@@ -738,6 +760,7 @@ mod tests {
         let req = AudioInputBuildRequest {
             start_input_index: 1,
             system_audio_path: None,
+            embedded_audio_path: None,
             microphone_audio_path: None,
             typewriter_loop_audio_path: Some("typewriter.wav".to_string()),
             typewriter_windows: vec![AudioSegment {
@@ -790,6 +813,7 @@ mod tests {
             audio_input_request: AudioInputBuildRequest {
                 start_input_index: 1,
                 system_audio_path: Some("system.wav".to_string()),
+                embedded_audio_path: None,
                 microphone_audio_path: None,
                 typewriter_loop_audio_path: None,
                 typewriter_windows: Vec::new(),
@@ -809,5 +833,28 @@ mod tests {
         assert!(args.contains(&"[aout]".to_string()));
         assert!(args.contains(&"libopus".to_string()));
         assert_eq!(args.last().map(String::as_str), Some("out.webm"));
+    }
+
+    #[test]
+    fn builds_audio_input_args_with_embedded_source_audio_fallback() {
+        let req = AudioInputBuildRequest {
+            start_input_index: 1,
+            system_audio_path: None,
+            embedded_audio_path: Some("screen.mp4".to_string()),
+            microphone_audio_path: None,
+            typewriter_loop_audio_path: None,
+            typewriter_windows: Vec::new(),
+            system_muted: false,
+            microphone_muted: false,
+            system_volume: 0.8,
+            microphone_volume: 1.0,
+        };
+
+        let (args, inputs) = build_audio_input_args(&req);
+        assert!(args.contains(&"screen.mp4".to_string()));
+        assert_eq!(inputs.len(), 1);
+        assert_eq!(inputs[0].input_index, 1);
+        assert_eq!(inputs[0].volume, 0.8);
+        assert!(matches!(inputs[0].source, AudioInputSource::SourceTrack));
     }
 }

@@ -5,9 +5,7 @@ use moonsnap_render::scene::{InterpolatedScene, SceneInterpolator};
 use moonsnap_render::zoom::ZoomInterpolator;
 use moonsnap_render::ZoomState;
 
-use crate::timeline_plan::{
-    should_skip_source_frame, source_time_ms_for_decoded_frame, timeline_time_ms_for_output_frame,
-};
+use crate::timeline_plan::{should_skip_source_frame, timeline_time_ms_for_output_frame};
 
 /// Timeline-derived context for one decoded/output frame pair.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -30,14 +28,12 @@ pub struct FrameSceneContext {
 
 /// Build timeline times for one iteration and whether this decoded source frame is skipped.
 pub fn build_frame_timeline_context(
-    decode_start_ms: u64,
-    decoded_frame_idx: u32,
+    source_time_ms: u64,
     output_frame_count: u32,
     fps: u32,
     timeline: &TimelineState,
     has_segments: bool,
 ) -> FrameTimelineContext {
-    let source_time_ms = source_time_ms_for_decoded_frame(decode_start_ms, decoded_frame_idx, fps);
     let relative_time_ms = timeline_time_ms_for_output_frame(output_frame_count, fps);
     let should_skip = should_skip_source_frame(timeline, has_segments, source_time_ms);
 
@@ -112,17 +108,17 @@ mod tests {
             }],
         };
 
-        let outside = build_frame_timeline_context(0, 10, 10, 10, &timeline, true);
+        let outside = build_frame_timeline_context(1_000, 10, 10, &timeline, true);
         assert_eq!(outside.source_time_ms, 1_000);
         assert_eq!(outside.relative_time_ms, 1_000);
         assert!(outside.should_skip);
 
-        let inside = build_frame_timeline_context(0, 25, 25, 10, &timeline, true);
+        let inside = build_frame_timeline_context(2_500, 25, 10, &timeline, true);
         assert_eq!(inside.source_time_ms, 2_500);
         assert_eq!(inside.relative_time_ms, 2_500);
         assert!(!inside.should_skip);
 
-        let ignore_segments = build_frame_timeline_context(0, 10, 10, 10, &timeline, false);
+        let ignore_segments = build_frame_timeline_context(1_000, 10, 10, &timeline, false);
         assert!(!ignore_segments.should_skip);
     }
 

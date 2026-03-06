@@ -10,6 +10,7 @@ use crate::timeline_plan::{plan_export_timeline, ExportTimelinePlan};
 /// Aggregated export plan derived from a project.
 #[derive(Debug, Clone, PartialEq)]
 pub struct VideoExportPlan {
+    pub output_fps: u32,
     pub timeline: ExportTimelinePlan,
     pub dimensions: ExportDimensions,
     pub use_nv12_decode: bool,
@@ -17,12 +18,17 @@ pub struct VideoExportPlan {
     pub decode: StreamDecodePlan,
 }
 
+pub fn resolve_export_fps(project: &VideoProject) -> u32 {
+    project.sources.fps.max(1)
+}
+
 /// Build the reusable planning view for export orchestration.
 pub fn plan_video_export(project: &VideoProject) -> VideoExportPlan {
     let original_width = project.sources.original_width;
     let original_height = project.sources.original_height;
+    let output_fps = resolve_export_fps(project);
 
-    let timeline = plan_export_timeline(&project.timeline, project.export.fps);
+    let timeline = plan_export_timeline(&project.timeline, output_fps);
     let dimensions = plan_export_dimensions(
         original_width,
         original_height,
@@ -46,6 +52,7 @@ pub fn plan_video_export(project: &VideoProject) -> VideoExportPlan {
     let decode = plan_stream_decode(project, &timeline, use_nv12_decode);
 
     VideoExportPlan {
+        output_fps,
         timeline,
         dimensions,
         use_nv12_decode,
@@ -64,6 +71,7 @@ mod tests {
         let project = VideoProject::new("screen.mp4", 1920, 1080, 10_000, 30);
         let plan = plan_video_export(&project);
 
+        assert_eq!(plan.output_fps, 30);
         assert_eq!(plan.timeline.total_output_frames, 300);
         assert_eq!(plan.timeline.total_decode_frames, 300);
         assert_eq!(plan.dimensions.video_width, 1920);
@@ -88,5 +96,17 @@ mod tests {
         assert!(plan.force_even_source_crop);
         assert!(!plan.dimensions.crop_enabled);
         assert!(!plan.use_nv12_decode);
+    }
+
+    #[test]
+    fn caps_requested_export_fps_to_source_fps() {
+        let mut project = VideoProject::new("screen.mp4", 1920, 1080, 1_000, 30);
+        project.export.fps = 60;
+
+        let plan = plan_video_export(&project);
+
+        assert_eq!(plan.output_fps, 30);
+        assert_eq!(plan.timeline.total_output_frames, 30);
+        assert_eq!(plan.timeline.total_decode_frames, 30);
     }
 }

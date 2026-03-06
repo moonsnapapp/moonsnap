@@ -245,11 +245,10 @@ pub async fn export_video_gpu(
     emit_progress(&app, 0.02, ExportStage::Preparing, "Loading video...");
 
     // Calculate export parameters
-    let fps = project.export.fps;
+    let export_plan = plan_video_export(&project);
+    let fps = export_plan.output_fps;
     let original_width = project.sources.original_width;
     let original_height = project.sources.original_height;
-
-    let export_plan = plan_video_export(&project);
     let timeline_plan = export_plan.timeline;
     let dimensions = export_plan.dimensions;
     let decode_plan = &export_plan.decode;
@@ -274,6 +273,13 @@ pub async fn export_video_gpu(
         total_decode_frames,
         total_output_frames
     );
+    if project.export.fps != fps {
+        log::warn!(
+            "[EXPORT] Requested {}fps export, but using source fps {} because frame-rate conversion is not supported yet",
+            project.export.fps,
+            fps
+        );
+    }
 
     // Clone configs to avoid borrow issues with project
     let crop = project.export.crop.clone();
@@ -623,12 +629,11 @@ pub async fn export_video_gpu(
                 .add_readback_us(t_readback_start.elapsed().as_micros() as u64);
         }
 
-        let decoded_frame_idx = bundle.frame_idx;
         let current_webcam_frame = bundle.webcam_frame;
+        let source_time_ms = decode_start_ms.saturating_add(bundle.screen_frame.timestamp_ms);
 
         let frame_timeline = build_frame_timeline_context(
-            decode_start_ms,
-            decoded_frame_idx,
+            source_time_ms,
             loop_state.output_frame_count,
             fps,
             &project.timeline,
