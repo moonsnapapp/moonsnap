@@ -46,15 +46,34 @@ const TOOL_DEFAULT_COLORS: Partial<Record<Tool, string>> = {
 };
 const DEFAULT_STROKE_COLOR = '#ef4444';
 
+interface SavedCaptureLookup {
+  projectId: string;
+  imagePath: string;
+}
+
+interface ResolvedImageProject {
+  projectId: string;
+  capturePath: string;
+}
+
 /**
  * Inner component that uses the editor store context
  */
 const ImageEditorContent: React.FC<{
   imageData: string;
   projectId: string | null;
+  capturePath: string | null;
   store: EditorStore;
   onClose: () => void;
-}> = ({ imageData, projectId, store, onClose }) => {
+  resolveProjectForCapturePath: () => Promise<ResolvedImageProject | null>;
+}> = ({
+  imageData,
+  projectId,
+  capturePath,
+  store,
+  onClose,
+  resolveProjectForCapturePath,
+}) => {
   const stageRef = useRef<Konva.Stage>(null);
   const editorCanvasRef = useRef<EditorCanvasRef>(null);
 
@@ -141,18 +160,29 @@ const ImageEditorContent: React.FC<{
   }, []);
 
   const handleConfirmDelete = useCallback(async () => {
-    if (!projectId) return;
+    const resolvedProject =
+      projectId
+        ? { projectId, capturePath: capturePath ?? '' }
+        : await resolveProjectForCapturePath();
+
+    if (!resolvedProject) {
+      toast.error('Capture is still being saved. Try delete again in a moment.');
+      return;
+    }
+
     try {
-      await invoke('delete_project', { projectId });
+      await invoke('delete_project', { projectId: resolvedProject.projectId });
       // Notify main window to refresh library
-      await emit('capture-deleted', { projectId });
+      await emit('capture-deleted', { projectId: resolvedProject.projectId });
       toast.success('Capture deleted');
       onClose();
     } catch (error) {
       reportError(error, { operation: 'delete capture' });
+      return;
     }
+
     setDeleteDialogOpen(false);
-  }, [projectId, onClose]);
+  }, [projectId, capturePath, resolveProjectForCapturePath, onClose]);
 
   const handleCancelDelete = useCallback(() => {
     setDeleteDialogOpen(false);
@@ -270,6 +300,52 @@ const ImageEditorWindow: React.FC = () => {
   // Apply theme
   useTheme();
 
+  const applySavedCaptureLookup = useCallback((lookup: SavedCaptureLookup) => {
+    setProjectId(lookup.projectId);
+    projectIdRef.current = lookup.projectId;
+    setCapturePath(lookup.imagePath);
+  }, []);
+
+  const lookupSavedCaptureByTempPath = useCallback(async (path: string) => {
+    return invoke<SavedCaptureLookup | null>('get_saved_capture_by_temp_path', {
+      filePath: path,
+    });
+  }, []);
+
+  const resolveProjectForCapturePath = useCallback(async (): Promise<ResolvedImageProject | null> => {
+    if (projectIdRef.current) {
+      return {
+        projectId: projectIdRef.current,
+        capturePath: capturePath ?? '',
+      };
+    }
+
+    if (!capturePath) {
+      return null;
+    }
+
+    if (capturePath.endsWith('.rgba')) {
+      for (let attempt = 0; attempt < TIMING.IMAGE_EDITOR_DELETE_RESOLVE_MAX_ATTEMPTS; attempt += 1) {
+        const lookup = await lookupSavedCaptureByTempPath(capturePath);
+        if (lookup) {
+          applySavedCaptureLookup(lookup);
+          return {
+            projectId: lookup.projectId,
+            capturePath: lookup.imagePath,
+          };
+        }
+
+        if (attempt < TIMING.IMAGE_EDITOR_DELETE_RESOLVE_MAX_ATTEMPTS - 1) {
+          await new Promise((resolve) => {
+            setTimeout(resolve, TIMING.IMAGE_EDITOR_DELETE_RESOLVE_RETRY_MS);
+          });
+        }
+      }
+    }
+
+    return null;
+  }, [capturePath, applySavedCaptureLookup, lookupSavedCaptureByTempPath]);
+
   // Load project when path is received
   const loadProject = useCallback(async (path: string) => {
     if (hasLoadedRef.current) return;
@@ -283,8 +359,14 @@ const ImageEditorWindow: React.FC = () => {
 
       // Fast path: RGBA files can be loaded directly without IPC lookup
       if (path.endsWith('.rgba')) {
+        const savedCapture = await lookupSavedCaptureByTempPath(path);
+        if (savedCapture) {
+          applySavedCaptureLookup(savedCapture);
+        }
         setImageData(path);
-        setCapturePath(path);
+        if (!savedCapture) {
+          setCapturePath(path);
+        }
         setIsLoading(false);
         editorLogger.info('RGBA file loaded directly (fast path)');
         return;
@@ -296,8 +378,7 @@ const ImageEditorWindow: React.FC = () => {
       const capture = captures.find((c: { id: string; image_path: string }) => c.image_path === path);
 
       if (capture) {
-        setProjectId(capture.id);
-        projectIdRef.current = capture.id;
+        applySavedCaptureLookup({ projectId: capture.id, imagePath: path });
 
         // Load the image data (base64 encoded)
         const loadedImageData = await invoke<string>('get_project_image', { projectId: capture.id });
@@ -407,7 +488,7 @@ const ImageEditorWindow: React.FC = () => {
       setError(err instanceof Error ? err.message : 'Failed to load image project');
       setIsLoading(false);
     }
-  }, [store]);
+  }, [store, applySavedCaptureLookup, lookupSavedCaptureByTempPath]);
 
   // Load project from URL params on mount
   useEffect(() => {
@@ -429,17 +510,14 @@ const ImageEditorWindow: React.FC = () => {
       // Check if this event is for our capture (match the path)
       if (originalPath === capturePath) {
         editorLogger.info('Received projectId for fresh capture:', newProjectId);
-        setProjectId(newProjectId);
-        projectIdRef.current = newProjectId;
-        // Update to permanent path
-        setCapturePath(imagePath);
+        applySavedCaptureLookup({ projectId: newProjectId, imagePath });
       }
     });
 
     return () => {
       unlisten.then((unlistenFn: () => void) => unlistenFn());
     };
-  }, [projectId, capturePath]);
+  }, [projectId, capturePath, applySavedCaptureLookup]);
 
   // Track user activity so autosave is driven by actual editor interactions.
   useEffect(() => {
@@ -723,8 +801,10 @@ const ImageEditorWindow: React.FC = () => {
         <ImageEditorContent
           imageData={imageData}
           projectId={projectId}
+          capturePath={capturePath}
           store={store}
           onClose={handleClose}
+          resolveProjectForCapturePath={resolveProjectForCapturePath}
         />
       </EditorStoreProvider>
     </div>

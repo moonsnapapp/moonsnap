@@ -3,9 +3,12 @@
 use base64::{engine::general_purpose::STANDARD, Engine};
 use chrono::{DateTime, Utc};
 use image::{DynamicImage, GenericImageView};
+use serde::Serialize;
+use std::collections::HashMap;
 use std::fs;
 use std::io::Cursor;
 use std::path::PathBuf;
+use std::sync::{LazyLock, Mutex};
 use tauri::{command, AppHandle, Emitter};
 use tokio::fs as async_fs;
 
@@ -17,6 +20,35 @@ use moonsnap_media::ffmpeg::{
     find_ffmpeg, find_ffprobe, generate_gif_thumbnail, generate_thumbnail,
     generate_video_thumbnail, get_video_metadata_for_migration,
 };
+
+static SAVED_CAPTURE_LOOKUPS: LazyLock<Mutex<HashMap<String, SavedCaptureLookup>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SavedCaptureLookup {
+    pub project_id: String,
+    pub image_path: String,
+}
+
+fn remember_saved_capture_lookup(original_path: &str, project_id: &str, image_path: &str) {
+    if let Ok(mut lookups) = SAVED_CAPTURE_LOOKUPS.lock() {
+        lookups.insert(
+            original_path.to_string(),
+            SavedCaptureLookup {
+                project_id: project_id.to_string(),
+                image_path: image_path.to_string(),
+            },
+        );
+    }
+}
+
+fn get_saved_capture_lookup_for_path(path: &str) -> Option<SavedCaptureLookup> {
+    SAVED_CAPTURE_LOOKUPS
+        .lock()
+        .ok()
+        .and_then(|lookups| lookups.get(path).cloned())
+}
 
 // ============================================================================
 // Save Operations
@@ -171,11 +203,14 @@ pub async fn save_capture_from_file(
     fs::write(&project_file, project_json)
         .map_err(|e| format!("Failed to write project file: {}", e))?;
 
+    let image_path = original_path.to_string_lossy().to_string();
+    remember_saved_capture_lookup(&file_path, &id, &image_path);
+
     Ok(SaveCaptureResponse {
         id,
         project,
         thumbnail_path: thumbnail_path.to_string_lossy().to_string(),
-        image_path: original_path.to_string_lossy().to_string(),
+        image_path,
     })
 }
 
@@ -933,6 +968,11 @@ pub async fn get_project_image(app: AppHandle, project_id: String) -> Result<Str
     let image_data = fs::read(&image_path).map_err(|e| format!("Failed to read image: {}", e))?;
 
     Ok(STANDARD.encode(&image_data))
+}
+
+#[command]
+pub fn get_saved_capture_by_temp_path(file_path: String) -> Option<SavedCaptureLookup> {
+    get_saved_capture_lookup_for_path(&file_path)
 }
 
 #[command]

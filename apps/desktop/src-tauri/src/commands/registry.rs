@@ -69,6 +69,7 @@ macro_rules! tauri_command_handler {
             crate::commands::storage::operations::get_capture_list,
             crate::commands::storage::operations::get_project,
             crate::commands::storage::operations::get_project_image,
+            crate::commands::storage::operations::get_saved_capture_by_temp_path,
             crate::commands::storage::operations::delete_project,
             crate::commands::storage::operations::delete_projects,
             crate::commands::storage::operations::export_project,
