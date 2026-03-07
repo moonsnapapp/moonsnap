@@ -8,10 +8,11 @@
 import { useEffect, useState, useRef, useCallback, useMemo } from 'react';
 import { invoke, convertFileSrc } from '@tauri-apps/api/core';
 import { emit } from '@tauri-apps/api/event';
-import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
+import { cursorPosition, getCurrentWindow } from '@tauri-apps/api/window';
 
 const AUTO_DISMISS_MS = 5000;
 const SLIDE_DURATION_MS = 300;
+const CURSOR_SYNC_MS = 100;
 
 function formatDuration(secs: number): string {
   const m = Math.floor(secs / 60);
@@ -28,8 +29,10 @@ function formatFileSize(bytes: number): string {
 function RecordingPreviewWindow() {
   const [isVisible, setIsVisible] = useState(false);
   const [isExiting, setIsExiting] = useState(false);
-  const [isHovered, setIsHovered] = useState(false);
+  const [timerPaused, setTimerPaused] = useState(false);
   const dismissTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isVisibleRef = useRef(false);
+  const isCursorInsideRef = useRef(false);
 
   const params = new URLSearchParams(window.location.search);
   const outputPath = params.get('path') || '';
@@ -53,44 +56,89 @@ function RecordingPreviewWindow() {
     }, SLIDE_DURATION_MS);
   }, []);
 
-  const resetDismissTimer = useCallback(() => {
+  const pauseTimer = useCallback(() => {
+    if (dismissTimerRef.current) {
+      clearTimeout(dismissTimerRef.current);
+      dismissTimerRef.current = null;
+    }
+    setTimerPaused(true);
+  }, []);
+
+  const startTimer = useCallback(() => {
     if (dismissTimerRef.current) {
       clearTimeout(dismissTimerRef.current);
     }
     dismissTimerRef.current = setTimeout(() => {
-      if (!isHovered) {
-        closePreview();
-      }
+      closePreview();
     }, AUTO_DISMISS_MS);
-  }, [isHovered, closePreview]);
+    setTimerPaused(false);
+  }, [closePreview]);
+
+  const syncTimerFromCursor = useCallback(async () => {
+    try {
+      const window = getCurrentWindow();
+      const [cursor, position, size] = await Promise.all([
+        cursorPosition(),
+        window.outerPosition(),
+        window.outerSize(),
+      ]);
+
+      const isInside =
+        cursor.x >= position.x &&
+        cursor.x < position.x + size.width &&
+        cursor.y >= position.y &&
+        cursor.y < position.y + size.height;
+
+      if (isInside === isCursorInsideRef.current) {
+        return;
+      }
+
+      isCursorInsideRef.current = isInside;
+      if (isInside) {
+        pauseTimer();
+      } else if (isVisibleRef.current) {
+        startTimer();
+      }
+    } catch {
+      // Ignore cursor sync failures and preserve current timer state.
+    }
+  }, [pauseTimer, startTimer]);
 
   // Trigger slide-in on mount
   useEffect(() => {
     if (!outputPath) return;
     requestAnimationFrame(() => {
       setIsVisible(true);
+      isVisibleRef.current = true;
     });
   }, [outputPath]);
 
-  // Auto-dismiss timer
+  // Start auto-dismiss timer when first visible
   useEffect(() => {
     if (!isVisible) return;
-    resetDismissTimer();
+    startTimer();
     return () => {
       if (dismissTimerRef.current) {
         clearTimeout(dismissTimerRef.current);
       }
     };
-  }, [isVisible, resetDismissTimer]);
+  }, [isVisible]);
 
-  // Pause timer on hover
   useEffect(() => {
-    if (isHovered && dismissTimerRef.current) {
-      clearTimeout(dismissTimerRef.current);
-    } else if (!isHovered && isVisible) {
-      resetDismissTimer();
+    if (!isVisible) {
+      return;
     }
-  }, [isHovered, isVisible, resetDismissTimer]);
+
+    const intervalId = setInterval(() => {
+      void syncTimerFromCursor();
+    }, CURSOR_SYNC_MS);
+
+    void syncTimerFromCursor();
+
+    return () => {
+      clearInterval(intervalId);
+    };
+  }, [isVisible, syncTimerFromCursor]);
 
   const handleOpenEditor = useCallback(async () => {
     try {
@@ -138,16 +186,18 @@ function RecordingPreviewWindow() {
     return () => document.removeEventListener('contextmenu', handler);
   }, []);
 
-  // Drag support
-  useEffect(() => {
-    const handleMouseDown = (e: MouseEvent) => {
-      const target = e.target as HTMLElement;
-      if (target.tagName === 'BUTTON' || target.closest('button')) return;
-      getCurrentWebviewWindow().startDragging().catch(() => {});
-    };
+  const handlePreviewMouseDown = useCallback(async (e: React.MouseEvent<HTMLDivElement>) => {
+    const target = e.target as HTMLElement;
+    if (target.tagName === 'BUTTON' || target.closest('button')) return;
 
-    document.addEventListener('mousedown', handleMouseDown);
-    return () => document.removeEventListener('mousedown', handleMouseDown);
+    // Prevent native HTML drag/select behavior from competing with Tauri window dragging.
+    e.preventDefault();
+
+    try {
+      await getCurrentWindow().startDragging();
+    } catch {
+      // Ignore drag failures.
+    }
   }, []);
 
   return (
@@ -159,10 +209,17 @@ function RecordingPreviewWindow() {
       }}
     >
       <div
-        onMouseEnter={() => setIsHovered(true)}
-        onMouseLeave={() => setIsHovered(false)}
+        onMouseDown={(e) => {
+          void handlePreviewMouseDown(e);
+        }}
+        onDragStart={(e) => {
+          e.preventDefault();
+        }}
         style={{
           width: '100%',
+          height: '100%',
+          display: 'flex',
+          flexDirection: 'column',
           background: 'var(--card)',
           borderRadius: 12,
           overflow: 'hidden',
@@ -176,6 +233,8 @@ function RecordingPreviewWindow() {
           opacity: isExiting ? 0 : isVisible ? 1 : 0,
           transition: `transform ${SLIDE_DURATION_MS}ms cubic-bezier(0.16, 1, 0.3, 1), opacity ${SLIDE_DURATION_MS}ms ease`,
           cursor: 'default',
+          userSelect: 'none',
+          WebkitUserSelect: 'none',
         }}
       >
         {/* Thumbnail */}
@@ -183,20 +242,26 @@ function RecordingPreviewWindow() {
           style={{
             position: 'relative',
             width: '100%',
+            flex: 1,
+            minHeight: 0,
             overflow: 'hidden',
             background: '#000',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
           }}
         >
           {isGif ? (
             <img
               src={videoSrc}
               alt=""
+              draggable={false}
               style={{
-                width: '100%',
-                height: 'auto',
-                maxHeight: 160,
+                maxWidth: '100%',
+                maxHeight: '100%',
                 objectFit: 'contain',
                 display: 'block',
+                pointerEvents: 'none',
               }}
             />
           ) : (
@@ -205,12 +270,13 @@ function RecordingPreviewWindow() {
               muted
               playsInline
               preload="auto"
+              draggable={false}
               style={{
-                width: '100%',
-                height: 'auto',
-                maxHeight: 160,
+                maxWidth: '100%',
+                maxHeight: '100%',
                 objectFit: 'contain',
                 display: 'block',
+                pointerEvents: 'none',
               }}
             />
           )}
@@ -226,6 +292,7 @@ function RecordingPreviewWindow() {
               fontWeight: 600,
               padding: '2px 6px',
               borderRadius: 4,
+              pointerEvents: 'none',
             }}
           >
             {formatDuration(durationSecs)}
@@ -301,14 +368,14 @@ function RecordingPreviewWindow() {
         </div>
 
         {/* Auto-dismiss progress bar */}
-        {isVisible && !isHovered && (
-          <div
-            style={{
-              height: 2,
-              background: 'var(--polar-frost)',
-              overflow: 'hidden',
-            }}
-          >
+        <div
+          style={{
+            height: 2,
+            background: 'var(--polar-frost)',
+            overflow: 'hidden',
+          }}
+        >
+          {isVisible && !timerPaused && (
             <div
               style={{
                 height: '100%',
@@ -316,8 +383,8 @@ function RecordingPreviewWindow() {
                 animation: `shrink ${AUTO_DISMISS_MS}ms linear forwards`,
               }}
             />
-          </div>
-        )}
+          )}
+        </div>
       </div>
 
       <style>{`

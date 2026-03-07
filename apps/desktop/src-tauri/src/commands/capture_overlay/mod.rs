@@ -103,6 +103,7 @@ pub async fn show_capture_overlay(
     source_mode: Option<String>,
     preselect_monitor: Option<usize>,
     preselect_window: Option<isize>,
+    auto_start_recording: Option<bool>,
 ) -> Result<Option<OverlayResult>, String> {
     log::debug!("[show_capture_overlay] capture_type: {:?}, source_mode: {:?}, preselect_monitor: {:?}, preselect_window: {:?}",
         capture_type, source_mode, preselect_monitor, preselect_window);
@@ -156,6 +157,7 @@ pub async fn show_capture_overlay(
             app_clone,
             bounds,
             ct,
+            auto_start_recording.unwrap_or(false),
             mode,
             preselect_bounds,
             preselect_window,
@@ -238,6 +240,7 @@ fn run_overlay(
     app: AppHandle,
     bounds: Rect,
     capture_type: CaptureType,
+    auto_start_recording: bool,
     overlay_mode: OverlayMode,
     preselect_bounds: Option<Rect>,
     preselect_window_id: Option<isize>,
@@ -352,6 +355,7 @@ fn run_overlay(
         let mut state = Box::new(OverlayState {
             app_handle: app,
             capture_type,
+            auto_start_recording,
             overlay_mode,
             hwnd,
             monitor: monitor_info,
@@ -406,7 +410,10 @@ fn run_overlay(
                         "y": screen_sel.top,
                         "width": screen_sel.width(),
                         "height": screen_sel.height(),
+                        "captureType": state.capture_type.as_str(),
+                        "autoStartRecording": state.auto_start_recording,
                         "sourceType": source_type,
+                        "sourceMode": source_type,
                         "windowId": state.preselected_window_id,
                         "sourceTitle": state.preselected_window_title,
                         "monitorIndex": state.preselected_monitor_index,
@@ -546,36 +553,38 @@ fn run_overlay(
         }
 
         // Bring toolbar back to front after overlay closes (with delay for z-order to settle)
-        let app_for_toolbar = state.app_handle.clone();
-        std::thread::spawn(move || {
-            std::thread::sleep(std::time::Duration::from_millis(50));
-            if let Some(win) = app_for_toolbar.get_webview_window("capture-toolbar") {
-                if let Ok(toolbar_hwnd) = win.hwnd() {
-                    use windows::Win32::UI::WindowsAndMessaging::{
-                        SetForegroundWindow, SetWindowPos, ShowWindow, HWND_TOPMOST, SWP_NOMOVE,
-                        SWP_NOSIZE, SWP_SHOWWINDOW, SW_RESTORE, SW_SHOW,
-                    };
-                    // Restore if minimized
-                    let _ = ShowWindow(HWND(toolbar_hwnd.0), SW_RESTORE);
-                    // Show the window
-                    let _ = ShowWindow(HWND(toolbar_hwnd.0), SW_SHOW);
-                    // Set as topmost
-                    let _ = SetWindowPos(
-                        HWND(toolbar_hwnd.0),
-                        HWND_TOPMOST,
-                        0,
-                        0,
-                        0,
-                        0,
-                        SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW,
-                    );
-                    // Force foreground
-                    let _ = SetForegroundWindow(HWND(toolbar_hwnd.0));
+        if !state.auto_start_recording {
+            let app_for_toolbar = state.app_handle.clone();
+            std::thread::spawn(move || {
+                std::thread::sleep(std::time::Duration::from_millis(50));
+                if let Some(win) = app_for_toolbar.get_webview_window("capture-toolbar") {
+                    if let Ok(toolbar_hwnd) = win.hwnd() {
+                        use windows::Win32::UI::WindowsAndMessaging::{
+                            SetForegroundWindow, SetWindowPos, ShowWindow, HWND_TOPMOST,
+                            SWP_NOMOVE, SWP_NOSIZE, SWP_SHOWWINDOW, SW_RESTORE, SW_SHOW,
+                        };
+                        // Restore if minimized
+                        let _ = ShowWindow(HWND(toolbar_hwnd.0), SW_RESTORE);
+                        // Show the window
+                        let _ = ShowWindow(HWND(toolbar_hwnd.0), SW_SHOW);
+                        // Set as topmost
+                        let _ = SetWindowPos(
+                            HWND(toolbar_hwnd.0),
+                            HWND_TOPMOST,
+                            0,
+                            0,
+                            0,
+                            0,
+                            SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW,
+                        );
+                        // Force foreground
+                        let _ = SetForegroundWindow(HWND(toolbar_hwnd.0));
+                    }
+                    let _ = win.show();
+                    let _ = win.set_focus();
                 }
-                let _ = win.show();
-                let _ = win.set_focus();
-            }
-        });
+            });
+        }
 
         // If cancelled (no result), reset toolbar to startup state and show it
         if result.is_none() {
@@ -586,7 +595,8 @@ fn run_overlay(
             let app_handle = state.app_handle.clone();
             tauri::async_runtime::spawn(async move {
                 if let Err(e) =
-                    crate::commands::window::show_startup_toolbar(app_handle, None, None).await
+                    crate::commands::window::show_startup_toolbar(app_handle, None, None, None)
+                        .await
                 {
                     log::error!("Failed to show startup toolbar after cancel: {}", e);
                 }

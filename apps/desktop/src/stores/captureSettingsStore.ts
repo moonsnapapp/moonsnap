@@ -8,6 +8,12 @@ import type {
   GifSettings,
 } from '../types/generated';
 import type { CaptureType } from '../types';
+import {
+  normalizeGifSettings,
+  normalizeGifSettingsUpdates,
+  normalizeVideoSettings,
+  normalizeVideoSettingsUpdates,
+} from '@/constants/recording';
 
 /** Source mode for capture selection */
 export type CaptureSourceMode = 'display' | 'window' | 'area';
@@ -149,16 +155,16 @@ export const useCaptureSettingsStore = create<CaptureSettingsState>((set, get) =
           ...DEFAULT_SCREENSHOT_SETTINGS,
           ...savedSettings?.screenshot,
         },
-        video: {
+        video: normalizeVideoSettings({
           ...DEFAULT_VIDEO_SETTINGS,
           ...savedSettings?.video,
           // Always ensure webcam is false for now (placeholder)
           captureWebcam: false,
-        },
-        gif: {
+        }),
+        gif: normalizeGifSettings({
           ...DEFAULT_GIF_SETTINGS,
           ...savedSettings?.gif,
-        },
+        }),
       };
 
       set({
@@ -273,12 +279,14 @@ export const useCaptureSettingsStore = create<CaptureSettingsState>((set, get) =
   },
 
   updateVideoSettings: (updates) => {
+    const normalizedUpdates = normalizeVideoSettingsUpdates(updates);
+
     set((state) => ({
       settings: {
         ...state.settings,
         video: {
           ...state.settings.video,
-          ...updates,
+          ...normalizedUpdates,
           // Always ensure webcam is false for now (placeholder)
           captureWebcam: false,
         },
@@ -303,14 +311,7 @@ export const useCaptureSettingsStore = create<CaptureSettingsState>((set, get) =
   },
 
   updateGifSettings: (updates) => {
-    // Validate GIF-specific constraints
-    const validated = { ...updates };
-    if (validated.fps !== undefined) {
-      validated.fps = Math.min(validated.fps, 30); // Cap at 30 FPS for GIF
-    }
-    if (validated.maxDurationSecs !== undefined) {
-      validated.maxDurationSecs = Math.min(validated.maxDurationSecs, 60); // Cap at 60s for GIF
-    }
+    const validated = normalizeGifSettingsUpdates(updates);
 
     set((state) => ({
       settings: {

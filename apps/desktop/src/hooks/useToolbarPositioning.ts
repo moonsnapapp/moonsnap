@@ -20,6 +20,8 @@ interface UseToolbarPositioningOptions {
   selectionConfirmed?: boolean;
   /** Toolbar mode - triggers remeasure when mode changes (selection/recording/etc) */
   mode?: string;
+  /** Keep the toolbar window hidden even after the selection is confirmed. */
+  suppressWindowShow?: boolean;
 }
 
 export function useToolbarPositioning({
@@ -27,6 +29,7 @@ export function useToolbarPositioning({
   contentRef,
   selectionConfirmed,
   mode,
+  suppressWindowShow = false,
 }: UseToolbarPositioningOptions): void {
   const windowShownRef = useRef(false);
   const lastSizeRef = useRef({ width: 0, height: 0 });
@@ -78,26 +81,42 @@ export function useToolbarPositioning({
     const content = contentRef.current;
     if (!container || !content) return;
 
-    const resizeWindow = async (width: number, height: number) => {
-      if (width === lastSizeRef.current.width && height === lastSizeRef.current.height) {
+    const syncWindowVisibility = async () => {
+      const currentWindow = getCurrentWebviewWindow();
+      const isVisible = await currentWindow.isVisible().catch(() => windowShownRef.current);
+
+      if (suppressWindowShow) {
+        if (isVisible) {
+          await currentWindow.hide();
+        }
+        windowShownRef.current = false;
         return;
       }
-      lastSizeRef.current = { width, height };
 
-      const windowWidth = Math.ceil(width) + 1;
-      const windowHeight = Math.ceil(height) + 1;
+      if (selectionConfirmed && !isVisible) {
+        await currentWindow.show();
+        windowShownRef.current = true;
+        return;
+      }
 
+      windowShownRef.current = isVisible;
+    };
+
+    const resizeWindow = async (width: number, height: number) => {
       try {
-        await invoke('resize_capture_toolbar', {
-          width: windowWidth,
-          height: windowHeight,
-        });
+        if (width !== lastSizeRef.current.width || height !== lastSizeRef.current.height) {
+          lastSizeRef.current = { width, height };
 
-        if (!windowShownRef.current) {
-          const currentWindow = getCurrentWebviewWindow();
-          await currentWindow.show();
-          windowShownRef.current = true;
+          const windowWidth = Math.ceil(width) + 1;
+          const windowHeight = Math.ceil(height) + 1;
+
+          await invoke('resize_capture_toolbar', {
+            width: windowWidth,
+            height: windowHeight,
+          });
         }
+
+        await syncWindowVisibility();
       } catch (e) {
         toolbarLogger.error('Failed to resize toolbar:', e);
       }
@@ -118,7 +137,7 @@ export function useToolbarPositioning({
     observer.observe(container);
     observer.observe(content);
     return () => observer.disconnect();
-  }, [containerRef, contentRef, measureTargetSize]);
+  }, [containerRef, contentRef, measureTargetSize, selectionConfirmed, suppressWindowShow]);
 
   useEffect(() => {
     const container = containerRef.current;

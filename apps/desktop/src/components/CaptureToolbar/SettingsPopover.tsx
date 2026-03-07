@@ -9,6 +9,7 @@ import React, { useRef, useCallback } from 'react';
 import { Settings } from 'lucide-react';
 import { Menu, MenuItem, PredefinedMenuItem, CheckMenuItem, Submenu } from '@tauri-apps/api/menu';
 import { LogicalPosition } from '@tauri-apps/api/dpi';
+import { RECORDING, formatCountdownOption } from '@/constants';
 import { useCaptureSettingsStore } from '@/stores/captureSettingsStore';
 import { settingsLogger } from '@/utils/logger';
 import type { CaptureType } from '@/types';
@@ -98,7 +99,9 @@ export const SettingsPopover: React.FC<SettingsPopoverProps> = ({
       if (mode === 'video' || mode === 'gif') {
         // FPS submenu
         const currentFps = mode === 'video' ? settings.video.fps : settings.gif.fps;
-        const fpsOptions = mode === 'video' ? [15, 24, 30, 60] : [10, 15, 20, 30];
+        const fpsOptions = mode === 'video'
+          ? RECORDING.VIDEO_FPS_OPTIONS
+          : RECORDING.GIF_FPS_OPTIONS;
         const fpsItems = await Promise.all(
           fpsOptions.map(fps =>
             CheckMenuItem.new({
@@ -123,9 +126,8 @@ export const SettingsPopover: React.FC<SettingsPopoverProps> = ({
 
         // Quality submenu
         if (mode === 'video') {
-          const qualityOptions = [40, 60, 80, 100];
           const qualityItems = await Promise.all(
-            qualityOptions.map(q =>
+            RECORDING.VIDEO_QUALITY_OPTIONS.map(q =>
               CheckMenuItem.new({
                 id: `quality-${q}`,
                 text: `${q}%`,
@@ -159,14 +161,12 @@ export const SettingsPopover: React.FC<SettingsPopoverProps> = ({
         }
 
         // Countdown submenu
-        const countdownOptions = [0, 3, 5];
-        const countdownLabels: Record<number, string> = { 0: 'Off', 3: '3 sec', 5: '5 sec' };
         const currentCountdown = getCountdown();
         const countdownItems = await Promise.all(
-          countdownOptions.map(secs =>
+          RECORDING.COUNTDOWN_OPTIONS.map(secs =>
             CheckMenuItem.new({
               id: `countdown-${secs}`,
-              text: countdownLabels[secs],
+              text: formatCountdownOption(secs),
               checked: currentCountdown === secs,
               action: () => setCountdown(secs),
             })
@@ -174,7 +174,7 @@ export const SettingsPopover: React.FC<SettingsPopoverProps> = ({
         );
         menuItems.push(await Submenu.new({
           id: 'countdown-submenu',
-          text: `Countdown: ${countdownLabels[currentCountdown]}`,
+          text: `Countdown: ${formatCountdownOption(currentCountdown)}`,
           items: countdownItems,
         }));
 
@@ -271,4 +271,3 @@ export const SettingsPopover: React.FC<SettingsPopoverProps> = ({
     </button>
   );
 };
-

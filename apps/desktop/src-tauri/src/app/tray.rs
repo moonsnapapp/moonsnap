@@ -249,7 +249,7 @@ pub fn setup_system_tray(app: &App) -> Result<TrayState, Box<dyn std::error::Err
                 let app_handle = app.clone();
                 tauri::async_runtime::spawn(async move {
                     if let Err(e) =
-                        commands::window::show_startup_toolbar(app_handle, None, None).await
+                        commands::window::show_startup_toolbar(app_handle, None, None, None).await
                     {
                         log::error!("Failed to show capture toolbar: {}", e);
                     }
@@ -299,32 +299,18 @@ pub fn setup_system_tray(app: &App) -> Result<TrayState, Box<dyn std::error::Err
                 });
             },
             "record_video" => {
-                let app_handle = app.clone();
-                tauri::async_runtime::spawn(async move {
-                    if let Err(e) = commands::window::show_startup_toolbar(
-                        app_handle,
-                        Some("video".to_string()),
-                        None,
-                    )
-                    .await
-                    {
-                        log::error!("Failed to show video capture toolbar: {}", e);
-                    }
-                });
+                if let Err(e) =
+                    commands::window::trigger_capture_with_options(app, Some("video"), true)
+                {
+                    log::error!("Failed to start video area capture from tray: {}", e);
+                }
             },
             "record_gif" => {
-                let app_handle = app.clone();
-                tauri::async_runtime::spawn(async move {
-                    if let Err(e) = commands::window::show_startup_toolbar(
-                        app_handle,
-                        Some("gif".to_string()),
-                        None,
-                    )
-                    .await
-                    {
-                        log::error!("Failed to show GIF capture toolbar: {}", e);
-                    }
-                });
+                if let Err(e) =
+                    commands::window::trigger_capture_with_options(app, Some("gif"), true)
+                {
+                    log::error!("Failed to start GIF area capture from tray: {}", e);
+                }
             },
             "pause_or_resume_recording" => {
                 let app_handle = app.clone();

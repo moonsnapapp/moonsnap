@@ -1,6 +1,6 @@
 import React from 'react';
-import { Slider } from '@/components/ui/slider';
 import { Switch } from '@/components/ui/switch';
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import {
   Select,
   SelectContent,
@@ -8,8 +8,59 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { RECORDING, formatCountdownOption, formatGifDurationOption } from '@/constants';
 import { useCaptureSettingsStore } from '@/stores/captureSettingsStore';
 import type { AfterRecordingAction } from '@/stores/captureSettingsStore';
+
+interface OptionToggleGroupProps {
+  ariaLabel: string;
+  value: number;
+  options: readonly number[];
+  formatLabel: (value: number) => string;
+  onChange: (value: number) => void;
+}
+
+const TOGGLE_GROUP_CLASS =
+  'justify-start flex-wrap gap-2';
+
+const TOGGLE_GROUP_ITEM_CLASS =
+  'h-8 px-3 text-xs border border-[var(--polar-frost)] bg-[var(--card)] text-[var(--ink-black)] hover:bg-[var(--polar-ice)] data-[state=on]:bg-[var(--polar-frost)] data-[state=on]:text-[var(--ink-black)]';
+
+const OptionToggleGroup: React.FC<OptionToggleGroupProps> = ({
+  ariaLabel,
+  value,
+  options,
+  formatLabel,
+  onChange,
+}) => {
+  const currentValue = options.includes(value) ? String(value) : undefined;
+
+  return (
+    <ToggleGroup
+      type="single"
+      value={currentValue}
+      onValueChange={(nextValue) => {
+        if (!nextValue) return;
+        onChange(parseInt(nextValue, 10));
+      }}
+      className={TOGGLE_GROUP_CLASS}
+      aria-label={ariaLabel}
+    >
+      {options.map((option) => (
+        <ToggleGroupItem
+          key={option}
+          value={String(option)}
+          variant="outline"
+          size="sm"
+          className={TOGGLE_GROUP_ITEM_CLASS}
+          aria-label={formatLabel(option)}
+        >
+          {formatLabel(option)}
+        </ToggleGroupItem>
+      ))}
+    </ToggleGroup>
+  );
+};
 
 export const RecordingsTab: React.FC = () => {
   const {
@@ -23,13 +74,11 @@ export const RecordingsTab: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      {/* Behavior Section */}
       <section>
         <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--coral-400)] mb-3">
           Behavior
         </h3>
         <div className="p-4 rounded-lg bg-[var(--polar-ice)] border border-[var(--polar-frost)] space-y-4">
-          {/* After recording action */}
           <div>
             <label className="text-sm text-[var(--ink-black)] mb-2 block">
               After recording
@@ -56,73 +105,53 @@ export const RecordingsTab: React.FC = () => {
         </div>
       </section>
 
-      {/* Video Settings */}
       <section>
         <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--coral-400)] mb-3">
           Video (MP4)
         </h3>
         <div className="p-4 rounded-lg bg-[var(--polar-ice)] border border-[var(--polar-frost)] space-y-4">
-          {/* FPS */}
           <div>
-            <div className="flex items-center justify-between mb-2">
-              <label className="text-sm text-[var(--ink-black)]">
-                Frame rate
-              </label>
-              <span className="text-sm text-[var(--ink-muted)]">
-                {video.fps} FPS
-              </span>
-            </div>
-            <Slider
-              value={[video.fps]}
-              onValueChange={(value) => updateVideoSettings({ fps: value[0] })}
-              min={10}
-              max={60}
-              step={5}
+            <label className="text-sm text-[var(--ink-black)] mb-2 block">
+              Frame rate
+            </label>
+            <OptionToggleGroup
+              ariaLabel="Video frame rate"
+              value={video.fps}
+              options={RECORDING.VIDEO_FPS_OPTIONS}
+              formatLabel={(fps) => `${fps} fps`}
+              onChange={(fps) => updateVideoSettings({ fps })}
             />
           </div>
 
-          {/* Quality */}
           <div>
-            <div className="flex items-center justify-between mb-2">
-              <label className="text-sm text-[var(--ink-black)]">
-                Quality
-              </label>
-              <span className="text-sm text-[var(--ink-muted)]">
-                {video.quality}%
-              </span>
-            </div>
-            <Slider
-              value={[video.quality]}
-              onValueChange={(value) => updateVideoSettings({ quality: value[0] })}
-              min={10}
-              max={100}
-              step={5}
+            <label className="text-sm text-[var(--ink-black)] mb-2 block">
+              Quality
+            </label>
+            <OptionToggleGroup
+              ariaLabel="Video quality"
+              value={video.quality}
+              options={RECORDING.VIDEO_QUALITY_OPTIONS}
+              formatLabel={(quality) => `${quality}%`}
+              onChange={(quality) => updateVideoSettings({ quality })}
             />
             <p className="text-xs text-[var(--ink-muted)] mt-1">
               Higher quality = larger file size
             </p>
           </div>
 
-          {/* Countdown */}
           <div>
-            <div className="flex items-center justify-between mb-2">
-              <label className="text-sm text-[var(--ink-black)]">
-                Countdown
-              </label>
-              <span className="text-sm text-[var(--ink-muted)]">
-                {video.countdownSecs === 0 ? 'Off' : `${video.countdownSecs}s`}
-              </span>
-            </div>
-            <Slider
-              value={[video.countdownSecs]}
-              onValueChange={(value) => updateVideoSettings({ countdownSecs: value[0] })}
-              min={0}
-              max={10}
-              step={1}
+            <label className="text-sm text-[var(--ink-black)] mb-2 block">
+              Countdown
+            </label>
+            <OptionToggleGroup
+              ariaLabel="Video countdown"
+              value={video.countdownSecs}
+              options={RECORDING.COUNTDOWN_OPTIONS}
+              formatLabel={formatCountdownOption}
+              onChange={(countdownSecs) => updateVideoSettings({ countdownSecs })}
             />
           </div>
 
-          {/* Include Cursor */}
           <div className="flex items-center justify-between">
             <div>
               <label className="text-sm text-[var(--ink-black)] block">
@@ -138,7 +167,6 @@ export const RecordingsTab: React.FC = () => {
             />
           </div>
 
-          {/* Hide Desktop Icons */}
           <div className="flex items-center justify-between">
             <div>
               <label className="text-sm text-[var(--ink-black)] block">
@@ -156,51 +184,37 @@ export const RecordingsTab: React.FC = () => {
         </div>
       </section>
 
-      {/* GIF Settings */}
       <section>
         <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--coral-400)] mb-3">
           GIF
         </h3>
         <div className="p-4 rounded-lg bg-[var(--polar-ice)] border border-[var(--polar-frost)] space-y-4">
-          {/* GIF FPS */}
           <div>
-            <div className="flex items-center justify-between mb-2">
-              <label className="text-sm text-[var(--ink-black)]">
-                Frame rate
-              </label>
-              <span className="text-sm text-[var(--ink-muted)]">
-                {gif.fps} FPS
-              </span>
-            </div>
-            <Slider
-              value={[gif.fps]}
-              onValueChange={(value) => updateGifSettings({ fps: value[0] })}
-              min={5}
-              max={30}
-              step={5}
+            <label className="text-sm text-[var(--ink-black)] mb-2 block">
+              Frame rate
+            </label>
+            <OptionToggleGroup
+              ariaLabel="GIF frame rate"
+              value={gif.fps}
+              options={RECORDING.GIF_FPS_OPTIONS}
+              formatLabel={(fps) => `${fps} fps`}
+              onChange={(fps) => updateGifSettings({ fps })}
             />
           </div>
 
-          {/* GIF Max Duration */}
           <div>
-            <div className="flex items-center justify-between mb-2">
-              <label className="text-sm text-[var(--ink-black)]">
-                Max duration
-              </label>
-              <span className="text-sm text-[var(--ink-muted)]">
-                {gif.maxDurationSecs}s
-              </span>
-            </div>
-            <Slider
-              value={[gif.maxDurationSecs]}
-              onValueChange={(value) => updateGifSettings({ maxDurationSecs: value[0] })}
-              min={5}
-              max={60}
-              step={5}
+            <label className="text-sm text-[var(--ink-black)] mb-2 block">
+              Max duration
+            </label>
+            <OptionToggleGroup
+              ariaLabel="GIF max duration"
+              value={gif.maxDurationSecs}
+              options={RECORDING.GIF_MAX_DURATION_OPTIONS}
+              formatLabel={formatGifDurationOption}
+              onChange={(maxDurationSecs) => updateGifSettings({ maxDurationSecs })}
             />
           </div>
 
-          {/* GIF Quality Preset */}
           <div>
             <label className="text-sm text-[var(--ink-black)] mb-2 block">
               Quality preset
@@ -220,26 +234,19 @@ export const RecordingsTab: React.FC = () => {
             </Select>
           </div>
 
-          {/* GIF Countdown */}
           <div>
-            <div className="flex items-center justify-between mb-2">
-              <label className="text-sm text-[var(--ink-black)]">
-                Countdown
-              </label>
-              <span className="text-sm text-[var(--ink-muted)]">
-                {gif.countdownSecs === 0 ? 'Off' : `${gif.countdownSecs}s`}
-              </span>
-            </div>
-            <Slider
-              value={[gif.countdownSecs]}
-              onValueChange={(value) => updateGifSettings({ countdownSecs: value[0] })}
-              min={0}
-              max={10}
-              step={1}
+            <label className="text-sm text-[var(--ink-black)] mb-2 block">
+              Countdown
+            </label>
+            <OptionToggleGroup
+              ariaLabel="GIF countdown"
+              value={gif.countdownSecs}
+              options={RECORDING.COUNTDOWN_OPTIONS}
+              formatLabel={formatCountdownOption}
+              onChange={(countdownSecs) => updateGifSettings({ countdownSecs })}
             />
           </div>
 
-          {/* GIF Include Cursor */}
           <div className="flex items-center justify-between">
             <div>
               <label className="text-sm text-[var(--ink-black)] block">

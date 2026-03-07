@@ -22,6 +22,9 @@ pub struct CaptureToolbarSelectionPayload {
     pub source_title: Option<String>,
     pub monitor_index: Option<u32>,
     pub monitor_name: Option<String>,
+    pub capture_type: Option<String>,
+    pub source_mode: Option<String>,
+    pub auto_start_recording: Option<bool>,
 }
 
 #[derive(Default)]
@@ -39,6 +42,9 @@ fn build_selection_payload(
     source_title: Option<String>,
     monitor_index: Option<u32>,
     monitor_name: Option<String>,
+    capture_type: Option<String>,
+    source_mode: Option<String>,
+    auto_start_recording: Option<bool>,
 ) -> CaptureToolbarSelectionPayload {
     CaptureToolbarSelectionPayload {
         x,
@@ -50,6 +56,9 @@ fn build_selection_payload(
         source_title,
         monitor_index,
         monitor_name,
+        capture_type,
+        source_mode,
+        auto_start_recording,
     }
 }
 
@@ -74,6 +83,9 @@ pub async fn show_capture_toolbar(
     source_title: Option<String>,
     monitor_index: Option<u32>,
     monitor_name: Option<String>,
+    capture_type: Option<String>,
+    source_mode: Option<String>,
+    auto_start_recording: Option<bool>,
 ) -> Result<(), String> {
     let toolbar_state = app.state::<CaptureToolbarWindowState>();
     let _create_guard = toolbar_state
@@ -91,15 +103,22 @@ pub async fn show_capture_toolbar(
         source_title,
         monitor_index,
         monitor_name,
+        capture_type,
+        source_mode,
+        auto_start_recording,
     );
     if let Some(window) = app.get_webview_window(CAPTURE_TOOLBAR_LABEL) {
         let _ = window.emit("confirm-selection", &selection);
-        window
-            .show()
-            .map_err(|e| format!("Failed to show toolbar: {}", e))?;
-        window
-            .set_focus()
-            .map_err(|e| format!("Failed to focus toolbar: {}", e))?;
+        if auto_start_recording.unwrap_or(false) {
+            let _ = window.hide();
+        } else {
+            window
+                .show()
+                .map_err(|e| format!("Failed to show toolbar: {}", e))?;
+            window
+                .set_focus()
+                .map_err(|e| format!("Failed to focus toolbar: {}", e))?;
+        }
         return Ok(());
     }
 
@@ -389,8 +408,9 @@ fn emit_startup_toolbar_context(
     app: &AppHandle,
     capture_type: Option<String>,
     source_mode: Option<String>,
+    auto_start_area_selection: Option<bool>,
 ) {
-    if capture_type.is_none() && source_mode.is_none() {
+    if capture_type.is_none() && source_mode.is_none() && auto_start_area_selection.is_none() {
         return;
     }
 
@@ -403,6 +423,7 @@ fn emit_startup_toolbar_context(
                 serde_json::json!({
                     "captureType": capture_type,
                     "sourceMode": source_mode,
+                    "autoStartAreaSelection": auto_start_area_selection.unwrap_or(false),
                 }),
             );
         }
@@ -414,7 +435,9 @@ pub async fn show_startup_toolbar(
     app: AppHandle,
     capture_type: Option<String>,
     source_mode: Option<String>,
+    auto_start_area_selection: Option<bool>,
 ) -> Result<(), String> {
+    let auto_start_area_selection = auto_start_area_selection.unwrap_or(false);
     let toolbar_state = app.state::<CaptureToolbarWindowState>();
     let _create_guard = toolbar_state
         .create_lock
@@ -425,42 +448,49 @@ pub async fn show_startup_toolbar(
     if let Some(window) = app.get_webview_window(CAPTURE_TOOLBAR_LABEL) {
         log::debug!("[show_startup_toolbar] Window already exists, bringing to front");
 
-        // Use Windows API to forcefully bring window to front
-        #[cfg(target_os = "windows")]
-        {
-            use windows::Win32::Foundation::HWND;
-            use windows::Win32::UI::WindowsAndMessaging::{
-                BringWindowToTop, SetForegroundWindow, SetWindowPos, ShowWindow, HWND_TOPMOST,
-                SWP_NOMOVE, SWP_NOSIZE, SWP_SHOWWINDOW, SW_RESTORE, SW_SHOW,
-            };
+        if !auto_start_area_selection {
+            // Use Windows API to forcefully bring window to front
+            #[cfg(target_os = "windows")]
+            {
+                use windows::Win32::Foundation::HWND;
+                use windows::Win32::UI::WindowsAndMessaging::{
+                    BringWindowToTop, SetForegroundWindow, SetWindowPos, ShowWindow, HWND_TOPMOST,
+                    SWP_NOMOVE, SWP_NOSIZE, SWP_SHOWWINDOW, SW_RESTORE, SW_SHOW,
+                };
 
-            if let Ok(hwnd) = window.hwnd() {
-                unsafe {
-                    let hwnd = HWND(hwnd.0);
-                    let _ = ShowWindow(hwnd, SW_RESTORE);
-                    let _ = ShowWindow(hwnd, SW_SHOW);
-                    let _ = SetWindowPos(
-                        hwnd,
-                        HWND_TOPMOST,
-                        0,
-                        0,
-                        0,
-                        0,
-                        SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW,
-                    );
-                    let _ = BringWindowToTop(hwnd);
-                    let _ = SetForegroundWindow(hwnd);
+                if let Ok(hwnd) = window.hwnd() {
+                    unsafe {
+                        let hwnd = HWND(hwnd.0);
+                        let _ = ShowWindow(hwnd, SW_RESTORE);
+                        let _ = ShowWindow(hwnd, SW_SHOW);
+                        let _ = SetWindowPos(
+                            hwnd,
+                            HWND_TOPMOST,
+                            0,
+                            0,
+                            0,
+                            0,
+                            SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW,
+                        );
+                        let _ = BringWindowToTop(hwnd);
+                        let _ = SetForegroundWindow(hwnd);
+                    }
                 }
             }
-        }
 
-        window
-            .show()
-            .map_err(|e| format!("Failed to show toolbar: {}", e))?;
-        window
-            .set_focus()
-            .map_err(|e| format!("Failed to focus toolbar: {}", e))?;
-        emit_startup_toolbar_context(&app, capture_type, source_mode);
+            window
+                .show()
+                .map_err(|e| format!("Failed to show toolbar: {}", e))?;
+            window
+                .set_focus()
+                .map_err(|e| format!("Failed to focus toolbar: {}", e))?;
+        }
+        emit_startup_toolbar_context(
+            &app,
+            capture_type,
+            source_mode,
+            Some(auto_start_area_selection),
+        );
         return Ok(());
     }
 
@@ -508,22 +538,29 @@ pub async fn show_startup_toolbar(
         .skip_taskbar(false)
         .resizable(false) // Auto-resized by frontend
         .shadow(true)
-        .visible(true) // Show immediately - frontend will resize after measuring
-        .focused(true)
+        .visible(!auto_start_area_selection)
+        .focused(!auto_start_area_selection)
         .build()
         .map_err(|e| format!("Failed to create startup toolbar window: {}", e))?;
 
     // Set position/size using physical coordinates
     set_physical_bounds(&window, x, y, initial_width, initial_height)?;
 
-    window
-        .show()
-        .map_err(|e| format!("Failed to show toolbar: {}", e))?;
-    window
-        .set_focus()
-        .map_err(|e| format!("Failed to focus toolbar: {}", e))?;
+    if !auto_start_area_selection {
+        window
+            .show()
+            .map_err(|e| format!("Failed to show toolbar: {}", e))?;
+        window
+            .set_focus()
+            .map_err(|e| format!("Failed to focus toolbar: {}", e))?;
+    }
 
-    emit_startup_toolbar_context(&app, capture_type, source_mode);
+    emit_startup_toolbar_context(
+        &app,
+        capture_type,
+        source_mode,
+        Some(auto_start_area_selection),
+    );
 
     log::info!("[show_startup_toolbar] Toolbar ready");
 

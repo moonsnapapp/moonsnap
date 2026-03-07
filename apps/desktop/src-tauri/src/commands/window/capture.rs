@@ -25,6 +25,14 @@ use super::{
 ///
 /// This ensures webcam.mp4 and screen.mp4 are saved to the same folder.
 pub fn trigger_capture(app: &AppHandle, capture_type: Option<&str>) -> Result<(), String> {
+    trigger_capture_with_options(app, capture_type, false)
+}
+
+pub fn trigger_capture_with_options(
+    app: &AppHandle,
+    capture_type: Option<&str>,
+    auto_start_recording: bool,
+) -> Result<(), String> {
     log::info!(
         "[trigger_capture] Called with capture_type: {:?}",
         capture_type
@@ -40,8 +48,15 @@ pub fn trigger_capture(app: &AppHandle, capture_type: Option<&str>) -> Result<()
         // Don't hide main window - user may want to capture their own app
     }
 
+    if auto_start_recording {
+        if let Some(toolbar_window) = app.get_webview_window("capture-toolbar") {
+            let _ = toolbar_window.hide();
+        }
+    }
+
     // Clone capture type as owned String for use in spawned thread
     let ct_for_thread = ct.clone();
+    let auto_start_recording_for_thread = auto_start_recording;
 
     // Launch DirectComposition overlay in background
     let app_clone = app.clone();
@@ -69,6 +84,7 @@ pub fn trigger_capture(app: &AppHandle, capture_type: Option<&str>) -> Result<()
                 None,
                 None,
                 None,
+                Some(auto_start_recording_for_thread),
             )
             .await
             {

@@ -81,7 +81,8 @@ pub fn run() {
             let app_handle = app.clone();
             tauri::async_runtime::spawn(async move {
                 if let Err(e) =
-                    commands::window::toolbar::show_startup_toolbar(app_handle, None, None).await
+                    commands::window::toolbar::show_startup_toolbar(app_handle, None, None, None)
+                        .await
                 {
                     log::error!("Failed to show startup toolbar on second instance: {}", e);
                 }
@@ -185,7 +186,8 @@ pub fn run() {
             let app_handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 if let Err(e) =
-                    commands::window::toolbar::show_startup_toolbar(app_handle, None, None).await
+                    commands::window::toolbar::show_startup_toolbar(app_handle, None, None, None)
+                        .await
                 {
                     log::error!("Failed to show startup toolbar: {}", e);
                 }

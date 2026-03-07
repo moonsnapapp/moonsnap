@@ -7,6 +7,31 @@ export const mockInvoke: Mock = vi.fn();
 export const mockListen: Mock = vi.fn(() => Promise.resolve(() => {}));
 export const mockEmit: Mock = vi.fn(() => Promise.resolve());
 export const mockOnce: Mock = vi.fn(() => Promise.resolve(() => {}));
+export const mockAvailableMonitors: Mock = vi.fn(() =>
+  Promise.resolve([
+    {
+      position: { x: 0, y: 0 },
+      size: { width: 1920, height: 1080 },
+    },
+  ])
+);
+
+export const mockWebviewWindow = {
+  label: 'capture-toolbar',
+  listen: mockListen,
+  emit: mockEmit,
+  close: vi.fn(),
+  hide: vi.fn(),
+  show: vi.fn(),
+  setFocus: vi.fn(),
+  center: vi.fn(),
+  setSize: vi.fn(),
+  setPosition: vi.fn(),
+  outerSize: vi.fn(() => Promise.resolve({ width: 640, height: 120 })),
+  innerSize: vi.fn(() => Promise.resolve({ width: 640, height: 120 })),
+  isVisible: vi.fn(() => Promise.resolve(false)),
+  destroy: vi.fn(),
+};
 
 // Mock responses storage for invoke
 const invokeResponses = new Map<string, unknown>();
@@ -51,6 +76,10 @@ export function emitMockEvent(event: string, payload: unknown) {
   }
 }
 
+export function clearMockEventListeners() {
+  eventListeners.clear();
+}
+
 // Mock listen implementation - set up handler
 mockListen.mockImplementation(
   (event: string, handler: (event: unknown) => void): Promise<() => void> => {
@@ -90,7 +119,15 @@ vi.mock('@tauri-apps/api/window', () => ({
     setSize: vi.fn(),
     setPosition: vi.fn(),
   }),
+  availableMonitors: mockAvailableMonitors,
   Window: {
+    getByLabel: vi.fn(() => null),
+  },
+}));
+
+vi.mock('@tauri-apps/api/webviewWindow', () => ({
+  getCurrentWebviewWindow: () => mockWebviewWindow,
+  WebviewWindow: {
     getByLabel: vi.fn(() => null),
   },
 }));

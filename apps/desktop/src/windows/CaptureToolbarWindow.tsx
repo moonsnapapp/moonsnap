@@ -29,7 +29,7 @@ import { useWebcamSettingsStore } from '../stores/webcamSettingsStore';
 import { useSettingsStore } from '../stores/settingsStore';
 import { useTheme } from '../hooks/useTheme';
 import { useRecordingEvents } from '../hooks/useRecordingEvents';
-import { useSelectionEvents } from '../hooks/useSelectionEvents';
+import { repositionToolbar, useSelectionEvents } from '../hooks/useSelectionEvents';
 import { useWebcamCoordination } from '../hooks/useWebcamCoordination';
 import { useToolbarPositioning } from '../hooks/useToolbarPositioning';
 import type { CaptureType } from '../types';
@@ -38,6 +38,7 @@ import { toolbarLogger } from '../utils/logger';
 interface StartupToolbarContext {
   captureType?: CaptureType;
   sourceMode?: CaptureSourceMode;
+  autoStartAreaSelection?: boolean;
 }
 
 const CaptureToolbarWindow: React.FC = () => {
@@ -95,14 +96,28 @@ const CaptureToolbarWindow: React.FC = () => {
   } = useRecordingEvents();
 
   const pendingStartupContextRef = useRef<StartupToolbarContext | null>(null);
+  const shouldAutoStartAreaSelectionRef = useRef(false);
+  const autoStartRecordingTriggeredRef = useRef(false);
 
   const {
     selectionBounds,
     selectionBoundsRef,
     selectionConfirmed,
+    autoStartRecording,
+    setAutoStartRecording,
   } = useSelectionEvents();
 
-  useToolbarPositioning({ containerRef, contentRef, selectionConfirmed, mode });
+  const suppressToolbarUntilRecording =
+    (autoStartRecording || Boolean(selectionBounds.autoStartRecording)) &&
+    (mode === 'selection' || mode === 'starting');
+
+  useToolbarPositioning({
+    containerRef,
+    contentRef,
+    selectionConfirmed,
+    mode,
+    suppressWindowShow: suppressToolbarUntilRecording,
+  });
 
   useEffect(() => {
     if (captureType === 'video') {
@@ -111,6 +126,12 @@ const CaptureToolbarWindow: React.FC = () => {
       closeWebcamPreview();
     }
   }, [captureType, openWebcamPreviewIfEnabled, closeWebcamPreview]);
+
+  useEffect(() => {
+    if (!autoStartRecording) {
+      autoStartRecordingTriggeredRef.current = false;
+    }
+  }, [autoStartRecording]);
 
   useEffect(() => {
     const handleBlur = () => {
@@ -280,9 +301,10 @@ const CaptureToolbarWindow: React.FC = () => {
     } catch (e) {
       toolbarLogger.error('Failed to capture:', e);
       recordingInitiatedRef.current = false;
+      setAutoStartRecording(false);
       setMode('selection');
     }
-  }, [captureType, captureSource, selectionConfirmed, settings, webcamSettings.enabled, selectionBoundsRef, recordingInitiatedRef, setMode]);
+  }, [captureType, captureSource, selectionConfirmed, settings, webcamSettings.enabled, selectionBoundsRef, recordingInitiatedRef, setAutoStartRecording, setMode]);
 
   const handleRedo = useCallback(async () => {
     try {
@@ -410,6 +432,10 @@ const CaptureToolbarWindow: React.FC = () => {
     if (context.sourceMode) {
       setCaptureSource(context.sourceMode);
     }
+
+    shouldAutoStartAreaSelectionRef.current = Boolean(
+      context.autoStartAreaSelection && context.sourceMode === 'area'
+    );
   }, [mode, setCaptureSource, setCaptureType]);
 
   useEffect(() => {
@@ -435,6 +461,86 @@ const CaptureToolbarWindow: React.FC = () => {
     applyStartupToolbarContext(pendingStartupContextRef.current);
     pendingStartupContextRef.current = null;
   }, [applyStartupToolbarContext, isInitialized]);
+
+  useEffect(() => {
+    if (
+      !shouldAutoStartAreaSelectionRef.current ||
+      !isInitialized ||
+      mode !== 'selection' ||
+      selectionConfirmed ||
+      captureSource !== 'area' ||
+      (captureType !== 'video' && captureType !== 'gif')
+    ) {
+      return;
+    }
+
+    shouldAutoStartAreaSelectionRef.current = false;
+    void handleCaptureSourceChange('area');
+  }, [
+    captureSource,
+    captureType,
+    handleCaptureSourceChange,
+    isInitialized,
+    mode,
+    selectionConfirmed,
+  ]);
+
+  useEffect(() => {
+    if (
+      !autoStartRecording ||
+      autoStartRecordingTriggeredRef.current ||
+      !selectionConfirmed ||
+      mode !== 'selection' ||
+      captureType === 'screenshot' ||
+      (selectionBounds.captureType != null && selectionBounds.captureType !== captureType)
+    ) {
+      return;
+    }
+
+    autoStartRecordingTriggeredRef.current = true;
+    void handleCapture();
+  }, [
+    autoStartRecording,
+    captureType,
+    handleCapture,
+    mode,
+    selectionBounds.captureType,
+    selectionConfirmed,
+    setAutoStartRecording,
+  ]);
+
+  useEffect(() => {
+    if (
+      autoStartRecording &&
+      (mode === 'recording' || mode === 'paused' || mode === 'error')
+    ) {
+      setAutoStartRecording(false);
+    }
+  }, [autoStartRecording, mode, setAutoStartRecording]);
+
+  useEffect(() => {
+    if (
+      !selectionConfirmed ||
+      (mode !== 'recording' && mode !== 'paused')
+    ) {
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      const currentWindow = getCurrentWebviewWindow();
+      currentWindow.show().catch((e) => {
+        toolbarLogger.error('Failed to show toolbar during recording:', e);
+      });
+
+      void repositionToolbar(selectionBounds).catch((e) => {
+        toolbarLogger.error('Failed to reposition toolbar during recording:', e);
+      });
+    }, 80);
+
+    return () => {
+      clearTimeout(timeoutId);
+    };
+  }, [mode, selectionBounds, selectionConfirmed]);
 
   const handleTitlebarClose = useCallback(async () => {
     try {

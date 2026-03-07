@@ -11,6 +11,7 @@ import { useEffect } from 'react';
 import { listen } from '@tauri-apps/api/event';
 import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
 import { useSettingsStore } from '../stores/settingsStore';
+import type { CaptureType } from '../types';
 import { libraryLogger } from '../utils/logger';
 
 interface ThumbnailReadyEvent {
@@ -106,6 +107,8 @@ export function useAppEventListeners(callbacks: AppEventCallbacks) {
         y: number;
         width: number;
         height: number;
+        captureType?: CaptureType;
+        autoStartRecording?: boolean;
         sourceType?: 'area' | 'window' | 'display';
         windowId?: number | null;
         sourceTitle?: string | null;
@@ -114,25 +117,34 @@ export function useAppEventListeners(callbacks: AppEventCallbacks) {
       }>(
         'create-capture-toolbar',
         async (event) => {
-          const { x, y, width, height, sourceType, windowId, sourceTitle, monitorIndex, monitorName } = event.payload;
+          const { x, y, width, height, captureType, autoStartRecording, sourceType, windowId, sourceTitle, monitorIndex, monitorName } = event.payload;
+          const sourceMode = sourceType ?? 'area';
 
           // Check if toolbar already exists
           const existing = await WebviewWindow.getByLabel('capture-toolbar');
           if (existing) {
+            if (autoStartRecording) {
+              await existing.hide();
+            }
+
             // Toolbar exists - emit confirm-selection to mark selection confirmed and reposition
             // This is a NEW selection from overlay, not an adjustment update
             // Pass through all metadata for proper recording mode
             await existing.emit('confirm-selection', {
               x, y, width, height,
+              captureType,
+              autoStartRecording,
+              sourceMode,
               sourceType,
               windowId,
               sourceTitle,
               monitorIndex,
               monitorName
             });
-            // Bring to front
-            await existing.show();
-            await existing.setFocus();
+            if (!autoStartRecording) {
+              await existing.show();
+              await existing.setFocus();
+            }
             return;
           }
 
@@ -144,6 +156,9 @@ export function useAppEventListeners(callbacks: AppEventCallbacks) {
             y,
             width,
             height,
+            captureType,
+            autoStartRecording,
+            sourceMode,
             sourceType,
             windowId,
             sourceTitle,

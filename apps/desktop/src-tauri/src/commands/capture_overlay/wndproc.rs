@@ -545,21 +545,26 @@ fn show_toolbar(state: &OverlayState, screen_bounds: Rect, source: SourceType) {
         "x": screen_bounds.left,
         "y": screen_bounds.top,
         "width": screen_bounds.width(),
-        "height": screen_bounds.height()
+        "height": screen_bounds.height(),
+        "captureType": state.capture_type.as_str(),
+        "autoStartRecording": state.auto_start_recording
     });
 
     // Add source-specific metadata for recording mode selection
     match source {
         SourceType::Area => {
             payload["sourceType"] = serde_json::json!("area");
+            payload["sourceMode"] = serde_json::json!("area");
         },
         SourceType::Window { id, title } => {
             payload["sourceType"] = serde_json::json!("window");
+            payload["sourceMode"] = serde_json::json!("window");
             payload["windowId"] = serde_json::json!(id);
             payload["sourceTitle"] = serde_json::json!(title);
         },
         SourceType::Display { index, name } => {
             payload["sourceType"] = serde_json::json!("display");
+            payload["sourceMode"] = serde_json::json!("display");
             payload["monitorIndex"] = serde_json::json!(index);
             payload["monitorName"] = serde_json::json!(name);
         },

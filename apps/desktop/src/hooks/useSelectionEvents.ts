@@ -11,6 +11,7 @@ import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { invoke } from '@tauri-apps/api/core';
 import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
 import { availableMonitors, type Monitor } from '@tauri-apps/api/window';
+import type { CaptureType } from '@/types';
 import { useCaptureSettingsStore } from '@/stores/captureSettingsStore';
 import { toolbarLogger } from '@/utils/logger';
 
@@ -19,6 +20,9 @@ export interface SelectionBounds {
   y: number;
   width: number;
   height: number;
+  captureType?: CaptureType;
+  autoStartRecording?: boolean;
+  sourceMode?: 'display' | 'window' | 'area';
   sourceType?: 'area' | 'window' | 'display';
   windowId?: number | null;
   sourceTitle?: string | null;
@@ -33,11 +37,13 @@ interface UseSelectionEventsReturn {
   selectionBoundsRef: React.MutableRefObject<SelectionBounds>;
   selectionConfirmed: boolean;
   setSelectionConfirmed: (confirmed: boolean) => void;
+  autoStartRecording: boolean;
+  setAutoStartRecording: (enabled: boolean) => void;
 }
 
 const MARGIN = 8;
 
-async function repositionToolbar(selection: SelectionBounds): Promise<void> {
+export async function repositionToolbar(selection: SelectionBounds): Promise<void> {
   const currentWindow = getCurrentWebviewWindow();
   const outerSize = await currentWindow.outerSize();
   const toolbarWidth = outerSize.width;
@@ -106,6 +112,7 @@ export function useSelectionEvents(): UseSelectionEventsReturn {
   const [selectionBounds, setSelectionBounds] = useState<SelectionBounds>(DEFAULT_BOUNDS);
   const selectionBoundsRef = useRef<SelectionBounds>(DEFAULT_BOUNDS);
   const [selectionConfirmed, setSelectionConfirmed] = useState(false);
+  const [autoStartRecording, setAutoStartRecording] = useState(false);
 
   useEffect(() => {
     let unlistenSelection: UnlistenFn | null = null;
@@ -136,11 +143,33 @@ export function useSelectionEvents(): UseSelectionEventsReturn {
         selectionBoundsRef.current = bounds;
         setSelectionConfirmed(true);
 
-        const currentMode = useCaptureSettingsStore.getState().activeMode;
-        const format = currentMode === 'gif' ? 'gif' : 'mp4';
-        invoke('prepare_recording', { format }).catch((e) => {
-          toolbarLogger.warn('Failed to prepare recording:', e);
-        });
+        const captureSettingsStore = useCaptureSettingsStore.getState();
+
+        if (bounds.captureType && captureSettingsStore.activeMode !== bounds.captureType) {
+          captureSettingsStore.setActiveMode(bounds.captureType);
+        }
+
+        if (bounds.sourceMode && captureSettingsStore.sourceMode !== bounds.sourceMode) {
+          captureSettingsStore.setSourceMode(bounds.sourceMode);
+        }
+
+        const effectiveMode = bounds.captureType ?? captureSettingsStore.activeMode;
+        if (effectiveMode !== 'screenshot') {
+          const format = effectiveMode === 'gif' ? 'gif' : 'mp4';
+          const preparePromise = invoke('prepare_recording', { format }).catch((e) => {
+            toolbarLogger.warn('Failed to prepare recording:', e);
+          });
+
+          if (bounds.autoStartRecording) {
+            await preparePromise;
+          }
+        }
+
+        // Keep the auto-start latch false until preparation completes.
+        // CaptureToolbarWindow watches this flag and immediately calls handleCapture()
+        // for tray quick-record sessions; flipping it earlier regresses back to the
+        // manual selection toolbar because recording starts before setup is ready.
+        setAutoStartRecording(Boolean(bounds.autoStartRecording));
 
         await new Promise((resolve) => window.setTimeout(resolve, 200));
 
@@ -153,6 +182,7 @@ export function useSelectionEvents(): UseSelectionEventsReturn {
 
       unlistenReset = await listen('reset-to-startup', () => {
         setSelectionConfirmed(false);
+        setAutoStartRecording(false);
         setSelectionBounds(DEFAULT_BOUNDS);
         selectionBoundsRef.current = DEFAULT_BOUNDS;
       });
@@ -171,5 +201,7 @@ export function useSelectionEvents(): UseSelectionEventsReturn {
     selectionBoundsRef,
     selectionConfirmed,
     setSelectionConfirmed,
+    autoStartRecording,
+    setAutoStartRecording,
   };
 }
