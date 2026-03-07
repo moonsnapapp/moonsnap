@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
 import { useSettingsStore } from '@/stores/settingsStore';
-import type { Theme } from '@/types';
+import type { Theme, UpdateChannel } from '@/types';
 import { settingsLogger } from '@/utils/logger';
 
 export const GeneralTab: React.FC = () => {
@@ -224,6 +224,38 @@ export const GeneralTab: React.FC = () => {
                 </Button>
               )}
             </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Updates Section */}
+      <section>
+        <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--coral-400)] mb-3">
+          Updates
+        </h3>
+        <div className="p-4 rounded-lg bg-[var(--polar-ice)] border border-[var(--polar-frost)]">
+          <div>
+            <label className="text-sm text-[var(--ink-black)] mb-3 block">
+              Update channel
+            </label>
+            <div className="flex gap-2">
+              {(['stable', 'beta'] as const).map((ch: UpdateChannel) => (
+                <button
+                  key={ch}
+                  onClick={() => updateGeneralSettings({ updateChannel: ch })}
+                  className={`flex-1 flex items-center justify-center px-4 py-2.5 rounded-lg border transition-all ${
+                    general.updateChannel === ch
+                      ? 'bg-[var(--coral-400)] text-white border-[var(--coral-400)]'
+                      : 'bg-[var(--card)] text-[var(--ink-dark)] border-[var(--polar-frost)] hover:border-[var(--polar-steel)]'
+                  }`}
+                >
+                  <span className="text-sm font-medium capitalize">{ch}</span>
+                </button>
+              ))}
+            </div>
+            <p className="text-xs text-[var(--ink-muted)] mt-2">
+              Beta channel receives early updates that may be less stable
+            </p>
           </div>
         </div>
       </section>

@@ -249,14 +249,14 @@ jobs:
               prerelease: ${{ needs.create-release.outputs.is_prerelease == 'true' }}
             })
 
-  # Mirror release to public repo for downloads (skip for prereleases)
+  # Mirror release to public repo for downloads
   mirror-to-public:
     runs-on: ubuntu-latest
     needs: [create-release, build-tauri, publish-release]
-    if: needs.create-release.outputs.is_prerelease != 'true'
     env:
-      PUBLIC_REPO: walterlow/moonsnap-releases
+      PUBLIC_REPO: moonsnapapp/moonsnap-releases
       VERSION: ${{ needs.create-release.outputs.version }}
+      IS_PRERELEASE: ${{ needs.create-release.outputs.is_prerelease }}
 
     steps:
       - name: Download release assets
@@ -294,12 +294,15 @@ jobs:
         run: |
           if [ -f assets/latest.json ]; then
             echo "Rewriting URLs in latest.json..."
-            echo "Before:"
-            cat assets/latest.json
             # Replace private repo URLs with public repo URLs
             sed -i "s|github.com/${PRIVATE_REPO}/releases|github.com/${PUBLIC_REPO}/releases|g" assets/latest.json
-            echo "After:"
-            cat assets/latest.json
+
+            # For beta releases, create latest-beta.json (kept separate from latest.json)
+            if [ "$IS_PRERELEASE" = "true" ]; then
+              echo "Beta release: creating latest-beta.json"
+              cp assets/latest.json assets/latest-beta.json
+              rm assets/latest.json
+            fi
           fi
 
       - name: Create release on public repo
@@ -313,60 +316,100 @@ jobs:
             const path = require('path');
             const [owner, repo] = process.env.PUBLIC_REPO.split('/');
             const version = process.env.VERSION;
+            const isPrerelease = process.env.IS_PRERELEASE === 'true';
 
-            // Check if release already exists
-            let release;
-            try {
-              const { data } = await github.rest.repos.getReleaseByTag({
-                owner,
-                repo,
-                tag: `v${version}`
-              });
-              release = data;
-              console.log(`Release v${version} already exists, updating...`);
-            } catch (e) {
-              // Create new release
-              const { data } = await github.rest.repos.createRelease({
-                owner,
-                repo,
-                tag_name: `v${version}`,
-                name: `MoonSnap v${version}`,
-                body: `## Download\n\nDownload the installer for your platform below.\n\n**Windows:** Download the \`.exe\` installer.\n\n---\n\n[View changelog](https://github.com/${owner}/${repo}/releases)`,
-                draft: false,
-                prerelease: false
-              });
-              release = data;
-              console.log(`Created release v${version}`);
-            }
+            // For beta: upload latest-beta.json to the latest stable release
+            // (GitHub's /latest/download/ always points to the latest non-prerelease)
+            // For stable: create/update a release with all assets
+            if (isPrerelease) {
+              // Get the latest stable release to attach latest-beta.json
+              const { data: latestRelease } = await github.rest.repos.getLatestRelease({ owner, repo });
+              console.log(`Attaching beta manifest to stable release: ${latestRelease.tag_name}`);
 
-            // Upload assets
-            const assetsDir = 'assets';
-            const files = fs.readdirSync(assetsDir);
+              const betaManifest = 'latest-beta.json';
+              const betaPath = path.join('assets', betaManifest);
+              if (!fs.existsSync(betaPath)) {
+                console.log('No latest-beta.json found, skipping');
+                return;
+              }
 
-            for (const file of files) {
-              const filePath = path.join(assetsDir, file);
-              const content = fs.readFileSync(filePath);
-
-              console.log(`Uploading ${file}...`);
-
-              // Delete existing asset if it exists
-              for (const existingAsset of release.assets || []) {
-                if (existingAsset.name === file) {
-                  await github.rest.repos.deleteReleaseAsset({
-                    owner,
-                    repo,
-                    asset_id: existingAsset.id
-                  });
+              // Delete existing latest-beta.json if present
+              for (const asset of latestRelease.assets) {
+                if (asset.name === betaManifest) {
+                  await github.rest.repos.deleteReleaseAsset({ owner, repo, asset_id: asset.id });
                 }
               }
 
               await github.rest.repos.uploadReleaseAsset({
-                owner,
-                repo,
-                release_id: release.id,
-                name: file,
-                data: content
+                owner, repo,
+                release_id: latestRelease.id,
+                name: betaManifest,
+                data: fs.readFileSync(betaPath),
               });
-            }
 
-            console.log('✅ Release mirrored to public repo!')
+              // Also create/update the beta release with installer assets
+              let betaRelease;
+              try {
+                const { data } = await github.rest.repos.getReleaseByTag({ owner, repo, tag: `v${version}` });
+                betaRelease = data;
+              } catch (e) {
+                const { data } = await github.rest.repos.createRelease({
+                  owner, repo,
+                  tag_name: `v${version}`,
+                  name: `MoonSnap v${version}`,
+                  body: `## Beta Release\n\nThis is a pre-release for testing. Report issues on GitHub.\n\n**Windows:** Download the \`.exe\` installer.`,
+                  draft: false,
+                  prerelease: true,
+                });
+                betaRelease = data;
+              }
+
+              // Upload installer assets (not the manifest)
+              for (const file of fs.readdirSync('assets')) {
+                if (file === betaManifest) continue;
+                const content = fs.readFileSync(path.join('assets', file));
+                for (const existing of betaRelease.assets || []) {
+                  if (existing.name === file) {
+                    await github.rest.repos.deleteReleaseAsset({ owner, repo, asset_id: existing.id });
+                  }
+                }
+                await github.rest.repos.uploadReleaseAsset({
+                  owner, repo, release_id: betaRelease.id, name: file, data: content,
+                });
+              }
+
+              console.log('✅ Beta release mirrored to public repo!');
+            } else {
+              // Stable release: create/update release with all assets
+              let release;
+              try {
+                const { data } = await github.rest.repos.getReleaseByTag({ owner, repo, tag: `v${version}` });
+                release = data;
+                console.log(`Release v${version} already exists, updating...`);
+              } catch (e) {
+                const { data } = await github.rest.repos.createRelease({
+                  owner, repo,
+                  tag_name: `v${version}`,
+                  name: `MoonSnap v${version}`,
+                  body: `## Download\n\nDownload the installer for your platform below.\n\n**Windows:** Download the \`.exe\` installer.\n\n---\n\n[View changelog](https://github.com/${owner}/${repo}/releases)`,
+                  draft: false,
+                  prerelease: false,
+                });
+                release = data;
+                console.log(`Created release v${version}`);
+              }
+
+              for (const file of fs.readdirSync('assets')) {
+                const content = fs.readFileSync(path.join('assets', file));
+                for (const existing of release.assets || []) {
+                  if (existing.name === file) {
+                    await github.rest.repos.deleteReleaseAsset({ owner, repo, asset_id: existing.id });
+                  }
+                }
+                await github.rest.repos.uploadReleaseAsset({
+                  owner, repo, release_id: release.id, name: file, data: content,
+                });
+              }
+
+              console.log('✅ Stable release mirrored to public repo!');
+            }

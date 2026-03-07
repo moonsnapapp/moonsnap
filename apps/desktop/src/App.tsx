@@ -28,7 +28,8 @@ function App() {
   useTheme();
 
   // Auto-update checker (runs 5s after app starts)
-  useUpdater(true);
+  const updateChannel = useSettingsStore(s => s.settings.general.updateChannel);
+  useUpdater(true, updateChannel);
 
   // Keyboard shortcuts help modal
   const [showShortcuts, setShowShortcuts] = useState(false);
