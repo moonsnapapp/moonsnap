@@ -14,12 +14,14 @@ pub mod capture;
 pub(crate) mod editor_windows;
 pub mod image_editor;
 pub mod recording;
+pub mod recording_preview;
+pub mod screenshot_preview;
 pub mod settings;
 pub mod toolbar;
 pub mod video_editor;
 
 // Re-export commonly used functions for internal use (used by app/tray.rs)
-pub use capture::{open_editor_fast, trigger_capture};
+pub use capture::{open_editor_fast, trigger_capture, trigger_capture_with_options};
 pub use toolbar::show_startup_toolbar;
 
 use std::sync::atomic::{AtomicBool, Ordering};

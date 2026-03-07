@@ -72,6 +72,7 @@ export interface CropRegionAnnotation {
   y: number;
   width: number;
   height: number;
+  cropUserExpanded?: boolean;
 }
 
 // Union type for all annotation types
@@ -114,6 +115,7 @@ export interface CaptureListItem {
   has_annotations: boolean;
   tags: string[];
   favorite: boolean;
+  quick_capture?: boolean;
   /** True if the original image file is missing from disk */
   is_missing: boolean;
 }
@@ -199,6 +201,7 @@ export interface CanvasShape {
   blurType?: BlurType;
   blurAmount?: number;
   imageSrc?: string; // base64 data URL for pasted images
+  textBackground?: string; // Background color for text shapes
   isBackground?: boolean; // true for the original screenshot background shape
   rotation?: number;
   scaleX?: number;
@@ -325,10 +328,19 @@ export interface AppSettings {
 
 // Default shortcut configurations
 export const DEFAULT_SHORTCUTS: Record<string, ShortcutConfig> = {
+  open_capture_toolbar: {
+    id: 'open_capture_toolbar',
+    name: 'Open Capture Toolbar',
+    description: 'Open the floating capture launcher',
+    defaultShortcut: 'Ctrl+Shift+Space',
+    currentShortcut: 'Ctrl+Shift+Space',
+    status: 'pending',
+    useHook: true,
+  },
   new_capture: {
     id: 'new_capture',
-    name: 'New Capture',
-    description: 'Capture a window or region of the screen',
+    name: 'New Screenshot',
+    description: 'Start an area screenshot flow',
     defaultShortcut: 'PrintScreen',
     currentShortcut: 'PrintScreen',
     status: 'pending',
@@ -336,8 +348,8 @@ export const DEFAULT_SHORTCUTS: Record<string, ShortcutConfig> = {
   },
   fullscreen_capture: {
     id: 'fullscreen_capture',
-    name: 'Fullscreen Capture',
-    description: 'Capture the current monitor',
+    name: 'Current Display',
+    description: 'Capture the current display',
     defaultShortcut: 'Shift+PrintScreen',
     currentShortcut: 'Shift+PrintScreen',
     status: 'pending',
@@ -345,10 +357,28 @@ export const DEFAULT_SHORTCUTS: Record<string, ShortcutConfig> = {
   },
   all_monitors_capture: {
     id: 'all_monitors_capture',
-    name: 'All Monitors',
-    description: 'Capture all monitors combined',
+    name: 'All Displays',
+    description: 'Capture all displays combined',
     defaultShortcut: 'Ctrl+PrintScreen',
     currentShortcut: 'Ctrl+PrintScreen',
+    status: 'pending',
+    useHook: true,
+  },
+  record_video: {
+    id: 'record_video',
+    name: 'Record Video…',
+    description: 'Open the capture toolbar in Video mode',
+    defaultShortcut: 'Ctrl+Alt+R',
+    currentShortcut: 'Ctrl+Alt+R',
+    status: 'pending',
+    useHook: true,
+  },
+  record_gif: {
+    id: 'record_gif',
+    name: 'Record GIF…',
+    description: 'Open the capture toolbar in GIF mode',
+    defaultShortcut: 'Ctrl+Alt+G',
+    currentShortcut: 'Ctrl+Alt+G',
     status: 'pending',
     useHook: true,
   },
@@ -459,14 +489,16 @@ import type {
   VideoProject as GeneratedVideoProject,
 } from './generated';
 
-// Smooth movement settings were removed. Keep the app-level type aligned even when
-// generated files are temporarily stale before ts-rs regeneration.
+// Keep the app-level cursor type aligned even when generated files are temporarily
+// stale before ts-rs regeneration.
 export type CursorConfig = Omit<
   GeneratedCursorConfig,
   'smoothMovement' | 'animationStyle' | 'tension' | 'mass' | 'friction'
 > & {
   // Cursor fade-out when idle (Screen Studio-like behavior).
   hideWhenIdle?: boolean;
+  // Zoom-adaptive cursor smoothing strength (0 = linear, 1 = smooth).
+  dampening?: number;
 };
 
 // Text animation style for text overlay segments.
@@ -489,9 +521,11 @@ export type TextConfig = Omit<GeneratedTextConfig, 'segments'> & {
 };
 
 // Keep VideoProject aligned with app-level CursorConfig/TextConfig extensions.
-export type VideoProject = Omit<GeneratedVideoProject, 'cursor' | 'text'> & {
+export type VideoProject = Omit<GeneratedVideoProject, 'cursor' | 'text' | 'originalFileName'> & {
   cursor: CursorConfig;
   text: TextConfig;
+  originalFileName?: string | null;
+  quickCapture?: boolean;
 };
 
 // GPU Video Editor types (wgpu-accelerated rendering)

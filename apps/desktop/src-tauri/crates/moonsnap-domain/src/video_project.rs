@@ -31,6 +31,12 @@ pub struct VideoProject {
     pub updated_at: String,
     /// Project name (usually derived from filename).
     pub name: String,
+    /// Original on-disk filename preserved for quick-share/save defaults.
+    #[serde(default)]
+    pub original_file_name: Option<String>,
+    /// Whether this recording originated from the quick capture flow.
+    #[serde(default)]
+    pub quick_capture: bool,
     /// Source files for this project.
     pub sources: VideoSources,
     /// Timeline editing state.
@@ -475,6 +481,9 @@ pub struct CursorConfig {
     pub cursor_type: CursorType,
     /// Scale factor (1.0 = native size, 2.0 = double size).
     pub scale: f32,
+    /// Zoom-adaptive cursor smoothing amount (0.0 = linear, 1.0 = smooth).
+    #[serde(default = "default_cursor_dampening")]
+    pub dampening: f32,
     /// Motion blur amount (0.0 = none, 1.0 = maximum).
     #[serde(default)]
     pub motion_blur: f32,
@@ -489,12 +498,17 @@ const fn default_cursor_hide_when_idle() -> bool {
     true
 }
 
+const fn default_cursor_dampening() -> f32 {
+    0.5
+}
+
 impl Default for CursorConfig {
     fn default() -> Self {
         Self {
             visible: true,
             cursor_type: CursorType::default(),
             scale: 1.0,
+            dampening: default_cursor_dampening(),
             motion_blur: 0.0,
             hide_when_idle: default_cursor_hide_when_idle(),
             click_highlight: ClickHighlightConfig::default(),
@@ -1410,6 +1424,10 @@ impl VideoProject {
                 .file_stem()
                 .map(|s| s.to_string_lossy().to_string())
                 .unwrap_or_else(|| "Untitled".to_string()),
+            original_file_name: PathBuf::from(screen_video_path)
+                .file_name()
+                .map(|s| s.to_string_lossy().to_string()),
+            quick_capture: false,
             sources: VideoSources {
                 screen_video: screen_video_path.to_string(),
                 webcam_video: None,
@@ -1497,7 +1515,57 @@ impl VideoProject {
 
 #[cfg(test)]
 mod tests {
-    use super::TextAnimation;
+    use super::{
+        AudioTrackSettings, AutoZoomConfig, BackgroundConfig, ClickHighlightConfig,
+        ClickHighlightStyle, CompositionConfig, CompositionMode, CornerStyle, CropConfig,
+        CursorConfig, CursorType, EasingFunction, ExportConfig, ExportFormat, MaskConfig,
+        MaskSegment, MaskType, SceneConfig, SceneMode, SceneSegment, ShadowConfig, TextAnimation,
+        TextConfig, TextSegment, TimelineState, VideoProject, VideoSources, WebcamBorder,
+        WebcamConfig, WebcamOverlayPosition, WebcamOverlayShape, ZoomConfig, ZoomMode, ZoomRegion,
+        ZoomRegionMode, ZoomTransition, XY,
+    };
+    use ts_rs::TS;
+
+    #[test]
+    fn export_types() {
+        VideoProject::export_all().unwrap();
+        VideoSources::export_all().unwrap();
+        TimelineState::export_all().unwrap();
+        AudioTrackSettings::export_all().unwrap();
+        ZoomConfig::export_all().unwrap();
+        ZoomMode::export_all().unwrap();
+        ZoomRegionMode::export_all().unwrap();
+        ZoomRegion::export_all().unwrap();
+        ZoomTransition::export_all().unwrap();
+        EasingFunction::export_all().unwrap();
+        AutoZoomConfig::export_all().unwrap();
+        CursorType::export_all().unwrap();
+        CursorConfig::export_all().unwrap();
+        ClickHighlightConfig::export_all().unwrap();
+        ClickHighlightStyle::export_all().unwrap();
+        WebcamConfig::export_all().unwrap();
+        WebcamOverlayPosition::export_all().unwrap();
+        WebcamOverlayShape::export_all().unwrap();
+        WebcamBorder::export_all().unwrap();
+        CornerStyle::export_all().unwrap();
+        ShadowConfig::export_all().unwrap();
+        ExportConfig::export_all().unwrap();
+        ExportFormat::export_all().unwrap();
+        BackgroundConfig::export_all().unwrap();
+        CropConfig::export_all().unwrap();
+        CompositionMode::export_all().unwrap();
+        CompositionConfig::export_all().unwrap();
+        SceneMode::export_all().unwrap();
+        SceneSegment::export_all().unwrap();
+        SceneConfig::export_all().unwrap();
+        MaskType::export_all().unwrap();
+        MaskSegment::export_all().unwrap();
+        MaskConfig::export_all().unwrap();
+        XY::<f64>::export_all().unwrap();
+        TextAnimation::export_all().unwrap();
+        TextSegment::export_all().unwrap();
+        TextConfig::export_all().unwrap();
+    }
 
     #[test]
     fn text_animation_deserializes_legacy_aliases() {

@@ -8,9 +8,18 @@ import type {
   GifSettings,
 } from '../types/generated';
 import type { CaptureType } from '../types';
+import {
+  normalizeGifSettings,
+  normalizeGifSettingsUpdates,
+  normalizeVideoSettings,
+  normalizeVideoSettingsUpdates,
+} from '@/constants/recording';
 
 /** Source mode for capture selection */
 export type CaptureSourceMode = 'display' | 'window' | 'area';
+
+/** What to do after a recording completes */
+export type AfterRecordingAction = 'preview' | 'editor' | 'save';
 import { createErrorHandler } from '../utils/errorReporting';
 import { settingsLogger } from '../utils/logger';
 
@@ -77,6 +86,12 @@ interface CaptureSettingsState {
   // Copy to clipboard after screenshot capture
   copyToClipboardAfterCapture: boolean;
 
+  // Show floating preview panel after screenshot capture
+  showPreviewAfterCapture: boolean;
+
+  // What to do after a recording completes
+  afterRecordingAction: AfterRecordingAction;
+
   // Actions - Settings management
   loadSettings: () => Promise<void>;
   saveSettings: () => Promise<void>;
@@ -86,6 +101,12 @@ interface CaptureSettingsState {
 
   // Actions - Clipboard
   setCopyToClipboardAfterCapture: (value: boolean) => void;
+
+  // Actions - Preview
+  setShowPreviewAfterCapture: (value: boolean) => void;
+
+  // Actions - After recording
+  setAfterRecordingAction: (action: AfterRecordingAction) => void;
 
   // Actions - Mode
   setActiveMode: (mode: CaptureType) => void;
@@ -113,6 +134,8 @@ export const useCaptureSettingsStore = create<CaptureSettingsState>((set, get) =
   activeMode: 'video',
   sourceMode: 'area',
   copyToClipboardAfterCapture: true,
+  showPreviewAfterCapture: true,
+  afterRecordingAction: 'preview',
 
   loadSettings: async () => {
     set({ isLoading: true });
@@ -123,6 +146,8 @@ export const useCaptureSettingsStore = create<CaptureSettingsState>((set, get) =
       const savedActiveMode = await store.get<CaptureType>('activeMode');
       const savedSourceMode = await store.get<CaptureSourceMode>('sourceMode');
       const savedCopyToClipboard = await store.get<boolean>('copyToClipboardAfterCapture');
+      const savedShowPreview = await store.get<boolean>('showPreviewAfterCapture');
+      const savedAfterRecording = await store.get<AfterRecordingAction>('afterRecordingAction');
 
       // Merge with defaults (in case new settings were added)
       const settings: CaptureSettings = {
@@ -130,16 +155,16 @@ export const useCaptureSettingsStore = create<CaptureSettingsState>((set, get) =
           ...DEFAULT_SCREENSHOT_SETTINGS,
           ...savedSettings?.screenshot,
         },
-        video: {
+        video: normalizeVideoSettings({
           ...DEFAULT_VIDEO_SETTINGS,
           ...savedSettings?.video,
           // Always ensure webcam is false for now (placeholder)
           captureWebcam: false,
-        },
-        gif: {
+        }),
+        gif: normalizeGifSettings({
           ...DEFAULT_GIF_SETTINGS,
           ...savedSettings?.gif,
-        },
+        }),
       };
 
       set({
@@ -147,6 +172,8 @@ export const useCaptureSettingsStore = create<CaptureSettingsState>((set, get) =
         activeMode: savedActiveMode || 'video',
         sourceMode: savedSourceMode || 'area',
         copyToClipboardAfterCapture: savedCopyToClipboard ?? true,
+        showPreviewAfterCapture: savedShowPreview ?? true,
+        afterRecordingAction: savedAfterRecording ?? 'preview',
         isLoading: false,
         isInitialized: true,
       });
@@ -157,6 +184,8 @@ export const useCaptureSettingsStore = create<CaptureSettingsState>((set, get) =
         activeMode: 'video',
         sourceMode: 'area',
         copyToClipboardAfterCapture: true,
+        showPreviewAfterCapture: true,
+        afterRecordingAction: 'preview',
         isLoading: false,
         isInitialized: true,
       });
@@ -164,14 +193,19 @@ export const useCaptureSettingsStore = create<CaptureSettingsState>((set, get) =
   },
 
   saveSettings: async () => {
-    const { settings, activeMode, sourceMode, copyToClipboardAfterCapture } = get();
+    const { settings, activeMode, sourceMode, copyToClipboardAfterCapture, showPreviewAfterCapture, afterRecordingAction } = get();
     try {
       const store = await getStore();
       await store.set('captureSettings', settings);
       await store.set('activeMode', activeMode);
       await store.set('sourceMode', sourceMode);
       await store.set('copyToClipboardAfterCapture', copyToClipboardAfterCapture);
+      await store.set('showPreviewAfterCapture', showPreviewAfterCapture);
+      await store.set('afterRecordingAction', afterRecordingAction);
       await store.save();
+      // Notify other windows to reload capture settings
+      const { emit } = await import('@tauri-apps/api/event');
+      await emit('capture-settings-changed');
     } catch (error) {
       settingsLogger.error('Failed to save capture settings:', error);
       throw error;
@@ -197,6 +231,20 @@ export const useCaptureSettingsStore = create<CaptureSettingsState>((set, get) =
   setCopyToClipboardAfterCapture: (value) => {
     set({ copyToClipboardAfterCapture: value });
     // Auto-save when clipboard setting changes
+    get().saveSettings().catch(
+      createErrorHandler({ operation: 'save capture settings', silent: true })
+    );
+  },
+
+  setShowPreviewAfterCapture: (value) => {
+    set({ showPreviewAfterCapture: value });
+    get().saveSettings().catch(
+      createErrorHandler({ operation: 'save capture settings', silent: true })
+    );
+  },
+
+  setAfterRecordingAction: (action) => {
+    set({ afterRecordingAction: action });
     get().saveSettings().catch(
       createErrorHandler({ operation: 'save capture settings', silent: true })
     );
@@ -231,12 +279,14 @@ export const useCaptureSettingsStore = create<CaptureSettingsState>((set, get) =
   },
 
   updateVideoSettings: (updates) => {
+    const normalizedUpdates = normalizeVideoSettingsUpdates(updates);
+
     set((state) => ({
       settings: {
         ...state.settings,
         video: {
           ...state.settings.video,
-          ...updates,
+          ...normalizedUpdates,
           // Always ensure webcam is false for now (placeholder)
           captureWebcam: false,
         },
@@ -261,14 +311,7 @@ export const useCaptureSettingsStore = create<CaptureSettingsState>((set, get) =
   },
 
   updateGifSettings: (updates) => {
-    // Validate GIF-specific constraints
-    const validated = { ...updates };
-    if (validated.fps !== undefined) {
-      validated.fps = Math.min(validated.fps, 30); // Cap at 30 FPS for GIF
-    }
-    if (validated.maxDurationSecs !== undefined) {
-      validated.maxDurationSecs = Math.min(validated.maxDurationSecs, 60); // Cap at 60s for GIF
-    }
+    const validated = normalizeGifSettingsUpdates(updates);
 
     set((state) => ({
       settings: {
@@ -303,6 +346,8 @@ export const useCaptureSettingsStore = create<CaptureSettingsState>((set, get) =
       activeMode: 'video',
       sourceMode: 'area',
       copyToClipboardAfterCapture: true,
+      showPreviewAfterCapture: true,
+      afterRecordingAction: 'preview',
     });
     get().saveSettings().catch(
       createErrorHandler({ operation: 'save capture settings', silent: true })

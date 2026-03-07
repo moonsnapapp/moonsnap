@@ -1,5 +1,11 @@
 import React from 'react';
-import { Check, X } from 'lucide-react';
+import { Check, X, RotateCcw } from 'lucide-react';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 
 interface CropControlsProps {
   width: number;
@@ -11,7 +17,7 @@ interface CropControlsProps {
 }
 
 /**
- * Crop control buttons - bottom left corner
+ * Crop control buttons - bottom center
  * Shows dimensions and action buttons during crop mode
  */
 export const CropControls: React.FC<CropControlsProps> = React.memo(({
@@ -23,35 +29,64 @@ export const CropControls: React.FC<CropControlsProps> = React.memo(({
   onCommit,
 }) => {
   return (
-    <div className="absolute bottom-4 left-4 flex items-center gap-2 bg-[var(--card)] rounded-xl p-2 border border-[var(--polar-frost)] shadow-lg z-10">
-      <span className="text-xs text-[var(--ink-muted)] px-2 font-mono">
-        {Math.round(width)} × {Math.round(height)}
-      </span>
-      <div className="w-px h-4 bg-[var(--polar-frost)]" />
-      <button
-        onClick={onCancel}
-        className="p-1.5 hover:bg-red-100 rounded-lg transition-colors group"
-        title="Cancel (switch tool)"
-      >
-        <X size={16} className="text-[var(--ink-muted)] group-hover:text-red-500 transition-colors" />
-      </button>
-      {isModified && (
-        <button
-          onClick={onReset}
-          className="px-2 py-1 text-xs text-[var(--ink-muted)] hover:bg-[var(--polar-frost)] hover:text-[var(--ink-dark)] rounded-lg transition-colors"
-          title="Reset to minimum bounds"
-        >
-          Reset
-        </button>
-      )}
-      <button
-        onClick={onCommit}
-        className="p-1.5 hover:bg-emerald-100 bg-emerald-50 rounded-lg transition-colors"
-        title="Apply crop"
-      >
-        <Check size={16} className="text-emerald-600" />
-      </button>
-    </div>
+    <TooltipProvider delayDuration={300} skipDelayDuration={100}>
+      <div className="absolute bottom-4 flex items-center gap-1 bg-[var(--card)] rounded-xl p-1 border border-[var(--polar-frost)] shadow-lg z-10 animate-in fade-in slide-in-from-right-4 duration-200" style={{ left: 'calc(50% + 0.5rem)' }}>
+        <span className="text-xs text-[var(--ink-muted)] px-2 font-mono">
+          {Math.round(width)} × {Math.round(height)}
+        </span>
+        <div className="w-px h-4 bg-[var(--polar-frost)] mx-1" />
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              onClick={onCancel}
+              className="p-1.5 hover:bg-red-500/30 bg-red-500/20 rounded-lg transition-colors"
+            >
+              <X size={16} className="text-red-400" />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="top">
+            <div className="flex items-center gap-2">
+              <span className="text-xs">Cancel</span>
+              <kbd className="kbd text-[10px] px-1.5 py-0.5">Esc</kbd>
+            </div>
+          </TooltipContent>
+        </Tooltip>
+        {isModified && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                onClick={onReset}
+                className="p-1.5 hover:bg-amber-500/30 bg-amber-500/20 rounded-lg transition-colors"
+              >
+                <RotateCcw size={16} className="text-amber-400" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="top">
+              <div className="flex items-center gap-2">
+                <span className="text-xs">Reset</span>
+                <kbd className="kbd text-[10px] px-1.5 py-0.5">R</kbd>
+              </div>
+            </TooltipContent>
+          </Tooltip>
+        )}
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              onClick={onCommit}
+              className="p-1.5 hover:bg-emerald-500/30 bg-emerald-500/20 rounded-lg transition-colors"
+            >
+              <Check size={16} className="text-emerald-400" />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="top">
+            <div className="flex items-center gap-2">
+              <span className="text-xs">Apply Crop</span>
+              <kbd className="kbd text-[10px] px-1.5 py-0.5">Enter</kbd>
+            </div>
+          </TooltipContent>
+        </Tooltip>
+      </div>
+    </TooltipProvider>
   );
 });
 

@@ -15,13 +15,14 @@ import {
   selectSetHoveredTrack,
   selectUpdateMaskSegment,
 } from '../../../stores/videoEditor/selectors';
-import { BaseSegmentItem, type BaseSegment } from './BaseTrack';
+import { BaseSegmentItem, type BaseSegment, type SegmentTooltipPlacement } from './BaseTrack';
 
 interface MaskTrackProps {
   segments: MaskSegment[];
   durationMs: number;
   timelineZoom: number;
   width: number;
+  tooltipPlacement?: SegmentTooltipPlacement;
 }
 
 // Default segment duration when adding new masks (3 seconds)
@@ -119,7 +120,8 @@ export const MaskTrackContent = memo(function MaskTrackContent({
   segments,
   durationMs,
   timelineZoom,
-  width
+  width,
+  tooltipPlacement = 'below',
 }: MaskTrackProps) {
   const selectedMaskSegmentId = useVideoEditorStore(selectSelectedMaskSegmentId);
   const previewTimeMs = useVideoEditorStore(selectPreviewTimeMs);
@@ -238,6 +240,7 @@ export const MaskTrackContent = memo(function MaskTrackContent({
           borderColorSelected={MASK_COLORS.borderSelected}
           hoverColor={MASK_COLORS.hover}
           textColor={MASK_COLORS.text}
+          tooltipPlacement={tooltipPlacement}
         />
       ))}
 

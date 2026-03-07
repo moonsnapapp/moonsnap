@@ -13,72 +13,77 @@
  * - useWebcamCoordination: Webcam preview lifecycle
  */
 
-import React, { useEffect, useState, useCallback, useRef } from 'react';
+import React, { useEffect, useCallback, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { emit } from '@tauri-apps/api/event';
+import { emit, listen, once } from '@tauri-apps/api/event';
 import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
 import { Toaster } from 'sonner';
 import { Titlebar } from '../components/Titlebar/Titlebar';
 import { CaptureToolbar } from '../components/CaptureToolbar/CaptureToolbar';
 import type { CaptureSource } from '../components/CaptureToolbar/SourceSelector';
-import { useCaptureSettingsStore } from '../stores/captureSettingsStore';
+import {
+  useCaptureSettingsStore,
+  type CaptureSourceMode,
+} from '../stores/captureSettingsStore';
 import { useWebcamSettingsStore } from '../stores/webcamSettingsStore';
 import { useSettingsStore } from '../stores/settingsStore';
 import { useTheme } from '../hooks/useTheme';
 import { useRecordingEvents } from '../hooks/useRecordingEvents';
-import { useSelectionEvents } from '../hooks/useSelectionEvents';
+import { repositionToolbar, useSelectionEvents } from '../hooks/useSelectionEvents';
 import { useWebcamCoordination } from '../hooks/useWebcamCoordination';
 import { useToolbarPositioning } from '../hooks/useToolbarPositioning';
+import type { CaptureType } from '../types';
 import { toolbarLogger } from '../utils/logger';
 
-const CaptureToolbarWindow: React.FC = () => {
-  // No URL params - toolbar always starts in "startup" state (no selection)
-  // Bounds come from events: confirm-selection, selection-updated, reset-to-startup
+interface StartupToolbarContext {
+  captureType?: CaptureType;
+  sourceMode?: CaptureSourceMode;
+  autoStartAreaSelection?: boolean;
+}
 
-  // Apply theme
+const CaptureToolbarWindow: React.FC = () => {
   useTheme();
 
-  // Refs for layout
   const containerRef = useRef<HTMLDivElement>(null);
   const toolbarRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
 
-  // Capture settings
   const {
     settings,
     activeMode: captureType,
+    sourceMode: captureSource,
     isInitialized,
     loadSettings,
     setActiveMode: setCaptureType,
+    setSourceMode: setCaptureSource,
   } = useCaptureSettingsStore();
 
-  // Webcam settings
   const { settings: webcamSettings } = useWebcamSettingsStore();
 
-  // UI state
-  const [captureSource, setCaptureSource] = useState<CaptureSource>('area');
-
-  // Load settings on mount
   useEffect(() => {
     if (!isInitialized) {
       loadSettings();
     }
   }, [isInitialized, loadSettings]);
 
-  // Pre-warm capture resources when toolbar appears
-  // This initializes webcam and screen capture so recording starts instantly
+  useEffect(() => {
+    const unlisten = listen('capture-settings-changed', () => {
+      void loadSettings();
+    });
+
+    return () => {
+      unlisten.then((fn) => fn()).catch(() => {});
+    };
+  }, [loadSettings]);
+
   useEffect(() => {
     invoke('prewarm_capture').catch((e) => {
       toolbarLogger.warn('Failed to pre-warm capture:', e);
     });
   }, []);
 
-  // --- Hooks for window management ---
-
-  // Webcam coordination (errors, preview lifecycle)
   const { closeWebcamPreview, openWebcamPreviewIfEnabled } = useWebcamCoordination();
 
-  // Recording state machine
   const {
     mode,
     setMode,
@@ -90,36 +95,44 @@ const CaptureToolbarWindow: React.FC = () => {
     recordingInitiatedRef,
   } = useRecordingEvents();
 
-  // Selection bounds tracking
+  const pendingStartupContextRef = useRef<StartupToolbarContext | null>(null);
+  const shouldAutoStartAreaSelectionRef = useRef(false);
+  const autoStartRecordingTriggeredRef = useRef(false);
+
   const {
     selectionBounds,
     selectionBoundsRef,
     selectionConfirmed,
+    autoStartRecording,
+    setAutoStartRecording,
   } = useSelectionEvents();
 
-  // Measure content and resize window to fit
-  useToolbarPositioning({ containerRef, contentRef, selectionConfirmed, mode });
+  const suppressToolbarUntilRecording =
+    (autoStartRecording || Boolean(selectionBounds.autoStartRecording)) &&
+    (mode === 'selection' || mode === 'starting');
 
-  // Manage webcam preview based on capture type
-  // - Open when in video mode with webcam enabled
-  // - Close when switching away from video mode
+  useToolbarPositioning({
+    containerRef,
+    contentRef,
+    selectionConfirmed,
+    mode,
+    suppressWindowShow: suppressToolbarUntilRecording,
+  });
+
   useEffect(() => {
     if (captureType === 'video') {
       openWebcamPreviewIfEnabled();
     } else {
-      // Close webcam preview when not in video mode
       closeWebcamPreview();
     }
   }, [captureType, openWebcamPreviewIfEnabled, closeWebcamPreview]);
 
-  // Note: Webcam preview is managed by mode switching useEffect above.
-  // We intentionally don't auto-restore on focus events because:
-  // 1. If user explicitly closes the preview, it should stay closed
-  // 2. Mode switching already handles opening when entering video mode
+  useEffect(() => {
+    if (!autoStartRecording) {
+      autoStartRecordingTriggeredRef.current = false;
+    }
+  }, [autoStartRecording]);
 
-  // --- Event handlers ---
-
-  // Close popovers when window loses focus
   useEffect(() => {
     const handleBlur = () => {
       document.body.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
@@ -128,7 +141,6 @@ const CaptureToolbarWindow: React.FC = () => {
     return () => window.removeEventListener('blur', handleBlur);
   }, []);
 
-  // ESC key handler - use ref to prevent key repeat from closing after reset
   const escHandledRef = useRef(false);
 
   useEffect(() => {
@@ -136,24 +148,22 @@ const CaptureToolbarWindow: React.FC = () => {
       if (e.key === 'Escape' && mode === 'selection' && !e.repeat) {
         e.preventDefault();
 
-        // Prevent key repeat from triggering close after reset
         if (escHandledRef.current) return;
 
         await closeWebcamPreview();
 
         if (selectionConfirmed) {
-          // Has active selection - reset to startup state
           escHandledRef.current = true;
           try {
             await invoke('capture_overlay_cancel');
           } catch {
-            // Overlay may already be closed - that's fine
+            // Overlay may already be closed.
           }
           await emit('reset-to-startup', null);
-          // Allow ESC again after a short delay
-          setTimeout(() => { escHandledRef.current = false; }, 200);
+          setTimeout(() => {
+            escHandledRef.current = false;
+          }, 200);
         } else {
-          // No selection (startup mode) - close the toolbar
           const currentWindow = getCurrentWebviewWindow();
           await currentWindow.close();
         }
@@ -164,11 +174,8 @@ const CaptureToolbarWindow: React.FC = () => {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [mode, selectionConfirmed, closeWebcamPreview]);
 
-  // --- Action handlers ---
-
   const handleCapture = useCallback(async () => {
     try {
-      // No selection confirmed - trigger overlay first
       if (!selectionConfirmed) {
         const currentWindow = getCurrentWebviewWindow();
 
@@ -186,22 +193,18 @@ const CaptureToolbarWindow: React.FC = () => {
           } else {
             const ctStr = captureType === 'gif' ? 'gif' : 'video';
             await invoke('show_overlay', { captureType: ctStr });
-            // Toolbar stays hidden, overlay will show it when selection is made
           }
         } else {
           const ctStr = captureType === 'screenshot' ? 'screenshot' : captureType === 'gif' ? 'gif' : 'video';
           await currentWindow.hide();
           await invoke('show_overlay', { captureType: ctStr });
-          // Toolbar stays hidden, overlay will show it when selection is made
         }
         return;
       }
 
-      // Capture mode with active selection
       if (captureType === 'screenshot') {
         await invoke('capture_overlay_confirm', { action: 'screenshot' });
       } else {
-        // Video or GIF recording
         recordingInitiatedRef.current = true;
         setMode('starting');
 
@@ -209,11 +212,9 @@ const CaptureToolbarWindow: React.FC = () => {
         const fps = captureType === 'video' ? settings.video.fps : settings.gif.fps;
         const quality = captureType === 'video' ? settings.video.quality : 80;
         const gifQualityPreset = settings.gif.qualityPreset;
-        const quickCapture = captureType === 'video' ? settings.video.quickCapture : true; // GIF is always "quick"
-        // Quick capture skips countdown for faster recording start
+        const afterRecordingAction = useCaptureSettingsStore.getState().afterRecordingAction;
+        const quickCapture = captureType === 'video' ? afterRecordingAction === 'save' : true;
         const countdownSecs = quickCapture ? 0 : (captureType === 'video' ? settings.video.countdownSecs : settings.gif.countdownSecs);
-        // For video: if quick capture, use user's cursor preference; if editor flow, always capture without cursor
-        // For GIF: always use user's cursor preference (GIF is always quick capture)
         const includeCursor = captureType === 'video'
           ? (quickCapture ? settings.video.includeCursor : false)
           : settings.gif.includeCursor;
@@ -222,10 +223,8 @@ const CaptureToolbarWindow: React.FC = () => {
 
         if (captureType === 'video') {
           await invoke('set_hide_desktop_icons', { enabled: settings.video.hideDesktopIcons });
-          // Webcam only for editor flow, not quick capture
           await invoke('set_webcam_enabled', { enabled: !quickCapture && webcamSettings.enabled });
         } else {
-          // GIF mode: no webcam support
           await invoke('set_webcam_enabled', { enabled: false });
         }
 
@@ -255,28 +254,34 @@ const CaptureToolbarWindow: React.FC = () => {
         await emit('recording-format', formatStr);
 
         if (countdownSecs > 0) {
+          const countdownReady = new Promise<void>((resolve) => {
+            const timeout = setTimeout(resolve, 2000);
+            once('countdown-window-ready', () => {
+              clearTimeout(timeout);
+              resolve();
+            });
+          });
+
           await invoke('show_countdown_window', {
             x: bounds.x,
             y: bounds.y,
             width: bounds.width,
             height: bounds.height,
+            countdownSecs,
           });
+
+          await countdownReady;
         }
 
-        // Determine recording mode based on sourceType
-        // Display mode uses monitor capture (no crop, avoids DPI scaling issues)
-        // Window mode uses window capture
-        // Otherwise use region mode
-        const mode = bounds.sourceType === 'display' && bounds.monitorIndex != null
+        const recordingMode = bounds.sourceType === 'display' && bounds.monitorIndex != null
           ? { type: 'monitor' as const, monitorIndex: bounds.monitorIndex }
           : bounds.windowId
             ? { type: 'window' as const, windowId: bounds.windowId }
             : { type: 'region' as const, x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height };
 
-
         const recordingSettings = {
           format: captureType === 'gif' ? 'gif' : 'mp4',
-          mode,
+          mode: recordingMode,
           fps,
           maxDurationSecs: maxDurationSecs ?? null,
           includeCursor,
@@ -296,17 +301,17 @@ const CaptureToolbarWindow: React.FC = () => {
     } catch (e) {
       toolbarLogger.error('Failed to capture:', e);
       recordingInitiatedRef.current = false;
+      setAutoStartRecording(false);
       setMode('selection');
     }
-  }, [captureType, captureSource, selectionConfirmed, settings, webcamSettings.enabled, selectionBoundsRef, recordingInitiatedRef, setMode]);
+  }, [captureType, captureSource, selectionConfirmed, settings, webcamSettings.enabled, selectionBoundsRef, recordingInitiatedRef, setAutoStartRecording, setMode]);
 
   const handleRedo = useCallback(async () => {
     try {
-      // Cancel overlay and reset to startup (source selector view)
       try {
         await invoke('capture_overlay_cancel');
       } catch {
-        // Overlay may already be closed - that's fine
+        // Overlay may already be closed.
       }
       await emit('reset-to-startup', null);
     } catch (e) {
@@ -319,19 +324,15 @@ const CaptureToolbarWindow: React.FC = () => {
       await closeWebcamPreview();
 
       if (mode !== 'selection') {
-        // During recording - cancel the recording
         await invoke('cancel_recording');
       } else if (selectionConfirmed) {
-        // Has active selection - try to cancel overlay (may already be closed)
         try {
           await invoke('capture_overlay_cancel');
         } catch {
-          // Overlay may already be closed - that's fine
+          // Overlay may already be closed.
         }
-        // Emit reset event directly since overlay may not be running
         await emit('reset-to-startup', null);
       } else {
-        // No selection (startup mode) - close the toolbar
         const currentWindow = getCurrentWebviewWindow();
         await currentWindow.close();
       }
@@ -341,15 +342,27 @@ const CaptureToolbarWindow: React.FC = () => {
   }, [mode, selectionConfirmed, closeWebcamPreview]);
 
   const handlePause = useCallback(async () => {
-    try { await invoke('pause_recording'); } catch (e) { toolbarLogger.error('Failed to pause:', e); }
+    try {
+      await invoke('pause_recording');
+    } catch (e) {
+      toolbarLogger.error('Failed to pause:', e);
+    }
   }, []);
 
   const handleResume = useCallback(async () => {
-    try { await invoke('resume_recording'); } catch (e) { toolbarLogger.error('Failed to resume:', e); }
+    try {
+      await invoke('resume_recording');
+    } catch (e) {
+      toolbarLogger.error('Failed to resume:', e);
+    }
   }, []);
 
   const handleStop = useCallback(async () => {
-    try { await invoke('stop_recording'); } catch (e) { toolbarLogger.error('Failed to stop:', e); }
+    try {
+      await invoke('stop_recording');
+    } catch (e) {
+      toolbarLogger.error('Failed to stop:', e);
+    }
   }, []);
 
   const handleDimensionChange = useCallback(async (width: number, height: number) => {
@@ -363,7 +376,6 @@ const CaptureToolbarWindow: React.FC = () => {
   const handleCaptureSourceChange = useCallback(async (source: CaptureSource) => {
     setCaptureSource(source);
 
-    // Trigger overlay when no selection is confirmed (startup state)
     if (!selectionConfirmed) {
       const currentWindow = getCurrentWebviewWindow();
 
@@ -378,25 +390,22 @@ const CaptureToolbarWindow: React.FC = () => {
               width: result.width,
               height: result.height,
             });
-            // Close toolbar after screenshot complete
             await currentWindow.close();
           } else {
             const ctStr = captureType === 'gif' ? 'gif' : 'video';
             await invoke('show_overlay', { captureType: ctStr });
-            // Toolbar stays hidden, overlay will show it when selection is made
           }
         } else {
           const ctStr = captureType === 'screenshot' ? 'screenshot' : captureType === 'gif' ? 'gif' : 'video';
           await currentWindow.hide();
           await invoke('show_overlay', { captureType: ctStr });
-          // Toolbar stays hidden, overlay will show it when selection is made
         }
       } catch (e) {
         toolbarLogger.error('Failed to trigger capture:', e);
         await currentWindow.show();
       }
     }
-  }, [selectionConfirmed, captureType]);
+  }, [selectionConfirmed, captureType, setCaptureSource]);
 
   const handleOpenSettings = useCallback(() => {
     useSettingsStore.getState().openSettingsModal();
@@ -409,18 +418,135 @@ const CaptureToolbarWindow: React.FC = () => {
 
   const handleModeChange = useCallback((newMode: typeof captureType) => {
     if (mode === 'selection') {
-      // Just update the capture type - the useEffect at line 106-113 handles
-      // opening/closing webcam preview based on captureType changes
       setCaptureType(newMode);
     }
   }, [mode, setCaptureType]);
 
+  const applyStartupToolbarContext = useCallback((context: StartupToolbarContext) => {
+    if (mode !== 'selection') return;
+
+    if (context.captureType) {
+      setCaptureType(context.captureType);
+    }
+
+    if (context.sourceMode) {
+      setCaptureSource(context.sourceMode);
+    }
+
+    shouldAutoStartAreaSelectionRef.current = Boolean(
+      context.autoStartAreaSelection && context.sourceMode === 'area'
+    );
+  }, [mode, setCaptureSource, setCaptureType]);
+
+  useEffect(() => {
+    const unlisten = listen<StartupToolbarContext>('startup-toolbar-context', (event) => {
+      if (!isInitialized) {
+        pendingStartupContextRef.current = event.payload;
+        return;
+      }
+
+      applyStartupToolbarContext(event.payload);
+    });
+
+    return () => {
+      unlisten.then((fn) => fn()).catch(() => {});
+    };
+  }, [applyStartupToolbarContext, isInitialized]);
+
+  useEffect(() => {
+    if (!isInitialized || !pendingStartupContextRef.current) {
+      return;
+    }
+
+    applyStartupToolbarContext(pendingStartupContextRef.current);
+    pendingStartupContextRef.current = null;
+  }, [applyStartupToolbarContext, isInitialized]);
+
+  useEffect(() => {
+    if (
+      !shouldAutoStartAreaSelectionRef.current ||
+      !isInitialized ||
+      mode !== 'selection' ||
+      selectionConfirmed ||
+      captureSource !== 'area' ||
+      (captureType !== 'video' && captureType !== 'gif')
+    ) {
+      return;
+    }
+
+    shouldAutoStartAreaSelectionRef.current = false;
+    void handleCaptureSourceChange('area');
+  }, [
+    captureSource,
+    captureType,
+    handleCaptureSourceChange,
+    isInitialized,
+    mode,
+    selectionConfirmed,
+  ]);
+
+  useEffect(() => {
+    if (
+      !autoStartRecording ||
+      autoStartRecordingTriggeredRef.current ||
+      !selectionConfirmed ||
+      mode !== 'selection' ||
+      captureType === 'screenshot' ||
+      (selectionBounds.captureType != null && selectionBounds.captureType !== captureType)
+    ) {
+      return;
+    }
+
+    autoStartRecordingTriggeredRef.current = true;
+    void handleCapture();
+  }, [
+    autoStartRecording,
+    captureType,
+    handleCapture,
+    mode,
+    selectionBounds.captureType,
+    selectionConfirmed,
+    setAutoStartRecording,
+  ]);
+
+  useEffect(() => {
+    if (
+      autoStartRecording &&
+      (mode === 'recording' || mode === 'paused' || mode === 'error')
+    ) {
+      setAutoStartRecording(false);
+    }
+  }, [autoStartRecording, mode, setAutoStartRecording]);
+
+  useEffect(() => {
+    if (
+      !selectionConfirmed ||
+      (mode !== 'recording' && mode !== 'paused')
+    ) {
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      const currentWindow = getCurrentWebviewWindow();
+      currentWindow.show().catch((e) => {
+        toolbarLogger.error('Failed to show toolbar during recording:', e);
+      });
+
+      void repositionToolbar(selectionBounds).catch((e) => {
+        toolbarLogger.error('Failed to reposition toolbar during recording:', e);
+      });
+    }, 80);
+
+    return () => {
+      clearTimeout(timeoutId);
+    };
+  }, [mode, selectionBounds, selectionConfirmed]);
+
   const handleTitlebarClose = useCallback(async () => {
-    // Cancel overlay when toolbar is closed
     try {
       await invoke('capture_overlay_cancel');
     } catch {
-      // Overlay may not be running
+      // Overlay may not be running.
     }
     await closeWebcamPreview();
   }, [closeWebcamPreview]);
@@ -433,11 +559,15 @@ const CaptureToolbarWindow: React.FC = () => {
     }
   }, []);
 
-  // --- Render ---
-
   return (
     <div ref={containerRef} className="app-container">
-      <Titlebar title="MoonSnap Capture" showMaximize={false} onClose={handleTitlebarClose} onOpenLibrary={handleOpenLibrary} onOpenSettings={handleOpenSettings} />
+      <Titlebar
+        title="MoonSnap Capture"
+        showMaximize={false}
+        onClose={handleTitlebarClose}
+        onOpenLibrary={handleOpenLibrary}
+        onOpenSettings={handleOpenSettings}
+      />
       <div ref={toolbarRef} className="toolbar-container">
         <div className="toolbar-animated-wrapper">
           <div ref={contentRef} className="toolbar-content-measure">

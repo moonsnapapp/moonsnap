@@ -102,6 +102,7 @@ export function useRecordingEvents(): UseRecordingEventsReturn {
     let unlistenFormat: UnlistenFn | null = null;
     let unlistenClosed: UnlistenFn | null = null;
     let unlistenReselecting: UnlistenFn | null = null;
+    let unlistenCountdownTick: UnlistenFn | null = null;
 
     const currentWindow = getCurrentWebviewWindow();
 
@@ -121,14 +122,9 @@ export function useRecordingEvents(): UseRecordingEventsReturn {
 
         switch (state.status) {
           case 'countdown':
-            isRecordingActiveRef.current = false;
-            timerBaseTimeRef.current = 0;
-            timerStartedAtRef.current = null;
-            setMode('starting');
-            setElapsedTime(0);
-            setProgress(0);
-            setErrorMessage(undefined);
-            setCountdownSeconds(state.secondsRemaining);
+            // Backend countdown events are ignored for display purposes.
+            // The countdown overlay window drives ticks via 'countdown-tick' events
+            // to keep both the overlay and toolbar perfectly in sync.
             break;
 
           case 'recording':
@@ -252,6 +248,12 @@ export function useRecordingEvents(): UseRecordingEventsReturn {
         }
       });
 
+      // Countdown ticks from the self-driven countdown overlay window
+      unlistenCountdownTick = await listen<{ secondsRemaining: number }>('countdown-tick', (event) => {
+        setMode('starting');
+        setCountdownSeconds(event.payload.secondsRemaining);
+      });
+
       // Recording format
       unlistenFormat = await listen<RecordingFormat>('recording-format', (event) => {
         setFormat(event.payload);
@@ -282,6 +284,7 @@ export function useRecordingEvents(): UseRecordingEventsReturn {
       unlistenFormat?.();
       unlistenClosed?.();
       unlistenReselecting?.();
+      unlistenCountdownTick?.();
     };
   }, []); // Empty deps - listeners must not be recreated
 

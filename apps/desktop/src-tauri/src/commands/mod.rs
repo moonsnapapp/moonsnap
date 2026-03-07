@@ -29,6 +29,7 @@ pub mod capture_overlay;
 pub mod fonts;
 pub mod image;
 pub mod keyboard_hook;
+pub mod license;
 pub mod logging;
 pub mod preview;
 pub mod registry;

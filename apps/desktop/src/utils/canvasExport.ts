@@ -80,6 +80,8 @@ export function exportCanvas(
   // Save current transform
   const savedScale = { x: stage.scaleX(), y: stage.scaleY() };
   const savedPosition = { x: stage.x(), y: stage.y() };
+
+  // Reset stage transform to 1:1 for pixel-accurate export
   stage.scale({ x: 1, y: 1 });
   stage.position({ x: 0, y: 0 });
 
@@ -117,6 +119,7 @@ export function exportCanvas(
   // Restore all removed nodes back to their original positions
   stage.scale(savedScale);
   stage.position(savedPosition);
+
   for (const { node, parent, index } of removedNodes) {
     if (index >= 0 && parent.children && index < parent.children.length) {
       // Insert back at original position
@@ -211,4 +214,3 @@ export async function exportToFile(
   const arrayBuffer = await blob.arrayBuffer();
   await writeFile(filePath, new Uint8Array(arrayBuffer));
 }
-

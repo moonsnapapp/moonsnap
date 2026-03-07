@@ -99,4 +99,45 @@ describe('useCursorInterpolation', () => {
     const cursor = result.current.getCursorAt(5000);
     expect(cursor.opacity).toBeCloseTo(1, 3);
   });
+
+  it('preserves raw cursor motion when zoom smoothing is inactive', () => {
+    const recording: CursorRecording = {
+      ...createRecording(),
+      events: [
+        { timestampMs: 0, x: 0, y: 0.5, eventType: { type: 'move' }, cursorId: null },
+        { timestampMs: 1000, x: 0, y: 0.5, eventType: { type: 'move' }, cursorId: null },
+        { timestampMs: 1010, x: 1, y: 0.5, eventType: { type: 'move' }, cursorId: null },
+        { timestampMs: 2000, x: 1, y: 0.5, eventType: { type: 'move' }, cursorId: null },
+      ],
+    };
+
+    const { result } = renderHook(() => useCursorInterpolation(recording, {
+      dampening: 1,
+      getZoomScale: () => 1,
+    }));
+
+    const cursor = result.current.getCursorAt(1010);
+    expect(cursor.x).toBeCloseTo(1, 3);
+  });
+
+  it('smooths abrupt cursor jumps more aggressively at high zoom', () => {
+    const recording: CursorRecording = {
+      ...createRecording(),
+      events: [
+        { timestampMs: 0, x: 0, y: 0.5, eventType: { type: 'move' }, cursorId: null },
+        { timestampMs: 1000, x: 0, y: 0.5, eventType: { type: 'move' }, cursorId: null },
+        { timestampMs: 1010, x: 1, y: 0.5, eventType: { type: 'move' }, cursorId: null },
+        { timestampMs: 2000, x: 1, y: 0.5, eventType: { type: 'move' }, cursorId: null },
+      ],
+    };
+
+    const { result } = renderHook(() => useCursorInterpolation(recording, {
+      dampening: 1,
+      getZoomScale: () => 4,
+    }));
+
+    const cursor = result.current.getCursorAt(1010);
+    expect(cursor.x).toBeGreaterThan(0.7);
+    expect(cursor.x).toBeLessThan(1);
+  });
 });

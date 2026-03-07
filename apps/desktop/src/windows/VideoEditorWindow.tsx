@@ -13,6 +13,12 @@ import { Loader2 } from 'lucide-react';
 import { Titlebar } from '@/components/Titlebar/Titlebar';
 import { VideoEditorView } from '@/views/VideoEditorView';
 import { useVideoEditorStore } from '@/stores/videoEditorStore';
+import {
+  selectProjectName,
+  selectSetProject,
+  selectClearEditor,
+  selectSetExportProgress,
+} from '@/stores/videoEditor/selectors';
 import { useTheme } from '@/hooks/useTheme';
 import type { VideoProject, ExportProgress } from '@/types';
 import { videoEditorLogger } from '@/utils/logger';
@@ -22,6 +28,12 @@ import { videoEditorLogger } from '@/utils/logger';
  */
 const SAVE_WAIT_TIMEOUT_MS = 5000;
 const SAVE_WAIT_POLL_MS = 50;
+const GIF_EDITOR_UNAVAILABLE_MESSAGE =
+  'GIF editing is not available in the video editor yet. Open the GIF in your default app for now.';
+
+function isGifPath(path: string): boolean {
+  return path.toLowerCase().endsWith('.gif');
+}
 
 const VideoEditorWindow: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
@@ -30,12 +42,13 @@ const VideoEditorWindow: React.FC = () => {
   const hasLoadedRef = useRef(false);
   const isClosingRef = useRef(false);
 
-  const {
-    project,
-    setProject,
-    clearEditor,
-    setExportProgress,
-  } = useVideoEditorStore();
+  // Use targeted selectors to avoid re-rendering on every store change.
+  // Previously this component subscribed to the entire store, causing cascading
+  // re-renders of the entire editor tree on every store update.
+  const projectName = useVideoEditorStore(selectProjectName);
+  const setProject = useVideoEditorStore(selectSetProject);
+  const clearEditor = useVideoEditorStore(selectClearEditor);
+  const setExportProgress = useVideoEditorStore(selectSetExportProgress);
 
   // Apply theme
   useTheme();
@@ -60,12 +73,24 @@ const VideoEditorWindow: React.FC = () => {
     setError(null);
 
     try {
+      if (isGifPath(path)) {
+        throw new Error(GIF_EDITOR_UNAVAILABLE_MESSAGE);
+      }
+
+      console.time('[EDITOR-INIT] load_video_project');
       videoEditorLogger.info('Loading video project:', path);
       const videoProject = await invoke<VideoProject>('load_video_project', {
         videoPath: path,
       });
+      console.timeEnd('[EDITOR-INIT] load_video_project');
 
+      console.time('[EDITOR-INIT] setProject');
       setProject(videoProject);
+      console.timeEnd('[EDITOR-INIT] setProject');
+
+      videoEditorLogger.info('[EDITOR-INIT] Project sources:', JSON.stringify(videoProject.sources, null, 2));
+      videoEditorLogger.info(`[EDITOR-INIT] Dimensions: ${videoProject.sources.originalWidth}x${videoProject.sources.originalHeight}, duration: ${videoProject.timeline.durationMs}ms, fps: ${videoProject.sources.fps}`);
+      videoEditorLogger.info(`[EDITOR-INIT] Timeline segments: ${videoProject.timeline.segments?.length ?? 0}`);
 
       setIsLoading(false);
     } catch (err) {
@@ -170,8 +195,8 @@ const VideoEditorWindow: React.FC = () => {
     );
   }
 
-  // No project loaded
-  if (!project) {
+  // No project loaded (projectName is null when no project is set)
+  if (projectName === null) {
     return (
       <div className="h-screen w-screen flex flex-col bg-card overflow-hidden">
         <Titlebar title="Video Editor" showLogo={true} showMaximize={true} />
@@ -186,7 +211,7 @@ const VideoEditorWindow: React.FC = () => {
   return (
     <div className="h-screen w-screen flex flex-col bg-card overflow-hidden">
       <Titlebar
-        title={project.name || 'Video Editor'}
+        title={projectName || 'Video Editor'}
         showLogo={true}
         showMaximize={true}
         onClose={handleClose}

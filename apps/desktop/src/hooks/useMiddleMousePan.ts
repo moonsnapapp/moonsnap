@@ -11,6 +11,8 @@ interface UseMiddleMousePanProps {
   renderedPositionRef?: React.RefObject<{ x: number; y: number }>;
   renderedZoomRef?: React.RefObject<number>;
   transformCoeffsRef?: React.RefObject<{ kx: number; ky: number }>;
+  /** When true, left-click also pans (for the move/hand tool) */
+  leftClickPan?: boolean;
 }
 
 interface UseMiddleMousePanReturn {
@@ -34,6 +36,7 @@ export const useMiddleMousePan = ({
   renderedPositionRef,
   renderedZoomRef,
   transformCoeffsRef,
+  leftClickPan = false,
 }: UseMiddleMousePanProps): UseMiddleMousePanReturn => {
   const [isPanning, setIsPanning] = useState(false);
   const panStartRef = useRef({ x: 0, y: 0 });
@@ -47,13 +50,13 @@ export const useMiddleMousePan = ({
   }, [position, isPanning]);
 
   const handleMiddleMouseDown = useCallback((e: React.MouseEvent) => {
-    if (e.button === 1) { // Middle mouse button
+    if (e.button === 1 || (leftClickPan && e.button === 0)) {
       e.preventDefault();
       setIsPanning(true);
       panStartRef.current = { x: e.clientX, y: e.clientY };
       positionStartRef.current = position;
     }
-  }, [position]);
+  }, [position, leftClickPan]);
 
   const handleMiddleMouseMove = useCallback((e: React.MouseEvent) => {
     if (!isPanning) return;

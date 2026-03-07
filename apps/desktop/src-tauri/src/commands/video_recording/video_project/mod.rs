@@ -102,6 +102,7 @@ mod tests {
         let deserialized: CursorConfig = serde_json::from_value(legacy_cursor_json).unwrap();
         assert!(deserialized.visible);
         assert_eq!(deserialized.scale, 1.0);
+        assert_eq!(deserialized.dampening, 0.5);
         assert_eq!(deserialized.motion_blur, 0.05);
     }
 }

@@ -1,6 +1,7 @@
 /**
  * CursorConfigPanel - Cursor visibility, size, motion blur, click highlight settings.
  */
+import { CURSOR } from '../../../constants';
 import { Slider } from '../../../components/ui/slider';
 import { ToggleGroup, ToggleGroupItem } from '../../../components/ui/toggle-group';
 import type { VideoProject, CursorConfig } from '../../../types';
@@ -12,6 +13,7 @@ export interface CursorConfigPanelProps {
 
 export function CursorConfigPanel({ project, onUpdateCursorConfig }: CursorConfigPanelProps) {
   const hideWhenIdle = project.cursor.hideWhenIdle ?? true;
+  const dampening = project.cursor.dampening ?? CURSOR.DAMPENING_DEFAULT;
 
   return (
     <div className="space-y-4">
@@ -67,6 +69,30 @@ export function CursorConfigPanel({ project, onUpdateCursorConfig }: CursorConfi
           max={300}
           step={10}
         />
+      </div>
+
+      {/* Dampening */}
+      <div>
+        <div className="flex items-start justify-between mb-2">
+          <div className="flex flex-col">
+            <span className="text-xs text-[var(--ink-muted)]">Dampening</span>
+            <span className="text-[10px] text-[var(--ink-subtle)]">Adapts cursor smoothing as zoom increases</span>
+          </div>
+          <span className="text-xs text-[var(--ink-dark)] font-mono">
+            {Math.round(dampening * 100)}%
+          </span>
+        </div>
+        <Slider
+          value={[dampening * 100]}
+          onValueChange={(values) => onUpdateCursorConfig({ dampening: values[0] / 100 })}
+          min={CURSOR.DAMPENING_MIN * 100}
+          max={CURSOR.DAMPENING_MAX * 100}
+          step={5}
+        />
+        <div className="mt-1 flex items-center justify-between text-[10px] text-[var(--ink-subtle)]">
+          <span>Linear</span>
+          <span>Smooth</span>
+        </div>
       </div>
 
       {/* Motion Blur */}

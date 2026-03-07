@@ -33,22 +33,41 @@ export const WebCodecsCanvasNoZoom = memo(function WebCodecsCanvasNoZoom({
   const lastDrawnTimeRef = useRef<number | null>(null);
   const rafIdRef = useRef<number>(0);
   const [hasFrame, setHasFrame] = useState(false);
+  const [shouldInitDecoder, setShouldInitDecoder] = useState(false);
 
   const previewTimeMs = useVideoEditorStore(selectPreviewTimeMs);
   const isPlaying = useVideoEditorStore(selectIsPlaying);
   const getSourceTime = useTimelineToSourceTime();
-  const { getFrame, prefetchAround, isReady } = useWebCodecsPreview(videoPath);
+  const decoderVideoPath = shouldInitDecoder ? videoPath : null;
+  const { getFrame, prefetchAround, isReady } = useWebCodecsPreview(decoderVideoPath);
 
-  // Prefetch frames when preview position changes (use source time)
+  // Avoid opening a second media pipeline during editor startup.
+  // The decoder is only useful while scrubbing preview frames.
+  useEffect(() => {
+    if (!shouldInitDecoder && previewTimeMs !== null) {
+      setShouldInitDecoder(true);
+    }
+  }, [previewTimeMs, shouldInitDecoder]);
+
+  // Prefetch frames when preview position changes (use source time).
+  // Skip when hovering tracks — only prefetch for ruler scrubbing.
   useEffect(() => {
     if (!isReady || isPlaying || previewTimeMs === null) return;
+    const hoveredTrack = useVideoEditorStore.getState().hoveredTrack;
+    if (hoveredTrack !== null) return;
     const sourceTimeMs = getSourceTime(previewTimeMs);
     prefetchAround(sourceTimeMs);
   }, [isReady, isPlaying, previewTimeMs, prefetchAround, getSourceTime]);
 
-  // RAF-based canvas drawing - polls for frames without causing React re-renders
+  // RAF-based canvas drawing - polls for frames without causing React re-renders.
+  // Skip when hovering tracks — only draw for ruler scrubbing.
   useEffect(() => {
     if (!isReady || isPlaying || previewTimeMs === null) {
+      setHasFrame(false);
+      return;
+    }
+    const hoveredTrack = useVideoEditorStore.getState().hoveredTrack;
+    if (hoveredTrack !== null) {
       setHasFrame(false);
       return;
     }
@@ -139,26 +158,7 @@ export const VideoNoZoom = memo(function VideoNoZoom({
   hidden?: boolean;
   cropStyle?: React.CSSProperties;
 }) {
-  const currentTimeMs = usePreviewOrPlaybackTime();
-  const isPlaying = useVideoEditorStore(selectIsPlaying);
-  const getSourceTime = useTimelineToSourceTime();
-
-  // Keep video seeked even when hidden (needed for mask overlay sampling)
-  // Convert timeline time to source time before seeking
-  useEffect(() => {
-    const video = videoRef.current;
-    if (!video || isPlaying) return;
-
-    const sourceTimeMs = getSourceTime(currentTimeMs);
-    const targetTime = sourceTimeMs / 1000;
-    const diff = Math.abs(video.currentTime - targetTime);
-
-    // Seek when difference is noticeable
-    if (diff > 0.05) {
-      video.currentTime = targetTime;
-    }
-  }, [videoRef, currentTimeMs, isPlaying, getSourceTime]);
-
+  // Video seeking is handled by usePlaybackSync — no duplicate seek here.
   // Default to contain, but crop style can override with cover + position
   const hasCrop = cropStyle && cropStyle.objectFit === 'cover';
 

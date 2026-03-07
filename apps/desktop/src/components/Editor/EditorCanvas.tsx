@@ -9,7 +9,6 @@ import { useFastImage } from '../../hooks/useFastImage';
 import type { Tool, CanvasShape } from '../../types';
 import { useEditorStore } from '../../stores/editorStore';
 import { useEditorHistory } from '../../hooks/useEditorHistory';
-import { CompositorBackground } from './CompositorBackground';
 import { CompositorCssPreview } from './CompositorCssPreview';
 import { KonvaBackgroundLayer } from './KonvaBackgroundLayer';
 
@@ -32,9 +31,11 @@ import { ZoomControls } from './overlays/ZoomControls';
 import { CropControls } from './overlays/CropControls';
 import { TextEditorOverlay } from './overlays/TextEditorOverlay';
 import { CropOverlay } from './overlays/CropOverlay';
+import { ResetRotationButton } from './overlays/ResetRotationButton';
 
 // Utility functions
-import { getSelectionBounds, expandBoundsForShapes, ensureBackgroundShape, BACKGROUND_SHAPE_ID, createCheckerPattern } from '../../utils/canvasGeometry';
+import { getSelectionBounds, expandBoundsForShapes, expandCropRegionForShapes, ensureBackgroundShape, BACKGROUND_SHAPE_ID, createCheckerPattern } from '../../utils/canvasGeometry';
+import { EDITOR_TEXT, getEditorTextResizeDimensions } from '../../utils/editorText';
 
 interface EditorCanvasProps {
   imageData: string;
@@ -49,7 +50,17 @@ interface EditorCanvasProps {
 }
 
 const PIXEL_SNAP_EPSILON = 0.02;
+const TEXT_MANUAL_DRAG_EPSILON = 0.01;
 type ClipContext = Parameters<NonNullable<Konva.GroupConfig['clipFunc']>>[0];
+
+interface ManualTextDragState {
+  shapeId: string;
+  node: Konva.Node;
+  startPointer: { x: number; y: number };
+  startPosition: { x: number; y: number };
+  activated: boolean;
+  drewFirstFrame: boolean;
+}
 
 function snapInsideStart(value: number): number {
   const rounded = Math.round(value);
@@ -117,6 +128,9 @@ export const EditorCanvas = React.memo(forwardRef<EditorCanvasRef, EditorCanvasP
 
   // Track device pixel ratio for crisp HiDPI rendering
   const [pixelRatio, setPixelRatio] = useState(() => window.devicePixelRatio || 1);
+  const isShapeDraggingRef = useRef(false);
+  const preTextDragHideRef = useRef(false);
+  const manualTextDragRef = useRef<ManualTextDragState | null>(null);
 
   // Update pixelRatio when DPI changes (e.g., window moved between monitors)
   useEffect(() => {
@@ -150,6 +164,8 @@ export const EditorCanvas = React.memo(forwardRef<EditorCanvasRef, EditorCanvasP
   const originalImageSize = useEditorStore((state) => state.originalImageSize);
   const cropRegion = useEditorStore((state) => state.cropRegion);
   const setCropRegion = useEditorStore((state) => state.setCropRegion);
+  const cropUserExpanded = useEditorStore((state) => state.cropUserExpanded);
+  const setCropUserExpanded = useEditorStore((state) => state.setCropUserExpanded);
 
   // Context-aware history actions for undo/redo
   const history = useEditorHistory();
@@ -299,6 +315,7 @@ export const EditorCanvas = React.memo(forwardRef<EditorCanvasRef, EditorCanvasP
     setCanvasBounds,
     setOriginalImageSize,
     selectedTool,
+    cropRegion,
     fitVisibleBounds: fitToCenterBounds,
     compositorBgRef,
   });
@@ -316,7 +333,7 @@ export const EditorCanvas = React.memo(forwardRef<EditorCanvasRef, EditorCanvasP
     setSelectedTool: onToolChange,
   });
 
-  // Middle mouse panning hook
+  // Middle mouse panning hook (also handles left-click pan in move tool)
   const pan = useMiddleMousePan({
     position: navigation.position,
     setPosition: (pos) => navigation.setPosition(pos),
@@ -327,6 +344,7 @@ export const EditorCanvas = React.memo(forwardRef<EditorCanvasRef, EditorCanvasP
     renderedPositionRef: navigation.renderedPositionRef,
     renderedZoomRef: navigation.renderedZoomRef,
     transformCoeffsRef: navigation.transformCoeffsRef,
+    leftClickPan: false,
   });
 
   // Text editing hook
@@ -348,6 +366,9 @@ export const EditorCanvas = React.memo(forwardRef<EditorCanvasRef, EditorCanvasP
     canvasBounds,
     setCanvasBounds,
     originalImageSize,
+    cropRegion,
+    setCropRegion,
+    cropUserExpanded,
   });
 
   // Font size state for text tool
@@ -396,6 +417,7 @@ export const EditorCanvas = React.memo(forwardRef<EditorCanvasRef, EditorCanvasP
     backgroundShape,
     originalImageSize,
     history,
+    setCropUserExpanded,
   });
 
   // Reset target: exact background image bounds (pixel-aligned).
@@ -416,6 +438,37 @@ export const EditorCanvas = React.memo(forwardRef<EditorCanvasRef, EditorCanvasP
     return null;
   }, [backgroundShape, originalImageSize]);
 
+  // Reset crop to minimum bounds (background image extents)
+  const handleCropReset = React.useCallback(() => {
+    if (minCropResetBounds && canvasBounds) {
+      const minCanvasBoundsForReset = {
+        width: minCropResetBounds.width,
+        height: minCropResetBounds.height,
+        imageOffsetX: -minCropResetBounds.x,
+        imageOffsetY: -minCropResetBounds.y,
+      };
+      const boundsChanged =
+        minCanvasBoundsForReset.width !== canvasBounds.width ||
+        minCanvasBoundsForReset.height !== canvasBounds.height ||
+        minCanvasBoundsForReset.imageOffsetX !== canvasBounds.imageOffsetX ||
+        minCanvasBoundsForReset.imageOffsetY !== canvasBounds.imageOffsetY;
+      if (boundsChanged) {
+        setCanvasBounds(minCanvasBoundsForReset);
+      }
+    }
+    if (minCropResetBounds) {
+      setCropRegion(minCropResetBounds);
+      navigation.handleFitToRect(minCropResetBounds);
+    }
+    setCropUserExpanded(false);
+  }, [minCropResetBounds, canvasBounds, setCanvasBounds, setCropRegion, setCropUserExpanded, navigation]);
+
+  // Listen for crop-reset event (R key in crop mode)
+  useEffect(() => {
+    const handler = () => handleCropReset();
+    window.addEventListener('crop-reset', handler);
+    return () => window.removeEventListener('crop-reset', handler);
+  }, [handleCropReset]);
 
   // Check if source image has transparent pixels (only recalculated when image changes).
   const imageHasAlpha = useMemo(() => {
@@ -479,13 +532,41 @@ export const EditorCanvas = React.memo(forwardRef<EditorCanvasRef, EditorCanvasP
     return getSelectionBounds(shapes, selectedIds);
   }, [shapes, selectedIds]);
 
-  // Check if any selected shape requires proportional scaling
+  // Fast lookup maps for selection/transformer paths.
+  const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds]);
+  const shapeById = useMemo(() => new Map(shapes.map((shape) => [shape.id, shape] as const)), [shapes]);
+
+  // Check if any selected shape requires proportional scaling.
   const hasProportionalShape = useMemo(() => {
-    return selectedIds.some((id) => {
-      const shape = shapes.find((s) => s.id === id);
-      return shape?.type === 'step';
+    for (const id of selectedIds) {
+      if (shapeById.get(id)?.type === 'step') {
+        return true;
+      }
+    }
+    return false;
+  }, [selectedIds, shapeById]);
+
+  // Reset rotation of all selected shapes to 0
+  const handleResetRotation = React.useCallback(() => {
+    history.takeSnapshot();
+    const updatedShapes = shapes.map((s) => {
+      if (!selectedSet.has(s.id)) return s;
+      return { ...s, rotation: 0 };
     });
-  }, [selectedIds, shapes]);
+    onShapesChange(updatedShapes);
+
+    // Also reset rotation on the Konva nodes so the Transformer updates
+    const tr = transformerRef.current;
+    if (tr) {
+      tr.nodes().forEach((node) => {
+        if (selectedSet.has(node.id())) {
+          node.rotation(0);
+        }
+      });
+      tr.getLayer()?.batchDraw();
+    }
+    history.commitSnapshot();
+  }, [history, onShapesChange, selectedSet, shapes]);
 
   // Disable image smoothing for crisp 1:1 pixel rendering at 100% zoom
   useEffect(() => {
@@ -509,7 +590,7 @@ export const EditorCanvas = React.memo(forwardRef<EditorCanvasRef, EditorCanvasP
     if (!transformerRef.current || !layerRef.current) return;
 
     // Hide transformer while drawing, editing text, or not in select mode
-    if (drawing.isDrawing || textEditing.editingTextId || selectedTool !== 'select') {
+    if (drawing.isDrawing || textEditing.editingTextId || selectedTool !== 'select' || isShapeDraggingRef.current) {
       transformerRef.current.nodes([]);
       transformerRef.current.getLayer()?.batchDraw();
       return;
@@ -520,7 +601,7 @@ export const EditorCanvas = React.memo(forwardRef<EditorCanvasRef, EditorCanvasP
     const nodes = selectedIds
       .filter((id) => {
         if (isMultiSelect) return true;
-        const shape = shapes.find((s) => s.id === id);
+        const shape = shapeById.get(id);
         return shape && shape.type !== 'arrow' && shape.type !== 'line';
       })
       .map((id) => layerRef.current!.findOne(`#${id}`))
@@ -528,7 +609,7 @@ export const EditorCanvas = React.memo(forwardRef<EditorCanvasRef, EditorCanvasP
 
     transformerRef.current.nodes(nodes);
     transformerRef.current.getLayer()?.batchDraw();
-  }, [selectedIds, shapes, drawing.isDrawing, textEditing.editingTextId, selectedTool]);
+  }, [drawing.isDrawing, selectedIds, selectedTool, shapeById, textEditing.editingTextId]);
 
   // Handle mouse events
   const handleMouseDown = React.useCallback(
@@ -572,6 +653,42 @@ export const EditorCanvas = React.memo(forwardRef<EditorCanvasRef, EditorCanvasP
     [drawing, selectedTool, setSelectedIds, marquee, stageRef, navigation, textEditing.editingTextId]
   );
 
+  const updateManualTextDrag = React.useCallback((pointer: { x: number; y: number }): boolean => {
+    const manualTextDrag = manualTextDragRef.current;
+    if (!manualTextDrag) return false;
+
+    const dx = pointer.x - manualTextDrag.startPointer.x;
+    const dy = pointer.y - manualTextDrag.startPointer.y;
+    if (Math.abs(dx) <= TEXT_MANUAL_DRAG_EPSILON && Math.abs(dy) <= TEXT_MANUAL_DRAG_EPSILON) {
+      return true;
+    }
+
+    if (!manualTextDrag.activated) {
+      manualTextDrag.activated = true;
+      isShapeDraggingRef.current = true;
+
+      // Defer transformer hide to actual movement to keep mousedown path minimal.
+      const tr = transformerRef.current;
+      if (tr?.visible()) {
+        tr.visible(false);
+        preTextDragHideRef.current = true;
+      }
+    }
+
+    manualTextDrag.node.position({
+      x: manualTextDrag.startPosition.x + dx,
+      y: manualTextDrag.startPosition.y + dy,
+    });
+
+    const dragLayer = manualTextDrag.node.getLayer();
+    if (dragLayer) {
+      manualTextDrag.drewFirstFrame = true;
+      dragLayer.batchDraw();
+    }
+
+    return true;
+  }, []);
+
   const handleMouseMove = React.useCallback(
     (_e: Konva.KonvaEventObject<MouseEvent>) => {
       const stage = stageRef.current;
@@ -581,6 +698,10 @@ export const EditorCanvas = React.memo(forwardRef<EditorCanvasRef, EditorCanvasP
       if (!screenPos) return;
 
       const pos = navigation.getCanvasPosition(screenPos);
+
+      if (updateManualTextDrag(pos)) {
+        return;
+      }
 
       // Drawing move (also handles pending → drawing transition on drag threshold)
       if (drawing.isDrawing || (selectedTool !== 'select' && selectedTool !== 'crop' && selectedTool !== 'background')) {
@@ -593,22 +714,162 @@ export const EditorCanvas = React.memo(forwardRef<EditorCanvasRef, EditorCanvasP
         marquee.updateMarquee(pos);
       }
     },
-    [drawing, marquee, navigation, stageRef, selectedTool]
+    [drawing, marquee, navigation, stageRef, selectedTool, updateManualTextDrag]
   );
-
-  const handleMouseUp = React.useCallback(() => {
-    // Finish drawing or click-to-place (always call — it no-ops when idle)
-    drawing.handleDrawingMouseUp();
-
-    // Finish marquee
-    if (marquee.isMarqueeSelecting) {
-      marquee.finishMarquee();
-    }
-  }, [drawing, marquee]);
 
   const handleShapeSelect = React.useCallback((id: string) => {
     setSelectedIds([id]);
   }, [setSelectedIds]);
+
+  const shapeDragStart = transform.handleShapeDragStart;
+  const shapeDragEnd = transform.handleShapeDragEnd;
+  const commitManualDragDelta = transform.commitManualDragDelta;
+
+  const reattachTransformerToSelection = React.useCallback(() => {
+    const tr = transformerRef.current;
+    const layer = layerRef.current;
+    if (!tr || !layer || drawing.isDrawing || textEditing.editingTextId || selectedTool !== 'select') return;
+
+    const selectedNow = selectedIds;
+    const isMultiSelect = selectedNow.length > 1;
+    const nodes = selectedNow
+      .filter((shapeId) => {
+        if (isMultiSelect) return true;
+        const shape = shapeById.get(shapeId);
+        return shape && shape.type !== 'arrow' && shape.type !== 'line';
+      })
+      .map((shapeId) => layer.findOne(`#${shapeId}`))
+      .filter((node): node is Konva.Node => node !== null && node !== undefined);
+
+    tr.nodes(nodes);
+    tr.getLayer()?.batchDraw();
+  }, [drawing.isDrawing, selectedIds, selectedTool, shapeById, textEditing.editingTextId]);
+
+  const handleTextMouseDown = React.useCallback((shapeId: string, e: Konva.KonvaEventObject<MouseEvent>) => {
+    if (e.evt?.button !== 0 || selectedTool !== 'select') return;
+    if (textEditing.editingTextId === shapeId) return;
+    if (selectedIds.length > 1) return;
+    // Preserve double-click editing path.
+    if (e.evt.detail >= 2) return;
+
+    // Keep stage handlers out of this path and run manual drag for selected text.
+    e.cancelBubble = true;
+
+    // Ensure first-gesture drag works even when the shape was not selected yet.
+    if (!selectedSet.has(shapeId) || selectedIds.length !== 1) {
+      setSelectedIds([shapeId]);
+    }
+
+    const dragNode = e.currentTarget as Konva.Node | null;
+    const stage = stageRef.current;
+    const screenPos = stage?.getPointerPosition();
+    if (!dragNode || !screenPos) return;
+
+    manualTextDragRef.current = {
+      shapeId,
+      node: dragNode,
+      startPointer: navigation.getCanvasPosition(screenPos),
+      startPosition: { x: dragNode.x(), y: dragNode.y() },
+      activated: false,
+      drewFirstFrame: false,
+    };
+  }, [navigation, selectedIds.length, selectedSet, selectedTool, setSelectedIds, stageRef, textEditing.editingTextId]);
+
+  const handleMouseUp = React.useCallback(() => {
+    const manualTextDrag = manualTextDragRef.current;
+    if (manualTextDrag) {
+      manualTextDragRef.current = null;
+      const wasDragging = manualTextDrag.activated;
+      isShapeDraggingRef.current = false;
+      preTextDragHideRef.current = false;
+
+      const dx = manualTextDrag.node.x() - manualTextDrag.startPosition.x;
+      const dy = manualTextDrag.node.y() - manualTextDrag.startPosition.y;
+      if (wasDragging && (Math.abs(dx) > TEXT_MANUAL_DRAG_EPSILON || Math.abs(dy) > TEXT_MANUAL_DRAG_EPSILON)) {
+        commitManualDragDelta(manualTextDrag.shapeId, dx, dy);
+      }
+
+      if (wasDragging) {
+        requestAnimationFrame(() => {
+          const tr = transformerRef.current;
+          if (tr) {
+            tr.visible(true);
+          }
+          reattachTransformerToSelection();
+        });
+      }
+      return;
+    }
+
+    // Finish drawing or click-to-place (always call - it no-ops when idle)
+    drawing.handleDrawingMouseUp();
+    // Finish marquee
+    if (marquee.isMarqueeSelecting) {
+      marquee.finishMarquee();
+    }
+    // Restore transformer if we hid it for a forced text drag that never started.
+    if (preTextDragHideRef.current && !isShapeDraggingRef.current) {
+      preTextDragHideRef.current = false;
+      const tr = transformerRef.current;
+      if (tr) {
+        tr.visible(true);
+      }
+    }
+  }, [commitManualDragDelta, drawing, marquee, reattachTransformerToSelection]);
+
+  useEffect(() => {
+    const handleWindowMouseMove = (evt: MouseEvent) => {
+      if (!manualTextDragRef.current) return;
+      const stage = stageRef.current;
+      if (!stage) return;
+
+      const rect = stage.container().getBoundingClientRect();
+      const pointer = navigation.getCanvasPosition({
+        x: evt.clientX - rect.left,
+        y: evt.clientY - rect.top,
+      });
+
+      updateManualTextDrag(pointer);
+    };
+
+    const handleWindowMouseUp = () => {
+      if (!manualTextDragRef.current) return;
+      handleMouseUp();
+    };
+
+    window.addEventListener('mousemove', handleWindowMouseMove, true);
+    window.addEventListener('mouseup', handleWindowMouseUp, true);
+
+    return () => {
+      window.removeEventListener('mousemove', handleWindowMouseMove, true);
+      window.removeEventListener('mouseup', handleWindowMouseUp, true);
+    };
+  }, [handleMouseUp, navigation, stageRef, updateManualTextDrag]);
+
+  const handleShapeDragStart = React.useCallback((id: string, e: Konva.KonvaEventObject<DragEvent>) => {
+    // Hide transformer during drag to reduce overlay work on text-heavy scenes.
+    if (e.evt?.button !== 1) {
+      isShapeDraggingRef.current = true;
+      preTextDragHideRef.current = false;
+      const tr = transformerRef.current;
+      if (tr) {
+        tr.visible(false);
+      }
+    }
+    shapeDragStart(id, e);
+  }, [shapeDragStart]);
+
+  const handleShapeDragEnd = React.useCallback((id: string, e: Konva.KonvaEventObject<DragEvent>) => {
+    shapeDragEnd(id, e);
+    isShapeDraggingRef.current = false;
+    requestAnimationFrame(() => {
+      const tr = transformerRef.current;
+      if (tr) {
+        tr.visible(true);
+      }
+      reattachTransformerToSelection();
+    });
+  }, [shapeDragEnd, reattachTransformerToSelection]);
 
   // Composition box dimensions (for CSS preview background)
   // Simple calculation: content size + padding on each side, scaled by zoom
@@ -803,15 +1064,9 @@ export const EditorCanvas = React.memo(forwardRef<EditorCanvasRef, EditorCanvasP
                     listening={false}
                   />
                 )}
-                {/* Inner clip background — named for export removal so compositor.ts can detect transparency */}
-                {compositorSettings.enabled && (
-                  <CompositorBackground
-                    name="compositor-bg"
-                    settings={compositorSettings}
-                    bounds={{ x: clipX, y: clipY, width: clipW, height: clipH }}
-                    borderRadius={0}
-                  />
-                )}
+                {/* Inner clip background — only needed when compositor is off (checkerboard above handles it).
+                   When compositor is enabled, the CSS preview div behind the canvas provides the background
+                   seamlessly — transparent Konva pixels let it show through without doubled gradients. */}
                 {/* Render shapes (background image is now the first shape) */}
                 <ShapeRenderer
                   shapes={shapes}
@@ -824,12 +1079,13 @@ export const EditorCanvas = React.memo(forwardRef<EditorCanvasRef, EditorCanvasP
                   editingTextId={textEditing.editingTextId}
                   onShapeClick={transform.handleShapeClick}
                   onShapeSelect={handleShapeSelect}
-                  onDragStart={transform.handleShapeDragStart}
-                  onDragEnd={transform.handleShapeDragEnd}
+                  onDragStart={handleShapeDragStart}
+                  onDragEnd={handleShapeDragEnd}
                   onArrowDragEnd={transform.handleArrowDragEnd}
                   onTransformStart={transform.handleTransformStart}
                   onTransformEnd={transform.handleTransformEnd}
                   onArrowEndpointDragEnd={transform.handleArrowEndpointDragEnd}
+                  onTextMouseDown={handleTextMouseDown}
                   onTextStartEdit={textEditing.startEditing}
                   takeSnapshot={history.takeSnapshot}
                   commitSnapshot={history.commitSnapshot}
@@ -896,7 +1152,7 @@ export const EditorCanvas = React.memo(forwardRef<EditorCanvasRef, EditorCanvasP
               onDragStart={() => history.takeSnapshot()}
               onDragEnd={(dx, dy) => {
                 const updatedShapes = shapes.map((shape) => {
-                  if (!selectedIds.includes(shape.id)) return shape;
+                  if (!selectedSet.has(shape.id)) return shape;
                   if (['pen', 'arrow', 'line'].includes(shape.type) && shape.points && shape.points.length >= 2) {
                     // Reset node position (was moved imperatively during drag)
                     const node = layerRef.current?.findOne(`#${shape.id}`);
@@ -914,12 +1170,14 @@ export const EditorCanvas = React.memo(forwardRef<EditorCanvasRef, EditorCanvasP
                 });
                 onShapesChange(updatedShapes);
 
-                // Auto-extend canvas if shapes moved beyond bounds
+                // Auto-extend canvas and crop region if shapes moved beyond bounds
                 if (canvasBounds && originalImageSize) {
-                  const expanded = expandBoundsForShapes(canvasBounds, updatedShapes, originalImageSize);
-                  if (expanded) {
-                    setCanvasBounds(expanded);
-                  }
+                  const expanded = expandBoundsForShapes(canvasBounds, updatedShapes, originalImageSize, cropUserExpanded);
+                  if (expanded) setCanvasBounds(expanded);
+                }
+                if (cropRegion) {
+                  const expandedCrop = expandCropRegionForShapes(cropRegion, updatedShapes, cropUserExpanded);
+                  if (expandedCrop) setCropRegion(expandedCrop);
                 }
 
                 history.commitSnapshot();
@@ -943,48 +1201,71 @@ export const EditorCanvas = React.memo(forwardRef<EditorCanvasRef, EditorCanvasP
             }}
             onTransformStart={() => history.takeSnapshot()}
             onTransform={() => {
-              // For text shapes, convert scale to width/height in real-time to prevent stretching
+              // Convert scale to dimensions in real-time to prevent stroke scaling during resize
               const nodes = transformerRef.current?.nodes() || [];
               nodes.forEach(node => {
-                const shape = shapes.find(s => s.id === node.id());
-                if (shape?.type === 'text') {
-                  const scaleX = node.scaleX();
-                  const scaleY = node.scaleY();
+                const shape = shapeById.get(node.id());
+                if (!shape) return;
 
-                  // Read current dimensions from node (not React state)
-                  const currentWidth = node.width();
-                  const currentHeight = node.height();
+                const scaleX = node.scaleX();
+                const scaleY = node.scaleY();
 
-                  // Allow negative dimensions for crossover (like rect behavior)
-                  // Don't clamp to minimum during drag - only at the end
-                  const newWidth = currentWidth * scaleX;
-                  const newHeight = currentHeight * scaleY;
+                if (shape.type === 'text') {
+                  const group = node as Konva.Group;
+                  const { width: liveWidth, height: liveHeight } = getEditorTextResizeDimensions(
+                    shape.width,
+                    shape.height,
+                    scaleX,
+                    scaleY
+                  );
+                  const w = Math.max(EDITOR_TEXT.MIN_BOX_WIDTH, Math.abs(liveWidth));
+                  const h = Math.max(EDITOR_TEXT.MIN_BOX_HEIGHT, Math.abs(liveHeight));
+                  const invSx = scaleX === 0 ? 1 : 1 / scaleX;
+                  const invSy = scaleY === 0 ? 1 : 1 / scaleY;
 
-                  // Update Group dimensions and reset scale
-                  node.width(newWidth);
-                  node.height(newHeight);
+                  // Counter-scale all child rects so they resize without distortion
+                  for (const child of [
+                    group.findOne('.text-content'),
+                    group.findOne('.text-background'),
+                    group.findOne('.text-hit-area'),
+                  ]) {
+                    if (!child) continue;
+                    child.width(w);
+                    child.height(h);
+                    child.scaleX(invSx);
+                    child.scaleY(invSy);
+                    child.x(0);
+                    child.y(0);
+                  }
+                } else if (scaleX !== 1 || scaleY !== 1) {
+                  // All other shapes: reset scale to 1 and adjust geometry
+                  // This prevents stroke width from visually scaling during resize
+                  if (shape.type === 'circle') {
+                    const ellipse = node as unknown as Konva.Ellipse;
+                    ellipse.radiusX(ellipse.radiusX() * Math.abs(scaleX));
+                    ellipse.radiusY(ellipse.radiusY() * Math.abs(scaleY));
+                  } else if (shape.type === 'step') {
+                    const circle = (node as Konva.Group).findOne('Circle') as Konva.Circle | undefined;
+                    if (circle) {
+                      const avgScale = (Math.abs(scaleX) + Math.abs(scaleY)) / 2;
+                      circle.radius(circle.radius() * avgScale);
+                    }
+                  } else if ((shape.type === 'pen' || shape.type === 'arrow' || shape.type === 'line') && shape.points) {
+                    const line = node.className === 'Group'
+                      ? (node as Konva.Group).findOne('Line, Arrow') as Konva.Line | undefined
+                      : node as Konva.Line;
+                    if (line) {
+                      const pts = line.points();
+                      const scaled = pts.map((v, i) => v * (i % 2 === 0 ? scaleX : scaleY));
+                      line.points(scaled);
+                    }
+                  } else {
+                    // rect, highlight, image, blur: width/height based
+                    node.width(node.width() * scaleX);
+                    node.height(node.height() * scaleY);
+                  }
                   node.scaleX(1);
                   node.scaleY(1);
-
-                  // Also update child elements with absolute values for rendering
-                  const group = node as Konva.Group;
-                  const border = group.findOne('.text-box-border');
-                  const textContent = group.findOne('.text-content');
-                  const absWidth = Math.abs(newWidth);
-                  const absHeight = Math.abs(newHeight);
-                  if (border) {
-                    border.width(absWidth);
-                    border.height(absHeight);
-                    // Offset for negative dimensions
-                    border.x(newWidth < 0 ? newWidth : 0);
-                    border.y(newHeight < 0 ? newHeight : 0);
-                  }
-                  if (textContent) {
-                    textContent.width(absWidth);
-                    textContent.height(absHeight);
-                    textContent.x(newWidth < 0 ? newWidth : 0);
-                    textContent.y(newHeight < 0 ? newHeight : 0);
-                  }
                 }
               });
             }}
@@ -1001,7 +1282,7 @@ export const EditorCanvas = React.memo(forwardRef<EditorCanvasRef, EditorCanvasP
 
               nodes.forEach(node => {
                 const shapeId = node.id();
-                const shape = shapes.find(s => s.id === shapeId);
+                const shape = shapeById.get(shapeId);
                 if (!shape) return;
 
                 const scaleX = node.scaleX();
@@ -1029,31 +1310,39 @@ export const EditorCanvas = React.memo(forwardRef<EditorCanvasRef, EditorCanvasP
                     height: node.height(),
                   };
                 } else if (shape.type === 'text') {
-                  // Text: normalize negative dimensions
-                  const rawWidth = node.width();
-                  const rawHeight = node.height();
+                  // Text: let Konva own the live scale during the gesture, then
+                  // normalize the box dimensions once at the end.
+                  const { width: rawWidth, height: rawHeight } = getEditorTextResizeDimensions(
+                    node.width(),
+                    node.height(),
+                    scaleX,
+                    scaleY
+                  );
                   let finalX = node.x();
                   let finalY = node.y();
-                  const finalWidth = Math.max(50, Math.abs(rawWidth));
-                  const finalHeight = Math.max(24, Math.abs(rawHeight));
+                  const finalWidth = Math.max(EDITOR_TEXT.MIN_BOX_WIDTH, Math.abs(rawWidth));
+                  const finalHeight = Math.max(EDITOR_TEXT.MIN_BOX_HEIGHT, Math.abs(rawHeight));
                   if (rawWidth < 0) finalX += rawWidth;
                   if (rawHeight < 0) finalY += rawHeight;
 
-                  // Reset child positions
+                  node.scaleX(1);
+                  node.scaleY(1);
+
+                  // Reset all child positions/scales to final dimensions
                   if (node instanceof Konva.Group) {
-                    const border = node.findOne('.text-box-border');
-                    const textContent = node.findOne('.text-content');
-                    if (border) {
-                      border.x(0);
-                      border.y(0);
-                      border.width(finalWidth);
-                      border.height(finalHeight);
-                    }
-                    if (textContent) {
-                      textContent.x(0);
-                      textContent.y(0);
-                      textContent.width(finalWidth);
-                      textContent.height(finalHeight);
+                    for (const child of [
+                      node.findOne('.text-hit-area'),
+                      node.findOne('.text-box-border'),
+                      node.findOne('.text-background'),
+                      node.findOne('.text-content'),
+                    ]) {
+                      if (!child) continue;
+                      child.x(0);
+                      child.y(0);
+                      child.width(finalWidth);
+                      child.height(finalHeight);
+                      child.scaleX(1);
+                      child.scaleY(1);
                     }
                   }
                   node.x(finalX);
@@ -1119,17 +1408,24 @@ export const EditorCanvas = React.memo(forwardRef<EditorCanvasRef, EditorCanvasP
                 });
                 onShapesChange(updatedShapes);
 
-                // Auto-extend canvas if shapes moved beyond bounds
+                // Auto-extend canvas and crop region if shapes moved beyond bounds
                 if (canvasBounds && originalImageSize) {
-                  const expanded = expandBoundsForShapes(canvasBounds, updatedShapes, originalImageSize);
-                  if (expanded) {
-                    setCanvasBounds(expanded);
-                  }
+                  const expanded = expandBoundsForShapes(canvasBounds, updatedShapes, originalImageSize, cropUserExpanded);
+                  if (expanded) setCanvasBounds(expanded);
+                }
+                if (cropRegion) {
+                  const expandedCrop = expandCropRegionForShapes(cropRegion, updatedShapes, cropUserExpanded);
+                  if (expandedCrop) setCropRegion(expandedCrop);
                 }
               }
 
               history.commitSnapshot();
             }}
+          />
+          <ResetRotationButton
+            transformerRef={transformerRef}
+            zoom={navigation.zoom}
+            onReset={handleResetRotation}
           />
         </Layer>
       </Stage>
@@ -1150,35 +1446,16 @@ export const EditorCanvas = React.memo(forwardRef<EditorCanvasRef, EditorCanvasP
             height={displayBounds.height}
             isModified={artboardModified}
             onCancel={() => {
-              // Reset artboard to original image dimensions
-              if (originalImageSize) {
-                setCropRegion({ x: 0, y: 0, width: originalImageSize.width, height: originalImageSize.height });
-              }
+              // Just exit crop mode — retain the current crop as-is
               onToolChange('select');
             }}
-            onReset={() => {
-              if (minCropResetBounds && canvasBounds) {
-                const minCanvasBoundsForReset = {
-                  width: minCropResetBounds.width,
-                  height: minCropResetBounds.height,
-                  imageOffsetX: -minCropResetBounds.x,
-                  imageOffsetY: -minCropResetBounds.y,
-                };
-                const boundsChanged =
-                  minCanvasBoundsForReset.width !== canvasBounds.width ||
-                  minCanvasBoundsForReset.height !== canvasBounds.height ||
-                  minCanvasBoundsForReset.imageOffsetX !== canvasBounds.imageOffsetX ||
-                  minCanvasBoundsForReset.imageOffsetY !== canvasBounds.imageOffsetY;
-                if (boundsChanged) {
-                  setCanvasBounds(minCanvasBoundsForReset);
-                }
-              }
-              if (minCropResetBounds) {
-                setCropRegion(minCropResetBounds);
-                navigation.handleFitToSize();
-              }
+            onReset={handleCropReset}
+            onCommit={() => {
+              onToolChange('select');
+              // Explicitly fit after crop commit (the useEffect also fires, but this
+              // ensures the rAF runs after React has processed the tool change).
+              navigation.handleFitToSize();
             }}
-            onCommit={() => onToolChange('select')}
           />
         );
       })()}
@@ -1201,6 +1478,8 @@ export const EditorCanvas = React.memo(forwardRef<EditorCanvasRef, EditorCanvasP
         onZoomOut={navigation.handleZoomOut}
         onFitToSize={navigation.handleFitToSize}
         onActualSize={navigation.handleActualSize}
+        dimensions={selectedTool === 'crop' ? null : (cropRegion ?? canvasBounds ?? originalImageSize)}
+        cropActive={selectedTool === 'crop'}
       />
     </div>
   );

@@ -43,7 +43,7 @@ interface SettingsState {
 
   // UI state
   settingsModalOpen: boolean;
-  activeTab: 'shortcuts' | 'general';
+  activeTab: 'shortcuts' | 'general' | 'license';
 
   // Actions - Settings management
   loadSettings: () => Promise<void>;
@@ -62,9 +62,9 @@ interface SettingsState {
   resetGeneralSettings: () => void;
 
   // Actions - UI
-  openSettingsModal: (tab?: 'shortcuts' | 'general') => void;
+  openSettingsModal: (tab?: 'shortcuts' | 'general' | 'license') => void;
   closeSettingsModal: () => void;
-  setActiveTab: (tab: 'shortcuts' | 'general') => void;
+  setActiveTab: (tab: 'shortcuts' | 'general' | 'license') => void;
 }
 
 /**

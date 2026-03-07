@@ -362,6 +362,8 @@ pub struct OverlayState {
     pub app_handle: AppHandle,
     /// Type of capture being performed
     pub capture_type: CaptureType,
+    /// Start recording immediately after the selection is confirmed.
+    pub auto_start_recording: bool,
     /// Overlay selection mode (display/window/region)
     pub overlay_mode: OverlayMode,
 

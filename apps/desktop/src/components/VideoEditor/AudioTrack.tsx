@@ -1,6 +1,7 @@
 import { memo, useEffect, useRef, useState, useMemo } from 'react';
 import { Volume2 } from 'lucide-react';
 import { invoke } from '@tauri-apps/api/core';
+import { WAVEFORM } from '../../constants';
 import { audioLogger } from '../../utils/logger';
 import type { AudioWaveform } from '../../types';
 
@@ -19,6 +20,10 @@ const MAX_WAVEFORM_SAMPLES = 6000;
 // dB range for scaling (-60dB to -30dB like Cap)
 const DB_MIN = -60;
 const DB_MAX = -30;
+const WAVEFORM_BOTTOM_PADDING_PX = 2;
+const WAVEFORM_TOP_PADDING_PX = 2;
+const WAVEFORM_RESPONSE_GAMMA = 0.72;
+const WAVEFORM_MIN_VISIBLE_HEIGHT = 0.06;
 
 /**
  * Convert linear amplitude to dB scale and normalize to 0-1 range
@@ -30,6 +35,15 @@ function linearToDbNormalized(sample: number): number {
   const db = 20 * Math.log10(amplitude);
   // Normalize to 0-1 range using -60dB to -30dB scale
   return Math.max(0, Math.min(1, (db - DB_MIN) / (DB_MAX - DB_MIN)));
+}
+
+function shapeWaveformLevel(level: number): number {
+  if (level <= 0) {
+    return 0;
+  }
+
+  const curved = Math.pow(level, WAVEFORM_RESPONSE_GAMMA);
+  return WAVEFORM_MIN_VISIBLE_HEIGHT + curved * (1 - WAVEFORM_MIN_VISIBLE_HEIGHT);
 }
 
 /**
@@ -83,10 +97,10 @@ export const AudioTrack = memo(function AudioTrack({
       setError(null);
 
       try {
-        // Request ~200 samples per second for detailed waveform
+        // Shared waveform extraction density for timeline consistency.
         const data = await invoke<AudioWaveform>('extract_audio_waveform', {
           audioPath,
-          samplesPerSecond: 200,
+          samplesPerSecond: WAVEFORM.DEFAULT_SAMPLES_PER_SECOND,
         });
 
         if (!cancelled) {
@@ -122,7 +136,7 @@ export const AudioTrack = memo(function AudioTrack({
     }
 
     // Apply dB scaling for better visual representation
-    return samples.map(linearToDbNormalized);
+    return samples.map((sample) => shapeWaveformLevel(linearToDbNormalized(sample)));
   }, [waveform]);
 
   // Render waveform to canvas when data or dimensions change
@@ -135,7 +149,7 @@ export const AudioTrack = memo(function AudioTrack({
 
     const totalWidth = durationMs * timelineZoom;
     const height = canvas.height;
-    const centerY = height / 2;
+    const baselineY = height - WAVEFORM_BOTTOM_PADDING_PX;
 
     // Set canvas size to match the timeline width
     canvas.width = totalWidth;
@@ -146,41 +160,34 @@ export const AudioTrack = memo(function AudioTrack({
     // Calculate sample spacing
     const samplesCount = processedSamples.length;
     const sampleWidth = totalWidth / samplesCount;
+    const maxAmplitude = Math.max(1, height - WAVEFORM_TOP_PADDING_PX - WAVEFORM_BOTTOM_PADDING_PX);
 
     // Create gradient for waveform using coral/orange theme (MoonSnap brand colors)
     const gradient = ctx.createLinearGradient(0, 0, 0, height);
-    gradient.addColorStop(0, 'rgba(249, 112, 102, 0.9)'); // coral-400
-    gradient.addColorStop(0.5, 'rgba(251, 146, 60, 0.7)'); // orange-400
-    gradient.addColorStop(1, 'rgba(249, 112, 102, 0.9)');
+    gradient.addColorStop(0, 'rgba(251, 146, 60, 0.9)'); // orange-400
+    gradient.addColorStop(0.6, 'rgba(249, 112, 102, 0.7)'); // coral-400
+    gradient.addColorStop(1, 'rgba(240, 68, 56, 0.3)'); // coral-500
 
     ctx.fillStyle = gradient;
     ctx.beginPath();
-
-    // Draw the top half of the waveform
-    ctx.moveTo(0, centerY);
+    ctx.moveTo(0, baselineY);
 
     for (let i = 0; i < samplesCount; i++) {
       const x = i * sampleWidth;
-      const amplitude = processedSamples[i] * (height / 2 - 2); // Leave 2px margin
-      ctx.lineTo(x, centerY - amplitude);
+      const amplitude = processedSamples[i] * maxAmplitude;
+      ctx.lineTo(x, baselineY - amplitude);
     }
 
-    // Draw the bottom half (mirror)
-    for (let i = samplesCount - 1; i >= 0; i--) {
-      const x = i * sampleWidth;
-      const amplitude = processedSamples[i] * (height / 2 - 2);
-      ctx.lineTo(x, centerY + amplitude);
-    }
-
+    ctx.lineTo(totalWidth, baselineY);
     ctx.closePath();
     ctx.fill();
 
-    // Draw center line
-    ctx.strokeStyle = 'rgba(249, 112, 102, 0.3)';
+    // Draw a subtle floor line to anchor the half-waveform.
+    ctx.strokeStyle = 'rgba(249, 112, 102, 0.28)';
     ctx.lineWidth = 1;
     ctx.beginPath();
-    ctx.moveTo(0, centerY);
-    ctx.lineTo(totalWidth, centerY);
+    ctx.moveTo(0, baselineY + 0.5);
+    ctx.lineTo(totalWidth, baselineY + 0.5);
     ctx.stroke();
   }, [processedSamples, durationMs, timelineZoom]);
 

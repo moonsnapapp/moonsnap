@@ -198,9 +198,12 @@ export function formatShortcutForDisplay(shortcut: string): string {
  * Tray menu display names for shortcuts
  */
 const TRAY_MENU_NAMES: Record<string, string> = {
-  new_capture: 'New Capture',
-  fullscreen_capture: 'Fullscreen',
-  all_monitors_capture: 'All Monitors',
+  open_capture_toolbar: 'Open Capture Toolbar',
+  new_capture: 'New Screenshot',
+  fullscreen_capture: 'Current Display',
+  all_monitors_capture: 'All Displays',
+  record_video: 'Record Video…',
+  record_gif: 'Record GIF…',
 };
 
 /**

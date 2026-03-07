@@ -31,6 +31,7 @@ export const capturePropsAreEqual = (
   return (
     prev.capture.id === next.capture.id &&
     prev.capture.favorite === next.capture.favorite &&
+    prev.capture.quick_capture === next.capture.quick_capture &&
     prev.capture.thumbnail_path === next.capture.thumbnail_path &&
     tagsEqual(prev.capture.tags, next.capture.tags) &&
     prev.selected === next.selected &&

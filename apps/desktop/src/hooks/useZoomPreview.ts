@@ -12,7 +12,8 @@
  * - Auto: Follows cursor position during playback (like Cap)
  */
 
-import { useMemo } from 'react';
+import { useCallback, useMemo } from 'react';
+import { CURSOR } from '../constants';
 import type { ZoomRegion, CursorRecording } from '../types';
 import { useCursorInterpolation, type InterpolatedCursor } from './useCursorInterpolation';
 
@@ -372,6 +373,13 @@ function getZoomStateAtSorted(
   return boundsToZoomState(interp);
 }
 
+function getZoomScaleAtSorted(sortedRegions: ZoomRegion[], timestampMs: number): number {
+  if (!sortedRegions || sortedRegions.length === 0) {
+    return 1;
+  }
+  return getZoomStateAtSorted(sortedRegions, timestampMs).scale;
+}
+
 export function getZoomStateAt(
   regions: ZoomRegion[],
   timestampMs: number,
@@ -381,6 +389,16 @@ export function getZoomStateAt(
     return { scale: 1, centerX: 0.5, centerY: 0.5 };
   }
   return getZoomStateAtSorted(sortRegionsByStart(regions), timestampMs, getCursorAt);
+}
+
+export function getZoomScaleAt(
+  regions: ZoomRegion[] | undefined,
+  timestampMs: number
+): number {
+  if (!regions || regions.length === 0) {
+    return 1;
+  }
+  return getZoomScaleAtSorted(sortRegionsByStart(regions), timestampMs);
 }
 
 interface ZoomTransformOptions {
@@ -428,6 +446,8 @@ interface UseZoomPreviewOptions {
   videoWidth?: number;
   /** Video height for calculating rounding ratio */
   videoHeight?: number;
+  /** Cursor dampening amount for auto-zoom follow (0 = linear, 1 = smooth). */
+  cursorDampening?: number;
   /** Optional source-time timestamp for Auto zoom cursor lookup (trim-aware parity). */
   cursorTimeMs?: number;
 }
@@ -451,13 +471,22 @@ export function useZoomPreview(
     rounding = 0,
     videoWidth = 1920,
     videoHeight = 1080,
+    cursorDampening = CURSOR.DAMPENING_DEFAULT,
     cursorTimeMs,
   } = options;
-  const { getCursorAt, hasCursorData } = useCursorInterpolation(cursorRecording);
   const sortedRegions = useMemo(
     () => (regions && regions.length > 0 ? sortRegionsByStart(regions) : []),
     [regions]
   );
+  const currentZoomScale = useMemo(
+    () => getZoomScaleAtSorted(sortedRegions, currentTimeMs),
+    [sortedRegions, currentTimeMs]
+  );
+  const getPreviewZoomScale = useCallback(() => currentZoomScale, [currentZoomScale]);
+  const { getCursorAt, hasCursorData } = useCursorInterpolation(cursorRecording, {
+    dampening: cursorDampening,
+    getZoomScale: currentZoomScale > 1.001 ? getPreviewZoomScale : null,
+  });
 
   return useMemo(() => {
     // Always return an identity transform instead of 'none'

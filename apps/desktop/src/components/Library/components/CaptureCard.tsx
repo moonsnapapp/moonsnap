@@ -37,6 +37,7 @@ export const CaptureCard: React.FC<CaptureCardProps> = memo(
     const isPlaceholder = capture.id.startsWith('temp_');
     const isMissing = capture.is_missing;
     const isMedia = isVideoOrGif(capture.capture_type);
+    const isQuickVideo = capture.capture_type === 'video' && Boolean(capture.quick_capture);
     const hasThumbnail = capture.thumbnail_path && capture.thumbnail_path.length > 0;
 
     // Use cached URL to avoid repeated convertFileSrc calls
@@ -137,8 +138,15 @@ export const CaptureCard: React.FC<CaptureCardProps> = memo(
               
               {/* Media type badge for videos/gifs */}
               {isMedia && !isMissing && (
-                <div className="absolute bottom-3 left-3 px-2 py-1 rounded-md bg-black/70 text-white text-[10px] font-medium uppercase">
-                  {capture.capture_type}
+                <div className="absolute bottom-3 left-3 flex items-center gap-2">
+                  <div className="px-2 py-1 rounded-md bg-black/70 text-white text-[10px] font-medium uppercase">
+                    {capture.capture_type}
+                  </div>
+                  {isQuickVideo && (
+                    <div className="px-2 py-1 rounded-md bg-[var(--coral-400)]/90 text-white text-[10px] font-medium">
+                      Quick Capture
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -155,14 +163,25 @@ export const CaptureCard: React.FC<CaptureCardProps> = memo(
                 </div>
               </div>
 
-              {/* Favorite Badge */}
-              {capture.favorite && (
-                <div className="absolute top-3 right-3 animate-scale-in">
-                  <div className="w-7 h-7 rounded-lg bg-[var(--card)] flex items-center justify-center border border-[var(--coral-200)] shadow-sm">
-                    <Star className="w-3.5 h-3.5 text-[var(--coral-400)]" fill="currentColor" />
-                  </div>
-                </div>
-              )}
+              {/* Favorite Toggle */}
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onToggleFavorite();
+                }}
+                onMouseDown={(e) => e.stopPropagation()}
+                onDoubleClick={(e) => e.stopPropagation()}
+                className={`absolute top-3 right-3 z-10 w-7 h-7 rounded-lg flex items-center justify-center border shadow-sm transition-all duration-200 hover:scale-110 ${
+                  capture.favorite
+                    ? 'bg-[var(--card)] border-[var(--coral-200)] opacity-100'
+                    : 'bg-[var(--card)]/80 border-transparent opacity-0 group-hover:opacity-100'
+                }`}
+              >
+                <Star
+                  className="w-3.5 h-3.5 text-[var(--coral-400)] transition-colors"
+                  fill={capture.favorite ? 'currentColor' : 'none'}
+                />
+              </button>
 
               {/* Hover Overlay */}
               <div className="absolute inset-0 bg-gradient-to-t from-black/30 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
@@ -189,6 +208,9 @@ export const CaptureCard: React.FC<CaptureCardProps> = memo(
                         ? capture.capture_type.toUpperCase()
                         : `${capture.dimensions.width} × ${capture.dimensions.height}`}
                   </span>
+                  {isQuickVideo && (
+                    <span className="pill-coral text-[10px]">Ready to share</span>
+                  )}
                   {/* Display up to 2 tags */}
                   {!isPlaceholder && capture.tags.slice(0, 2).map(tag => (
                     <TagChip key={tag} tag={tag} size="sm" />
@@ -225,21 +247,6 @@ export const CaptureCard: React.FC<CaptureCardProps> = memo(
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
-                      onToggleFavorite();
-                    }}
-                    className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-[var(--polar-mist)] transition-colors"
-                  >
-                    <Star
-                      className="w-4 h-4 transition-colors"
-                      fill={capture.favorite ? 'currentColor' : 'none'}
-                      style={{
-                        color: capture.favorite ? 'var(--coral-400)' : 'var(--ink-subtle)',
-                      }}
-                    />
-                  </button>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
                       onDelete();
                     }}
                     className="w-8 h-8 rounded-lg flex items-center justify-center text-red-500 hover:bg-red-50 transition-colors"
@@ -255,6 +262,7 @@ export const CaptureCard: React.FC<CaptureCardProps> = memo(
           favorite={capture.favorite}
           isMissing={isMissing}
           captureType={capture.capture_type}
+          quickCapture={capture.quick_capture}
           onCopyToClipboard={onCopyToClipboard}
           onOpenInFolder={onOpenInFolder}
           onToggleFavorite={onToggleFavorite}

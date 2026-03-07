@@ -39,6 +39,8 @@ interface UseCropToolProps {
   originalImageSize: ImageSize | null;
   /** Context-aware history actions for undo/redo support */
   history: EditorHistoryActions;
+  /** Mark crop as manually expanded (prevents auto-shrink) */
+  setCropUserExpanded: (expanded: boolean) => void;
 }
 
 interface UseCropToolReturn {
@@ -92,6 +94,7 @@ export const useCropTool = ({
   backgroundShape,
   originalImageSize,
   history,
+  setCropUserExpanded,
 }: UseCropToolProps): UseCropToolReturn => {
   const { takeSnapshot, commitSnapshot } = history;
   const [cropPreview, setCropPreview] = useState<CropBounds | null>(null);
@@ -297,9 +300,10 @@ export const useCropTool = ({
         width: Math.round(finalBounds.width),
         height: Math.round(finalBounds.height),
       });
+      setCropUserExpanded(true);
       setCropPreview(null);
     },
-    [setCropRegion, applySnapping, isShiftHeld]
+    [setCropRegion, setCropUserExpanded, applySnapping, isShiftHeld]
   );
 
   // Center drag handlers (with Shift axis locking)

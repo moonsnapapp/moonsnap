@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import Konva from 'konva';
 import type { CanvasShape, CanvasBounds } from '../types';
 import type { EditorHistoryActions } from './useEditorHistory';
-import { expandBoundsForShapes } from '../utils/canvasGeometry';
+import { expandBoundsForShapes, expandCropRegionForShapes } from '../utils/canvasGeometry';
 
 interface UseShapeTransformProps {
   shapes: CanvasShape[];
@@ -17,17 +17,26 @@ interface UseShapeTransformProps {
   setCanvasBounds: (bounds: CanvasBounds | null) => void;
   /** Original image dimensions */
   originalImageSize: { width: number; height: number } | null;
+  /** Current crop region for auto-extend */
+  cropRegion: { x: number; y: number; width: number; height: number } | null;
+  /** Setter for crop region */
+  setCropRegion: (region: { x: number; y: number; width: number; height: number } | null) => void;
+  /** Whether user has manually expanded crop — prevents auto-shrink */
+  cropUserExpanded: boolean;
 }
 
 interface UseShapeTransformReturn {
   handleShapeDragStart: (id: string, e: Konva.KonvaEventObject<DragEvent>) => void;
   handleShapeDragEnd: (id: string, e: Konva.KonvaEventObject<DragEvent>) => void;
+  commitManualDragDelta: (id: string, dx: number, dy: number) => void;
   handleArrowDragEnd: (id: string, newPoints: number[]) => void;
   handleTransformStart: () => void;
   handleTransformEnd: (id: string, e: Konva.KonvaEventObject<Event>) => void;
   handleShapeClick: (shapeId: string, e: Konva.KonvaEventObject<MouseEvent>) => void;
   handleArrowEndpointDragEnd: (shapeId: string, newPoints: number[]) => void;
 }
+
+const DRAG_EPSILON = 0.01;
 
 /**
  * Hook for shape transformation operations - drag, resize, rotate
@@ -42,30 +51,40 @@ export const useShapeTransform = ({
   canvasBounds,
   setCanvasBounds,
   originalImageSize,
+  cropRegion,
+  setCropRegion,
+  cropUserExpanded,
 }: UseShapeTransformProps): UseShapeTransformReturn => {
   const { takeSnapshot, commitSnapshot } = history;
   const selectedIdsRef = useRef(selectedIds);
+  const shapeById = useMemo(() => new Map(shapes.map((shape) => [shape.id, shape] as const)), [shapes]);
 
   useEffect(() => {
     selectedIdsRef.current = selectedIds;
   }, [selectedIds]);
 
-  /** Try to expand canvas bounds to fit all shapes after a drag/transform */
+  /** Try to expand canvas bounds and crop region to fit all shapes after a drag/transform */
   const maybeExpandBounds = useCallback(
     (updatedShapes: CanvasShape[]) => {
       if (!canvasBounds || !originalImageSize) return;
-      const expanded = expandBoundsForShapes(canvasBounds, updatedShapes, originalImageSize);
+      const expanded = expandBoundsForShapes(canvasBounds, updatedShapes, originalImageSize, cropUserExpanded);
       if (expanded) {
         setCanvasBounds(expanded);
       }
+      if (cropRegion) {
+        const expandedCrop = expandCropRegionForShapes(cropRegion, updatedShapes, cropUserExpanded);
+        if (expandedCrop) {
+          setCropRegion(expandedCrop);
+        }
+      }
     },
-    [canvasBounds, originalImageSize, setCanvasBounds]
+    [canvasBounds, originalImageSize, setCanvasBounds, cropRegion, setCropRegion, cropUserExpanded]
   );
 
-  // Pause history at drag start to batch all drag updates
+  // Drag start should stay lightweight for immediate pointer response.
   const handleShapeDragStart = useCallback((id: string, e: Konva.KonvaEventObject<DragEvent>) => {
     // Ignore middle mouse button (used for panning)
-    if (e.evt.button === 1) {
+    if (e.evt?.button === 1) {
       e.evt.preventDefault();
       return;
     }
@@ -74,22 +93,48 @@ export const useShapeTransform = ({
     if (!selectedIdsRef.current.includes(id)) {
       setSelectedIds([id]);
     }
-    takeSnapshot();
-  }, [setSelectedIds, takeSnapshot]);
+  }, [setSelectedIds]);
 
   // Handle shape drag end - supports both single and group movement
   const handleShapeDragEnd = useCallback(
     (id: string, e: Konva.KonvaEventObject<DragEvent>) => {
-      const draggedShape = shapes.find(s => s.id === id);
+      const draggedShape = shapeById.get(id);
       if (!draggedShape) {
-        commitSnapshot();
         return;
       }
 
       // Calculate delta based on shape type
+      const selectedNow = selectedIdsRef.current;
+      const selectedNowSet = new Set(selectedNow);
+      const isGroupDrag = selectedNow.length > 1 && selectedNowSet.has(id);
       const isPen = draggedShape.type === 'pen' && draggedShape.points && draggedShape.points.length >= 2;
       const dx = e.target.x() - (isPen ? 0 : (draggedShape.x ?? 0));
       const dy = e.target.y() - (isPen ? 0 : (draggedShape.y ?? 0));
+      const movedByDelta = Math.abs(dx) > DRAG_EPSILON || Math.abs(dy) > DRAG_EPSILON;
+
+      let blurDx = 0;
+      let blurDy = 0;
+      if (!isGroupDrag && draggedShape.type === 'blur') {
+        const normalizedX = (draggedShape.width ?? 0) < 0
+          ? (draggedShape.x ?? 0) + (draggedShape.width ?? 0)
+          : (draggedShape.x ?? 0);
+        const normalizedY = (draggedShape.height ?? 0) < 0
+          ? (draggedShape.y ?? 0) + (draggedShape.height ?? 0)
+          : (draggedShape.y ?? 0);
+        blurDx = e.target.x() - normalizedX;
+        blurDy = e.target.y() - normalizedY;
+        const movedBlur = Math.abs(blurDx) > DRAG_EPSILON || Math.abs(blurDy) > DRAG_EPSILON;
+        if (!movedBlur) {
+          return;
+        }
+      } else if (!movedByDelta) {
+        return;
+      }
+
+      // Snapshot just before committing state updates. During drag, shapes are moved
+      // imperatively in Konva and React shape state is unchanged, so this still captures
+      // the true pre-drag state while avoiding drag-start latency.
+      takeSnapshot();
 
       // Reset position for pen strokes (they use points, not x/y)
       if (isPen) {
@@ -99,10 +144,9 @@ export const useShapeTransform = ({
       let updatedShapes: CanvasShape[];
 
       // Group drag: move all selected shapes by the same delta
-      const selectedNow = selectedIdsRef.current;
-      if (selectedNow.length > 1 && selectedNow.includes(id)) {
+      if (isGroupDrag) {
         updatedShapes = shapes.map((shape) => {
-          if (!selectedNow.includes(shape.id)) return shape;
+          if (!selectedNowSet.has(shape.id)) return shape;
 
           if (shape.type === 'pen' && shape.points && shape.points.length >= 2) {
             const newPoints = shape.points.map((val, i) =>
@@ -127,15 +171,6 @@ export const useShapeTransform = ({
             shape.id === id ? { ...shape, points: newPoints } : shape
           );
         } else if (draggedShape.type === 'blur') {
-          // Blur uses normalized position
-          const normalizedX = (draggedShape.width ?? 0) < 0
-            ? (draggedShape.x ?? 0) + (draggedShape.width ?? 0)
-            : (draggedShape.x ?? 0);
-          const normalizedY = (draggedShape.height ?? 0) < 0
-            ? (draggedShape.y ?? 0) + (draggedShape.height ?? 0)
-            : (draggedShape.y ?? 0);
-          const blurDx = e.target.x() - normalizedX;
-          const blurDy = e.target.y() - normalizedY;
           updatedShapes = shapes.map((shape) =>
             shape.id === id
               ? { ...shape, x: (shape.x ?? 0) + blurDx, y: (shape.y ?? 0) + blurDy }
@@ -156,8 +191,57 @@ export const useShapeTransform = ({
       // Resume history tracking
       commitSnapshot();
     },
-    [shapes, onShapesChange, commitSnapshot, maybeExpandBounds]
+    [shapes, shapeById, onShapesChange, takeSnapshot, commitSnapshot, maybeExpandBounds]
   );
+
+  // Commit a drag delta produced outside Konva's native draggable pipeline.
+  const commitManualDragDelta = useCallback((id: string, dx: number, dy: number) => {
+    if (Math.abs(dx) <= DRAG_EPSILON && Math.abs(dy) <= DRAG_EPSILON) {
+      return;
+    }
+
+    const draggedShape = shapeById.get(id);
+    if (!draggedShape) return;
+
+    const selectedNow = selectedIdsRef.current;
+    const selectedNowSet = new Set(selectedNow);
+    const isGroupDrag = selectedNow.length > 1 && selectedNowSet.has(id);
+
+    takeSnapshot();
+
+    let updatedShapes: CanvasShape[];
+    if (isGroupDrag) {
+      updatedShapes = shapes.map((shape) => {
+        if (!selectedNowSet.has(shape.id)) return shape;
+
+        if ((shape.type === 'pen' || shape.type === 'arrow' || shape.type === 'line') && shape.points && shape.points.length >= 2) {
+          const newPoints = shape.points.map((val, i) => (i % 2 === 0 ? val + dx : val + dy));
+          return { ...shape, points: newPoints };
+        }
+
+        return {
+          ...shape,
+          x: (shape.x ?? 0) + dx,
+          y: (shape.y ?? 0) + dy,
+        };
+      });
+    } else if ((draggedShape.type === 'pen' || draggedShape.type === 'arrow' || draggedShape.type === 'line') && draggedShape.points && draggedShape.points.length >= 2) {
+      const newPoints = draggedShape.points.map((val, i) => (i % 2 === 0 ? val + dx : val + dy));
+      updatedShapes = shapes.map((shape) =>
+        shape.id === id ? { ...shape, points: newPoints } : shape
+      );
+    } else {
+      updatedShapes = shapes.map((shape) =>
+        shape.id === id
+          ? { ...shape, x: (shape.x ?? 0) + dx, y: (shape.y ?? 0) + dy }
+          : shape
+      );
+    }
+
+    onShapesChange(updatedShapes);
+    maybeExpandBounds(updatedShapes);
+    commitSnapshot();
+  }, [shapes, shapeById, onShapesChange, takeSnapshot, commitSnapshot, maybeExpandBounds]);
 
   // Handle transform start - pause history
   const handleTransformStart = useCallback(() => {
@@ -179,19 +263,20 @@ export const useShapeTransform = ({
   const handleShapeClick = useCallback(
     (shapeId: string, e: Konva.KonvaEventObject<MouseEvent>) => {
       // Ignore middle mouse button (used for panning)
-      if (e.evt.button === 1) return;
+      if (e.evt?.button === 1) return;
 
       const selectedNow = selectedIdsRef.current;
-      if (e.evt.shiftKey) {
+      const selectedNowSet = new Set(selectedNow);
+      if (e.evt?.shiftKey) {
         // Toggle selection with shift
-        if (selectedNow.includes(shapeId)) {
+        if (selectedNowSet.has(shapeId)) {
           setSelectedIds(selectedNow.filter(id => id !== shapeId));
         } else {
           setSelectedIds([...selectedNow, shapeId]);
         }
       } else {
         // Keep group selection if clicking already-selected shape
-        if (!selectedNow.includes(shapeId)) {
+        if (!selectedNowSet.has(shapeId)) {
           setSelectedIds([shapeId]);
         }
       }
@@ -212,20 +297,22 @@ export const useShapeTransform = ({
     [shapes, onShapesChange, commitSnapshot, maybeExpandBounds]
   );
 
-  // Handle arrow endpoint drag end - update state only at the end
+  // Handle arrow endpoint drag end - update state and expand bounds
   const handleArrowEndpointDragEnd = useCallback(
     (shapeId: string, newPoints: number[]) => {
       const updatedShapes = shapes.map(s =>
         s.id === shapeId ? { ...s, points: newPoints } : s
       );
       onShapesChange(updatedShapes);
+      maybeExpandBounds(updatedShapes);
     },
-    [shapes, onShapesChange]
+    [shapes, onShapesChange, maybeExpandBounds]
   );
 
   return {
     handleShapeDragStart,
     handleShapeDragEnd,
+    commitManualDragDelta,
     handleArrowDragEnd,
     handleTransformStart,
     handleTransformEnd,

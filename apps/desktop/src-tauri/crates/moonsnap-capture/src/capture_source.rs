@@ -57,8 +57,7 @@ impl CaptureSource {
     /// Uses display capture + crop instead of WGC window capture to properly
     /// capture WebView2/transparent windows (WGC's CreateForWindow fails for these).
     pub fn new_window(window_id: u32, include_cursor: bool) -> Result<Self, String> {
-        use windows::Win32::Foundation::{HWND, RECT};
-        use windows::Win32::Graphics::Dwm::{DwmGetWindowAttribute, DWMWA_EXTENDED_FRAME_BOUNDS};
+        use windows::Win32::Foundation::HWND;
 
         log::info!(
             "[CAPTURE] Creating D3D capture for window {} via display+crop (cursor={})",
@@ -68,25 +67,15 @@ impl CaptureSource {
 
         let hwnd = HWND(window_id as isize as *mut std::ffi::c_void);
 
-        // Get window bounds using DWM (excludes shadow, accurate for WebView2 windows)
-        let mut dwm_rect = RECT::default();
-        let result = unsafe {
-            DwmGetWindowAttribute(
-                hwnd,
-                DWMWA_EXTENDED_FRAME_BOUNDS,
-                &mut dwm_rect as *mut _ as *mut _,
-                std::mem::size_of::<RECT>() as u32,
-            )
-        };
+        let bounds = scap_targets::get_window_capture_bounds(hwnd)
+            .ok_or_else(|| "Failed to get window capture bounds".to_string())?;
+        let position = bounds.position();
+        let size = bounds.size();
 
-        if result.is_err() {
-            return Err(format!("Failed to get window bounds: {:?}", result.err()));
-        }
-
-        let x = dwm_rect.left;
-        let y = dwm_rect.top;
-        let width = (dwm_rect.right - dwm_rect.left) as u32;
-        let height = (dwm_rect.bottom - dwm_rect.top) as u32;
+        let x = position.x() as i32;
+        let y = position.y() as i32;
+        let width = size.width() as u32;
+        let height = size.height() as u32;
 
         if width == 0 || height == 0 {
             return Err("Window has zero dimensions".to_string());

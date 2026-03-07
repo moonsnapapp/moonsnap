@@ -5,12 +5,13 @@ import { afterEach, beforeEach, vi } from 'vitest';
 
 // Import Tauri mocks - this sets up all the vi.mock calls
 import './mocks/tauri';
-import { clearInvokeResponses } from './mocks/tauri';
+import { clearInvokeResponses, clearMockEventListeners } from './mocks/tauri';
 
 // Cleanup after each test
 afterEach(() => {
   cleanup();
   clearInvokeResponses();
+  clearMockEventListeners();
   vi.clearAllMocks();
 });
 

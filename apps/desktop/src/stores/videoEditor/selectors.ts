@@ -2,6 +2,8 @@ import type { TrimSegment } from '@/types';
 import type { VideoEditorState } from '@/stores/videoEditor/types';
 
 export const selectProject = (state: VideoEditorState) => state.project;
+export const selectProjectName = (state: VideoEditorState) => state.project?.name ?? null;
+export const selectSetProject = (state: VideoEditorState) => state.setProject;
 export const selectScreenVideoPath = (state: VideoEditorState) => state.project?.sources.screenVideo ?? null;
 export const selectOriginalVideoWidth = (state: VideoEditorState) => state.project?.sources.originalWidth ?? 1920;
 export const selectOriginalVideoHeight = (state: VideoEditorState) => state.project?.sources.originalHeight ?? 1080;

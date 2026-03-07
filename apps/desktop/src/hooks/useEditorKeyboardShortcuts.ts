@@ -33,6 +33,8 @@ interface UseEditorKeyboardShortcutsProps {
   onShowShortcuts: () => void;
   onDeselect: () => void;
   onFitToCenter: () => void;
+  onCropCommit: () => void;
+  onCropReset: () => void;
 }
 
 interface UseEditorKeyboardShortcutsReturn {
@@ -65,6 +67,8 @@ export const useEditorKeyboardShortcuts = ({
   onShowShortcuts,
   onDeselect,
   onFitToCenter,
+  onCropCommit,
+  onCropReset,
 }: UseEditorKeyboardShortcutsProps): UseEditorKeyboardShortcutsReturn => {
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
 
@@ -117,6 +121,20 @@ export const useEditorKeyboardShortcuts = ({
         return;
       }
 
+      // Crop mode shortcuts (before tool shortcuts to override R)
+      if (selectedTool === 'crop') {
+        if (e.key === ' ' || e.key === 'Enter') {
+          e.preventDefault();
+          onCropCommit();
+          return;
+        }
+        if (e.key.toLowerCase() === 'r') {
+          e.preventDefault();
+          onCropReset();
+          return;
+        }
+      }
+
       // Tool shortcuts (only when no modifier keys)
       if (e.ctrlKey || e.metaKey || e.altKey) return;
 
@@ -124,6 +142,13 @@ export const useEditorKeyboardShortcuts = ({
       if (tool) {
         e.preventDefault();
         onToolChange(tool);
+        return;
+      }
+
+      // Shift+G: Quick toggle compositor on/off without switching tool
+      if (e.key === 'G' && e.shiftKey) {
+        e.preventDefault();
+        onToggleCompositor();
         return;
       }
 
@@ -190,6 +215,8 @@ export const useEditorKeyboardShortcuts = ({
     onShowShortcuts,
     onDeselect,
     onFitToCenter,
+    onCropCommit,
+    onCropReset,
   ]);
 
   return {

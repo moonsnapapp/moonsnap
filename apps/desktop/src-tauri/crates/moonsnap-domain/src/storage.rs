@@ -85,6 +85,9 @@ pub struct CaptureListItem {
     pub has_annotations: bool,
     pub tags: Vec<String>,
     pub favorite: bool,
+    /// Whether this media came from the quick capture flow.
+    #[serde(default)]
+    pub quick_capture: bool,
     /// True if the original image file is missing from disk
     pub is_missing: bool,
 }

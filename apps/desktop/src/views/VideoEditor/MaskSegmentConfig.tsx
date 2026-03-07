@@ -103,26 +103,6 @@ export function MaskSegmentConfig({ segment, onUpdate, onDelete, onDone }: MaskS
         />
       </div>
 
-      {/* Position info */}
-      <div className="pt-3 border-t border-[var(--glass-border)]">
-        <div className="grid grid-cols-2 gap-3 text-xs">
-          <div>
-            <span className="text-[var(--ink-subtle)]">Position</span>
-            <p className="text-[var(--ink-dark)] font-mono mt-0.5">
-              {Math.round(segment.x * 100)}%, {Math.round(segment.y * 100)}%
-            </p>
-          </div>
-          <div>
-            <span className="text-[var(--ink-subtle)]">Size</span>
-            <p className="text-[var(--ink-dark)] font-mono mt-0.5">
-              {Math.round(segment.width * 100)}% x {Math.round(segment.height * 100)}%
-            </p>
-          </div>
-        </div>
-        <p className="text-[10px] text-[var(--ink-faint)] mt-2">
-          Drag the mask on the preview to reposition
-        </p>
-      </div>
     </div>
   );
 }

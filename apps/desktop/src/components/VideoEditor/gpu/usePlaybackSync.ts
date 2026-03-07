@@ -51,6 +51,7 @@ interface PlaybackSyncResult {
 
 // Keep playback smooth without audible "rewind" artifacts from backward seeks.
 const PLAYBACK_AUDIO_RESYNC_THRESHOLD_SEC = 0.5;
+const PLAYBACK_SEEK_START_FALLBACK_MS = 250;
 
 /**
  * Hook for managing playback synchronization between video and audio elements.
@@ -157,9 +158,16 @@ export function usePlaybackSync(options: PlaybackSyncOptions): PlaybackSyncResul
 
     let cancelled = false;
     let seekedHandler: (() => void) | null = null;
+    let fallbackTimerId: ReturnType<typeof setTimeout> | null = null;
+    let hasStartedPlayback = false;
 
     const startPlayback = () => {
-      if (cancelled) return;
+      if (cancelled || hasStartedPlayback) return;
+      hasStartedPlayback = true;
+      if (fallbackTimerId !== null) {
+        clearTimeout(fallbackTimerId);
+        fallbackTimerId = null;
+      }
       if (video.paused) {
         video.play().catch(e => {
           if (e.name === 'AbortError') return;
@@ -184,6 +192,11 @@ export function usePlaybackSync(options: PlaybackSyncOptions): PlaybackSyncResul
         };
         video.addEventListener('seeked', seekedHandler, { once: true });
         video.currentTime = targetTimeSec;
+        fallbackTimerId = setTimeout(() => {
+          if (!cancelled) {
+            startPlayback();
+          }
+        }, PLAYBACK_SEEK_START_FALLBACK_MS);
 
         // Some browsers apply currentTime immediately and may not dispatch seeked.
         if (Math.abs(video.currentTime - targetTimeSec) <= 0.001) {
@@ -205,6 +218,9 @@ export function usePlaybackSync(options: PlaybackSyncOptions): PlaybackSyncResul
 
     return () => {
       cancelled = true;
+      if (fallbackTimerId !== null) {
+        clearTimeout(fallbackTimerId);
+      }
       if (seekedHandler) {
         video.removeEventListener('seeked', seekedHandler);
       }
@@ -273,13 +289,21 @@ export function usePlaybackSync(options: PlaybackSyncOptions): PlaybackSyncResul
     }
   }, [isPlaying, getSourceTime, micAudioRef, systemAudioRef]);
 
-  // Seek audio when preview time or current time changes
+  // Seek audio when preview time or current time changes.
+  // Skip seeking when hovering over tracks (hoveredTrack !== null) since that's
+  // just for segment preview indicators — only seek when scrubbing the ruler.
   useEffect(() => {
     const timelineTime = !isPlaying && previewTimeMs !== null ? previewTimeMs : currentTimeMs;
     const sourceTime = getSourceTime(timelineTime);
     const seekTokenChanged = lastSeekTokenRef.current !== lastSeekToken;
     if (seekTokenChanged) {
       lastSeekTokenRef.current = lastSeekToken;
+    }
+
+    // When previewTimeMs is set from track hover (not ruler), skip expensive audio seeking
+    if (!isPlaying && previewTimeMs !== null && !seekTokenChanged) {
+      const hoveredTrack = useVideoEditorStore.getState().hoveredTrack;
+      if (hoveredTrack !== null) return;
     }
 
     const syncAudio = (audio: HTMLAudioElement | null) => {
@@ -328,10 +352,17 @@ export function usePlaybackSync(options: PlaybackSyncOptions): PlaybackSyncResul
     return () => masterAudio.removeEventListener('timeupdate', handleTimeUpdate);
   }, [isPlaying, systemAudioRef, micAudioRef, videoRef]);
 
-  // Seek video when preview time or current time changes
+  // Seek video when preview time or current time changes.
+  // Skip seeking when hovering over tracks — only seek for ruler scrubbing or playhead changes.
   useEffect(() => {
     const video = videoRef.current;
     if (!video || isPlaying) return;
+
+    // When previewTimeMs comes from track hover, skip expensive video seeking
+    if (previewTimeMs !== null) {
+      const hoveredTrack = useVideoEditorStore.getState().hoveredTrack;
+      if (hoveredTrack !== null) return;
+    }
 
     const timelineTime = previewTimeMs !== null ? previewTimeMs : currentTimeMs;
     const sourceTime = getSourceTime(timelineTime);

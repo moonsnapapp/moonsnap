@@ -368,7 +368,7 @@ impl EditorInstance {
         // This ensures cursor position is correct in the final cropped output.
         if self.project.cursor.visible {
             if let Some(ref cursor_interp) = self.cursor_interpolator {
-                let cursor = cursor_interp.get_cursor_at(timestamp_ms);
+                let cursor = cursor_interp.get_cursor_at(timestamp_ms, zoom_state.scale);
                 let original_cursor_x = cursor.x;
                 let original_cursor_y = cursor.y;
 

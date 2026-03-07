@@ -241,6 +241,8 @@ pub fn mux_audio_to_video(
                     "aac",
                     "-b:a",
                     "192k",
+                    "-movflags",
+                    "+faststart",
                     &video_path.to_string_lossy(),
                 ])
                 .output()
@@ -260,6 +262,8 @@ pub fn mux_audio_to_video(
                     "aac",
                     "-b:a",
                     "192k",
+                    "-movflags",
+                    "+faststart",
                     &video_path.to_string_lossy(),
                 ])
                 .output()
@@ -279,6 +283,8 @@ pub fn mux_audio_to_video(
                     "aac",
                     "-b:a",
                     "192k",
+                    "-movflags",
+                    "+faststart",
                     &video_path.to_string_lossy(),
                 ])
                 .output()
@@ -455,8 +461,7 @@ pub fn get_video_duration(ffprobe_path: &PathBuf, video_path: &PathBuf) -> Resul
 #[cfg(target_os = "windows")]
 pub fn get_window_rect(window_id: u32) -> Result<(i32, i32, u32, u32), String> {
     use windows::Win32::{
-        Foundation::{HWND, RECT},
-        Graphics::Dwm::{DwmGetWindowAttribute, DWMWA_EXTENDED_FRAME_BOUNDS},
+        Foundation::HWND,
         UI::WindowsAndMessaging::{IsIconic, IsWindowVisible},
     };
 
@@ -472,24 +477,19 @@ pub fn get_window_rect(window_id: u32) -> Result<(i32, i32, u32, u32), String> {
             return Err("Window is minimized".to_string());
         }
 
-        // Get window bounds using DWM (excludes shadow, includes titlebar)
-        let mut rect = RECT::default();
-        DwmGetWindowAttribute(
-            hwnd,
-            DWMWA_EXTENDED_FRAME_BOUNDS,
-            &mut rect as *mut RECT as *mut std::ffi::c_void,
-            std::mem::size_of::<RECT>() as u32,
-        )
-        .map_err(|e| format!("Failed to get window bounds: {:?}", e))?;
+        let bounds = scap_targets::get_window_capture_bounds(hwnd)
+            .ok_or_else(|| "Failed to get window capture bounds".to_string())?;
+        let position = bounds.position();
+        let size = bounds.size();
 
-        let width = (rect.right - rect.left) as u32;
-        let height = (rect.bottom - rect.top) as u32;
+        let width = size.width() as u32;
+        let height = size.height() as u32;
 
         if width < 10 || height < 10 {
             return Err("Window is too small".to_string());
         }
 
-        Ok((rect.left, rect.top, width, height))
+        Ok((position.x() as i32, position.y() as i32, width, height))
     }
 }
 
@@ -538,6 +538,7 @@ pub struct CreateVideoProjectRequest<'a> {
     pub height: u32,
     pub duration_ms: u64,
     pub fps: u32,
+    pub quick_capture: bool,
     pub has_webcam: bool,
     pub has_cursor_data: bool,
     pub has_system_audio: bool,
@@ -555,10 +556,17 @@ pub fn create_video_project_file(request: CreateVideoProjectRequest<'_>) -> Resu
         request.duration_ms,
         request.fps,
     );
+    project.quick_capture = request.quick_capture;
 
     // Set project name from folder name
     if let Some(folder_name) = request.project_folder.file_name() {
-        project.name = folder_name.to_string_lossy().to_string();
+        let folder_name = folder_name.to_string_lossy().to_string();
+        project.name = folder_name.clone();
+        project.original_file_name = if request.quick_capture {
+            Some(format!("{}.mp4", folder_name))
+        } else {
+            None
+        };
     }
 
     // Update sources with relative paths for files that exist

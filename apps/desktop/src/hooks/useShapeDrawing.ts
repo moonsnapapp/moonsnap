@@ -1,9 +1,16 @@
 import { useState, useCallback, useRef } from 'react';
 import Konva from 'konva';
 import type { Tool, CanvasShape, BlurType } from '../types';
+import {
+  createEditorClickTextShape,
+  createEditorDragTextShape,
+  EDITOR_TEXT,
+  getEditorTextDragBoxHeight,
+} from '../utils/editorText';
 import type { EditorHistoryActions } from './useEditorHistory';
 
 const MIN_SHAPE_SIZE = 5;
+const TEXT_DRAG_EPSILON = 0.01;
 
 // Tools that stay in draw mode after completing a shape
 const TOOLS_RETAIN_MODE: Set<Tool> = new Set(['pen', 'steps']);
@@ -83,7 +90,10 @@ export const useShapeDrawing = ({
     shapeId: string;
     rect: Konva.Rect | null;
     textNode: Konva.Text | null;
+    hitArea: Konva.Rect | null;
+    background: Konva.Rect | null;
   } | null>(null);
+  const textDragMovedRef = useRef(false);
 
   // Create a new shape based on tool type
   const createShapeAtPosition = useCallback(
@@ -175,28 +185,14 @@ export const useShapeDrawing = ({
             stroke: strokeColor,
             strokeWidth,
           };
-        case 'text': {
-          const width = Math.max(50, Math.abs(endPos.x - startPos.x));
-          const height = Math.max(fontSize * 1.5, Math.abs(endPos.y - startPos.y));
-          return {
+        case 'text':
+          return createEditorDragTextShape({
             id,
-            type: 'text',
-            x: Math.min(startPos.x, endPos.x),
-            y: Math.min(startPos.y, endPos.y),
-            width,
-            height,
-            text: '',
+            startPos,
+            endPos,
             fontSize,
-            fontFamily: 'Arial',
-            fontStyle: 'normal',
-            textDecoration: '',
-            align: 'left',
-            wrap: 'word',
-            fill: strokeColor, // Text color uses stroke color (red by default)
-            stroke: undefined,
-            strokeWidth: 0,
-          };
-        }
+            color: strokeColor,
+          });
         default:
           return null;
       }
@@ -218,7 +214,7 @@ export const useShapeDrawing = ({
       // Select tool doesn't draw
       if (selectedTool === 'select') return false;
 
-      // Click-to-place tools (steps only - text is now drag-to-draw)
+      // Click-to-place tools
       if (selectedTool === 'steps') {
         // Find the next available step number (fill gaps first, then continue series)
         const existingNumbers = shapes
@@ -254,6 +250,33 @@ export const useShapeDrawing = ({
       // Crop tool is handled elsewhere
       if (selectedTool === 'crop') return false;
 
+      // Text tool: pre-spawn shape on mouse down so first drag frame doesn't
+      // pay shape mount cost. This removes the start-of-drag hitch.
+      if (selectedTool === 'text') {
+        takeSnapshot();
+        drawStartRef.current = pos;
+        shapesBeforeDrawRef.current = shapes;
+        pendingDrawRef.current = null;
+        liveTextNodesRef.current = null;
+        shapeSpawnedRef.current = false;
+        textDragMovedRef.current = false;
+        setIsDrawing(true);
+
+        const id = `shape_${Date.now()}`;
+        const newShape = createEditorDragTextShape({
+          id,
+          startPos: pos,
+          endPos: pos,
+          fontSize,
+          color: strokeColor,
+        });
+
+        liveShapeRef.current = newShape;
+        onShapesChange([...shapesBeforeDrawRef.current, newShape]);
+        shapeSpawnedRef.current = true;
+        return true;
+      }
+
       // For drag-to-draw tools, record position but defer drawing mode to mouseMove.
       // This avoids re-renders from isDrawing state changes on simple clicks.
       drawStartRef.current = pos;
@@ -262,16 +285,21 @@ export const useShapeDrawing = ({
       liveShapeRef.current = null;
       liveTextNodesRef.current = null;
       shapeSpawnedRef.current = false;
+      textDragMovedRef.current = false;
       return true;
     },
     [
       selectedTool,
       strokeColor,
+      fontSize,
       shapes,
       onShapesChange,
       stageRef,
       getCanvasPosition,
       setSelectedIds,
+      recordAction,
+      takeSnapshot,
+      setIsDrawing,
     ]
   );
 
@@ -354,7 +382,27 @@ export const useShapeDrawing = ({
       }
 
       const node = stage.findOne(`#${liveShape.id}`);
-      if (!node) return;
+      if (!node) {
+        // Shape can briefly be missing right after text pre-spawn before React commits.
+        // Keep state in sync with the latest pointer so first rendered frame is up-to-date.
+        if (liveShape.type === 'text') {
+          const width = Math.max(EDITOR_TEXT.MIN_BOX_WIDTH, Math.abs(pos.x - drawStart.x));
+          const height = Math.max(getEditorTextDragBoxHeight(fontSize), Math.abs(pos.y - drawStart.y));
+          const x = Math.min(drawStart.x, pos.x);
+          const y = Math.min(drawStart.y, pos.y);
+          const updatedShape = { ...liveShape, x, y, width, height };
+          liveShapeRef.current = updatedShape;
+          onShapesChange([...shapesBeforeDrawRef.current, updatedShape]);
+          if (
+            !textDragMovedRef.current &&
+            (Math.abs(pos.x - drawStart.x) > TEXT_DRAG_EPSILON ||
+              Math.abs(pos.y - drawStart.y) > TEXT_DRAG_EPSILON)
+          ) {
+            textDragMovedRef.current = true;
+          }
+        }
+        return;
+      }
 
       // For Group-wrapped shapes (arrow, line), drill into the first child
       const drawNode = node.getClassName() === 'Group'
@@ -416,22 +464,29 @@ export const useShapeDrawing = ({
               shapeId: liveShape.id,
               rect: group.findOne('.text-box-border') as Konva.Rect | null,
               textNode: group.findOne('.text-content') as Konva.Text | null,
+              hitArea: group.findOne('.text-hit-area') as Konva.Rect | null,
+              background: group.findOne('.text-background') as Konva.Rect | null,
             };
             liveTextNodesRef.current = cache;
           }
-          const width = Math.max(50, Math.abs(pos.x - drawStart.x));
-          const height = Math.max(fontSize * 1.5, Math.abs(pos.y - drawStart.y));
+          const width = Math.max(EDITOR_TEXT.MIN_BOX_WIDTH, Math.abs(pos.x - drawStart.x));
+          const height = Math.max(getEditorTextDragBoxHeight(fontSize), Math.abs(pos.y - drawStart.y));
           const x = Math.min(drawStart.x, pos.x);
           const y = Math.min(drawStart.y, pos.y);
+          if (
+            !textDragMovedRef.current &&
+            (Math.abs(pos.x - drawStart.x) > TEXT_DRAG_EPSILON ||
+              Math.abs(pos.y - drawStart.y) > TEXT_DRAG_EPSILON)
+          ) {
+            textDragMovedRef.current = true;
+          }
           group.x(x);
           group.y(y);
-          if (cache.rect) {
-            cache.rect.width(width);
-            cache.rect.height(height);
-          }
-          if (cache.textNode) {
-            cache.textNode.width(width);
-            cache.textNode.height(height);
+          for (const child of [cache.rect, cache.textNode, cache.hitArea, cache.background]) {
+            if (child) {
+              child.width(width);
+              child.height(height);
+            }
           }
           liveShapeRef.current = { ...liveShape, x, y, width, height };
           break;
@@ -454,26 +509,12 @@ export const useShapeDrawing = ({
       if (selectedTool === 'text') {
         // Click-to-place: spawn a default-size text box at the click position
         const id = `shape_${Date.now()}`;
-        const defaultWidth = 200;
-        const defaultHeight = Math.max(fontSize * 1.5, 30);
-        const newShape: CanvasShape = {
+        const newShape = createEditorClickTextShape({
           id,
-          type: 'text',
-          x: clickPos.x,
-          y: clickPos.y,
-          width: defaultWidth,
-          height: defaultHeight,
-          text: '',
+          position: clickPos,
           fontSize,
-          fontFamily: 'Arial',
-          fontStyle: 'normal',
-          textDecoration: '',
-          align: 'left',
-          wrap: 'word',
-          fill: strokeColor,
-          stroke: undefined,
-          strokeWidth: 0,
-        };
+          color: strokeColor,
+        });
         recordAction(() => onShapesChange([...shapesBeforeDrawRef.current, newShape]));
         setSelectedIds([id]);
         onToolChange('select');
@@ -489,7 +530,16 @@ export const useShapeDrawing = ({
 
     if (shapeSpawnedRef.current && liveShapeRef.current) {
       // Commit final shape to React state
-      const finalShape = liveShapeRef.current;
+      let finalShape = liveShapeRef.current;
+      if (finalShape.type === 'text' && !textDragMovedRef.current) {
+        // Preserve click-to-place behavior: click without drag becomes default text box size.
+        finalShape = createEditorClickTextShape({
+          id: finalShape.id,
+          position: drawStartRef.current,
+          fontSize,
+          color: strokeColor,
+        });
+      }
       onShapesChange([...shapesBeforeDrawRef.current, finalShape]);
       commitSnapshot();
       // Switch to select mode unless tool retains mode
@@ -507,6 +557,7 @@ export const useShapeDrawing = ({
     liveShapeRef.current = null;
     shapesBeforeDrawRef.current = [];
     liveTextNodesRef.current = null;
+    textDragMovedRef.current = false;
     setIsDrawing(false);
     shapeSpawnedRef.current = false;
   }, [selectedTool, onToolChange, onShapesChange, onTextShapeCreated, fontSize, strokeColor, setSelectedIds, recordAction, commitSnapshot, setIsDrawing]);
@@ -527,6 +578,7 @@ export const useShapeDrawing = ({
       liveShapeRef.current = null;
       shapesBeforeDrawRef.current = [];
       liveTextNodesRef.current = null;
+      textDragMovedRef.current = false;
       setIsDrawing(false);
       shapeSpawnedRef.current = false;
 
@@ -535,7 +587,7 @@ export const useShapeDrawing = ({
 
     // No in-progress drawing, return current shapes
     return shapes;
-  }, [shapes, onShapesChange, setIsDrawing]);
+  }, [shapes, onShapesChange, commitSnapshot, setIsDrawing]);
 
   return {
     isDrawing,

@@ -79,14 +79,16 @@ pub fn run_video_capture(
     // - Region mode: Scap with built-in crop_area
     // - Monitor mode: Scap full monitor capture
     //
-    // NOTE: We always capture WITHOUT the baked-in cursor. The cursor is rendered
-    // separately via the cursor overlay in the video editor, which allows for
-    // customization (size, style, visibility) and proper zoom tracking.
+    // For editor flow: capture WITHOUT cursor — cursor overlay handles it in the editor
+    // with customization (size, style, visibility) and proper zoom tracking.
+    // For quick capture: bake cursor into video if include_cursor is enabled,
+    // since there's no editor to add it later.
+    let bake_cursor = settings.quick_capture && settings.include_cursor;
     let (capture_source, first_frame) =
         moonsnap_capture::recorder_video_capture::create_capture_source(
             &capture_plan,
             settings.fps,
-            false,
+            bake_cursor,
         )?;
 
     let first_frame_dims = first_frame.as_ref().map(|(w, h, _)| (*w, *h));
@@ -384,6 +386,7 @@ pub fn run_video_capture(
                 height,
                 duration_ms: recording_duration.as_millis() as u64,
                 fps: settings.fps,
+                quick_capture: settings.quick_capture,
                 has_webcam: artifact_flags.has_webcam,
                 has_cursor_data: artifact_flags.has_cursor,
                 has_system_audio: artifact_flags.has_system_audio,

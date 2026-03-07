@@ -1,8 +1,66 @@
 //! Capture toolbar and startup toolbar commands.
 
+use std::sync::Mutex;
+
+use serde::{Deserialize, Serialize};
 use tauri::{command, AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 
 use super::{apply_dwm_transparency, set_physical_bounds, CAPTURE_TOOLBAR_LABEL};
+
+const STARTUP_TOOLBAR_WIDTH: u32 = 738;
+const STARTUP_TOOLBAR_HEIGHT: u32 = 147;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CaptureToolbarSelectionPayload {
+    pub x: i32,
+    pub y: i32,
+    pub width: u32,
+    pub height: u32,
+    pub source_type: Option<String>,
+    pub window_id: Option<i64>,
+    pub source_title: Option<String>,
+    pub monitor_index: Option<u32>,
+    pub monitor_name: Option<String>,
+    pub capture_type: Option<String>,
+    pub source_mode: Option<String>,
+    pub auto_start_recording: Option<bool>,
+}
+
+#[derive(Default)]
+pub struct CaptureToolbarWindowState {
+    create_lock: Mutex<()>,
+}
+
+fn build_selection_payload(
+    x: i32,
+    y: i32,
+    width: u32,
+    height: u32,
+    source_type: Option<String>,
+    window_id: Option<i64>,
+    source_title: Option<String>,
+    monitor_index: Option<u32>,
+    monitor_name: Option<String>,
+    capture_type: Option<String>,
+    source_mode: Option<String>,
+    auto_start_recording: Option<bool>,
+) -> CaptureToolbarSelectionPayload {
+    CaptureToolbarSelectionPayload {
+        x,
+        y,
+        width,
+        height,
+        source_type,
+        window_id,
+        source_title,
+        monitor_index,
+        monitor_name,
+        capture_type,
+        source_mode,
+        auto_start_recording,
+    }
+}
 
 // ============================================================================
 // Capture Toolbar
@@ -20,22 +78,47 @@ pub async fn show_capture_toolbar(
     y: i32,
     width: u32,
     height: u32,
+    source_type: Option<String>,
+    window_id: Option<i64>,
+    source_title: Option<String>,
+    monitor_index: Option<u32>,
+    monitor_name: Option<String>,
+    capture_type: Option<String>,
+    source_mode: Option<String>,
+    auto_start_recording: Option<bool>,
 ) -> Result<(), String> {
-    // Check if window already exists
+    let toolbar_state = app.state::<CaptureToolbarWindowState>();
+    let _create_guard = toolbar_state
+        .create_lock
+        .lock()
+        .map_err(|_| "Failed to lock capture toolbar creation".to_string())?;
+
+    let selection = build_selection_payload(
+        x,
+        y,
+        width,
+        height,
+        source_type,
+        window_id,
+        source_title,
+        monitor_index,
+        monitor_name,
+        capture_type,
+        source_mode,
+        auto_start_recording,
+    );
     if let Some(window) = app.get_webview_window(CAPTURE_TOOLBAR_LABEL) {
-        // Emit confirm-selection to update bounds and mark selection confirmed
-        let _ = window.emit(
-            "confirm-selection",
-            serde_json::json!({
-                "x": x, "y": y, "width": width, "height": height
-            }),
-        );
-        window
-            .show()
-            .map_err(|e| format!("Failed to show toolbar: {}", e))?;
-        window
-            .set_focus()
-            .map_err(|e| format!("Failed to focus toolbar: {}", e))?;
+        let _ = window.emit("confirm-selection", &selection);
+        if auto_start_recording.unwrap_or(false) {
+            let _ = window.hide();
+        } else {
+            window
+                .show()
+                .map_err(|e| format!("Failed to show toolbar: {}", e))?;
+            window
+                .set_focus()
+                .map_err(|e| format!("Failed to focus toolbar: {}", e))?;
+        }
         return Ok(());
     }
 
@@ -66,13 +149,11 @@ pub async fn show_capture_toolbar(
 
     set_physical_bounds(&window, initial_x, initial_y, toolbar_width, toolbar_height)?;
 
-    // Emit confirm-selection after a short delay to ensure frontend is ready
     let app_clone = app.clone();
-    let bounds = serde_json::json!({ "x": x, "y": y, "width": width, "height": height });
     tauri::async_runtime::spawn(async move {
         tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
         if let Some(window) = app_clone.get_webview_window(CAPTURE_TOOLBAR_LABEL) {
-            let _ = window.emit("confirm-selection", bounds);
+            let _ = window.emit("confirm-selection", selection);
         }
     });
 
@@ -227,9 +308,11 @@ pub async fn set_capture_toolbar_position(app: AppHandle, x: i32, y: i32) -> Res
         return Ok(());
     };
 
-    // Get current size
+    // Preserve the inner content size.
+    // Using outer_size here causes the window to grow when shadows/frame extents
+    // are reapplied repeatedly during drag reposition updates.
     let size = window
-        .outer_size()
+        .inner_size()
         .map_err(|e| format!("Failed to get size: {}", e))?;
 
     // Set position only (preserve size)
@@ -321,47 +404,93 @@ pub async fn set_capture_toolbar_ignore_cursor(
 /// Show the startup toolbar window (floating, centered on primary monitor).
 /// This is the main toolbar shown on app startup for initiating captures.
 /// Different from capture toolbar which appears during region selection.
+fn emit_startup_toolbar_context(
+    app: &AppHandle,
+    capture_type: Option<String>,
+    source_mode: Option<String>,
+    auto_start_area_selection: Option<bool>,
+) {
+    if capture_type.is_none() && source_mode.is_none() && auto_start_area_selection.is_none() {
+        return;
+    }
+
+    let app_handle = app.clone();
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
+        if let Some(window) = app_handle.get_webview_window(CAPTURE_TOOLBAR_LABEL) {
+            let _ = window.emit(
+                "startup-toolbar-context",
+                serde_json::json!({
+                    "captureType": capture_type,
+                    "sourceMode": source_mode,
+                    "autoStartAreaSelection": auto_start_area_selection.unwrap_or(false),
+                }),
+            );
+        }
+    });
+}
+
 #[command]
-pub async fn show_startup_toolbar(app: AppHandle) -> Result<(), String> {
+pub async fn show_startup_toolbar(
+    app: AppHandle,
+    capture_type: Option<String>,
+    source_mode: Option<String>,
+    auto_start_area_selection: Option<bool>,
+) -> Result<(), String> {
+    let auto_start_area_selection = auto_start_area_selection.unwrap_or(false);
+    let toolbar_state = app.state::<CaptureToolbarWindowState>();
+    let _create_guard = toolbar_state
+        .create_lock
+        .lock()
+        .map_err(|_| "Failed to lock startup toolbar creation".to_string())?;
+
     // Check if window already exists
     if let Some(window) = app.get_webview_window(CAPTURE_TOOLBAR_LABEL) {
         log::debug!("[show_startup_toolbar] Window already exists, bringing to front");
 
-        // Use Windows API to forcefully bring window to front
-        #[cfg(target_os = "windows")]
-        {
-            use windows::Win32::Foundation::HWND;
-            use windows::Win32::UI::WindowsAndMessaging::{
-                BringWindowToTop, SetForegroundWindow, SetWindowPos, ShowWindow, HWND_TOPMOST,
-                SWP_NOMOVE, SWP_NOSIZE, SWP_SHOWWINDOW, SW_RESTORE, SW_SHOW,
-            };
+        if !auto_start_area_selection {
+            // Use Windows API to forcefully bring window to front
+            #[cfg(target_os = "windows")]
+            {
+                use windows::Win32::Foundation::HWND;
+                use windows::Win32::UI::WindowsAndMessaging::{
+                    BringWindowToTop, SetForegroundWindow, SetWindowPos, ShowWindow, HWND_TOPMOST,
+                    SWP_NOMOVE, SWP_NOSIZE, SWP_SHOWWINDOW, SW_RESTORE, SW_SHOW,
+                };
 
-            if let Ok(hwnd) = window.hwnd() {
-                unsafe {
-                    let hwnd = HWND(hwnd.0);
-                    let _ = ShowWindow(hwnd, SW_RESTORE);
-                    let _ = ShowWindow(hwnd, SW_SHOW);
-                    let _ = SetWindowPos(
-                        hwnd,
-                        HWND_TOPMOST,
-                        0,
-                        0,
-                        0,
-                        0,
-                        SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW,
-                    );
-                    let _ = BringWindowToTop(hwnd);
-                    let _ = SetForegroundWindow(hwnd);
+                if let Ok(hwnd) = window.hwnd() {
+                    unsafe {
+                        let hwnd = HWND(hwnd.0);
+                        let _ = ShowWindow(hwnd, SW_RESTORE);
+                        let _ = ShowWindow(hwnd, SW_SHOW);
+                        let _ = SetWindowPos(
+                            hwnd,
+                            HWND_TOPMOST,
+                            0,
+                            0,
+                            0,
+                            0,
+                            SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW,
+                        );
+                        let _ = BringWindowToTop(hwnd);
+                        let _ = SetForegroundWindow(hwnd);
+                    }
                 }
             }
-        }
 
-        window
-            .show()
-            .map_err(|e| format!("Failed to show toolbar: {}", e))?;
-        window
-            .set_focus()
-            .map_err(|e| format!("Failed to focus toolbar: {}", e))?;
+            window
+                .show()
+                .map_err(|e| format!("Failed to show toolbar: {}", e))?;
+            window
+                .set_focus()
+                .map_err(|e| format!("Failed to focus toolbar: {}", e))?;
+        }
+        emit_startup_toolbar_context(
+            &app,
+            capture_type,
+            source_mode,
+            Some(auto_start_area_selection),
+        );
         return Ok(());
     }
 
@@ -383,9 +512,8 @@ pub async fn show_startup_toolbar(app: AppHandle) -> Result<(), String> {
     // No URL params - toolbar starts in startup state by default
     let url = WebviewUrl::App("windows/capture-toolbar.html".into());
 
-    // Fixed toolbar size: 1280x144px
-    let initial_width = 1280u32;
-    let initial_height = 144u32;
+    let initial_width = STARTUP_TOOLBAR_WIDTH;
+    let initial_height = STARTUP_TOOLBAR_HEIGHT;
 
     // Position at bottom-center of primary monitor
     let x = monitor_pos.x + (monitor_size.width as i32 - initial_width as i32) / 2;
@@ -410,22 +538,29 @@ pub async fn show_startup_toolbar(app: AppHandle) -> Result<(), String> {
         .skip_taskbar(false)
         .resizable(false) // Auto-resized by frontend
         .shadow(true)
-        .visible(true) // Show immediately - frontend will resize after measuring
-        .focused(true)
+        .visible(!auto_start_area_selection)
+        .focused(!auto_start_area_selection)
         .build()
         .map_err(|e| format!("Failed to create startup toolbar window: {}", e))?;
 
     // Set position/size using physical coordinates
     set_physical_bounds(&window, x, y, initial_width, initial_height)?;
 
-    // Show the window immediately - frontend will resize it after measuring content
-    // This ensures the window appears even if frontend has timing issues
-    window
-        .show()
-        .map_err(|e| format!("Failed to show toolbar: {}", e))?;
-    window
-        .set_focus()
-        .map_err(|e| format!("Failed to focus toolbar: {}", e))?;
+    if !auto_start_area_selection {
+        window
+            .show()
+            .map_err(|e| format!("Failed to show toolbar: {}", e))?;
+        window
+            .set_focus()
+            .map_err(|e| format!("Failed to focus toolbar: {}", e))?;
+    }
+
+    emit_startup_toolbar_context(
+        &app,
+        capture_type,
+        source_mode,
+        Some(auto_start_area_selection),
+    );
 
     log::info!("[show_startup_toolbar] Toolbar ready");
 

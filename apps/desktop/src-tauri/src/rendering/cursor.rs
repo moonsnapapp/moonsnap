@@ -94,6 +94,19 @@ const CURSOR_IDLE_FADE_DURATION_MS: u64 = 300;
 const CURSOR_ACTIVITY_MOVE_DEADZONE: f64 = 0.0015;
 const CURSOR_ACTIVITY_MOVE_DEADZONE_SQ: f64 =
     CURSOR_ACTIVITY_MOVE_DEADZONE * CURSOR_ACTIVITY_MOVE_DEADZONE;
+const CURSOR_SMOOTHING_MIN_ZOOM: f32 = 1.15;
+const CURSOR_SMOOTHING_MAX_ZOOM: f32 = 2.0;
+const CURSOR_SMOOTHING_MAX_WINDOW_MS: f64 = 72.0;
+const CURSOR_SMOOTHING_MIN_WINDOW_MS: f64 = 12.0;
+const CURSOR_SMOOTHING_OVERDRIVE_WINDOW_MS: f64 = 56.0;
+const CURSOR_SMOOTHING_SAMPLE_OFFSETS: [f64; 5] = [-1.0, -0.5, 0.0, 0.5, 1.0];
+const CURSOR_SMOOTHING_SAMPLE_WEIGHTS: [f32; 5] = [0.12, 0.2, 0.36, 0.2, 0.12];
+const CURSOR_SMOOTHING_VELOCITY_DELTA_RATIO: f64 = 0.35;
+const CURSOR_SMOOTHING_MIN_VELOCITY_DELTA_MS: f64 = 8.0;
+const CURSOR_CATCHUP_RESPONSE_START: f32 = 0.0025;
+const CURSOR_CATCHUP_RESPONSE_END: f32 = 0.045;
+const CURSOR_CATCHUP_BASE_STRENGTH: f32 = 0.3;
+const CURSOR_CATCHUP_OVERDRIVE_STRENGTH: f32 = 0.18;
 
 // ============================================================================
 // Cursor Click Animation (from Cap)
@@ -416,6 +429,8 @@ pub struct CursorInterpolator {
     video_start_offset_ms: u64,
     /// Whether inactivity fade-out is enabled in cursor settings.
     hide_when_idle: bool,
+    /// Zoom-adaptive smoothing strength (0 = linear, 1 = smooth).
+    dampening: f32,
     /// Timestamps for cursor activity events (move/click/scroll), sorted ascending.
     /// Used for inactivity fade-out opacity.
     activity_timestamps: Vec<u64>,
@@ -467,6 +482,7 @@ impl CursorInterpolator {
             height: recording.height,
             video_start_offset_ms: recording.video_start_offset_ms,
             hide_when_idle: cursor_config.hide_when_idle,
+            dampening: cursor_config.dampening.clamp(0.0, 2.0),
             activity_timestamps,
         }
     }
@@ -476,13 +492,18 @@ impl CursorInterpolator {
     /// This returns the cursor position along with:
     /// - `cursor_id`: Active cursor image ID (with preview-matching fallback)
     /// - `cursor_shape`: Shape from active cursor image, falling back to Arrow
-    pub fn get_cursor_at(&self, time_ms: u64) -> InterpolatedCursor {
+    pub fn get_cursor_at(&self, time_ms: u64, zoom_scale: f32) -> InterpolatedCursor {
         // Apply video start offset to align cursor timestamps with video frame timestamps.
         let adjusted_time_ms = time_ms.saturating_add(self.video_start_offset_ms);
 
         let cursor_id = get_active_cursor_id(&self.original_events, adjusted_time_ms);
-        let mut cursor =
-            interpolate_raw_at_time(&self.raw_move_events, adjusted_time_ms, cursor_id);
+        let mut cursor = interpolate_cursor_at_time(
+            &self.raw_move_events,
+            adjusted_time_ms as f64,
+            cursor_id,
+            zoom_scale,
+            self.dampening,
+        );
 
         // Use fallback cursor_id if none found (prevents cursor from disappearing)
         if cursor.cursor_id.is_none() {
@@ -897,82 +918,197 @@ fn segment_velocity(curr: &CursorEvent, next: &CursorEvent) -> XY {
     }
 }
 
-fn interpolate_raw_at_time(
-    move_events: &[CursorEvent],
-    time_ms: u64,
-    cursor_id: Option<String>,
-) -> InterpolatedCursor {
+fn sample_raw_motion_at_time(move_events: &[CursorEvent], time_ms: f64) -> (XY, XY) {
     if move_events.is_empty() {
-        return InterpolatedCursor {
-            cursor_id,
-            ..Default::default()
-        };
+        return (XY { x: 0.5, y: 0.5 }, XY::default());
     }
 
     // Before first event
-    if time_ms <= move_events[0].timestamp_ms {
+    if time_ms <= move_events[0].timestamp_ms as f64 {
         let first = &move_events[0];
         let velocity = move_events
             .get(1)
             .map(|next| segment_velocity(first, next))
             .unwrap_or_default();
-        return InterpolatedCursor {
-            x: first.x as f32,
-            y: first.y as f32,
-            velocity_x: velocity.x,
-            velocity_y: velocity.y,
-            cursor_id,
-            cursor_shape: None,
-            opacity: 1.0,
-            scale: 1.0,
-        };
+        return (
+            XY {
+                x: first.x as f32,
+                y: first.y as f32,
+            },
+            velocity,
+        );
     }
 
     // After last event
     let last = &move_events[move_events.len() - 1];
-    if time_ms >= last.timestamp_ms {
+    if time_ms >= last.timestamp_ms as f64 {
         let velocity = move_events
             .get(move_events.len().saturating_sub(2))
             .map(|prev| segment_velocity(prev, last))
             .unwrap_or_default();
-        return InterpolatedCursor {
-            x: last.x as f32,
-            y: last.y as f32,
-            velocity_x: velocity.x,
-            velocity_y: velocity.y,
-            cursor_id,
-            cursor_shape: None,
-            opacity: 1.0,
-            scale: 1.0,
-        };
+        return (
+            XY {
+                x: last.x as f32,
+                y: last.y as f32,
+            },
+            velocity,
+        );
     }
 
     // Between two move events: linear interpolation with segment velocity
     for i in 0..move_events.len() - 1 {
         let curr = &move_events[i];
         let next = &move_events[i + 1];
-        if time_ms >= curr.timestamp_ms && time_ms < next.timestamp_ms {
-            let dt_ms = (next.timestamp_ms.saturating_sub(curr.timestamp_ms)).max(1);
-            let t = (time_ms.saturating_sub(curr.timestamp_ms)) as f32 / dt_ms as f32;
+        if time_ms >= curr.timestamp_ms as f64 && time_ms < next.timestamp_ms as f64 {
+            let dt_ms = (next.timestamp_ms.saturating_sub(curr.timestamp_ms)).max(1) as f64;
+            let t = ((time_ms - curr.timestamp_ms as f64) / dt_ms) as f32;
             let velocity = segment_velocity(curr, next);
-            return InterpolatedCursor {
-                x: (curr.x + (next.x - curr.x) * t as f64) as f32,
-                y: (curr.y + (next.y - curr.y) * t as f64) as f32,
-                velocity_x: velocity.x,
-                velocity_y: velocity.y,
-                cursor_id,
-                cursor_shape: None,
-                opacity: 1.0,
-                scale: 1.0,
-            };
+            return (
+                XY {
+                    x: (curr.x + (next.x - curr.x) * t as f64) as f32,
+                    y: (curr.y + (next.y - curr.y) * t as f64) as f32,
+                },
+                velocity,
+            );
         }
     }
 
+    (
+        XY {
+            x: last.x as f32,
+            y: last.y as f32,
+        },
+        XY::default(),
+    )
+}
+
+fn get_adaptive_smoothing_strength(zoom_scale: f32, dampening: f32) -> f32 {
+    if dampening <= 0.0 || zoom_scale <= CURSOR_SMOOTHING_MIN_ZOOM {
+        return 0.0;
+    }
+
+    let zoom_factor = smoothstep(
+        CURSOR_SMOOTHING_MIN_ZOOM,
+        CURSOR_SMOOTHING_MAX_ZOOM,
+        zoom_scale,
+    );
+    let base_dampening = dampening.clamp(0.0, 1.0);
+    zoom_factor * base_dampening
+}
+
+fn get_adaptive_smoothing_window_ms(zoom_scale: f32, dampening: f32) -> f64 {
+    if dampening <= 0.0 || zoom_scale <= CURSOR_SMOOTHING_MIN_ZOOM {
+        return CURSOR_SMOOTHING_MIN_WINDOW_MS;
+    }
+
+    let zoom_factor = smoothstep(
+        CURSOR_SMOOTHING_MIN_ZOOM,
+        CURSOR_SMOOTHING_MAX_ZOOM,
+        zoom_scale,
+    ) as f64;
+    let overdrive = (dampening - 1.0).max(0.0) as f64;
+    CURSOR_SMOOTHING_MIN_WINDOW_MS
+        + (CURSOR_SMOOTHING_MAX_WINDOW_MS - CURSOR_SMOOTHING_MIN_WINDOW_MS) * zoom_factor
+        + CURSOR_SMOOTHING_OVERDRIVE_WINDOW_MS * zoom_factor * overdrive
+}
+
+fn get_smoothed_motion_at_time(
+    move_events: &[CursorEvent],
+    time_ms: f64,
+    zoom_scale: f32,
+    dampening: f32,
+) -> (XY, XY) {
+    let (raw_position, raw_velocity) = sample_raw_motion_at_time(move_events, time_ms);
+    let smoothing_strength = get_adaptive_smoothing_strength(zoom_scale, dampening);
+
+    if smoothing_strength <= 0.0 || move_events.len() < 3 {
+        return (raw_position, raw_velocity);
+    }
+
+    let window_ms = get_adaptive_smoothing_window_ms(zoom_scale, dampening);
+
+    let mut total_weight = 0.0_f32;
+    let mut averaged_x = 0.0_f32;
+    let mut averaged_y = 0.0_f32;
+
+    for (offset, weight) in CURSOR_SMOOTHING_SAMPLE_OFFSETS
+        .iter()
+        .zip(CURSOR_SMOOTHING_SAMPLE_WEIGHTS.iter())
+    {
+        let sample_time_ms = time_ms + offset * window_ms;
+        let (sample_position, _) = sample_raw_motion_at_time(move_events, sample_time_ms);
+        total_weight += *weight;
+        averaged_x += sample_position.x * *weight;
+        averaged_y += sample_position.y * *weight;
+    }
+
+    if total_weight <= 0.0 {
+        return (raw_position, raw_velocity);
+    }
+
+    averaged_x /= total_weight;
+    averaged_y /= total_weight;
+
+    let derivative_delta_ms = f64::max(
+        CURSOR_SMOOTHING_MIN_VELOCITY_DELTA_MS,
+        window_ms * CURSOR_SMOOTHING_VELOCITY_DELTA_RATIO,
+    );
+    let (before_position, _) =
+        sample_raw_motion_at_time(move_events, time_ms - derivative_delta_ms);
+    let (after_position, _) = sample_raw_motion_at_time(move_events, time_ms + derivative_delta_ms);
+    let derivative_scale = 1000.0_f32 / f64::max(derivative_delta_ms * 2.0, 1.0) as f32;
+    let averaged_velocity = XY {
+        x: (after_position.x - before_position.x) * derivative_scale,
+        y: (after_position.y - before_position.y) * derivative_scale,
+    };
+    let smoothed_position = XY {
+        x: raw_position.x + (averaged_x - raw_position.x) * smoothing_strength,
+        y: raw_position.y + (averaged_y - raw_position.y) * smoothing_strength,
+    };
+    let smoothed_velocity = XY {
+        x: raw_velocity.x + (averaged_velocity.x - raw_velocity.x) * smoothing_strength,
+        y: raw_velocity.y + (averaged_velocity.y - raw_velocity.y) * smoothing_strength,
+    };
+    let response_distance = ((smoothed_position.x - raw_position.x).powi(2)
+        + (smoothed_position.y - raw_position.y).powi(2))
+    .sqrt();
+    let response_factor = smoothstep(
+        CURSOR_CATCHUP_RESPONSE_START,
+        CURSOR_CATCHUP_RESPONSE_END,
+        response_distance,
+    );
+    let overdrive = (dampening - 1.0).max(0.0);
+    let catchup_strength = (smoothing_strength
+        * response_factor
+        * (CURSOR_CATCHUP_BASE_STRENGTH + CURSOR_CATCHUP_OVERDRIVE_STRENGTH * overdrive))
+        .min(0.65);
+
+    (
+        XY {
+            x: smoothed_position.x + (raw_position.x - smoothed_position.x) * catchup_strength,
+            y: smoothed_position.y + (raw_position.y - smoothed_position.y) * catchup_strength,
+        },
+        XY {
+            x: smoothed_velocity.x + (raw_velocity.x - smoothed_velocity.x) * catchup_strength,
+            y: smoothed_velocity.y + (raw_velocity.y - smoothed_velocity.y) * catchup_strength,
+        },
+    )
+}
+
+fn interpolate_cursor_at_time(
+    move_events: &[CursorEvent],
+    time_ms: f64,
+    cursor_id: Option<String>,
+    zoom_scale: f32,
+    dampening: f32,
+) -> InterpolatedCursor {
+    let (position, velocity) =
+        get_smoothed_motion_at_time(move_events, time_ms, zoom_scale, dampening);
     InterpolatedCursor {
-        x: last.x as f32,
-        y: last.y as f32,
-        velocity_x: 0.0,
-        velocity_y: 0.0,
+        x: position.x,
+        y: position.y,
+        velocity_x: velocity.x,
+        velocity_y: velocity.y,
         cursor_id,
         cursor_shape: None,
         opacity: 1.0,
@@ -1294,9 +1430,9 @@ mod tests {
         let interp = CursorInterpolator::new(&recording, &CursorConfig::default());
 
         // Last explicit activity is at 400ms (click above).
-        let visible = interp.get_cursor_at(1500);
-        let fading = interp.get_cursor_at(1700);
-        let hidden = interp.get_cursor_at(2100);
+        let visible = interp.get_cursor_at(1500, 1.0);
+        let fading = interp.get_cursor_at(1700, 1.0);
+        let hidden = interp.get_cursor_at(2100, 1.0);
 
         assert!((visible.opacity - 1.0).abs() < 0.0001);
         assert!(fading.opacity > 0.0 && fading.opacity < 1.0);
@@ -1315,8 +1451,8 @@ mod tests {
         });
 
         let interp = CursorInterpolator::new(&recording, &CursorConfig::default());
-        let before_click = interp.get_cursor_at(2500);
-        let on_click = interp.get_cursor_at(2600);
+        let before_click = interp.get_cursor_at(2500, 1.0);
+        let on_click = interp.get_cursor_at(2600, 1.0);
 
         assert!(before_click.opacity <= 0.01);
         assert!((on_click.opacity - 1.0).abs() < 0.0001);
@@ -1334,7 +1470,7 @@ mod tests {
         });
 
         let interp = CursorInterpolator::new(&recording, &CursorConfig::default());
-        let after_jitter = interp.get_cursor_at(2600);
+        let after_jitter = interp.get_cursor_at(2600, 1.0);
 
         assert!(after_jitter.opacity <= 0.01);
     }
@@ -1346,7 +1482,7 @@ mod tests {
         cursor_config.hide_when_idle = false;
 
         let interp = CursorInterpolator::new(&recording, &cursor_config);
-        let cursor = interp.get_cursor_at(10_000);
+        let cursor = interp.get_cursor_at(10_000, 1.0);
         assert!((cursor.opacity - 1.0).abs() < 0.0001);
     }
 
@@ -1355,7 +1491,7 @@ mod tests {
         let recording = test_recording();
 
         let raw_interp = CursorInterpolator::new(&recording, &CursorConfig::default());
-        let raw_cursor = raw_interp.get_cursor_at(100);
+        let raw_cursor = raw_interp.get_cursor_at(100, 1.0);
         assert!((raw_cursor.x - 0.5).abs() < 0.05);
     }
 
@@ -1364,8 +1500,8 @@ mod tests {
         let recording = test_recording();
 
         let interp = CursorInterpolator::new(&recording, &CursorConfig::default());
-        let a = interp.get_cursor_at(120);
-        let b = interp.get_cursor_at(120);
+        let a = interp.get_cursor_at(120, 1.0);
+        let b = interp.get_cursor_at(120, 1.0);
 
         assert!((a.x - b.x).abs() < 0.0001);
         assert!((a.y - b.y).abs() < 0.0001);
@@ -1381,7 +1517,59 @@ mod tests {
         let interp = CursorInterpolator::new(&recording, &CursorConfig::default());
 
         // With 100ms offset applied, querying at t=0 should match raw event stream at t=100.
-        let cursor = interp.get_cursor_at(0);
+        let cursor = interp.get_cursor_at(0, 1.0);
         assert!((cursor.x - 0.5).abs() < 0.05);
+    }
+
+    #[test]
+    fn test_cursor_interpolator_smooths_abrupt_jumps_at_high_zoom() {
+        let recording = CursorRecording {
+            sample_rate: 100,
+            width: 1920,
+            height: 1080,
+            region_x: 0,
+            region_y: 0,
+            video_start_offset_ms: 0,
+            events: vec![
+                CursorEvent {
+                    timestamp_ms: 0,
+                    x: 0.0,
+                    y: 0.5,
+                    event_type: CursorEventType::Move,
+                    cursor_id: None,
+                },
+                CursorEvent {
+                    timestamp_ms: 1000,
+                    x: 0.0,
+                    y: 0.5,
+                    event_type: CursorEventType::Move,
+                    cursor_id: None,
+                },
+                CursorEvent {
+                    timestamp_ms: 1010,
+                    x: 1.0,
+                    y: 0.5,
+                    event_type: CursorEventType::Move,
+                    cursor_id: None,
+                },
+                CursorEvent {
+                    timestamp_ms: 2000,
+                    x: 1.0,
+                    y: 0.5,
+                    event_type: CursorEventType::Move,
+                    cursor_id: None,
+                },
+            ],
+            cursor_images: HashMap::new(),
+        };
+
+        let mut cursor_config = CursorConfig::default();
+        cursor_config.dampening = 1.0;
+
+        let interp = CursorInterpolator::new(&recording, &cursor_config);
+        let cursor = interp.get_cursor_at(1010, 4.0);
+
+        assert!(cursor.x > 0.7);
+        assert!(cursor.x < 1.0);
     }
 }

@@ -29,6 +29,7 @@ const TOOL_SHORTCUTS = [
   { key: 'S', action: 'Steps' },
   { key: 'P', action: 'Pen' },
   { key: 'G', action: 'Background' },
+  { key: 'Shift+G', action: 'Toggle background on/off' },
 ];
 
 const ACTION_SHORTCUTS = [
@@ -38,6 +39,8 @@ const ACTION_SHORTCUTS = [
   { key: 'Ctrl+C', action: 'Copy' },
   { key: 'Esc', action: 'Deselect' },
   { key: 'F', action: 'Fit to center' },
+  { key: 'Enter / Space', action: 'Apply crop (in crop mode)' },
+  { key: 'R', action: 'Reset crop (in crop mode)' },
   { key: '?', action: 'Show shortcuts' },
 ];
 

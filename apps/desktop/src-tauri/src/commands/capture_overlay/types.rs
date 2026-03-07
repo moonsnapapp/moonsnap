@@ -217,6 +217,15 @@ impl CaptureType {
     pub fn is_recording(&self) -> bool {
         matches!(self, Self::Video | Self::Gif)
     }
+
+    /// Convert capture type to the frontend string literal.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Screenshot => "screenshot",
+            Self::Video => "video",
+            Self::Gif => "gif",
+        }
+    }
 }
 
 // ============================================================================

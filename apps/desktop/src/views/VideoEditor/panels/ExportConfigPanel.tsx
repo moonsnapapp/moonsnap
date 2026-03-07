@@ -1,14 +1,15 @@
 ﻿/**
  * ExportConfigPanel - Format, FPS, resolution, crop, and audio settings.
  */
-import { useMemo } from 'react';
-import { Crop, X } from 'lucide-react';
+import { useEffect, useMemo } from 'react';
+import { Crop, X, Lock } from 'lucide-react';
 import { Button } from '../../../components/ui/button';
 import { AudioControlsPanel } from './AudioControlsPanel';
 import type { VideoProject, ExportConfig, ExportFormat, AudioTrackSettings } from '../../../types';
 import { calculateCompositionOutputSize } from '@/utils/compositionBounds';
 import { hasVideoBackgroundFrameStyling } from '@/utils/backgroundFrameStyling';
 import { getContentDimensionsFromCrop } from '@/utils/videoContentDimensions';
+import { useLicenseStore } from '@/stores/licenseStore';
 
 export interface ExportConfigPanelProps {
   project: VideoProject;
@@ -18,6 +19,10 @@ export interface ExportConfigPanelProps {
 }
 
 export function ExportConfigPanel({ project, onUpdateExportConfig, onUpdateAudioConfig, onOpenCropDialog }: ExportConfigPanelProps) {
+  const isPro = useLicenseStore((s) => s.isPro());
+  const sourceFps = project.sources.fps;
+  const sourceAspectRatio = project.sources.originalWidth / project.sources.originalHeight;
+
   const outputResolution = useMemo(() => {
     const crop = project.export.crop;
     const bg = project.export.background;
@@ -42,6 +47,15 @@ export function ExportConfigPanel({ project, onUpdateExportConfig, onUpdateAudio
     project.sources.originalWidth,
     project.sources.originalHeight,
   ]);
+  const outputAspectRatio = outputResolution.width / outputResolution.height;
+  const usesAlternateCanvasAspect =
+    Math.abs(outputAspectRatio - sourceAspectRatio) > 0.01;
+
+  useEffect(() => {
+    if (project.export.fps !== sourceFps) {
+      onUpdateExportConfig({ fps: sourceFps });
+    }
+  }, [onUpdateExportConfig, project.export.fps, sourceFps]);
 
   return (
     <div className="space-y-4">
@@ -55,28 +69,36 @@ export function ExportConfigPanel({ project, onUpdateExportConfig, onUpdateAudio
         >
           <option value="mp4">MP4</option>
           <option value="webm">WebM</option>
-          <option value="gif">GIF</option>
+          <option value="gif" disabled={!isPro}>
+            {isPro ? 'GIF' : 'GIF (Pro)'}
+          </option>
         </select>
+        {!isPro && project.export.format === 'gif' && (
+          <div className="flex items-center gap-1.5 mt-1.5 text-xs text-[var(--coral-500)]">
+            <Lock size={12} />
+            <span>GIF export requires MoonSnap Pro</span>
+          </div>
+        )}
       </div>
 
       {/* FPS */}
       <div>
         <span className="text-xs text-[var(--ink-muted)] block mb-2">Frame Rate</span>
         <select
-          value={project.export.fps}
-          onChange={(e) => onUpdateExportConfig({ fps: Number(e.target.value) })}
+          value={sourceFps}
+          disabled
           className="w-full h-8 bg-[var(--polar-mist)] border border-[var(--glass-border)] rounded-md text-sm text-[var(--ink-dark)] px-2"
         >
-          <option value={15}>15 fps</option>
-          <option value={24}>24 fps</option>
-          <option value={30}>30 fps</option>
-          <option value={60}>60 fps</option>
+          <option value={sourceFps}>Match Source ({sourceFps} fps)</option>
         </select>
+        <p className="mt-1.5 text-[11px] text-[var(--ink-muted)]">
+          Frame-rate conversion is not supported yet, so exports match the source.
+        </p>
       </div>
 
-      {/* Output Resolution */}
+      {/* Output Canvas */}
       <div>
-        <span className="text-xs text-[var(--ink-muted)] block mb-2">Output Resolution</span>
+        <span className="text-xs text-[var(--ink-muted)] block mb-2">Output Canvas</span>
         <select
           value={
             project.export.composition?.mode === 'manual' && project.export.composition?.width && project.export.composition?.height
@@ -98,15 +120,23 @@ export function ExportConfigPanel({ project, onUpdateExportConfig, onUpdateAudio
           }}
           className="w-full h-8 bg-[var(--polar-mist)] border border-[var(--glass-border)] rounded-md text-sm text-[var(--ink-dark)] px-2"
         >
-          <option value="auto">Auto (Match Source)</option>
-          <option value="3840x2160">4K (3840x2160)</option>
-          <option value="1920x1080">1080p (1920x1080)</option>
-          <option value="1280x720">720p (1280x720)</option>
-          <option value="1080x1920">1080p Portrait (1080x1920)</option>
-          <option value="1080x1080">Square (1080x1080)</option>
+          <option value="auto">Match Source</option>
+          <option value="3840x2160">4K Canvas (3840x2160)</option>
+          <option value="1920x1080">1080p Canvas (1920x1080)</option>
+          <option value="1280x720">720p Canvas (1280x720)</option>
+          <option value="1080x1920">Portrait Canvas (1080x1920)</option>
+          <option value="1080x1080">Square Canvas (1080x1080)</option>
         </select>
+        <p className="mt-1.5 text-[11px] text-[var(--ink-muted)]">
+          The video keeps its aspect ratio and is fit inside the output canvas.
+        </p>
+        {usesAlternateCanvasAspect && (
+          <p className="mt-1 text-[11px] text-[var(--ink-muted)]">
+            This canvas uses a different aspect ratio than the source, so the video will be centered inside it.
+          </p>
+        )}
         <div className="flex items-center gap-2 mt-2 px-2.5 py-1.5 rounded-md bg-[var(--polar-mist)] border border-[var(--glass-border)]">
-          <span className="text-[11px] text-[var(--ink-muted)]">Output</span>
+          <span className="text-[11px] text-[var(--ink-muted)]">Canvas</span>
           <span className="text-[11px] text-[var(--ink-dark)] font-mono font-medium">
             {`${outputResolution.width}x${outputResolution.height}`}
           </span>
@@ -153,4 +183,3 @@ export function ExportConfigPanel({ project, onUpdateExportConfig, onUpdateAudio
     </div>
   );
 }
-

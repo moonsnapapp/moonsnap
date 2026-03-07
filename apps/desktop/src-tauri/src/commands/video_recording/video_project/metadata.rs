@@ -15,6 +15,8 @@ pub struct VideoMetadata {
     pub height: u32,
     pub duration_ms: u64,
     pub fps: u32,
+    /// Whether the file contains an audio stream.
+    pub has_audio: bool,
 }
 
 impl VideoMetadata {
@@ -23,6 +25,7 @@ impl VideoMetadata {
         let ffprobe_path = find_ffprobe()
             .ok_or_else(|| "ffprobe not found. Ensure FFmpeg is installed.".to_string())?;
 
+        // Probe ALL streams (video + audio) to detect embedded audio
         let mut cmd = std::process::Command::new(&ffprobe_path);
         cmd.args([
             "-v",
@@ -31,8 +34,6 @@ impl VideoMetadata {
             "json",
             "-show_format",
             "-show_streams",
-            "-select_streams",
-            "v:0",
         ])
         .arg(video_path);
 
@@ -56,11 +57,20 @@ impl VideoMetadata {
         let json: serde_json::Value = serde_json::from_str(&json_str)
             .map_err(|e| format!("Failed to parse ffprobe output: {}", e))?;
 
-        // Extract video stream info
-        let stream = json["streams"]
+        let streams = json["streams"]
             .as_array()
-            .and_then(|s| s.first())
+            .ok_or_else(|| "No streams found".to_string())?;
+
+        // Find the first video stream
+        let stream = streams
+            .iter()
+            .find(|s| s["codec_type"].as_str() == Some("video"))
             .ok_or_else(|| "No video stream found".to_string())?;
+
+        // Check if any audio stream exists
+        let has_audio = streams
+            .iter()
+            .any(|s| s["codec_type"].as_str() == Some("audio"));
 
         let width = stream["width"]
             .as_u64()
@@ -95,6 +105,7 @@ impl VideoMetadata {
             height,
             duration_ms,
             fps,
+            has_audio,
         })
     }
 }
@@ -213,6 +224,13 @@ fn load_video_project_from_folder(folder_path: &std::path::Path) -> Result<Video
     let mut project: VideoProject = serde_json::from_str(&content)
         .map_err(|e| format!("Failed to parse project.json: {}", e))?;
 
+    if project.quick_capture && project.original_file_name.is_none() {
+        project.original_file_name = folder_path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .map(|name| format!("{}.mp4", name));
+    }
+
     // Resolve relative paths to absolute paths
     // The sources contain relative paths like "screen.mp4", "webcam.mp4", etc.
     // We need to convert them to absolute paths for the video editor to use
@@ -268,6 +286,7 @@ fn load_video_project_legacy(video_path: &std::path::Path) -> Result<VideoProjec
         metadata.duration_ms,
         metadata.fps,
     );
+    project.quick_capture = true;
 
     // Check for associated files
     let base_path = video_path.with_extension("");
@@ -298,6 +317,10 @@ fn load_video_project_legacy(video_path: &std::path::Path) -> Result<VideoProjec
     if system_audio_path.exists() {
         project.sources.system_audio = Some(system_audio_path.to_string_lossy().to_string());
     }
+    // Note: Quick capture videos have audio muxed INTO the MP4.
+    // We leave systemAudio = None so the <video> element plays its own
+    // embedded audio. Setting it to the MP4 path would cause a redundant
+    // <audio> element to load the same file, tripling asset protocol load.
 
     // Check for microphone audio (e.g., recording_123456_mic.wav)
     let mic_audio_path = PathBuf::from(format!("{}_mic.wav", base_str));

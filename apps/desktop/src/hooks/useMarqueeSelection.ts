@@ -57,9 +57,9 @@ export const useMarqueeSelection = ({
       height: Math.abs(marqueeEnd.y - marqueeStart.y),
     };
 
-    // Find shapes that intersect with marquee (uses line intersection for lines/arrows)
+    // Find shapes that intersect with marquee (exclude background image)
     const selectedShapeIds = shapes
-      .filter(shape => shapeIntersectsRect(shape, marqueeBounds))
+      .filter(shape => !shape.isBackground && shapeIntersectsRect(shape, marqueeBounds))
       .map(shape => shape.id);
 
     if (selectedShapeIds.length > 0) {

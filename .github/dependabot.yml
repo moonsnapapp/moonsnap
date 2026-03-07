@@ -45,7 +45,7 @@ updates:
 
   # Rust/Cargo dependencies
   - package-ecosystem: "cargo"
-    directory: "/src-tauri"
+    directory: "/apps/desktop/src-tauri"
     schedule:
       interval: "weekly"
       day: "monday"

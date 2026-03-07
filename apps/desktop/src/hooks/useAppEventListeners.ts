@@ -10,8 +10,8 @@
 import { useEffect } from 'react';
 import { listen } from '@tauri-apps/api/event';
 import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
-import { toast } from 'sonner';
 import { useSettingsStore } from '../stores/settingsStore';
+import type { CaptureType } from '../types';
 import { libraryLogger } from '../utils/logger';
 
 interface ThumbnailReadyEvent {
@@ -19,9 +19,15 @@ interface ThumbnailReadyEvent {
   thumbnailPath: string;
 }
 
+interface RecordingCompleteData {
+  outputPath: string;
+  durationSecs: number;
+  fileSizeBytes: number;
+}
+
 interface AppEventCallbacks {
   /** Called when a recording completes - should refresh the library */
-  onRecordingComplete: () => void;
+  onRecordingComplete: (data: RecordingCompleteData) => void;
   /** Called when a thumbnail is generated for a capture */
   onThumbnailReady: (captureId: string, thumbnailPath: string) => void;
   /** Called when a fast capture completes (file path) */
@@ -52,12 +58,16 @@ export function useAppEventListeners(callbacks: AppEventCallbacks) {
 
     // Recording state changes - refresh library when complete
     unlisteners.push(
-      listen<{ status: string }>('recording-state-changed', (event) => {
+      listen<{ status: string; outputPath?: string; durationSecs?: number; fileSizeBytes?: number }>('recording-state-changed', (event) => {
         if (event.payload.status === 'completed') {
           libraryLogger.info('Recording completed, refreshing library...');
           // Small delay to ensure file is fully written
           const t1 = setTimeout(() => {
-            callbacks.onRecordingComplete();
+            callbacks.onRecordingComplete({
+              outputPath: event.payload.outputPath ?? '',
+              durationSecs: event.payload.durationSecs ?? 0,
+              fileSizeBytes: event.payload.fileSizeBytes ?? 0,
+            });
           }, 500);
           timeoutIds.push(t1);
         }
@@ -80,6 +90,15 @@ export function useAppEventListeners(callbacks: AppEventCallbacks) {
       })
     );
 
+    // Reload capture settings when changed from another window (e.g. settings)
+    unlisteners.push(
+      listen('capture-settings-changed', () => {
+        import('../stores/captureSettingsStore').then(({ useCaptureSettingsStore }) => {
+          useCaptureSettingsStore.getState().loadSettings();
+        });
+      })
+    );
+
     // Update capture toolbar bounds from D2D overlay
     // If toolbar exists, confirm selection and update; if not, let Rust create it
     unlisteners.push(
@@ -88,6 +107,8 @@ export function useAppEventListeners(callbacks: AppEventCallbacks) {
         y: number;
         width: number;
         height: number;
+        captureType?: CaptureType;
+        autoStartRecording?: boolean;
         sourceType?: 'area' | 'window' | 'display';
         windowId?: number | null;
         sourceTitle?: string | null;
@@ -96,43 +117,63 @@ export function useAppEventListeners(callbacks: AppEventCallbacks) {
       }>(
         'create-capture-toolbar',
         async (event) => {
-          const { x, y, width, height, sourceType, windowId, sourceTitle, monitorIndex, monitorName } = event.payload;
+          const { x, y, width, height, captureType, autoStartRecording, sourceType, windowId, sourceTitle, monitorIndex, monitorName } = event.payload;
+          const sourceMode = sourceType ?? 'area';
 
           // Check if toolbar already exists
           const existing = await WebviewWindow.getByLabel('capture-toolbar');
           if (existing) {
+            if (autoStartRecording) {
+              await existing.hide();
+            }
+
             // Toolbar exists - emit confirm-selection to mark selection confirmed and reposition
             // This is a NEW selection from overlay, not an adjustment update
             // Pass through all metadata for proper recording mode
             await existing.emit('confirm-selection', {
               x, y, width, height,
+              captureType,
+              autoStartRecording,
+              sourceMode,
               sourceType,
               windowId,
               sourceTitle,
               monitorIndex,
               monitorName
             });
-            // Bring to front
-            await existing.show();
-            await existing.setFocus();
+            if (!autoStartRecording) {
+              await existing.show();
+              await existing.setFocus();
+            }
             return;
           }
 
           // Toolbar doesn't exist - create it via Rust command
           // This ensures consistent window creation
           const { invoke } = await import('@tauri-apps/api/core');
-          await invoke('show_capture_toolbar', { x, y, width, height });
+          await invoke('show_capture_toolbar', {
+            x,
+            y,
+            width,
+            height,
+            captureType,
+            autoStartRecording,
+            sourceMode,
+            sourceType,
+            windowId,
+            sourceTitle,
+            monitorIndex,
+            monitorName,
+          });
         }
       )
     );
 
-    // Fast capture complete (file path)
+    // Fast capture complete (file path) - show mini preview
     unlisteners.push(
       listen<{ file_path: string; width: number; height: number }>(
         'capture-complete-fast',
         async (event) => {
-          // Show toast immediately - don't wait for save to complete
-          toast.success('Screenshot captured');
           try {
             await callbacks.onCaptureCompleteFast(event.payload);
           } catch {

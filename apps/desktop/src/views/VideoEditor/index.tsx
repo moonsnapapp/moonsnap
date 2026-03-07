@@ -19,6 +19,7 @@ import {
   useRef,
 } from 'react';
 import { toast } from 'sonner';
+import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { save } from '@tauri-apps/plugin-dialog';
 import { useCaptureStore } from '../../stores/captureStore';
@@ -75,6 +76,13 @@ import { ExportProgressOverlay } from './components/ExportProgressOverlay';
 import type { ExportProgress, CropConfig } from '../../types';
 import { TIMING } from '../../constants';
 import { videoEditorLogger } from '../../utils/logger';
+import {
+  getVideoExportDialogTitle,
+  getVideoEditedDefaultFilename,
+  getVideoOriginalFilename,
+  getVideoOutputMode,
+  getVideoPrimaryActionLabel,
+} from '../../utils/videoExportMode';
 
 // Lazy load CropDialog - only needed when crop tool is opened (861 lines)
 const CropDialog = lazy(() => import('../../components/VideoEditor/CropDialog').then(m => ({ default: m.CropDialog })));
@@ -109,6 +117,33 @@ export const VideoEditorView = forwardRef<VideoEditorViewRef, VideoEditorViewPro
   { onBack, hideTopBar, isActive = true },
   ref
 ) {
+  // Long-task detector: logs when the main thread is blocked for >50ms
+  useEffect(() => {
+    if (typeof PerformanceObserver === 'undefined') return;
+    try {
+      const obs = new PerformanceObserver((list) => {
+        for (const entry of list.getEntries()) {
+          console.warn(`[LONG-TASK] Main thread blocked for ${entry.duration.toFixed(0)}ms (name: ${entry.name})`);
+        }
+      });
+      obs.observe({ type: 'longtask', buffered: true });
+      return () => obs.disconnect();
+    } catch {
+      // longtask not supported in all browsers
+    }
+  }, []);
+
+  // Heartbeat: check if main thread is responsive every 2s for the first 15s
+  useEffect(() => {
+    let count = 0;
+    const id = setInterval(() => {
+      count++;
+      console.warn(`[EDITOR-DIAG] Heartbeat #${count} - main thread alive at ${Date.now()}`);
+      if (count >= 7) clearInterval(id);
+    }, 2000);
+    return () => clearInterval(id);
+  }, []);
+
   const { setView } = useCaptureStore();
   const project = useVideoEditorStore(selectProject);
   const isPlaying = useVideoEditorStore(selectIsPlaying);
@@ -155,6 +190,12 @@ export const VideoEditorView = forwardRef<VideoEditorViewRef, VideoEditorViewPro
   // Crop dialog state
   const [isCropDialogOpen, setIsCropDialogOpen] = useState(false);
   const lastUserActivityAtRef = useRef(Date.now());
+  const handleExportRef = useRef<() => void>(() => {});
+
+  // Diagnostic: log when VideoEditorView renders
+  useEffect(() => {
+    console.warn('[EDITOR-DIAG] VideoEditorView mounted, project:', project?.id ?? 'null', 'isActive:', isActive);
+  }, [project?.id, isActive]);
 
 
   // Keyboard shortcut handlers
@@ -258,28 +299,6 @@ export const VideoEditorView = forwardRef<VideoEditorViewRef, VideoEditorViewPro
   const handleClearExportRange = useCallback(() => {
     clearExportRange();
   }, [clearExportRange]);
-
-  // Use keyboard shortcuts
-  useVideoEditorShortcuts({
-    enabled: !!project && !isExporting,
-    onTogglePlayback: togglePlayback,
-    onSeekToStart: () => requestSeek(0),
-    onSeekToEnd: () => project && requestSeek(project.timeline.durationMs),
-    onSkipBack: handleSkipBack,
-    onSkipForward: handleSkipForward,
-    onToggleCutMode: handleToggleCutMode,
-    onDeleteSelected: handleDeleteSelected,
-    onTimelineZoomIn: handleTimelineZoomIn,
-    onTimelineZoomOut: handleTimelineZoomOut,
-    onDeselect: handleDeselect,
-    onSave: handleSave,
-    onExport: () => {}, // Will be wired to handleExport after it's defined
-    onUndoTrim: handleUndoTrim,
-    onRedoTrim: handleRedoTrim,
-    onFitTimeline: fitTimelineToWindow,
-    onSetInPoint: handleSetInPoint,
-    onSetOutPoint: handleSetOutPoint,
-  });
 
   // Listen for export progress events from Rust backend
   useEffect(() => {
@@ -431,14 +450,64 @@ export const VideoEditorView = forwardRef<VideoEditorViewRef, VideoEditorViewPro
   const handleExport = useCallback(async () => {
     if (!project) return;
 
+    const outputMode = getVideoOutputMode(project);
+    const exportActionLabel = getVideoPrimaryActionLabel(project);
+    const exportDialogTitle = getVideoExportDialogTitle(project);
+    const sourceFilename = getVideoOriginalFilename(project);
+    const editedDefaultFilename = getVideoEditedDefaultFilename(project);
+
+    if (outputMode === 'original') {
+      try {
+        const outputPath = await save({
+          title: exportDialogTitle,
+          defaultPath: sourceFilename,
+          filters: [{ name: 'MP4 Video', extensions: ['mp4'] }],
+        });
+
+        if (!outputPath) {
+          return;
+        }
+
+        await invoke('save_copy_of_file', {
+          sourcePath: project.sources.screenVideo,
+          destinationPath: outputPath,
+        });
+
+        toast.success('Original video saved', {
+          description: 'Copied without rendering',
+        });
+      } catch (error) {
+        videoEditorLogger.error('Save original failed:', error);
+        const message = error instanceof Error ? error.message : 'Failed to save original video';
+        toast.error(message);
+      }
+      return;
+    }
+
+    if (project.export.fps !== project.sources.fps) {
+      toast.info(`Export uses source frame rate (${project.sources.fps} fps)`, {
+        description: 'Frame-rate conversion is not supported yet.',
+      });
+    }
+
+    // Pro feature gate: export requires a license
+    const { isPro } = await import('../../stores/licenseStore').then(m => {
+      const store = m.useLicenseStore.getState();
+      return { isPro: store.isPro() };
+    });
+    if (!isPro) {
+      window.open('https://buy.polar.sh/polar_cl_WDZB2ld3wEqqWTOustdiNZHASOHMOz4lxlsZ03VjJfx', '_blank');
+      return;
+    }
+
     // Stop playback before exporting
     useVideoEditorStore.getState().setIsPlaying(false);
 
     try {
       // Show save dialog to choose output path
       const outputPath = await save({
-        title: 'Export Video',
-        defaultPath: `${project.name}.mp4`,
+        title: exportDialogTitle,
+        defaultPath: editedDefaultFilename,
         filters: [
           { name: 'MP4 Video', extensions: ['mp4'] },
           { name: 'WebM Video', extensions: ['webm'] },
@@ -456,7 +525,7 @@ export const VideoEditorView = forwardRef<VideoEditorViewRef, VideoEditorViewPro
 
       // Show success toast with file info
       const sizeMB = (result.fileSizeBytes / (1024 * 1024)).toFixed(1);
-      toast.success(`Exported successfully`, {
+      toast.success(exportActionLabel, {
         description: `${sizeMB} MB - ${result.format.toUpperCase()}`,
       });
     } catch (error) {
@@ -465,6 +534,34 @@ export const VideoEditorView = forwardRef<VideoEditorViewRef, VideoEditorViewPro
       toast.error(message);
     }
   }, [project, exportVideo]);
+
+  useEffect(() => {
+    handleExportRef.current = () => {
+      void handleExport();
+    };
+  }, [handleExport]);
+
+  // Use keyboard shortcuts
+  useVideoEditorShortcuts({
+    enabled: !!project && !isExporting,
+    onTogglePlayback: togglePlayback,
+    onSeekToStart: () => requestSeek(0),
+    onSeekToEnd: () => project && requestSeek(project.timeline.durationMs),
+    onSkipBack: handleSkipBack,
+    onSkipForward: handleSkipForward,
+    onToggleCutMode: handleToggleCutMode,
+    onDeleteSelected: handleDeleteSelected,
+    onTimelineZoomIn: handleTimelineZoomIn,
+    onTimelineZoomOut: handleTimelineZoomOut,
+    onDeselect: handleDeselect,
+    onSave: handleSave,
+    onExport: () => handleExportRef.current(),
+    onUndoTrim: handleUndoTrim,
+    onRedoTrim: handleRedoTrim,
+    onFitTimeline: fitTimelineToWindow,
+    onSetInPoint: handleSetInPoint,
+    onSetOutPoint: handleSetOutPoint,
+  });
 
   // Handle crop apply
   const handleCropApply = useCallback((crop: CropConfig) => {

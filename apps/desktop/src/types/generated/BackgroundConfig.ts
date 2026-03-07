@@ -54,7 +54,7 @@ padding: number,
  */
 inset: number, 
 /**
- * Corner rounding radius (0-100 pixels).
+ * Corner rounding radius (0-200 pixels).
  */
 rounding: number, 
 /**

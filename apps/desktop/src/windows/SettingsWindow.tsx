@@ -9,14 +9,18 @@ import {
   Camera,
   MessageSquare,
   FileText,
+  Key,
 } from 'lucide-react';
 import { Titlebar } from '@/components/Titlebar/Titlebar';
 import { ShortcutsTab } from '@/components/Settings/ShortcutsTab';
 import { GeneralTab } from '@/components/Settings/GeneralTab';
+import { RecordingsTab } from '@/components/Settings/RecordingsTab';
 import { ScreenshotsTab } from '@/components/Settings/ScreenshotsTab';
 import { FeedbackTab } from '@/components/Settings/FeedbackTab';
 import { ChangelogTab } from '@/components/Settings/ChangelogTab';
+import { LicenseTab } from '@/components/Settings/LicenseTab';
 import { useSettingsStore } from '@/stores/settingsStore';
+import { useCaptureSettingsStore } from '@/stores/captureSettingsStore';
 import { useTheme } from '@/hooks/useTheme';
 import { useUpdater } from '@/hooks/useUpdater';
 
@@ -26,7 +30,8 @@ type SettingsSection =
   | 'recordings'
   | 'screenshots'
   | 'feedback'
-  | 'changelog';
+  | 'changelog'
+  | 'license';
 
 interface SidebarItem {
   id: SettingsSection;
@@ -41,14 +46,8 @@ const sidebarItems: SidebarItem[] = [
   { id: 'screenshots', label: 'Screenshots', icon: <Camera className="w-4 h-4" /> },
   { id: 'feedback', label: 'Feedback', icon: <MessageSquare className="w-4 h-4" /> },
   { id: 'changelog', label: 'Changelog', icon: <FileText className="w-4 h-4" /> },
+  { id: 'license', label: 'License', icon: <Key className="w-4 h-4" /> },
 ];
-
-// Placeholder components for sections not yet implemented
-const PlaceholderSection: React.FC<{ title: string }> = ({ title }) => (
-  <div className="flex items-center justify-center h-full text-(--ink-muted)">
-    <p>{title} settings coming soon...</p>
-  </div>
-);
 
 /**
  * SettingsWindow - Dedicated window for application settings.
@@ -58,6 +57,7 @@ const SettingsWindow: React.FC = () => {
   const [appVersion, setAppVersion] = useState<string>('');
   const [isCheckingUpdates, setIsCheckingUpdates] = useState(false);
   const { loadSettings, saveSettings, isInitialized } = useSettingsStore();
+  const { loadSettings: loadCaptureSettings, isInitialized: captureSettingsInitialized } = useCaptureSettingsStore();
   const { available, version, checkForUpdates, downloadAndInstall, downloading } = useUpdater(false);
 
   // Apply theme
@@ -84,6 +84,13 @@ const SettingsWindow: React.FC = () => {
     }
   }, [isInitialized, loadSettings]);
 
+  // Load capture settings on mount (for Recordings/Screenshots tabs)
+  useEffect(() => {
+    if (!captureSettingsInitialized) {
+      loadCaptureSettings();
+    }
+  }, [captureSettingsInitialized, loadCaptureSettings]);
+
   // Save settings when window is about to close
   useEffect(() => {
     const currentWindow = getCurrentWebviewWindow();
@@ -108,6 +115,17 @@ const SettingsWindow: React.FC = () => {
     };
   }, []);
 
+  // Keep capture settings tabs in sync with changes from other windows.
+  useEffect(() => {
+    const unlisten = listen('capture-settings-changed', () => {
+      void loadCaptureSettings();
+    });
+
+    return () => {
+      unlisten.then((fn) => fn()).catch(() => {});
+    };
+  }, [loadCaptureSettings]);
+
   // Handle Escape key
   useEffect(() => {
     const handleKeyDown = async (e: KeyboardEvent) => {
@@ -128,13 +146,15 @@ const SettingsWindow: React.FC = () => {
       case 'shortcuts':
         return <ShortcutsTab />;
       case 'recordings':
-        return <PlaceholderSection title="Recordings" />;
+        return <RecordingsTab />;
       case 'screenshots':
         return <ScreenshotsTab />;
       case 'feedback':
         return <FeedbackTab />;
       case 'changelog':
         return <ChangelogTab />;
+      case 'license':
+        return <LicenseTab />;
       default:
         return <GeneralTab />;
     }

@@ -6,11 +6,12 @@
  * - confirm-selection: User confirmed selection (from preselection flow)
  */
 
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { invoke } from '@tauri-apps/api/core';
 import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
 import { availableMonitors, type Monitor } from '@tauri-apps/api/window';
+import type { CaptureType } from '@/types';
 import { useCaptureSettingsStore } from '@/stores/captureSettingsStore';
 import { toolbarLogger } from '@/utils/logger';
 
@@ -19,41 +20,30 @@ export interface SelectionBounds {
   y: number;
   width: number;
   height: number;
-  /** Source type: 'area', 'window', or 'display' */
+  captureType?: CaptureType;
+  autoStartRecording?: boolean;
+  sourceMode?: 'display' | 'window' | 'area';
   sourceType?: 'area' | 'window' | 'display';
-  /** Window ID (HWND) if sourceType is 'window' */
   windowId?: number | null;
-  /** Window/app title if sourceType is 'window' */
   sourceTitle?: string | null;
-  /** Monitor name if sourceType is 'display' */
   monitorName?: string | null;
-  /** Monitor index if sourceType is 'display' */
   monitorIndex?: number | null;
 }
 
-/** Default bounds (no selection) */
 const DEFAULT_BOUNDS: SelectionBounds = { x: 0, y: 0, width: 0, height: 0 };
 
 interface UseSelectionEventsReturn {
-  /** Current selection bounds */
   selectionBounds: SelectionBounds;
-  /** Ref for synchronous access to bounds */
   selectionBoundsRef: React.MutableRefObject<SelectionBounds>;
-  /** Whether selection has been confirmed (shows record button) */
   selectionConfirmed: boolean;
-  /** Set selection confirmed state */
   setSelectionConfirmed: (confirmed: boolean) => void;
+  autoStartRecording: boolean;
+  setAutoStartRecording: (enabled: boolean) => void;
 }
-
 
 const MARGIN = 8;
 
-/**
- * Calculate and apply toolbar position based on selection bounds.
- * Positions toolbar below selection (preferred) or above if doesn't fit.
- */
-async function repositionToolbar(selection: SelectionBounds): Promise<void> {
-  // Get actual window size
+export async function repositionToolbar(selection: SelectionBounds): Promise<void> {
   const currentWindow = getCurrentWebviewWindow();
   const outerSize = await currentWindow.outerSize();
   const toolbarWidth = outerSize.width;
@@ -63,7 +53,6 @@ async function repositionToolbar(selection: SelectionBounds): Promise<void> {
   const selectionCenterX = selection.x + selection.width / 2;
   const selectionCenterY = selection.y + selection.height / 2;
 
-  // Find monitor containing selection center
   const currentMonitor = monitors.find((m: Monitor) => {
     const pos = m.position;
     const size = m.size;
@@ -113,7 +102,6 @@ async function repositionToolbar(selection: SelectionBounds): Promise<void> {
     finalPos = clampToMonitor(centeredX, belowY, monitors[0]);
   }
 
-  // Update position via Rust (size is handled by useToolbarPositioning)
   await invoke('set_capture_toolbar_position', {
     x: finalPos.x,
     y: finalPos.y,
@@ -121,14 +109,11 @@ async function repositionToolbar(selection: SelectionBounds): Promise<void> {
 }
 
 export function useSelectionEvents(): UseSelectionEventsReturn {
-  // Always start with no selection (startup state)
   const [selectionBounds, setSelectionBounds] = useState<SelectionBounds>(DEFAULT_BOUNDS);
   const selectionBoundsRef = useRef<SelectionBounds>(DEFAULT_BOUNDS);
-
-  // Selection confirmed state - starts false (startup mode)
   const [selectionConfirmed, setSelectionConfirmed] = useState(false);
+  const [autoStartRecording, setAutoStartRecording] = useState(false);
 
-  // Listen for selection updates (bounds changes during drag/resize)
   useEffect(() => {
     let unlistenSelection: UnlistenFn | null = null;
 
@@ -140,41 +125,54 @@ export function useSelectionEvents(): UseSelectionEventsReturn {
       });
     };
 
-    setup();
+    void setup();
 
     return () => {
       unlistenSelection?.();
     };
   }, []);
 
-  // Listen for selection confirmation (from preselection flow or new selection)
   useEffect(() => {
     let unlistenConfirm: UnlistenFn | null = null;
     let unlistenReset: UnlistenFn | null = null;
 
     const setup = async () => {
-      // Selection confirmed (from overlay) - repositions toolbar
       unlistenConfirm = await listen<SelectionBounds>('confirm-selection', async (event) => {
         const bounds = event.payload;
         setSelectionBounds(bounds);
         selectionBoundsRef.current = bounds;
         setSelectionConfirmed(true);
 
-        // Pre-spawn FFmpeg for webcam so recording starts instantly
-        // This runs in parallel with repositioning - don't await
-        // Use actual capture format (gif or mp4) to generate correct output path
-        // Get current state inside callback to avoid stale closure
-        const currentMode = useCaptureSettingsStore.getState().activeMode;
-        const format = currentMode === 'gif' ? 'gif' : 'mp4';
-        invoke('prepare_recording', { format }).catch((e) => {
-          toolbarLogger.warn('Failed to prepare recording:', e);
-        });
+        const captureSettingsStore = useCaptureSettingsStore.getState();
 
-        // Wait for React to re-render and resize hook to run, then reposition
-        // This ensures the window size is updated AFTER DimensionSelect renders
-        await new Promise(resolve => setTimeout(resolve, 200));
+        if (bounds.captureType && captureSettingsStore.activeMode !== bounds.captureType) {
+          captureSettingsStore.setActiveMode(bounds.captureType);
+        }
 
-        // Reposition toolbar for the new selection
+        if (bounds.sourceMode && captureSettingsStore.sourceMode !== bounds.sourceMode) {
+          captureSettingsStore.setSourceMode(bounds.sourceMode);
+        }
+
+        const effectiveMode = bounds.captureType ?? captureSettingsStore.activeMode;
+        if (effectiveMode !== 'screenshot') {
+          const format = effectiveMode === 'gif' ? 'gif' : 'mp4';
+          const preparePromise = invoke('prepare_recording', { format }).catch((e) => {
+            toolbarLogger.warn('Failed to prepare recording:', e);
+          });
+
+          if (bounds.autoStartRecording) {
+            await preparePromise;
+          }
+        }
+
+        // Keep the auto-start latch false until preparation completes.
+        // CaptureToolbarWindow watches this flag and immediately calls handleCapture()
+        // for tray quick-record sessions; flipping it earlier regresses back to the
+        // manual selection toolbar because recording starts before setup is ready.
+        setAutoStartRecording(Boolean(bounds.autoStartRecording));
+
+        await new Promise((resolve) => window.setTimeout(resolve, 200));
+
         try {
           await repositionToolbar(bounds);
         } catch (e) {
@@ -182,15 +180,15 @@ export function useSelectionEvents(): UseSelectionEventsReturn {
         }
       });
 
-      // Reset to startup state (overlay cancelled)
       unlistenReset = await listen('reset-to-startup', () => {
         setSelectionConfirmed(false);
-        setSelectionBounds({ x: 0, y: 0, width: 0, height: 0 });
-        selectionBoundsRef.current = { x: 0, y: 0, width: 0, height: 0 };
+        setAutoStartRecording(false);
+        setSelectionBounds(DEFAULT_BOUNDS);
+        selectionBoundsRef.current = DEFAULT_BOUNDS;
       });
     };
 
-    setup();
+    void setup();
 
     return () => {
       unlistenConfirm?.();
@@ -203,5 +201,7 @@ export function useSelectionEvents(): UseSelectionEventsReturn {
     selectionBoundsRef,
     selectionConfirmed,
     setSelectionConfirmed,
+    autoStartRecording,
+    setAutoStartRecording,
   };
 }

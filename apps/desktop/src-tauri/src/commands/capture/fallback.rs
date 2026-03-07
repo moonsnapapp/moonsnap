@@ -136,33 +136,20 @@ pub fn get_windows() -> Result<Vec<WindowInfo>, CaptureError> {
 /// Reuses capture_screen_region_raw which handles DXGI capture properly.
 #[cfg(target_os = "windows")]
 pub fn capture_window_xcap(hwnd_value: isize) -> Result<(Vec<u8>, u32, u32), CaptureError> {
-    use windows::Win32::Foundation::{HWND, RECT};
-    use windows::Win32::Graphics::Dwm::{DwmGetWindowAttribute, DWMWA_EXTENDED_FRAME_BOUNDS};
+    use windows::Win32::Foundation::HWND;
 
     let hwnd = HWND(hwnd_value as *mut std::ffi::c_void);
 
-    // Get window bounds using DWM (excludes shadow)
-    let mut dwm_rect = RECT::default();
-    let result = unsafe {
-        DwmGetWindowAttribute(
-            hwnd,
-            DWMWA_EXTENDED_FRAME_BOUNDS,
-            &mut dwm_rect as *mut _ as *mut _,
-            std::mem::size_of::<RECT>() as u32,
-        )
-    };
+    let bounds = scap_targets::get_window_capture_bounds(hwnd).ok_or_else(|| {
+        CaptureError::CaptureFailed("Failed to get window capture bounds".to_string())
+    })?;
+    let position = bounds.position();
+    let size = bounds.size();
 
-    if result.is_err() {
-        return Err(CaptureError::CaptureFailed(format!(
-            "Failed to get window bounds: {:?}",
-            result.err()
-        )));
-    }
-
-    let x = dwm_rect.left;
-    let y = dwm_rect.top;
-    let width = (dwm_rect.right - dwm_rect.left) as u32;
-    let height = (dwm_rect.bottom - dwm_rect.top) as u32;
+    let x = position.x() as i32;
+    let y = position.y() as i32;
+    let width = size.width() as u32;
+    let height = size.height() as u32;
 
     if width == 0 || height == 0 {
         return Err(CaptureError::CaptureFailed(

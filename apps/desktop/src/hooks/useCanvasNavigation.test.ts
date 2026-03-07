@@ -61,6 +61,7 @@ function createMockProps(overrides: Partial<Parameters<typeof useCanvasNavigatio
     setCanvasBounds: vi.fn(),
     setOriginalImageSize: vi.fn(),
     selectedTool: 'select' as Tool,
+    cropRegion: null,
     compositorBgRef: { current: null } as React.RefObject<HTMLDivElement | null>,
     ...overrides,
   };

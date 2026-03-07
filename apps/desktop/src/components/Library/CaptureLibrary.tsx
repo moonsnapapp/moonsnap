@@ -98,8 +98,17 @@ export const CaptureLibrary: React.FC = () => {
 
   const { settings } = useSettingsStore();
 
+  const totalCaptureCount = useCaptureStore((state) => state.captures.length);
   const captures = useFilteredCaptures();
   const allTags = useAllTags();
+  const hasActiveFilters = filterFavorites || filterTags.length > 0 || filterMediaTypes.length > 0 || searchQuery.length > 0;
+
+  const clearAllFilters = useCallback(() => {
+    setSearchQuery('');
+    setFilterFavorites(false);
+    setFilterTags([]);
+    setFilterMediaTypes([]);
+  }, [setSearchQuery, setFilterFavorites, setFilterTags, setFilterMediaTypes]);
   const containerRef = useRef<HTMLDivElement>(null);
   const [containerWidth, setContainerWidth] = useState(0);
 
@@ -393,6 +402,19 @@ export const CaptureLibrary: React.FC = () => {
           <div className="flex-1 flex items-center justify-center">
             <Loader2 className="w-12 h-12 text-[var(--coral-400)] animate-spin" />
           </div>
+        ) : captures.length === 0 && hasActiveFilters && totalCaptureCount > 0 ? (
+          <div className="flex-1 flex flex-col items-center justify-center gap-4 p-8">
+            <div className="text-center space-y-2">
+              <p className="text-sm text-[var(--ink-muted)]">No captures match the current filters</p>
+              <p className="text-xs text-[var(--ink-faint)]">{totalCaptureCount} capture{totalCaptureCount !== 1 ? 's' : ''} hidden by filters</p>
+            </div>
+            <button
+              onClick={clearAllFilters}
+              className="px-4 py-2 text-xs font-medium rounded-lg bg-[var(--coral-500)] text-white hover:bg-[var(--coral-600)] transition-colors"
+            >
+              Clear All Filters
+            </button>
+          </div>
         ) : captures.length === 0 ? (
           <div className="flex-1 overflow-auto p-8 pb-32">
             <EmptyState onNewCapture={handleNewImage} />
@@ -470,6 +492,10 @@ export const CaptureLibrary: React.FC = () => {
           onDeleteSelected={handleRequestDeleteSelected}
           onClearSelection={clearSelection}
           onOpenLibraryFolder={handleOpenLibraryFolder}
+          activeFilterCount={
+            (filterFavorites ? 1 : 0) + filterTags.length + filterMediaTypes.length + (searchQuery ? 1 : 0)
+          }
+          onClearAllFilters={clearAllFilters}
         />
       </div>
     </TooltipProvider>

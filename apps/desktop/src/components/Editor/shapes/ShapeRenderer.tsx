@@ -30,6 +30,7 @@ interface ShapeRendererProps {
   onTransformEnd: (shapeId: string, e: Konva.KonvaEventObject<Event>) => void;
   onArrowEndpointDragEnd: (shapeId: string, newPoints: number[]) => void;
   onTextStartEdit: (shapeId: string, currentText: string) => void;
+  onTextMouseDown?: (shapeId: string, e: Konva.KonvaEventObject<MouseEvent>) => void;
   /** Take snapshot before starting an edit action */
   takeSnapshot: () => void;
   /** Commit snapshot after completing an edit action */
@@ -58,6 +59,7 @@ const MemoizedShape = React.memo<{
   onTransformEnd: (shapeId: string, e: Konva.KonvaEventObject<Event>) => void;
   onArrowEndpointDragEnd: (shapeId: string, newPoints: number[]) => void;
   onTextStartEdit: (shapeId: string, currentText: string) => void;
+  onTextMouseDown?: (shapeId: string, e: Konva.KonvaEventObject<MouseEvent>) => void;
   takeSnapshot: () => void;
   commitSnapshot: () => void;
 }>(({
@@ -79,6 +81,7 @@ const MemoizedShape = React.memo<{
   onTransformEnd,
   onArrowEndpointDragEnd,
   onTextStartEdit,
+  onTextMouseDown,
   takeSnapshot,
   commitSnapshot,
 }) => {
@@ -86,16 +89,16 @@ const MemoizedShape = React.memo<{
 
   // Stable callbacks that reference shape.id
   const handleSelect = useCallback((e?: Konva.KonvaEventObject<MouseEvent | TouchEvent>) => {
-    if (isPanning) return;
+    if (isPanning || shape.isBackground) return;
     const evt = e?.evt as MouseEvent | undefined;
     if (evt?.button === 1) return;
     onShapeSelect(shape.id);
-  }, [isPanning, onShapeSelect, shape.id]);
+  }, [isPanning, onShapeSelect, shape.id, shape.isBackground]);
 
   const handleClick = useCallback((e: Konva.KonvaEventObject<MouseEvent>) => {
-    if (isPanning) return;
+    if (isPanning || shape.isBackground) return;
     onShapeClick(shape.id, e);
-  }, [isPanning, onShapeClick, shape.id]);
+  }, [isPanning, onShapeClick, shape.id, shape.isBackground]);
 
   const handleDragStart = useCallback((e: Konva.KonvaEventObject<DragEvent>) => {
     if (isPanning) return;
@@ -121,6 +124,11 @@ const MemoizedShape = React.memo<{
   const handleTextStartEdit = useCallback(() => {
     onTextStartEdit(shape.id, shape.text || '');
   }, [onTextStartEdit, shape.id, shape.text]);
+
+  const handleTextMouseDown = useCallback((e: Konva.KonvaEventObject<MouseEvent>) => {
+    if (isPanning || shape.isBackground || shape.type !== 'text') return;
+    onTextMouseDown?.(shape.id, e);
+  }, [isPanning, shape.isBackground, shape.type, onTextMouseDown, shape.id]);
 
   const commonProps = useMemo(() => ({
     shape,
@@ -185,6 +193,7 @@ const MemoizedShape = React.memo<{
           isActivelyDrawing={isActivelyDrawing}
           isEditing={isEditingTextShape}
           zoom={zoom}
+          onMouseDown={handleTextMouseDown}
           onStartEdit={handleTextStartEdit}
         />
       );
@@ -223,6 +232,7 @@ export const ShapeRenderer: React.FC<ShapeRendererProps> = React.memo(({
   onTransformEnd,
   onArrowEndpointDragEnd,
   onTextStartEdit,
+  onTextMouseDown,
   takeSnapshot,
   commitSnapshot,
 }) => {
@@ -238,8 +248,8 @@ export const ShapeRenderer: React.FC<ShapeRendererProps> = React.memo(({
         <MemoizedShape
           key={shape.id}
           shape={shape}
-          isSelected={selectedSet.has(shape.id)}
-          isDraggable={isDraggable}
+          isSelected={!shape.isBackground && selectedSet.has(shape.id)}
+          isDraggable={!shape.isBackground && isDraggable}
           isPanning={isPanning}
           isDrawing={isDrawing}
           isLastShape={shape.id === lastShapeId}
@@ -255,6 +265,7 @@ export const ShapeRenderer: React.FC<ShapeRendererProps> = React.memo(({
           onTransformEnd={onTransformEnd}
           onArrowEndpointDragEnd={onArrowEndpointDragEnd}
           onTextStartEdit={onTextStartEdit}
+          onTextMouseDown={onTextMouseDown}
           takeSnapshot={takeSnapshot}
           commitSnapshot={commitSnapshot}
         />

@@ -7,11 +7,12 @@
 use windows::Win32::Foundation::{HWND, RECT};
 use windows::Win32::Graphics::Dwm::{DwmGetWindowAttribute, DWMWA_EXTENDED_FRAME_BOUNDS};
 use windows::Win32::UI::WindowsAndMessaging::{
-    GetDesktopWindow, GetTopWindow, GetWindow, GetWindowLongW, GetWindowRect, IsWindowVisible,
-    GWL_EXSTYLE, GWL_STYLE, GW_HWNDNEXT, WS_CHILD, WS_EX_APPWINDOW, WS_EX_TOOLWINDOW,
+    GetClassNameW, GetDesktopWindow, GetTopWindow, GetWindow, GetWindowLongW, GetWindowRect,
+    IsWindowVisible, GWL_EXSTYLE, GWL_STYLE, GW_HWNDNEXT, WS_CHILD, WS_EX_APPWINDOW,
+    WS_EX_TOOLWINDOW,
 };
 
-use crate::commands::capture_overlay::types::{DetectedWindow, Rect, WS_EX_NOREDIRECTIONBITMAP};
+use crate::commands::capture_overlay::types::{DetectedWindow, Rect};
 
 /// Get the topmost valid window at a screen point.
 ///
@@ -66,7 +67,6 @@ pub fn get_window_at_point(screen_x: i32, screen_y: i32, exclude: HWND) -> Optio
 /// - Invisible windows
 /// - Child windows
 /// - Tool windows (unless they have WS_EX_APPWINDOW)
-/// - DirectComposition windows (WS_EX_NOREDIRECTIONBITMAP)
 /// - Very small windows (< 50x50)
 fn validate_window(hwnd: HWND, exclude: HWND) -> Option<DetectedWindow> {
     unsafe {
@@ -94,9 +94,22 @@ fn validate_window(hwnd: HWND, exclude: HWND) -> Option<DetectedWindow> {
             return None;
         }
 
-        // Skip DirectComposition windows (like our overlay)
-        if (ex_style & WS_EX_NOREDIRECTIONBITMAP) != 0 {
-            return None;
+        // Skip desktop shell windows (Progman, WorkerW) - these cover the
+        // work area and would prevent the "no window" fallback to full monitor bounds
+        let mut class_buf = [0u16; 64];
+        let class_len = GetClassNameW(hwnd, &mut class_buf);
+        if class_len > 0 {
+            let class_name = String::from_utf16_lossy(&class_buf[..class_len as usize]);
+            match class_name.as_str() {
+                "Progman"
+                | "WorkerW"
+                | "SHELLDLL_DefView"
+                | "Shell_TrayWnd"
+                | "Shell_SecondaryTrayWnd"
+                | "Windows.UI.Core.CoreWindow"
+                | "ApplicationFrameWindow" => return None,
+                _ => {},
+            }
         }
 
         // Get actual visible bounds (without shadow) using DWM

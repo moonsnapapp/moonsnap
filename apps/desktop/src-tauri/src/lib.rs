@@ -35,6 +35,7 @@ pub mod app;
 mod commands;
 pub mod config;
 pub mod cursor;
+pub mod license;
 pub mod preview;
 pub mod rendering;
 
@@ -79,7 +80,10 @@ pub fn run() {
             // Show the startup toolbar (or bring it to front if already visible)
             let app_handle = app.clone();
             tauri::async_runtime::spawn(async move {
-                if let Err(e) = commands::window::toolbar::show_startup_toolbar(app_handle).await {
+                if let Err(e) =
+                    commands::window::toolbar::show_startup_toolbar(app_handle, None, None, None)
+                        .await
+                {
                     log::error!("Failed to show startup toolbar on second instance: {}", e);
                 }
             });
@@ -134,11 +138,31 @@ pub fn run() {
             // Initialize preview state for GPU-rendered preview streaming
             app.manage(commands::preview::PreviewState::new());
 
+            // Serialize toolbar creation so shortcut repeats do not create duplicate windows.
+            app.manage(commands::window::toolbar::CaptureToolbarWindowState::default());
+
             // Initialize pre-rendered text state for WYSIWYG text export
             app.manage(commands::text_prerender::PreRenderedTextState::new());
 
             // Initialize native caption preview state for zero-latency caption preview
             app.manage(commands::preview::NativeCaptionPreviewState::new());
+
+            // Initialize license state
+            let app_data_dir = app.path().app_data_dir().map_err(|e| {
+                Box::<dyn std::error::Error>::from(format!("Failed to get app data dir: {}", e))
+            })?;
+            app.manage(commands::license::LicenseState::new(app_data_dir));
+
+            // Spawn background license re-validation
+            {
+                let license_state: tauri::State<'_, commands::license::LicenseState> = app.state();
+                let cache = license_state.cache.clone();
+                let key = license_state.encryption_key;
+                let path = license_state.cache_path.clone();
+                tauri::async_runtime::spawn(async move {
+                    commands::license::background_revalidation(cache, key, path).await;
+                });
+            }
 
             // Set window icon on library window (kept for when it's shown via tray)
             if let Some(window) = app.get_webview_window("library") {
@@ -161,7 +185,10 @@ pub fn run() {
             // Show floating startup toolbar on app launch
             let app_handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
-                if let Err(e) = commands::window::toolbar::show_startup_toolbar(app_handle).await {
+                if let Err(e) =
+                    commands::window::toolbar::show_startup_toolbar(app_handle, None, None, None)
+                        .await
+                {
                     log::error!("Failed to show startup toolbar: {}", e);
                 }
             });

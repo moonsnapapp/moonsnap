@@ -8,6 +8,7 @@
 import { useCallback, useEffect, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
+import { LAYOUT } from '@/constants';
 import { toolbarLogger } from '@/utils/logger';
 
 interface UseToolbarPositioningOptions {
@@ -19,13 +20,29 @@ interface UseToolbarPositioningOptions {
   selectionConfirmed?: boolean;
   /** Toolbar mode - triggers remeasure when mode changes (selection/recording/etc) */
   mode?: string;
+  /** Keep the toolbar window hidden even after the selection is confirmed. */
+  suppressWindowShow?: boolean;
 }
 
-export function useToolbarPositioning({ containerRef, contentRef, selectionConfirmed, mode }: UseToolbarPositioningOptions): void {
+export function useToolbarPositioning({
+  containerRef,
+  contentRef,
+  selectionConfirmed,
+  mode,
+  suppressWindowShow = false,
+}: UseToolbarPositioningOptions): void {
   const windowShownRef = useRef(false);
   const lastSizeRef = useRef({ width: 0, height: 0 });
 
   const measureTargetSize = useCallback(() => {
+    const isStartupToolbar = !selectionConfirmed && mode === 'selection';
+    if (isStartupToolbar) {
+      return {
+        width: LAYOUT.CAPTURE_TOOLBAR_STARTUP_WIDTH,
+        height: LAYOUT.CAPTURE_TOOLBAR_STARTUP_HEIGHT,
+      };
+    }
+
     const container = containerRef.current;
     const content = contentRef.current;
     if (!container || !content) {
@@ -50,8 +67,6 @@ export function useToolbarPositioning({ containerRef, contentRef, selectionConfi
         (Number.parseFloat(titlebarStyle.borderLeftWidth) || 0) +
         (Number.parseFloat(titlebarStyle.borderRightWidth) || 0);
 
-      // Intrinsic titlebar width is just left content + controls + horizontal chrome.
-      // The center drag region is flex:1 and can collapse to zero.
       titlebarWidth = leftWidth + controlsWidth + horizontalChrome;
     }
 
@@ -59,62 +74,71 @@ export function useToolbarPositioning({ containerRef, contentRef, selectionConfi
       width: Math.max(contentRect.width, titlebarWidth),
       height: containerRect.height,
     };
-  }, [containerRef, contentRef]);
+  }, [containerRef, contentRef, mode, selectionConfirmed]);
 
-  // Measure content and resize window
   useEffect(() => {
     const container = containerRef.current;
     const content = contentRef.current;
     if (!container || !content) return;
 
-    const resizeWindow = async (width: number, height: number) => {
-      // Skip if size hasn't changed
-      if (width === lastSizeRef.current.width && height === lastSizeRef.current.height) {
+    const syncWindowVisibility = async () => {
+      const currentWindow = getCurrentWebviewWindow();
+      const isVisible = await currentWindow.isVisible().catch(() => windowShownRef.current);
+
+      if (suppressWindowShow) {
+        if (isVisible) {
+          await currentWindow.hide();
+        }
+        windowShownRef.current = false;
         return;
       }
-      lastSizeRef.current = { width, height };
 
-      // Add 1px buffer to prevent sub-pixel rounding issues
-      const windowWidth = Math.ceil(width) + 1;
-      const windowHeight = Math.ceil(height) + 1;
+      if (selectionConfirmed && !isVisible) {
+        await currentWindow.show();
+        windowShownRef.current = true;
+        return;
+      }
 
+      windowShownRef.current = isVisible;
+    };
+
+    const resizeWindow = async (width: number, height: number) => {
       try {
-        await invoke('resize_capture_toolbar', {
-          width: windowWidth,
-          height: windowHeight,
-        });
+        if (width !== lastSizeRef.current.width || height !== lastSizeRef.current.height) {
+          lastSizeRef.current = { width, height };
 
-        // Show window on first resize
-        if (!windowShownRef.current) {
-          const currentWindow = getCurrentWebviewWindow();
-          await currentWindow.show();
-          windowShownRef.current = true;
+          const windowWidth = Math.ceil(width) + 1;
+          const windowHeight = Math.ceil(height) + 1;
+
+          await invoke('resize_capture_toolbar', {
+            width: windowWidth,
+            height: windowHeight,
+          });
         }
+
+        await syncWindowVisibility();
       } catch (e) {
         toolbarLogger.error('Failed to resize toolbar:', e);
       }
     };
 
-    // Initial measurement - width must fit both titlebar controls and toolbar content
     const initialSize = measureTargetSize();
     if (initialSize && initialSize.width > 0 && initialSize.height > 0) {
-      resizeWindow(initialSize.width, initialSize.height);
+      void resizeWindow(initialSize.width, initialSize.height);
     }
 
-    // Watch for size changes on both elements
     const observer = new ResizeObserver(() => {
       const measuredSize = measureTargetSize();
       if (measuredSize && measuredSize.width > 0 && measuredSize.height > 0) {
-        resizeWindow(measuredSize.width, measuredSize.height);
+        void resizeWindow(measuredSize.width, measuredSize.height);
       }
     });
 
     observer.observe(container);
     observer.observe(content);
     return () => observer.disconnect();
-  }, [containerRef, contentRef, measureTargetSize]);
+  }, [containerRef, contentRef, measureTargetSize, selectionConfirmed, suppressWindowShow]);
 
-  // Force remeasure when selection state or mode changes (content swaps)
   useEffect(() => {
     const container = containerRef.current;
     const content = contentRef.current;
@@ -122,18 +146,17 @@ export function useToolbarPositioning({ containerRef, contentRef, selectionConfi
 
     let cancelled = false;
 
-    // Wait for CSS transition to complete (200ms) plus buffer before measuring
-    // This ensures we measure the final size, not mid-transition values
-    const timeoutId = setTimeout(() => {
+    const timeoutId = window.setTimeout(() => {
       if (cancelled) return;
       const measuredSize = measureTargetSize();
       if (measuredSize && measuredSize.width > 0 && measuredSize.height > 0) {
-        // Reset last size to force update
         lastSizeRef.current = { width: 0, height: 0 };
-        // Trigger resize
         const windowWidth = Math.ceil(measuredSize.width) + 1;
         const windowHeight = Math.ceil(measuredSize.height) + 1;
-        invoke('resize_capture_toolbar', { width: windowWidth, height: windowHeight }).catch((e) => toolbarLogger.error('Failed to resize toolbar:', e));
+        invoke('resize_capture_toolbar', {
+          width: windowWidth,
+          height: windowHeight,
+        }).catch((e) => toolbarLogger.error('Failed to resize toolbar:', e));
       }
     }, 220);
 

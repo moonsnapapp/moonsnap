@@ -9,39 +9,51 @@ use font_kit::family_name::FamilyName;
 use font_kit::properties::{Properties, Style, Weight};
 use font_kit::source::SystemSource;
 use std::collections::HashSet;
+use std::time::Instant;
+use tokio::sync::OnceCell;
 
-/// Get list of installed system fonts (only fonts that can actually be loaded)
-#[tauri::command]
-pub fn get_system_fonts() -> Result<Vec<String>, String> {
+static SYSTEM_FONTS_CACHE: OnceCell<Vec<String>> = OnceCell::const_new();
+
+fn enumerate_system_fonts() -> Result<Vec<String>, String> {
     let source = SystemSource::new();
 
     let families = source
         .all_families()
         .map_err(|e| format!("Failed to get font families: {}", e))?;
 
-    // Filter to only fonts we can actually load
-    let mut valid_fonts: Vec<String> = Vec::new();
-
+    // Keep filtering lightweight: avoid loading each font file during enumeration.
+    let mut unique_fonts: HashSet<String> = HashSet::new();
     for name in families {
-        // Skip internal/symbol fonts
         if name.starts_with('@') || name.starts_with('.') || name.is_empty() {
             continue;
         }
-
-        // Try to actually load the font - only include if it works
-        let props = Properties::new();
-        if let Ok(handle) = source.select_best_match(&[FamilyName::Title(name.clone())], &props) {
-            if let Ok(font) = handle.load() {
-                // Verify we can get font data
-                if font.copy_font_data().is_some() {
-                    valid_fonts.push(name);
-                }
-            }
-        }
+        unique_fonts.insert(name);
     }
 
-    valid_fonts.sort_by(|a, b| a.to_lowercase().cmp(&b.to_lowercase()));
-    Ok(valid_fonts)
+    let mut fonts: Vec<String> = unique_fonts.into_iter().collect();
+    fonts.sort_by_key(|name| name.to_lowercase());
+    Ok(fonts)
+}
+
+/// Get list of installed system font families.
+#[tauri::command]
+pub async fn get_system_fonts() -> Result<Vec<String>, String> {
+    let fonts = SYSTEM_FONTS_CACHE
+        .get_or_try_init(|| async {
+            let started_at = Instant::now();
+            let fonts = tauri::async_runtime::spawn_blocking(enumerate_system_fonts)
+                .await
+                .map_err(|err| format!("Failed to join font enumeration task: {}", err))??;
+            log::info!(
+                "Enumerated {} system font families in {:?}",
+                fonts.len(),
+                started_at.elapsed()
+            );
+            Ok::<Vec<String>, String>(fonts)
+        })
+        .await?;
+
+    Ok(fonts.clone())
 }
 
 /// Get font file data for a given font family name, weight, and style

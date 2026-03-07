@@ -52,8 +52,15 @@ macro_rules! tauri_command_handler {
             crate::commands::window::image_editor::show_image_editor_window,
             crate::commands::window::image_editor::close_image_editor_window,
             crate::commands::window::image_editor::get_image_editor_capture_path,
+            // Window commands - screenshot preview
+            crate::commands::window::screenshot_preview::show_screenshot_preview,
+            crate::commands::window::screenshot_preview::close_screenshot_preview,
+            // Window commands - recording preview
+            crate::commands::window::recording_preview::show_recording_preview,
+            crate::commands::window::recording_preview::close_recording_preview,
             // Image commands
             crate::commands::image::copy_image_to_clipboard,
+            crate::commands::image::copy_rgba_to_clipboard,
             // Storage commands
             crate::commands::storage::operations::save_capture,
             crate::commands::storage::operations::save_capture_from_file,
@@ -76,6 +83,7 @@ macro_rules! tauri_command_handler {
             crate::commands::settings::open_path_in_explorer,
             crate::commands::settings::reveal_file_in_explorer,
             crate::commands::settings::open_file_with_default_app,
+            crate::commands::settings::save_copy_of_file,
             crate::commands::settings::get_default_save_dir,
             crate::commands::settings::update_tray_shortcut,
             // App config commands (from centralized config module)
@@ -241,6 +249,11 @@ macro_rules! tauri_command_handler {
             crate::commands::captions::transcribe_caption_segment,
             crate::commands::captions::save_caption_data,
             crate::commands::captions::load_caption_data,
+            // License commands
+            crate::commands::license::get_license_status,
+            crate::commands::license::activate_license,
+            crate::commands::license::deactivate_license,
+            crate::commands::license::check_pro_feature,
             // Parity commands (preview/export CSS sync)
             crate::rendering::parity::get_parity_layout,
             crate::rendering::parity::get_composition_bounds,

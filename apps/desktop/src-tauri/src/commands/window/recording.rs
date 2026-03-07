@@ -128,13 +128,14 @@ pub async fn show_countdown_window(
     y: i32,
     width: u32,
     height: u32,
+    countdown_secs: u32,
 ) -> Result<(), String> {
     // Close existing window if any
     if let Some(window) = app.get_webview_window(COUNTDOWN_WINDOW_LABEL) {
         let _ = window.close();
     }
 
-    let url = WebviewUrl::App("windows/countdown.html".into());
+    let url = WebviewUrl::App(format!("windows/countdown.html?secs={}", countdown_secs).into());
 
     let window = WebviewWindowBuilder::new(&app, COUNTDOWN_WINDOW_LABEL, url)
         .title("Countdown")

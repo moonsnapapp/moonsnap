@@ -15,13 +15,14 @@ import {
   selectSetHoveredTrack,
   selectUpdateZoomRegion,
 } from '../../../stores/videoEditor/selectors';
-import { BaseSegmentItem, type BaseSegment } from './BaseTrack';
+import { BaseSegmentItem, type BaseSegment, type SegmentTooltipPlacement } from './BaseTrack';
 
 interface ZoomTrackProps {
   regions: ZoomRegion[];
   durationMs: number;
   timelineZoom: number;
   width: number;
+  tooltipPlacement?: SegmentTooltipPlacement;
 }
 
 // Default segment duration when adding new regions (3 seconds)
@@ -101,7 +102,8 @@ export const ZoomTrackContent = memo(function ZoomTrackContent({
   regions,
   durationMs,
   timelineZoom,
-  width
+  width,
+  tooltipPlacement = 'below',
 }: ZoomTrackProps) {
   const selectedZoomRegionId = useVideoEditorStore(selectSelectedZoomRegionId);
   const previewTimeMs = useVideoEditorStore(selectPreviewTimeMs);
@@ -225,6 +227,7 @@ export const ZoomTrackContent = memo(function ZoomTrackContent({
           hoverColor={ZOOM_COLORS.hover}
           textColor={ZOOM_COLORS.text}
           className={region.isAuto ? 'border-dashed' : ''}
+          tooltipPlacement={tooltipPlacement}
         />
       ))}
 

@@ -12,7 +12,12 @@ import {
   WindowsIcon,
   PlayIcon,
   CheckIcon,
+  CrossIcon,
+  CrownIcon,
 } from "./icons";
+
+const POLAR_CHECKOUT_URL =
+  "https://buy.polar.sh/polar_cl_WDZB2ld3wEqqWTOustdiNZHASOHMOz4lxlsZ03VjJfx";
 
 export default async function Home() {
   const latestVersion = await getLatestReleaseVersion();
@@ -51,6 +56,12 @@ export default async function Home() {
               className="text-sm text-[var(--muted)] hover:text-white transition-colors"
             >
               Features
+            </a>
+            <a
+              href="#pricing"
+              className="text-sm text-[var(--muted)] hover:text-white transition-colors"
+            >
+              Pricing
             </a>
             <Link
               href="/changelog"
@@ -91,13 +102,21 @@ export default async function Home() {
               The most elegant recording tool for Windows.
             </p>
 
-            {/* CTA Button */}
-            <div className="flex items-center justify-center mb-16 animate-slide-up opacity-0 delay-300">
+            {/* CTA Buttons */}
+            <div className="flex flex-col sm:flex-row items-center justify-center gap-4 mb-16 animate-slide-up opacity-0 delay-300">
               <a href="#download" className="btn-primary flex items-center gap-2">
                 <DownloadIcon className="w-5 h-5" />
-                Download for Windows
+                Start Free Trial
+              </a>
+              <a href="#pricing" className="btn-secondary flex items-center gap-2">
+                <CrownIcon className="w-5 h-5 text-[var(--accent)]" />
+                See Pricing
               </a>
             </div>
+
+            <p className="text-sm text-[var(--muted)] mb-16 animate-slide-up opacity-0 delay-300">
+              14-day free trial &middot; All features unlocked &middot; No account required
+            </p>
 
             {/* Hero mockup */}
             <div className="relative animate-scale-in opacity-0 delay-400">
@@ -182,6 +201,7 @@ export default async function Home() {
               icon={<RecordIcon className="w-6 h-6" />}
               title="Screen Recording"
               description="Record your entire screen, a window, or a custom region. Crystal clear quality at up to 60fps."
+              pro
             />
             <FeatureCard
               icon={<ScreenshotIcon className="w-6 h-6" />}
@@ -192,21 +212,25 @@ export default async function Home() {
               icon={<GifIcon className="w-6 h-6" />}
               title="GIF Creation"
               description="Turn any recording into a perfectly looped GIF. Optimized for sharing anywhere."
+              pro
             />
             <FeatureCard
               icon={<WebcamIcon className="w-6 h-6" />}
               title="Webcam Overlay"
               description="Add your face to recordings with customizable webcam overlays. Perfect for tutorials."
+              pro
             />
             <FeatureCard
               icon={<EditIcon className="w-6 h-6" />}
               title="Video Editor"
               description="Trim, cut, and polish your recordings. Add captions, zoom effects, and custom backgrounds."
+              pro
             />
             <FeatureCard
               icon={<SparklesIcon className="w-6 h-6" />}
               title="Auto Captions"
               description="AI-powered captions generated locally. No cloud upload, complete privacy."
+              pro
             />
           </div>
         </div>
@@ -291,6 +315,120 @@ export default async function Home() {
         </div>
       </section>
 
+      {/* Pricing Section */}
+      <section id="pricing" className="py-24 px-6 relative">
+        <div className="absolute inset-0 pointer-events-none" style={{
+          background: "radial-gradient(ellipse 60% 40% at 50% 50%, rgba(255, 77, 77, 0.06) 0%, transparent 60%)",
+        }} />
+        <div className="max-w-5xl mx-auto relative">
+          <div className="text-center mb-16">
+            <h2
+              className="text-3xl sm:text-4xl font-bold tracking-tight mb-4"
+              style={{ fontFamily: "var(--font-sora)" }}
+            >
+              Simple, <span className="text-[var(--accent)]">honest</span> pricing
+            </h2>
+            <p className="text-[var(--muted)] max-w-xl mx-auto">
+              Try everything free for 14 days. Then choose the plan that works for you.
+              <br />
+              One-time purchase — no subscriptions, no recurring fees.
+            </p>
+          </div>
+
+          <div className="grid md:grid-cols-2 gap-6 max-w-4xl mx-auto">
+            {/* Free Plan */}
+            <div className="pricing-card p-8 rounded-2xl bg-[var(--surface)] border border-[var(--border)]">
+              <div className="mb-6">
+                <h3
+                  className="text-xl font-semibold mb-1"
+                  style={{ fontFamily: "var(--font-sora)" }}
+                >
+                  Free
+                </h3>
+                <p className="text-sm text-[var(--muted)]">After trial ends</p>
+              </div>
+              <div className="mb-8">
+                <span
+                  className="text-4xl font-bold tracking-tight"
+                  style={{ fontFamily: "var(--font-sora)" }}
+                >
+                  $0
+                </span>
+                <span className="text-[var(--muted)] ml-1">forever</span>
+              </div>
+              <ul className="space-y-3 mb-8">
+                <PricingFeature included>Screenshots</PricingFeature>
+                <PricingFeature included>Basic annotations</PricingFeature>
+                <PricingFeature>Video recording</PricingFeature>
+                <PricingFeature>GIF export</PricingFeature>
+                <PricingFeature>Webcam overlay</PricingFeature>
+                <PricingFeature>Custom backgrounds</PricingFeature>
+                <PricingFeature>Blur tool</PricingFeature>
+                <PricingFeature>High-res export</PricingFeature>
+              </ul>
+              <a
+                href="#download"
+                className="btn-secondary block text-center text-sm"
+              >
+                Download
+              </a>
+            </div>
+
+            {/* Pro Plan */}
+            <div className="pricing-card pricing-card-pro p-8 rounded-2xl bg-[var(--surface)] border-2 border-[var(--accent)]/40 relative overflow-hidden">
+              <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-[var(--accent)] to-transparent" />
+              <div className="absolute -top-24 -right-24 w-48 h-48 rounded-full bg-[var(--accent)]/8 blur-3xl" />
+              <div className="relative">
+                <div className="mb-6 flex items-start justify-between">
+                  <div>
+                    <h3
+                      className="text-xl font-semibold mb-1 flex items-center gap-2"
+                      style={{ fontFamily: "var(--font-sora)" }}
+                    >
+                      Pro
+                      <span className="text-[10px] uppercase tracking-widest font-medium px-2 py-0.5 rounded-full bg-[var(--accent)]/15 text-[var(--accent)] border border-[var(--accent)]/20">
+                        Popular
+                      </span>
+                    </h3>
+                    <p className="text-sm text-[var(--muted)]">One-time purchase</p>
+                  </div>
+                </div>
+                <div className="mb-8">
+                  <span
+                    className="text-4xl font-bold tracking-tight"
+                    style={{ fontFamily: "var(--font-sora)" }}
+                  >
+                    $29
+                  </span>
+                  <span className="text-[var(--muted)] ml-1">one-time</span>
+                </div>
+                <ul className="space-y-3 mb-8">
+                  <PricingFeature included>Screenshots</PricingFeature>
+                  <PricingFeature included>Basic annotations</PricingFeature>
+                  <PricingFeature included>Video recording</PricingFeature>
+                  <PricingFeature included>GIF export</PricingFeature>
+                  <PricingFeature included>Webcam overlay</PricingFeature>
+                  <PricingFeature included>Custom backgrounds</PricingFeature>
+                  <PricingFeature included>Blur tool</PricingFeature>
+                  <PricingFeature included>High-res export</PricingFeature>
+                </ul>
+                <a
+                  href={POLAR_CHECKOUT_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="btn-primary block text-center text-sm"
+                >
+                  Buy MoonSnap Pro
+                </a>
+                <p className="text-xs text-[var(--muted)] text-center mt-3">
+                  Covers all v1.x updates
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
       {/* Download Section */}
       <section id="download" className="py-24 px-6">
         <div className="max-w-3xl mx-auto text-center">
@@ -301,9 +439,9 @@ export default async function Home() {
             Ready to start capturing?
           </h2>
           <p className="text-[var(--muted)] mb-10 text-lg">
-            Download MoonSnap for free and start recording in seconds.
+            Download MoonSnap and try every feature free for 14 days.
             <br />
-            No account required.
+            No account required. No credit card.
           </p>
 
           <div className="inline-flex flex-col items-center gap-4">
@@ -317,13 +455,13 @@ export default async function Home() {
               Download for Windows
             </a>
             <span className="text-sm text-[var(--muted)]">
-              {displayVersion ? `Version ${displayVersion} • Windows 10/11` : "Windows 10/11"}
+              {displayVersion ? `Version ${displayVersion} · Windows 10/11` : "Windows 10/11"}
             </span>
           </div>
 
           <div className="mt-16 pt-16 border-t border-[var(--border)]">
             <p className="text-sm text-[var(--muted)]">
-              Privacy-focused • No account required • Free forever
+              14-day free trial · No account required · One-time purchase
             </p>
           </div>
         </div>
@@ -337,7 +475,7 @@ export default async function Home() {
               <RecordIcon className="w-3 h-3 text-white" />
             </div>
             <span className="text-sm text-[var(--muted)]">
-              MoonSnap © {new Date().getFullYear()}
+              MoonSnap &copy; {new Date().getFullYear()}
             </span>
           </div>
           <div className="flex items-center gap-6">
@@ -346,6 +484,12 @@ export default async function Home() {
               className="text-sm text-[var(--muted)] hover:text-white transition-colors"
             >
               Features
+            </a>
+            <a
+              href="#pricing"
+              className="text-sm text-[var(--muted)] hover:text-white transition-colors"
+            >
+              Pricing
             </a>
             <a
               href="#download"
@@ -364,15 +508,24 @@ function FeatureCard({
   icon,
   title,
   description,
+  pro,
 }: {
   icon: React.ReactNode;
   title: string;
   description: string;
+  pro?: boolean;
 }) {
   return (
     <div className="feature-card p-6 rounded-2xl bg-[var(--surface)] border border-[var(--border)]">
-      <div className="w-12 h-12 rounded-xl bg-[var(--accent)]/10 flex items-center justify-center mb-4 text-[var(--accent)]">
-        {icon}
+      <div className="flex items-start justify-between mb-4">
+        <div className="w-12 h-12 rounded-xl bg-[var(--accent)]/10 flex items-center justify-center text-[var(--accent)]">
+          {icon}
+        </div>
+        {pro && (
+          <span className="text-[10px] uppercase tracking-widest font-medium px-2 py-0.5 rounded-full bg-[var(--accent)]/10 text-[var(--accent)] border border-[var(--accent)]/20">
+            Pro
+          </span>
+        )}
       </div>
       <h3
         className="text-lg font-semibold mb-2"
@@ -384,5 +537,30 @@ function FeatureCard({
         {description}
       </p>
     </div>
+  );
+}
+
+function PricingFeature({
+  children,
+  included,
+}: {
+  children: React.ReactNode;
+  included?: boolean;
+}) {
+  return (
+    <li className="flex items-center gap-3">
+      {included ? (
+        <div className="w-5 h-5 rounded-full bg-[var(--accent)]/20 flex items-center justify-center flex-shrink-0">
+          <CheckIcon className="w-3 h-3 text-[var(--accent)]" />
+        </div>
+      ) : (
+        <div className="w-5 h-5 rounded-full bg-white/5 flex items-center justify-center flex-shrink-0">
+          <CrossIcon className="w-3 h-3 text-[var(--muted)]/50" />
+        </div>
+      )}
+      <span className={included ? "text-sm text-[var(--foreground)]" : "text-sm text-[var(--muted)]"}>
+        {children}
+      </span>
+    </li>
   );
 }

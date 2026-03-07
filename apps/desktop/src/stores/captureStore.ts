@@ -108,6 +108,10 @@ function isCacheStale(timestamp: number): boolean {
   return Date.now() - timestamp > STORAGE.CACHE_MAX_AGE_MS;
 }
 
+function isGifPath(path: string): boolean {
+  return path.toLowerCase().endsWith('.gif');
+}
+
 interface CaptureState {
   // Library state
   captures: CaptureListItem[];
@@ -201,6 +205,7 @@ function createPlaceholderCapture(
     has_annotations: false,
     tags: [],
     favorite: false,
+    quick_capture: false,
     is_missing: false,
   };
 }
@@ -218,6 +223,7 @@ function createCaptureFromResponse(result: SaveCaptureResponse): CaptureListItem
     has_annotations: result.project.annotations.length > 0,
     tags: result.project.tags,
     favorite: result.project.favorite,
+    quick_capture: false,
     is_missing: false,
   };
 }
@@ -256,7 +262,12 @@ export const useCaptureStore = create<CaptureState>()(
   searchQuery: '',
   filterFavorites: false,
   filterTags: [],
-  filterMediaTypes: [],
+  filterMediaTypes: (() => {
+    try {
+      const stored = localStorage.getItem('library:filterMediaTypes');
+      return stored ? JSON.parse(stored) : [];
+    } catch { return []; }
+  })(),
   view: 'library',
 
   loadCaptures: async () => {
@@ -622,7 +633,7 @@ export const useCaptureStore = create<CaptureState>()(
   setSearchQuery: (query: string) => set({ searchQuery: query }),
   setFilterFavorites: (value: boolean) => set({ filterFavorites: value }),
   setFilterTags: (tags: string[]) => set({ filterTags: tags }),
-  setFilterMediaTypes: (types: string[]) => set({ filterMediaTypes: types }),
+  setFilterMediaTypes: (types: string[]) => { localStorage.setItem('library:filterMediaTypes', JSON.stringify(types)); set({ filterMediaTypes: types }); },
   setSkipStagger: (value: boolean) => set({ skipStagger: value }),
   clearCurrentProject: () => {
     clearEditorSession();
@@ -673,6 +684,11 @@ export const useCaptureStore = create<CaptureState>()(
       }
     } else if (session.view === 'videoEditor' && session.videoProjectPath) {
       try {
+        if (isGifPath(session.videoProjectPath)) {
+          clearEditorSession();
+          return false;
+        }
+
         // Load video project and set it in video editor store
         const { useVideoEditorStore } = await import('./videoEditorStore');
         const project = await invoke('load_video_project', { videoPath: session.videoProjectPath });

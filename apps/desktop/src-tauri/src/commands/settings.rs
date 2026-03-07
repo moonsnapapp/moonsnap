@@ -21,6 +21,9 @@ pub fn update_tray_shortcut(
             .map_err(|e| format!("Failed to lock tray state: {}", e))?;
 
         match shortcut_id.as_str() {
+            "open_capture_toolbar" => tray
+                .update_open_capture_toolbar_text(&display_text)
+                .map_err(|e| format!("Failed to update capture toolbar text: {}", e))?,
             "new_capture" => tray
                 .update_new_capture_text(&display_text)
                 .map_err(|e| format!("Failed to update new capture text: {}", e))?,
@@ -30,6 +33,12 @@ pub fn update_tray_shortcut(
             "all_monitors_capture" => tray
                 .update_all_monitors_text(&display_text)
                 .map_err(|e| format!("Failed to update all monitors text: {}", e))?,
+            "record_video" => tray
+                .update_record_video_text(&display_text)
+                .map_err(|e| format!("Failed to update record video text: {}", e))?,
+            "record_gif" => tray
+                .update_record_gif_text(&display_text)
+                .map_err(|e| format!("Failed to update record GIF text: {}", e))?,
             _ => {}, // Ignore unknown shortcut IDs
         }
     }
@@ -208,4 +217,35 @@ pub async fn open_file_with_default_app(path: String) -> Result<(), String> {
     }
 
     Ok(())
+}
+
+/// Copy a file to a user-selected destination without re-encoding.
+#[tauri::command]
+pub async fn save_copy_of_file(
+    source_path: String,
+    destination_path: String,
+) -> Result<(), String> {
+    tokio::task::spawn_blocking(move || {
+        let source = std::path::PathBuf::from(&source_path);
+        let destination = std::path::PathBuf::from(&destination_path);
+
+        if !source.exists() {
+            return Err(format!("Source file not found: {}", source_path));
+        }
+
+        if source == destination {
+            return Ok(());
+        }
+
+        if let Some(parent) = destination.parent() {
+            std::fs::create_dir_all(parent)
+                .map_err(|e| format!("Failed to create destination folder: {}", e))?;
+        }
+
+        std::fs::copy(&source, &destination).map_err(|e| format!("Failed to copy file: {}", e))?;
+
+        Ok(())
+    })
+    .await
+    .map_err(|e| format!("Copy task panicked: {}", e))?
 }

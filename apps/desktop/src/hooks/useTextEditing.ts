@@ -1,5 +1,14 @@
 import { useState, useCallback, useRef } from 'react';
 import type { CanvasShape } from '../types';
+import {
+  EDITOR_TEXT,
+  getEditorTextDecoration,
+  getEditorTextDefaultBoxHeight,
+  getEditorTextFontFamily,
+  getEditorTextFontStyle,
+  normalizeEditorTextAlign,
+  normalizeEditorTextVerticalAlign,
+} from '../utils/editorText';
 
 interface UseTextEditingProps {
   shapes: CanvasShape[];
@@ -21,6 +30,7 @@ interface TextareaPosition {
   align: string;
   verticalAlign: string;
   color: string;
+  textBackground: string;
 }
 
 interface UseTextEditingReturn {
@@ -29,7 +39,7 @@ interface UseTextEditingReturn {
   textareaRef: React.RefObject<HTMLTextAreaElement | null>;
   startEditing: (shapeId: string, currentText: string) => void;
   handleTextChange: (value: string) => void;
-  handleSaveTextEdit: () => void;
+  handleSaveTextEdit: (measuredHeight?: number) => void;
   handleCancelTextEdit: () => void;
   getTextareaPosition: () => TextareaPosition | null;
 }
@@ -60,27 +70,43 @@ export const useTextEditing = ({
     setEditingTextValue(value);
   }, []);
 
-  // Save text edit
-  const handleSaveTextEdit = useCallback(() => {
+  // Save text edit, optionally resizing the shape to fit measured content height
+  const handleSaveTextEdit = useCallback((measuredHeight?: number) => {
     if (!editingTextId) return;
 
     const currentShape = shapes.find((s) => s.id === editingTextId);
     const nextText = editingTextValue;
 
-    // Avoid shape-array churn when blur/save doesn't actually change text.
-    if (!currentShape || (currentShape.text || '') === nextText) {
+    if (!currentShape) {
+      setEditingTextId(null);
+      setEditingTextValue('');
+      return;
+    }
+
+    // Convert measured pixel height (screen space) back to canvas space
+    const newHeight = measuredHeight != null && zoom > 0
+      ? Math.max(measuredHeight / zoom, EDITOR_TEXT.MIN_BOX_HEIGHT)
+      : undefined;
+
+    const textChanged = (currentShape.text || '') !== nextText;
+    const heightChanged = newHeight != null && Math.abs((currentShape.height || 0) - newHeight) > 1;
+
+    // Avoid shape-array churn when nothing actually changed.
+    if (!textChanged && !heightChanged) {
       setEditingTextId(null);
       setEditingTextValue('');
       return;
     }
 
     const updatedShapes = shapes.map((s) =>
-      s.id === editingTextId ? { ...s, text: nextText } : s
+      s.id === editingTextId
+        ? { ...s, text: nextText, ...(heightChanged ? { height: newHeight } : {}) }
+        : s
     );
     onShapesChange(updatedShapes);
     setEditingTextId(null);
     setEditingTextValue('');
-  }, [editingTextId, editingTextValue, shapes, onShapesChange]);
+  }, [editingTextId, editingTextValue, shapes, onShapesChange, zoom]);
 
   // Cancel text edit
   const handleCancelTextEdit = useCallback(() => {
@@ -95,6 +121,8 @@ export const useTextEditing = ({
     const shape = shapes.find(s => s.id === editingTextId);
     if (!shape) return null;
 
+    const fontSize = shape.fontSize ?? EDITOR_TEXT.DEFAULT_FONT_SIZE;
+
     // Get container bounds
     const containerRect = containerRef.current.getBoundingClientRect();
 
@@ -105,15 +133,16 @@ export const useTextEditing = ({
     return {
       left: screenX,
       top: screenY,
-      width: (shape.width || 100) * zoom,
-      height: (shape.height || 50) * zoom,
-      fontSize: (shape.fontSize || 36) * zoom,
-      fontFamily: shape.fontFamily || 'Arial',
-      fontStyle: shape.fontStyle || 'normal',
-      textDecoration: shape.textDecoration || '',
-      align: shape.align || 'left',
-      verticalAlign: shape.verticalAlign || 'top',
-      color: shape.fill || '#000',
+      width: (shape.width || EDITOR_TEXT.DEFAULT_BOX_WIDTH) * zoom,
+      height: (shape.height || getEditorTextDefaultBoxHeight(fontSize)) * zoom,
+      fontSize: fontSize * zoom,
+      fontFamily: getEditorTextFontFamily(shape.fontFamily),
+      fontStyle: getEditorTextFontStyle(shape.fontStyle),
+      textDecoration: getEditorTextDecoration(shape.textDecoration),
+      align: normalizeEditorTextAlign(shape.align),
+      verticalAlign: normalizeEditorTextVerticalAlign(shape.verticalAlign),
+      color: shape.fill || EDITOR_TEXT.DEFAULT_COLOR,
+      textBackground: shape.textBackground || 'transparent',
     };
   }, [editingTextId, shapes, position, zoom, containerRef]);
 

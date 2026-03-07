@@ -87,48 +87,78 @@ export const screenToCanvas = (
  * });
  * // Returns: { x: 50, y: 50, width: 100, height: 100 }
  */
+/** Inflate a bounding rect by `padding` on each side. */
+const inflateBounds = (
+  bx: number, by: number, bw: number, bh: number, padding: number,
+): { x: number; y: number; width: number; height: number } => ({
+  x: bx - padding,
+  y: by - padding,
+  width: bw + padding * 2,
+  height: bh + padding * 2,
+});
+
 export const getShapeBounds = (
   shape: CanvasShape
 ): { x: number; y: number; width: number; height: number } => {
-  let x = shape.x ?? 0;
-  let y = shape.y ?? 0;
-  let width = shape.width ?? 0;
-  let height = shape.height ?? 0;
+  const x = shape.x ?? 0;
+  const y = shape.y ?? 0;
+  const w = shape.width ?? 0;
+  const h = shape.height ?? 0;
+  const halfStroke = (shape.strokeWidth ?? 0) / 2;
 
-  // Handle circles/ellipses
+  // Handle circles/ellipses (center-based, rotation-symmetric)
   const radiusX = shape.radiusX ?? shape.radius ?? 0;
   const radiusY = shape.radiusY ?? shape.radius ?? 0;
   if (radiusX || radiusY) {
-    x -= radiusX;
-    y -= radiusY;
-    width = radiusX * 2;
-    height = radiusY * 2;
+    const rad = (shape.rotation ?? 0) * Math.PI / 180;
+    const cosR = Math.cos(rad);
+    const sinR = Math.sin(rad);
+    // Rotated ellipse AABB: half-extents from parametric max
+    const hx = Math.sqrt(radiusX * radiusX * cosR * cosR + radiusY * radiusY * sinR * sinR);
+    const hy = Math.sqrt(radiusX * radiusX * sinR * sinR + radiusY * radiusY * cosR * cosR);
+    return inflateBounds(x - hx, y - hy, hx * 2, hy * 2, halfStroke);
   }
 
-  // Handle arrows and lines (point-based)
+  // Handle arrows and lines (point-based, no rotation transform)
   if ((shape.type === 'arrow' || shape.type === 'line') && shape.points && shape.points.length >= 4) {
     const [px1, py1, px2, py2] = shape.points;
-    x = Math.min(px1, px2);
-    y = Math.min(py1, py2);
-    width = Math.abs(px2 - px1);
-    height = Math.abs(py2 - py1);
+    return inflateBounds(
+      Math.min(px1, px2), Math.min(py1, py2),
+      Math.abs(px2 - px1), Math.abs(py2 - py1), halfStroke,
+    );
   }
 
-  // Handle pen strokes (point-based)
+  // Handle pen strokes — single-pass min/max to avoid spread on large arrays
   if (shape.type === 'pen' && shape.points && shape.points.length >= 2) {
-    const xs = shape.points.filter((_, i) => i % 2 === 0);
-    const ys = shape.points.filter((_, i) => i % 2 === 1);
-    const minX = Math.min(...xs);
-    const maxX = Math.max(...xs);
-    const minY = Math.min(...ys);
-    const maxY = Math.max(...ys);
-    x = minX;
-    y = minY;
-    width = maxX - minX;
-    height = maxY - minY;
+    const pts = shape.points;
+    let minX = pts[0], maxX = pts[0], minY = pts[1], maxY = pts[1];
+    for (let i = 2; i < pts.length; i += 2) {
+      const px = pts[i], py = pts[i + 1];
+      if (px < minX) minX = px; else if (px > maxX) maxX = px;
+      if (py < minY) minY = py; else if (py > maxY) maxY = py;
+    }
+    return inflateBounds(minX, minY, maxX - minX, maxY - minY, halfStroke);
   }
 
-  return { x, y, width, height };
+  // For shapes with rotation, compute rotated AABB
+  const rotation = shape.rotation ?? 0;
+  if (rotation !== 0) {
+    const rad = rotation * Math.PI / 180;
+    const cosR = Math.abs(Math.cos(rad));
+    const sinR = Math.abs(Math.sin(rad));
+    // Rotated AABB half-extents
+    const halfW = (Math.abs(w) * cosR + Math.abs(h) * sinR) / 2;
+    const halfH = (Math.abs(w) * sinR + Math.abs(h) * cosR) / 2;
+    // Center in world space (Konva rotates around top-left, so center moves)
+    const cos = Math.cos(rad);
+    const sin = Math.sin(rad);
+    const worldCx = x + w / 2 * cos - h / 2 * sin;
+    const worldCy = y + w / 2 * sin + h / 2 * cos;
+    return inflateBounds(worldCx - halfW, worldCy - halfH, halfW * 2, halfH * 2, halfStroke);
+  }
+
+  // No rotation — simple bounds
+  return inflateBounds(x, y, w, h, halfStroke);
 };
 
 /**
@@ -517,6 +547,7 @@ export const expandBoundsForShapes = (
   currentBounds: CanvasBounds,
   shapes: CanvasShape[],
   originalImageSize: { width: number; height: number },
+  expandOnly = false,
 ): CanvasBounds | null => {
   // Find background shape to use as base region
   const bgShape = shapes.find(s => s.id === BACKGROUND_SHAPE_ID);
@@ -535,8 +566,19 @@ export const expandBoundsForShapes = (
     maxY = originalImageSize.height;
   }
 
-  // Union with all shape bounding boxes
+  // When expandOnly, include current bounds so we never shrink
+  if (expandOnly) {
+    const curX = -currentBounds.imageOffsetX;
+    const curY = -currentBounds.imageOffsetY;
+    minX = Math.min(minX, curX);
+    minY = Math.min(minY, curY);
+    maxX = Math.max(maxX, curX + currentBounds.width);
+    maxY = Math.max(maxY, curY + currentBounds.height);
+  }
+
+  // Union with image shapes only — drawing elements don't expand the canvas
   for (const shape of shapes) {
+    if (shape.type !== 'image') continue;
     const bounds = getShapeBounds(shape);
     minX = Math.min(minX, bounds.x);
     minY = Math.min(minY, bounds.y);
@@ -566,4 +608,66 @@ export const expandBoundsForShapes = (
     imageOffsetX: -newOffsetX,
     imageOffsetY: -newOffsetY,
   };
+};
+
+/**
+ * Compute the minimum crop region that fits all shapes (including background).
+ * Returns null if the crop region is already correct.
+ */
+export const expandCropRegionForShapes = (
+  currentCrop: { x: number; y: number; width: number; height: number },
+  shapes: CanvasShape[],
+  expandOnly = false,
+): { x: number; y: number; width: number; height: number } | null => {
+  // Start with background shape bounds (or 0,0 fallback)
+  const bgShape = shapes.find(s => s.id === BACKGROUND_SHAPE_ID);
+  let minX: number, minY: number, maxX: number, maxY: number;
+  if (bgShape) {
+    minX = bgShape.x ?? 0;
+    minY = bgShape.y ?? 0;
+    maxX = minX + (bgShape.width ?? 0);
+    maxY = minY + (bgShape.height ?? 0);
+  } else {
+    minX = currentCrop.x;
+    minY = currentCrop.y;
+    maxX = currentCrop.x + currentCrop.width;
+    maxY = currentCrop.y + currentCrop.height;
+  }
+
+  // When expandOnly, include current crop so we never shrink
+  if (expandOnly) {
+    minX = Math.min(minX, currentCrop.x);
+    minY = Math.min(minY, currentCrop.y);
+    maxX = Math.max(maxX, currentCrop.x + currentCrop.width);
+    maxY = Math.max(maxY, currentCrop.y + currentCrop.height);
+  }
+
+  // Union with non-background image shapes only — drawing elements don't expand crop
+  for (const shape of shapes) {
+    if (shape.isBackground || shape.type !== 'image') continue;
+    const bounds = getShapeBounds(shape);
+    minX = Math.min(minX, bounds.x);
+    minY = Math.min(minY, bounds.y);
+    maxX = Math.max(maxX, bounds.x + bounds.width);
+    maxY = Math.max(maxY, bounds.y + bounds.height);
+  }
+
+  const newCrop = {
+    x: Math.floor(minX),
+    y: Math.floor(minY),
+    width: Math.ceil(maxX - Math.floor(minX)),
+    height: Math.ceil(maxY - Math.floor(minY)),
+  };
+
+  // Check if anything changed
+  if (
+    newCrop.x === currentCrop.x &&
+    newCrop.y === currentCrop.y &&
+    newCrop.width === currentCrop.width &&
+    newCrop.height === currentCrop.height
+  ) {
+    return null;
+  }
+
+  return newCrop;
 };

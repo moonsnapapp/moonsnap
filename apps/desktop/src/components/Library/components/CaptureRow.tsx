@@ -41,6 +41,7 @@ export const CaptureRow: React.FC<CaptureCardProps> = memo(
     const isPlaceholder = capture.id.startsWith('temp_');
     const isMissing = capture.is_missing;
     const isMedia = isVideoOrGif(capture.capture_type);
+    const isQuickVideo = capture.capture_type === 'video' && Boolean(capture.quick_capture);
     const hasThumbnail = capture.thumbnail_path && capture.thumbnail_path.length > 0;
 
     // Use cached URL to avoid repeated convertFileSrc calls
@@ -151,6 +152,9 @@ export const CaptureRow: React.FC<CaptureCardProps> = memo(
                 {isMissing && (
                   <Badge className="bg-amber-100 text-amber-700 text-[10px] px-2 py-0.5">Missing</Badge>
                 )}
+                {isQuickVideo && !isMissing && (
+                  <Badge className="pill-coral text-[10px] px-2 py-0.5">Quick Capture</Badge>
+                )}
                 {capture.has_annotations && !isMissing && (
                   <Badge className="pill-coral text-[10px] px-2 py-0.5">Edited</Badge>
                 )}
@@ -170,6 +174,12 @@ export const CaptureRow: React.FC<CaptureCardProps> = memo(
                   : `${capture.dimensions.width} × ${capture.dimensions.height}`}
                 <span className="mx-2 text-[var(--polar-frost)]">·</span>
                 {formatDate(capture.created_at)}
+                {isQuickVideo && (
+                  <>
+                    <span className="mx-2 text-[var(--polar-frost)]">Â·</span>
+                    <span className="text-[var(--coral-400)]">Ready to share</span>
+                  </>
+                )}
               </div>
             </div>
 
@@ -249,6 +259,7 @@ export const CaptureRow: React.FC<CaptureCardProps> = memo(
           favorite={capture.favorite}
           isMissing={isMissing}
           captureType={capture.capture_type}
+          quickCapture={capture.quick_capture}
           onCopyToClipboard={onCopyToClipboard}
           onOpenInFolder={onOpenInFolder}
           onToggleFavorite={onToggleFavorite}

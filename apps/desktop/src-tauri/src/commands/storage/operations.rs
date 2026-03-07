@@ -315,14 +315,50 @@ pub async fn update_project_metadata(
     favorite: Option<bool>,
 ) -> Result<CaptureProject, String> {
     let base_dir = get_app_data_dir(&app)?;
-    let project_file = base_dir
+
+    // Use projects/{id}/project.json for all metadata
+    let projects_path = base_dir
         .join("projects")
         .join(&project_id)
         .join("project.json");
 
-    if !project_file.exists() {
-        return Err("Project not found".to_string());
-    }
+    let project_file = if projects_path.exists() {
+        projects_path
+    } else {
+        // No project.json exists (e.g. legacy media file) — create one in projects/
+        let project_dir = base_dir.join("projects").join(&project_id);
+        fs::create_dir_all(&project_dir)
+            .map_err(|e| format!("Failed to create project dir: {}", e))?;
+
+        let now = Utc::now();
+        let project = CaptureProject {
+            id: project_id.clone(),
+            created_at: now,
+            updated_at: now,
+            capture_type: "video".to_string(),
+            source: CaptureSource {
+                monitor: None,
+                window_id: None,
+                window_title: None,
+                region: None,
+            },
+            original_image: String::new(),
+            dimensions: Dimensions {
+                width: 0,
+                height: 0,
+            },
+            annotations: Vec::new(),
+            tags: tags.clone().unwrap_or_default(),
+            favorite: favorite.unwrap_or(false),
+        };
+
+        let json = serde_json::to_string_pretty(&project)
+            .map_err(|e| format!("Failed to serialize project: {}", e))?;
+        let path = project_dir.join("project.json");
+        fs::write(&path, json).map_err(|e| format!("Failed to write project: {}", e))?;
+
+        return Ok(project);
+    };
 
     let content =
         fs::read_to_string(&project_file).map_err(|e| format!("Failed to read project: {}", e))?;
@@ -361,6 +397,11 @@ async fn load_project_item(
     let content = async_fs::read_to_string(&project_file).await.ok()?;
     let project: CaptureProject = serde_json::from_str(&content).ok()?;
 
+    // Skip metadata-only sidecars (created for video/media favorites/tags)
+    if project.original_image.is_empty() {
+        return None;
+    }
+
     let thumbnail_path = thumbnails_dir
         .join(format!("{}_thumb.png", &project.id))
         .to_string_lossy()
@@ -390,6 +431,7 @@ async fn load_project_item(
         has_annotations: !project.annotations.is_empty(),
         tags: project.tags,
         favorite: project.favorite,
+        quick_capture: false,
         is_missing,
     })
 }
@@ -424,8 +466,26 @@ async fn load_video_project_folder(
         .unwrap_or("recording")
         .to_string();
 
+    // Check for metadata sidecar in projects/{id}/project.json
+    let base_dir = get_app_data_dir(&app).ok()?;
+    let sidecar_path = base_dir.join("projects").join(&id).join("project.json");
+    let (sidecar_tags, sidecar_favorite) =
+        if async_fs::try_exists(&sidecar_path).await.unwrap_or(false) {
+            if let Ok(content) = async_fs::read_to_string(&sidecar_path).await {
+                if let Ok(project) = serde_json::from_str::<CaptureProject>(&content) {
+                    (project.tags, project.favorite)
+                } else {
+                    (Vec::new(), false)
+                }
+            } else {
+                (Vec::new(), false)
+            }
+        } else {
+            (Vec::new(), false)
+        };
+
     // Try to read metadata from project.json, fall back to file metadata
-    let (created_at, updated_at, dimensions) =
+    let (created_at, updated_at, dimensions, json_tags, json_favorite, json_quick_capture) =
         if async_fs::try_exists(&project_json).await.unwrap_or(false) {
             if let Ok(content) = async_fs::read_to_string(&project_json).await {
                 if let Ok(project) = serde_json::from_str::<serde_json::Value>(&content) {
@@ -455,7 +515,19 @@ async fn load_video_project_folder(
                             width: 0,
                             height: 0,
                         });
-                    (created, updated, dims)
+                    let tags: Vec<String> = project
+                        .get("tags")
+                        .and_then(|v| serde_json::from_value(v.clone()).ok())
+                        .unwrap_or_default();
+                    let fav = project
+                        .get("favorite")
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(false);
+                    let quick_capture = project
+                        .get("quickCapture")
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(false);
+                    (created, updated, dims, tags, fav, quick_capture)
                 } else {
                     (
                         Utc::now(),
@@ -464,6 +536,9 @@ async fn load_video_project_folder(
                             width: 0,
                             height: 0,
                         },
+                        Vec::new(),
+                        false,
+                        false,
                     )
                 }
             } else {
@@ -474,6 +549,9 @@ async fn load_video_project_folder(
                         width: 0,
                         height: 0,
                     },
+                    Vec::new(),
+                    false,
+                    false,
                 )
             }
         } else {
@@ -495,8 +573,19 @@ async fn load_video_project_folder(
                     width: 0,
                     height: 0,
                 },
+                Vec::new(),
+                false,
+                false,
             )
         };
+
+    // Sidecar metadata (from projects/ dir) takes priority over video project.json
+    let final_tags = if !sidecar_tags.is_empty() {
+        sidecar_tags
+    } else {
+        json_tags
+    };
+    let final_favorite = sidecar_favorite || json_favorite;
 
     // Check/generate thumbnail
     let thumbnail_filename = format!("{}_thumb.png", &id);
@@ -542,8 +631,9 @@ async fn load_video_project_folder(
         // Point to the screen.mp4 inside the folder
         image_path: screen_mp4.to_string_lossy().to_string(),
         has_annotations: false,
-        tags: Vec::new(),
-        favorite: false,
+        tags: final_tags,
+        favorite: final_favorite,
+        quick_capture: json_quick_capture,
         is_missing: false,
     })
 }
@@ -661,6 +751,26 @@ async fn load_media_item(
         height: 0,
     };
 
+    // Check for metadata sidecar in projects/{id}/project.json
+    let (sidecar_tags, sidecar_favorite) = if let Ok(base_dir) = get_app_data_dir(&app) {
+        let sidecar_path = base_dir.join("projects").join(&id).join("project.json");
+        if async_fs::try_exists(&sidecar_path).await.unwrap_or(false) {
+            if let Ok(content) = async_fs::read_to_string(&sidecar_path).await {
+                if let Ok(project) = serde_json::from_str::<CaptureProject>(&content) {
+                    (project.tags, project.favorite)
+                } else {
+                    (Vec::new(), false)
+                }
+            } else {
+                (Vec::new(), false)
+            }
+        } else {
+            (Vec::new(), false)
+        }
+    } else {
+        (Vec::new(), false)
+    };
+
     Some(CaptureListItem {
         id,
         created_at,
@@ -670,8 +780,9 @@ async fn load_media_item(
         thumbnail_path: thumbnail_path_str,
         image_path: path.to_string_lossy().to_string(),
         has_annotations: false,
-        tags: Vec::new(),
-        favorite: false,
+        tags: sidecar_tags,
+        favorite: sidecar_favorite,
+        quick_capture: capture_type == "video" || capture_type == "gif",
         is_missing: false,
     })
 }
@@ -1257,6 +1368,11 @@ fn migrate_legacy_video(
         .and_then(|s| s.to_str())
         .ok_or("Invalid video path")?
         .to_string();
+    let original_file_name = video_path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or("Invalid video filename")?
+        .to_string();
 
     // Create the project folder
     let folder_path = captures_dir.join(&stem);
@@ -1302,8 +1418,21 @@ fn migrate_legacy_video(
     };
 
     // Create project.json
-    let project =
-        create_migration_project_json(&stem, width, height, duration_ms, fps, &folder_path);
+    // Note: For quick capture videos with embedded audio, we intentionally leave
+    // systemAudio as null — the <video> element plays its own embedded audio.
+    // Setting systemAudio to "screen.mp4" would create a redundant <audio> element
+    // loading the same file, causing triple asset protocol load and UI hangs.
+    let has_system_audio = folder_path.join("system.wav").exists();
+    let project = create_migration_project_json(
+        &stem,
+        &original_file_name,
+        width,
+        height,
+        duration_ms,
+        fps,
+        &folder_path,
+        has_system_audio,
+    );
     let project_file = folder_path.join("project.json");
     fs::write(&project_file, project)
         .map_err(|e| format!("Failed to write project.json: {}", e))?;
@@ -1327,15 +1456,26 @@ fn migrate_legacy_video(
 /// Create a minimal project.json for a migrated video.
 fn create_migration_project_json(
     id: &str,
+    original_file_name: &str,
     width: u32,
     height: u32,
     duration_ms: u64,
     fps: u32,
     folder_path: &PathBuf,
+    has_system_audio_file: bool,
 ) -> String {
     let now = chrono::Utc::now().to_rfc3339();
     let has_webcam = folder_path.join("webcam.mp4").exists();
     let has_cursor = folder_path.join("cursor.json").exists();
+
+    // System audio: only set when a separate WAV file exists (editor flow).
+    // Quick capture videos have audio muxed into screen.mp4 — leave null so
+    // the <video> element plays its own embedded audio directly.
+    let system_audio: Option<&str> = if has_system_audio_file {
+        Some("system.wav")
+    } else {
+        None
+    };
 
     // Use serde_json to create a proper VideoProject-compatible JSON
     let sources = serde_json::json!({
@@ -1343,7 +1483,7 @@ fn create_migration_project_json(
         "webcamVideo": if has_webcam { Some("webcam.mp4") } else { None::<&str> },
         "cursorData": if has_cursor { Some("cursor.json") } else { None::<&str> },
         "audioFile": null,
-        "systemAudio": null,
+        "systemAudio": system_audio,
         "microphoneAudio": null,
         "backgroundMusic": null,
         "originalWidth": width,
@@ -1357,6 +1497,8 @@ fn create_migration_project_json(
         "createdAt": now,
         "updatedAt": now,
         "name": id,
+        "originalFileName": original_file_name,
+        "quickCapture": true,
         "sources": sources,
         "timeline": {
             "durationMs": duration_ms,
@@ -1373,6 +1515,7 @@ fn create_migration_project_json(
             "visible": true,
             "cursorType": "auto",
             "scale": 1.0,
+            "dampening": 0.5,
             "motionBlur": 0.0,
             "clickHighlight": {
                 "enabled": true,

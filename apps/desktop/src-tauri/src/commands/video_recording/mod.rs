@@ -265,7 +265,20 @@ pub fn stop_prewarm() {
 /// Start native webcam capture service for preview.
 /// Call this before showing the preview window.
 #[command]
-pub fn start_webcam_preview(device_index: usize) -> Result<(), String> {
+pub fn start_webcam_preview(
+    device_index: usize,
+    license: tauri::State<'_, crate::commands::license::LicenseState>,
+) -> Result<(), String> {
+    // Pro feature gate: webcam overlay requires a license
+    {
+        let guard = license.cache.read();
+        if let Some(ref cache) = *guard {
+            let status =
+                crate::license::validation::resolve_status(cache, env!("CARGO_PKG_VERSION"));
+            crate::license::feature_gate::require_pro(&status)?;
+        }
+    }
+
     log::debug!(
         "[WEBCAM] start_webcam_preview(device_index={})",
         device_index
@@ -327,7 +340,18 @@ pub async fn start_gpu_webcam_preview(
     size: WebcamSize,
     shape: WebcamShape,
     mirror: bool,
+    license: tauri::State<'_, crate::commands::license::LicenseState>,
 ) -> Result<(), String> {
+    // Pro feature gate: webcam overlay requires a license
+    {
+        let guard = license.cache.read();
+        if let Some(ref cache) = *guard {
+            let status =
+                crate::license::validation::resolve_status(cache, env!("CARGO_PKG_VERSION"));
+            crate::license::feature_gate::require_pro(&status)?;
+        }
+    }
+
     log::debug!(
         "[WEBCAM] start_gpu_webcam_preview(device_index={}, size={:?}, shape={:?}, mirror={})",
         device_index,
@@ -423,7 +447,21 @@ pub async fn update_gpu_webcam_preview_settings(
 /// Creates window HIDDEN, initializes wgpu, then shows window (Cap pattern).
 /// Uses the CameraPreviewManager to ensure only ONE preview exists at a time.
 #[command]
-pub async fn show_camera_preview(app: tauri::AppHandle, device_index: usize) -> Result<(), String> {
+pub async fn show_camera_preview(
+    app: tauri::AppHandle,
+    device_index: usize,
+    license: tauri::State<'_, crate::commands::license::LicenseState>,
+) -> Result<(), String> {
+    // Pro feature gate: webcam overlay requires a license
+    {
+        let guard = license.cache.read();
+        if let Some(ref cache) = *guard {
+            let status =
+                crate::license::validation::resolve_status(cache, env!("CARGO_PKG_VERSION"));
+            crate::license::feature_gate::require_pro(&status)?;
+        }
+    }
+
     log::debug!(
         "[WEBCAM] show_camera_preview(device_index={})",
         device_index
@@ -976,13 +1014,20 @@ pub async fn get_recording_status() -> Result<RecordingStatus, String> {
 /// A VideoProject ready for editing in the video editor UI.
 #[command]
 pub async fn load_video_project(video_path: String) -> Result<VideoProject, String> {
-    let path = std::path::Path::new(&video_path);
+    // Use spawn_blocking to avoid starving the tokio async worker threads.
+    // load_video_project_from_file may call ffprobe (blocking subprocess) for
+    // legacy videos, and the asset-protocol handler shares this runtime.
+    tokio::task::spawn_blocking(move || {
+        let path = std::path::Path::new(&video_path);
 
-    if !path.exists() {
-        return Err(format!("Video file not found: {}", video_path));
-    }
+        if !path.exists() {
+            return Err(format!("Video file not found: {}", video_path));
+        }
 
-    load_video_project_from_file(path)
+        load_video_project_from_file(path)
+    })
+    .await
+    .map_err(|e| format!("Load project task panicked: {}", e))?
 }
 
 /// Save a video project to a JSON file.
@@ -993,7 +1038,13 @@ pub async fn load_video_project(video_path: String) -> Result<VideoProject, Stri
 /// For legacy flat file projects:
 ///   Saves alongside the video with `.moonsnap` extension.
 #[command]
-pub async fn save_video_project(mut project: VideoProject) -> Result<(), String> {
+pub async fn save_video_project(project: VideoProject) -> Result<(), String> {
+    tokio::task::spawn_blocking(move || save_video_project_blocking(project))
+        .await
+        .map_err(|e| format!("Save project task panicked: {}", e))?
+}
+
+fn save_video_project_blocking(mut project: VideoProject) -> Result<(), String> {
     let video_path = std::path::Path::new(&project.sources.screen_video);
 
     // Check if this is a folder-based project (video is inside a project folder)
@@ -1052,13 +1103,17 @@ pub async fn save_video_project(mut project: VideoProject) -> Result<(), String>
 /// This is used for auto-zoom cursor following and cursor interpolation.
 #[command]
 pub async fn load_cursor_recording_cmd(path: String) -> Result<CursorRecording, String> {
-    let cursor_path = std::path::Path::new(&path);
+    tokio::task::spawn_blocking(move || {
+        let cursor_path = std::path::Path::new(&path);
 
-    if !cursor_path.exists() {
-        return Err(format!("Cursor data file not found: {}", path));
-    }
+        if !cursor_path.exists() {
+            return Err(format!("Cursor data file not found: {}", path));
+        }
 
-    cursor::load_cursor_recording(cursor_path)
+        cursor::load_cursor_recording(cursor_path)
+    })
+    .await
+    .map_err(|e| format!("Load cursor task panicked: {}", e))?
 }
 
 /// Extract a video frame at the specified timestamp.
@@ -1077,16 +1132,20 @@ pub async fn extract_frame(
     max_width: Option<u32>,
     tolerance_ms: Option<u64>,
 ) -> Result<String, String> {
-    let path = std::path::Path::new(&video_path);
+    tokio::task::spawn_blocking(move || {
+        let path = std::path::Path::new(&video_path);
 
-    if !path.exists() {
-        return Err(format!("Video file not found: {}", video_path));
-    }
+        if !path.exists() {
+            return Err(format!("Video file not found: {}", video_path));
+        }
 
-    let max_w = max_width.unwrap_or(1280);
-    let tolerance = tolerance_ms.unwrap_or(100);
+        let max_w = max_width.unwrap_or(1280);
+        let tolerance = tolerance_ms.unwrap_or(100);
 
-    get_video_frame_cached(path, timestamp_ms, Some(max_w), tolerance)
+        get_video_frame_cached(path, timestamp_ms, Some(max_w), tolerance)
+    })
+    .await
+    .map_err(|e| format!("Extract frame task panicked: {}", e))?
 }
 
 /// Clear the frame cache for a video or all videos.
@@ -1106,7 +1165,24 @@ pub async fn extract_audio_waveform(
     audio_path: String,
     samples_per_second: Option<u32>,
 ) -> Result<AudioWaveform, String> {
-    let path = std::path::Path::new(&audio_path);
+    // Move all blocking subprocess work to a dedicated blocking thread so we
+    // don't starve the tokio async worker threads.  The asset-protocol handler
+    // shares this runtime, so blocking here would prevent video seeking from
+    // completing — causing the editor to hang when scrubbing the timeline.
+    tokio::task::spawn_blocking(move || {
+        extract_audio_waveform_blocking(&audio_path, samples_per_second)
+    })
+    .await
+    .map_err(|e| format!("Waveform task panicked: {}", e))?
+}
+
+/// Blocking implementation of audio waveform extraction.
+/// Runs ffprobe + ffmpeg subprocesses (blocking I/O).
+fn extract_audio_waveform_blocking(
+    audio_path: &str,
+    samples_per_second: Option<u32>,
+) -> Result<AudioWaveform, String> {
+    let path = std::path::Path::new(audio_path);
 
     if !path.exists() {
         return Err(format!("Audio file not found: {}", audio_path));
@@ -1128,7 +1204,7 @@ pub async fn extract_audio_waveform(
     let mut probe_cmd = std::process::Command::new(&ffprobe_path);
     probe_cmd
         .args(["-v", "quiet", "-print_format", "json", "-show_format"])
-        .arg(&path);
+        .arg(path);
 
     #[cfg(windows)]
     {
@@ -1163,7 +1239,7 @@ pub async fn extract_audio_waveform(
     let output = moonsnap_media::ffmpeg::create_hidden_command(&ffmpeg_path)
         .args([
             "-i",
-            &audio_path,
+            audio_path,
             "-vn",
             "-ac",
             "1",
@@ -1251,7 +1327,21 @@ pub async fn export_video(
     app: AppHandle,
     project: VideoProject,
     output_path: String,
+    license: tauri::State<'_, crate::commands::license::LicenseState>,
 ) -> Result<ExportResult, String> {
+    // Pro feature gate: GIF export requires a license
+    if matches!(
+        project.export.format,
+        moonsnap_domain::video_project::ExportFormat::Gif
+    ) {
+        let guard = license.cache.read();
+        if let Some(ref cache) = *guard {
+            let status =
+                crate::license::validation::resolve_status(cache, env!("CARGO_PKG_VERSION"));
+            crate::license::feature_gate::require_pro(&status)?;
+        }
+    }
+
     // Check if FFmpeg is available (required for video encoding)
     if moonsnap_media::ffmpeg::find_ffmpeg().is_none() {
         return Err(
@@ -1373,6 +1463,20 @@ pub fn emit_state_change(app: &AppHandle, state: &RecordingState) {
     if let Ok(json) = serde_json::to_string(state) {
         log::debug!("[EMIT] recording-state-changed: {}", json);
     }
+
+    #[cfg(desktop)]
+    {
+        if let Ok(tray_state) = app.state::<Mutex<crate::TrayState>>().lock() {
+            let format = RECORDING_CONTROLLER.lock().ok().and_then(|controller| {
+                controller.settings.as_ref().map(|settings| settings.format)
+            });
+
+            if let Err(error) = tray_state.update_recording_state(state, format) {
+                log::warn!("Failed to update tray recording state: {}", error);
+            }
+        }
+    }
+
     let _ = app.emit("recording-state-changed", state);
 }
 // ============================================================================

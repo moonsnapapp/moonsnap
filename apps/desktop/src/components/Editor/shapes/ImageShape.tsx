@@ -28,6 +28,22 @@ export const ImageShape: React.FC<ImageShapeProps> = React.memo(({
 
   if (!img) return null;
 
+  // Background image: not interactive — clicks pass through to stage
+  if (shape.isBackground) {
+    return (
+      <Image
+        id={shape.id}
+        image={img}
+        x={shape.x}
+        y={shape.y}
+        width={shape.width}
+        height={shape.height}
+        name="background"
+        listening={false}
+      />
+    );
+  }
+
   return (
     <Image
       id={shape.id}
@@ -44,7 +60,6 @@ export const ImageShape: React.FC<ImageShapeProps> = React.memo(({
       onDragEnd={onDragEnd}
       onTransformStart={onTransformStart}
       onTransformEnd={onTransformEnd}
-      name={shape.isBackground ? 'background' : undefined}
       {...cursorHandlers}
     />
   );

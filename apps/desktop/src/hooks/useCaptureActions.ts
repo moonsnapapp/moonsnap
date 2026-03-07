@@ -12,6 +12,13 @@ import type { FastCaptureResult } from '../types';
 
 export function useCaptureActions() {
   /**
+   * Open the capture toolbar using the last-used mode and source.
+   */
+  const openCaptureToolbar = useCallback(async () => {
+    await invoke('show_startup_toolbar');
+  }, []);
+
+  /**
    * Trigger region capture overlay for screenshot.
    */
   const triggerNewCapture = useCallback(async () => {
@@ -37,9 +44,26 @@ export function useCaptureActions() {
     await CaptureService.captureAllMonitorsToEditor();
   }, []);
 
+  /**
+   * Open the capture toolbar in Video mode.
+   */
+  const triggerVideoCapture = useCallback(async () => {
+    await invoke('show_startup_toolbar', { captureType: 'video' });
+  }, []);
+
+  /**
+   * Open the capture toolbar in GIF mode.
+   */
+  const triggerGifCapture = useCallback(async () => {
+    await invoke('show_startup_toolbar', { captureType: 'gif' });
+  }, []);
+
   return {
+    openCaptureToolbar,
     triggerNewCapture,
     triggerFullscreenCapture,
     triggerAllMonitorsCapture,
+    triggerVideoCapture,
+    triggerGifCapture,
   };
 }

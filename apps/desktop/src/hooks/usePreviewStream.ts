@@ -167,7 +167,9 @@ export function usePreviewStream(options: UsePreviewStreamOptions = {}): UsePrev
 
     try {
       // Initialize backend preview renderer
+      console.time('[EDITOR-INIT] PreviewStream init_preview');
       const url = await invoke<string>('init_preview');
+      console.timeEnd('[EDITOR-INIT] PreviewStream init_preview');
       setWsUrl(url);
 
       // Connect to WebSocket
