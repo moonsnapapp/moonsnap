@@ -446,7 +446,7 @@ export default async function Home() {
 
           <div className="inline-flex flex-col items-center gap-4">
             <a
-              href="https://github.com/walterlow/moonsnap-releases/releases/latest"
+              href="https://github.com/moonsnapapp/moonsnap-releases/releases/latest"
               target="_blank"
               rel="noopener noreferrer"
               className="btn-primary flex items-center gap-3 text-lg px-8 py-4"

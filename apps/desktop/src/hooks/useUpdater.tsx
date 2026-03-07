@@ -48,7 +48,7 @@ function UpdateProgressToast({ progress, contentLength }: UpdateProgressToastPro
   );
 }
 
-const BETA_MANIFEST_URL = 'https://github.com/walterlow/moonsnap-releases/releases/latest/download/latest-beta.json';
+const BETA_MANIFEST_URL = 'https://github.com/moonsnapapp/moonsnap-releases/releases/latest/download/latest-beta.json';
 
 export function useUpdater(checkOnMount = true, channel: UpdateChannel = 'stable') {
   const [state, setState] = useState<UpdateState>({
@@ -103,7 +103,7 @@ export function useUpdater(checkOnMount = true, channel: UpdateChannel = 'stable
                 action: {
                   label: 'Download',
                   onClick: () => {
-                    window.open(`https://github.com/walterlow/moonsnap-releases/releases/tag/v${manifest.version}`, '_blank');
+                    window.open(`https://github.com/moonsnapapp/moonsnap-releases/releases/tag/v${manifest.version}`, '_blank');
                   },
                 },
                 duration: 10000,
