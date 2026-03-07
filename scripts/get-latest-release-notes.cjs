@@ -34,7 +34,10 @@ if (!latest) {
   process.exit(1);
 }
 
-if (expectedVersion && latest.version !== expectedVersion) {
+// For prereleases (e.g. 1.0.0-beta.1), use the latest changelog entry as-is
+const isPrerelease = expectedVersion && expectedVersion.includes("-");
+
+if (expectedVersion && !isPrerelease && latest.version !== expectedVersion) {
   console.error(
     `Latest changelog version (${latest.version}) does not match requested release version (${expectedVersion}).`,
   );
