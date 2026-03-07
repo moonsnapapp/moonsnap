@@ -208,10 +208,12 @@ jobs:
         shell: pwsh
         run: choco install llvm -y
 
-      - name: Set LLVM env
+      - name: Set LLVM env and use lld linker
         if: matrix.platform == 'windows-latest'
         shell: pwsh
-        run: echo "LIBCLANG_PATH=C:\Program Files\LLVM\bin" >> $env:GITHUB_ENV
+        run: |
+          echo "LIBCLANG_PATH=C:\Program Files\LLVM\bin" >> $env:GITHUB_ENV
+          echo "CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_LINKER=lld-link" >> $env:GITHUB_ENV
 
       - name: Install frontend dependencies
         run: bun install
