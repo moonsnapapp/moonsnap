@@ -13,6 +13,8 @@ import { toolbarLogger } from '@/utils/logger';
 interface UseToolbarPositioningOptions {
   /** Ref to the full container (app-container) for height measurement */
   containerRef: React.RefObject<HTMLDivElement | null>;
+  /** Ref to the toolbar padding wrapper */
+  toolbarRef: React.RefObject<HTMLDivElement | null>;
   /** Ref to the content element for width measurement */
   contentRef: React.RefObject<HTMLDivElement | null>;
   /** Selection confirmed state - triggers remeasure when content swaps */
@@ -25,6 +27,7 @@ interface UseToolbarPositioningOptions {
 
 export function useToolbarPositioning({
   containerRef,
+  toolbarRef,
   contentRef,
   selectionConfirmed,
   mode,
@@ -37,17 +40,19 @@ export function useToolbarPositioning({
 
   const measureTargetSize = useCallback(() => {
     const container = containerRef.current;
+    const toolbar = toolbarRef.current;
     const content = contentRef.current;
-    if (!container || !content) {
+    if (!container || !toolbar || !content) {
       return null;
     }
 
     const contentRect = content.getBoundingClientRect();
-    const containerRect = container.getBoundingClientRect();
     const titlebar = container.querySelector<HTMLElement>('.titlebar');
     let titlebarWidth = 0;
+    let titlebarHeight = 0;
 
     if (titlebar) {
+      const titlebarRect = titlebar.getBoundingClientRect();
       const titlebarLeft = titlebar.querySelector<HTMLElement>('.titlebar-left');
       const titlebarControls = titlebar.querySelector<HTMLElement>('.titlebar-controls');
       const titlebarStyle = window.getComputedStyle(titlebar);
@@ -63,13 +68,26 @@ export function useToolbarPositioning({
       // Intrinsic titlebar width is just left content + controls + horizontal chrome.
       // The center drag region is flex:1 and can collapse to zero.
       titlebarWidth = leftWidth + controlsWidth + horizontalChrome;
+      titlebarHeight = titlebarRect.height;
     }
 
+    const toolbarStyle = window.getComputedStyle(toolbar);
+    const horizontalPadding =
+      (Number.parseFloat(toolbarStyle.paddingLeft) || 0) +
+      (Number.parseFloat(toolbarStyle.paddingRight) || 0) +
+      (Number.parseFloat(toolbarStyle.borderLeftWidth) || 0) +
+      (Number.parseFloat(toolbarStyle.borderRightWidth) || 0);
+    const verticalPadding =
+      (Number.parseFloat(toolbarStyle.paddingTop) || 0) +
+      (Number.parseFloat(toolbarStyle.paddingBottom) || 0) +
+      (Number.parseFloat(toolbarStyle.borderTopWidth) || 0) +
+      (Number.parseFloat(toolbarStyle.borderBottomWidth) || 0);
+
     return {
-      width: Math.max(contentRect.width, titlebarWidth),
-      height: containerRect.height,
+      width: Math.max(contentRect.width + horizontalPadding, titlebarWidth),
+      height: titlebarHeight + contentRect.height + verticalPadding,
     };
-  }, [containerRef, contentRef]);
+  }, [containerRef, contentRef, toolbarRef]);
 
   const resizeWindow = useCallback(async (width: number, height: number, force = false) => {
     if (!force && width === lastSizeRef.current.width && height === lastSizeRef.current.height) {
@@ -144,8 +162,9 @@ export function useToolbarPositioning({
   // Measure content and resize window
   useEffect(() => {
     const container = containerRef.current;
+    const toolbar = toolbarRef.current;
     const content = contentRef.current;
-    if (!container || !content) return;
+    if (!container || !toolbar || !content) return;
 
     scheduleMeasure(5, true);
 
@@ -161,19 +180,20 @@ export function useToolbarPositioning({
       scheduleMeasure(3);
     });
 
-    observer.observe(container);
+    observer.observe(toolbar);
     observer.observe(content);
     return () => {
       observer.disconnect();
       clearScheduledMeasure();
     };
-  }, [clearScheduledMeasure, containerRef, contentRef, scheduleMeasure]);
+  }, [clearScheduledMeasure, containerRef, contentRef, scheduleMeasure, toolbarRef]);
 
   // Force remeasure when selection state or mode changes (content swaps)
   useEffect(() => {
     const container = containerRef.current;
+    const toolbar = toolbarRef.current;
     const content = contentRef.current;
-    if (!container || !content) return;
+    if (!container || !toolbar || !content) return;
 
     lastSizeRef.current = { width: 0, height: 0 };
     scheduleMeasure(5, true);
@@ -181,5 +201,5 @@ export function useToolbarPositioning({
     return () => {
       clearScheduledMeasure();
     };
-  }, [clearScheduledMeasure, containerRef, contentRef, mode, scheduleMeasure, selectionConfirmed]);
+  }, [clearScheduledMeasure, containerRef, contentRef, mode, scheduleMeasure, selectionConfirmed, toolbarRef]);
 }

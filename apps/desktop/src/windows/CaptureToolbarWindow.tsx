@@ -153,6 +153,7 @@ const CaptureToolbarWindow: React.FC = () => {
   // Measure content and resize window to fit
   useToolbarPositioning({
     containerRef,
+    toolbarRef,
     contentRef,
     selectionConfirmed,
     mode,

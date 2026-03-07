@@ -32,6 +32,7 @@ pub struct CaptureToolbarBootstrapPayload {
 #[derive(Default)]
 pub struct CaptureToolbarBootstrapState {
     payload: Mutex<Option<CaptureToolbarBootstrapPayload>>,
+    create_lock: Mutex<()>,
 }
 
 impl CaptureToolbarBootstrapState {
@@ -103,6 +104,12 @@ pub async fn show_capture_toolbar(
     monitor_index: Option<u32>,
     monitor_name: Option<String>,
 ) -> Result<(), String> {
+    let toolbar_state = app.state::<CaptureToolbarBootstrapState>();
+    let _create_guard = toolbar_state
+        .create_lock
+        .lock()
+        .map_err(|_| "Failed to lock capture toolbar creation".to_string())?;
+
     let selection = build_selection_payload(
         x,
         y,
@@ -314,9 +321,11 @@ pub async fn set_capture_toolbar_position(app: AppHandle, x: i32, y: i32) -> Res
         return Ok(());
     };
 
-    // Get current size
+    // Preserve the inner content size.
+    // Using outer_size here causes the window to grow when shadows/frame extents
+    // are reapplied repeatedly during drag reposition updates.
     let size = window
-        .outer_size()
+        .inner_size()
         .map_err(|e| format!("Failed to get size: {}", e))?;
 
     // Set position only (preserve size)
@@ -443,6 +452,12 @@ pub async fn show_startup_toolbar(
     capture_type: Option<String>,
     source_mode: Option<String>,
 ) -> Result<(), String> {
+    let toolbar_state = app.state::<CaptureToolbarBootstrapState>();
+    let _create_guard = toolbar_state
+        .create_lock
+        .lock()
+        .map_err(|_| "Failed to lock startup toolbar creation".to_string())?;
+
     // Check if window already exists
     if let Some(window) = app.get_webview_window(CAPTURE_TOOLBAR_LABEL) {
         log::debug!("[show_startup_toolbar] Window already exists, bringing to front");
