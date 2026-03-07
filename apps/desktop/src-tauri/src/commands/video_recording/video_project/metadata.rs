@@ -16,6 +16,7 @@ pub struct VideoMetadata {
     pub duration_ms: u64,
     pub fps: u32,
     /// Whether the file contains an audio stream.
+    #[allow(dead_code)]
     pub has_audio: bool,
 }
 

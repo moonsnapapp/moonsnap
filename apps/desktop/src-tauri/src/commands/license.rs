@@ -243,7 +243,7 @@ pub async fn background_revalidation(
 
         let needs_validation = {
             let guard = cache_state.read();
-            guard.as_ref().map_or(false, |c| {
+            guard.as_ref().is_some_and(|c| {
                 if c.status != LicenseStatus::Pro {
                     return false;
                 }

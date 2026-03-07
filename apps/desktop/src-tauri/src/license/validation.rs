@@ -1,6 +1,8 @@
 //! License validation logic.
 
-use chrono::{Duration as ChronoDuration, Utc};
+#[cfg(test)]
+use chrono::Duration as ChronoDuration;
+use chrono::Utc;
 use reqwest::header::RETRY_AFTER;
 use reqwest::StatusCode;
 use serde::Deserialize;
@@ -25,6 +27,7 @@ const POLAR_UNAUTH_MIN_INTERVAL: StdDuration = StdDuration::from_millis(350);
 static POLAR_UNAUTH_REQUEST_GATE: OnceLock<Mutex<Instant>> = OnceLock::new();
 
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 struct PolarActivation {
     pub id: String,
     pub label: Option<String>,
@@ -40,6 +43,7 @@ struct PolarValidateResponse {
 }
 
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 struct PolarActivateResponse {
     pub id: String,
     pub label: Option<String>,

@@ -190,6 +190,7 @@ mod tests {
             mask: MaskConfig::default(),
             captions: CaptionSettings::default(),
             caption_segments: Vec::<CaptionSegment>::new(),
+            quick_capture: false,
         }
     }
 
