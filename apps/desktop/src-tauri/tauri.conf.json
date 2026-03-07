@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "MoonSnap",
-  "version": "0.5.8-beta.0",
+  "version": "0.5.8-beta.1",
   "identifier": "com.moonsnap.app",
   "build": {
     "beforeDevCommand": "bun run dev",
