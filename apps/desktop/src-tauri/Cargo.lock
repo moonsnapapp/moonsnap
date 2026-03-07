@@ -3805,7 +3805,7 @@ dependencies = [
 
 [[package]]
 name = "moonsnap"
-version = "0.5.8-beta.2"
+version = "0.5.8"
 dependencies = [
  "aes-gcm",
  "axum",
