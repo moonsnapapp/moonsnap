@@ -2,6 +2,26 @@
 
 All notable changes to MoonSnap are documented in this file.
 
+## [0.5.8] - 2026-03-07
+
+### Added
+- Beta update channel for early access to new features.
+- Improved timeline zoom with better scroll behavior.
+
+### Changed
+- True squircle (superellipse) shape for video frame corner radius.
+- Faster editor resizing with reduced lag during window resize.
+
+### Fixed
+- Capture bar now retains theme correctly.
+- Tray icon context menu reliably appears in the foreground on click.
+- Typewriter sound effect now ends in sync with the visual character reveal.
+- Squircle border snapping at radius 0, increased max radius to 200px, and border syncs with zoom.
+- Squircle border now renders with proper curve on both inner and outer edges.
+- Playhead snaps to the exact end when video finishes playing.
+- Playhead no longer oscillates when crossing deleted trim segments.
+- Fit-to-window now fills the full timeline width for short videos.
+
 ## [0.5.7] - 2026-03-02
 
 ### Changed
