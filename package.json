@@ -27,6 +27,7 @@
     "release": "npm version patch",
     "release:minor": "npm version minor",
     "release:major": "npm version major",
+    "release:beta": "npm version prerelease --preid=beta",
     "prepare": "husky"
   },
   "devDependencies": {
