@@ -7,9 +7,14 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Version to release (e.g., 1.0.0)'
+        description: 'Version to release (e.g., 1.0.0 or 1.0.0-beta.1)'
         required: true
         type: string
+      prerelease:
+        description: 'Mark as pre-release (beta)'
+        required: false
+        type: boolean
+        default: false
 
 env:
   CARGO_TERM_COLOR: always
@@ -22,6 +27,7 @@ jobs:
     outputs:
       release_id: ${{ steps.create-release.outputs.result }}
       version: ${{ steps.get-version.outputs.version }}
+      is_prerelease: ${{ steps.get-version.outputs.is_prerelease }}
 
     steps:
       - uses: actions/checkout@v6
@@ -33,10 +39,19 @@ jobs:
         id: get-version
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "version=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
+            VERSION="${{ github.event.inputs.version }}"
+            IS_PRE="${{ github.event.inputs.prerelease }}"
           else
-            echo "version=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+            VERSION="${GITHUB_REF#refs/tags/v}"
+            # Auto-detect prerelease from tag (e.g., v1.0.0-beta.1)
+            if [[ "$VERSION" == *"-"* ]]; then
+              IS_PRE="true"
+            else
+              IS_PRE="false"
+            fi
           fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "is_prerelease=$IS_PRE" >> $GITHUB_OUTPUT
 
       - name: Generate release notes from changelog
         id: release-notes
@@ -63,7 +78,7 @@ jobs:
               name: `MoonSnap v${{ steps.get-version.outputs.version }}`,
               body: process.env.RELEASE_BODY,
               draft: true,
-              prerelease: false
+              prerelease: ${{ steps.get-version.outputs.is_prerelease == 'true' }}
             })
             return data.id
 
@@ -141,38 +156,62 @@ jobs:
         with:
           workspaces: './apps/desktop/src-tauri -> target'
 
-      - name: Install FFmpeg (Windows)
+      - name: Cache FFmpeg
         if: matrix.platform == 'windows-latest'
+        id: cache-ffmpeg
+        uses: actions/cache@v4
+        with:
+          path: C:\ffmpeg
+          key: ffmpeg-windows-7.1
+
+      - name: Download FFmpeg
+        if: matrix.platform == 'windows-latest' && steps.cache-ffmpeg.outputs.cache-hit != 'true'
         shell: pwsh
         run: |
-          # Download and extract FFmpeg dev libraries
           $ffmpegVersion = "7.1"
           $ffmpegUrl = "https://github.com/GyanD/codexffmpeg/releases/download/$ffmpegVersion/ffmpeg-$ffmpegVersion-full_build-shared.zip"
           $ffmpegZip = "$env:RUNNER_TEMP\ffmpeg.zip"
-          $ffmpegDir = "$env:RUNNER_TEMP\ffmpeg"
 
           Write-Host "Downloading FFmpeg $ffmpegVersion..."
           Invoke-WebRequest -Uri $ffmpegUrl -OutFile $ffmpegZip
 
           Write-Host "Extracting FFmpeg..."
-          Expand-Archive -Path $ffmpegZip -DestinationPath $ffmpegDir -Force
+          Expand-Archive -Path $ffmpegZip -DestinationPath "$env:RUNNER_TEMP\ffmpeg-extract" -Force
 
-          $ffmpegPath = Get-ChildItem -Path $ffmpegDir -Directory | Select-Object -First 1
+          $ffmpegPath = Get-ChildItem -Path "$env:RUNNER_TEMP\ffmpeg-extract" -Directory | Select-Object -First 1
+          Move-Item -Path $ffmpegPath.FullName -Destination "C:\ffmpeg" -Force
 
-          # Set environment variables for ffmpeg-sys-next
-          echo "FFMPEG_DIR=$($ffmpegPath.FullName)" >> $env:GITHUB_ENV
-          echo "$($ffmpegPath.FullName)\bin" >> $env:GITHUB_PATH
+      - name: Set FFmpeg env and copy DLLs
+        if: matrix.platform == 'windows-latest'
+        shell: pwsh
+        run: |
+          echo "FFMPEG_DIR=C:\ffmpeg" >> $env:GITHUB_ENV
+          echo "C:\ffmpeg\bin" >> $env:GITHUB_PATH
 
           # Copy FFmpeg DLLs to binaries folder for bundling
           Write-Host "Copying FFmpeg DLLs for bundling..."
           $binariesDir = "apps\desktop\src-tauri\binaries"
           if (!(Test-Path $binariesDir)) { New-Item -ItemType Directory -Path $binariesDir -Force }
-          Copy-Item "$($ffmpegPath.FullName)\bin\*.dll" -Destination $binariesDir -Force
+          Copy-Item "C:\ffmpeg\bin\*.dll" -Destination $binariesDir -Force
           Get-ChildItem $binariesDir -Filter "*.dll" | ForEach-Object { Write-Host "  - $($_.Name)" }
 
-          # Install LLVM/Clang (required by ffmpeg-sys-next for bindgen)
-          choco install llvm -y
-          echo "LIBCLANG_PATH=C:\Program Files\LLVM\bin" >> $env:GITHUB_ENV
+      - name: Cache LLVM
+        if: matrix.platform == 'windows-latest'
+        id: cache-llvm
+        uses: actions/cache@v4
+        with:
+          path: C:\Program Files\LLVM
+          key: llvm-windows-latest
+
+      - name: Install LLVM
+        if: matrix.platform == 'windows-latest' && steps.cache-llvm.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: choco install llvm -y
+
+      - name: Set LLVM env
+        if: matrix.platform == 'windows-latest'
+        shell: pwsh
+        run: echo "LIBCLANG_PATH=C:\Program Files\LLVM\bin" >> $env:GITHUB_ENV
 
       - name: Install frontend dependencies
         run: bun install
@@ -207,13 +246,14 @@ jobs:
               repo: context.repo.repo,
               release_id: process.env.release_id,
               draft: false,
-              prerelease: false
+              prerelease: ${{ needs.create-release.outputs.is_prerelease == 'true' }}
             })
 
-  # Mirror release to public repo for downloads
+  # Mirror release to public repo for downloads (skip for prereleases)
   mirror-to-public:
     runs-on: ubuntu-latest
     needs: [create-release, build-tauri, publish-release]
+    if: needs.create-release.outputs.is_prerelease != 'true'
     env:
       PUBLIC_REPO: walterlow/moonsnap-releases
       VERSION: ${{ needs.create-release.outputs.version }}
