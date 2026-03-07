@@ -35,10 +35,27 @@ struct PolarActivation {
 }
 
 #[derive(Debug, Deserialize)]
+struct PolarCustomer {
+    pub name: Option<String>,
+    pub email: Option<String>,
+    pub avatar_url: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct PolarUser {
+    pub public_name: Option<String>,
+    pub email: Option<String>,
+    pub avatar_url: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
 struct PolarValidateResponse {
-    pub valid: bool,
+    pub valid: Option<bool>,
+    pub status: Option<String>,
     pub limit_activations: Option<u32>,
     pub activation: Option<PolarActivation>,
+    pub customer: Option<PolarCustomer>,
+    pub user: Option<PolarUser>,
     pub usage: Option<u32>,
 }
 
@@ -55,6 +72,51 @@ pub struct ValidationInfo {
     pub seats_used: Option<u32>,
     pub seats_limit: Option<u32>,
     pub device_name: Option<String>,
+    pub customer_name: Option<String>,
+    pub customer_email: Option<String>,
+    pub customer_avatar_url: Option<String>,
+}
+
+fn parse_validate_response(raw: &str, status: StatusCode) -> Result<ValidationInfo, String> {
+    let body: PolarValidateResponse = serde_json::from_str(raw).map_err(|e| {
+        let preview: String = raw.chars().take(200).collect();
+        format!(
+            "Parse error (status {}): {} | body preview: {}",
+            status, e, preview
+        )
+    })?;
+
+    let customer_name = body
+        .customer
+        .as_ref()
+        .and_then(|customer| customer.name.clone())
+        .or_else(|| {
+            body.user
+                .as_ref()
+                .and_then(|user| user.public_name.clone())
+                .filter(|name| !name.trim().is_empty())
+        });
+    let customer_email = body
+        .customer
+        .as_ref()
+        .and_then(|customer| customer.email.clone())
+        .or_else(|| body.user.as_ref().and_then(|user| user.email.clone()));
+    let customer_avatar_url = body
+        .customer
+        .and_then(|customer| customer.avatar_url)
+        .or_else(|| body.user.and_then(|user| user.avatar_url));
+
+    Ok(ValidationInfo {
+        valid: body
+            .valid
+            .unwrap_or(matches!(body.status.as_deref(), Some("granted"))),
+        seats_used: body.usage,
+        seats_limit: body.limit_activations,
+        device_name: body.activation.and_then(|a| a.label),
+        customer_name,
+        customer_email,
+        customer_avatar_url,
+    })
 }
 
 async fn throttle_unauth_polar_request() {
@@ -166,20 +228,7 @@ pub async fn validate_online(
         .text()
         .await
         .map_err(|e| format!("Parse error reading response body: {}", e))?;
-    let body: PolarValidateResponse = serde_json::from_str(&raw).map_err(|e| {
-        let preview: String = raw.chars().take(200).collect();
-        format!(
-            "Parse error (status {}): {} | body preview: {}",
-            status, e, preview
-        )
-    })?;
-
-    Ok(ValidationInfo {
-        valid: body.valid,
-        seats_used: body.usage,
-        seats_limit: body.limit_activations,
-        device_name: body.activation.and_then(|a| a.label),
-    })
+    parse_validate_response(&raw, status)
 }
 
 /// Result of a successful activation, including the Polar activation ID.
@@ -295,6 +344,7 @@ pub async fn deactivate_online(key: &str, activation_id: &str) -> Result<(), Str
 #[cfg(test)]
 mod tests {
     use super::*;
+    use reqwest::StatusCode;
 
     #[test]
     fn test_trial_not_expired() {
@@ -311,6 +361,9 @@ mod tests {
             seats_used: None,
             seats_limit: None,
             device_name: None,
+            customer_name: None,
+            customer_email: None,
+            customer_avatar_url: None,
         };
         assert!(!is_trial_expired(&cache));
     }
@@ -330,6 +383,9 @@ mod tests {
             seats_used: None,
             seats_limit: None,
             device_name: None,
+            customer_name: None,
+            customer_email: None,
+            customer_avatar_url: None,
         };
         assert!(is_trial_expired(&cache));
     }
@@ -349,6 +405,9 @@ mod tests {
             seats_used: None,
             seats_limit: None,
             device_name: None,
+            customer_name: None,
+            customer_email: None,
+            customer_avatar_url: None,
         };
         assert!(is_within_grace_period(&cache));
     }
@@ -368,6 +427,9 @@ mod tests {
             seats_used: None,
             seats_limit: None,
             device_name: None,
+            customer_name: None,
+            customer_email: None,
+            customer_avatar_url: None,
         };
         assert!(!is_within_grace_period(&cache));
     }
@@ -397,8 +459,58 @@ mod tests {
             seats_used: None,
             seats_limit: None,
             device_name: None,
+            customer_name: None,
+            customer_email: None,
+            customer_avatar_url: None,
         };
         let days = trial_days_left(&cache);
         assert!(days >= 9 && days <= 10);
+    }
+
+    #[test]
+    fn test_parse_validate_response_supports_live_polar_shape() {
+        let raw = r#"{
+            "status":"granted",
+            "user":{"email":"walterlow88@gmail.com","public_name":"w","avatar_url":null},
+            "customer":{"email":"walterlow88@gmail.com","name":null,"avatar_url":"https://example.com/avatar.png"},
+            "limit_activations":2,
+            "usage":0,
+            "activation":{"id":"act-123","label":"DESKTOP-9V6CAA5","meta":{"device_id":"abc"}}
+        }"#;
+
+        let info = parse_validate_response(raw, StatusCode::OK).unwrap();
+
+        assert!(info.valid);
+        assert_eq!(info.seats_limit, Some(2));
+        assert_eq!(info.device_name.as_deref(), Some("DESKTOP-9V6CAA5"));
+        assert_eq!(info.customer_name.as_deref(), Some("w"));
+        assert_eq!(
+            info.customer_email.as_deref(),
+            Some("walterlow88@gmail.com")
+        );
+        assert_eq!(
+            info.customer_avatar_url.as_deref(),
+            Some("https://example.com/avatar.png")
+        );
+    }
+
+    #[test]
+    fn test_parse_validate_response_supports_boolean_valid_shape() {
+        let raw = r#"{
+            "valid":true,
+            "limit_activations":3,
+            "usage":1,
+            "customer":{"email":"owner@example.com","name":"Owner Example","avatar_url":null},
+            "activation":{"id":"act-456","label":"WORKSTATION","meta":{"device_id":"abc"}}
+        }"#;
+
+        let info = parse_validate_response(raw, StatusCode::OK).unwrap();
+
+        assert!(info.valid);
+        assert_eq!(info.seats_limit, Some(3));
+        assert_eq!(info.seats_used, Some(1));
+        assert_eq!(info.device_name.as_deref(), Some("WORKSTATION"));
+        assert_eq!(info.customer_name.as_deref(), Some("Owner Example"));
+        assert_eq!(info.customer_email.as_deref(), Some("owner@example.com"));
     }
 }

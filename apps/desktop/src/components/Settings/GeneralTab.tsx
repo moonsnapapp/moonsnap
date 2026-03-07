@@ -1,11 +1,11 @@
 import React, { useEffect, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { emit } from '@tauri-apps/api/event';
 import { open } from '@tauri-apps/plugin-dialog';
 import { FolderOpen, ExternalLink, Sun, Moon, Monitor, FileText } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
+import { useTheme } from '@/hooks/useTheme';
 import { useSettingsStore } from '@/stores/settingsStore';
 import type { Theme, UpdateChannel } from '@/types';
 import { settingsLogger } from '@/utils/logger';
@@ -13,6 +13,7 @@ import { settingsLogger } from '@/utils/logger';
 export const GeneralTab: React.FC = () => {
   const { settings, updateGeneralSettings } = useSettingsStore();
   const { general } = settings;
+  const { setTheme } = useTheme();
 
   const [isAutostartEnabled, setIsAutostartEnabled] = useState(false);
   const [isLoadingAutostart, setIsLoadingAutostart] = useState(true);
@@ -83,10 +84,7 @@ export const GeneralTab: React.FC = () => {
   };
 
   const handleThemeChange = (theme: Theme) => {
-    updateGeneralSettings({ theme });
-    emit('theme-changed', { theme }).catch((error) => {
-      settingsLogger.error('Failed to emit theme-changed:', error);
-    });
+    setTheme(theme);
   };
 
   return (

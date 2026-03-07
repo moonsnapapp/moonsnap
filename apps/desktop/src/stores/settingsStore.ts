@@ -27,6 +27,7 @@ const SETTINGS_STORE_PATH = 'settings.json';
 
 // Create a lazy store instance (initialized on first access)
 let storeInstance: LazyStore | null = null;
+let loadSettingsPromise: Promise<void> | null = null;
 
 async function getStore(): Promise<LazyStore> {
   if (!storeInstance) {
@@ -92,50 +93,60 @@ export const useSettingsStore = create<SettingsState>()(
   activeTab: 'general',
 
   loadSettings: async () => {
-    set({ isLoading: true });
-    try {
-      const store = await getStore();
-
-      // Load raw settings from storage
-      const savedShortcuts = await store.get<Record<string, Partial<ShortcutConfig>>>('shortcuts');
-      const savedGeneral = await store.get<Partial<GeneralSettings>>('general');
-      const savedVersion = await store.get<number>('_version');
-
-      // Build raw settings object for migration
-      const rawSettings = {
-        _version: savedVersion ?? 0,
-        shortcuts: savedShortcuts ?? undefined,
-        general: savedGeneral ?? undefined,
-      };
-
-      // Apply migrations if needed
-      const migratedSettings = migrateSettings(rawSettings);
-
-      // Merge with defaults to ensure all fields exist
-      const settings = mergeWithDefaults(migratedSettings);
-
-      // Save migrated settings if version changed
-      if (needsMigration(rawSettings)) {
-        settingsLogger.info('Settings migrated, saving new version');
-        await store.set('_version', SETTINGS_VERSION);
-        await store.set('shortcuts', migratedSettings.shortcuts);
-        await store.set('general', migratedSettings.general);
-        await store.save();
-      }
-
-      set({
-        settings,
-        isLoading: false,
-        isInitialized: true,
-      });
-    } catch {
-      // Use defaults on error
-      set({
-        settings: { ...DEFAULT_SETTINGS },
-        isLoading: false,
-        isInitialized: true,
-      });
+    if (loadSettingsPromise) {
+      return loadSettingsPromise;
     }
+
+    loadSettingsPromise = (async () => {
+      set({ isLoading: true });
+      try {
+        const store = await getStore();
+
+        // Load raw settings from storage
+        const savedShortcuts = await store.get<Record<string, Partial<ShortcutConfig>>>('shortcuts');
+        const savedGeneral = await store.get<Partial<GeneralSettings>>('general');
+        const savedVersion = await store.get<number>('_version');
+
+        // Build raw settings object for migration
+        const rawSettings = {
+          _version: savedVersion ?? 0,
+          shortcuts: savedShortcuts ?? undefined,
+          general: savedGeneral ?? undefined,
+        };
+
+        // Apply migrations if needed
+        const migratedSettings = migrateSettings(rawSettings);
+
+        // Merge with defaults to ensure all fields exist
+        const settings = mergeWithDefaults(migratedSettings);
+
+        // Save migrated settings if version changed
+        if (needsMigration(rawSettings)) {
+          settingsLogger.info('Settings migrated, saving new version');
+          await store.set('_version', SETTINGS_VERSION);
+          await store.set('shortcuts', migratedSettings.shortcuts);
+          await store.set('general', migratedSettings.general);
+          await store.save();
+        }
+
+        set({
+          settings,
+          isLoading: false,
+          isInitialized: true,
+        });
+      } catch {
+        // Use defaults on error
+        set({
+          settings: { ...DEFAULT_SETTINGS },
+          isLoading: false,
+          isInitialized: true,
+        });
+      } finally {
+        loadSettingsPromise = null;
+      }
+    })();
+
+    return loadSettingsPromise;
   },
 
   saveSettings: async () => {

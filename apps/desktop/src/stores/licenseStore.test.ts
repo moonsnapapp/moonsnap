@@ -14,6 +14,12 @@ describe('licenseStore', () => {
       status: 'trial',
       trialDaysLeft: null,
       licensedVersion: null,
+      seatsUsed: null,
+      seatsLimit: null,
+      deviceName: null,
+      customerName: null,
+      customerEmail: null,
+      customerAvatarUrl: null,
       isLoading: false,
     });
   });
@@ -31,6 +37,12 @@ describe('licenseStore', () => {
         status: 'pro',
         trialDaysLeft: null,
         licensedVersion: 1,
+        seatsUsed: null,
+        seatsLimit: 3,
+        deviceName: 'DESKTOP-01',
+        customerName: 'Taylor Example',
+        customerEmail: 'taylor@example.com',
+        customerAvatarUrl: 'https://example.com/avatar.png',
       });
 
       await useLicenseStore.getState().fetchStatus();
@@ -38,6 +50,8 @@ describe('licenseStore', () => {
       const state = useLicenseStore.getState();
       expect(state.status).toBe('pro');
       expect(state.licensedVersion).toBe(1);
+      expect(state.customerName).toBe('Taylor Example');
+      expect(state.customerEmail).toBe('taylor@example.com');
       expect(mockInvoke).toHaveBeenCalledWith('get_license_status');
     });
 
@@ -59,6 +73,12 @@ describe('licenseStore', () => {
           status: 'pro',
           trialDaysLeft: null,
           licensedVersion: 1,
+          seatsUsed: null,
+          seatsLimit: 3,
+          deviceName: 'DESKTOP-01',
+          customerName: 'Taylor Example',
+          customerEmail: 'taylor@example.com',
+          customerAvatarUrl: 'https://example.com/avatar.png',
         });
 
       const result = await useLicenseStore.getState().activate('test-key');
@@ -86,6 +106,12 @@ describe('licenseStore', () => {
           status: 'free',
           trialDaysLeft: null,
           licensedVersion: null,
+          seatsUsed: null,
+          seatsLimit: null,
+          deviceName: null,
+          customerName: null,
+          customerEmail: null,
+          customerAvatarUrl: null,
         });
 
       await useLicenseStore.getState().deactivate();

@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { describe, expect, it, beforeEach } from 'vitest';
+import { describe, expect, it, beforeEach, vi } from 'vitest';
 import { GeneralTab } from './GeneralTab';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { mockEmit, setInvokeResponse } from '@/test/mocks/tauri';
@@ -27,11 +27,15 @@ describe('GeneralTab', () => {
   });
 
   it('emits a theme sync event when changing the theme', async () => {
+    const saveSettings = vi.fn(async () => undefined);
+    useSettingsStore.setState({ saveSettings });
+
     render(<GeneralTab />);
 
     fireEvent.click(screen.getByRole('button', { name: 'Dark' }));
 
     expect(useSettingsStore.getState().settings.general.theme).toBe('dark');
+    expect(saveSettings).toHaveBeenCalledTimes(1);
 
     await waitFor(() => {
       expect(mockEmit).toHaveBeenCalledWith('theme-changed', { theme: 'dark' });

@@ -4,4 +4,4 @@ import type { LicenseStatus } from "./LicenseStatus";
 /**
  * License info exposed to the frontend via Tauri commands.
  */
-export type LicenseInfo = { status: LicenseStatus, trialDaysLeft: bigint | null, licensedVersion: number | null, seatsUsed: number | null, seatsLimit: number | null, deviceName: string | null, };
+export type LicenseInfo = { status: LicenseStatus, trialDaysLeft: bigint | null, licensedVersion: number | null, seatsUsed: number | null, seatsLimit: number | null, deviceName: string | null, customerName: string | null, customerEmail: string | null, customerAvatarUrl: string | null, };

@@ -15,6 +15,9 @@ interface LicenseInfoRuntime {
   seatsUsed: number | null;
   seatsLimit: number | null;
   deviceName: string | null;
+  customerName: string | null;
+  customerEmail: string | null;
+  customerAvatarUrl: string | null;
 }
 
 interface LicenseState {
@@ -24,6 +27,9 @@ interface LicenseState {
   seatsUsed: number | null;
   seatsLimit: number | null;
   deviceName: string | null;
+  customerName: string | null;
+  customerEmail: string | null;
+  customerAvatarUrl: string | null;
   isLoading: boolean;
 
   fetchStatus: () => Promise<void>;
@@ -41,6 +47,9 @@ export const useLicenseStore = create<LicenseState>()(
       seatsUsed: null,
       seatsLimit: null,
       deviceName: null,
+      customerName: null,
+      customerEmail: null,
+      customerAvatarUrl: null,
       isLoading: false,
 
       fetchStatus: async () => {
@@ -55,6 +64,9 @@ export const useLicenseStore = create<LicenseState>()(
             seatsUsed: info.seatsUsed,
             seatsLimit: info.seatsLimit,
             deviceName: info.deviceName,
+            customerName: info.customerName,
+            customerEmail: info.customerEmail,
+            customerAvatarUrl: info.customerAvatarUrl,
             isLoading: false,
           });
         } catch (e) {

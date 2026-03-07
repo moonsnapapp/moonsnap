@@ -2,7 +2,9 @@
 
 use parking_lot::RwLock;
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
+use std::time::{Duration as StdDuration, Instant};
+use tokio::sync::Mutex;
 
 use crate::license::{
     cache, device, feature_gate, validation, ActivationResult, LicenseCache, LicenseInfo,
@@ -11,6 +13,8 @@ use crate::license::{
 
 const CACHE_FILENAME: &str = "license.dat";
 const TRIAL_DAYS: i64 = 7;
+const PROFILE_BACKFILL_MIN_INTERVAL: StdDuration = StdDuration::from_secs(30);
+static PROFILE_BACKFILL_GATE: OnceLock<Mutex<Instant>> = OnceLock::new();
 
 /// Managed state holding the current license cache in memory.
 pub struct LicenseState {
@@ -42,6 +46,9 @@ impl LicenseState {
                 seats_used: None,
                 seats_limit: None,
                 device_name: None,
+                customer_name: None,
+                customer_email: None,
+                customer_avatar_url: None,
             };
             if let Err(e) = cache::save_cache(&cache_path, &encryption_key, &trial) {
                 log::error!("Failed to save initial trial cache: {}", e);
@@ -101,8 +108,94 @@ async fn validate_and_refresh_cache(
     None
 }
 
+async fn should_attempt_profile_backfill() -> bool {
+    let gate = PROFILE_BACKFILL_GATE
+        .get_or_init(|| Mutex::new(Instant::now() - PROFILE_BACKFILL_MIN_INTERVAL));
+    let mut last_attempt = gate.lock().await;
+    if last_attempt.elapsed() < PROFILE_BACKFILL_MIN_INTERVAL {
+        return false;
+    }
+
+    *last_attempt = Instant::now();
+    true
+}
+
+async fn backfill_pro_profile_if_missing(state: &LicenseState) {
+    let (key, activation_id) = {
+        let guard = state.cache.read();
+        let Some(cache) = guard.as_ref() else {
+            return;
+        };
+
+        let missing_profile = cache.customer_name.is_none()
+            && cache.customer_email.is_none()
+            && cache.device_name.is_none()
+            && cache.seats_limit.is_none();
+
+        if cache.status != LicenseStatus::Pro || !missing_profile {
+            return;
+        }
+
+        let Some(key) = cache.license_key.clone() else {
+            return;
+        };
+
+        (key, cache.activation_id.clone())
+    };
+
+    if !should_attempt_profile_backfill().await {
+        return;
+    }
+
+    match validation::validate_online(&key, activation_id.as_deref()).await {
+        Ok(info) if info.valid => {
+            let mut guard = state.cache.write();
+            if let Some(ref mut cache) = *guard {
+                if cache.license_key.as_deref() != Some(key.as_str()) {
+                    return;
+                }
+
+                cache.last_validated = Some(chrono::Utc::now());
+                cache.seats_used = info.seats_used;
+                cache.seats_limit = info.seats_limit;
+                cache.device_name = info.device_name;
+                cache.customer_name = info.customer_name;
+                cache.customer_email = info.customer_email;
+                cache.customer_avatar_url = info.customer_avatar_url;
+
+                if let Err(e) = cache::save_cache(&state.cache_path, &state.encryption_key, cache) {
+                    log::error!("Failed to save backfilled license profile: {}", e);
+                }
+            }
+        },
+        Ok(_) => {
+            let mut guard = state.cache.write();
+            if let Some(ref mut cache) = *guard {
+                if cache.license_key.as_deref() != Some(key.as_str()) {
+                    return;
+                }
+
+                cache.status = LicenseStatus::Expired;
+                if let Err(e) = cache::save_cache(&state.cache_path, &state.encryption_key, cache) {
+                    log::error!(
+                        "Failed to save expired license state after profile refresh: {}",
+                        e
+                    );
+                }
+            }
+        },
+        Err(e) => {
+            log::warn!("License profile backfill skipped: {}", e);
+        },
+    }
+}
+
 #[tauri::command]
-pub fn get_license_status(state: tauri::State<'_, LicenseState>) -> Result<LicenseInfo, String> {
+pub async fn get_license_status(
+    state: tauri::State<'_, LicenseState>,
+) -> Result<LicenseInfo, String> {
+    backfill_pro_profile_if_missing(&state).await;
+
     let guard = state.cache.read();
     let cache = guard.as_ref().ok_or("License not initialized")?;
 
@@ -120,6 +213,9 @@ pub fn get_license_status(state: tauri::State<'_, LicenseState>) -> Result<Licen
         seats_used: cache.seats_used,
         seats_limit: cache.seats_limit,
         device_name: cache.device_name.clone(),
+        customer_name: cache.customer_name.clone(),
+        customer_email: cache.customer_email.clone(),
+        customer_avatar_url: cache.customer_avatar_url.clone(),
     })
 }
 
@@ -156,10 +252,16 @@ pub async fn activate_license(
             c.seats_used = None;
             c.seats_limit = None;
             c.device_name = None;
+            c.customer_name = None;
+            c.customer_email = None;
+            c.customer_avatar_url = None;
             if let Some(ref info) = validation {
                 c.seats_used = info.seats_used;
                 c.seats_limit = info.seats_limit;
                 c.device_name = info.device_name.clone();
+                c.customer_name = info.customer_name.clone();
+                c.customer_email = info.customer_email.clone();
+                c.customer_avatar_url = info.customer_avatar_url.clone();
             }
 
             if let Err(e) = cache::save_cache(&state.cache_path, &state.encryption_key, c) {
@@ -204,6 +306,9 @@ pub async fn deactivate_license(state: tauri::State<'_, LicenseState>) -> Result
         c.seats_used = None;
         c.seats_limit = None;
         c.device_name = None;
+        c.customer_name = None;
+        c.customer_email = None;
+        c.customer_avatar_url = None;
         if let Err(e) = cache::save_cache(&state.cache_path, &state.encryption_key, c) {
             log::error!("Failed to save license cache after deactivation: {}", e);
         }
@@ -276,6 +381,9 @@ pub async fn background_revalidation(
                             c.seats_used = info.seats_used;
                             c.seats_limit = info.seats_limit;
                             c.device_name = info.device_name;
+                            c.customer_name = info.customer_name;
+                            c.customer_email = info.customer_email;
+                            c.customer_avatar_url = info.customer_avatar_url;
                             let _ = cache::save_cache(&cache_path, &encryption_key, c);
                             log::info!("License re-validated successfully");
                         }

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Key, CheckCircle, AlertCircle, Clock, ExternalLink } from 'lucide-react';
+import { Key, CheckCircle, AlertCircle, Clock, ExternalLink, Mail, Monitor } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useLicenseStore } from '@/stores/licenseStore';
@@ -29,7 +29,19 @@ const STATUS_CONFIG: Record<LicenseStatus, { icon: React.ReactNode; label: strin
 };
 
 export const LicenseTab: React.FC = () => {
-  const { status, trialDaysLeft, seatsUsed, seatsLimit, deviceName, isLoading, fetchStatus, activate, deactivate } = useLicenseStore();
+  const {
+    status,
+    trialDaysLeft,
+    seatsLimit,
+    deviceName,
+    customerName,
+    customerEmail,
+    customerAvatarUrl,
+    isLoading,
+    fetchStatus,
+    activate,
+    deactivate,
+  } = useLicenseStore();
   const [licenseKey, setLicenseKey] = useState('');
   const [activationMessage, setActivationMessage] = useState<{ text: string; success: boolean } | null>(null);
 
@@ -54,6 +66,16 @@ export const LicenseTab: React.FC = () => {
   };
 
   const statusConfig = STATUS_CONFIG[status];
+  const ownerLabel =
+    customerName && customerName.trim().length > 1
+      ? customerName
+      : customerEmail || customerName || 'MoonSnap Pro';
+  const ownerMonogram = ownerLabel.trim().charAt(0).toUpperCase() || 'P';
+  const ownerAvatarUrl =
+    customerAvatarUrl && /^(data:|blob:|asset:|https:\/\/asset\.localhost)/.test(customerAvatarUrl)
+      ? customerAvatarUrl
+      : null;
+  const hasProProfile = status === 'pro' && (customerName || customerEmail || customerAvatarUrl || deviceName || seatsLimit != null);
 
   return (
     <div className="space-y-6">
@@ -79,20 +101,67 @@ export const LicenseTab: React.FC = () => {
               )}
             </div>
           </div>
-          {status === 'pro' && (seatsUsed != null || deviceName) && (
-            <div className="mt-3 pt-3 border-t border-[var(--polar-frost)] space-y-1.5">
-              {deviceName && (
-                <div className="flex items-center justify-between">
-                  <span className="text-xs text-[var(--ink-muted)]">This device</span>
-                  <span className="text-xs text-[var(--ink-black)] font-medium">{deviceName}</span>
+          {hasProProfile && (
+            <div className="mt-4 pt-4 border-t border-[var(--polar-frost)]">
+              <div className="space-y-4">
+                <div className="flex items-center gap-3">
+                  {ownerAvatarUrl ? (
+                    <img
+                      src={ownerAvatarUrl}
+                      alt={ownerLabel}
+                      className="h-12 w-12 rounded-full border border-[var(--polar-frost)] object-cover"
+                    />
+                  ) : (
+                    <div className="flex h-12 w-12 items-center justify-center rounded-full bg-[var(--coral-400)] text-sm font-semibold text-white">
+                      {ownerMonogram}
+                    </div>
+                  )}
+
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <p className="truncate text-sm font-semibold text-[var(--ink-black)]">{ownerLabel}</p>
+                      <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-700">
+                        Pro
+                      </span>
+                    </div>
+                    {customerName && customerEmail && (
+                      <p className="truncate text-xs text-[var(--ink-muted)]">{customerEmail}</p>
+                    )}
+                    {!customerName && customerEmail && (
+                      <p className="text-xs text-[var(--ink-muted)]">Polar customer</p>
+                    )}
+                  </div>
                 </div>
-              )}
-              {seatsUsed != null && seatsLimit != null && (
-                <div className="flex items-center justify-between">
-                  <span className="text-xs text-[var(--ink-muted)]">Seats</span>
-                  <span className="text-xs text-[var(--ink-black)] font-medium">{seatsUsed} / {seatsLimit}</span>
+
+                <div className="space-y-2">
+                  {customerEmail && customerName && (
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="inline-flex items-center gap-1.5 text-xs text-[var(--ink-muted)]">
+                        <Mail className="h-3.5 w-3.5" />
+                        Email
+                      </span>
+                      <span className="truncate text-xs font-medium text-[var(--ink-black)]">{customerEmail}</span>
+                    </div>
+                  )}
+                  {deviceName && (
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="inline-flex items-center gap-1.5 text-xs text-[var(--ink-muted)]">
+                        <Monitor className="h-3.5 w-3.5" />
+                        This device
+                      </span>
+                      <span className="truncate text-xs font-medium text-[var(--ink-black)]">{deviceName}</span>
+                    </div>
+                  )}
+                  {seatsLimit != null && (
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="text-xs text-[var(--ink-muted)]">Device limit</span>
+                      <span className="text-xs font-medium text-[var(--ink-black)]">
+                        {seatsLimit} {seatsLimit === 1 ? 'device' : 'devices'}
+                      </span>
+                    </div>
+                  )}
                 </div>
-              )}
+              </div>
             </div>
           )}
         </div>

@@ -38,6 +38,9 @@ pub struct LicenseCache {
     pub seats_used: Option<u32>,
     pub seats_limit: Option<u32>,
     pub device_name: Option<String>,
+    pub customer_name: Option<String>,
+    pub customer_email: Option<String>,
+    pub customer_avatar_url: Option<String>,
 }
 
 /// License info exposed to the frontend via Tauri commands.
@@ -51,6 +54,9 @@ pub struct LicenseInfo {
     pub seats_used: Option<u32>,
     pub seats_limit: Option<u32>,
     pub device_name: Option<String>,
+    pub customer_name: Option<String>,
+    pub customer_email: Option<String>,
+    pub customer_avatar_url: Option<String>,
 }
 
 /// Result of a license activation attempt.
@@ -92,6 +98,9 @@ mod tests {
             seats_used: None,
             seats_limit: None,
             device_name: None,
+            customer_name: None,
+            customer_email: None,
+            customer_avatar_url: None,
         };
 
         let json = serde_json::to_string(&cache).unwrap();
@@ -110,11 +119,15 @@ mod tests {
             seats_used: None,
             seats_limit: None,
             device_name: None,
+            customer_name: Some("Taylor Example".to_string()),
+            customer_email: Some("taylor@example.com".to_string()),
+            customer_avatar_url: Some("https://example.com/avatar.png".to_string()),
         };
 
         let json = serde_json::to_string(&info).unwrap();
         assert!(json.contains("\"trial\""));
         assert!(json.contains("10"));
+        assert!(json.contains("Taylor Example"));
     }
 
     #[test]

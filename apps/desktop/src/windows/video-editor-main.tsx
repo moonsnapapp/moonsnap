@@ -5,21 +5,32 @@ import { VideoEditorProvider } from '@/contexts/VideoEditorContext';
 import '../styles.css';
 import { initializeLogging } from '../utils/logger';
 import { Toaster } from 'sonner';
+import { initializeThemeFromSettings } from '@/hooks/useTheme';
 
 // Initialize logging
 initializeLogging().catch(console.error);
 
-ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
-  <React.StrictMode>
-    <VideoEditorProvider>
-      <VideoEditorWindow />
-      <Toaster
-        position="bottom-right"
-        toastOptions={{
-          className: 'glass-toast',
-          duration: 3000,
-        }}
-      />
-    </VideoEditorProvider>
-  </React.StrictMode>
-);
+async function bootstrap() {
+  try {
+    await initializeThemeFromSettings();
+  } catch (error) {
+    console.error('Failed to initialize video editor theme:', error);
+  }
+
+  ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
+    <React.StrictMode>
+      <VideoEditorProvider>
+        <VideoEditorWindow />
+        <Toaster
+          position="bottom-right"
+          toastOptions={{
+            className: 'glass-toast',
+            duration: 3000,
+          }}
+        />
+      </VideoEditorProvider>
+    </React.StrictMode>
+  );
+}
+
+void bootstrap();

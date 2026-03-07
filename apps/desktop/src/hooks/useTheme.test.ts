@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import { useTheme } from './useTheme';
 import { useSettingsStore } from '../stores/settingsStore';
+import { mockEmit } from '@/test/mocks/tauri';
 
 describe('useTheme', () => {
   beforeEach(() => {
@@ -20,6 +21,8 @@ describe('useTheme', () => {
           theme: 'light',
         },
       },
+      isLoading: false,
+      isInitialized: true,
     });
     
     // Clear document classes
@@ -101,6 +104,9 @@ describe('useTheme', () => {
   });
 
   it('should change theme via setTheme', () => {
+    const saveSettings = vi.fn(async () => undefined);
+    useSettingsStore.setState({ saveSettings });
+
     const { result } = renderHook(() => useTheme());
     
     act(() => {
@@ -108,6 +114,8 @@ describe('useTheme', () => {
     });
     
     expect(result.current.theme).toBe('dark');
+    expect(saveSettings).toHaveBeenCalledTimes(1);
+    expect(mockEmit).toHaveBeenCalledWith('theme-changed', { theme: 'dark' });
   });
 
   it('should toggle between light and dark', () => {
@@ -166,5 +174,19 @@ describe('useTheme', () => {
     });
     
     expect(result.current.theme).toBe('light');
+  });
+
+  it('loads persisted settings when a fresh window has not initialized settings yet', () => {
+    const loadSettings = vi.fn(async () => undefined);
+
+    useSettingsStore.setState({
+      isLoading: false,
+      isInitialized: false,
+      loadSettings,
+    });
+
+    renderHook(() => useTheme());
+
+    expect(loadSettings).toHaveBeenCalledTimes(1);
   });
 });

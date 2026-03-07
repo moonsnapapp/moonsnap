@@ -86,6 +86,9 @@ mod tests {
             seats_used: None,
             seats_limit: None,
             device_name: None,
+            customer_name: None,
+            customer_email: None,
+            customer_avatar_url: None,
         }
     }
 
