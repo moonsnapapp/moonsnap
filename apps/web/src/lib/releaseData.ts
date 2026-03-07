@@ -1,7 +1,7 @@
 import { changelog as localChangelog } from "@moonsnap/changelog";
 import type { ChangelogDocument } from "@moonsnap/changelog";
 
-const RELEASE_REPO = process.env.NEXT_PUBLIC_RELEASE_REPO ?? "moonsnapapp/moonsnap-releases";
+const RELEASE_REPO = process.env.NEXT_PUBLIC_RELEASE_REPO ?? "moonsnapapp/moonsnap";
 const CHANGELOG_ASSET_NAME = process.env.NEXT_PUBLIC_CHANGELOG_ASSET_NAME ?? "changelog.generated.json";
 const CHANGELOG_REPO = process.env.MOONSNAP_CHANGELOG_REPO ?? "moonsnapapp/moonsnap";
 const CHANGELOG_BRANCH = process.env.MOONSNAP_CHANGELOG_BRANCH ?? "main";

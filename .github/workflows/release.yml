@@ -237,181 +237,74 @@ jobs:
 
     steps:
       - name: Publish release
-        id: publish-release
         uses: actions/github-script@v8
         env:
           release_id: ${{ needs.create-release.outputs.release_id }}
         with:
           script: |
-            github.rest.repos.updateRelease({
+            await github.rest.repos.updateRelease({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              release_id: process.env.release_id,
+              release_id: Number(process.env.release_id),
               draft: false,
               prerelease: ${{ needs.create-release.outputs.is_prerelease == 'true' }}
             })
 
-  # Mirror release to public repo for downloads
-  mirror-to-public:
-    runs-on: ubuntu-latest
-    needs: [create-release, build-tauri, publish-release]
-    env:
-      PUBLIC_REPO: moonsnapapp/moonsnap-releases
-      VERSION: ${{ needs.create-release.outputs.version }}
-      IS_PRERELEASE: ${{ needs.create-release.outputs.is_prerelease }}
-
-    steps:
-      - name: Download release assets
+      # For beta releases, upload latest-beta.json to the latest stable release
+      # so the beta updater channel can find it via /latest/download/latest-beta.json
+      - name: Upload beta manifest to stable release
+        if: needs.create-release.outputs.is_prerelease == 'true'
         uses: actions/github-script@v8
+        env:
+          release_id: ${{ needs.create-release.outputs.release_id }}
         with:
           script: |
             const fs = require('fs');
-            const path = require('path');
 
-            // Get release assets from private repo
-            const { data: release } = await github.rest.repos.getRelease({
+            // Download latest.json from the beta release
+            const { data: betaRelease } = await github.rest.repos.getRelease({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              release_id: ${{ needs.create-release.outputs.release_id }}
+              release_id: Number(process.env.release_id),
             });
 
-            // Create assets directory
-            fs.mkdirSync('assets', { recursive: true });
-
-            // Download each asset
-            for (const asset of release.assets) {
-              console.log(`Downloading ${asset.name}...`);
-              const { data } = await github.rest.repos.getReleaseAsset({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                asset_id: asset.id,
-                headers: { Accept: 'application/octet-stream' }
-              });
-              fs.writeFileSync(path.join('assets', asset.name), Buffer.from(data));
+            const latestAsset = betaRelease.assets.find(a => a.name === 'latest.json');
+            if (!latestAsset) {
+              console.log('No latest.json found in beta release, skipping');
+              return;
             }
 
-      - name: Rewrite latest.json URLs for public repo
-        env:
-          PRIVATE_REPO: ${{ github.repository }}
-        run: |
-          if [ -f assets/latest.json ]; then
-            echo "Rewriting URLs in latest.json..."
-            # Replace private repo URLs with public repo URLs
-            sed -i "s|github.com/${PRIVATE_REPO}/releases|github.com/${PUBLIC_REPO}/releases|g" assets/latest.json
+            const { data: latestJson } = await github.rest.repos.getReleaseAsset({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              asset_id: latestAsset.id,
+              headers: { Accept: 'application/octet-stream' },
+            });
 
-            # For beta releases, create latest-beta.json (kept separate from latest.json)
-            if [ "$IS_PRERELEASE" = "true" ]; then
-              echo "Beta release: creating latest-beta.json"
-              cp assets/latest.json assets/latest-beta.json
-              rm assets/latest.json
-            fi
-          fi
+            // Get the latest stable release
+            const { data: stableRelease } = await github.rest.repos.getLatestRelease({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+            });
+            console.log(`Attaching latest-beta.json to stable release: ${stableRelease.tag_name}`);
 
-      - name: Create release on public repo
-        uses: actions/github-script@v8
-        env:
-          RELEASES_PAT: ${{ secrets.RELEASES_PAT }}
-        with:
-          github-token: ${{ secrets.RELEASES_PAT }}
-          script: |
-            const fs = require('fs');
-            const path = require('path');
-            const [owner, repo] = process.env.PUBLIC_REPO.split('/');
-            const version = process.env.VERSION;
-            const isPrerelease = process.env.IS_PRERELEASE === 'true';
-
-            // For beta: upload latest-beta.json to the latest stable release
-            // (GitHub's /latest/download/ always points to the latest non-prerelease)
-            // For stable: create/update a release with all assets
-            if (isPrerelease) {
-              // Get the latest stable release to attach latest-beta.json
-              const { data: latestRelease } = await github.rest.repos.getLatestRelease({ owner, repo });
-              console.log(`Attaching beta manifest to stable release: ${latestRelease.tag_name}`);
-
-              const betaManifest = 'latest-beta.json';
-              const betaPath = path.join('assets', betaManifest);
-              if (!fs.existsSync(betaPath)) {
-                console.log('No latest-beta.json found, skipping');
-                return;
-              }
-
-              // Delete existing latest-beta.json if present
-              for (const asset of latestRelease.assets) {
-                if (asset.name === betaManifest) {
-                  await github.rest.repos.deleteReleaseAsset({ owner, repo, asset_id: asset.id });
-                }
-              }
-
-              await github.rest.repos.uploadReleaseAsset({
-                owner, repo,
-                release_id: latestRelease.id,
-                name: betaManifest,
-                data: fs.readFileSync(betaPath),
-              });
-
-              // Also create/update the beta release with installer assets
-              let betaRelease;
-              try {
-                const { data } = await github.rest.repos.getReleaseByTag({ owner, repo, tag: `v${version}` });
-                betaRelease = data;
-              } catch (e) {
-                const { data } = await github.rest.repos.createRelease({
-                  owner, repo,
-                  tag_name: `v${version}`,
-                  name: `MoonSnap v${version}`,
-                  body: `## Beta Release\n\nThis is a pre-release for testing. Report issues on GitHub.\n\n**Windows:** Download the \`.exe\` installer.`,
-                  draft: false,
-                  prerelease: true,
-                });
-                betaRelease = data;
-              }
-
-              // Upload installer assets (not the manifest)
-              for (const file of fs.readdirSync('assets')) {
-                if (file === betaManifest) continue;
-                const content = fs.readFileSync(path.join('assets', file));
-                for (const existing of betaRelease.assets || []) {
-                  if (existing.name === file) {
-                    await github.rest.repos.deleteReleaseAsset({ owner, repo, asset_id: existing.id });
-                  }
-                }
-                await github.rest.repos.uploadReleaseAsset({
-                  owner, repo, release_id: betaRelease.id, name: file, data: content,
+            // Delete existing latest-beta.json if present
+            for (const asset of stableRelease.assets) {
+              if (asset.name === 'latest-beta.json') {
+                await github.rest.repos.deleteReleaseAsset({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  asset_id: asset.id,
                 });
               }
-
-              console.log('✅ Beta release mirrored to public repo!');
-            } else {
-              // Stable release: create/update release with all assets
-              let release;
-              try {
-                const { data } = await github.rest.repos.getReleaseByTag({ owner, repo, tag: `v${version}` });
-                release = data;
-                console.log(`Release v${version} already exists, updating...`);
-              } catch (e) {
-                const { data } = await github.rest.repos.createRelease({
-                  owner, repo,
-                  tag_name: `v${version}`,
-                  name: `MoonSnap v${version}`,
-                  body: `## Download\n\nDownload the installer for your platform below.\n\n**Windows:** Download the \`.exe\` installer.\n\n---\n\n[View changelog](https://github.com/${owner}/${repo}/releases)`,
-                  draft: false,
-                  prerelease: false,
-                });
-                release = data;
-                console.log(`Created release v${version}`);
-              }
-
-              for (const file of fs.readdirSync('assets')) {
-                const content = fs.readFileSync(path.join('assets', file));
-                for (const existing of release.assets || []) {
-                  if (existing.name === file) {
-                    await github.rest.repos.deleteReleaseAsset({ owner, repo, asset_id: existing.id });
-                  }
-                }
-                await github.rest.repos.uploadReleaseAsset({
-                  owner, repo, release_id: release.id, name: file, data: content,
-                });
-              }
-
-              console.log('✅ Stable release mirrored to public repo!');
             }
+
+            await github.rest.repos.uploadReleaseAsset({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              release_id: stableRelease.id,
+              name: 'latest-beta.json',
+              data: Buffer.from(latestJson),
+            });
+
+            console.log('Beta manifest uploaded to stable release')
