@@ -18,7 +18,8 @@ const changelogPath = path.join(ROOT, 'CHANGELOG.md');
 const changelogMd = fs.readFileSync(changelogPath, 'utf8');
 const versionHeaderRe = new RegExp(`^## \\[${version.replace(/\./g, '\\.')}\\]`, 'm');
 
-if (!versionHeaderRe.test(changelogMd)) {
+const isPrerelease = version.includes('-');
+if (!isPrerelease && !versionHeaderRe.test(changelogMd)) {
   console.error(
     `\n  ERROR: CHANGELOG.md has no entry for version ${version}.\n` +
     `  Add a "## [${version}] - YYYY-MM-DD" section before running \`bun run release\`.\n`,
