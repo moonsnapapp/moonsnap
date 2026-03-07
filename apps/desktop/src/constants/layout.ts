@@ -18,6 +18,7 @@ export const LAYOUT = {
   CARD_ROW_HEIGHT: 280,
   LIST_ROW_HEIGHT: 88, // 56px thumbnail + 24px padding (12px*2) + 8px gap
   MIN_CARD_WIDTH: 240,
+  CARD_THUMBNAIL_ASPECT_RATIO: 16 / 9,
 } as const;
 
 export type LayoutConstants = typeof LAYOUT;

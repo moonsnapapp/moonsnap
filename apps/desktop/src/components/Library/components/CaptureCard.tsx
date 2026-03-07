@@ -4,6 +4,7 @@ import { ContextMenu, ContextMenuTrigger } from '@/components/ui/context-menu';
 import { CaptureContextMenu } from './CaptureContextMenu';
 import { TagChip } from './TagChip';
 import { TagPopover } from './TagPopover';
+import { getCaptureCardThumbnailFit } from './thumbnailPresentation';
 import { useInViewAnimation, getCachedThumbnailUrl } from '../hooks';
 import type { CaptureCardProps } from './types';
 import { capturePropsAreEqual } from './types';
@@ -39,6 +40,7 @@ export const CaptureCard: React.FC<CaptureCardProps> = memo(
     const isMedia = isVideoOrGif(capture.capture_type);
     const isQuickVideo = capture.capture_type === 'video' && Boolean(capture.quick_capture);
     const hasThumbnail = capture.thumbnail_path && capture.thumbnail_path.length > 0;
+    const thumbnailFit = getCaptureCardThumbnailFit(capture);
 
     // Use cached URL to avoid repeated convertFileSrc calls
     const thumbnailSrc = useMemo(() => {
@@ -91,7 +93,11 @@ export const CaptureCard: React.FC<CaptureCardProps> = memo(
             }}
           >
             {/* Thumbnail */}
-            <div className={`thumbnail ${isMissing ? 'opacity-60' : ''}`}>
+            <div
+              className={`thumbnail ${isMissing ? 'opacity-60' : ''} ${
+                thumbnailFit === 'preserve' ? 'thumbnail-surface--preserve' : ''
+              }`}
+            >
               {isPlaceholder ? (
                 <div className="w-full h-full flex items-center justify-center bg-[var(--polar-mist)]">
                   <Loader2 className="w-8 h-8 text-[var(--ink-subtle)] animate-spin" />
@@ -131,7 +137,11 @@ export const CaptureCard: React.FC<CaptureCardProps> = memo(
                     alt="Capture"
                     onLoad={() => setThumbLoaded(true)}
                     onError={() => setThumbError(true)}
-                    className={`transition-opacity duration-200 ${thumbLoaded ? 'opacity-100' : 'opacity-0'}`}
+                    className={`thumbnail-image ${
+                      thumbnailFit === 'preserve'
+                        ? 'thumbnail-image--preserve'
+                        : 'thumbnail-image--cover'
+                    } transition-opacity duration-200 ${thumbLoaded ? 'opacity-100' : 'opacity-0'}`}
                   />
                 </>
               )}
