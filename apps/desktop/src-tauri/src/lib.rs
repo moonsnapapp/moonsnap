@@ -137,8 +137,8 @@ pub fn run() {
             // Initialize preview state for GPU-rendered preview streaming
             app.manage(commands::preview::PreviewState::new());
 
-            // Persist bootstrap payloads until the capture toolbar frontend is ready.
-            app.manage(commands::window::toolbar::CaptureToolbarBootstrapState::default());
+            // Serialize toolbar creation so shortcut repeats do not create duplicate windows.
+            app.manage(commands::window::toolbar::CaptureToolbarWindowState::default());
 
             // Initialize pre-rendered text state for WYSIWYG text export
             app.manage(commands::text_prerender::PreRenderedTextState::new());

@@ -6,7 +6,7 @@
  * - confirm-selection: User confirmed selection (from preselection flow)
  */
 
-import { useCallback, useEffect, useState, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { invoke } from '@tauri-apps/api/core';
 import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
@@ -19,45 +19,25 @@ export interface SelectionBounds {
   y: number;
   width: number;
   height: number;
-  /** Source type: 'area', 'window', or 'display' */
   sourceType?: 'area' | 'window' | 'display';
-  /** Window ID (HWND) if sourceType is 'window' */
   windowId?: number | null;
-  /** Window/app title if sourceType is 'window' */
   sourceTitle?: string | null;
-  /** Monitor name if sourceType is 'display' */
   monitorName?: string | null;
-  /** Monitor index if sourceType is 'display' */
   monitorIndex?: number | null;
 }
 
-/** Default bounds (no selection) */
 const DEFAULT_BOUNDS: SelectionBounds = { x: 0, y: 0, width: 0, height: 0 };
 
 interface UseSelectionEventsReturn {
-  /** Current selection bounds */
   selectionBounds: SelectionBounds;
-  /** Ref for synchronous access to bounds */
   selectionBoundsRef: React.MutableRefObject<SelectionBounds>;
-  /** Whether selection has been confirmed (shows record button) */
   selectionConfirmed: boolean;
-  /** Set selection confirmed state */
   setSelectionConfirmed: (confirmed: boolean) => void;
-  /** Apply a confirmed selection payload from overlay/bootstrap */
-  confirmSelection: (bounds: SelectionBounds) => Promise<void>;
-  /** Reset selection state back to startup mode */
-  resetSelection: () => void;
 }
-
 
 const MARGIN = 8;
 
-/**
- * Calculate and apply toolbar position based on selection bounds.
- * Positions toolbar below selection (preferred) or above if doesn't fit.
- */
-export async function repositionToolbar(selection: SelectionBounds): Promise<void> {
-  // Get actual window size
+async function repositionToolbar(selection: SelectionBounds): Promise<void> {
   const currentWindow = getCurrentWebviewWindow();
   const outerSize = await currentWindow.outerSize();
   const toolbarWidth = outerSize.width;
@@ -67,7 +47,6 @@ export async function repositionToolbar(selection: SelectionBounds): Promise<voi
   const selectionCenterX = selection.x + selection.width / 2;
   const selectionCenterY = selection.y + selection.height / 2;
 
-  // Find monitor containing selection center
   const currentMonitor = monitors.find((m: Monitor) => {
     const pos = m.position;
     const size = m.size;
@@ -117,7 +96,6 @@ export async function repositionToolbar(selection: SelectionBounds): Promise<voi
     finalPos = clampToMonitor(centeredX, belowY, monitors[0]);
   }
 
-  // Update position via Rust (size is handled by useToolbarPositioning)
   await invoke('set_capture_toolbar_position', {
     x: finalPos.x,
     y: finalPos.y,
@@ -125,34 +103,10 @@ export async function repositionToolbar(selection: SelectionBounds): Promise<voi
 }
 
 export function useSelectionEvents(): UseSelectionEventsReturn {
-  // Always start with no selection (startup state)
   const [selectionBounds, setSelectionBounds] = useState<SelectionBounds>(DEFAULT_BOUNDS);
   const selectionBoundsRef = useRef<SelectionBounds>(DEFAULT_BOUNDS);
-
-  // Selection confirmed state - starts false (startup mode)
   const [selectionConfirmed, setSelectionConfirmed] = useState(false);
 
-  const resetSelection = useCallback(() => {
-    setSelectionConfirmed(false);
-    setSelectionBounds(DEFAULT_BOUNDS);
-    selectionBoundsRef.current = DEFAULT_BOUNDS;
-  }, []);
-
-  const confirmSelection = useCallback(async (bounds: SelectionBounds) => {
-    setSelectionBounds(bounds);
-    selectionBoundsRef.current = bounds;
-    setSelectionConfirmed(true);
-
-    // Pre-spawn FFmpeg for webcam so recording starts instantly.
-    // Use actual capture format (gif or mp4) to generate correct output path.
-    const currentMode = useCaptureSettingsStore.getState().activeMode;
-    const format = currentMode === 'gif' ? 'gif' : 'mp4';
-    invoke('prepare_recording', { format }).catch((e) => {
-      toolbarLogger.warn('Failed to prepare recording:', e);
-    });
-  }, []);
-
-  // Listen for selection updates (bounds changes during drag/resize)
   useEffect(() => {
     let unlistenSelection: UnlistenFn | null = null;
 
@@ -164,60 +118,58 @@ export function useSelectionEvents(): UseSelectionEventsReturn {
       });
     };
 
-    setup();
+    void setup();
 
     return () => {
       unlistenSelection?.();
     };
   }, []);
 
-  // Listen for selection confirmation (from preselection flow or new selection)
   useEffect(() => {
     let unlistenConfirm: UnlistenFn | null = null;
     let unlistenReset: UnlistenFn | null = null;
 
     const setup = async () => {
-      // Selection confirmed (from overlay) - repositions toolbar
-      unlistenConfirm = await listen<SelectionBounds>('confirm-selection', (event) => {
-        void confirmSelection(event.payload);
+      unlistenConfirm = await listen<SelectionBounds>('confirm-selection', async (event) => {
+        const bounds = event.payload;
+        setSelectionBounds(bounds);
+        selectionBoundsRef.current = bounds;
+        setSelectionConfirmed(true);
+
+        const currentMode = useCaptureSettingsStore.getState().activeMode;
+        const format = currentMode === 'gif' ? 'gif' : 'mp4';
+        invoke('prepare_recording', { format }).catch((e) => {
+          toolbarLogger.warn('Failed to prepare recording:', e);
+        });
+
+        await new Promise((resolve) => window.setTimeout(resolve, 200));
+
+        try {
+          await repositionToolbar(bounds);
+        } catch (e) {
+          toolbarLogger.error('Failed to reposition toolbar:', e);
+        }
       });
 
-      // Reset to startup state (overlay cancelled)
       unlistenReset = await listen('reset-to-startup', () => {
-        resetSelection();
+        setSelectionConfirmed(false);
+        setSelectionBounds(DEFAULT_BOUNDS);
+        selectionBoundsRef.current = DEFAULT_BOUNDS;
       });
     };
 
-    setup();
+    void setup();
 
     return () => {
       unlistenConfirm?.();
       unlistenReset?.();
     };
-  }, [confirmSelection, resetSelection]);
-
-  useEffect(() => {
-    if (!selectionConfirmed || selectionBounds.width <= 0 || selectionBounds.height <= 0) {
-      return;
-    }
-
-    const timeoutId = window.setTimeout(() => {
-      void repositionToolbar(selectionBounds).catch((e) => {
-        toolbarLogger.error('Failed to reposition toolbar:', e);
-      });
-    }, 0);
-
-    return () => {
-      clearTimeout(timeoutId);
-    };
-  }, [selectionBounds, selectionConfirmed]);
+  }, []);
 
   return {
     selectionBounds,
     selectionBoundsRef,
     selectionConfirmed,
     setSelectionConfirmed,
-    confirmSelection,
-    resetSelection,
   };
 }

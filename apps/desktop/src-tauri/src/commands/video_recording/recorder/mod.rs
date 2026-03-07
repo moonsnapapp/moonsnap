@@ -243,8 +243,10 @@ fn start_capture_thread(
 /// The actual completion is signaled via the 'recording-state-changed' event
 /// when the state becomes Completed or Error.
 pub async fn stop_recording(app: AppHandle) -> Result<(), String> {
-    let controller = RECORDING_CONTROLLER.lock().map_err(|e| e.to_string())?;
-    controller.request_stop()?;
+    {
+        let controller = RECORDING_CONTROLLER.lock().map_err(|e| e.to_string())?;
+        controller.request_stop()?;
+    }
 
     // Immediately emit Processing state so UI feels responsive
     // Timer stops, user sees "Saving..." or similar
@@ -262,18 +264,24 @@ pub async fn cancel_recording(_app: AppHandle) -> Result<(), String> {
 
 /// Pause the current recording.
 pub async fn pause_recording(app: AppHandle) -> Result<(), String> {
-    let mut controller = RECORDING_CONTROLLER.lock().map_err(|e| e.to_string())?;
-    controller.request_pause()?;
-    emit_state_change(&app, &controller.state);
+    let state = {
+        let mut controller = RECORDING_CONTROLLER.lock().map_err(|e| e.to_string())?;
+        controller.request_pause()?;
+        controller.state.clone()
+    };
+    emit_state_change(&app, &state);
 
     Ok(())
 }
 
 /// Resume a paused recording.
 pub async fn resume_recording(app: AppHandle) -> Result<(), String> {
-    let mut controller = RECORDING_CONTROLLER.lock().map_err(|e| e.to_string())?;
-    controller.request_resume()?;
-    emit_state_change(&app, &controller.state);
+    let state = {
+        let mut controller = RECORDING_CONTROLLER.lock().map_err(|e| e.to_string())?;
+        controller.request_resume()?;
+        controller.state.clone()
+    };
+    emit_state_change(&app, &state);
 
     Ok(())
 }

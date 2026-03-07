@@ -10,6 +10,10 @@ export const LAYOUT = {
   GRID_GAP: 20,
   CONTAINER_PADDING: 64,
 
+  // Capture toolbar
+  CAPTURE_TOOLBAR_STARTUP_WIDTH: 738,
+  CAPTURE_TOOLBAR_STARTUP_HEIGHT: 147,
+
   // Card dimensions
   CARD_ROW_HEIGHT: 280,
   LIST_ROW_HEIGHT: 88, // 56px thumbnail + 24px padding (12px*2) + 8px gap

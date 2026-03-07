@@ -3,9 +3,12 @@
 use std::sync::Mutex;
 
 use serde::{Deserialize, Serialize};
-use tauri::{command, AppHandle, Emitter, Manager, State, WebviewUrl, WebviewWindowBuilder};
+use tauri::{command, AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 
 use super::{apply_dwm_transparency, set_physical_bounds, CAPTURE_TOOLBAR_LABEL};
+
+const STARTUP_TOOLBAR_WIDTH: u32 = 738;
+const STARTUP_TOOLBAR_HEIGHT: u32 = 147;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -21,34 +24,9 @@ pub struct CaptureToolbarSelectionPayload {
     pub monitor_name: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CaptureToolbarBootstrapPayload {
-    pub selection: Option<CaptureToolbarSelectionPayload>,
-    pub capture_type: Option<String>,
-    pub source_mode: Option<String>,
-}
-
 #[derive(Default)]
-pub struct CaptureToolbarBootstrapState {
-    payload: Mutex<Option<CaptureToolbarBootstrapPayload>>,
+pub struct CaptureToolbarWindowState {
     create_lock: Mutex<()>,
-}
-
-impl CaptureToolbarBootstrapState {
-    fn replace(&self, payload: CaptureToolbarBootstrapPayload) {
-        if let Ok(mut slot) = self.payload.lock() {
-            *slot = Some(payload);
-        }
-    }
-
-    fn take(&self) -> Option<CaptureToolbarBootstrapPayload> {
-        self.payload.lock().ok()?.take()
-    }
-}
-
-fn queue_toolbar_bootstrap(app: &AppHandle, payload: CaptureToolbarBootstrapPayload) {
-    app.state::<CaptureToolbarBootstrapState>().replace(payload);
 }
 
 fn build_selection_payload(
@@ -75,13 +53,6 @@ fn build_selection_payload(
     }
 }
 
-#[command]
-pub async fn consume_capture_toolbar_bootstrap(
-    state: State<'_, CaptureToolbarBootstrapState>,
-) -> Result<Option<CaptureToolbarBootstrapPayload>, String> {
-    Ok(state.take())
-}
-
 // ============================================================================
 // Capture Toolbar
 // ============================================================================
@@ -104,7 +75,7 @@ pub async fn show_capture_toolbar(
     monitor_index: Option<u32>,
     monitor_name: Option<String>,
 ) -> Result<(), String> {
-    let toolbar_state = app.state::<CaptureToolbarBootstrapState>();
+    let toolbar_state = app.state::<CaptureToolbarWindowState>();
     let _create_guard = toolbar_state
         .create_lock
         .lock()
@@ -121,18 +92,7 @@ pub async fn show_capture_toolbar(
         monitor_index,
         monitor_name,
     );
-    queue_toolbar_bootstrap(
-        &app,
-        CaptureToolbarBootstrapPayload {
-            selection: Some(selection.clone()),
-            capture_type: None,
-            source_mode: None,
-        },
-    );
-
-    // Check if window already exists
     if let Some(window) = app.get_webview_window(CAPTURE_TOOLBAR_LABEL) {
-        // Emit confirm-selection to update bounds and mark selection confirmed
         let _ = window.emit("confirm-selection", &selection);
         window
             .show()
@@ -169,6 +129,14 @@ pub async fn show_capture_toolbar(
     let initial_y = y + height as i32 + 8; // Below selection
 
     set_physical_bounds(&window, initial_x, initial_y, toolbar_width, toolbar_height)?;
+
+    let app_clone = app.clone();
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+        if let Some(window) = app_clone.get_webview_window(CAPTURE_TOOLBAR_LABEL) {
+            let _ = window.emit("confirm-selection", selection);
+        }
+    });
 
     Ok(())
 }
@@ -422,28 +390,23 @@ fn emit_startup_toolbar_context(
     capture_type: Option<String>,
     source_mode: Option<String>,
 ) {
-    queue_toolbar_bootstrap(
-        app,
-        CaptureToolbarBootstrapPayload {
-            selection: None,
-            capture_type: capture_type.clone(),
-            source_mode: source_mode.clone(),
-        },
-    );
-
     if capture_type.is_none() && source_mode.is_none() {
         return;
     }
 
-    if let Some(window) = app.get_webview_window(CAPTURE_TOOLBAR_LABEL) {
-        let _ = window.emit(
-            "startup-toolbar-context",
-            serde_json::json!({
-                "captureType": capture_type,
-                "sourceMode": source_mode,
-            }),
-        );
-    }
+    let app_handle = app.clone();
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
+        if let Some(window) = app_handle.get_webview_window(CAPTURE_TOOLBAR_LABEL) {
+            let _ = window.emit(
+                "startup-toolbar-context",
+                serde_json::json!({
+                    "captureType": capture_type,
+                    "sourceMode": source_mode,
+                }),
+            );
+        }
+    });
 }
 
 #[command]
@@ -452,7 +415,7 @@ pub async fn show_startup_toolbar(
     capture_type: Option<String>,
     source_mode: Option<String>,
 ) -> Result<(), String> {
-    let toolbar_state = app.state::<CaptureToolbarBootstrapState>();
+    let toolbar_state = app.state::<CaptureToolbarWindowState>();
     let _create_guard = toolbar_state
         .create_lock
         .lock()
@@ -519,9 +482,8 @@ pub async fn show_startup_toolbar(
     // No URL params - toolbar starts in startup state by default
     let url = WebviewUrl::App("windows/capture-toolbar.html".into());
 
-    // Fixed toolbar size: 1280x144px
-    let initial_width = 1280u32;
-    let initial_height = 144u32;
+    let initial_width = STARTUP_TOOLBAR_WIDTH;
+    let initial_height = STARTUP_TOOLBAR_HEIGHT;
 
     // Position at bottom-center of primary monitor
     let x = monitor_pos.x + (monitor_size.width as i32 - initial_width as i32) / 2;
@@ -546,13 +508,20 @@ pub async fn show_startup_toolbar(
         .skip_taskbar(false)
         .resizable(false) // Auto-resized by frontend
         .shadow(true)
-        .visible(false) // Frontend will show after measuring a stable size
-        .focused(false)
+        .visible(true) // Show immediately - frontend will resize after measuring
+        .focused(true)
         .build()
         .map_err(|e| format!("Failed to create startup toolbar window: {}", e))?;
 
     // Set position/size using physical coordinates
     set_physical_bounds(&window, x, y, initial_width, initial_height)?;
+
+    window
+        .show()
+        .map_err(|e| format!("Failed to show toolbar: {}", e))?;
+    window
+        .set_focus()
+        .map_err(|e| format!("Failed to focus toolbar: {}", e))?;
 
     emit_startup_toolbar_context(&app, capture_type, source_mode);
 

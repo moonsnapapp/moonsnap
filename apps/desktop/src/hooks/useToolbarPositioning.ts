@@ -8,51 +8,50 @@
 import { useCallback, useEffect, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
+import { LAYOUT } from '@/constants';
 import { toolbarLogger } from '@/utils/logger';
 
 interface UseToolbarPositioningOptions {
   /** Ref to the full container (app-container) for height measurement */
   containerRef: React.RefObject<HTMLDivElement | null>;
-  /** Ref to the toolbar padding wrapper */
-  toolbarRef: React.RefObject<HTMLDivElement | null>;
   /** Ref to the content element for width measurement */
   contentRef: React.RefObject<HTMLDivElement | null>;
   /** Selection confirmed state - triggers remeasure when content swaps */
   selectionConfirmed?: boolean;
   /** Toolbar mode - triggers remeasure when mode changes (selection/recording/etc) */
   mode?: string;
-  /** Called after the native window size has been updated */
-  onWindowSized?: () => void | Promise<void>;
 }
 
 export function useToolbarPositioning({
   containerRef,
-  toolbarRef,
   contentRef,
   selectionConfirmed,
   mode,
-  onWindowSized,
 }: UseToolbarPositioningOptions): void {
   const windowShownRef = useRef(false);
   const lastSizeRef = useRef({ width: 0, height: 0 });
-  const rafIdRef = useRef<number | null>(null);
-  const retryTimerRef = useRef<number | null>(null);
 
   const measureTargetSize = useCallback(() => {
+    const isStartupToolbar = !selectionConfirmed && mode === 'selection';
+    if (isStartupToolbar) {
+      return {
+        width: LAYOUT.CAPTURE_TOOLBAR_STARTUP_WIDTH,
+        height: LAYOUT.CAPTURE_TOOLBAR_STARTUP_HEIGHT,
+      };
+    }
+
     const container = containerRef.current;
-    const toolbar = toolbarRef.current;
     const content = contentRef.current;
-    if (!container || !toolbar || !content) {
+    if (!container || !content) {
       return null;
     }
 
     const contentRect = content.getBoundingClientRect();
+    const containerRect = container.getBoundingClientRect();
     const titlebar = container.querySelector<HTMLElement>('.titlebar');
     let titlebarWidth = 0;
-    let titlebarHeight = 0;
 
     if (titlebar) {
-      const titlebarRect = titlebar.getBoundingClientRect();
       const titlebarLeft = titlebar.querySelector<HTMLElement>('.titlebar-left');
       const titlebarControls = titlebar.querySelector<HTMLElement>('.titlebar-controls');
       const titlebarStyle = window.getComputedStyle(titlebar);
@@ -65,141 +64,86 @@ export function useToolbarPositioning({
         (Number.parseFloat(titlebarStyle.borderLeftWidth) || 0) +
         (Number.parseFloat(titlebarStyle.borderRightWidth) || 0);
 
-      // Intrinsic titlebar width is just left content + controls + horizontal chrome.
-      // The center drag region is flex:1 and can collapse to zero.
       titlebarWidth = leftWidth + controlsWidth + horizontalChrome;
-      titlebarHeight = titlebarRect.height;
     }
-
-    const toolbarStyle = window.getComputedStyle(toolbar);
-    const horizontalPadding =
-      (Number.parseFloat(toolbarStyle.paddingLeft) || 0) +
-      (Number.parseFloat(toolbarStyle.paddingRight) || 0) +
-      (Number.parseFloat(toolbarStyle.borderLeftWidth) || 0) +
-      (Number.parseFloat(toolbarStyle.borderRightWidth) || 0);
-    const verticalPadding =
-      (Number.parseFloat(toolbarStyle.paddingTop) || 0) +
-      (Number.parseFloat(toolbarStyle.paddingBottom) || 0) +
-      (Number.parseFloat(toolbarStyle.borderTopWidth) || 0) +
-      (Number.parseFloat(toolbarStyle.borderBottomWidth) || 0);
 
     return {
-      width: Math.max(contentRect.width + horizontalPadding, titlebarWidth),
-      height: titlebarHeight + contentRect.height + verticalPadding,
+      width: Math.max(contentRect.width, titlebarWidth),
+      height: containerRect.height,
     };
-  }, [containerRef, contentRef, toolbarRef]);
+  }, [containerRef, contentRef, mode, selectionConfirmed]);
 
-  const resizeWindow = useCallback(async (width: number, height: number, force = false) => {
-    if (!force && width === lastSizeRef.current.width && height === lastSizeRef.current.height) {
-      return false;
-    }
-    lastSizeRef.current = { width, height };
-
-    const windowWidth = Math.ceil(width) + 1;
-    const windowHeight = Math.ceil(height) + 1;
-
-    try {
-      await invoke('resize_capture_toolbar', {
-        width: windowWidth,
-        height: windowHeight,
-      });
-
-      if (onWindowSized) {
-        await onWindowSized();
-      }
-
-      const currentWindow = getCurrentWebviewWindow();
-      const isVisible = await currentWindow.isVisible().catch(() => windowShownRef.current);
-      if (!windowShownRef.current || !isVisible) {
-        await currentWindow.show();
-        windowShownRef.current = true;
-      }
-
-      return true;
-    } catch (e) {
-      toolbarLogger.error('Failed to resize toolbar:', e);
-      return false;
-    }
-  }, [onWindowSized]);
-
-  const clearScheduledMeasure = useCallback(() => {
-    if (rafIdRef.current !== null) {
-      cancelAnimationFrame(rafIdRef.current);
-      rafIdRef.current = null;
-    }
-    if (retryTimerRef.current !== null) {
-      clearTimeout(retryTimerRef.current);
-      retryTimerRef.current = null;
-    }
-  }, []);
-
-  const scheduleMeasure = useCallback((attempts = 4, force = false) => {
-    clearScheduledMeasure();
-
-    const runAttempt = (remainingAttempts: number) => {
-      rafIdRef.current = requestAnimationFrame(() => {
-        rafIdRef.current = null;
-
-        const measuredSize = measureTargetSize();
-        const hasSize = Boolean(measuredSize && measuredSize.width > 0 && measuredSize.height > 0);
-
-        if (measuredSize && hasSize) {
-          void resizeWindow(measuredSize.width, measuredSize.height, force && remainingAttempts === attempts);
-        }
-
-        if (remainingAttempts > 1) {
-          retryTimerRef.current = window.setTimeout(() => {
-            retryTimerRef.current = null;
-            runAttempt(remainingAttempts - 1);
-          }, hasSize ? 140 : 50);
-        }
-      });
-    };
-
-    runAttempt(attempts);
-  }, [clearScheduledMeasure, measureTargetSize, resizeWindow]);
-
-  // Measure content and resize window
   useEffect(() => {
     const container = containerRef.current;
-    const toolbar = toolbarRef.current;
     const content = contentRef.current;
-    if (!container || !toolbar || !content) return;
+    if (!container || !content) return;
 
-    scheduleMeasure(5, true);
+    const resizeWindow = async (width: number, height: number) => {
+      if (width === lastSizeRef.current.width && height === lastSizeRef.current.height) {
+        return;
+      }
+      lastSizeRef.current = { width, height };
 
-    const fonts = document.fonts;
-    if (fonts?.ready) {
-      void fonts.ready.then(() => {
-        scheduleMeasure(3, true);
-      });
+      const windowWidth = Math.ceil(width) + 1;
+      const windowHeight = Math.ceil(height) + 1;
+
+      try {
+        await invoke('resize_capture_toolbar', {
+          width: windowWidth,
+          height: windowHeight,
+        });
+
+        if (!windowShownRef.current) {
+          const currentWindow = getCurrentWebviewWindow();
+          await currentWindow.show();
+          windowShownRef.current = true;
+        }
+      } catch (e) {
+        toolbarLogger.error('Failed to resize toolbar:', e);
+      }
+    };
+
+    const initialSize = measureTargetSize();
+    if (initialSize && initialSize.width > 0 && initialSize.height > 0) {
+      void resizeWindow(initialSize.width, initialSize.height);
     }
 
-    // Watch for size changes on both elements
     const observer = new ResizeObserver(() => {
-      scheduleMeasure(3);
+      const measuredSize = measureTargetSize();
+      if (measuredSize && measuredSize.width > 0 && measuredSize.height > 0) {
+        void resizeWindow(measuredSize.width, measuredSize.height);
+      }
     });
 
-    observer.observe(toolbar);
+    observer.observe(container);
     observer.observe(content);
-    return () => {
-      observer.disconnect();
-      clearScheduledMeasure();
-    };
-  }, [clearScheduledMeasure, containerRef, contentRef, scheduleMeasure, toolbarRef]);
+    return () => observer.disconnect();
+  }, [containerRef, contentRef, measureTargetSize]);
 
-  // Force remeasure when selection state or mode changes (content swaps)
   useEffect(() => {
     const container = containerRef.current;
-    const toolbar = toolbarRef.current;
     const content = contentRef.current;
-    if (!container || !toolbar || !content) return;
+    if (!container || !content) return;
 
-    lastSizeRef.current = { width: 0, height: 0 };
-    scheduleMeasure(5, true);
+    let cancelled = false;
+
+    const timeoutId = window.setTimeout(() => {
+      if (cancelled) return;
+      const measuredSize = measureTargetSize();
+      if (measuredSize && measuredSize.width > 0 && measuredSize.height > 0) {
+        lastSizeRef.current = { width: 0, height: 0 };
+        const windowWidth = Math.ceil(measuredSize.width) + 1;
+        const windowHeight = Math.ceil(measuredSize.height) + 1;
+        invoke('resize_capture_toolbar', {
+          width: windowWidth,
+          height: windowHeight,
+        }).catch((e) => toolbarLogger.error('Failed to resize toolbar:', e));
+      }
+    }, 220);
 
     return () => {
-      clearScheduledMeasure();
+      cancelled = true;
+      clearTimeout(timeoutId);
     };
-  }, [clearScheduledMeasure, containerRef, contentRef, mode, scheduleMeasure, selectionConfirmed, toolbarRef]);
+  }, [selectionConfirmed, mode, containerRef, contentRef, measureTargetSize]);
 }
