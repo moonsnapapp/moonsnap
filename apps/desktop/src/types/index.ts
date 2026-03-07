@@ -308,6 +308,9 @@ export type ImageFormat = 'png' | 'jpg' | 'webp' | 'gif' | 'bmp';
 // Theme options
 export type Theme = 'light' | 'dark' | 'system';
 
+// Update channel
+export type UpdateChannel = 'stable' | 'beta';
+
 // General application settings
 export interface GeneralSettings {
   startWithWindows: boolean;
@@ -318,6 +321,7 @@ export interface GeneralSettings {
   jpgQuality: number; // 0-100
   allowOverride: boolean; // Allow MoonSnap to override shortcuts registered by other apps
   theme: Theme; // App color theme
+  updateChannel: UpdateChannel;
 }
 
 // Complete application settings
@@ -394,6 +398,7 @@ export const DEFAULT_GENERAL_SETTINGS: GeneralSettings = {
   jpgQuality: 85,
   allowOverride: true, // Override shortcuts from other apps by default
   theme: 'system', // Follow OS preference by default
+  updateChannel: 'stable',
 };
 
 // Default complete settings

@@ -58,7 +58,8 @@ const SettingsWindow: React.FC = () => {
   const [isCheckingUpdates, setIsCheckingUpdates] = useState(false);
   const { loadSettings, saveSettings, isInitialized } = useSettingsStore();
   const { loadSettings: loadCaptureSettings, isInitialized: captureSettingsInitialized } = useCaptureSettingsStore();
-  const { available, version, checkForUpdates, downloadAndInstall, downloading } = useUpdater(false);
+  const updateChannel = useSettingsStore(s => s.settings.general.updateChannel);
+  const { available, version, checkForUpdates, downloadAndInstall, downloading } = useUpdater(false, updateChannel);
 
   // Apply theme
   useTheme();
