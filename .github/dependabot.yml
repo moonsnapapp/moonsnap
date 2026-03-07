@@ -62,19 +62,10 @@ updates:
       - dependency-name: "*"
         update-types: ["version-update:semver-major"]
     groups:
-      # Group Tauri-related crates
-      tauri:
+      # Group all Cargo updates into a single PR to avoid repeated CI builds
+      all-cargo:
         patterns:
-          - "tauri"
-          - "tauri-*"
-        update-types:
-          - "minor"
-          - "patch"
-      # Group Windows-related crates
-      windows:
-        patterns:
-          - "windows"
-          - "windows-*"
+          - "*"
         update-types:
           - "minor"
           - "patch"
