@@ -52,6 +52,6 @@
     ]
   },
   "dependencies": {
-    "@uiw/react-color-hue": "2.9.5"
+    "@uiw/react-color-hue": "2.9.6"
   }
 }
