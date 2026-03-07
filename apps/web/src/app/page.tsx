@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { latestRelease } from "@moonsnap/changelog";
-import { getLatestReleaseVersion } from "@/lib/releaseData";
+import { getLatestReleaseVersion, getWindowsInstallerDownloadUrl } from "@/lib/releaseData";
 import {
   RecordIcon,
   ScreenshotIcon,
@@ -23,6 +23,9 @@ export default async function Home() {
   const latestVersion = await getLatestReleaseVersion();
   const fallbackVersion = latestRelease?.version ?? null;
   const displayVersion = latestVersion ?? fallbackVersion;
+  const downloadUrl =
+    getWindowsInstallerDownloadUrl(displayVersion) ??
+    "https://github.com/moonsnapapp/moonsnap/releases/latest";
 
   return (
     <div className="relative min-h-screen">
@@ -446,7 +449,7 @@ export default async function Home() {
 
           <div className="inline-flex flex-col items-center gap-4">
             <a
-              href="https://github.com/moonsnapapp/moonsnap/releases/latest"
+              href={downloadUrl}
               target="_blank"
               rel="noopener noreferrer"
               className="btn-primary flex items-center gap-3 text-lg px-8 py-4"

@@ -14,6 +14,8 @@ interface LatestJsonPayload {
   version?: unknown;
 }
 
+const normalizeReleaseVersion = (version: string): string => version.replace(/^v/, "");
+
 const isChangelogDocument = (value: unknown): value is ChangelogDocument => {
   if (!value || typeof value !== "object") {
     return false;
@@ -40,6 +42,15 @@ export const getLatestReleaseVersion = async (): Promise<string | null> => {
   } catch {
     return null;
   }
+};
+
+export const getWindowsInstallerDownloadUrl = (version: string | null | undefined): string | null => {
+  if (!version) {
+    return null;
+  }
+
+  const normalizedVersion = normalizeReleaseVersion(version);
+  return `https://github.com/${RELEASE_REPO}/releases/download/v${normalizedVersion}/MoonSnap_${normalizedVersion}_x64-setup.exe`;
 };
 
 export const getChangelogDocument = async (): Promise<ChangelogDocument> => {
