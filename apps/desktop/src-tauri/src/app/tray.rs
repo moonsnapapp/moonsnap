@@ -9,9 +9,9 @@ use moonsnap_domain::capture::ScreenRegionSelection;
 use moonsnap_domain::recording::{RecordingFormat, RecordingState};
 use tauri::{
     image::Image,
-    menu::{Menu, MenuItem, PredefinedMenuItem},
-    tray::TrayIconBuilder,
-    App, Emitter, Manager,
+    menu::{ContextMenu, Menu, MenuItem, PredefinedMenuItem},
+    tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
+    App, AppHandle, Emitter, Manager, Runtime, WebviewWindow,
 };
 
 use crate::commands;
@@ -164,6 +164,49 @@ impl TrayState {
     }
 }
 
+fn should_open_tray_menu(event: &TrayIconEvent) -> bool {
+    matches!(
+        event,
+        TrayIconEvent::Click {
+            button: MouseButton::Left | MouseButton::Right,
+            button_state: MouseButtonState::Up,
+            ..
+        }
+    )
+}
+
+fn resolve_tray_menu_owner_window<R: Runtime>(app: &AppHandle<R>) -> Option<WebviewWindow<R>> {
+    // Prefer visible windows so the native popup can reliably take foreground.
+    for label in ["capture-toolbar", "library", "settings"] {
+        if let Some(window) = app.get_webview_window(label) {
+            if window.is_visible().unwrap_or(false) {
+                return Some(window);
+            }
+        }
+    }
+
+    // Fall back to known windows even if hidden.
+    for label in ["capture-toolbar", "library", "settings"] {
+        if let Some(window) = app.get_webview_window(label) {
+            return Some(window);
+        }
+    }
+
+    app.webview_windows().into_values().next()
+}
+
+fn popup_tray_menu<R: Runtime>(app: &AppHandle<R>, menu: &Menu<R>) {
+    let Some(owner_window) = resolve_tray_menu_owner_window(app) else {
+        log::warn!("No window available to anchor tray menu popup");
+        return;
+    };
+
+    let window = owner_window.as_ref().window();
+    if let Err(error) = menu.popup(window) {
+        log::error!("Failed to open tray menu: {}", error);
+    }
+}
+
 /// Set up the system tray with menu and event handlers.
 ///
 /// Returns a `TrayState` that should be managed by the app for dynamic updates.
@@ -239,10 +282,16 @@ pub fn setup_system_tray(app: &App) -> Result<TrayState, Box<dyn std::error::Err
     let tray_icon = Image::from_bytes(include_bytes!("../../icons/32x32.png"))
         .expect("Failed to load tray icon");
 
+    let tray_menu = menu.clone();
+    let tray_app = app.handle().clone();
+
     let _tray = TrayIconBuilder::new()
         .icon(tray_icon)
-        .menu(&menu)
-        .show_menu_on_left_click(true)
+        .on_tray_icon_event(move |_tray, event| {
+            if should_open_tray_menu(&event) {
+                popup_tray_menu(&tray_app, &tray_menu);
+            }
+        })
         .on_menu_event(move |app, event| match event.id.as_ref() {
             "quit" => app.exit(0),
             "open_capture_toolbar" => {
