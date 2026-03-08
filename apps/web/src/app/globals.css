@@ -191,7 +191,6 @@ body {
 }
 
 .feature-card:hover {
-  transform: translateY(-4px);
   border-color: rgba(255, 77, 77, 0.3);
   box-shadow:
     0 20px 40px -20px rgba(0, 0, 0, 0.5),

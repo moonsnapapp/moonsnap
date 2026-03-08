@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { render } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from './tooltip';
 
 // Animation classes that cause duplicate/flash visual bugs when combined
@@ -113,6 +113,32 @@ describe('Tooltip', () => {
         tooltipInContainer,
         'TooltipContent should render inside container, not in a portal to document.body'
       ).toBeTruthy();
+    });
+
+    it('should blur mouse-triggered buttons so tooltips do not stay open from focus', () => {
+      render(
+        <TooltipProvider delayDuration={0}>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button type="button">Trigger</button>
+            </TooltipTrigger>
+            <TooltipContent>Content</TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+      );
+
+      const trigger = screen.getByRole('button', { name: 'Trigger' });
+      act(() => {
+        trigger.focus();
+      });
+      expect(document.activeElement).toBe(trigger);
+
+      act(() => {
+        fireEvent.pointerDown(trigger, { pointerType: 'mouse' });
+        fireEvent.click(trigger);
+      });
+
+      expect(document.activeElement).not.toBe(trigger);
     });
   });
 });

@@ -10,6 +10,7 @@ export interface Env {
 }
 
 interface FeedbackPayload {
+  productName?: string;
   message?: string;
   logs?: string;
   systemInfo?: {
@@ -85,6 +86,7 @@ async function handleFeedback(request: Request, env: Env): Promise<Response> {
     }
 
     const payload: FeedbackPayload = await request.json();
+    const productName = payload.productName?.trim().slice(0, 100) || 'MoonSnap';
     const message = typeof payload.message === 'string' ? payload.message : '';
     const logs = typeof payload.logs === 'string' ? payload.logs : undefined;
     const platform = payload.systemInfo?.platform?.trim() || 'unknown';
@@ -115,6 +117,7 @@ async function handleFeedback(request: Request, env: Env): Promise<Response> {
         id,
         JSON.stringify({
           id,
+          productName,
           message,
           logs: logs ? '[LOGS ATTACHED]' : null, // Don't store full logs in KV, just a marker
           systemInfo: {
@@ -140,12 +143,12 @@ async function handleFeedback(request: Request, env: Env): Promise<Response> {
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
-            from: 'MoonSnap Feedback <onboarding@resend.dev>',
+            from: `${productName} Feedback <onboarding@resend.dev>`,
             to: env.NOTIFICATION_EMAIL,
-            subject: `[MoonSnap] ${message.slice(0, 60)}${message.length > 60 ? '...' : ''}`,
+            subject: `[${productName}] ${message.slice(0, 60)}${message.length > 60 ? '...' : ''}`,
             html: `
           <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto;">
-            <h2 style="color: #f97316; border-bottom: 2px solid #f97316; padding-bottom: 10px;">New Feedback Received</h2>
+            <h2 style="color: #f97316; border-bottom: 2px solid #f97316; padding-bottom: 10px;">New ${escapeHtml(productName)} Feedback</h2>
 
             <div style="background: #f8fafc; padding: 16px; border-radius: 8px; margin: 16px 0;">
               <p style="margin: 0; white-space: pre-wrap;">${escapeHtml(message)}</p>

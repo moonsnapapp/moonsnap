@@ -3,6 +3,7 @@ import type { SliceCreator, VideoProject, CursorRecording } from './types';
 import { STORAGE } from '../../constants';
 import { videoEditorLogger } from '../../utils/logger';
 import { DEFAULT_TIMELINE_ZOOM } from './timelineSlice';
+import { getEffectiveDuration } from './trimSlice';
 
 /**
  * Sanitize project for saving - ensures all millisecond values are integers.
@@ -54,6 +55,73 @@ export function sanitizeProjectForSave(project: VideoProject): VideoProject {
       })),
     },
     // Note: text.segments uses start/end in seconds (f32), not ms
+  };
+}
+
+/**
+ * Reconcile the stored project duration with the actual media duration reported by the browser.
+ * This keeps the timeline/playback endpoint aligned when encoded media duration differs slightly
+ * from the persisted metadata.
+ */
+export function reconcileProjectDuration(project: VideoProject, actualDurationMs: number): VideoProject {
+  const nextDurationMs = Math.max(0, Math.round(actualDurationMs));
+  if (nextDurationMs <= 0) {
+    return project;
+  }
+
+  let segmentsChanged = false;
+  const originalSegments = project.timeline.segments ?? [];
+  const nextSegments = originalSegments
+    .map((segment) => {
+      const sourceStartMs = Math.max(0, Math.min(segment.sourceStartMs, nextDurationMs));
+      const sourceEndMs = Math.max(sourceStartMs, Math.min(segment.sourceEndMs, nextDurationMs));
+
+      if (
+        sourceStartMs !== segment.sourceStartMs ||
+        sourceEndMs !== segment.sourceEndMs
+      ) {
+        segmentsChanged = true;
+      }
+
+      return {
+        ...segment,
+        sourceStartMs,
+        sourceEndMs,
+      };
+    })
+    .filter((segment) => segment.sourceEndMs > segment.sourceStartMs);
+
+  if (nextSegments.length !== originalSegments.length) {
+    segmentsChanged = true;
+  }
+
+  const effectiveDurationMs = getEffectiveDuration(nextSegments, nextDurationMs);
+  const nextInPoint = Math.max(0, Math.min(project.timeline.inPoint, effectiveDurationMs));
+  const nextOutPoint = Math.max(nextInPoint, Math.min(project.timeline.outPoint, effectiveDurationMs));
+
+  const durationChanged =
+    project.sources.durationMs !== nextDurationMs ||
+    project.timeline.durationMs !== nextDurationMs;
+  const inPointChanged = project.timeline.inPoint !== nextInPoint;
+  const outPointChanged = project.timeline.outPoint !== nextOutPoint;
+
+  if (!durationChanged && !segmentsChanged && !inPointChanged && !outPointChanged) {
+    return project;
+  }
+
+  return {
+    ...project,
+    sources: {
+      ...project.sources,
+      durationMs: nextDurationMs,
+    },
+    timeline: {
+      ...project.timeline,
+      durationMs: nextDurationMs,
+      inPoint: nextInPoint,
+      outPoint: nextOutPoint,
+      segments: nextSegments,
+    },
   };
 }
 

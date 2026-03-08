@@ -4,6 +4,7 @@ use std::future::Future;
 use std::path::Path;
 use std::process::Child;
 
+use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 
 use crate::frame_pipeline_state::{ExportLoopState, PendingCpuWork};
@@ -174,6 +175,30 @@ pub async fn finalize_completed_export(
         pipeline_warnings,
         file_size_bytes,
     })
+}
+
+/// Finalize a completed export after explicitly closing the decode receiver.
+///
+/// Export jobs can stop early once enough output frames are rendered, even when
+/// the decode task still has skipped source-gap frames left to send. Dropping
+/// the receiver first ensures a blocked decode task exits before we await it.
+pub async fn finalize_completed_export_with_decode_shutdown<T>(
+    decode_rx: mpsc::Receiver<T>,
+    decode_handle: JoinHandle<Result<(), String>>,
+    encode_handle: JoinHandle<Result<(), String>>,
+    ffmpeg: &mut Child,
+    output_path: &Path,
+    stderr_tail_lines: usize,
+) -> Result<CompletedFinalizeSummary, EncoderFinalizeError> {
+    drop(decode_rx);
+    finalize_completed_export(
+        decode_handle,
+        encode_handle,
+        ffmpeg,
+        output_path,
+        stderr_tail_lines,
+    )
+    .await
 }
 
 #[cfg(test)]
@@ -403,6 +428,53 @@ mod tests {
                 },
                 other => panic!("unexpected error: {:?}", other),
             }
+        });
+    }
+
+    #[test]
+    fn finalize_completed_export_with_decode_shutdown_closes_blocked_decode_sender() {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(async {
+            let output_path = temp_path("completed_shutdown.mp4");
+            std::fs::write(&output_path, [1u8, 2, 3]).expect("write output file");
+
+            let (decode_tx, decode_rx) = mpsc::channel::<u8>(1);
+            let decode = tokio::spawn(async move {
+                if decode_tx.send(1).await.is_err() {
+                    return Ok(());
+                }
+                if decode_tx.send(2).await.is_err() {
+                    return Ok(());
+                }
+                Ok(())
+            });
+            let encode = tokio::spawn(async { Ok(()) });
+
+            let mut child = Command::new("cmd")
+                .args(["/C", "exit", "0"])
+                .stderr(Stdio::piped())
+                .spawn()
+                .expect("spawn success child");
+
+            let summary = tokio::time::timeout(
+                std::time::Duration::from_millis(250),
+                finalize_completed_export_with_decode_shutdown(
+                    decode_rx,
+                    decode,
+                    encode,
+                    &mut child,
+                    &output_path,
+                    20,
+                ),
+            )
+            .await
+            .expect("finalization should not hang")
+            .expect("finalize should succeed");
+
+            assert!(summary.pipeline_warnings.is_empty());
+            assert_eq!(summary.file_size_bytes, 3);
+
+            let _ = std::fs::remove_file(output_path);
         });
     }
 }

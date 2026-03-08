@@ -107,6 +107,12 @@ const CaptureToolbarWindow: React.FC = () => {
     setAutoStartRecording,
   } = useSelectionEvents();
 
+  useEffect(() => {
+    invoke('capture_toolbar_ready').catch((e) => {
+      toolbarLogger.warn('Failed to notify capture toolbar readiness:', e);
+    });
+  }, []);
+
   const suppressToolbarUntilRecording =
     (autoStartRecording || Boolean(selectionBounds.autoStartRecording)) &&
     (mode === 'selection' || mode === 'starting');

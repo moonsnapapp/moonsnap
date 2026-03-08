@@ -31,6 +31,7 @@ macro_rules! tauri_command_handler {
             crate::commands::window::recording::hide_countdown_window,
             // Window commands - toolbar
             crate::commands::window::toolbar::show_capture_toolbar,
+            crate::commands::window::toolbar::capture_toolbar_ready,
             crate::commands::window::toolbar::update_capture_toolbar,
             crate::commands::window::toolbar::hide_capture_toolbar,
             crate::commands::window::toolbar::close_capture_toolbar,

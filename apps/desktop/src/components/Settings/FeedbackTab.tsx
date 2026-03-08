@@ -4,9 +4,8 @@ import { getVersion } from '@tauri-apps/api/app';
 import { FileText, Upload, Send, Check, X, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
+import { APP } from '@/constants';
 import { settingsLogger } from '@/utils/logger';
-
-const FEEDBACK_API = 'https://moonsnap-feedback.walterlow88.workers.dev/feedback';
 
 type SubmitStatus = 'idle' | 'submitting' | 'success' | 'error';
 
@@ -29,10 +28,11 @@ export const FeedbackTab: React.FC = () => {
     setErrorMessage('');
 
     try {
-      const response = await fetch(FEEDBACK_API, {
+      const response = await fetch(APP.FEEDBACK_API, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          productName: APP.NAME,
           message: feedback,
           logs: attachedLogs,
           systemInfo: {

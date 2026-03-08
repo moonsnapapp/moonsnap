@@ -1,3 +1,4 @@
+import Image from "next/image";
 import Link from "next/link";
 import { latestRelease } from "@moonsnap/changelog";
 import { getLatestReleaseVersion, getWindowsInstallerDownloadUrl } from "@/lib/releaseData";
@@ -121,59 +122,30 @@ export default async function Home() {
               14-day free trial &middot; All features unlocked &middot; No account required
             </p>
 
-            {/* Hero mockup */}
+            {/* Hero screenshot */}
             <div className="relative animate-scale-in opacity-0 delay-400">
               {/* Glow behind */}
               <div className="absolute inset-0 blur-3xl opacity-30 bg-gradient-to-b from-[var(--accent)] to-transparent" />
 
-              <div className="relative window-mockup animate-float">
-                <div className="window-titlebar">
-                  <div className="window-dot bg-[#ff5f57]" />
-                  <div className="window-dot bg-[#febc2e]" />
-                  <div className="window-dot bg-[#28c840]" />
-                  <span className="ml-4 text-xs text-[var(--muted)]">
-                    MoonSnap Library
-                  </span>
-                </div>
-                <div className="relative aspect-video bg-gradient-to-br from-[var(--surface)] to-[var(--background)]">
-                  {/* Simulated UI */}
-                  <div className="absolute inset-4 flex gap-4">
-                    {/* Sidebar */}
-                    <div className="w-48 space-y-3">
-                      <div className="h-10 rounded-lg bg-[var(--surface-elevated)] border border-[var(--border)]" />
-                      <div className="space-y-2">
-                        {[1, 2, 3, 4].map((i) => (
-                          <div
-                            key={i}
-                            className="h-8 rounded-md bg-[var(--surface-elevated)]/50"
-                          />
-                        ))}
-                      </div>
-                    </div>
-                    {/* Content grid */}
-                    <div className="flex-1 grid grid-cols-3 gap-3">
-                      {[1, 2, 3, 4, 5, 6].map((i) => (
-                        <div
-                          key={i}
-                          className="aspect-video rounded-lg bg-[var(--surface-elevated)] border border-[var(--border)] flex items-center justify-center"
-                        >
-                          {i === 1 && (
-                            <div className="w-10 h-10 rounded-full bg-[var(--accent)]/20 flex items-center justify-center">
-                              <PlayIcon className="w-5 h-5 text-[var(--accent)]" />
-                            </div>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                  {/* Recording indicator */}
-                  <div className="absolute top-4 right-4 flex items-center gap-2 px-3 py-1.5 rounded-full bg-[var(--accent)]/20 border border-[var(--accent)]/30">
-                    <span className="w-2 h-2 rounded-full bg-[var(--accent)] animate-recording" />
-                    <span className="text-xs font-medium text-[var(--accent)]">
-                      REC 00:42
-                    </span>
-                  </div>
-                </div>
+              <div className="relative animate-float rounded-xl overflow-hidden border border-[var(--border)] shadow-2xl">
+                <Image
+                  src="/cover.png"
+                  alt="MoonSnap Library"
+                  width={1920}
+                  height={1080}
+                  className="w-full h-auto"
+                  priority
+                />
+              </div>
+
+              <div className="relative mt-6 mx-auto max-w-2xl animate-float" style={{ animationDelay: "0.5s" }}>
+                <Image
+                  src="/capture-bar.png"
+                  alt="MoonSnap Capture Bar"
+                  width={736}
+                  height={110}
+                  className="w-full h-auto rounded-lg border border-[var(--border)] shadow-xl"
+                />
               </div>
             </div>
           </div>
@@ -200,17 +172,63 @@ export default async function Home() {
           </div>
 
           <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-5">
-            <FeatureCard
-              icon={<RecordIcon className="w-6 h-6" />}
-              title="Screen Recording"
-              description="Record your entire screen, a window, or a custom region. Crystal clear quality at up to 60fps."
-              pro
-            />
-            <FeatureCard
-              icon={<ScreenshotIcon className="w-6 h-6" />}
-              title="Screenshots"
-              description="Capture any part of your screen instantly. Annotate, blur, and highlight with built-in tools."
-            />
+            <div className="feature-card rounded-2xl bg-[var(--surface)] border border-[var(--border)] overflow-hidden">
+              <video
+                autoPlay
+                loop
+                muted
+                playsInline
+                className="w-full h-auto"
+              >
+                <source src="/screen-capture.mp4" type="video/mp4" />
+              </video>
+              <div className="p-6">
+                <div className="flex items-start justify-between mb-4">
+                  <div className="w-12 h-12 rounded-xl bg-[var(--accent)]/10 flex items-center justify-center text-[var(--accent)]">
+                    <RecordIcon className="w-6 h-6" />
+                  </div>
+                  <span className="text-[10px] uppercase tracking-widest font-medium px-2 py-0.5 rounded-full bg-[var(--accent)]/10 text-[var(--accent)] border border-[var(--accent)]/20">
+                    Pro
+                  </span>
+                </div>
+                <h3
+                  className="text-lg font-semibold mb-2"
+                  style={{ fontFamily: "var(--font-sora)" }}
+                >
+                  Screen Recording
+                </h3>
+                <p className="text-[var(--muted)] text-sm leading-relaxed">
+                  Record your entire screen, a window, or a custom region. Crystal clear quality at up to 60fps.
+                </p>
+              </div>
+            </div>
+            <div className="feature-card rounded-2xl bg-[var(--surface)] border border-[var(--border)] overflow-hidden">
+              <video
+                autoPlay
+                loop
+                muted
+                playsInline
+                className="w-full h-auto"
+              >
+                <source src="/image-editor.mp4" type="video/mp4" />
+              </video>
+              <div className="p-6">
+                <div className="flex items-start justify-between mb-4">
+                  <div className="w-12 h-12 rounded-xl bg-[var(--accent)]/10 flex items-center justify-center text-[var(--accent)]">
+                    <ScreenshotIcon className="w-6 h-6" />
+                  </div>
+                </div>
+                <h3
+                  className="text-lg font-semibold mb-2"
+                  style={{ fontFamily: "var(--font-sora)" }}
+                >
+                  Screenshots
+                </h3>
+                <p className="text-[var(--muted)] text-sm leading-relaxed">
+                  Capture any part of your screen instantly. Annotate, blur, and highlight with built-in tools.
+                </p>
+              </div>
+            </div>
             <FeatureCard
               icon={<GifIcon className="w-6 h-6" />}
               title="GIF Creation"

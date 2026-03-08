@@ -14,6 +14,7 @@ import { usePlaybackControls, initPlaybackEngine } from '../../../hooks/usePlayb
 import { useTimelineToSourceTime } from '../../../hooks/useTimelineSourceTime';
 import { videoEditorLogger } from '../../../utils/logger';
 import type { AudioTrackSettings } from '../../../types';
+import { reconcileProjectDuration } from '../../../stores/videoEditor/projectSlice';
 
 interface PlaybackSyncOptions {
   /** Main video element ref */
@@ -107,6 +108,51 @@ export function usePlaybackSync(options: PlaybackSyncOptions): PlaybackSyncResul
     const video = videoRef.current;
     if (!video) return;
 
+    const onLoadedMetadata = () => {
+      if (!Number.isFinite(video.duration) || video.duration <= 0) {
+        return;
+      }
+
+      const actualDurationMs = Math.round(video.duration * 1000);
+
+      useVideoEditorStore.setState((state) => {
+        if (!state.project) {
+          return state;
+        }
+
+        const nextProject = reconcileProjectDuration(state.project, actualDurationMs);
+        if (nextProject === state.project) {
+          return state;
+        }
+
+        const effectiveDurationMs = getEffectiveDuration(
+          nextProject.timeline.segments ?? [],
+          nextProject.timeline.durationMs,
+        );
+        const nextPreviewTimeMs = state.previewTimeMs === null
+          ? null
+          : Math.min(state.previewTimeMs, effectiveDurationMs);
+        const nextCurrentTimeMs = Math.min(state.currentTimeMs, effectiveDurationMs);
+        const nextExportInPointMs = state.exportInPointMs === null
+          ? null
+          : Math.min(state.exportInPointMs, effectiveDurationMs);
+        const nextExportOutPointMs = state.exportOutPointMs === null
+          ? null
+          : Math.max(
+              nextExportInPointMs ?? 0,
+              Math.min(state.exportOutPointMs, effectiveDurationMs),
+            );
+
+        return {
+          project: nextProject,
+          currentTimeMs: nextCurrentTimeMs,
+          previewTimeMs: nextPreviewTimeMs,
+          exportInPointMs: nextExportInPointMs,
+          exportOutPointMs: nextExportOutPointMs,
+        };
+      });
+    };
+
     const onEnded = () => {
       controls.stopRAFLoop();
       // Snap playhead to the exact end — the browser fires `ended` before the
@@ -140,11 +186,13 @@ export function usePlaybackSync(options: PlaybackSyncOptions): PlaybackSyncResul
       }
     };
 
+    video.addEventListener('loadedmetadata', onLoadedMetadata);
     video.addEventListener('ended', onEnded);
     video.addEventListener('error', onError);
     video.addEventListener('loadeddata', onLoadedData);
 
     return () => {
+      video.removeEventListener('loadedmetadata', onLoadedMetadata);
       video.removeEventListener('ended', onEnded);
       video.removeEventListener('error', onError);
       video.removeEventListener('loadeddata', onLoadedData);

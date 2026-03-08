@@ -3,11 +3,70 @@ import * as TooltipPrimitive from "@radix-ui/react-tooltip"
 
 import { cn } from "@/lib/utils"
 
-const TooltipProvider = TooltipPrimitive.Provider
+function composeEventHandlers<E>(
+  userHandler: ((event: E) => void) | undefined,
+  internalHandler: (event: E) => void,
+) {
+  return (event: E) => {
+    userHandler?.(event)
+    internalHandler(event)
+  }
+}
 
-const Tooltip = TooltipPrimitive.Root
+const TooltipProvider = ({
+  delayDuration = 200,
+  skipDelayDuration = 300,
+  disableHoverableContent = true,
+  ...props
+}: React.ComponentPropsWithoutRef<typeof TooltipPrimitive.Provider>) => (
+  <TooltipPrimitive.Provider
+    delayDuration={delayDuration}
+    skipDelayDuration={skipDelayDuration}
+    disableHoverableContent={disableHoverableContent}
+    {...props}
+  />
+)
 
-const TooltipTrigger = TooltipPrimitive.Trigger
+const Tooltip = ({
+  disableHoverableContent = true,
+  ...props
+}: React.ComponentPropsWithoutRef<typeof TooltipPrimitive.Root>) => (
+  <TooltipPrimitive.Root
+    disableHoverableContent={disableHoverableContent}
+    {...props}
+  />
+)
+
+const TooltipTrigger = React.forwardRef<
+  React.ElementRef<typeof TooltipPrimitive.Trigger>,
+  React.ComponentPropsWithoutRef<typeof TooltipPrimitive.Trigger>
+>(({ onPointerDownCapture, onClickCapture, onBlurCapture, ...props }, ref) => {
+  const pointerOpenedRef = React.useRef(false)
+
+  return (
+    <TooltipPrimitive.Trigger
+      ref={ref}
+      onPointerDownCapture={composeEventHandlers(onPointerDownCapture, (event) => {
+        if (event.pointerType === "mouse" || event.pointerType === "touch" || event.pointerType === "pen") {
+          pointerOpenedRef.current = true
+        }
+      })}
+      onClickCapture={composeEventHandlers(onClickCapture, (event) => {
+        if (!pointerOpenedRef.current) return
+        pointerOpenedRef.current = false
+
+        if (event.currentTarget instanceof HTMLElement) {
+          event.currentTarget.blur()
+        }
+      })}
+      onBlurCapture={composeEventHandlers(onBlurCapture, () => {
+        pointerOpenedRef.current = false
+      })}
+      {...props}
+    />
+  )
+})
+TooltipTrigger.displayName = TooltipPrimitive.Trigger.displayName
 
 const TooltipContent = React.forwardRef<
   React.ElementRef<typeof TooltipPrimitive.Content>,

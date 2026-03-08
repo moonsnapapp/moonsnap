@@ -42,8 +42,8 @@ use moonsnap_export::job_control::{
     FINALIZING_PROGRESS,
 };
 use moonsnap_export::job_finalize::{
-    drain_pipeline_if_needed, finalize_cancelled_export, finalize_completed_export,
-    EncoderFinalizeError,
+    drain_pipeline_if_needed, finalize_cancelled_export,
+    finalize_completed_export_with_decode_shutdown, EncoderFinalizeError,
 };
 use moonsnap_export::job_runner::{ExportJobRunner, ExportJobRunnerConfig, LoopControl};
 use moonsnap_export::timing::FrameTimingAverages;
@@ -958,7 +958,8 @@ pub async fn export_video_gpu(
         "Finalizing...",
     );
 
-    let completed_summary = match finalize_completed_export(
+    let completed_summary = match finalize_completed_export_with_decode_shutdown(
+        decode_rx,
         decode_handle,
         encode_handle,
         &mut ffmpeg,

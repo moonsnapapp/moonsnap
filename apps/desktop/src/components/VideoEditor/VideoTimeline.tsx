@@ -70,6 +70,41 @@ const PLAYHEAD_BORDER = 'rgba(245, 158, 11, 0.55)';
 const CUT_SCRUBBER_COLOR = 'var(--coral-500, #F04438)';
 const HOVER_PREVIEW_MIN_POINTER_DELTA_PX = 2;
 const HOVER_PREVIEW_RESUME_AFTER_RESIZE_MS = TIMING.RESIZE_DEBOUNCE_MS * 2;
+const TIMELINE_MARKER_LINE_WIDTH_PX = 2;
+const TIMELINE_MARKER_HANDLE_WIDTH_PX = 12;
+const CUT_PREVIEW_LINE_WIDTH_PX = 1;
+
+type TimelineMarkerEdge = 'start' | 'center' | 'end';
+
+function snapToDevicePixel(positionPx: number): number {
+  const dpr = typeof window === 'undefined' ? 1 : window.devicePixelRatio || 1;
+  return Math.round(positionPx * dpr) / dpr;
+}
+
+function getMarkerLayout(positionPx: number, widthPx: number, lineWidthPx = TIMELINE_MARKER_LINE_WIDTH_PX) {
+  const snappedPositionPx = snapToDevicePixel(positionPx);
+  const clampedLeft = Math.max(
+    0,
+    Math.min(snappedPositionPx, Math.max(0, widthPx - lineWidthPx)),
+  );
+
+  const halfHandleWidth = TIMELINE_MARKER_HANDLE_WIDTH_PX / 2;
+  let edge: TimelineMarkerEdge = 'center';
+
+  if (snappedPositionPx <= halfHandleWidth) {
+    edge = 'start';
+  } else if (snappedPositionPx >= widthPx - halfHandleWidth) {
+    edge = 'end';
+  }
+
+  return { clampedLeft, edge };
+}
+
+function getMarkerAnchorClass(edge: TimelineMarkerEdge): string {
+  if (edge === 'start') return 'left-0 translate-x-0';
+  if (edge === 'end') return 'right-0 translate-x-0';
+  return 'left-1/2 -translate-x-1/2';
+}
 
 /**
  * Preview scrubber - ghost playhead that follows mouse when not playing.
@@ -79,25 +114,29 @@ const PreviewScrubber = memo(function PreviewScrubber({
   timelineZoom,
   trackLabelWidth,
   isCutMode,
+  width,
 }: {
   previewTimeMs: number;
   timelineZoom: number;
   trackLabelWidth: number;
   isCutMode: boolean;
+  width: number;
 }) {
   const position = previewTimeMs * timelineZoom + trackLabelWidth;
+  const lineWidthPx = isCutMode ? CUT_PREVIEW_LINE_WIDTH_PX : TIMELINE_MARKER_LINE_WIDTH_PX;
+  const { clampedLeft, edge } = getMarkerLayout(position, width, lineWidthPx);
   const scrubberColor = isCutMode ? CUT_SCRUBBER_COLOR : 'var(--ink-muted)';
 
   return (
     <div
       data-preview-scrubber
       data-cut-mode={isCutMode}
-      className="absolute top-0 bottom-0 w-0.5 z-20 pointer-events-none"
-      style={{ left: `${position}px`, backgroundColor: scrubberColor }}
+      className="absolute top-0 bottom-0 z-40 pointer-events-none"
+      style={{ left: `${clampedLeft}px`, width: `${lineWidthPx}px`, backgroundColor: scrubberColor }}
     >
       {/* Scrubber handle */}
       <div
-        className="absolute -top-1 left-1/2 -translate-x-1/2 w-3 h-4 rounded-b-sm"
+        className={`absolute -top-1 ${getMarkerAnchorClass(edge)} w-3 h-4 rounded-b-sm`}
         style={{
           clipPath: 'polygon(0 0, 100% 0, 100% 60%, 50% 100%, 0 60%)',
           backgroundColor: scrubberColor,
@@ -105,7 +144,7 @@ const PreviewScrubber = memo(function PreviewScrubber({
       />
       {/* Time tooltip */}
       <div
-        className="absolute top-5 left-1/2 -translate-x-1/2 px-2 py-0.5 bg-[var(--glass-bg-solid)] border border-[var(--glass-border)] rounded text-[10px] font-mono text-[var(--ink-dark)] whitespace-nowrap shadow-lg"
+        className={`absolute top-5 ${getMarkerAnchorClass(edge)} px-2 py-0.5 bg-[var(--glass-bg-solid)] border border-[var(--glass-border)] rounded text-[10px] font-mono text-[var(--ink-dark)] whitespace-nowrap shadow-lg`}
       >
         {formatTimeSimple(previewTimeMs)}
       </div>
@@ -145,46 +184,55 @@ const Playhead = memo(function Playhead({
   trackLabelWidth,
   isDragging,
   onMouseDown,
+  width,
+  visible,
 }: {
   timelineZoom: number;
   trackLabelWidth: number;
   isDragging: boolean;
   onMouseDown: (e: React.MouseEvent) => void;
+  width: number;
+  visible: boolean;
 }) {
   const currentTimeMs = usePlaybackTime();
   const playheadPosition = currentTimeMs * timelineZoom + trackLabelWidth;
+  const { clampedLeft, edge } = getMarkerLayout(playheadPosition, width);
 
   return (
     <div
-      data-timeline-control
+      data-playhead
       className={`
-        absolute top-0 bottom-0 w-0.5 z-30 pointer-events-auto
-        ${isDragging ? 'cursor-grabbing' : 'cursor-grab'}
+        absolute top-0 bottom-0 w-0.5 z-30 pointer-events-none transition-opacity
       `}
       style={{ 
-        left: `${playheadPosition}px`,
+        left: `${clampedLeft}px`,
         backgroundColor: PLAYHEAD_COLOR,
+        opacity: visible ? 1 : 0,
       }}
-      onMouseDown={onMouseDown}
     >
       {/* Playhead handle */}
       <div 
         className={`
-          absolute -top-1 left-1/2 -translate-x-1/2 w-3 h-4 rounded-b-sm
+          absolute -top-1 ${getMarkerAnchorClass(edge)} w-3 h-4
+          ${visible ? 'pointer-events-auto' : 'pointer-events-none'}
+          rounded-b-sm
           shadow-lg
+          ${isDragging ? 'cursor-grabbing' : 'cursor-grab'}
           ${isDragging ? 'scale-110' : 'hover:scale-105'}
           transition-transform
         `}
+        data-timeline-control
         style={{
           clipPath: 'polygon(0 0, 100% 0, 100% 60%, 50% 100%, 0 60%)',
           backgroundColor: PLAYHEAD_COLOR,
           boxShadow: `0 10px 15px -3px ${PLAYHEAD_GLOW}`,
         }}
+        onMouseDown={onMouseDown}
       />
       
       {/* Time indicator (shown when dragging) */}
       {isDragging && (
-        <PlayheadTimeIndicator />
+        <PlayheadTimeIndicator edge={edge} />
       )}
     </div>
   );
@@ -193,12 +241,16 @@ const Playhead = memo(function Playhead({
 /**
  * Separate component for the time indicator to minimize re-renders.
  */
-const PlayheadTimeIndicator = memo(function PlayheadTimeIndicator() {
+const PlayheadTimeIndicator = memo(function PlayheadTimeIndicator({
+  edge,
+}: {
+  edge: TimelineMarkerEdge;
+}) {
   const currentTimeMs = usePlaybackTime();
   
   return (
     <div 
-      className="absolute top-5 left-1/2 -translate-x-1/2 px-2 py-0.5 bg-[var(--polar-ice)] rounded text-[10px] font-mono whitespace-nowrap shadow-lg"
+      className={`absolute top-5 ${getMarkerAnchorClass(edge)} px-2 py-0.5 bg-[var(--polar-ice)] rounded text-[10px] font-mono whitespace-nowrap shadow-lg`}
       style={{ 
         borderColor: PLAYHEAD_BORDER,
         borderWidth: '1px',
@@ -220,27 +272,30 @@ const IOMarker = memo(function IOMarker({
   timelineZoom,
   isDragging,
   onMouseDown,
+  width,
 }: {
   timeMs: number;
   label: 'I' | 'O';
   timelineZoom: number;
   isDragging: boolean;
   onMouseDown: (e: React.MouseEvent) => void;
+  width: number;
 }) {
   const position = timeMs * timelineZoom;
+  const { clampedLeft, edge } = getMarkerLayout(position, width);
 
   return (
     <div
       className="absolute top-0 h-8 w-0.5 z-25 pointer-events-none"
       style={{
-        left: `${position}px`,
+        left: `${clampedLeft}px`,
         backgroundColor: IO_MARKER_LINE_COLOR,
       }}
     >
       {/* Draggable label handle */}
       <div
         data-timeline-control
-        className={`absolute top-0 left-1/2 -translate-x-1/2 w-4 h-4 rounded-b-sm flex items-center justify-center text-[9px] font-bold text-white pointer-events-auto ${isDragging ? 'cursor-grabbing scale-110' : 'cursor-grab hover:scale-105'} transition-transform`}
+        className={`absolute top-0 ${getMarkerAnchorClass(edge)} w-4 h-4 rounded-b-sm flex items-center justify-center text-[9px] font-bold text-white pointer-events-auto ${isDragging ? 'cursor-grabbing scale-110' : 'cursor-grab hover:scale-105'} transition-transform`}
         style={{
           background: IO_MARKER_HANDLE_BG,
           borderColor: 'rgba(255, 255, 255, 0.15)',
@@ -253,7 +308,7 @@ const IOMarker = memo(function IOMarker({
       {/* Time tooltip while dragging */}
       {isDragging && (
         <div
-          className="absolute top-5 left-1/2 -translate-x-1/2 px-2 py-0.5 rounded text-[10px] font-mono whitespace-nowrap shadow-lg pointer-events-none"
+          className={`absolute top-5 ${getMarkerAnchorClass(edge)} px-2 py-0.5 rounded text-[10px] font-mono whitespace-nowrap shadow-lg pointer-events-none`}
           style={{
             backgroundColor: IO_MARKER_TOOLTIP_BG,
             color: IO_MARKER_TOOLTIP_TEXT,
@@ -444,6 +499,7 @@ export function VideoTimeline({ onExport, onResetTrimSegments, onSetInPoint, onS
   const hasZoomTrack = !!project && trackVisibility.zoom;
   const hasSceneTrack = !!project && !!project.sources.webcamVideo && trackVisibility.scene;
   const hasMaskTrack = !!project && trackVisibility.mask;
+  const shouldShowPrimaryPlayhead = !splitMode || previewTimeMs === null || isDraggingPlayhead;
   const lastVisibleTrack =
     ([
       hasVideoTrack ? 'video' : null,
@@ -878,7 +934,7 @@ export function VideoTimeline({ onExport, onResetTrimSegments, onSetInPoint, onS
                     <TooltipTrigger asChild>
                       <button
                         onClick={onSetInPoint}
-                        className="glass-btn h-8 px-2 text-[11px] font-semibold"
+                        className="glass-btn h-8 w-8 flex items-center justify-center text-[11px] font-semibold leading-none"
                         style={exportInPointMs !== null
                           ? {
                               color: IO_MARKER_TOOLTIP_TEXT,
@@ -904,7 +960,7 @@ export function VideoTimeline({ onExport, onResetTrimSegments, onSetInPoint, onS
                     <TooltipTrigger asChild>
                       <button
                         onClick={onSetOutPoint}
-                        className="glass-btn h-8 px-2 text-[11px] font-semibold"
+                        className="glass-btn h-8 w-8 flex items-center justify-center text-[11px] font-semibold leading-none"
                         style={exportOutPointMs !== null
                           ? {
                               color: IO_MARKER_TOOLTIP_TEXT,
@@ -1254,6 +1310,7 @@ export function VideoTimeline({ onExport, onResetTrimSegments, onSetInPoint, onS
                 timeMs={exportInPointMs}
                 label="I"
                 timelineZoom={timelineZoom}
+                width={timelineWidth}
                 isDragging={draggingIOMarker === 'in'}
                 onMouseDown={(e) => handleIOMarkerMouseDown('in', e)}
               />
@@ -1263,6 +1320,7 @@ export function VideoTimeline({ onExport, onResetTrimSegments, onSetInPoint, onS
                 timeMs={exportOutPointMs}
                 label="O"
                 timelineZoom={timelineZoom}
+                width={timelineWidth}
                 isDragging={draggingIOMarker === 'out'}
                 onMouseDown={(e) => handleIOMarkerMouseDown('out', e)}
               />
@@ -1275,6 +1333,7 @@ export function VideoTimeline({ onExport, onResetTrimSegments, onSetInPoint, onS
                 timelineZoom={timelineZoom}
                 trackLabelWidth={0}
                 isCutMode={splitMode}
+                width={timelineWidth}
               />
             )}
 
@@ -1282,6 +1341,8 @@ export function VideoTimeline({ onExport, onResetTrimSegments, onSetInPoint, onS
             <Playhead
               timelineZoom={timelineZoom}
               trackLabelWidth={0}
+              width={timelineWidth}
+              visible={shouldShowPrimaryPlayhead}
               isDragging={isDraggingPlayhead}
               onMouseDown={handlePlayheadMouseDown}
             />

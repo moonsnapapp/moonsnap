@@ -214,6 +214,30 @@ describe('timelineSlice', () => {
       useVideoEditorStore.getState().setTimelineZoom(fitZoom * MAX_ZOOM_PERCENT);
       expect(useVideoEditorStore.getState().timelineZoom).toBeCloseTo(fitZoom * MAX_ZOOM_PERCENT);
     });
+
+    it('should clamp zoom from the effective trimmed duration', () => {
+      const project = createTestProject({
+        timeline: {
+          durationMs: 60000,
+          inPoint: 0,
+          outPoint: 60000,
+          speed: 1.0,
+          segments: [
+            { id: 'seg-1', sourceStartMs: 0, sourceEndMs: 10000 },
+            { id: 'seg-2', sourceStartMs: 20000, sourceEndMs: 30000 },
+          ],
+        },
+      });
+
+      useVideoEditorStore.setState({ project, timelineContainerWidth: 1080 });
+
+      const effectiveDurationMs = 20000;
+      const expectedFitZoom = 1000 / effectiveDurationMs;
+
+      useVideoEditorStore.getState().setTimelineZoom(expectedFitZoom * 10);
+
+      expect(useVideoEditorStore.getState().timelineZoom).toBeCloseTo(expectedFitZoom * MAX_ZOOM_PERCENT);
+    });
   });
 
   describe('timeline scroll', () => {
@@ -271,6 +295,33 @@ describe('timelineSlice', () => {
       const expectedFitZoom = 920 / 60000;
       expect(timelineZoom).toBeCloseTo(expectedFitZoom);
       // Should reset scroll to start
+      expect(timelineScrollLeft).toBe(0);
+    });
+
+    it('should calculate fit zoom from effective duration after trims', () => {
+      const project = createTestProject({
+        timeline: {
+          durationMs: 60000,
+          inPoint: 0,
+          outPoint: 60000,
+          speed: 1.0,
+          segments: [
+            { id: 'seg-1', sourceStartMs: 0, sourceEndMs: 10000 },
+            { id: 'seg-2', sourceStartMs: 20000, sourceEndMs: 30000 },
+          ],
+        },
+      });
+
+      useVideoEditorStore.setState({
+        project,
+        timelineContainerWidth: 1000,
+      });
+
+      useVideoEditorStore.getState().fitTimelineToWindow();
+
+      const { timelineZoom, timelineScrollLeft } = useVideoEditorStore.getState();
+      const expectedFitZoom = 920 / 20000;
+      expect(timelineZoom).toBeCloseTo(expectedFitZoom);
       expect(timelineScrollLeft).toBe(0);
     });
 

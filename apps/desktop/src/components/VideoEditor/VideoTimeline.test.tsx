@@ -436,6 +436,29 @@ describe('VideoTimeline', () => {
       );
     });
 
+    it('should render IO header buttons with matching fixed sizes', async () => {
+      let container: HTMLElement;
+      await act(async () => {
+        const result = render(
+          <VideoTimeline
+            {...defaultProps}
+            onSetInPoint={vi.fn()}
+            onSetOutPoint={vi.fn()}
+          />
+        );
+        container = result.container;
+      });
+
+      const inButton = screen.getByRole('button', { name: 'I' });
+      const outButton = screen.getByRole('button', { name: 'O' });
+
+      expect(inButton.className).toContain('w-8');
+      expect(outButton.className).toContain('w-8');
+      expect(inButton.className).toContain('justify-center');
+      expect(outButton.className).toContain('justify-center');
+      expect(container).toBeInTheDocument();
+    });
+
   });
 
   describe('playback interactions', () => {
@@ -657,6 +680,7 @@ describe('VideoTimeline', () => {
       const previewScrubber = container!.querySelector('[data-preview-scrubber]');
       expect(previewScrubber).toBeInTheDocument();
       expect(previewScrubber?.getAttribute('data-cut-mode')).toBe('false');
+      expect(previewScrubber?.className).toContain('z-40');
     });
   });
 
@@ -695,6 +719,26 @@ describe('VideoTimeline', () => {
       const previewScrubber = container!.querySelector('[data-preview-scrubber]');
       expect(previewScrubber).toBeInTheDocument();
       expect(previewScrubber?.getAttribute('data-cut-mode')).toBe('true');
+      expect((previewScrubber as HTMLDivElement | null)?.style.width).toBe('1px');
+    });
+
+    it('should hide the primary playhead while cut skimming is active', async () => {
+      useVideoEditorStore.setState({
+        project: createMockProject(),
+        splitMode: true,
+        isPlaying: false,
+        previewTimeMs: 2500,
+      });
+
+      let container: HTMLElement;
+      await act(async () => {
+        const result = render(<VideoTimeline {...defaultProps} />);
+        container = result.container;
+      });
+
+      const playhead = container!.querySelector('[data-playhead]') as HTMLDivElement | null;
+      expect(playhead).toBeInTheDocument();
+      expect(playhead?.style.opacity).toBe('0');
     });
 
     it('should split hovered trim segment when clicking timeline in cut mode', async () => {
@@ -747,6 +791,57 @@ describe('VideoTimeline', () => {
       expect(segments.length).toBe(2);
       expect(useVideoEditorStore.getState().selectedTrimSegmentId).toBeNull();
     });
+
+    it('should still split in cut mode when clicking through the playhead line', async () => {
+      useVideoEditorStore.setState({
+        project: createMockProject({
+          timeline: {
+            durationMs: 10000,
+            trimStart: 0,
+            trimEnd: 10000,
+            inPoint: 0,
+            outPoint: 10000,
+            cuts: [],
+          },
+        }),
+        splitMode: true,
+        currentTimeMs: 5000,
+        timelineZoom: 0.1,
+      });
+
+      let container: HTMLElement;
+      await act(async () => {
+        const result = render(<VideoTimeline {...defaultProps} />);
+        container = result.container;
+      });
+
+      const scrollContainer = container!.querySelector('.overflow-x-auto');
+      const timelineArea = scrollContainer?.querySelector('.relative') as HTMLElement | null;
+      const trimTrack = container!.querySelector('[data-trim-track]') as HTMLElement | null;
+      expect(timelineArea).toBeInTheDocument();
+      expect(trimTrack).toBeInTheDocument();
+
+      if (timelineArea && trimTrack) {
+        const originalGetBoundingClientRect = timelineArea.getBoundingClientRect;
+        timelineArea.getBoundingClientRect = () => ({
+          left: 0,
+          top: 0,
+          right: 1000,
+          bottom: 200,
+          width: 1000,
+          height: 200,
+          x: 0,
+          y: 0,
+          toJSON: () => ({}),
+        });
+
+        fireEvent.click(trimTrack, { clientX: 500 });
+        timelineArea.getBoundingClientRect = originalGetBoundingClientRect;
+      }
+
+      const segments = useVideoEditorStore.getState().project?.timeline.segments ?? [];
+      expect(segments.length).toBe(2);
+    });
   });
 
   describe('playhead dragging', () => {
@@ -788,6 +883,34 @@ describe('VideoTimeline', () => {
       // When dragging, the playhead should have cursor-grabbing class
       const playhead = container!.querySelector('.cursor-grabbing');
       expect(playhead).toBeInTheDocument();
+    });
+
+    it('should keep the playhead inside the timeline width at the end', async () => {
+      useVideoEditorStore.setState({
+        project: createMockProject({
+          timeline: {
+            durationMs: 10000,
+            trimStart: 0,
+            trimEnd: 10000,
+            inPoint: 0,
+            outPoint: 10000,
+            cuts: [],
+          },
+        }),
+        currentTimeMs: 10000,
+        timelineZoom: 0.1,
+      });
+
+      let container: HTMLElement;
+      await act(async () => {
+        const result = render(<VideoTimeline {...defaultProps} />);
+        container = result.container;
+      });
+
+      const playheadHandle = container!.querySelector('[data-timeline-control].cursor-grab') as HTMLDivElement | null;
+      const playheadLine = playheadHandle?.parentElement as HTMLDivElement | null;
+      expect(playheadHandle).toBeInTheDocument();
+      expect(playheadLine?.style.left).toBe('998px');
     });
   });
 

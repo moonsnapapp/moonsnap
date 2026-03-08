@@ -11,7 +11,10 @@ export const TRACK_LABEL_WIDTH = 80;
 /** Compute the zoom level where the full timeline exactly fills the viewport. */
 export function getFitZoom(project: VideoProject | null, containerWidth: number): number | null {
   if (!project || containerWidth <= 0) return null;
-  const durationMs = project.timeline.durationMs;
+  const durationMs = getEffectiveDuration(
+    project.timeline.segments ?? [],
+    project.timeline.durationMs,
+  );
   if (durationMs <= 0) return null;
   return (containerWidth - TRACK_LABEL_WIDTH) / durationMs;
 }

@@ -1,10 +1,24 @@
 //! FFmpeg argument planning helpers for export pipelines.
 
 use moonsnap_domain::video_project::{ExportFormat, TextAnimation, VideoProject};
+use moonsnap_media::ffmpeg::{find_ffprobe, video_has_audio_stream};
 
 use crate::encoder_selection::{EncoderConfig, EncoderType};
 
 const TYPEWRITER_SOUND_MIN_TAIL_TRIM_SECS: f64 = 0.10;
+
+fn screen_video_has_embedded_audio(screen_video_path: &str) -> bool {
+    let path = std::path::Path::new(screen_video_path);
+    if !path.exists() {
+        return false;
+    }
+
+    let Some(ffprobe_path) = find_ffprobe() else {
+        return false;
+    };
+
+    video_has_audio_stream(&ffprobe_path, path)
+}
 
 /// Audio input info for building ffmpeg filter.
 #[derive(Debug, Clone)]
@@ -70,7 +84,7 @@ where
         .filter(|p| std::path::Path::new(p).exists())
         .cloned();
     let embedded_audio_path = if system_audio_path.is_none() && microphone_audio_path.is_none() {
-        if std::path::Path::new(&project.sources.screen_video).exists() {
+        if screen_video_has_embedded_audio(&project.sources.screen_video) {
             Some(project.sources.screen_video.clone())
         } else {
             None

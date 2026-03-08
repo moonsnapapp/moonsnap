@@ -30,6 +30,7 @@ pub struct CaptureToolbarSelectionPayload {
 #[derive(Default)]
 pub struct CaptureToolbarWindowState {
     create_lock: Mutex<()>,
+    pending_selection: Mutex<Option<CaptureToolbarSelectionPayload>>,
 }
 
 fn build_selection_payload(
@@ -108,6 +109,12 @@ pub async fn show_capture_toolbar(
         auto_start_recording,
     );
     if let Some(window) = app.get_webview_window(CAPTURE_TOOLBAR_LABEL) {
+        let mut pending_selection = toolbar_state
+            .pending_selection
+            .lock()
+            .map_err(|_| "Failed to lock pending capture toolbar selection".to_string())?;
+        pending_selection.take();
+
         let _ = window.emit("confirm-selection", &selection);
         if auto_start_recording.unwrap_or(false) {
             let _ = window.hide();
@@ -120,6 +127,14 @@ pub async fn show_capture_toolbar(
                 .map_err(|e| format!("Failed to focus toolbar: {}", e))?;
         }
         return Ok(());
+    }
+
+    {
+        let mut pending_selection = toolbar_state
+            .pending_selection
+            .lock()
+            .map_err(|_| "Failed to lock pending capture toolbar selection".to_string())?;
+        *pending_selection = Some(selection.clone());
     }
 
     // No URL params - toolbar always starts in startup state
@@ -138,8 +153,19 @@ pub async fn show_capture_toolbar(
         .shadow(true)
         .visible(false) // Hidden until frontend configures bounds
         .focused(false)
-        .build()
-        .map_err(|e| format!("Failed to create capture toolbar window: {}", e))?;
+        .build();
+
+    let window = match window {
+        Ok(window) => window,
+        Err(e) => {
+            let mut pending_selection = toolbar_state
+                .pending_selection
+                .lock()
+                .map_err(|_| "Failed to lock pending capture toolbar selection".to_string())?;
+            pending_selection.take();
+            return Err(format!("Failed to create capture toolbar window: {}", e));
+        },
+    };
 
     // Fixed toolbar size: 1280x144px
     let toolbar_width = 1280u32;
@@ -149,14 +175,30 @@ pub async fn show_capture_toolbar(
 
     set_physical_bounds(&window, initial_x, initial_y, toolbar_width, toolbar_height)?;
 
-    let app_clone = app.clone();
-    tauri::async_runtime::spawn(async move {
-        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
-        if let Some(window) = app_clone.get_webview_window(CAPTURE_TOOLBAR_LABEL) {
-            let _ = window.emit("confirm-selection", selection);
-        }
-    });
+    Ok(())
+}
 
+/// Deliver any queued selection once the toolbar window finishes mounting its listeners.
+#[command]
+pub async fn capture_toolbar_ready(app: AppHandle) -> Result<(), String> {
+    let toolbar_state = app.state::<CaptureToolbarWindowState>();
+    let pending_selection = {
+        let mut pending_selection = toolbar_state
+            .pending_selection
+            .lock()
+            .map_err(|_| "Failed to lock pending capture toolbar selection".to_string())?;
+        pending_selection.take()
+    };
+
+    let Some(selection) = pending_selection else {
+        return Ok(());
+    };
+
+    let Some(window) = app.get_webview_window(CAPTURE_TOOLBAR_LABEL) else {
+        return Ok(());
+    };
+
+    let _ = window.emit("confirm-selection", selection);
     Ok(())
 }
 

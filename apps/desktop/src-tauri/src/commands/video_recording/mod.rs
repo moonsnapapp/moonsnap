@@ -1192,15 +1192,10 @@ fn extract_audio_waveform_blocking(
 
     let ffmpeg_path =
         moonsnap_media::ffmpeg::find_ffmpeg().ok_or_else(|| "FFmpeg not found".to_string())?;
+    let ffprobe_path =
+        moonsnap_media::ffmpeg::find_ffprobe().ok_or_else(|| "ffprobe not found".to_string())?;
 
-    // Get audio duration via ffprobe
-    let ffprobe_name = if cfg!(windows) {
-        "ffprobe.exe"
-    } else {
-        "ffprobe"
-    };
-    let ffprobe_path = ffmpeg_path.with_file_name(ffprobe_name);
-
+    // Get container duration via ffprobe so silent videos still return a stable empty waveform.
     let mut probe_cmd = std::process::Command::new(&ffprobe_path);
     probe_cmd
         .args(["-v", "quiet", "-print_format", "json", "-show_format"])
@@ -1231,6 +1226,14 @@ fn extract_audio_waveform_blocking(
         return Ok(AudioWaveform {
             samples: Vec::new(),
             duration_ms: 0,
+            samples_per_second: sps,
+        });
+    }
+
+    if !moonsnap_media::ffmpeg::video_has_audio_stream(&ffprobe_path, path) {
+        return Ok(AudioWaveform {
+            samples: Vec::new(),
+            duration_ms,
             samples_per_second: sps,
         });
     }
