@@ -2,6 +2,12 @@
 
 All notable changes to MoonSnap are documented in this file.
 
+## [0.5.9] - 2026-03-08
+
+### Fixed
+- Capture thumbnails now fit correctly regardless of aspect ratio.
+- Deleting a freshly opened capture no longer fails before the project is saved.
+
 ## [0.5.8] - 2026-03-07
 
 ### Added

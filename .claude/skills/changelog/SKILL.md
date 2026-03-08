@@ -66,13 +66,13 @@ Classify each commit into Keep a Changelog sections:
 ### 5. Determine the version number
 
 - If the user provided a version argument (e.g., `/changelog 0.5.4`), use that.
-- If there are unreleased commits (commits after the latest tag), compute the next patch version from the latest tag.
-- If there are no unreleased commits, re-generate the entry for the current version.
+- If there are unreleased commits (commits after the latest tag), compute the next patch version by bumping the **latest tag's** patch number (e.g., `v0.5.8-beta.2` → `0.5.9`). Do NOT use `package.json` version, as it may already reflect the tagged release.
+- If there are no unreleased commits, re-generate the entry for the current version (derived from the latest tag).
 
 ### 6. Write the entry
 
 - If an entry for this version already exists in CHANGELOG.md, **replace it** with the updated one.
-- If no entry exists, insert a new `## [X.Y.Z] - YYYY-MM-DD` section at the top (below the header), using today's date.
+- If no entry exists, insert a new `## [X.Y.Z] - YYYY-MM-DD` section at the top (below the header), using today's date. Entries must be in **descending version order** (newest first).
 - After editing CHANGELOG.md, rebuild the JSON:
 
 ```bash
