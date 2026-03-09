@@ -2,6 +2,11 @@
 
 All notable changes to MoonSnap are documented in this file.
 
+## [0.5.10] - 2026-03-10
+
+### Fixed
+- Minor bug fixes.
+
 ## [0.5.9] - 2026-03-08
 
 ### Fixed
