@@ -119,7 +119,7 @@ export default async function Home() {
             </div>
 
             <p className="text-sm text-[var(--muted)] mb-16 animate-slide-up opacity-0 delay-300">
-              14-day free trial &middot; All features unlocked &middot; No account required
+              7-day free trial &middot; All features unlocked &middot; No account required
             </p>
 
             {/* Hero screenshot */}
@@ -187,9 +187,6 @@ export default async function Home() {
                   <div className="w-12 h-12 rounded-xl bg-[var(--accent)]/10 flex items-center justify-center text-[var(--accent)]">
                     <RecordIcon className="w-6 h-6" />
                   </div>
-                  <span className="text-[10px] uppercase tracking-widest font-medium px-2 py-0.5 rounded-full bg-[var(--accent)]/10 text-[var(--accent)] border border-[var(--accent)]/20">
-                    Pro
-                  </span>
                 </div>
                 <h3
                   className="text-lg font-semibold mb-2"
@@ -299,9 +296,6 @@ export default async function Home() {
                   <div className="w-12 h-12 rounded-xl bg-[var(--accent)]/10 flex items-center justify-center text-[var(--accent)]">
                     <EditIcon className="w-6 h-6" />
                   </div>
-                  <span className="text-[10px] uppercase tracking-widest font-medium px-2 py-0.5 rounded-full bg-[var(--accent)]/10 text-[var(--accent)] border border-[var(--accent)]/20">
-                    Pro
-                  </span>
                 </div>
                 <h3
                   className="text-lg font-semibold mb-2"
@@ -397,15 +391,12 @@ export default async function Home() {
                   </span>
                 </div>
                 <div className="aspect-video bg-[var(--surface)] p-4">
-                  {/* Simulated video editor UI */}
                   <div className="h-full flex flex-col gap-3">
-                    {/* Preview area */}
                     <div className="flex-1 rounded-lg bg-[var(--background)] border border-[var(--border)] flex items-center justify-center">
                       <div className="w-16 h-16 rounded-full bg-[var(--accent)]/20 flex items-center justify-center">
                         <PlayIcon className="w-8 h-8 text-[var(--accent)]" />
                       </div>
                     </div>
-                    {/* Timeline */}
                     <div className="h-16 rounded-lg bg-[var(--surface-elevated)] border border-[var(--border)] p-2">
                       <div className="h-full flex gap-1">
                         {[65, 45, 80, 35, 70, 55, 90, 40, 75, 50, 85, 38, 72, 48, 88, 42, 78, 52, 68, 58].map((h, i) => (
@@ -442,7 +433,7 @@ export default async function Home() {
               Simple, <span className="text-[var(--accent)]">honest</span> pricing
             </h2>
             <p className="text-[var(--muted)] max-w-xl mx-auto">
-              Try everything free for 14 days. Then choose the plan that works for you.
+              Try everything free for 7 days. Then choose the plan that works for you.
               <br />
               One-time purchase — no subscriptions, no recurring fees.
             </p>
@@ -471,13 +462,13 @@ export default async function Home() {
               </div>
               <ul className="space-y-3 mb-8">
                 <PricingFeature included>Screenshots</PricingFeature>
-                <PricingFeature included>Basic annotations</PricingFeature>
-                <PricingFeature>Video recording</PricingFeature>
+                <PricingFeature included>Annotations</PricingFeature>
+                <PricingFeature included>Screen recording</PricingFeature>
+                <PricingFeature>Video export</PricingFeature>
                 <PricingFeature>GIF export</PricingFeature>
+                <PricingFeature>Auto captions</PricingFeature>
                 <PricingFeature>Webcam overlay</PricingFeature>
                 <PricingFeature>Custom backgrounds</PricingFeature>
-                <PricingFeature>Blur tool</PricingFeature>
-                <PricingFeature>High-res export</PricingFeature>
               </ul>
               <a
                 href="#download"
@@ -517,13 +508,13 @@ export default async function Home() {
                 </div>
                 <ul className="space-y-3 mb-8">
                   <PricingFeature included>Screenshots</PricingFeature>
-                  <PricingFeature included>Basic annotations</PricingFeature>
-                  <PricingFeature included>Video recording</PricingFeature>
+                  <PricingFeature included>Annotations</PricingFeature>
+                  <PricingFeature included>Screen recording</PricingFeature>
+                  <PricingFeature included>Video export</PricingFeature>
                   <PricingFeature included>GIF export</PricingFeature>
+                  <PricingFeature included>Auto captions</PricingFeature>
                   <PricingFeature included>Webcam overlay</PricingFeature>
                   <PricingFeature included>Custom backgrounds</PricingFeature>
-                  <PricingFeature included>Blur tool</PricingFeature>
-                  <PricingFeature included>High-res export</PricingFeature>
                 </ul>
                 <a
                   href={POLAR_CHECKOUT_URL}
@@ -552,7 +543,7 @@ export default async function Home() {
             Ready to start capturing?
           </h2>
           <p className="text-[var(--muted)] mb-10 text-lg">
-            Download MoonSnap and try every feature free for 14 days.
+            Download MoonSnap and try every feature free for 7 days.
             <br />
             No account required. No credit card.
           </p>
@@ -574,7 +565,7 @@ export default async function Home() {
 
           <div className="mt-16 pt-16 border-t border-[var(--border)]">
             <p className="text-sm text-[var(--muted)]">
-              14-day free trial · No account required · One-time purchase
+              7-day free trial · No account required · One-time purchase
             </p>
           </div>
         </div>
@@ -613,42 +604,6 @@ export default async function Home() {
           </div>
         </div>
       </footer>
-    </div>
-  );
-}
-
-function FeatureCard({
-  icon,
-  title,
-  description,
-  pro,
-}: {
-  icon: React.ReactNode;
-  title: string;
-  description: string;
-  pro?: boolean;
-}) {
-  return (
-    <div className="feature-card p-6 rounded-2xl bg-[var(--surface)] border border-[var(--border)]">
-      <div className="flex items-start justify-between mb-4">
-        <div className="w-12 h-12 rounded-xl bg-[var(--accent)]/10 flex items-center justify-center text-[var(--accent)]">
-          {icon}
-        </div>
-        {pro && (
-          <span className="text-[10px] uppercase tracking-widest font-medium px-2 py-0.5 rounded-full bg-[var(--accent)]/10 text-[var(--accent)] border border-[var(--accent)]/20">
-            Pro
-          </span>
-        )}
-      </div>
-      <h3
-        className="text-lg font-semibold mb-2"
-        style={{ fontFamily: "var(--font-sora)" }}
-      >
-        {title}
-      </h3>
-      <p className="text-[var(--muted)] text-sm leading-relaxed">
-        {description}
-      </p>
     </div>
   );
 }
