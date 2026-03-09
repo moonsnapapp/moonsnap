@@ -229,30 +229,122 @@ export default async function Home() {
                 </p>
               </div>
             </div>
-            <FeatureCard
-              icon={<GifIcon className="w-6 h-6" />}
-              title="GIF Creation"
-              description="Turn any recording into a perfectly looped GIF. Optimized for sharing anywhere."
-              pro
-            />
-            <FeatureCard
-              icon={<WebcamIcon className="w-6 h-6" />}
-              title="Webcam Overlay"
-              description="Add your face to recordings with customizable webcam overlays. Perfect for tutorials."
-              pro
-            />
-            <FeatureCard
-              icon={<EditIcon className="w-6 h-6" />}
-              title="Video Editor"
-              description="Trim, cut, and polish your recordings. Add captions, zoom effects, and custom backgrounds."
-              pro
-            />
-            <FeatureCard
-              icon={<SparklesIcon className="w-6 h-6" />}
-              title="Auto Captions"
-              description="AI-powered captions generated locally. No cloud upload, complete privacy."
-              pro
-            />
+            <div className="feature-card rounded-2xl bg-[var(--surface)] border border-[var(--border)] overflow-hidden">
+              <Image
+                src="/gif-capture.gif"
+                alt="GIF recording demo"
+                width={600}
+                height={338}
+                className="w-full h-auto"
+                unoptimized
+              />
+              <div className="p-6">
+                <div className="flex items-start justify-between mb-4">
+                  <div className="w-12 h-12 rounded-xl bg-[var(--accent)]/10 flex items-center justify-center text-[var(--accent)]">
+                    <GifIcon className="w-6 h-6" />
+                  </div>
+                  <span className="text-[10px] uppercase tracking-widest font-medium px-2 py-0.5 rounded-full bg-[var(--accent)]/10 text-[var(--accent)] border border-[var(--accent)]/20">
+                    Pro
+                  </span>
+                </div>
+                <h3
+                  className="text-lg font-semibold mb-2"
+                  style={{ fontFamily: "var(--font-sora)" }}
+                >
+                  GIF Recording
+                </h3>
+                <p className="text-[var(--muted)] text-sm leading-relaxed">
+                  Turn your captures into GIFs. Optimized for sharing anywhere.
+                </p>
+              </div>
+            </div>
+            <div className="feature-card rounded-2xl bg-[var(--surface)] border border-[var(--border)] overflow-hidden">
+              <Image
+                src="/webcam.png"
+                alt="Webcam overlay demo"
+                width={600}
+                height={338}
+                className="w-full h-auto"
+              />
+              <div className="p-6">
+                <div className="flex items-start justify-between mb-4">
+                  <div className="w-12 h-12 rounded-xl bg-[var(--accent)]/10 flex items-center justify-center text-[var(--accent)]">
+                    <WebcamIcon className="w-6 h-6" />
+                  </div>
+                  <span className="text-[10px] uppercase tracking-widest font-medium px-2 py-0.5 rounded-full bg-[var(--accent)]/10 text-[var(--accent)] border border-[var(--accent)]/20">
+                    Pro
+                  </span>
+                </div>
+                <h3
+                  className="text-lg font-semibold mb-2"
+                  style={{ fontFamily: "var(--font-sora)" }}
+                >
+                  Webcam Overlay
+                </h3>
+                <p className="text-[var(--muted)] text-sm leading-relaxed">
+                  Add your face to recordings with customizable webcam overlays. Perfect for tutorials.
+                </p>
+              </div>
+            </div>
+            <div className="feature-card rounded-2xl bg-[var(--surface)] border border-[var(--border)] overflow-hidden">
+              <Image
+                src="/video-editor.png"
+                alt="Video editor demo"
+                width={600}
+                height={338}
+                className="w-full h-auto"
+              />
+              <div className="p-6">
+                <div className="flex items-start justify-between mb-4">
+                  <div className="w-12 h-12 rounded-xl bg-[var(--accent)]/10 flex items-center justify-center text-[var(--accent)]">
+                    <EditIcon className="w-6 h-6" />
+                  </div>
+                  <span className="text-[10px] uppercase tracking-widest font-medium px-2 py-0.5 rounded-full bg-[var(--accent)]/10 text-[var(--accent)] border border-[var(--accent)]/20">
+                    Pro
+                  </span>
+                </div>
+                <h3
+                  className="text-lg font-semibold mb-2"
+                  style={{ fontFamily: "var(--font-sora)" }}
+                >
+                  Video Editor
+                </h3>
+                <p className="text-[var(--muted)] text-sm leading-relaxed">
+                  Trim, cut, and polish your recordings. Add captions, zoom effects, and custom backgrounds.
+                </p>
+              </div>
+            </div>
+            <div className="feature-card rounded-2xl bg-[var(--surface)] border border-[var(--border)] overflow-hidden">
+              <video
+                autoPlay
+                loop
+                muted
+                playsInline
+                controls
+                className="w-full h-auto"
+              >
+                <source src="/captions.mp4" type="video/mp4" />
+              </video>
+              <div className="p-6">
+                <div className="flex items-start justify-between mb-4">
+                  <div className="w-12 h-12 rounded-xl bg-[var(--accent)]/10 flex items-center justify-center text-[var(--accent)]">
+                    <SparklesIcon className="w-6 h-6" />
+                  </div>
+                  <span className="text-[10px] uppercase tracking-widest font-medium px-2 py-0.5 rounded-full bg-[var(--accent)]/10 text-[var(--accent)] border border-[var(--accent)]/20">
+                    Pro
+                  </span>
+                </div>
+                <h3
+                  className="text-lg font-semibold mb-2"
+                  style={{ fontFamily: "var(--font-sora)" }}
+                >
+                  Auto Captions
+                </h3>
+                <p className="text-[var(--muted)] text-sm leading-relaxed">
+                  AI-powered captions generated locally. No cloud upload, complete privacy.
+                </p>
+              </div>
+            </div>
           </div>
         </div>
       </section>
