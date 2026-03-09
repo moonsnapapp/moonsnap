@@ -44,9 +44,13 @@ export default async function Home() {
       <nav className="fixed top-0 left-0 right-0 z-50 bg-[var(--background)]/50 backdrop-blur-sm border-b border-[var(--border)]">
         <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-lg bg-[var(--accent)] flex items-center justify-center glow-red">
-              <RecordIcon className="w-4 h-4 text-white" />
-            </div>
+            <Image
+              src="/app-icon.png"
+              alt="MoonSnap"
+              width={32}
+              height={32}
+              className="rounded-lg"
+            />
             <span
               className="text-lg font-semibold tracking-tight"
               style={{ fontFamily: "var(--font-sora)" }}
@@ -575,9 +579,13 @@ export default async function Home() {
       <footer className="py-8 px-6 border-t border-[var(--border)]">
         <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-3">
-            <div className="w-6 h-6 rounded-md bg-[var(--accent)] flex items-center justify-center">
-              <RecordIcon className="w-3 h-3 text-white" />
-            </div>
+            <Image
+              src="/app-icon.png"
+              alt="MoonSnap"
+              width={24}
+              height={24}
+              className="rounded-md"
+            />
             <span className="text-sm text-[var(--muted)]">
               MoonSnap &copy; {new Date().getFullYear()}
             </span>
