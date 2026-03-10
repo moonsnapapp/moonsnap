@@ -161,6 +161,75 @@ pub fn convert_to_whisper_format(input_path: &Path, output_path: &Path) -> Resul
     Ok(())
 }
 
+/// Mix one or more prepared 16kHz mono WAV files for Whisper.
+///
+/// Each input is expected to already be converted to Whisper-compatible WAV.
+/// The volume scalar is applied before mixing so project track levels can be respected.
+pub fn mix_prepared_audio_for_whisper(
+    inputs: &[(std::path::PathBuf, f32)],
+    output_path: &Path,
+) -> Result<(), String> {
+    match inputs {
+        [] => Err("No audio inputs available for transcription.".to_string()),
+        [(input_path, _)] => {
+            std::fs::copy(input_path, output_path)
+                .map_err(|e| format!("Failed to copy prepared audio: {}", e))?;
+            Ok(())
+        },
+        _ => {
+            let ffmpeg_path = find_ffmpeg().ok_or_else(|| "ffmpeg not found".to_string())?;
+            let mut command = create_hidden_command(&ffmpeg_path);
+            command.arg("-y");
+
+            for (input_path, _) in inputs {
+                command.arg("-i").arg(input_path);
+            }
+
+            let mut filter_parts = Vec::new();
+            let mut mix_inputs = String::new();
+
+            for (index, (_, volume)) in inputs.iter().enumerate() {
+                filter_parts.push(format!("[{}:a]volume={:.3}[a{}]", index, volume, index));
+                mix_inputs.push_str(&format!("[a{}]", index));
+            }
+
+            filter_parts.push(format!(
+                "{}amix=inputs={}:duration=longest:normalize=1[aout]",
+                mix_inputs,
+                inputs.len()
+            ));
+            let filter_complex = filter_parts.join(";");
+
+            let output = command
+                .args([
+                    "-filter_complex",
+                    &filter_complex,
+                    "-map",
+                    "[aout]",
+                    "-acodec",
+                    "pcm_s16le",
+                    "-ar",
+                    "16000",
+                    "-ac",
+                    "1",
+                    &output_path.to_string_lossy(),
+                ])
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .output()
+                .map_err(|e| format!("Failed to run ffmpeg: {}", e))?;
+
+            if !output.status.success() {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                return Err(format!("Audio mixing failed: {}", stderr));
+            }
+
+            log::info!("Mixed {} audio sources to {:?}", inputs.len(), output_path);
+            Ok(())
+        },
+    }
+}
+
 /// Convert a bounded time range from an input media file to 16kHz mono WAV.
 ///
 /// Works for both audio and video inputs (ffmpeg picks the audio stream).

@@ -17,29 +17,36 @@ import { useVideoEditorStore } from '../../stores/videoEditorStore';
 import {
   selectCaptionSegments,
   selectCaptionSettings,
+  selectCancelTranscription,
   selectDownloadModel,
   selectDownloadProgress,
+  selectIsCancellingTranscription,
   selectIsDownloadingModel,
   selectIsTranscribing,
   selectLoadWhisperModels,
   selectProject,
   selectRequestSeek,
   selectSelectedModelName,
+  selectSelectedTranscriptionLanguage,
   selectSetCaptionSegments,
   selectSetCaptionsEnabled,
   selectSetIsPlaying,
   selectSetSelectedModel,
+  selectSetSelectedTranscriptionLanguage,
   selectSetTranscriptionProgress,
   selectStartTranscription,
   selectTogglePlayback,
   selectTranscribeCaptionSegment,
   selectTranscriptionError,
+  selectTranscriptionMessage,
   selectTranscriptionProgress,
   selectTranscriptionStage,
   selectUpdateCaptionSegment,
   selectUpdateCaptionSettings,
   selectWhisperModels,
 } from '../../stores/videoEditor/selectors';
+import { TRANSCRIPTION } from '../../constants';
+import { isTranscriptionCancelledError } from '../../stores/videoEditor/captionSlice';
 import { Button } from '../../components/ui/button';
 import {
   Dialog,
@@ -107,16 +114,27 @@ export function CaptionPanel({ videoPath }: CaptionPanelProps) {
   const project = useVideoEditorStore(selectProject);
   const captionSegments = useVideoEditorStore(selectCaptionSegments);
   const captionSettings = useVideoEditorStore(selectCaptionSettings);
+  const cancelTranscription = useVideoEditorStore(selectCancelTranscription);
+  const isCancellingTranscription = useVideoEditorStore(
+    selectIsCancellingTranscription
+  );
   const isTranscribing = useVideoEditorStore(selectIsTranscribing);
+  const transcriptionMessage = useVideoEditorStore(selectTranscriptionMessage);
   const transcriptionProgress = useVideoEditorStore(selectTranscriptionProgress);
   const transcriptionStage = useVideoEditorStore(selectTranscriptionStage);
   const transcriptionError = useVideoEditorStore(selectTranscriptionError);
   const whisperModels = useVideoEditorStore(selectWhisperModels);
   const selectedModelName = useVideoEditorStore(selectSelectedModelName);
+  const selectedTranscriptionLanguage = useVideoEditorStore(
+    selectSelectedTranscriptionLanguage
+  );
   const isDownloadingModel = useVideoEditorStore(selectIsDownloadingModel);
   const downloadProgress = useVideoEditorStore(selectDownloadProgress);
   const loadWhisperModels = useVideoEditorStore(selectLoadWhisperModels);
   const setSelectedModel = useVideoEditorStore(selectSetSelectedModel);
+  const setSelectedTranscriptionLanguage = useVideoEditorStore(
+    selectSetSelectedTranscriptionLanguage
+  );
   const downloadModel = useVideoEditorStore(selectDownloadModel);
   const startTranscription = useVideoEditorStore(selectStartTranscription);
   const transcribeCaptionSegment = useVideoEditorStore(selectTranscribeCaptionSegment);
@@ -170,7 +188,11 @@ export function CaptionPanel({ videoPath }: CaptionPanelProps) {
     const unlistenTranscription = listen<TranscriptionProgress>(
       'transcription-progress',
       (event) => {
-        setTranscriptionProgress(event.payload.progress, event.payload.stage);
+        setTranscriptionProgress(
+          event.payload.progress,
+          event.payload.stage,
+          event.payload.message
+        );
       }
     );
 
@@ -252,7 +274,19 @@ export function CaptionPanel({ videoPath }: CaptionPanelProps) {
     try {
       await startTranscription(videoPath);
     } catch (error) {
-      videoEditorLogger.error('Transcription failed:', error);
+      if (!isTranscriptionCancelledError(error)) {
+        videoEditorLogger.error('Transcription failed:', error);
+      }
+    }
+  };
+
+  const handleCancelTranscription = async () => {
+    try {
+      await cancelTranscription();
+    } catch (error) {
+      if (!isTranscriptionCancelledError(error)) {
+        videoEditorLogger.error('Failed to cancel transcription:', error);
+      }
     }
   };
 
@@ -942,7 +976,7 @@ export function CaptionPanel({ videoPath }: CaptionPanelProps) {
         videoPath,
         nextStart,
         nextEnd,
-        'auto',
+        selectedTranscriptionLanguage,
         regenerateModelName
       );
       applyRegeneratedSegment(
@@ -954,10 +988,12 @@ export function CaptionPanel({ videoPath }: CaptionPanelProps) {
       );
       setLastRegenSnapshot(snapshot);
     } catch (error) {
-      videoEditorLogger.error('Failed to regenerate caption segment:', error);
-      setSegmentRegenerateError(
-        error instanceof Error ? error.message : String(error)
-      );
+      if (!isTranscriptionCancelledError(error)) {
+        videoEditorLogger.error('Failed to regenerate caption segment:', error);
+        setSegmentRegenerateError(
+          error instanceof Error ? error.message : String(error)
+        );
+      }
     } finally {
       setIsRegeneratingSegment(false);
     }
@@ -993,10 +1029,12 @@ export function CaptionPanel({ videoPath }: CaptionPanelProps) {
         cancelEditingSegment();
       }
     } catch (error) {
-      videoEditorLogger.error('Failed to regenerate all captions:', error);
-      setSegmentRegenerateError(
-        error instanceof Error ? error.message : String(error)
-      );
+      if (!isTranscriptionCancelledError(error)) {
+        videoEditorLogger.error('Failed to regenerate all captions:', error);
+        setSegmentRegenerateError(
+          error instanceof Error ? error.message : String(error)
+        );
+      }
     } finally {
       if (shouldRestoreModel) {
         setSelectedModel(previousModelName);
@@ -1127,42 +1165,104 @@ export function CaptionPanel({ videoPath }: CaptionPanelProps) {
           )}
         </div>
 
-        {/* Transcribe Button */}
-        <Button
-          onClick={handleTranscribe}
-          disabled={!videoPath || isTranscribing || isDownloadingModel}
-          className="w-full"
-          variant={captionSegments.length > 0 ? 'outline' : 'default'}
-        >
-          {isDownloadingModel ? (
-            <>
-              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-              Downloading... {Math.round(downloadProgress)}%
-            </>
-          ) : isTranscribing ? (
-            <>
-              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-              {transcriptionStage === 'extracting_audio'
-                ? 'Extracting audio...'
-                : `Transcribing... ${Math.round(transcriptionProgress)}%`}
-            </>
-          ) : !isModelDownloaded ? (
-            <>
-              <Download className="w-4 h-4 mr-2" />
-              Download & Transcribe
-            </>
-          ) : captionSegments.length > 0 ? (
-            <>
-              <Mic className="w-4 h-4 mr-2" />
-              Re-transcribe
-            </>
-          ) : (
-            <>
-              <Mic className="w-4 h-4 mr-2" />
-              Transcribe Audio
-            </>
+        <div className="mb-3">
+          <div className="flex items-center justify-between mb-1">
+            <span className="text-xs text-[var(--ink-muted)]">Language</span>
+            <span className="text-[10px] text-[var(--ink-subtle)]">
+              Default is pinned; use auto only if needed
+            </span>
+          </div>
+          <select
+            value={selectedTranscriptionLanguage}
+            onChange={(event) =>
+              setSelectedTranscriptionLanguage(event.target.value)
+            }
+            className="w-full h-10 rounded-md border border-[var(--glass-border)] bg-[var(--polar-mist)] px-3 text-sm text-[var(--ink-dark)]"
+          >
+            {TRANSCRIPTION.LANGUAGES.map((language) => (
+              <option key={`transcription-language-${language.value}`} value={language.value}>
+                {language.label}
+              </option>
+            ))}
+          </select>
+          {selectedTranscriptionLanguage === TRANSCRIPTION.AUTO_LANGUAGE && (
+            <p className="mt-1 text-[10px] text-[var(--ink-subtle)]">
+              Auto-detect is supported, but explicit language selection is usually more reliable.
+            </p>
           )}
-        </Button>
+        </div>
+
+        {/* Transcribe Button */}
+        <div className="flex gap-2">
+          <Button
+            onClick={handleTranscribe}
+            disabled={!videoPath || isTranscribing || isDownloadingModel}
+            className="flex-1"
+            variant={captionSegments.length > 0 ? 'outline' : 'default'}
+          >
+            {isDownloadingModel ? (
+              <>
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                Downloading... {Math.round(downloadProgress)}%
+              </>
+            ) : isTranscribing ? (
+              <>
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                {transcriptionStage === 'extracting_audio'
+                  ? 'Extracting audio...'
+                  : isCancellingTranscription
+                    ? 'Cancelling...'
+                    : `Transcribing... ${Math.round(transcriptionProgress)}%`}
+              </>
+            ) : !isModelDownloaded ? (
+              <>
+                <Download className="w-4 h-4 mr-2" />
+                Download & Transcribe
+              </>
+            ) : captionSegments.length > 0 ? (
+              <>
+                <Mic className="w-4 h-4 mr-2" />
+                Re-transcribe
+              </>
+            ) : (
+              <>
+                <Mic className="w-4 h-4 mr-2" />
+                Transcribe Audio
+              </>
+            )}
+          </Button>
+          {(isTranscribing || isCancellingTranscription) && (
+            <Button
+              type="button"
+              variant="outline"
+              onClick={handleCancelTranscription}
+              disabled={isCancellingTranscription}
+              className="shrink-0"
+            >
+              {isCancellingTranscription ? 'Cancelling...' : 'Cancel'}
+            </Button>
+          )}
+        </div>
+
+        {(isTranscribing || isCancellingTranscription) && (
+          <div className="mt-2 rounded-md border border-[var(--glass-border)] bg-[var(--polar-mist)] px-3 py-2">
+            <div className="mb-2 flex items-center justify-between text-[11px] text-[var(--ink-muted)]">
+              <span className="capitalize">
+                {transcriptionStage.replace(/_/g, ' ')}
+              </span>
+              <span>{Math.round(transcriptionProgress)}%</span>
+            </div>
+            <div className="h-2 overflow-hidden rounded-full bg-[var(--glass-border)]">
+              <div
+                className="h-full rounded-full bg-[var(--coral-400)] transition-[width] duration-200"
+                style={{ width: `${Math.max(0, Math.min(100, transcriptionProgress))}%` }}
+              />
+            </div>
+            <p className="mt-2 text-xs text-[var(--ink-subtle)]">
+              {transcriptionMessage || 'Working on transcription...'}
+            </p>
+          </div>
+        )}
 
         {/* Error Display */}
         {transcriptionError && (
@@ -1632,6 +1732,17 @@ export function CaptionPanel({ videoPath }: CaptionPanelProps) {
                           'Re-transcribe All'
                         )}
                       </Button>
+                      {(isRegeneratingSegment || isRegeneratingAllSegments) && (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={handleCancelTranscription}
+                          disabled={isCancellingTranscription}
+                        >
+                          {isCancellingTranscription ? 'Cancelling...' : 'Cancel'}
+                        </Button>
+                      )}
                       <Button
                         type="button"
                         variant="outline"
@@ -1669,4 +1780,3 @@ export function CaptionPanel({ videoPath }: CaptionPanelProps) {
     </div>
   );
 }
-

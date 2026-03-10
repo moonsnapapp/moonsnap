@@ -114,7 +114,7 @@ function createMediaElement<T extends HTMLMediaElement>() {
 
 const documentHasFocusMock = vi.fn<() => boolean>(() => true);
 
-describe('usePlaybackSync window restore', () => {
+describe('usePlaybackSync playback interruption handling', () => {
   beforeEach(() => {
     Object.defineProperty(document, 'hasFocus', {
       configurable: true,
@@ -135,6 +135,12 @@ describe('usePlaybackSync window restore', () => {
     };
     mockState.setCurrentTime.mockReset();
     mockState.setIsPlaying.mockReset();
+    mockState.setCurrentTime.mockImplementation((timeMs: number) => {
+      mockState.currentTimeMs = timeMs;
+    });
+    mockState.setIsPlaying.mockImplementation((isPlaying: boolean) => {
+      mockState.isPlaying = isPlaying;
+    });
 
     mockControls.setVideoElement.mockReset();
     mockControls.setDuration.mockReset();
@@ -143,7 +149,7 @@ describe('usePlaybackSync window restore', () => {
     mockControls.toggle.mockReset();
   });
 
-  it('recovers paused media after window restore without clearing playback state', async () => {
+  it('does not pause playback when the document becomes hidden by itself', async () => {
     const video = createMediaElement<HTMLVideoElement>();
     const systemAudio = createMediaElement<HTMLAudioElement>();
     const micAudio = createMediaElement<HTMLAudioElement>();
@@ -174,44 +180,25 @@ describe('usePlaybackSync window restore', () => {
       await Promise.resolve();
     });
 
-    video.setPaused(true);
-    systemAudio.setPaused(true);
-    micAudio.setPaused(true);
-    video.element.currentTime = 0;
-    systemAudio.element.currentTime = 0;
-    micAudio.element.currentTime = 0;
-    mockControls.startRAFLoop.mockClear();
+    mockState.setIsPlaying.mockClear();
     mockControls.stopRAFLoop.mockClear();
-    (video.element.play as ReturnType<typeof vi.fn>).mockClear();
-    (systemAudio.element.play as ReturnType<typeof vi.fn>).mockClear();
-    (micAudio.element.play as ReturnType<typeof vi.fn>).mockClear();
+    (video.element.pause as ReturnType<typeof vi.fn>).mockClear();
+    (systemAudio.element.pause as ReturnType<typeof vi.fn>).mockClear();
+    (micAudio.element.pause as ReturnType<typeof vi.fn>).mockClear();
 
     act(() => {
       setWindowState(false, 'hidden');
       document.dispatchEvent(new Event('visibilitychange'));
     });
 
-    expect(mockControls.stopRAFLoop).toHaveBeenCalled();
+    expect(mockControls.stopRAFLoop).not.toHaveBeenCalled();
     expect(mockState.setIsPlaying).not.toHaveBeenCalledWith(false);
-
-    await act(async () => {
-      setWindowState(true, 'visible');
-      window.dispatchEvent(new Event('focus'));
-      document.dispatchEvent(new Event('visibilitychange'));
-      await Promise.resolve();
-    });
-
-    expect(video.element.currentTime).toBeCloseTo(4.2, 3);
-    expect(systemAudio.element.currentTime).toBeCloseTo(4.2, 3);
-    expect(micAudio.element.currentTime).toBeCloseTo(4.2, 3);
-    expect(video.element.play).toHaveBeenCalled();
-    expect(systemAudio.element.play).toHaveBeenCalled();
-    expect(micAudio.element.play).toHaveBeenCalled();
-    expect(mockControls.startRAFLoop).toHaveBeenCalled();
-    expect(mockState.setIsPlaying).not.toHaveBeenCalledWith(false);
+    expect(video.element.pause).not.toHaveBeenCalled();
+    expect(systemAudio.element.pause).not.toHaveBeenCalled();
+    expect(micAudio.element.pause).not.toHaveBeenCalled();
   });
 
-  it('syncs the store from the live video clock when media kept playing in the background', async () => {
+  it('does not pause playback when the window loses focus by itself', async () => {
     const video = createMediaElement<HTMLVideoElement>();
     const systemAudio = createMediaElement<HTMLAudioElement>();
     const micAudio = createMediaElement<HTMLAudioElement>();
@@ -249,25 +236,114 @@ describe('usePlaybackSync window restore', () => {
       await Promise.resolve();
     });
 
-    video.setPaused(false);
-    systemAudio.setPaused(false);
-    micAudio.setPaused(false);
-    video.element.currentTime = 7.25;
-    systemAudio.element.currentTime = 7.25;
-    micAudio.element.currentTime = 7.25;
-    mockState.setCurrentTime.mockClear();
-    mockControls.startRAFLoop.mockClear();
-    (video.element.play as ReturnType<typeof vi.fn>).mockClear();
+    mockState.setIsPlaying.mockClear();
+    mockControls.stopRAFLoop.mockClear();
+    (video.element.pause as ReturnType<typeof vi.fn>).mockClear();
+    (systemAudio.element.pause as ReturnType<typeof vi.fn>).mockClear();
+    (micAudio.element.pause as ReturnType<typeof vi.fn>).mockClear();
+
+    act(() => {
+      window.dispatchEvent(new Event('blur'));
+    });
+
+    expect(mockState.setIsPlaying).not.toHaveBeenCalledWith(false);
+    expect(mockControls.stopRAFLoop).not.toHaveBeenCalled();
+    expect(video.element.pause).not.toHaveBeenCalled();
+    expect(systemAudio.element.pause).not.toHaveBeenCalled();
+    expect(micAudio.element.pause).not.toHaveBeenCalled();
+  });
+
+  it('clears playback state when the video pauses unexpectedly while the window stays visible', async () => {
+    const video = createMediaElement<HTMLVideoElement>();
+    const systemAudio = createMediaElement<HTMLAudioElement>();
+    const micAudio = createMediaElement<HTMLAudioElement>();
+
+    renderHook(() =>
+      usePlaybackSync({
+        videoRef: { current: video.element },
+        systemAudioRef: { current: systemAudio.element },
+        micAudioRef: { current: micAudio.element },
+        videoSrc: '/video.mp4',
+        systemAudioSrc: '/system.wav',
+        micAudioSrc: '/mic.wav',
+        audioConfig: {
+          systemMuted: false,
+          systemVolume: 1,
+          microphoneMuted: false,
+          microphoneVolume: 1,
+        },
+        durationMs: 10000,
+        isPlaying: true,
+        previewTimeMs: null,
+        currentTimeMs: 4200,
+        onVideoError: vi.fn(),
+      })
+    );
 
     await act(async () => {
-      setWindowState(true, 'visible');
-      window.dispatchEvent(new Event('focus'));
-      document.dispatchEvent(new Event('visibilitychange'));
       await Promise.resolve();
     });
 
-    expect(mockState.setCurrentTime).toHaveBeenCalledWith(7250);
-    expect(video.element.play).not.toHaveBeenCalled();
-    expect(mockControls.startRAFLoop).toHaveBeenCalled();
+    setWindowState(true, 'visible');
+    video.setPaused(true);
+    systemAudio.setPaused(false);
+    micAudio.setPaused(false);
+    mockState.setIsPlaying.mockClear();
+    mockControls.stopRAFLoop.mockClear();
+    (systemAudio.element.pause as ReturnType<typeof vi.fn>).mockClear();
+    (micAudio.element.pause as ReturnType<typeof vi.fn>).mockClear();
+
+    act(() => {
+      video.element.dispatchEvent(new Event('pause'));
+    });
+
+    expect(mockState.setIsPlaying).toHaveBeenCalledWith(false);
+    expect(mockControls.stopRAFLoop).toHaveBeenCalled();
+    expect(systemAudio.element.pause).toHaveBeenCalled();
+    expect(micAudio.element.pause).toHaveBeenCalled();
+  });
+
+  it('ignores duplicate pause cleanup once playback has already been cleared', async () => {
+    const video = createMediaElement<HTMLVideoElement>();
+    const systemAudio = createMediaElement<HTMLAudioElement>();
+    const micAudio = createMediaElement<HTMLAudioElement>();
+
+    renderHook(() =>
+      usePlaybackSync({
+        videoRef: { current: video.element },
+        systemAudioRef: { current: systemAudio.element },
+        micAudioRef: { current: micAudio.element },
+        videoSrc: '/video.mp4',
+        systemAudioSrc: '/system.wav',
+        micAudioSrc: '/mic.wav',
+        audioConfig: {
+          systemMuted: false,
+          systemVolume: 1,
+          microphoneMuted: false,
+          microphoneVolume: 1,
+        },
+        durationMs: 10000,
+        isPlaying: true,
+        previewTimeMs: null,
+        currentTimeMs: 4200,
+        onVideoError: vi.fn(),
+      })
+    );
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    mockState.setIsPlaying.mockClear();
+    mockControls.stopRAFLoop.mockClear();
+
+    act(() => {
+      video.element.dispatchEvent(new Event('pause'));
+      video.element.dispatchEvent(new Event('pause'));
+    });
+
+    expect(mockState.setIsPlaying).toHaveBeenCalledTimes(1);
+    expect(mockState.setIsPlaying).toHaveBeenCalledWith(false);
+    expect(mockControls.stopRAFLoop).toHaveBeenCalledTimes(1);
   });
 });

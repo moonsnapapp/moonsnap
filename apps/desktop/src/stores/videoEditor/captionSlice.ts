@@ -6,8 +6,12 @@ import type {
   CaptionSettings,
   WhisperModelInfo,
 } from '../../types';
-import { TIMING } from '../../constants';
+import { TIMING, TRANSCRIPTION } from '../../constants';
 import { videoEditorLogger } from '../../utils/logger';
+
+export function isTranscriptionCancelledError(error: unknown): boolean {
+  return String(error).includes(TRANSCRIPTION.CANCELLED_MESSAGE);
+}
 
 /**
  * Default caption settings
@@ -84,13 +88,16 @@ export interface CaptionSlice {
 
   // Transcription state
   isTranscribing: boolean;
+  isCancellingTranscription: boolean;
   transcriptionProgress: number;
   transcriptionStage: string;
+  transcriptionMessage: string;
   transcriptionError: string | null;
 
   // Model state
   whisperModels: WhisperModelInfo[];
   selectedModelName: string;
+  selectedTranscriptionLanguage: string;
   isDownloadingModel: boolean;
   downloadProgress: number;
 
@@ -114,12 +121,18 @@ export interface CaptionSlice {
     language?: string,
     modelName?: string
   ) => Promise<CaptionSegment>;
-  setTranscriptionProgress: (progress: number, stage: string) => void;
+  cancelTranscription: () => Promise<void>;
+  setTranscriptionProgress: (
+    progress: number,
+    stage: string,
+    message?: string
+  ) => void;
   setTranscriptionError: (error: string | null) => void;
 
   // Model actions
   loadWhisperModels: () => Promise<void>;
   setSelectedModel: (modelName: string) => void;
+  setSelectedTranscriptionLanguage: (language: string) => void;
   downloadModel: (modelName: string) => Promise<void>;
   deleteModel: (modelName: string) => Promise<void>;
 
@@ -136,13 +149,16 @@ export const createCaptionSlice: SliceCreator<CaptionSlice> = (set, get) => ({
 
   // Initial transcription state
   isTranscribing: false,
+  isCancellingTranscription: false,
   transcriptionProgress: 0,
   transcriptionStage: '',
+  transcriptionMessage: '',
   transcriptionError: null,
 
   // Initial model state
   whisperModels: [],
-  selectedModelName: 'base',
+  selectedModelName: TRANSCRIPTION.DEFAULT_MODEL,
+  selectedTranscriptionLanguage: TRANSCRIPTION.DEFAULT_LANGUAGE,
   isDownloadingModel: false,
   downloadProgress: 0,
 
@@ -207,12 +223,14 @@ export const createCaptionSlice: SliceCreator<CaptionSlice> = (set, get) => ({
 
   // Transcription actions
   startTranscription: async (videoPath) => {
-    const { selectedModelName } = get();
+    const { selectedModelName, selectedTranscriptionLanguage } = get();
 
     set({
       isTranscribing: true,
+      isCancellingTranscription: false,
       transcriptionProgress: 0,
       transcriptionStage: 'starting',
+      transcriptionMessage: 'Starting transcription...',
       transcriptionError: null,
     });
 
@@ -220,22 +238,30 @@ export const createCaptionSlice: SliceCreator<CaptionSlice> = (set, get) => ({
       const result = await invoke<CaptionData>('transcribe_video', {
         videoPath,
         modelName: selectedModelName,
-        language: 'auto',
+        language: selectedTranscriptionLanguage,
       });
 
       set({
         captionSegments: result.segments,
         captionSettings: { ...result.settings, enabled: true },
         isTranscribing: false,
+        isCancellingTranscription: false,
         transcriptionProgress: 100,
         transcriptionStage: 'complete',
+        transcriptionMessage: 'Transcription complete.',
       });
       scheduleCaptionSidecarSave(get);
     } catch (error) {
+      const cancelled = isTranscriptionCancelledError(error);
       set({
         isTranscribing: false,
-        transcriptionError: String(error),
-        transcriptionStage: 'error',
+        isCancellingTranscription: false,
+        transcriptionError: cancelled ? null : String(error),
+        transcriptionStage: cancelled ? 'cancelled' : 'error',
+        transcriptionMessage: cancelled
+          ? TRANSCRIPTION.CANCELLED_MESSAGE
+          : String(error),
+        transcriptionProgress: cancelled ? 0 : get().transcriptionProgress,
       });
       throw error;
     }
@@ -245,11 +271,17 @@ export const createCaptionSlice: SliceCreator<CaptionSlice> = (set, get) => ({
     videoPath,
     segmentStart,
     segmentEnd,
-    language = 'auto',
+    language,
     modelName
   ) => {
-    const { selectedModelName, whisperModels, downloadModel } = get();
+    const {
+      selectedModelName,
+      whisperModels,
+      downloadModel,
+      selectedTranscriptionLanguage,
+    } = get();
     const requestedModelName = modelName ?? selectedModelName;
+    const requestedLanguage = language ?? selectedTranscriptionLanguage;
     const selectedModel = whisperModels.find(
       (model) => model.name === requestedModelName
     );
@@ -261,22 +293,64 @@ export const createCaptionSlice: SliceCreator<CaptionSlice> = (set, get) => ({
     return await invoke<CaptionSegment>('transcribe_caption_segment', {
       videoPath,
       modelName: requestedModelName,
-      language,
+      language: requestedLanguage,
       segmentStart,
       segmentEnd,
     });
   },
 
-  setTranscriptionProgress: (progress, stage) =>
+  cancelTranscription: async () => {
+    const { isCancellingTranscription } = get();
+    if (isCancellingTranscription) {
+      return;
+    }
+
     set({
+      isCancellingTranscription: true,
+      transcriptionStage: 'cancelling',
+      transcriptionMessage: 'Cancelling transcription...',
+      transcriptionError: null,
+    });
+
+    try {
+      await invoke('cancel_transcription');
+    } catch (error) {
+      videoEditorLogger.warn('Failed to request transcription cancellation:', error);
+      set({
+        isCancellingTranscription: false,
+        transcriptionStage: 'error',
+        transcriptionMessage: String(error),
+        transcriptionError: String(error),
+      });
+      throw error;
+    }
+  },
+
+  setTranscriptionProgress: (progress, stage, message) =>
+    set((state) => ({
       transcriptionProgress: progress,
       transcriptionStage: stage,
-    }),
+      transcriptionMessage: message ?? '',
+      isCancellingTranscription:
+        state.isCancellingTranscription
+          ? !['cancelled', 'complete', 'error'].includes(stage)
+          : stage === 'cancelling',
+      isTranscribing: [
+        'starting',
+        'loading_audio',
+        'converting_audio',
+        'extracting_audio',
+        'transcribing',
+        'cancelling',
+      ].includes(stage),
+    })),
 
   setTranscriptionError: (error) =>
     set({
       transcriptionError: error,
       isTranscribing: false,
+      isCancellingTranscription: false,
+      transcriptionMessage: error ?? '',
     }),
 
   // Model actions
@@ -292,6 +366,11 @@ export const createCaptionSlice: SliceCreator<CaptionSlice> = (set, get) => ({
   setSelectedModel: (modelName) =>
     set({
       selectedModelName: modelName,
+    }),
+
+  setSelectedTranscriptionLanguage: (language) =>
+    set({
+      selectedTranscriptionLanguage: language,
     }),
 
   downloadModel: async (modelName) => {

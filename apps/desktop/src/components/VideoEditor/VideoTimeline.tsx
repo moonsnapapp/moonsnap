@@ -106,6 +106,23 @@ function getMarkerAnchorClass(edge: TimelineMarkerEdge): string {
   return 'left-1/2 -translate-x-1/2';
 }
 
+function getArrowHeadClipPath(
+  edge: TimelineMarkerEdge,
+  lineWidthPx: number,
+  handleWidthPx = TIMELINE_MARKER_HANDLE_WIDTH_PX,
+): string {
+  if (edge === 'center') {
+    return 'polygon(0 0, 100% 0, 100% 60%, 50% 100%, 0 60%)';
+  }
+
+  const tipOffsetPercent = Number((((lineWidthPx / 2) / handleWidthPx) * 100).toFixed(4));
+  const tipPositionPercent = edge === 'start'
+    ? tipOffsetPercent
+    : Number((100 - tipOffsetPercent).toFixed(4));
+
+  return `polygon(0 0, 100% 0, 100% 60%, ${tipPositionPercent}% 100%, 0 60%)`;
+}
+
 /**
  * Preview scrubber - ghost playhead that follows mouse when not playing.
  */
@@ -126,6 +143,7 @@ const PreviewScrubber = memo(function PreviewScrubber({
   const lineWidthPx = isCutMode ? CUT_PREVIEW_LINE_WIDTH_PX : TIMELINE_MARKER_LINE_WIDTH_PX;
   const { clampedLeft, edge } = getMarkerLayout(position, width, lineWidthPx);
   const scrubberColor = isCutMode ? CUT_SCRUBBER_COLOR : 'var(--ink-muted)';
+  const arrowHeadClipPath = getArrowHeadClipPath(edge, lineWidthPx);
 
   return (
     <div
@@ -138,7 +156,7 @@ const PreviewScrubber = memo(function PreviewScrubber({
       <div
         className={`absolute -top-1 ${getMarkerAnchorClass(edge)} w-3 h-4 rounded-b-sm`}
         style={{
-          clipPath: 'polygon(0 0, 100% 0, 100% 60%, 50% 100%, 0 60%)',
+          clipPath: arrowHeadClipPath,
           backgroundColor: scrubberColor,
         }}
       />
@@ -197,6 +215,7 @@ const Playhead = memo(function Playhead({
   const currentTimeMs = usePlaybackTime();
   const playheadPosition = currentTimeMs * timelineZoom + trackLabelWidth;
   const { clampedLeft, edge } = getMarkerLayout(playheadPosition, width);
+  const arrowHeadClipPath = getArrowHeadClipPath(edge, TIMELINE_MARKER_LINE_WIDTH_PX);
 
   return (
     <div
@@ -223,7 +242,7 @@ const Playhead = memo(function Playhead({
         `}
         data-timeline-control
         style={{
-          clipPath: 'polygon(0 0, 100% 0, 100% 60%, 50% 100%, 0 60%)',
+          clipPath: arrowHeadClipPath,
           backgroundColor: PLAYHEAD_COLOR,
           boxShadow: `0 10px 15px -3px ${PLAYHEAD_GLOW}`,
         }}
@@ -454,7 +473,7 @@ export function VideoTimeline({ onExport, onResetTrimSegments, onSetInPoint, onS
       if (debounceTimer) clearTimeout(debounceTimer);
       observer.disconnect();
     };
-  }, [setTimelineContainerWidth]);
+  }, [setPreviewTime, setTimelineContainerWidth]);
 
   // Fit timeline to window when project loads and container is measured
   const projectId = project?.id;

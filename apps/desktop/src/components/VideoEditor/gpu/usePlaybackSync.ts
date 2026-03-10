@@ -53,7 +53,6 @@ interface PlaybackSyncResult {
 // Keep playback smooth without audible "rewind" artifacts from backward seeks.
 const PLAYBACK_AUDIO_RESYNC_THRESHOLD_SEC = 0.5;
 const PLAYBACK_SEEK_START_FALLBACK_MS = 250;
-const PLAYBACK_WINDOW_RESUME_SEEK_THRESHOLD_SEC = 0.05;
 
 /**
  * Hook for managing playback synchronization between video and audio elements.
@@ -78,37 +77,39 @@ export function usePlaybackSync(options: PlaybackSyncOptions): PlaybackSyncResul
   const hasSeparateAudio = Boolean(systemAudioSrc || micAudioSrc);
   const lastSeekToken = useVideoEditorStore(selectLastSeekToken);
   const lastSeekTokenRef = useRef(lastSeekToken);
-  const windowResumeInFlightRef = useRef(false);
-
   const getSourceTime = useTimelineToSourceTime();
 
-  const syncMediaElementsToSourceTime = useCallback((sourceTimeSec: number) => {
-    const video = videoRef.current;
-    const systemAudio = systemAudioRef.current;
-    const micAudio = micAudioRef.current;
-
-    if (video && Math.abs(video.currentTime - sourceTimeSec) > PLAYBACK_WINDOW_RESUME_SEEK_THRESHOLD_SEC) {
-      video.currentTime = sourceTimeSec;
-    }
-
-    if (systemAudio && Math.abs(systemAudio.currentTime - sourceTimeSec) > PLAYBACK_WINDOW_RESUME_SEEK_THRESHOLD_SEC) {
-      systemAudio.currentTime = sourceTimeSec;
-    }
-
-    if (micAudio && Math.abs(micAudio.currentTime - sourceTimeSec) > PLAYBACK_WINDOW_RESUME_SEEK_THRESHOLD_SEC) {
-      micAudio.currentTime = sourceTimeSec;
-    }
-  }, [micAudioRef, systemAudioRef, videoRef]);
-
-  const playAudioElement = useCallback((audio: HTMLAudioElement | null, label: string) => {
-    if (!audio || !audio.paused) {
+  const pauseMediaElement = useCallback((media: HTMLMediaElement | null) => {
+    if (!media || media.paused) {
       return;
     }
 
-    audio.play().catch((error) => {
-      videoEditorLogger.warn(`${label} audio play failed:`, error);
-    });
+    media.pause();
   }, []);
+
+  const stopPlayback = useCallback((reason: string) => {
+    const state = useVideoEditorStore.getState();
+    if (!state.isPlaying) {
+      return;
+    }
+
+    const video = videoRef.current;
+    if (video && Number.isFinite(video.currentTime)) {
+      const sourceTimeMs = video.currentTime * 1000;
+      const segments = state.project?.timeline.segments;
+      const timelineTimeMs = segments && segments.length > 0
+        ? sourceToTimeline(sourceTimeMs, segments) ?? state.currentTimeMs
+        : sourceTimeMs;
+      state.setCurrentTime(timelineTimeMs);
+    }
+
+    controls.stopRAFLoop();
+    pauseMediaElement(videoRef.current);
+    pauseMediaElement(systemAudioRef.current);
+    pauseMediaElement(micAudioRef.current);
+    videoEditorLogger.info(`[Playback] ${reason}; clearing playback state`);
+    state.setIsPlaying(false);
+  }, [controls, micAudioRef, pauseMediaElement, systemAudioRef, videoRef]);
 
   // Initialize playback engine when project loads
   useEffect(() => {
@@ -223,7 +224,10 @@ export function usePlaybackSync(options: PlaybackSyncOptions): PlaybackSyncResul
       }
     };
 
-    const onPause = () => logMediaState('pause');
+    const onPause = () => {
+      logMediaState('pause');
+      stopPlayback('video paused unexpectedly while playback state was active');
+    };
     const onPlay = () => logMediaState('play');
     const onWaiting = () => logMediaState('waiting');
     const onStalled = () => logMediaState('stalled');
@@ -250,7 +254,7 @@ export function usePlaybackSync(options: PlaybackSyncOptions): PlaybackSyncResul
       video.removeEventListener('stalled', onStalled);
       video.removeEventListener('suspend', onSuspend);
     };
-  }, [controls, audioConfig, hasSeparateAudio, onVideoError, videoRef]);
+  }, [audioConfig, controls, hasSeparateAudio, onVideoError, stopPlayback, videoRef]);
 
   // Sync play/pause state from store to video element and RAF loop
   useEffect(() => {
@@ -481,86 +485,6 @@ export function usePlaybackSync(options: PlaybackSyncOptions): PlaybackSyncResul
     const sourceTime = getSourceTime(timelineTime);
     video.currentTime = sourceTime / 1000;
   }, [previewTimeMs, currentTimeMs, isPlaying, getSourceTime, videoRef]);
-
-  useEffect(() => {
-    const handleWindowPlaybackRecovery = () => {
-      if (windowResumeInFlightRef.current) {
-        return;
-      }
-
-      if (document.visibilityState === 'hidden') {
-        controls.stopRAFLoop();
-        return;
-      }
-
-      if (typeof document.hasFocus === 'function' && !document.hasFocus()) {
-        return;
-      }
-
-      const state = useVideoEditorStore.getState();
-      if (!state.isPlaying) {
-        return;
-      }
-
-      const video = videoRef.current;
-      const systemAudio = systemAudioRef.current;
-      const micAudio = micAudioRef.current;
-
-      let sourceTimeSec = getSourceTime(state.currentTimeMs) / 1000;
-
-      if (video && !video.paused && Number.isFinite(video.currentTime)) {
-        sourceTimeSec = video.currentTime;
-        const sourceTimeMs = sourceTimeSec * 1000;
-        const segments = state.project?.timeline.segments;
-        const timelineTimeMs = segments && segments.length > 0
-          ? sourceToTimeline(sourceTimeMs, segments) ?? state.currentTimeMs
-          : sourceTimeMs;
-        state.setCurrentTime(timelineTimeMs);
-      }
-
-      syncMediaElementsToSourceTime(sourceTimeSec);
-      playAudioElement(systemAudio, 'System');
-      playAudioElement(micAudio, 'Mic');
-
-      if (!video) {
-        controls.startRAFLoop();
-        return;
-      }
-
-      if (!video.paused) {
-        controls.startRAFLoop();
-        videoEditorLogger.info(
-          `[Playback] restored active window while video kept playing at ${sourceTimeSec.toFixed(3)}s`
-        );
-        return;
-      }
-
-      windowResumeInFlightRef.current = true;
-      video.play()
-        .then(() => {
-          controls.startRAFLoop();
-          videoEditorLogger.info(
-            `[Playback] resumed paused video after window restore at ${sourceTimeSec.toFixed(3)}s`
-          );
-        })
-        .catch((error) => {
-          if (error.name !== 'AbortError') {
-            videoEditorLogger.warn('Video resume after window restore failed:', error);
-          }
-        })
-        .finally(() => {
-          windowResumeInFlightRef.current = false;
-        });
-    };
-
-    window.addEventListener('focus', handleWindowPlaybackRecovery);
-    document.addEventListener('visibilitychange', handleWindowPlaybackRecovery);
-
-    return () => {
-      window.removeEventListener('focus', handleWindowPlaybackRecovery);
-      document.removeEventListener('visibilitychange', handleWindowPlaybackRecovery);
-    };
-  }, [controls, getSourceTime, playAudioElement, syncMediaElementsToSourceTime, micAudioRef, systemAudioRef, videoRef]);
 
   const handleVideoClick = useCallback(() => {
     controls.toggle();

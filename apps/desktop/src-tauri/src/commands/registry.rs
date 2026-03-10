@@ -248,6 +248,7 @@ macro_rules! tauri_command_handler {
             crate::commands::captions::list_whisper_models,
             crate::commands::captions::download_whisper_model,
             crate::commands::captions::delete_whisper_model,
+            crate::commands::captions::cancel_transcription,
             crate::commands::captions::transcribe_video,
             crate::commands::captions::transcribe_caption_segment,
             crate::commands::captions::save_caption_data,

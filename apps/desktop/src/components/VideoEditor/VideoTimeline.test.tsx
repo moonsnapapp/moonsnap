@@ -885,7 +885,7 @@ describe('VideoTimeline', () => {
       expect(playhead).toBeInTheDocument();
     });
 
-    it('should keep the playhead inside the timeline width at the end', async () => {
+    it('should keep the playhead inside the timeline width at the end and align the arrow tip with the line', async () => {
       useVideoEditorStore.setState({
         project: createMockProject({
           timeline: {
@@ -911,6 +911,7 @@ describe('VideoTimeline', () => {
       const playheadLine = playheadHandle?.parentElement as HTMLDivElement | null;
       expect(playheadHandle).toBeInTheDocument();
       expect(playheadLine?.style.left).toBe('998px');
+      expect(playheadHandle?.style.clipPath).toContain('91.6667% 100%');
     });
   });
 

@@ -101,15 +101,22 @@ export const selectLastSeekToken = (state: VideoEditorState) => state.lastSeekTo
 export const selectCaptionSegments = (state: VideoEditorState) => state.captionSegments;
 export const selectCaptionSettings = (state: VideoEditorState) => state.captionSettings;
 export const selectIsTranscribing = (state: VideoEditorState) => state.isTranscribing;
+export const selectIsCancellingTranscription = (state: VideoEditorState) =>
+  state.isCancellingTranscription;
 export const selectTranscriptionProgress = (state: VideoEditorState) => state.transcriptionProgress;
 export const selectTranscriptionStage = (state: VideoEditorState) => state.transcriptionStage;
+export const selectTranscriptionMessage = (state: VideoEditorState) => state.transcriptionMessage;
 export const selectTranscriptionError = (state: VideoEditorState) => state.transcriptionError;
 export const selectWhisperModels = (state: VideoEditorState) => state.whisperModels;
 export const selectSelectedModelName = (state: VideoEditorState) => state.selectedModelName;
+export const selectSelectedTranscriptionLanguage = (state: VideoEditorState) =>
+  state.selectedTranscriptionLanguage;
 export const selectIsDownloadingModel = (state: VideoEditorState) => state.isDownloadingModel;
 export const selectDownloadProgress = (state: VideoEditorState) => state.downloadProgress;
 export const selectLoadWhisperModels = (state: VideoEditorState) => state.loadWhisperModels;
 export const selectSetSelectedModel = (state: VideoEditorState) => state.setSelectedModel;
+export const selectSetSelectedTranscriptionLanguage = (state: VideoEditorState) =>
+  state.setSelectedTranscriptionLanguage;
 export const selectDownloadModel = (state: VideoEditorState) => state.downloadModel;
 export const selectStartTranscription = (state: VideoEditorState) => state.startTranscription;
 export const selectTranscribeCaptionSegment = (state: VideoEditorState) => state.transcribeCaptionSegment;
@@ -118,3 +125,4 @@ export const selectUpdateCaptionSegment = (state: VideoEditorState) => state.upd
 export const selectSetCaptionSegments = (state: VideoEditorState) => state.setCaptionSegments;
 export const selectSetCaptionsEnabled = (state: VideoEditorState) => state.setCaptionsEnabled;
 export const selectSetTranscriptionProgress = (state: VideoEditorState) => state.setTranscriptionProgress;
+export const selectCancelTranscription = (state: VideoEditorState) => state.cancelTranscription;
