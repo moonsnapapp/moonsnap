@@ -228,7 +228,9 @@ export function VideoEditorSidebar({ project, onOpenCropDialog }: VideoEditorSid
         {/* Captions Tab */}
         {activeTab === 'captions' && (
           <div className="p-4">
-            <CaptionPanel videoPath={project?.sources.screenVideo || null} />
+            <ProFeature featureName="Auto Captions">
+              <CaptionPanel videoPath={project?.sources.screenVideo || null} />
+            </ProFeature>
           </div>
         )}
 

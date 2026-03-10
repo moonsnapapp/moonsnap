@@ -450,6 +450,21 @@ export const VideoEditorView = forwardRef<VideoEditorViewRef, VideoEditorViewPro
   const handleExport = useCallback(async () => {
     if (!project) return;
 
+    // Pro feature gate: export requires a license
+    const { isPro } = await import('../../stores/licenseStore').then(m => {
+      const store = m.useLicenseStore.getState();
+      return { isPro: store.isPro() };
+    });
+    if (!isPro) {
+      toast('Export requires MoonSnap Pro', {
+        action: {
+          label: 'Upgrade',
+          onClick: () => window.open('https://buy.polar.sh/polar_cl_WDZB2ld3wEqqWTOustdiNZHASOHMOz4lxlsZ03VjJfx', '_blank'),
+        },
+      });
+      return;
+    }
+
     const outputMode = getVideoOutputMode(project);
     const exportActionLabel = getVideoPrimaryActionLabel(project);
     const exportDialogTitle = getVideoExportDialogTitle(project);
@@ -488,16 +503,6 @@ export const VideoEditorView = forwardRef<VideoEditorViewRef, VideoEditorViewPro
       toast.info(`Export uses source frame rate (${project.sources.fps} fps)`, {
         description: 'Frame-rate conversion is not supported yet.',
       });
-    }
-
-    // Pro feature gate: export requires a license
-    const { isPro } = await import('../../stores/licenseStore').then(m => {
-      const store = m.useLicenseStore.getState();
-      return { isPro: store.isPro() };
-    });
-    if (!isPro) {
-      window.open('https://buy.polar.sh/polar_cl_WDZB2ld3wEqqWTOustdiNZHASOHMOz4lxlsZ03VjJfx', '_blank');
-      return;
     }
 
     // Stop playback before exporting

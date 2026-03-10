@@ -434,6 +434,24 @@ textarea,
   -webkit-app-region: drag;
 }
 
+.titlebar-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  height: 16px;
+  min-width: 32px;
+  padding: 1px 6px 0;
+  border-radius: 6px;
+  font-family: inherit;
+  font-size: 9px;
+  font-weight: 500;
+  line-height: 1;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
 .titlebar-center {
   flex: 1;
   -webkit-app-region: drag;

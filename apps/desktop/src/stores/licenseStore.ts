@@ -1,7 +1,10 @@
 import { create } from 'zustand';
 import { devtools } from 'zustand/middleware';
 import { invoke } from '@tauri-apps/api/core';
+import { emit } from '@tauri-apps/api/event';
 import type { LicenseStatus, ActivationResult } from '../types/generated';
+
+const LICENSE_STATUS_CHANGED_EVENT = 'license-status-changed';
 
 /**
  * Runtime shape of LicenseInfo from Tauri invoke.
@@ -41,7 +44,7 @@ interface LicenseState {
 export const useLicenseStore = create<LicenseState>()(
   devtools(
     (set, get) => ({
-      status: 'trial' as LicenseStatus,
+      status: 'free' as LicenseStatus,
       trialDaysLeft: null,
       licensedVersion: null,
       seatsUsed: null,
@@ -81,6 +84,7 @@ export const useLicenseStore = create<LicenseState>()(
           const result = await invoke<ActivationResult>('activate_license', { key });
           if (result.success) {
             await get().fetchStatus();
+            await emit(LICENSE_STATUS_CHANGED_EVENT);
           }
           set({ isLoading: false });
           return result;
@@ -95,6 +99,7 @@ export const useLicenseStore = create<LicenseState>()(
         try {
           await invoke('deactivate_license');
           await get().fetchStatus();
+          await emit(LICENSE_STATUS_CHANGED_EVENT);
           set({ isLoading: false });
           return { success: true, message: 'License deactivated successfully' };
         } catch (e) {

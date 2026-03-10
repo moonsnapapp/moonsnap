@@ -145,26 +145,19 @@ export const useEditorKeyboardShortcuts = ({
         return;
       }
 
-      // Shift+G: Quick toggle compositor on/off without switching tool
-      if (e.key === 'G' && e.shiftKey) {
-        e.preventDefault();
-        onToggleCompositor();
-        return;
-      }
-
-      // G: Toggle background tool and compositor
+      // G / Shift+G: Background tool (gated via onToolChange)
       if (e.key.toLowerCase() === 'g') {
         e.preventDefault();
-        // If already on background tool, toggle the effect off and switch to select
-        if (selectedTool === 'background') {
+        if (e.shiftKey) {
+          // Shift+G: Quick toggle compositor on/off without switching tool
+          onToggleCompositor();
+        } else if (selectedTool === 'background') {
+          // Already on background tool — toggle off and switch to select
           onToggleCompositor();
           onToolChange('select');
         } else {
-          // Switch to background tool and enable effect
+          // Switch to background tool (blocked if not Pro via onToolChange)
           onToolChange('background');
-          if (!compositorEnabled) {
-            onToggleCompositor();
-          }
         }
         return;
       }

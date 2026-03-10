@@ -34,6 +34,7 @@ import { isCropBoundsAnnotation, isCropRegionAnnotation, isCompositorSettingsAnn
 import { ensureBackgroundShape } from '@/utils/canvasGeometry';
 import { toast } from 'sonner';
 import { reportError } from '@/utils/errorReporting';
+import { useLicenseStore } from '@/stores/licenseStore';
 import { useEditorActions } from '@/hooks/useEditorActions';
 import { useEditorKeyboardShortcuts } from '@/hooks/useEditorKeyboardShortcuts';
 import { DeleteDialog } from '@/components/Library/components/DeleteDialog';
@@ -118,8 +119,23 @@ const ImageEditorContent: React.FC<{
     setCompositorSettings({ enabled: !compositorSettings.enabled });
   }, [compositorSettings.enabled, setCompositorSettings]);
 
+  const isPro = useLicenseStore((s) => s.isPro());
+
+  // Pro-gated tools in the image editor
+  const PRO_TOOLS: ReadonlySet<Tool> = new Set(['background']);
+  const PURCHASE_URL = 'https://buy.polar.sh/polar_cl_WDZB2ld3wEqqWTOustdiNZHASOHMOz4lxlsZ03VjJfx';
+
   // Handle tool change
   const handleToolChange = useCallback((newTool: Tool) => {
+    if (PRO_TOOLS.has(newTool) && !isPro) {
+      toast('This feature requires MoonSnap Pro', {
+        action: {
+          label: 'Upgrade',
+          onClick: () => window.open(PURCHASE_URL, '_blank'),
+        },
+      });
+      return;
+    }
     if (newTool !== selectedTool && selectedTool === 'select') {
       setSelectedIds([]);
     }
@@ -127,7 +143,11 @@ const ImageEditorContent: React.FC<{
     const defaultColor = TOOL_DEFAULT_COLORS[newTool] ?? DEFAULT_STROKE_COLOR;
     setStrokeColor(defaultColor);
     setSelectedTool(newTool);
-  }, [selectedTool, setSelectedIds, setStrokeColor]);
+    // Auto-enable compositor when switching to background tool
+    if (newTool === 'background' && !compositorSettings.enabled) {
+      setCompositorSettings({ enabled: true });
+    }
+  }, [selectedTool, setSelectedIds, setStrokeColor, isPro, compositorSettings.enabled, setCompositorSettings]);
 
   // Crop commit handler - switch to select tool and fit
   const handleCropCommit = useCallback(() => {

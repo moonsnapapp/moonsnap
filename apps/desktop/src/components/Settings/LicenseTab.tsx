@@ -66,6 +66,18 @@ export const LicenseTab: React.FC = () => {
   };
 
   const statusConfig = STATUS_CONFIG[status];
+  const badgeLabel = status === 'pro'
+    ? 'Pro'
+    : status === 'trial' && trialDaysLeft !== null
+      ? `${trialDaysLeft} day${trialDaysLeft === 1 ? '' : 's'} left`
+      : status === 'free' || status === 'expired'
+        ? 'Free'
+        : null;
+  const badgeClass = status === 'pro'
+    ? 'bg-[#3d1f1f] text-rose-400 border-[#5c2e2e]'
+    : status === 'trial'
+      ? 'bg-[#3d2f1a] text-amber-400 border-[#5c4528]'
+      : 'bg-[#2a2a2e] text-zinc-400 border-[#3a3a3f]';
   const ownerLabel =
     customerName && customerName.trim().length > 1
       ? customerName
@@ -120,9 +132,11 @@ export const LicenseTab: React.FC = () => {
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
                       <p className="truncate text-sm font-semibold text-[var(--ink-black)]">{ownerLabel}</p>
-                      <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-700">
-                        Pro
-                      </span>
+                      {badgeLabel && (
+                        <span className={`titlebar-badge ${badgeClass}`}>
+                          {badgeLabel}
+                        </span>
+                      )}
                     </div>
                     {customerName && customerEmail && (
                       <p className="truncate text-xs text-[var(--ink-muted)]">{customerEmail}</p>

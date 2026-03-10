@@ -1,7 +1,9 @@
 import { useState, useEffect } from 'react';
+import { listen } from '@tauri-apps/api/event';
 import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
 import { Minus, Square, X, Maximize2, Aperture, Sun, Moon, FolderOpen, Camera, Settings } from 'lucide-react';
 import { useTheme } from '@/hooks/useTheme';
+import { useLicenseStore } from '@/stores/licenseStore';
 
 interface TitlebarProps {
   title?: string;
@@ -30,6 +32,23 @@ export const Titlebar: React.FC<TitlebarProps> = ({
   const [isDragging, setIsDragging] = useState(false);
   const appWindow = getCurrentWebviewWindow();
   const { resolvedTheme, toggleTheme } = useTheme();
+  const licenseStatus = useLicenseStore((s) => s.status);
+  const trialDaysLeft = useLicenseStore((s) => s.trialDaysLeft);
+  const fetchLicenseStatus = useLicenseStore((s) => s.fetchStatus);
+
+  const badgeLabel = licenseStatus === 'pro'
+    ? 'Pro'
+    : licenseStatus === 'trial' && trialDaysLeft !== null
+      ? `${trialDaysLeft} day${trialDaysLeft === 1 ? '' : 's'} left`
+      : licenseStatus === 'free' || licenseStatus === 'expired'
+        ? 'Free'
+        : null;
+
+  const badgeClass = licenseStatus === 'pro'
+    ? 'bg-[#3d1f1f] text-rose-400 border-[#5c2e2e]'
+    : licenseStatus === 'trial'
+      ? 'bg-[#3d2f1a] text-amber-400 border-[#5c4528]'
+      : 'bg-[#2a2a2e] text-zinc-400 border-[#3a3a3f]';
 
   useEffect(() => {
     // Check initial maximized state
@@ -53,6 +72,26 @@ export const Titlebar: React.FC<TitlebarProps> = ({
       if (unlistenFn) unlistenFn();
     };
   }, [appWindow]);
+
+  useEffect(() => {
+    void fetchLicenseStatus();
+  }, [fetchLicenseStatus]);
+
+  useEffect(() => {
+    let unlistenFn: (() => void) | null = null;
+
+    listen('license-status-changed', () => {
+      void fetchLicenseStatus();
+    }).then((fn) => {
+      unlistenFn = fn;
+    }).catch((error) => {
+      console.error('Failed to listen for license-status-changed:', error);
+    });
+
+    return () => {
+      unlistenFn?.();
+    };
+  }, [fetchLicenseStatus]);
 
   // Handle drag state
   const handleMouseDown = () => setIsDragging(true);
@@ -86,6 +125,11 @@ export const Titlebar: React.FC<TitlebarProps> = ({
         <span className="titlebar-title" data-tauri-drag-region>
           {title}
         </span>
+        {badgeLabel && (
+          <span className={`titlebar-badge ${badgeClass}`}>
+            {badgeLabel}
+          </span>
+        )}
       </div>
 
       {/* Center: Drag Region */}

@@ -1,15 +1,13 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-
-const mockInvoke = vi.fn();
-vi.mock('@tauri-apps/api/core', () => ({
-  invoke: (...args: unknown[]) => mockInvoke(...args),
-}));
+import { mockEmit, mockInvoke, mockListen } from '../test/mocks/tauri';
 
 import { useLicenseStore } from './licenseStore';
 
 describe('licenseStore', () => {
   beforeEach(() => {
     mockInvoke.mockReset();
+    mockEmit.mockClear();
+    mockListen.mockClear();
     useLicenseStore.setState({
       status: 'trial',
       trialDaysLeft: null,
@@ -85,6 +83,7 @@ describe('licenseStore', () => {
 
       expect(result.success).toBe(true);
       expect(mockInvoke).toHaveBeenCalledWith('activate_license', { key: 'test-key' });
+      expect(mockEmit).toHaveBeenCalledWith('license-status-changed');
     });
 
     it('should return failure result on error', async () => {
@@ -117,6 +116,7 @@ describe('licenseStore', () => {
       await useLicenseStore.getState().deactivate();
 
       expect(mockInvoke).toHaveBeenCalledWith('deactivate_license');
+      expect(mockEmit).toHaveBeenCalledWith('license-status-changed');
       expect(useLicenseStore.getState().status).toBe('free');
     });
   });
