@@ -74,10 +74,10 @@ export const LicenseTab: React.FC = () => {
         ? 'Free'
         : null;
   const badgeClass = status === 'pro'
-    ? 'bg-[#3d1f1f] text-rose-400 border-[#5c2e2e]'
+    ? 'titlebar-badge-pro'
     : status === 'trial'
-      ? 'bg-[#3d2f1a] text-amber-400 border-[#5c4528]'
-      : 'bg-[#2a2a2e] text-zinc-400 border-[#3a3a3f]';
+      ? 'titlebar-badge-trial'
+      : 'titlebar-badge-free';
   const ownerLabel =
     customerName && customerName.trim().length > 1
       ? customerName

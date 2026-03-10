@@ -450,6 +450,25 @@ textarea,
   letter-spacing: 0.08em;
   text-transform: uppercase;
   white-space: nowrap;
+  border: 1px solid transparent;
+}
+
+.titlebar-badge-pro {
+  background: rgba(82, 29, 36, 0.92);
+  border-color: rgba(133, 56, 70, 0.9);
+  color: #f5b2bc;
+}
+
+.titlebar-badge-trial {
+  background: rgba(74, 53, 19, 0.92);
+  border-color: rgba(111, 81, 31, 0.9);
+  color: #f4c36d;
+}
+
+.titlebar-badge-free {
+  background: rgba(42, 42, 46, 0.92);
+  border-color: rgba(62, 62, 68, 0.92);
+  color: #a1a1aa;
 }
 
 .titlebar-center {
@@ -1464,6 +1483,24 @@ body.overlay-window #root {
 .light .titlebar::after {
   opacity: 0.8;
   background: var(--glass-accent-line);
+}
+
+.light .titlebar-badge-pro {
+  background: rgba(190, 24, 93, 0.08);
+  border-color: rgba(190, 24, 93, 0.16);
+  color: #9d174d;
+}
+
+.light .titlebar-badge-trial {
+  background: rgba(217, 119, 6, 0.1);
+  border-color: rgba(217, 119, 6, 0.18);
+  color: #9a5a00;
+}
+
+.light .titlebar-badge-free {
+  background: rgba(82, 82, 91, 0.08);
+  border-color: rgba(113, 113, 122, 0.14);
+  color: #5b6270;
 }
 
 /* Light mode frosted glass - editor toolbar */
