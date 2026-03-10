@@ -2,6 +2,11 @@
 
 All notable changes to MoonSnap are documented in this file.
 
+## [0.5.11] - 2026-03-10
+
+### Fixed
+- Badge counts now stay in sync across multiple windows.
+
 ## [0.5.10] - 2026-03-10
 
 ### Fixed
