@@ -211,21 +211,21 @@ export const ShortcutInput: React.FC<ShortcutInputProps> = ({
     <div className="space-y-2">
       <div
         className={cn(
-          'flex items-center gap-1.5 p-2 rounded-lg border transition-colors',
+          'flex flex-wrap items-center gap-1.5 p-1.5 rounded-lg border transition-colors',
           'bg-[var(--card)]',
           getBorderClass(),
           disabled && 'opacity-50'
         )}
       >
         {/* Ctrl checkbox */}
-        <label className="flex items-center gap-1 cursor-pointer select-none">
+        <label className="flex shrink-0 items-center gap-1 cursor-pointer select-none whitespace-nowrap">
           <input
             type="checkbox"
             checked={localCtrl}
             onChange={(e) => setLocalCtrl(e.target.checked)}
             disabled={disabled}
             className={cn(
-              'w-4 h-4 rounded border cursor-pointer appearance-none',
+              'h-4 w-4 rounded border cursor-pointer appearance-none',
               'border-[var(--polar-frost)] bg-[var(--polar-ice)]',
               'checked:bg-[var(--coral-400)] checked:border-[var(--coral-400)]',
               'focus:ring-2 focus:ring-[var(--coral-400)]/30 focus:ring-offset-0',
@@ -238,17 +238,17 @@ export const ShortcutInput: React.FC<ShortcutInputProps> = ({
           <span className="text-xs text-[var(--ink-dark)]">Ctrl</span>
         </label>
 
-        <span className="text-[var(--ink-muted)] text-xs px-0.5">+</span>
+        <span className="shrink-0 px-0.5 text-xs text-[var(--ink-muted)]">+</span>
 
         {/* Shift checkbox */}
-        <label className="flex items-center gap-1 cursor-pointer select-none">
+        <label className="flex shrink-0 items-center gap-1 cursor-pointer select-none whitespace-nowrap">
           <input
             type="checkbox"
             checked={localShift}
             onChange={(e) => setLocalShift(e.target.checked)}
             disabled={disabled}
             className={cn(
-              'w-4 h-4 rounded border cursor-pointer appearance-none',
+              'h-4 w-4 rounded border cursor-pointer appearance-none',
               'border-[var(--polar-frost)] bg-[var(--polar-ice)]',
               'checked:bg-[var(--coral-400)] checked:border-[var(--coral-400)]',
               'focus:ring-2 focus:ring-[var(--coral-400)]/30 focus:ring-offset-0',
@@ -261,17 +261,17 @@ export const ShortcutInput: React.FC<ShortcutInputProps> = ({
           <span className="text-xs text-[var(--ink-dark)]">Shift</span>
         </label>
 
-        <span className="text-[var(--ink-muted)] text-xs px-0.5">+</span>
+        <span className="shrink-0 px-0.5 text-xs text-[var(--ink-muted)]">+</span>
 
         {/* Alt checkbox */}
-        <label className="flex items-center gap-1 cursor-pointer select-none">
+        <label className="flex shrink-0 items-center gap-1 cursor-pointer select-none whitespace-nowrap">
           <input
             type="checkbox"
             checked={localAlt}
             onChange={(e) => setLocalAlt(e.target.checked)}
             disabled={disabled}
             className={cn(
-              'w-4 h-4 rounded border cursor-pointer appearance-none',
+              'h-4 w-4 rounded border cursor-pointer appearance-none',
               'border-[var(--polar-frost)] bg-[var(--polar-ice)]',
               'checked:bg-[var(--coral-400)] checked:border-[var(--coral-400)]',
               'focus:ring-2 focus:ring-[var(--coral-400)]/30 focus:ring-offset-0',
@@ -284,14 +284,14 @@ export const ShortcutInput: React.FC<ShortcutInputProps> = ({
           <span className="text-xs text-[var(--ink-dark)]">Alt</span>
         </label>
         
-        <span className="text-[var(--ink-muted)] text-xs px-0.5">+</span>
+        <span className="shrink-0 px-0.5 text-xs text-[var(--ink-muted)]">+</span>
 
         {/* Key dropdown */}
         <DropdownMenu>
           <DropdownMenuTrigger asChild disabled={disabled}>
             <button
               className={cn(
-                'flex items-center justify-between gap-2 h-7 px-2 min-w-[100px]',
+                'flex h-7 max-w-full shrink items-center justify-between gap-1.5 px-2 min-w-[76px]',
                 'rounded-lg border text-xs',
                 'bg-[var(--polar-ice)] border-[var(--polar-frost)]',
                 'hover:bg-[var(--polar-mist)] hover:border-[var(--ink-subtle)]',
@@ -299,7 +299,7 @@ export const ShortcutInput: React.FC<ShortcutInputProps> = ({
                 disabled && 'pointer-events-none opacity-50'
               )}
             >
-              <span className="text-[var(--ink-black)]">{getKeyLabel(localKey)}</span>
+              <span className="text-xs leading-tight text-[var(--ink-black)]">{getKeyLabel(localKey)}</span>
               <ChevronDown className="w-3 h-3 text-[var(--ink-muted)]" />
             </button>
           </DropdownMenuTrigger>
@@ -375,13 +375,13 @@ export const ShortcutInput: React.FC<ShortcutInputProps> = ({
         
         {/* Conflict status indicator */}
         {conflictStatus === 'checking' && (
-          <Loader2 className="w-4 h-4 text-[var(--coral-400)] animate-spin ml-1" />
+          <Loader2 className="ml-1 h-4 w-4 animate-spin text-[var(--coral-400)]" />
         )}
         {conflictStatus === 'available' && hasPendingChanges && (
-          <Check className="w-4 h-4 text-emerald-500 ml-1" />
+          <Check className="ml-1 h-4 w-4 text-emerald-500" />
         )}
         {(conflictStatus === 'conflict' || conflictStatus === 'internal_conflict') && (
-          <AlertTriangle className="w-4 h-4 text-red-500 ml-1" />
+          <AlertTriangle className="ml-1 h-4 w-4 text-red-500" />
         )}
 
         {hasPendingChanges && conflictStatus !== 'internal_conflict' && conflictStatus !== 'checking' && (
@@ -390,10 +390,10 @@ export const ShortcutInput: React.FC<ShortcutInputProps> = ({
             size="sm"
             onClick={handleApply}
             disabled={disabled || !isValid}
-            className="h-7 px-2 ml-1 text-xs bg-[var(--coral-400)] hover:bg-[var(--coral-500)] text-white"
+            className="ml-1 h-7 px-2 text-xs bg-[var(--coral-400)] text-white hover:bg-[var(--coral-500)]"
             title="Apply shortcut"
           >
-            <Check className="w-3 h-3 mr-1" />
+            <Check className="mr-1 h-3 w-3" />
             Apply
           </Button>
         )}
@@ -405,7 +405,7 @@ export const ShortcutInput: React.FC<ShortcutInputProps> = ({
             size="icon"
             onClick={onReset}
             disabled={disabled}
-            className="h-7 w-7 ml-1 text-[var(--ink-muted)] hover:text-[var(--ink-black)]"
+            className="ml-1 h-7 w-7 text-[var(--ink-muted)] hover:text-[var(--ink-black)]"
             title="Reset to default"
           >
             <RotateCcw className="w-3 h-3" />

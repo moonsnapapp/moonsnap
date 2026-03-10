@@ -11,7 +11,7 @@ use std::str::FromStr;
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::thread::{self, JoinHandle};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use moonsnap_domain::capture::ScreenRegionSelection;
 use moonsnap_hotkeys::{Hotkey, HotkeyId, HotkeyManager, HotkeyState as HotkeyEventState};
@@ -30,6 +30,7 @@ const DEFAULT_SHORTCUTS: [(&str, &str); 6] = [
 ];
 
 const MANAGER_POLL_INTERVAL: Duration = Duration::from_millis(10);
+const SHORTCUT_DISPATCH_DEBOUNCE: Duration = Duration::from_millis(250);
 
 struct OverrideBinding {
     shortcut: Hotkey,
@@ -82,6 +83,7 @@ struct HotkeyState {
 }
 
 static HOTKEY_STATE: OnceLock<Arc<Mutex<HotkeyState>>> = OnceLock::new();
+static LAST_SHORTCUT_DISPATCH: OnceLock<Mutex<Option<(String, Instant)>>> = OnceLock::new();
 
 #[derive(Debug, Default, Deserialize)]
 struct PersistedShortcutConfig {
@@ -107,6 +109,23 @@ fn get_state() -> &'static Arc<Mutex<HotkeyState>> {
 fn parse_hotkey(shortcut: &str) -> Result<Hotkey, String> {
     Hotkey::from_str(shortcut)
         .map_err(|error| format!("Invalid shortcut '{}': {}", shortcut, error))
+}
+
+fn should_skip_duplicate_dispatch(id: &str) -> bool {
+    let state = LAST_SHORTCUT_DISPATCH.get_or_init(|| Mutex::new(None));
+    let Ok(mut last_dispatch) = state.lock() else {
+        return false;
+    };
+
+    let now = Instant::now();
+    if let Some((last_id, last_at)) = last_dispatch.as_ref() {
+        if last_id == id && now.duration_since(*last_at) <= SHORTCUT_DISPATCH_DEBOUNCE {
+            return true;
+        }
+    }
+
+    *last_dispatch = Some((id.to_string(), now));
+    false
 }
 
 fn load_persisted_shortcut_settings(app: &AppHandle) -> PersistedShortcutSettings {
@@ -162,6 +181,10 @@ fn resolved_shortcuts(settings: &PersistedShortcutSettings) -> Vec<(String, Stri
 }
 
 fn dispatch_global_shortcut_inner(app: &AppHandle, id: &str) -> Result<(), String> {
+    if should_skip_duplicate_dispatch(id) {
+        return Ok(());
+    }
+
     match id {
         "open_capture_toolbar" => {
             let app_handle = app.clone();

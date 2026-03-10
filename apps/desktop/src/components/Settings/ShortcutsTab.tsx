@@ -35,19 +35,19 @@ const ShortcutItem: React.FC<ShortcutItemProps> = ({ config }) => {
   }, [config.id, config.defaultShortcut, resetShortcut]);
 
   return (
-    <div className="p-4 rounded-lg bg-[var(--polar-ice)] border border-[var(--polar-frost)]">
-      <div className="flex items-start gap-3">
-        <div className="flex-shrink-0 w-10 h-10 rounded-lg bg-[var(--card)] flex items-center justify-center text-[var(--coral-400)] shadow-sm border border-[var(--polar-frost)]">
+    <div className="rounded-lg border border-[var(--polar-frost)] bg-[var(--polar-ice)] p-3">
+      <div className="flex items-start gap-2.5">
+        <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg border border-[var(--polar-frost)] bg-[var(--card)] text-[var(--coral-400)] shadow-sm">
           {SHORTCUT_ICONS[config.id] || <Scan className="w-5 h-5" />}
         </div>
 
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 mb-1">
+          <div className="mb-1 flex items-center gap-2">
             <h4 className="text-sm font-medium text-[var(--ink-black)]">{config.name}</h4>
             {showGreen && <Check className="w-4 h-4 text-emerald-500" />}
             {showWarning && <AlertTriangle className="w-4 h-4 text-amber-500" />}
           </div>
-          <p className="text-xs text-[var(--ink-muted)] mb-3">{config.description}</p>
+          <p className="mb-2 text-xs text-[var(--ink-muted)]">{config.description}</p>
 
           <ShortcutInput
             value={config.currentShortcut}
@@ -76,7 +76,7 @@ export const ShortcutsTab: React.FC = () => {
 
   return (
     <div className="space-y-4">
-      <div className="space-y-3">
+      <div className="grid gap-3 md:grid-cols-2">
         {shortcuts.map((config) => (
           <ShortcutItem key={config.id} config={config} />
         ))}

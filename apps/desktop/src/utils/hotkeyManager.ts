@@ -168,6 +168,92 @@ export function parseKeyboardEvent(event: KeyboardEvent): string | null {
   return [...modifiers, key].join('+');
 }
 
+function normalizeEventKey(key: string): string | null {
+  if (!key) return null;
+
+  if (key === ' ') return 'Space';
+  if (key.length === 1) return key.toUpperCase();
+
+  switch (key.toLowerCase()) {
+    case 'printscreen':
+    case 'prtsc':
+      return 'PrintScreen';
+    case 'escape':
+    case 'esc':
+      return 'Escape';
+    case 'enter':
+      return 'Enter';
+    case 'tab':
+      return 'Tab';
+    case 'backspace':
+      return 'Backspace';
+    case 'delete':
+      return 'Delete';
+    case 'insert':
+      return 'Insert';
+    case 'home':
+      return 'Home';
+    case 'end':
+      return 'End';
+    case 'pageup':
+      return 'PageUp';
+    case 'pagedown':
+      return 'PageDown';
+    case 'arrowup':
+      return 'ArrowUp';
+    case 'arrowdown':
+      return 'ArrowDown';
+    case 'arrowleft':
+      return 'ArrowLeft';
+    case 'arrowright':
+      return 'ArrowRight';
+    default:
+      return key;
+  }
+}
+
+export function isEditableEventTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) {
+    return false;
+  }
+
+  if (target.isContentEditable) {
+    return true;
+  }
+
+  const tagName = target.tagName.toLowerCase();
+  return tagName === 'input' || tagName === 'textarea' || tagName === 'select';
+}
+
+export function matchesShortcutEvent(event: KeyboardEvent, shortcut: string): boolean {
+  const parts = shortcut.split('+').map((part) => part.trim()).filter(Boolean);
+  if (parts.length === 0) {
+    return false;
+  }
+
+  const shortcutKey = parts[parts.length - 1];
+  const modifiers = parts.slice(0, -1).map((modifier) => modifier.toLowerCase());
+  const eventKey = normalizeEventKey(event.key);
+
+  if (!eventKey || eventKey.toLowerCase() !== shortcutKey.toLowerCase()) {
+    return false;
+  }
+
+  const requiresCtrl = modifiers.some((modifier) =>
+    modifier === 'ctrl' || modifier === 'control' || modifier === 'commandorcontrol'
+  );
+  const requiresAlt = modifiers.includes('alt');
+  const requiresShift = modifiers.includes('shift');
+  const requiresMeta = modifiers.some((modifier) =>
+    modifier === 'meta' || modifier === 'command' || modifier === 'super'
+  );
+
+  return Boolean(event.ctrlKey) === requiresCtrl
+    && Boolean(event.altKey) === requiresAlt
+    && Boolean(event.shiftKey) === requiresShift
+    && Boolean(event.metaKey) === requiresMeta;
+}
+
 /**
  * Format shortcut for display (human-readable).
  * Converts internal shortcut format to user-friendly display format

@@ -1,9 +1,12 @@
 import { useState, useEffect } from 'react';
+import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
 import { Minus, Square, X, Maximize2, Aperture, Sun, Moon, FolderOpen, Camera, Settings } from 'lucide-react';
 import { useTheme } from '@/hooks/useTheme';
 import { useLicenseStore } from '@/stores/licenseStore';
+import { useSettingsStore } from '@/stores/settingsStore';
+import { isEditableEventTarget, matchesShortcutEvent } from '@/utils/hotkeyManager';
 
 interface TitlebarProps {
   title?: string;
@@ -35,6 +38,9 @@ export const Titlebar: React.FC<TitlebarProps> = ({
   const licenseStatus = useLicenseStore((s) => s.status);
   const trialDaysLeft = useLicenseStore((s) => s.trialDaysLeft);
   const fetchLicenseStatus = useLicenseStore((s) => s.fetchStatus);
+  const shortcuts = useSettingsStore((s) => s.settings.shortcuts);
+  const settingsInitialized = useSettingsStore((s) => s.isInitialized);
+  const loadSettings = useSettingsStore((s) => s.loadSettings);
 
   const badgeLabel = licenseStatus === 'pro'
     ? 'Pro'
@@ -78,6 +84,12 @@ export const Titlebar: React.FC<TitlebarProps> = ({
   }, [fetchLicenseStatus]);
 
   useEffect(() => {
+    if (!settingsInitialized) {
+      void loadSettings();
+    }
+  }, [settingsInitialized, loadSettings]);
+
+  useEffect(() => {
     const refreshLicenseStatus = () => {
       void fetchLicenseStatus();
     };
@@ -112,6 +124,28 @@ export const Titlebar: React.FC<TitlebarProps> = ({
       unlistenFn?.();
     };
   }, [fetchLicenseStatus]);
+
+  useEffect(() => {
+    const handleFocusedShortcut = (event: KeyboardEvent) => {
+      if (event.repeat || isEditableEventTarget(event.target)) {
+        return;
+      }
+
+      const matchedShortcut = Object.values(shortcuts).find((shortcut) =>
+        matchesShortcutEvent(event, shortcut.currentShortcut)
+      );
+
+      if (!matchedShortcut) {
+        return;
+      }
+
+      event.preventDefault();
+      void invoke('dispatch_global_shortcut', { id: matchedShortcut.id });
+    };
+
+    window.addEventListener('keydown', handleFocusedShortcut);
+    return () => window.removeEventListener('keydown', handleFocusedShortcut);
+  }, [shortcuts]);
 
   // Handle drag state
   const handleMouseDown = () => setIsDragging(true);

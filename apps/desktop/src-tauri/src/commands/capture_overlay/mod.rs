@@ -284,9 +284,8 @@ fn run_overlay(
             .collect();
 
         // Create window with DirectComposition style
-        let ex_style = WINDOW_EX_STYLE(
-            WS_EX_NOREDIRECTIONBITMAP | WS_EX_TOPMOST.0 | WS_EX_TOOLWINDOW.0 | WS_EX_NOACTIVATE.0,
-        );
+        let ex_style =
+            WINDOW_EX_STYLE(WS_EX_NOREDIRECTIONBITMAP | WS_EX_TOPMOST.0 | WS_EX_TOOLWINDOW.0);
 
         let hwnd = CreateWindowExW(
             ex_style,
