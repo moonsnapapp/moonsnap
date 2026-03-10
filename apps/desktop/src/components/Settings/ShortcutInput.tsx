@@ -14,7 +14,6 @@ import {
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { cn } from '@/lib/utils';
 import { checkShortcutConflict } from '@/utils/hotkeyManager';
-import { useSettingsStore } from '@/stores/settingsStore';
 import type { ShortcutStatus } from '@/types';
 
 interface ShortcutInputProps {
@@ -179,18 +178,8 @@ export const ShortcutInput: React.FC<ShortcutInputProps> = ({
     return () => clearTimeout(timer);
   }, [hasPendingChanges, checkConflicts]);
 
-  const { updateGeneralSettings, settings } = useSettingsStore();
-  const allowOverride = settings.general.allowOverride;
-
   const handleApply = () => {
     if (disabled || !isValid) return;
-    onChange(localShortcut);
-  };
-
-  const handleApplyOverride = () => {
-    if (disabled || !isValid) return;
-    // Enable global override setting, then apply shortcut
-    updateGeneralSettings({ allowOverride: true });
     onChange(localShortcut);
   };
 
@@ -213,10 +202,6 @@ export const ShortcutInput: React.FC<ShortcutInputProps> = ({
       return 'border-[var(--coral-400)]/70';
     }
 
-    // Override ON = always green (we're forcing it anyway)
-    if (allowOverride) return 'border-emerald-500/50';
-
-    // Override OFF = show actual status
     if (status === 'registered') return 'border-emerald-500/50';
     if (status === 'conflict' || status === 'error') return 'border-red-500/50';
     return 'border-[var(--polar-frost)]';
@@ -399,33 +384,17 @@ export const ShortcutInput: React.FC<ShortcutInputProps> = ({
           <AlertTriangle className="w-4 h-4 text-red-500 ml-1" />
         )}
 
-        {/* Apply button - for available shortcuts OR conflicts when override is already enabled */}
-        {hasPendingChanges && conflictStatus !== 'internal_conflict' && (conflictStatus !== 'conflict' || allowOverride) && (
+        {hasPendingChanges && conflictStatus !== 'internal_conflict' && conflictStatus !== 'checking' && (
           <Button
             variant="default"
             size="sm"
             onClick={handleApply}
-            disabled={disabled || !isValid || conflictStatus === 'checking'}
+            disabled={disabled || !isValid}
             className="h-7 px-2 ml-1 text-xs bg-[var(--coral-400)] hover:bg-[var(--coral-500)] text-white"
             title="Apply shortcut"
           >
             <Check className="w-3 h-3 mr-1" />
             Apply
-          </Button>
-        )}
-
-        {/* Apply Override button - for external conflicts when override is OFF */}
-        {hasPendingChanges && conflictStatus === 'conflict' && !allowOverride && (
-          <Button
-            variant="default"
-            size="sm"
-            onClick={handleApplyOverride}
-            disabled={disabled || !isValid}
-            className="h-7 px-3 ml-1 text-xs bg-red-500 hover:bg-red-600 text-white"
-            title="Enable hotkey override and apply"
-          >
-            <Check className="w-3 h-3 mr-1" />
-            Apply Override
           </Button>
         )}
 
@@ -448,7 +417,7 @@ export const ShortcutInput: React.FC<ShortcutInputProps> = ({
       {conflictStatus === 'conflict' && (
         <p className="text-xs text-red-500 flex items-center gap-1">
           <AlertTriangle className="w-3 h-3" />
-          Shortcut in use by another app.
+          Shortcut is unavailable right now.
         </p>
       )}
       {conflictStatus === 'internal_conflict' && (

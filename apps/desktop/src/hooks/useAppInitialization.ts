@@ -16,37 +16,15 @@ import { useCaptureStore } from '../stores/captureStore';
 import { useSettingsStore } from '../stores/settingsStore';
 import { useLicenseStore } from '../stores/licenseStore';
 import { useVideoRecordingStore } from '../stores/videoRecordingStore';
-import { registerAllShortcuts, setShortcutHandler } from '../utils/hotkeyManager';
+import { initializeShortcutRegistration } from '../utils/hotkeyManager';
 import { createErrorHandler } from '../utils/errorReporting';
 import { settingsLogger } from '../utils/logger';
-
-interface UseAppInitializationProps {
-  /** Handler for opening the capture toolbar shortcut */
-  openCaptureToolbar: () => Promise<void>;
-  /** Handler for new capture shortcut */
-  triggerNewCapture: () => Promise<void>;
-  /** Handler for fullscreen capture shortcut */
-  triggerFullscreenCapture: () => Promise<void>;
-  /** Handler for all monitors capture shortcut */
-  triggerAllMonitorsCapture: () => Promise<void>;
-  /** Handler for video recording shortcut */
-  triggerVideoCapture: () => Promise<void>;
-  /** Handler for GIF recording shortcut */
-  triggerGifCapture: () => Promise<void>;
-}
 
 /**
  * Hook that handles all app initialization effects.
  * Must be called once at the app root level.
  */
-export function useAppInitialization({
-  openCaptureToolbar,
-  triggerNewCapture,
-  triggerFullscreenCapture,
-  triggerAllMonitorsCapture,
-  triggerVideoCapture,
-  triggerGifCapture,
-}: UseAppInitializationProps) {
+export function useAppInitialization() {
   const { loadCaptures, restoreEditorSession } = useCaptureStore();
 
   // Restore editor session and load captures on mount
@@ -75,14 +53,6 @@ export function useAppInitialization({
 
   // Initialize settings and register shortcuts (non-blocking)
   useEffect(() => {
-    // Set up shortcut handlers IMMEDIATELY (synchronous, no blocking)
-    setShortcutHandler('open_capture_toolbar', openCaptureToolbar);
-    setShortcutHandler('new_capture', triggerNewCapture);
-    setShortcutHandler('fullscreen_capture', triggerFullscreenCapture);
-    setShortcutHandler('all_monitors_capture', triggerAllMonitorsCapture);
-    setShortcutHandler('record_video', triggerVideoCapture);
-    setShortcutHandler('record_gif', triggerGifCapture);
-
     // Defer heavy initialization to after first paint for responsive UI
     const initSettings = async () => {
       try {
@@ -93,7 +63,7 @@ export function useAppInitialization({
         const updatedSettings = useSettingsStore.getState().settings;
         await Promise.allSettled([
           invoke('set_close_to_tray', { enabled: updatedSettings.general.minimizeToTray }),
-          registerAllShortcuts(),
+          initializeShortcutRegistration(),
           useLicenseStore.getState().fetchStatus(),
         ]);
       } catch (error) {
@@ -101,21 +71,23 @@ export function useAppInitialization({
       }
     };
 
-    // Use requestIdleCallback if available, otherwise setTimeout
-    // This ensures UI renders first before heavy init work
-    if ('requestIdleCallback' in window) {
-      (window as typeof window & { requestIdleCallback: (cb: () => void) => void }).requestIdleCallback(() => initSettings());
-    } else {
-      setTimeout(initSettings, 0);
+    // Hidden startup windows can starve requestIdleCallback and delay shortcut
+    // registration indefinitely. Run immediately when hidden; otherwise defer.
+    if (document.visibilityState === 'hidden') {
+      void initSettings();
+      return;
     }
-  }, [
-    openCaptureToolbar,
-    triggerNewCapture,
-    triggerFullscreenCapture,
-    triggerAllMonitorsCapture,
-    triggerVideoCapture,
-    triggerGifCapture,
-  ]);
+
+    if ('requestIdleCallback' in window) {
+      (window as typeof window & { requestIdleCallback: (cb: () => void) => void }).requestIdleCallback(() => {
+        void initSettings();
+      });
+    } else {
+      setTimeout(() => {
+        void initSettings();
+      }, 0);
+    }
+  }, []);
 
   // Sync recording state with backend on window focus
   // This handles edge cases where frontend/backend state may drift

@@ -98,6 +98,7 @@ macro_rules! tauri_command_handler {
             crate::commands::fonts::get_font_weights,
             // Keyboard hook commands (Windows shortcut override)
             crate::commands::keyboard_hook::register_shortcut_with_hook,
+            crate::commands::keyboard_hook::dispatch_global_shortcut,
             crate::commands::keyboard_hook::unregister_shortcut_hook,
             crate::commands::keyboard_hook::unregister_all_hooks,
             crate::commands::keyboard_hook::reinstall_hook,

@@ -9,19 +9,14 @@
  */
 
 import {
-  register,
   unregister,
   unregisterAll,
   isRegistered,
 } from '@tauri-apps/plugin-global-shortcut';
 import { invoke } from '@tauri-apps/api/core';
-import { emit, listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { useSettingsStore } from '../stores/settingsStore';
 import type { ShortcutConfig, ShortcutStatus } from '../types';
 import { hotkeyLogger } from './logger';
-
-// Store unlisten functions for hook-based event listeners
-const hookListeners: Map<string, UnlistenFn> = new Map();
 
 // Valid modifier keys
 const VALID_MODIFIERS = [
@@ -256,51 +251,8 @@ export async function updateAllTrayShortcuts(): Promise<void> {
 }
 
 /**
- * Shortcut action handlers mapped by ID
- */
-type ShortcutHandler = () => void | Promise<void>;
-const shortcutHandlers: Map<string, ShortcutHandler> = new Map();
-
-/**
- * Register a shortcut handler.
- * Associates a callback function with a shortcut ID. When the shortcut
- * is triggered, this handler will be invoked.
- *
- * @param id - The shortcut ID (e.g., 'new_capture')
- * @param handler - The function to call when the shortcut is triggered
- *
- * @example
- * // Register handler for new capture shortcut
- * setShortcutHandler('new_capture', async () => {
- *   await startCapture();
- * });
- */
-export function setShortcutHandler(id: string, handler: ShortcutHandler): void {
-  shortcutHandlers.set(id, handler);
-}
-
-/**
- * Get the handler for a shortcut.
- * Retrieves the callback function registered for a given shortcut ID.
- *
- * @param id - The shortcut ID to look up
- * @returns The registered handler function, or undefined if not found
- *
- * @example
- * const handler = getShortcutHandler('new_capture');
- * if (handler) {
- *   await handler();
- * }
- */
-export function getShortcutHandler(id: string): ShortcutHandler | undefined {
-  return shortcutHandlers.get(id);
-}
-
-/**
  * Try to register a shortcut and detect conflicts.
- * Attempts to register a global shortcut with the operating system.
- * Uses either hook-based registration (override mode) or standard registration
- * depending on the allowOverride setting.
+ * Attempts to register a global shortcut with the Rust-backed hotkey manager.
  *
  * @param config - The shortcut configuration containing ID and key combination
  * @returns The registration status: 'registered' on success, 'conflict' if another app has the shortcut
@@ -322,85 +274,18 @@ export async function registerShortcut(
   const { id, currentShortcut } = config;
   const store = useSettingsStore.getState();
   const updateStatus = store.updateShortcutStatus;
-  const allowOverride = store.settings.general.allowOverride;
 
-  // When allowOverride is ON, use hooks directly (can override other apps)
-  if (allowOverride) {
-    try {
-      // First, clean up any tauri plugin registration to prevent duplicates
-      try {
-        const pluginRegistered = await isRegistered(currentShortcut);
-        if (pluginRegistered) {
-          await unregister(currentShortcut);
-        }
-      } catch {
-        // Ignore errors during cleanup
-      }
-
-      // Remove any existing hook listener for this shortcut
-      const existingListener = hookListeners.get(id);
-      if (existingListener) {
-        existingListener();
-        hookListeners.delete(id);
-      }
-
-      // Set up listener for events from Rust hook
-      const unlisten = await listen(`shortcut-${id}`, () => {
-        const handler = shortcutHandlers.get(id);
-        if (handler) {
-          handler();
-        }
-      });
-      hookListeners.set(id, unlisten);
-
-      // Register the hook with Rust
-      await invoke('register_shortcut_with_hook', { id, shortcut: currentShortcut });
-      updateStatus(id, 'registered');
-      return 'registered';
-    } catch {
-      updateStatus(id, 'conflict');
-      return 'conflict';
-    }
-  }
-
-  // When allowOverride is OFF, use normal registration (respects other apps)
   try {
-    // First, clean up any hook registration to prevent duplicates
-    try {
-      const existingListener = hookListeners.get(id);
-      if (existingListener) {
-        existingListener();
-        hookListeners.delete(id);
-      }
-      await invoke('unregister_shortcut_hook', { id });
-    } catch {
-      // Ignore errors during cleanup
-    }
-
+    // Clean up any stale plugin registration from older builds before handing
+    // registration to the backend manager.
     const alreadyRegistered = await isRegistered(currentShortcut);
     if (alreadyRegistered) {
       await unregister(currentShortcut);
     }
 
-    await register(currentShortcut, (event) => {
-      if (event.state === 'Pressed') {
-        const handler = shortcutHandlers.get(id);
-        if (handler) {
-          handler();
-        } else {
-          emit(`shortcut-${id}`, { shortcut: currentShortcut });
-        }
-      }
-    });
-
-    const registered = await isRegistered(currentShortcut);
-    if (registered) {
-      updateStatus(id, 'registered');
-      return 'registered';
-    }
-
-    updateStatus(id, 'conflict');
-    return 'conflict';
+    await invoke('register_shortcut_with_hook', { id, shortcut: currentShortcut });
+    updateStatus(id, 'registered');
+    return 'registered';
   } catch {
     updateStatus(id, 'conflict');
     return 'conflict';
@@ -429,11 +314,6 @@ export async function unregisterShortcut(config: ShortcutConfig): Promise<void> 
 
   // Clean up hook-based registration
   try {
-    const listener = hookListeners.get(id);
-    if (listener) {
-      listener();
-      hookListeners.delete(id);
-    }
     await invoke('unregister_shortcut_hook', { id });
   } catch {
     // Ignore errors during cleanup
@@ -453,7 +333,7 @@ export async function unregisterShortcut(config: ShortcutConfig): Promise<void> 
 /**
  * Register all shortcuts from the settings store.
  * Registers all configured shortcuts with the operating system.
- * Uses parallel registration for faster startup.
+ * Registration is sequential so startup remains deterministic.
  *
  * @returns Promise that resolves when all shortcuts are registered
  *
@@ -465,19 +345,29 @@ export async function unregisterShortcut(config: ShortcutConfig): Promise<void> 
 export async function registerAllShortcuts(): Promise<void> {
   const shortcuts = useSettingsStore.getState().settings.shortcuts;
 
-  // Register all shortcuts in parallel for faster startup
-  await Promise.allSettled(
-    Object.values(shortcuts).map(config => registerShortcut(config))
-  );
+  for (const config of Object.values(shortcuts)) {
+    await registerShortcut(config);
+  }
 
-  // Sync tray menu with current shortcuts (also in parallel)
+  // Sync tray menu with current shortcuts
   await updateAllTrayShortcuts();
 }
 
 /**
- * Unregister all shortcuts (both hook and plugin modes).
- * Removes all global shortcut registrations. Called during shutdown
- * or when switching between registration modes.
+ * Initialize shortcut registration on app startup.
+ * Mirrors a clean cleanup + re-register flow so startup does not depend on
+ * whatever state the runtime previously had.
+ */
+export async function initializeShortcutRegistration(): Promise<void> {
+  await unregisterAllShortcuts();
+  await new Promise(resolve => setTimeout(resolve, 50));
+  await registerAllShortcuts();
+}
+
+/**
+ * Unregister all shortcuts.
+ * Removes Rust hook registrations and cleans up any stale plugin state left by
+ * older builds.
  *
  * @returns Promise that resolves when all shortcuts are unregistered
  *
@@ -486,70 +376,26 @@ export async function registerAllShortcuts(): Promise<void> {
  * await unregisterAllShortcuts();
  */
 export async function unregisterAllShortcuts(): Promise<void> {
-  // Unregister all tauri plugin shortcuts
   try {
     await unregisterAll();
   } catch (error) {
     hotkeyLogger.error('Failed to unregister all plugin shortcuts:', error);
   }
 
-  // Also unregister ALL hook-based shortcuts and clear listeners
   const shortcuts = useSettingsStore.getState().settings.shortcuts;
   for (const config of Object.values(shortcuts)) {
-    // Clean up hook listener
-    const listener = hookListeners.get(config.id);
-    if (listener) {
-      listener();
-      hookListeners.delete(config.id);
-    }
-
-    // Unregister from Rust hook
     try {
       await invoke('unregister_shortcut_hook', { id: config.id });
     } catch {
-      // Ignore errors during cleanup
+      // Ignore per-shortcut cleanup errors and continue with the full reset.
     }
   }
 
-  // Also try to unregister all hooks at once (belt and suspenders)
   try {
     await invoke('unregister_all_hooks');
   } catch {
-    // Ignore errors during cleanup
+    // Ignore backend cleanup errors during reset.
   }
-}
-
-/**
- * Switch between override mode and normal mode with clean handoff.
- * Override mode uses low-level keyboard hooks that can intercept shortcuts
- * even when other apps have them registered. Normal mode respects other apps.
- * This ensures no ghost registrations are left behind during the switch.
- *
- * @param allowOverride - Whether to enable override mode (true = use hooks, false = respect other apps)
- * @returns Promise that resolves when the mode switch is complete
- *
- * @example
- * // Toggle override mode from settings
- * await setAllowOverride(true);  // Enable aggressive shortcut capture
- * await setAllowOverride(false); // Respect other apps' shortcuts
- */
-export async function setAllowOverride(allowOverride: boolean): Promise<void> {
-  hotkeyLogger.info(`Switching override mode to: ${allowOverride}`);
-
-  // First, unregister ALL shortcuts from BOTH mechanisms
-  await unregisterAllShortcuts();
-
-  // Small delay to ensure all unregistrations are processed
-  await new Promise(resolve => setTimeout(resolve, 50));
-
-  // Update the setting in the store
-  const store = useSettingsStore.getState();
-  store.updateGeneralSettings({ allowOverride });
-
-  // Re-register all shortcuts using the new mode
-  await registerAllShortcuts();
-
-  hotkeyLogger.info(`Override mode switch complete`);
 }
 
 /**
@@ -752,20 +598,13 @@ export function validateShortcutString(shortcut: string): { valid: boolean; erro
  * await resumeShortcut('new_capture');
  */
 export async function suspendShortcut(id: string): Promise<void> {
-  const store = useSettingsStore.getState();
-  const allowOverride = store.settings.general.allowOverride;
-
-  // If using hooks (override mode), suspend via Rust
-  if (allowOverride) {
-    try {
-      await invoke('suspend_shortcut', { id });
-    } catch (error) {
-      hotkeyLogger.error(`Failed to suspend shortcut ${id}:`, error);
-    }
+  try {
+    await invoke('suspend_shortcut', { id });
+  } catch (error) {
+    hotkeyLogger.error(`Failed to suspend shortcut ${id}:`, error);
   }
 
-  // Also unregister from tauri plugin if registered there
-  const config = store.settings.shortcuts[id];
+  const config = useSettingsStore.getState().settings.shortcuts[id];
   if (config) {
     try {
       const registered = await isRegistered(config.currentShortcut);
@@ -803,13 +642,11 @@ export async function resumeShortcut(id: string): Promise<void> {
 }
 
 /**
- * Check if a shortcut conflicts with another app (without committing).
- * Performs a non-destructive conflict check by temporarily registering
- * and immediately unregistering the shortcut.
+ * Check if a shortcut conflicts with current MoonSnap registrations.
  *
  * @param shortcut - The shortcut string to check
  * @param excludeId - Optional shortcut ID to exclude from internal conflict check
- * @returns 'available' if can be registered, 'conflict' if another app has it,
+ * @returns 'available' if can be registered, 'conflict' if unavailable,
  *          'internal_conflict' if already used internally, or 'error' on failure
  *
  * @example
@@ -831,42 +668,18 @@ export async function checkShortcutConflict(
   shortcut: string,
   excludeId?: string
 ): Promise<'available' | 'conflict' | 'internal_conflict' | 'error'> {
-  // First check internal conflicts (within MoonSnap)
   if (hasInternalConflict(shortcut, excludeId)) {
     return 'internal_conflict';
   }
 
-  // Try to register temporarily to detect external conflicts
   try {
-    // Check if already registered by us
-    const alreadyRegistered = await isRegistered(shortcut);
-    
-    if (alreadyRegistered) {
-      // Already registered by MoonSnap - available
-      return 'available';
-    }
-
-    // Try to register
-    await register(shortcut, () => {});
-    
-    // Check if registration succeeded
-    const nowRegistered = await isRegistered(shortcut);
-    
-    // Unregister immediately (we're just testing)
-    try {
-      await unregister(shortcut);
-    } catch {
-      // Ignore unregister errors
-    }
-    
-    if (nowRegistered) {
-      return 'available';
-    } else {
-      return 'conflict';
-    }
+    const available = await invoke<boolean>('check_shortcut_available', {
+      shortcut,
+      excludeId,
+    });
+    return available ? 'available' : 'conflict';
   } catch (error) {
     hotkeyLogger.error('Error checking shortcut conflict:', error);
-    // Registration threw an error - likely a conflict
-    return 'conflict';
+    return 'error';
   }
 }

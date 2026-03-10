@@ -37,22 +37,10 @@ function App() {
   // Capture actions for shortcuts
   const {
     openCaptureToolbar,
-    triggerNewCapture,
-    triggerFullscreenCapture,
-    triggerAllMonitorsCapture,
-    triggerVideoCapture,
-    triggerGifCapture,
   } = useCaptureActions();
 
   // App initialization (settings, shortcuts, cleanup)
-  useAppInitialization({
-    openCaptureToolbar,
-    triggerNewCapture,
-    triggerFullscreenCapture,
-    triggerAllMonitorsCapture,
-    triggerVideoCapture,
-    triggerGifCapture,
-  });
+  useAppInitialization();
 
   const isGifRecordingPath = useCallback(
     (path: string) => path.toLowerCase().endsWith('.gif'),

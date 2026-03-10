@@ -78,6 +78,26 @@ export const Titlebar: React.FC<TitlebarProps> = ({
   }, [fetchLicenseStatus]);
 
   useEffect(() => {
+    const refreshLicenseStatus = () => {
+      void fetchLicenseStatus();
+    };
+
+    const handleVisibilityChange = () => {
+      if (!document.hidden) {
+        refreshLicenseStatus();
+      }
+    };
+
+    window.addEventListener('focus', refreshLicenseStatus);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      window.removeEventListener('focus', refreshLicenseStatus);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [fetchLicenseStatus]);
+
+  useEffect(() => {
     let unlistenFn: (() => void) | null = null;
 
     listen('license-status-changed', () => {

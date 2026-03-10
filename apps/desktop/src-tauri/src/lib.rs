@@ -125,8 +125,11 @@ pub fn run() {
             #[cfg(desktop)]
             {
                 app::tray::init(app)?;
-                // Note: Shortcuts are now registered dynamically via frontend
-                // after settings are loaded. See commands::settings module.
+                if let Err(error) =
+                    commands::keyboard_hook::initialize_persisted_shortcuts(app.handle())
+                {
+                    log::error!("Failed to initialize startup shortcuts: {}", error);
+                }
             }
 
             // Initialize shared GPU renderer state (singleton pattern to avoid GPU conflicts)

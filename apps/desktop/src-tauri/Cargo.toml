@@ -9,6 +9,7 @@ edition = "2021"
 members = [
     ".",
     "crates/camera-windows",
+    "crates/moonsnap-hotkeys",
     "crates/moonsnap-capture",
     "crates/scap-direct3d",
     "crates/scap-targets",
@@ -69,6 +70,7 @@ scap-targets = { path = "crates/scap-targets" }
 
 # Native Windows camera capture (ported from Cap)
 moonsnap-camera-windows = { path = "crates/camera-windows" }
+moonsnap-hotkeys = { path = "crates/moonsnap-hotkeys" }
 moonsnap-capture = { path = "crates/moonsnap-capture" }
 moonsnap-core = { path = "crates/moonsnap-core" }
 moonsnap-domain = { path = "crates/moonsnap-domain" }

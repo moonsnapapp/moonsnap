@@ -1,10 +1,9 @@
 import React, { useCallback } from 'react';
 import { Scan, Monitor, ScreenShare, Check, AlertTriangle, Video, Film } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Switch } from '@/components/ui/switch';
 import { ShortcutInput } from './ShortcutInput';
 import { useSettingsStore, useShortcutsList } from '@/stores/settingsStore';
-import { updateShortcut, hasInternalConflict, setAllowOverride } from '@/utils/hotkeyManager';
+import { updateShortcut, hasInternalConflict } from '@/utils/hotkeyManager';
 import type { ShortcutConfig } from '@/types';
 
 const SHORTCUT_ICONS: Record<string, React.ReactNode> = {
@@ -21,12 +20,9 @@ interface ShortcutItemProps {
 }
 
 const ShortcutItem: React.FC<ShortcutItemProps> = ({ config }) => {
-  const { resetShortcut, settings } = useSettingsStore();
-  const allowOverride = settings.general.allowOverride;
-
-  // Override ON = always green, Override OFF = show actual status
-  const showGreen = allowOverride || config.status === 'registered';
-  const showWarning = !allowOverride && config.status === 'conflict';
+  const { resetShortcut } = useSettingsStore();
+  const showGreen = config.status === 'registered';
+  const showWarning = config.status === 'conflict';
 
   const handleShortcutChange = useCallback(async (newShortcut: string) => {
     if (hasInternalConflict(newShortcut, config.id)) return;
@@ -69,7 +65,7 @@ const ShortcutItem: React.FC<ShortcutItemProps> = ({ config }) => {
 
 export const ShortcutsTab: React.FC = () => {
   const shortcuts = useShortcutsList();
-  const { resetAllShortcuts, settings } = useSettingsStore();
+  const { resetAllShortcuts } = useSettingsStore();
 
   const handleResetAll = useCallback(async () => {
     resetAllShortcuts();
@@ -78,29 +74,8 @@ export const ShortcutsTab: React.FC = () => {
     }
   }, [resetAllShortcuts, shortcuts]);
 
-  const handleOverrideToggle = useCallback(async (enabled: boolean) => {
-    // Use setAllowOverride for clean handoff between modes
-    await setAllowOverride(enabled);
-  }, []);
-
   return (
     <div className="space-y-4">
-      {/* Global Override Setting */}
-      <div className="p-4 rounded-lg bg-[var(--polar-ice)] border border-[var(--polar-frost)]">
-        <label className="flex items-center justify-between cursor-pointer">
-          <div>
-            <p className="text-sm text-[var(--ink-black)]">Allow hotkey override</p>
-            <p className="text-xs text-[var(--ink-muted)] mt-0.5">
-              Override shortcuts registered by other apps (Windows only)
-            </p>
-          </div>
-          <Switch
-            checked={settings.general.allowOverride}
-            onCheckedChange={handleOverrideToggle}
-          />
-        </label>
-      </div>
-
       <div className="space-y-3">
         {shortcuts.map((config) => (
           <ShortcutItem key={config.id} config={config} />

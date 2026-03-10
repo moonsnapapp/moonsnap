@@ -1,408 +1,598 @@
-//! Windows Global Hotkey Registration using RegisterHotKey
+//! Global shortcut registration and Windows override handling.
 //!
-//! Uses RegisterHotKey API for global shortcuts. This is simpler and more reliable
-//! than low-level keyboard hooks for our use case.
-//!
-//! For PrintScreen specifically, we use IDHOT_SNAPDESKTOP to override the default
-//! Windows clipboard behavior.
+//! Override mode now uses the local `moonsnap-hotkeys` crate, with a dedicated
+//! manager thread modelled after Handy's `handy_keys` integration. The hotkey
+//! manager is owned by one thread and all register/unregister operations are
+//! routed to it over a channel.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
+use std::fs;
+use std::str::FromStr;
+use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::{Arc, Mutex, OnceLock};
-use std::thread;
-use tauri::{AppHandle, Emitter};
+use std::thread::{self, JoinHandle};
+use std::time::Duration;
 
-#[cfg(target_os = "windows")]
-use windows::Win32::{
-    Foundation::{HWND, LPARAM, LRESULT, WPARAM},
-    System::LibraryLoader::GetModuleHandleW,
-    UI::{
-        Input::KeyboardAndMouse::{
-            RegisterHotKey, UnregisterHotKey, HOT_KEY_MODIFIERS, MOD_ALT, MOD_CONTROL,
-            MOD_NOREPEAT, MOD_SHIFT,
-        },
-        WindowsAndMessaging::{
-            CreateWindowExW, DefWindowProcW, DispatchMessageW, GetMessageW, PostMessageW,
-            PostQuitMessage, RegisterClassW, TranslateMessage, CS_HREDRAW, CS_VREDRAW, HMENU, MSG,
-            WINDOW_EX_STYLE, WM_DESTROY, WM_HOTKEY, WM_USER, WNDCLASSW, WS_OVERLAPPED,
-        },
-    },
-};
+use moonsnap_domain::capture::ScreenRegionSelection;
+use moonsnap_hotkeys::{Hotkey, HotkeyId, HotkeyManager, HotkeyState as HotkeyEventState};
+use serde::Deserialize;
+use tauri::AppHandle;
 
-// Virtual key codes
-const VK_SNAPSHOT: u32 = 0x2C; // PrintScreen
+use crate::commands::{capture, storage, window};
 
-// Special hotkey IDs for system keys
-const IDHOT_SNAPDESKTOP: i32 = -2; // Overrides PrintScreen
+const DEFAULT_SHORTCUTS: [(&str, &str); 6] = [
+    ("open_capture_toolbar", "Ctrl+Shift+Space"),
+    ("new_capture", "PrintScreen"),
+    ("fullscreen_capture", "Shift+PrintScreen"),
+    ("all_monitors_capture", "Ctrl+PrintScreen"),
+    ("record_video", "Ctrl+Alt+R"),
+    ("record_gif", "Ctrl+Alt+G"),
+];
 
-// Custom window messages for thread-safe registration
-#[cfg(target_os = "windows")]
-const WM_REGISTER_HOTKEY: u32 = WM_USER + 1;
-#[cfg(target_os = "windows")]
-const WM_UNREGISTER_HOTKEY: u32 = WM_USER + 2;
+const MANAGER_POLL_INTERVAL: Duration = Duration::from_millis(10);
 
-#[derive(Clone)]
-struct RegisteredHotkey {
-    #[allow(dead_code)]
-    id: String,
-    hotkey_id: i32, // Windows hotkey ID
-    #[allow(dead_code)]
-    modifiers: u32,
-    #[allow(dead_code)]
-    key_code: u32,
+struct OverrideBinding {
+    shortcut: Hotkey,
+    shortcut_string: String,
+    registration: Option<HotkeyId>,
+    suspended: bool,
 }
 
-struct PendingRegistration {
-    #[allow(dead_code)]
-    id: String,
-    hotkey_id: i32,
-    modifiers: u32,
-    key_code: u32,
+enum ManagerCommand {
+    Register {
+        id: String,
+        shortcut: String,
+        response: Sender<Result<(), String>>,
+    },
+    Unregister {
+        id: String,
+        response: Sender<Result<(), String>>,
+    },
+    Suspend {
+        id: String,
+        response: Sender<Result<(), String>>,
+    },
+    Resume {
+        id: String,
+        response: Sender<Result<(), String>>,
+    },
+    IsRegistered {
+        id: String,
+        response: Sender<Result<bool, String>>,
+    },
+    CheckAvailable {
+        shortcut: String,
+        exclude_id: Option<String>,
+        response: Sender<Result<bool, String>>,
+    },
+    Snapshot {
+        response: Sender<Result<Vec<(String, String, bool)>, String>>,
+    },
+    Shutdown,
+}
+
+struct OverrideRuntime {
+    command_sender: Mutex<Sender<ManagerCommand>>,
+    thread_handle: Mutex<Option<JoinHandle<()>>>,
 }
 
 struct HotkeyState {
-    hwnd: Option<isize>,
-    hotkeys: HashMap<String, RegisteredHotkey>,
     app_handle: Option<AppHandle>,
-    running: bool,
-    next_id: i32,
-    pending_registrations: Vec<PendingRegistration>,
-    pending_unregistrations: Vec<i32>,
-    /// Shortcuts that are temporarily suspended (unregistered but config preserved)
-    suspended: HashSet<String>,
+    override_runtime: Option<OverrideRuntime>,
 }
 
 static HOTKEY_STATE: OnceLock<Arc<Mutex<HotkeyState>>> = OnceLock::new();
 
+#[derive(Debug, Default, Deserialize)]
+struct PersistedShortcutConfig {
+    #[serde(rename = "currentShortcut")]
+    current_shortcut: Option<String>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct PersistedShortcutSettings {
+    #[serde(default)]
+    shortcuts: HashMap<String, PersistedShortcutConfig>,
+}
+
 fn get_state() -> &'static Arc<Mutex<HotkeyState>> {
     HOTKEY_STATE.get_or_init(|| {
         Arc::new(Mutex::new(HotkeyState {
-            hwnd: None,
-            hotkeys: HashMap::new(),
             app_handle: None,
-            running: false,
-            next_id: 1, // Start at 1, reserve negative IDs for special keys
-            pending_registrations: Vec::new(),
-            pending_unregistrations: Vec::new(),
-            suspended: HashSet::new(),
+            override_runtime: None,
         }))
     })
 }
 
-fn parse_shortcut(shortcut: &str) -> Option<(u32, u32)> {
-    let parts: Vec<&str> = shortcut.split('+').map(|s| s.trim()).collect();
-    if parts.is_empty() {
-        return None;
+fn parse_hotkey(shortcut: &str) -> Result<Hotkey, String> {
+    Hotkey::from_str(shortcut)
+        .map_err(|error| format!("Invalid shortcut '{}': {}", shortcut, error))
+}
+
+fn load_persisted_shortcut_settings(app: &AppHandle) -> PersistedShortcutSettings {
+    let settings_path = match storage::get_app_data_dir(app) {
+        Ok(dir) => dir.join("settings.json"),
+        Err(error) => {
+            log::warn!(
+                "Failed to resolve settings path for startup shortcuts: {}",
+                error
+            );
+            return PersistedShortcutSettings::default();
+        },
+    };
+
+    match fs::read_to_string(&settings_path) {
+        Ok(content) => match serde_json::from_str::<PersistedShortcutSettings>(&content) {
+            Ok(settings) => settings,
+            Err(error) => {
+                log::warn!(
+                    "Failed to parse startup shortcut settings from {}: {}",
+                    settings_path.display(),
+                    error
+                );
+                PersistedShortcutSettings::default()
+            },
+        },
+        Err(error) => {
+            log::warn!(
+                "Failed to read startup shortcut settings from {}: {}",
+                settings_path.display(),
+                error
+            );
+            PersistedShortcutSettings::default()
+        },
+    }
+}
+
+fn resolved_shortcuts(settings: &PersistedShortcutSettings) -> Vec<(String, String)> {
+    DEFAULT_SHORTCUTS
+        .iter()
+        .map(|(id, default_shortcut)| {
+            let shortcut = settings
+                .shortcuts
+                .get(*id)
+                .and_then(|config| config.current_shortcut.as_ref())
+                .filter(|shortcut| !shortcut.trim().is_empty())
+                .cloned()
+                .unwrap_or_else(|| (*default_shortcut).to_string());
+
+            ((*id).to_string(), shortcut)
+        })
+        .collect()
+}
+
+fn dispatch_global_shortcut_inner(app: &AppHandle, id: &str) -> Result<(), String> {
+    match id {
+        "open_capture_toolbar" => {
+            let app_handle = app.clone();
+            tauri::async_runtime::spawn(async move {
+                if let Err(error) = window::show_startup_toolbar(app_handle, None, None, None).await
+                {
+                    log::error!("Failed to show capture toolbar from shortcut: {}", error);
+                }
+            });
+            Ok(())
+        },
+        "new_capture" => window::trigger_capture(app, Some("screenshot")),
+        "fullscreen_capture" => {
+            let app_handle = app.clone();
+            tauri::async_runtime::spawn(async move {
+                match capture::capture_fullscreen_fast().await {
+                    Ok(result) => {
+                        if let Err(error) = window::open_editor_fast(
+                            app_handle,
+                            result.file_path,
+                            result.width,
+                            result.height,
+                        )
+                        .await
+                        {
+                            log::error!(
+                                "Failed to open fullscreen capture from shortcut: {}",
+                                error
+                            );
+                        }
+                    },
+                    Err(error) => {
+                        log::error!("Failed to capture fullscreen from shortcut: {}", error);
+                    },
+                }
+            });
+            Ok(())
+        },
+        "all_monitors_capture" => {
+            let app_handle = app.clone();
+            tauri::async_runtime::spawn(async move {
+                match capture::get_virtual_screen_bounds().await {
+                    Ok(bounds) => {
+                        let selection = ScreenRegionSelection {
+                            x: bounds.x,
+                            y: bounds.y,
+                            width: bounds.width,
+                            height: bounds.height,
+                        };
+
+                        match capture::capture_screen_region_fast(selection).await {
+                            Ok(result) => {
+                                if let Err(error) = window::open_editor_fast(
+                                    app_handle,
+                                    result.file_path,
+                                    result.width,
+                                    result.height,
+                                )
+                                .await
+                                {
+                                    log::error!(
+                                        "Failed to open all-monitors capture from shortcut: {}",
+                                        error
+                                    );
+                                }
+                            },
+                            Err(error) => {
+                                log::error!(
+                                    "Failed to capture all monitors from shortcut: {}",
+                                    error
+                                );
+                            },
+                        }
+                    },
+                    Err(error) => {
+                        log::error!(
+                            "Failed to resolve virtual screen bounds from shortcut: {}",
+                            error
+                        );
+                    },
+                }
+            });
+            Ok(())
+        },
+        "record_video" => window::trigger_capture_with_options(app, Some("video"), true),
+        "record_gif" => window::trigger_capture_with_options(app, Some("gif"), true),
+        _ => Err(format!("Unknown shortcut action: {}", id)),
+    }
+}
+
+fn do_register(
+    manager: &HotkeyManager,
+    hotkey_to_binding: &mut HashMap<HotkeyId, String>,
+    bindings: &mut HashMap<String, OverrideBinding>,
+    id: String,
+    shortcut: String,
+) -> Result<(), String> {
+    let hotkey = parse_hotkey(&shortcut)?;
+
+    if let Some(existing_id) = bindings.iter().find_map(|(existing_id, binding)| {
+        if existing_id != &id && binding.shortcut == hotkey && !binding.suspended {
+            Some(existing_id.clone())
+        } else {
+            None
+        }
+    }) {
+        return Err(format!("Shortcut already registered by {}", existing_id));
     }
 
-    let mut modifiers: u32 = 0;
-
-    // Single key (no modifiers)
-    if parts.len() == 1 {
-        let key = parse_key_code(&parts[0].to_lowercase());
-        return if key != 0 { Some((0, key)) } else { None };
-    }
-
-    // Modifiers + key
-    for part in parts.iter().take(parts.len() - 1) {
-        match part.to_lowercase().as_str() {
-            "ctrl" | "control" | "commandorcontrol" => modifiers |= MOD_CONTROL.0,
-            "alt" => modifiers |= MOD_ALT.0,
-            "shift" => modifiers |= MOD_SHIFT.0,
-            _ => {},
+    if let Some(existing) = bindings.get_mut(&id) {
+        if let Some(hotkey_id) = existing.registration.take() {
+            let _ = manager.unregister(hotkey_id);
+            hotkey_to_binding.remove(&hotkey_id);
         }
     }
 
-    let key = parse_key_code(&parts.last()?.to_lowercase());
-    if key != 0 {
-        Some((modifiers, key))
-    } else {
-        None
-    }
-}
+    let registration = manager
+        .register(hotkey)
+        .map_err(|error| format!("Failed to register hotkey: {}", error))?;
 
-fn parse_key_code(key: &str) -> u32 {
-    match key {
-        "a" => 0x41,
-        "b" => 0x42,
-        "c" => 0x43,
-        "d" => 0x44,
-        "e" => 0x45,
-        "f" => 0x46,
-        "g" => 0x47,
-        "h" => 0x48,
-        "i" => 0x49,
-        "j" => 0x4A,
-        "k" => 0x4B,
-        "l" => 0x4C,
-        "m" => 0x4D,
-        "n" => 0x4E,
-        "o" => 0x4F,
-        "p" => 0x50,
-        "q" => 0x51,
-        "r" => 0x52,
-        "s" => 0x53,
-        "t" => 0x54,
-        "u" => 0x55,
-        "v" => 0x56,
-        "w" => 0x57,
-        "x" => 0x58,
-        "y" => 0x59,
-        "z" => 0x5A,
-        "0" => 0x30,
-        "1" => 0x31,
-        "2" => 0x32,
-        "3" => 0x33,
-        "4" => 0x34,
-        "5" => 0x35,
-        "6" => 0x36,
-        "7" => 0x37,
-        "8" => 0x38,
-        "9" => 0x39,
-        "f1" => 0x70,
-        "f2" => 0x71,
-        "f3" => 0x72,
-        "f4" => 0x73,
-        "f5" => 0x74,
-        "f6" => 0x75,
-        "f7" => 0x76,
-        "f8" => 0x77,
-        "f9" => 0x78,
-        "f10" => 0x79,
-        "f11" => 0x7A,
-        "f12" => 0x7B,
-        "space" => 0x20,
-        "enter" | "return" => 0x0D,
-        "escape" | "esc" => 0x1B,
-        "tab" => 0x09,
-        "backspace" => 0x08,
-        "delete" => 0x2E,
-        "insert" => 0x2D,
-        "home" => 0x24,
-        "end" => 0x23,
-        "pageup" => 0x21,
-        "pagedown" => 0x22,
-        "arrowup" | "up" => 0x26,
-        "arrowdown" | "down" => 0x28,
-        "arrowleft" | "left" => 0x25,
-        "arrowright" | "right" => 0x27,
-        "printscreen" => VK_SNAPSHOT,
-        _ => 0,
-    }
-}
-
-#[cfg(target_os = "windows")]
-unsafe extern "system" fn wnd_proc(
-    hwnd: HWND,
-    msg: u32,
-    w_param: WPARAM,
-    l_param: LPARAM,
-) -> LRESULT {
-    match msg {
-        WM_HOTKEY => {
-            let hotkey_id = w_param.0 as i32;
-
-            // Find the shortcut ID for this hotkey
-            if let Ok(state) = get_state().try_lock() {
-                for (id, hotkey) in &state.hotkeys {
-                    if hotkey.hotkey_id == hotkey_id {
-                        if let Some(app) = &state.app_handle {
-                            let event_name = format!("shortcut-{}", id);
-                            let app_clone = app.clone();
-
-                            // Emit on a separate task to avoid blocking the message loop
-                            std::thread::spawn(move || {
-                                let _ = app_clone.emit(&event_name, ());
-                            });
-                        }
-                        break;
-                    }
-                }
-            }
-            LRESULT(0)
+    hotkey_to_binding.insert(registration, id.clone());
+    bindings.insert(
+        id,
+        OverrideBinding {
+            shortcut: hotkey,
+            shortcut_string: shortcut,
+            registration: Some(registration),
+            suspended: false,
         },
-        x if x == WM_REGISTER_HOTKEY => {
-            // Process pending registrations from the message loop thread
-            if let Ok(mut state) = get_state().try_lock() {
-                // First, process any pending unregistrations
-                let pending_unregs = std::mem::take(&mut state.pending_unregistrations);
-                for hotkey_id in pending_unregs {
-                    let _ = UnregisterHotKey(hwnd, hotkey_id);
-                }
+    );
 
-                // Then process registrations
-                let pending = std::mem::take(&mut state.pending_registrations);
-                for reg in pending {
-                    let (actual_id, actual_mods) =
-                        if reg.key_code == VK_SNAPSHOT && reg.modifiers == 0 {
-                            (IDHOT_SNAPDESKTOP, 0)
-                        } else {
-                            (reg.hotkey_id, reg.modifiers | MOD_NOREPEAT.0)
-                        };
-                    let _ = RegisterHotKey(
-                        hwnd,
-                        actual_id,
-                        HOT_KEY_MODIFIERS(actual_mods),
-                        reg.key_code,
+    Ok(())
+}
+
+fn do_unregister(
+    manager: &HotkeyManager,
+    hotkey_to_binding: &mut HashMap<HotkeyId, String>,
+    bindings: &mut HashMap<String, OverrideBinding>,
+    id: &str,
+) -> Result<(), String> {
+    if let Some(binding) = bindings.remove(id) {
+        if let Some(hotkey_id) = binding.registration {
+            manager
+                .unregister(hotkey_id)
+                .map_err(|error| format!("Failed to unregister hotkey: {}", error))?;
+            hotkey_to_binding.remove(&hotkey_id);
+        }
+    }
+
+    Ok(())
+}
+
+fn do_suspend(
+    manager: &HotkeyManager,
+    hotkey_to_binding: &mut HashMap<HotkeyId, String>,
+    bindings: &mut HashMap<String, OverrideBinding>,
+    id: &str,
+) -> Result<(), String> {
+    let Some(binding) = bindings.get_mut(id) else {
+        return Ok(());
+    };
+
+    binding.suspended = true;
+    if let Some(hotkey_id) = binding.registration.take() {
+        manager
+            .unregister(hotkey_id)
+            .map_err(|error| format!("Failed to suspend hotkey: {}", error))?;
+        hotkey_to_binding.remove(&hotkey_id);
+    }
+
+    Ok(())
+}
+
+fn do_resume(
+    manager: &HotkeyManager,
+    hotkey_to_binding: &mut HashMap<HotkeyId, String>,
+    bindings: &mut HashMap<String, OverrideBinding>,
+    id: &str,
+) -> Result<(), String> {
+    let Some(binding) = bindings.get_mut(id) else {
+        return Ok(());
+    };
+
+    if !binding.suspended || binding.registration.is_some() {
+        return Ok(());
+    }
+
+    let hotkey_id = manager
+        .register(binding.shortcut)
+        .map_err(|error| format!("Failed to resume hotkey: {}", error))?;
+
+    binding.registration = Some(hotkey_id);
+    binding.suspended = false;
+    hotkey_to_binding.insert(hotkey_id, id.to_string());
+
+    Ok(())
+}
+
+fn do_is_registered(bindings: &HashMap<String, OverrideBinding>, id: &str) -> bool {
+    bindings
+        .get(id)
+        .is_some_and(|binding| binding.registration.is_some() && !binding.suspended)
+}
+
+fn do_check_available(
+    bindings: &HashMap<String, OverrideBinding>,
+    shortcut: &str,
+    exclude_id: Option<&str>,
+) -> Result<bool, String> {
+    let hotkey = parse_hotkey(shortcut)?;
+    Ok(!bindings.iter().any(|(id, binding)| {
+        exclude_id.is_none_or(|exclude_id| exclude_id != id)
+            && !binding.suspended
+            && binding.shortcut == hotkey
+    }))
+}
+
+fn manager_thread(command_receiver: Receiver<ManagerCommand>, app: AppHandle) {
+    let manager = match HotkeyManager::new_with_blocking() {
+        Ok(manager) => manager,
+        Err(error) => {
+            log::error!("Failed to create override hotkey manager: {}", error);
+            return;
+        },
+    };
+
+    let mut hotkey_to_binding: HashMap<HotkeyId, String> = HashMap::new();
+    let mut bindings: HashMap<String, OverrideBinding> = HashMap::new();
+
+    loop {
+        while let Some(event) = manager.try_recv() {
+            if event.state != HotkeyEventState::Pressed {
+                continue;
+            }
+
+            if let Some(binding_id) = hotkey_to_binding.get(&event.id).cloned() {
+                if let Err(error) = dispatch_global_shortcut_inner(&app, &binding_id) {
+                    log::error!(
+                        "Failed to dispatch override shortcut {}: {}",
+                        binding_id,
+                        error
                     );
                 }
             }
-            LRESULT(0)
-        },
-        x if x == WM_UNREGISTER_HOTKEY => {
-            // Process pending unregistrations from the message loop thread
-            if let Ok(mut state) = get_state().try_lock() {
-                let pending = std::mem::take(&mut state.pending_unregistrations);
-                for hotkey_id in pending {
-                    let _ = UnregisterHotKey(hwnd, hotkey_id);
-                }
+        }
+
+        match command_receiver.recv_timeout(MANAGER_POLL_INTERVAL) {
+            Ok(ManagerCommand::Register {
+                id,
+                shortcut,
+                response,
+            }) => {
+                let _ = response.send(do_register(
+                    &manager,
+                    &mut hotkey_to_binding,
+                    &mut bindings,
+                    id,
+                    shortcut,
+                ));
+            },
+            Ok(ManagerCommand::Unregister { id, response }) => {
+                let _ = response.send(do_unregister(
+                    &manager,
+                    &mut hotkey_to_binding,
+                    &mut bindings,
+                    &id,
+                ));
+            },
+            Ok(ManagerCommand::Suspend { id, response }) => {
+                let _ = response.send(do_suspend(
+                    &manager,
+                    &mut hotkey_to_binding,
+                    &mut bindings,
+                    &id,
+                ));
+            },
+            Ok(ManagerCommand::Resume { id, response }) => {
+                let _ = response.send(do_resume(
+                    &manager,
+                    &mut hotkey_to_binding,
+                    &mut bindings,
+                    &id,
+                ));
+            },
+            Ok(ManagerCommand::IsRegistered { id, response }) => {
+                let _ = response.send(Ok(do_is_registered(&bindings, &id)));
+            },
+            Ok(ManagerCommand::CheckAvailable {
+                shortcut,
+                exclude_id,
+                response,
+            }) => {
+                let _ = response.send(do_check_available(
+                    &bindings,
+                    &shortcut,
+                    exclude_id.as_deref(),
+                ));
+            },
+            Ok(ManagerCommand::Snapshot { response }) => {
+                let _ = response.send(Ok(bindings
+                    .iter()
+                    .map(|(id, binding)| {
+                        (
+                            id.clone(),
+                            binding.shortcut_string.clone(),
+                            binding.suspended,
+                        )
+                    })
+                    .collect()));
+            },
+            Ok(ManagerCommand::Shutdown) => break,
+            Err(mpsc::RecvTimeoutError::Timeout) => {},
+            Err(mpsc::RecvTimeoutError::Disconnected) => break,
+        }
+    }
+}
+
+fn shutdown_override_runtime(state: &mut HotkeyState) {
+    if let Some(runtime) = state.override_runtime.take() {
+        if let Ok(sender) = runtime.command_sender.lock() {
+            let _ = sender.send(ManagerCommand::Shutdown);
+        }
+
+        if let Ok(mut handle) = runtime.thread_handle.lock() {
+            if let Some(handle) = handle.take() {
+                let _ = handle.join();
             }
-            LRESULT(0)
-        },
-        WM_DESTROY => {
-            PostQuitMessage(0);
-            LRESULT(0)
-        },
-        _ => DefWindowProcW(hwnd, msg, w_param, l_param),
+        }
     }
 }
 
-#[cfg(target_os = "windows")]
-fn create_message_window() -> Result<HWND, String> {
-    unsafe {
-        let hinstance =
-            GetModuleHandleW(None).map_err(|e| format!("GetModuleHandleW failed: {}", e))?;
-
-        let class_name = windows::core::w!("MoonSnapHotkeyClass");
-
-        let wc = WNDCLASSW {
-            style: CS_HREDRAW | CS_VREDRAW,
-            lpfnWndProc: Some(wnd_proc),
-            hInstance: hinstance.into(),
-            lpszClassName: class_name,
-            ..Default::default()
-        };
-
-        let atom = RegisterClassW(&wc);
-        if atom == 0 {
-            // Class might already be registered, which is fine
-        }
-
-        let hwnd = CreateWindowExW(
-            WINDOW_EX_STYLE::default(),
-            class_name,
-            windows::core::w!("MoonSnap Hotkey Window"),
-            WS_OVERLAPPED,
-            0,
-            0,
-            0,
-            0,
-            HWND::default(),
-            HMENU::default(),
-            hinstance,
-            None,
-        )
-        .map_err(|e| format!("CreateWindowExW failed: {}", e))?;
-
-        if hwnd.0.is_null() {
-            return Err("CreateWindowExW returned null HWND".to_string());
-        }
-
-        Ok(hwnd)
-    }
-}
-
-#[cfg(target_os = "windows")]
-fn start_message_loop(app: AppHandle) -> Result<(), String> {
-    let state = get_state();
-
+fn ensure_override_runtime(app: &AppHandle) -> Result<(), String> {
     {
-        let mut s = state.lock().map_err(|e| e.to_string())?;
-        if s.running {
-            // Already running, just update app handle
-            s.app_handle = Some(app);
-            // Still need to wait for hwnd if not set yet
-            let hwnd_ready = s.hwnd.is_some();
-            drop(s);
-            if !hwnd_ready {
-                // Wait for the window to be created
-                let timeout = std::time::Duration::from_millis(500);
-                let start = std::time::Instant::now();
-                while start.elapsed() < timeout {
-                    if let Ok(s) = state.lock() {
-                        if s.hwnd.is_some() {
-                            break;
-                        }
-                    }
-                    thread::sleep(std::time::Duration::from_millis(10));
-                }
-            }
+        let mut state = get_state().lock().map_err(|error| error.to_string())?;
+        state.app_handle = Some(app.clone());
+        if state.override_runtime.is_some() {
             return Ok(());
         }
-        s.app_handle = Some(app);
-        s.running = true;
     }
 
-    let state_clone = state.clone();
-
-    thread::spawn(move || {
-        unsafe {
-            // Create the message-only window
-            match create_message_window() {
-                Ok(hwnd) => {
-                    if let Ok(mut s) = state_clone.lock() {
-                        s.hwnd = Some(hwnd.0 as isize);
-                    }
-
-                    // Re-register any pending hotkeys now that we have a window
-                    if let Ok(s) = state_clone.lock() {
-                        for (_, hotkey) in &s.hotkeys {
-                            let _ = if hotkey.key_code == VK_SNAPSHOT && hotkey.modifiers == 0 {
-                                // Use IDHOT_SNAPDESKTOP for bare PrintScreen
-                                RegisterHotKey(
-                                    hwnd,
-                                    IDHOT_SNAPDESKTOP,
-                                    HOT_KEY_MODIFIERS(0),
-                                    VK_SNAPSHOT,
-                                )
-                            } else {
-                                RegisterHotKey(
-                                    hwnd,
-                                    hotkey.hotkey_id,
-                                    HOT_KEY_MODIFIERS(hotkey.modifiers | MOD_NOREPEAT.0),
-                                    hotkey.key_code,
-                                )
-                            };
-                        }
-                    }
-
-                    // Message loop
-                    let mut msg = MSG::default();
-                    while GetMessageW(&mut msg, HWND::default(), 0, 0).as_bool() {
-                        let _ = TranslateMessage(&msg);
-                        DispatchMessageW(&msg);
-                    }
-                },
-                Err(_) => {},
-            }
-
-            // Cleanup
-            if let Ok(mut s) = state_clone.lock() {
-                s.hwnd = None;
-                s.running = false;
-            }
-        }
+    let (command_sender, command_receiver) = mpsc::channel::<ManagerCommand>();
+    let app_handle = app.clone();
+    let thread_handle = thread::spawn(move || {
+        manager_thread(command_receiver, app_handle);
     });
 
-    // Wait for the window to be created (with timeout)
-    let timeout = std::time::Duration::from_millis(500);
-    let start = std::time::Instant::now();
-    while start.elapsed() < timeout {
-        if let Ok(s) = state.lock() {
-            if s.hwnd.is_some() {
-                break;
-            }
+    let mut state = get_state().lock().map_err(|error| error.to_string())?;
+    if state.override_runtime.is_none() {
+        state.override_runtime = Some(OverrideRuntime {
+            command_sender: Mutex::new(command_sender),
+            thread_handle: Mutex::new(Some(thread_handle)),
+        });
+    }
+
+    Ok(())
+}
+
+fn with_runtime_sender<T>(
+    app: Option<&AppHandle>,
+    callback: impl FnOnce(&Sender<ManagerCommand>) -> Result<T, String>,
+) -> Result<T, String> {
+    if let Some(app) = app {
+        ensure_override_runtime(app)?;
+    }
+
+    let state = get_state().lock().map_err(|error| error.to_string())?;
+    let runtime = state
+        .override_runtime
+        .as_ref()
+        .ok_or_else(|| "Override runtime is not initialized".to_string())?;
+    let sender = runtime
+        .command_sender
+        .lock()
+        .map_err(|error| error.to_string())?;
+
+    callback(&sender)
+}
+
+fn register_shortcut_with_hook_inner(
+    app: AppHandle,
+    id: String,
+    shortcut: String,
+) -> Result<(), String> {
+    let (response_sender, response_receiver) = mpsc::channel();
+
+    with_runtime_sender(Some(&app), |sender| {
+        sender
+            .send(ManagerCommand::Register {
+                id,
+                shortcut,
+                response: response_sender,
+            })
+            .map_err(|_| "Failed to send register command".to_string())
+    })?;
+
+    response_receiver
+        .recv()
+        .map_err(|_| "Failed to receive register response".to_string())?
+}
+
+fn active_override_bindings() -> Result<Vec<(String, String, bool)>, String> {
+    let (response_sender, response_receiver) = mpsc::channel();
+
+    with_runtime_sender(None, |sender| {
+        sender
+            .send(ManagerCommand::Snapshot {
+                response: response_sender,
+            })
+            .map_err(|_| "Failed to request override snapshot".to_string())
+    })?;
+
+    response_receiver
+        .recv()
+        .map_err(|_| "Failed to receive override snapshot".to_string())?
+}
+
+pub fn initialize_persisted_shortcuts(app: &AppHandle) -> Result<(), String> {
+    let settings = load_persisted_shortcut_settings(app);
+    let shortcuts = resolved_shortcuts(&settings);
+
+    for (id, shortcut) in shortcuts {
+        if let Err(error) =
+            register_shortcut_with_hook_inner(app.clone(), id.clone(), shortcut.clone())
+        {
+            log::error!(
+                "Failed to register shortcut {} ({}) on startup: {}",
+                id,
+                shortcut,
+                error
+            );
         }
-        thread::sleep(std::time::Duration::from_millis(10));
     }
 
     Ok(())
@@ -414,266 +604,146 @@ pub async fn register_shortcut_with_hook(
     id: String,
     shortcut: String,
 ) -> Result<(), String> {
-    #[cfg(target_os = "windows")]
-    {
-        let (modifiers, key) =
-            parse_shortcut(&shortcut).ok_or_else(|| format!("Invalid shortcut: {}", shortcut))?;
+    register_shortcut_with_hook_inner(app, id, shortcut)
+}
 
-        if key == 0 {
-            return Err(format!("Unknown key: {}", shortcut));
-        }
-
-        // Start the message loop if not running
-        start_message_loop(app)?;
-
-        let mut state = get_state().lock().map_err(|e| e.to_string())?;
-
-        // Determine hotkey ID (use IDHOT_SNAPDESKTOP for bare PrintScreen)
-        let hotkey_id = if key == VK_SNAPSHOT && modifiers == 0 {
-            IDHOT_SNAPDESKTOP
-        } else {
-            let hid = state.next_id;
-            state.next_id += 1;
-            hid
-        };
-
-        // Remove existing registration if any
-        if let Some(old) = state.hotkeys.remove(&id) {
-            if state.hwnd.is_some() {
-                // Queue unregistration to be processed by the message loop thread
-                state.pending_unregistrations.push(old.hotkey_id);
-            }
-        }
-
-        // Store the hotkey info
-        state.hotkeys.insert(
-            id.clone(),
-            RegisteredHotkey {
-                id: id.clone(),
-                hotkey_id,
-                modifiers,
-                key_code: key,
-            },
-        );
-
-        // If we have a window, queue registration to be processed by the message loop thread
-        if let Some(hwnd_val) = state.hwnd {
-            state.pending_registrations.push(PendingRegistration {
-                id: id.clone(),
-                hotkey_id,
-                modifiers,
-                key_code: key,
-            });
-
-            // Post a message to trigger registration on the correct thread
-            let hwnd = HWND(hwnd_val as *mut _);
-            drop(state); // Release lock before PostMessage
-            unsafe {
-                let _ = PostMessageW(hwnd, WM_REGISTER_HOTKEY, WPARAM(0), LPARAM(0));
-            }
-        }
-
-        Ok(())
-    }
-
-    #[cfg(not(target_os = "windows"))]
-    {
-        let _ = (app, id, shortcut);
-        Err("Only available on Windows".to_string())
-    }
+#[tauri::command]
+pub async fn dispatch_global_shortcut(app: AppHandle, id: String) -> Result<(), String> {
+    dispatch_global_shortcut_inner(&app, &id)
 }
 
 #[tauri::command]
 pub async fn unregister_shortcut_hook(id: String) -> Result<(), String> {
-    #[cfg(target_os = "windows")]
-    {
-        let mut state = get_state().lock().map_err(|e| e.to_string())?;
+    let (response_sender, response_receiver) = mpsc::channel();
 
-        if let Some(hotkey) = state.hotkeys.remove(&id) {
-            if let Some(hwnd_val) = state.hwnd {
-                // Queue unregistration to be processed by the message loop thread
-                state.pending_unregistrations.push(hotkey.hotkey_id);
+    with_runtime_sender(None, |sender| {
+        sender
+            .send(ManagerCommand::Unregister {
+                id,
+                response: response_sender,
+            })
+            .map_err(|_| "Failed to send unregister command".to_string())
+    })?;
 
-                // Post a message to trigger unregistration on the correct thread
-                let hwnd = HWND(hwnd_val as *mut _);
-                drop(state); // Release lock before PostMessage
-                unsafe {
-                    let _ = PostMessageW(hwnd, WM_UNREGISTER_HOTKEY, WPARAM(0), LPARAM(0));
-                }
-            }
-        }
-
-        Ok(())
-    }
-
-    #[cfg(not(target_os = "windows"))]
-    {
-        let _ = id;
-        Ok(())
-    }
+    response_receiver
+        .recv()
+        .map_err(|_| "Failed to receive unregister response".to_string())?
 }
 
 #[tauri::command]
 pub async fn unregister_all_hooks() -> Result<(), String> {
-    #[cfg(target_os = "windows")]
-    {
-        let mut state = get_state().lock().map_err(|e| e.to_string())?;
-
-        if let Some(hwnd_val) = state.hwnd {
-            // Collect hotkey IDs first to avoid borrow conflict
-            let hotkey_ids: Vec<i32> = state.hotkeys.values().map(|h| h.hotkey_id).collect();
-            // Queue all hotkeys for unregistration
-            for hotkey_id in hotkey_ids {
-                state.pending_unregistrations.push(hotkey_id);
-            }
-
-            // Post a message to trigger unregistration on the correct thread
-            let hwnd = HWND(hwnd_val as *mut _);
-            state.hotkeys.clear();
-            drop(state); // Release lock before PostMessage
-            unsafe {
-                let _ = PostMessageW(hwnd, WM_UNREGISTER_HOTKEY, WPARAM(0), LPARAM(0));
-            }
-        } else {
-            state.hotkeys.clear();
-        }
-
-        Ok(())
-    }
-
-    #[cfg(not(target_os = "windows"))]
+    let mut state = get_state().lock().map_err(|error| error.to_string())?;
+    shutdown_override_runtime(&mut state);
     Ok(())
 }
 
-/// Reinstall hotkeys (placeholder for API compatibility)
 #[tauri::command]
 pub async fn reinstall_hook() -> Result<(), String> {
-    // With RegisterHotKey approach, we don't need to reinstall
-    // The hotkeys stay registered until we unregister them
+    let app_handle = {
+        let state = get_state().lock().map_err(|error| error.to_string())?;
+        state.app_handle.clone()
+    };
+
+    let Some(app_handle) = app_handle else {
+        return Ok(());
+    };
+
+    let bindings = active_override_bindings().unwrap_or_default();
+
+    {
+        let mut state = get_state().lock().map_err(|error| error.to_string())?;
+        shutdown_override_runtime(&mut state);
+    }
+
+    ensure_override_runtime(&app_handle)?;
+
+    for (id, shortcut, suspended) in bindings {
+        register_shortcut_with_hook_inner(app_handle.clone(), id.clone(), shortcut)?;
+        if suspended {
+            suspend_shortcut(id).await?;
+        }
+    }
+
     Ok(())
 }
 
-/// Temporarily suspend a shortcut (unregister without removing config)
-/// Used during shortcut editing to prevent accidental triggering
 #[tauri::command]
 pub async fn suspend_shortcut(id: String) -> Result<(), String> {
-    #[cfg(target_os = "windows")]
-    {
-        let mut state = get_state().lock().map_err(|e| e.to_string())?;
+    let (response_sender, response_receiver) = mpsc::channel();
 
-        // Mark as suspended
-        state.suspended.insert(id.clone());
+    with_runtime_sender(None, |sender| {
+        sender
+            .send(ManagerCommand::Suspend {
+                id,
+                response: response_sender,
+            })
+            .map_err(|_| "Failed to send suspend command".to_string())
+    })?;
 
-        // Get the hotkey info (but don't remove from hotkeys map)
-        let hotkey_id = state.hotkeys.get(&id).map(|h| h.hotkey_id);
-        let hwnd_val = state.hwnd;
-
-        if let (Some(hid), Some(hwnd_val)) = (hotkey_id, hwnd_val) {
-            // Queue unregistration
-            state.pending_unregistrations.push(hid);
-
-            // Post message to trigger unregistration
-            let hwnd = HWND(hwnd_val as *mut _);
-            drop(state);
-            unsafe {
-                let _ = PostMessageW(hwnd, WM_UNREGISTER_HOTKEY, WPARAM(0), LPARAM(0));
-            }
-        }
-
-        Ok(())
-    }
-
-    #[cfg(not(target_os = "windows"))]
-    {
-        let _ = id;
-        Ok(())
-    }
+    response_receiver
+        .recv()
+        .map_err(|_| "Failed to receive suspend response".to_string())?
 }
 
-/// Resume a suspended shortcut (re-register from preserved config)
 #[tauri::command]
 pub async fn resume_shortcut(id: String) -> Result<(), String> {
-    #[cfg(target_os = "windows")]
-    {
-        let mut state = get_state().lock().map_err(|e| e.to_string())?;
+    let app_handle = {
+        let state = get_state().lock().map_err(|error| error.to_string())?;
+        state.app_handle.clone()
+    };
 
-        // Remove from suspended set
-        state.suspended.remove(&id);
+    let (response_sender, response_receiver) = mpsc::channel();
 
-        // Get the hotkey info and re-register
-        if let Some(hotkey) = state.hotkeys.get(&id).cloned() {
-            if let Some(hwnd_val) = state.hwnd {
-                // Queue re-registration
-                state.pending_registrations.push(PendingRegistration {
-                    id: id.clone(),
-                    hotkey_id: hotkey.hotkey_id,
-                    modifiers: hotkey.modifiers,
-                    key_code: hotkey.key_code,
-                });
+    with_runtime_sender(app_handle.as_ref(), |sender| {
+        sender
+            .send(ManagerCommand::Resume {
+                id,
+                response: response_sender,
+            })
+            .map_err(|_| "Failed to send resume command".to_string())
+    })?;
 
-                // Post message to trigger registration
-                let hwnd = HWND(hwnd_val as *mut _);
-                drop(state);
-                unsafe {
-                    let _ = PostMessageW(hwnd, WM_REGISTER_HOTKEY, WPARAM(0), LPARAM(0));
-                }
-            }
-        }
-
-        Ok(())
-    }
-
-    #[cfg(not(target_os = "windows"))]
-    {
-        let _ = id;
-        Ok(())
-    }
+    response_receiver
+        .recv()
+        .map_err(|_| "Failed to receive resume response".to_string())?
 }
 
-/// Check if a shortcut is currently registered (by us)
-/// Returns true if the shortcut ID is registered and not suspended
 #[tauri::command]
 pub async fn is_shortcut_registered_hook(id: String) -> Result<bool, String> {
-    let state = get_state().lock().map_err(|e| e.to_string())?;
+    let (response_sender, response_receiver) = mpsc::channel();
 
-    // Check if registered and not suspended
-    let is_registered = state.hotkeys.contains_key(&id) && !state.suspended.contains(&id);
+    with_runtime_sender(None, |sender| {
+        sender
+            .send(ManagerCommand::IsRegistered {
+                id,
+                response: response_sender,
+            })
+            .map_err(|_| "Failed to send registration check command".to_string())
+    })?;
 
-    Ok(is_registered)
+    response_receiver
+        .recv()
+        .map_err(|_| "Failed to receive registration check response".to_string())?
 }
 
-/// Check if a shortcut string would conflict with an existing registration
-/// Returns true if the shortcut is already in use
 #[tauri::command]
 pub async fn check_shortcut_available(
     shortcut: String,
     exclude_id: Option<String>,
 ) -> Result<bool, String> {
-    let state = get_state().lock().map_err(|e| e.to_string())?;
+    let (response_sender, response_receiver) = mpsc::channel();
 
-    // Parse the shortcut to check
-    let (check_mods, check_key) =
-        parse_shortcut(&shortcut).ok_or_else(|| format!("Invalid shortcut: {}", shortcut))?;
+    with_runtime_sender(None, |sender| {
+        sender
+            .send(ManagerCommand::CheckAvailable {
+                shortcut,
+                exclude_id,
+                response: response_sender,
+            })
+            .map_err(|_| "Failed to send shortcut availability command".to_string())
+    })?;
 
-    // Check against all registered hotkeys
-    for (id, hotkey) in &state.hotkeys {
-        // Skip the excluded ID (self)
-        if let Some(ref exclude) = exclude_id {
-            if id == exclude {
-                continue;
-            }
-        }
-
-        // Skip suspended shortcuts
-        if state.suspended.contains(id) {
-            continue;
-        }
-
-        // Check if modifiers and key match
-        if hotkey.modifiers == check_mods && hotkey.key_code == check_key {
-            return Ok(false); // Not available - conflict
-        }
-    }
-
-    Ok(true) // Available
+    response_receiver
+        .recv()
+        .map_err(|_| "Failed to receive shortcut availability response".to_string())?
 }
