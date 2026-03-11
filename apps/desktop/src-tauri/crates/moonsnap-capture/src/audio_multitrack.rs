@@ -119,7 +119,20 @@ impl MultiTrackAudioRecorder {
         system_audio_path: Option<PathBuf>,
         mic_audio_path: Option<PathBuf>,
     ) -> Result<(Option<PathBuf>, Option<PathBuf>), String> {
-        self.start_with_device(system_audio_path, mic_audio_path, None)
+        self.start_with_device_at_time(system_audio_path, mic_audio_path, None, Instant::now())
+    }
+
+    /// Start recording audio to the specified files using a shared timeline origin.
+    ///
+    /// Use this when audio must align to an externally-created recording clock
+    /// (for example the same `Instant` used by video and cursor capture).
+    pub fn start_at_time(
+        &mut self,
+        system_audio_path: Option<PathBuf>,
+        mic_audio_path: Option<PathBuf>,
+        start_time: Instant,
+    ) -> Result<(Option<PathBuf>, Option<PathBuf>), String> {
+        self.start_with_device_at_time(system_audio_path, mic_audio_path, None, start_time)
     }
 
     /// Start recording audio with optional device selection.
@@ -137,11 +150,26 @@ impl MultiTrackAudioRecorder {
         mic_audio_path: Option<PathBuf>,
         system_device_id: Option<String>,
     ) -> Result<(Option<PathBuf>, Option<PathBuf>), String> {
+        self.start_with_device_at_time(
+            system_audio_path,
+            mic_audio_path,
+            system_device_id,
+            Instant::now(),
+        )
+    }
+
+    /// Start recording audio with optional device selection using a shared timeline origin.
+    pub fn start_with_device_at_time(
+        &mut self,
+        system_audio_path: Option<PathBuf>,
+        mic_audio_path: Option<PathBuf>,
+        system_device_id: Option<String>,
+        start_time: Instant,
+    ) -> Result<(Option<PathBuf>, Option<PathBuf>), String> {
         // Reset stop flag
         self.should_stop.store(false, Ordering::SeqCst);
         self.is_paused.store(false, Ordering::SeqCst);
 
-        let start_time = Instant::now();
         let mut actual_system_path = None;
         let mut actual_mic_path = None;
 
@@ -858,6 +886,7 @@ fn bytes_to_f32_samples(bytes: &VecDeque<u8>) -> Vec<f32> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::time::Instant;
 
     #[test]
     fn test_bytes_to_f32_samples() {
@@ -871,5 +900,16 @@ mod tests {
         assert_eq!(samples.len(), 2);
         assert!((samples[0] - 0.5).abs() < 0.001);
         assert!((samples[1] - (-0.25)).abs() < 0.001);
+    }
+
+    #[test]
+    fn start_with_device_at_time_allows_empty_track_configuration() {
+        let mut recorder = MultiTrackAudioRecorder::new();
+        let (system, mic) = recorder
+            .start_with_device_at_time(None, None, None, Instant::now())
+            .expect("empty start should succeed");
+
+        assert!(system.is_none());
+        assert!(mic.is_none());
     }
 }

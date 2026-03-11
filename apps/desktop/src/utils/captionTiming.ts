@@ -36,8 +36,118 @@ export function parseEditableWords(words: EditableCaptionWord[]) {
   }));
 }
 
+function isCjkChar(ch: string): boolean {
+  const codePoint = ch.codePointAt(0);
+  if (codePoint === undefined) {
+    return false;
+  }
+
+  return (
+    (codePoint >= 0x3400 && codePoint <= 0x4dbf) ||
+    (codePoint >= 0x4e00 && codePoint <= 0x9fff) ||
+    (codePoint >= 0xf900 && codePoint <= 0xfaff) ||
+    (codePoint >= 0x3040 && codePoint <= 0x30ff) ||
+    (codePoint >= 0xac00 && codePoint <= 0xd7af)
+  );
+}
+
+function textContainsInlineScript(text: string): boolean {
+  return Array.from(text).some(isCjkChar);
+}
+
+function isInlinePunctuationChar(ch: string): boolean {
+  return !/\s/u.test(ch) && !isCjkChar(ch) && !/[\p{Letter}\p{Number}]/u.test(ch);
+}
+
+function flushBufferedToken(tokens: string[], token: string): string {
+  if (token.length > 0) {
+    tokens.push(token);
+  }
+
+  return '';
+}
+
+export function shouldInsertSpaceBetweenWords(left: string, right: string): boolean {
+  const leftChars = Array.from(left);
+  const rightChars = Array.from(right);
+  const leftChar = leftChars[leftChars.length - 1];
+  const rightChar = rightChars[0];
+
+  if (!leftChar || !rightChar) {
+    return false;
+  }
+
+  return (
+    !isCjkChar(leftChar) &&
+    !isCjkChar(rightChar) &&
+    /[\p{Letter}\p{Number}]/u.test(leftChar) &&
+    /[\p{Letter}\p{Number}]/u.test(rightChar)
+  );
+}
+
+export function joinCaptionWordsForDisplay(words: Array<{ text: string }>): string {
+  const filteredWords = words.map((word) => word.text).filter(Boolean);
+  if (filteredWords.length === 0) {
+    return '';
+  }
+
+  const usesInlineJoining = filteredWords.some(textContainsInlineScript);
+  if (!usesInlineJoining) {
+    return filteredWords.join(' ');
+  }
+
+  let text = '';
+  for (const word of filteredWords) {
+    if (text && shouldInsertSpaceBetweenWords(text, word)) {
+      text += ' ';
+    }
+    text += word;
+  }
+
+  return text;
+}
+
 export function splitCaptionWords(text: string): string[] {
-  return text.trim().split(/\s+/).filter(Boolean);
+  const trimmed = text.trim();
+  if (!trimmed) {
+    return [];
+  }
+
+  if (!textContainsInlineScript(trimmed)) {
+    return trimmed.split(/\s+/u).filter(Boolean);
+  }
+
+  const tokens: string[] = [];
+  let currentToken = '';
+
+  for (const ch of Array.from(trimmed)) {
+    if (/\s/u.test(ch)) {
+      currentToken = flushBufferedToken(tokens, currentToken);
+      continue;
+    }
+
+    if (isCjkChar(ch)) {
+      currentToken = flushBufferedToken(tokens, currentToken);
+      tokens.push(ch);
+      continue;
+    }
+
+    if (isInlinePunctuationChar(ch)) {
+      if (currentToken.length > 0) {
+        currentToken += ch;
+      } else if (tokens.length > 0) {
+        tokens[tokens.length - 1] += ch;
+      } else {
+        tokens.push(ch);
+      }
+      continue;
+    }
+
+    currentToken += ch;
+  }
+
+  flushBufferedToken(tokens, currentToken);
+  return tokens;
 }
 
 function remapWordsToSegmentTiming(

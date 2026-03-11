@@ -47,10 +47,14 @@ pub struct FrameTextOverlayRequest<'a> {
 /// Build render options and prepared caption overlays for a frame.
 pub fn build_frame_overlay_plan(request: FrameOverlayRequest<'_>) -> FrameOverlayPlan {
     let frame_time_secs = request.relative_time_ms as f64 / 1000.0;
-    let prepared_captions = if request.caption_settings.enabled {
+    let export_caption_settings = CaptionSettings {
+        enabled: request.caption_settings.export_with_subtitles,
+        ..request.caption_settings.clone()
+    };
+    let prepared_captions = if export_caption_settings.enabled {
         prepare_captions(
             request.timeline_captions,
-            request.caption_settings,
+            &export_caption_settings,
             frame_time_secs as f32,
             request.composition_width as f32,
             request.composition_height as f32,
@@ -216,10 +220,10 @@ mod tests {
     }
 
     #[test]
-    fn overlay_plan_prepares_captions_when_enabled_and_active() {
+    fn overlay_plan_prepares_captions_when_export_burn_in_is_enabled() {
         let captions = vec![sample_caption_segment()];
         let settings = CaptionSettings {
-            enabled: true,
+            export_with_subtitles: true,
             ..CaptionSettings::default()
         };
         let plan = build_frame_overlay_plan(FrameOverlayRequest {
@@ -235,6 +239,29 @@ mod tests {
         });
 
         assert!(!plan.prepared_captions.is_empty());
+    }
+
+    #[test]
+    fn overlay_plan_ignores_preview_enabled_when_export_burn_in_is_disabled() {
+        let captions = vec![sample_caption_segment()];
+        let settings = CaptionSettings {
+            enabled: true,
+            export_with_subtitles: false,
+            ..CaptionSettings::default()
+        };
+        let plan = build_frame_overlay_plan(FrameOverlayRequest {
+            relative_time_ms: 1_000,
+            composition_width: 1280,
+            composition_height: 720,
+            use_manual_composition: false,
+            zoom_state: ZoomState::identity(),
+            webcam_overlay: None,
+            background_style: &BackgroundStyle::default(),
+            timeline_captions: &captions,
+            caption_settings: &settings,
+        });
+
+        assert!(plan.prepared_captions.is_empty());
     }
 
     #[test]

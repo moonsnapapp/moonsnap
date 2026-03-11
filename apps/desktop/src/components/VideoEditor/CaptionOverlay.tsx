@@ -8,6 +8,10 @@ import { useVideoEditorStore } from '../../stores/videoEditorStore';
 import { selectCaptionSegments, selectCaptionSettings } from '../../stores/videoEditor/selectors';
 import { usePreviewOrPlaybackTime } from '../../hooks/usePlaybackEngine';
 import { useScaledLayout } from '@/hooks/useParityLayout';
+import {
+  joinCaptionWordsForDisplay,
+  shouldInsertSpaceBetweenWords,
+} from '@/utils/captionTiming';
 
 interface CaptionOverlayProps {
   containerWidth: number;
@@ -20,7 +24,7 @@ function getCaptionTextContent(
   segment: { text: string; words: Array<{ text: string }> }
 ): string {
   if (segment.words.length > 0) {
-    return segment.words.map((word) => word.text).join(' ');
+    return joinCaptionWordsForDisplay(segment.words);
   }
   return segment.text;
 }
@@ -268,7 +272,13 @@ export const CaptionOverlay = memo(function CaptionOverlay({
         }}
       >
         {word.text}
-        {idx < activeSegment.words.length - 1 ? ' ' : ''}
+        {idx < activeSegment.words.length - 1 &&
+        shouldInsertSpaceBetweenWords(
+          word.text,
+          activeSegment.words[idx + 1]?.text ?? ''
+        )
+          ? ' '
+          : ''}
       </span>
     ));
   };

@@ -133,6 +133,7 @@ export interface CaptionSlice {
   loadWhisperModels: () => Promise<void>;
   setSelectedModel: (modelName: string) => void;
   setSelectedTranscriptionLanguage: (language: string) => void;
+  setDownloadProgress: (progress: number) => void;
   downloadModel: (modelName: string) => Promise<void>;
   deleteModel: (modelName: string) => Promise<void>;
 
@@ -240,10 +241,11 @@ export const createCaptionSlice: SliceCreator<CaptionSlice> = (set, get) => ({
         modelName: selectedModelName,
         language: selectedTranscriptionLanguage,
       });
+      const currentSettings = get().captionSettings;
 
       set({
         captionSegments: result.segments,
-        captionSettings: { ...result.settings, enabled: true },
+        captionSettings: { ...currentSettings, enabled: true },
         isTranscribing: false,
         isCancellingTranscription: false,
         transcriptionProgress: 100,
@@ -373,6 +375,11 @@ export const createCaptionSlice: SliceCreator<CaptionSlice> = (set, get) => ({
       selectedTranscriptionLanguage: language,
     }),
 
+  setDownloadProgress: (progress) =>
+    set({
+      downloadProgress: Math.max(0, Math.min(100, progress)),
+    }),
+
   downloadModel: async (modelName) => {
     set({
       isDownloadingModel: true,
@@ -392,6 +399,7 @@ export const createCaptionSlice: SliceCreator<CaptionSlice> = (set, get) => ({
     } catch (error) {
       set({
         isDownloadingModel: false,
+        downloadProgress: 0,
       });
       throw error;
     }

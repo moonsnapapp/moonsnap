@@ -30,6 +30,7 @@ import {
   selectSelectedTranscriptionLanguage,
   selectSetCaptionSegments,
   selectSetCaptionsEnabled,
+  selectSetDownloadProgress,
   selectSetIsPlaying,
   selectSetSelectedModel,
   selectSetSelectedTranscriptionLanguage,
@@ -142,6 +143,7 @@ export function CaptionPanel({ videoPath }: CaptionPanelProps) {
   const updateCaptionSegment = useVideoEditorStore(selectUpdateCaptionSegment);
   const setCaptionSegments = useVideoEditorStore(selectSetCaptionSegments);
   const setCaptionsEnabled = useVideoEditorStore(selectSetCaptionsEnabled);
+  const setDownloadProgress = useVideoEditorStore(selectSetDownloadProgress);
   const setTranscriptionProgress = useVideoEditorStore(selectSetTranscriptionProgress);
   const requestSeek = useVideoEditorStore(selectRequestSeek);
   const setIsPlaying = useVideoEditorStore(selectSetIsPlaying);
@@ -199,8 +201,7 @@ export function CaptionPanel({ videoPath }: CaptionPanelProps) {
     const unlistenDownload = listen<DownloadProgress>(
       'whisper-download-progress',
       (event) => {
-        // Download progress is handled via store state
-        void event.payload;
+        setDownloadProgress(event.payload.progress);
       }
     );
 
@@ -208,7 +209,7 @@ export function CaptionPanel({ videoPath }: CaptionPanelProps) {
       unlistenTranscription.then((fn) => fn());
       unlistenDownload.then((fn) => fn());
     };
-  }, [setTranscriptionProgress]);
+  }, [setDownloadProgress, setTranscriptionProgress]);
 
   const selectedModel = whisperModels.find((m) => m.name === selectedModelName);
   const isModelDownloaded = selectedModel?.downloaded ?? false;
@@ -1102,6 +1103,28 @@ export function CaptionPanel({ videoPath }: CaptionPanelProps) {
           <span
             className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${
               captionSettings.enabled ? 'translate-x-5' : 'translate-x-0'
+            }`}
+          />
+        </button>
+      </div>
+
+      <div className="flex items-center justify-between">
+        <span className="text-xs text-[var(--ink-muted)]">Burn Into Export</span>
+        <button
+          onClick={() =>
+            updateCaptionSettings({
+              exportWithSubtitles: !captionSettings.exportWithSubtitles,
+            })
+          }
+          className={`relative w-10 h-5 rounded-full transition-colors ${
+            captionSettings.exportWithSubtitles
+              ? 'bg-[var(--coral-400)]'
+              : 'bg-[var(--polar-frost)]'
+          }`}
+        >
+          <span
+            className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${
+              captionSettings.exportWithSubtitles ? 'translate-x-5' : 'translate-x-0'
             }`}
           />
         </button>

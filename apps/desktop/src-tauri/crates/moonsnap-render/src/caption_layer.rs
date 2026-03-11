@@ -66,6 +66,63 @@ fn lerp_color(base: [f32; 4], highlight: [f32; 4], factor: f32) -> [f32; 4] {
     ]
 }
 
+fn is_cjk_char(ch: char) -> bool {
+    matches!(
+        ch,
+        '\u{3400}'..='\u{4DBF}'
+            | '\u{4E00}'..='\u{9FFF}'
+            | '\u{F900}'..='\u{FAFF}'
+            | '\u{3040}'..='\u{30FF}'
+            | '\u{AC00}'..='\u{D7AF}'
+    )
+}
+
+fn text_contains_inline_script(text: &str) -> bool {
+    text.chars().any(is_cjk_char)
+}
+
+fn should_insert_space_between(left: &str, right: &str) -> bool {
+    let left_char = left.chars().last();
+    let right_char = right.chars().next();
+
+    matches!(
+        (left_char, right_char),
+        (Some(l), Some(r)) if l.is_ascii_alphanumeric() && r.is_ascii_alphanumeric()
+    )
+}
+
+fn build_caption_content_and_offsets(words: &[CaptionWord]) -> (String, Vec<(usize, usize)>) {
+    if words.is_empty() {
+        return (String::new(), Vec::new());
+    }
+
+    let uses_inline_joining = words
+        .iter()
+        .any(|word| text_contains_inline_script(&word.text));
+    let mut content = String::new();
+    let mut offsets = Vec::with_capacity(words.len());
+
+    for word in words {
+        if word.text.is_empty() {
+            offsets.push((content.len(), content.len()));
+            continue;
+        }
+
+        if !content.is_empty()
+            && (!uses_inline_joining || should_insert_space_between(&content, &word.text))
+        {
+            content.push(' ');
+        }
+
+        let start = content.len();
+        content.push_str(&word.text);
+        let end = content.len();
+        offsets.push((start, end));
+    }
+
+    (content, offsets)
+}
+
 fn word_highlight_factor(word: &CaptionWord, time_secs: f32, transition_duration: f32) -> f32 {
     let duration = transition_duration.max(0.0);
     if duration == 0.0 {
@@ -129,6 +186,7 @@ fn build_word_colors(
     segment: &CaptionSegment,
     settings: &CaptionSettings,
     time_secs: f32,
+    word_offsets: &[(usize, usize)],
 ) -> Option<Vec<WordColor>> {
     // Only build word colors if we have words and colors differ
     if segment.words.is_empty() || settings.color == settings.highlight_color {
@@ -139,26 +197,12 @@ fn build_word_colors(
     let highlight_color = hex_to_rgba(&settings.highlight_color);
     let transition_duration = settings.word_transition_duration.max(0.0);
 
-    // Build the full text by joining words with spaces to get accurate byte positions
     let mut word_colors = Vec::with_capacity(segment.words.len());
-    let mut byte_offset = 0;
-
-    for (idx, word) in segment.words.iter().enumerate() {
-        let word_bytes = word.text.len();
+    for (word, (start, end)) in segment.words.iter().zip(word_offsets.iter().copied()) {
         let factor = word_highlight_factor(word, time_secs, transition_duration);
         let color = lerp_color(base_color, highlight_color, factor);
 
-        word_colors.push(WordColor {
-            start: byte_offset,
-            end: byte_offset + word_bytes,
-            color,
-        });
-
-        // Account for space after word (except last word)
-        byte_offset += word_bytes;
-        if idx < segment.words.len() - 1 {
-            byte_offset += 1; // space
-        }
+        word_colors.push(WordColor { start, end, color });
     }
 
     Some(word_colors)
@@ -217,17 +261,13 @@ pub fn prepare_caption_text(
     // Base color (used for text without word highlighting)
     let base_color = hex_to_rgba(&settings.color);
 
-    // Build word colors for per-word highlighting
-    let word_colors = build_word_colors(segment, settings, time_secs);
+    let (content, word_offsets) = build_caption_content_and_offsets(&segment.words);
 
-    // Reconstruct text from words to ensure byte positions match
+    // Build word colors for per-word highlighting
+    let word_colors = build_word_colors(segment, settings, time_secs, &word_offsets);
+
     let content = if !segment.words.is_empty() {
-        segment
-            .words
-            .iter()
-            .map(|w| w.text.as_str())
-            .collect::<Vec<_>>()
-            .join(" ")
+        content
     } else {
         segment.text.clone()
     };
@@ -345,5 +385,67 @@ mod tests {
 
         let texts = prepare_captions(&[], &settings, 1.0, 1920.0, 1080.0);
         assert!(texts.is_empty());
+    }
+
+    #[test]
+    fn build_caption_content_omits_spaces_for_inline_script() {
+        let words = vec![
+            CaptionWord {
+                text: "中".to_string(),
+                start: 0.0,
+                end: 0.3,
+            },
+            CaptionWord {
+                text: "文".to_string(),
+                start: 0.3,
+                end: 0.6,
+            },
+            CaptionWord {
+                text: "字".to_string(),
+                start: 0.6,
+                end: 0.9,
+            },
+            CaptionWord {
+                text: "幕".to_string(),
+                start: 0.9,
+                end: 1.2,
+            },
+        ];
+
+        let (content, offsets) = build_caption_content_and_offsets(&words);
+
+        assert_eq!(content, "中文字幕");
+        assert_eq!(offsets, vec![(0, 3), (3, 6), (6, 9), (9, 12)]);
+    }
+
+    #[test]
+    fn build_caption_content_keeps_spaces_for_ascii_words_in_mixed_segments() {
+        let words = vec![
+            CaptionWord {
+                text: "OpenAI".to_string(),
+                start: 0.0,
+                end: 0.4,
+            },
+            CaptionWord {
+                text: "captions".to_string(),
+                start: 0.4,
+                end: 0.8,
+            },
+            CaptionWord {
+                text: "中".to_string(),
+                start: 0.8,
+                end: 1.0,
+            },
+            CaptionWord {
+                text: "文".to_string(),
+                start: 1.0,
+                end: 1.2,
+            },
+        ];
+
+        let (content, offsets) = build_caption_content_and_offsets(&words);
+
+        assert_eq!(content, "OpenAI captions中文");
+        assert_eq!(offsets, vec![(0, 6), (7, 15), (15, 18), (18, 21)]);
     }
 }

@@ -25,6 +25,8 @@ const WHISPER_SAMPLE_RATE: u32 = 16000;
 const MAX_SPACE_DELIMITED_WORDS_PER_SEGMENT: usize = 6;
 const MAX_INLINE_WORDS_PER_SEGMENT: usize = 18;
 const TRANSCRIPTION_CANCELLED_MESSAGE: &str = "Transcription cancelled.";
+const MODEL_DOWNLOAD_TEMP_EXTENSION: &str = "part";
+const MIN_VALID_MODEL_SIZE_PERCENT: u64 = 90;
 
 static TRANSCRIPTION_CANCEL_REQUESTED: AtomicBool = AtomicBool::new(false);
 
@@ -145,6 +147,20 @@ fn get_model_size(model_name: &str) -> u64 {
     }
 }
 
+fn minimum_valid_model_size(model_name: &str) -> u64 {
+    get_model_size(model_name).saturating_mul(MIN_VALID_MODEL_SIZE_PERCENT) / 100
+}
+
+fn is_model_size_valid(model_name: &str, size_bytes: u64) -> bool {
+    size_bytes >= minimum_valid_model_size(model_name)
+}
+
+fn is_valid_model_file(model_name: &str, model_path: &Path) -> bool {
+    std::fs::metadata(model_path)
+        .map(|metadata| metadata.is_file() && is_model_size_valid(model_name, metadata.len()))
+        .unwrap_or(false)
+}
+
 /// Check if a Whisper model exists locally.
 #[tauri::command]
 pub async fn check_whisper_model(
@@ -155,7 +171,7 @@ pub async fn check_whisper_model(
     let model_file = format!("ggml-{}.bin", model_name);
     let model_path = models_dir.join(&model_file);
 
-    let downloaded = model_path.exists();
+    let downloaded = is_valid_model_file(&model_name, &model_path);
 
     Ok(WhisperModelInfo {
         name: model_name.clone(),
@@ -192,9 +208,23 @@ pub async fn download_whisper_model(app: AppHandle, model_name: String) -> Resul
 
     let model_file = format!("ggml-{}.bin", model_name);
     let model_path = models_dir.join(&model_file);
+    let partial_model_path =
+        models_dir.join(format!("{}.{}", model_file, MODEL_DOWNLOAD_TEMP_EXTENSION));
+
+    if is_valid_model_file(&model_name, &model_path) {
+        return Ok(model_path.to_string_lossy().to_string());
+    }
 
     if model_path.exists() {
-        return Ok(model_path.to_string_lossy().to_string());
+        tokio::fs::remove_file(&model_path)
+            .await
+            .map_err(|e| format!("Failed to remove incomplete model: {}", e))?;
+    }
+
+    if partial_model_path.exists() {
+        tokio::fs::remove_file(&partial_model_path)
+            .await
+            .map_err(|e| format!("Failed to remove stale partial download: {}", e))?;
     }
 
     let url = get_model_url(&model_name);
@@ -214,36 +244,65 @@ pub async fn download_whisper_model(app: AppHandle, model_name: String) -> Resul
     let total_size = response
         .content_length()
         .unwrap_or(get_model_size(&model_name));
-    let mut downloaded: u64 = 0;
-
-    let mut file = tokio::fs::File::create(&model_path)
-        .await
-        .map_err(|e| format!("Failed to create file: {}", e))?;
-
-    let mut stream = response.bytes_stream();
-
-    while let Some(chunk_result) = stream.next().await {
-        let chunk = chunk_result.map_err(|e| format!("Download error: {}", e))?;
-
-        tokio::io::AsyncWriteExt::write_all(&mut file, &chunk)
+    let download_result: Result<(), String> = async {
+        let mut downloaded: u64 = 0;
+        let mut file = tokio::fs::File::create(&partial_model_path)
             .await
-            .map_err(|e| format!("Write error: {}", e))?;
+            .map_err(|e| format!("Failed to create file: {}", e))?;
+        let mut stream = response.bytes_stream();
 
-        downloaded += chunk.len() as u64;
-        let progress = (downloaded as f64 / total_size as f64) * 100.0;
+        while let Some(chunk_result) = stream.next().await {
+            let chunk = chunk_result.map_err(|e| format!("Download error: {}", e))?;
 
-        let _ = app.emit(
-            "whisper-download-progress",
-            DownloadProgress {
-                progress,
-                message: format!("Downloading {}: {:.1}%", model_name, progress),
-            },
-        );
+            tokio::io::AsyncWriteExt::write_all(&mut file, &chunk)
+                .await
+                .map_err(|e| format!("Write error: {}", e))?;
+
+            downloaded += chunk.len() as u64;
+            let progress = (downloaded as f64 / total_size as f64) * 100.0;
+
+            let _ = app.emit(
+                "whisper-download-progress",
+                DownloadProgress {
+                    progress,
+                    message: format!("Downloading {}: {:.1}%", model_name, progress),
+                },
+            );
+        }
+
+        tokio::io::AsyncWriteExt::flush(&mut file)
+            .await
+            .map_err(|e| format!("Flush error: {}", e))?;
+        file.sync_all()
+            .await
+            .map_err(|e| format!("Failed to sync model file: {}", e))?;
+        drop(file);
+
+        tokio::fs::rename(&partial_model_path, &model_path)
+            .await
+            .map_err(|e| format!("Failed to finalize model download: {}", e))?;
+
+        if !is_valid_model_file(&model_name, &model_path) {
+            return Err("Downloaded model file is incomplete.".to_string());
+        }
+
+        Ok(())
+    }
+    .await;
+
+    if let Err(error) = download_result {
+        let _ = tokio::fs::remove_file(&partial_model_path).await;
+        let _ = tokio::fs::remove_file(&model_path).await;
+        return Err(error);
     }
 
-    tokio::io::AsyncWriteExt::flush(&mut file)
-        .await
-        .map_err(|e| format!("Flush error: {}", e))?;
+    let _ = app.emit(
+        "whisper-download-progress",
+        DownloadProgress {
+            progress: 100.0,
+            message: format!("Downloading {}: 100.0%", model_name),
+        },
+    );
 
     log::info!("Model downloaded to: {:?}", model_path);
     Ok(model_path.to_string_lossy().to_string())
@@ -1186,6 +1245,15 @@ mod tests {
 
         reset_cancel_transcription();
         assert!(!is_transcription_cancelled());
+    }
+
+    #[test]
+    fn model_file_validation_rejects_truncated_downloads() {
+        assert!(!is_model_size_valid("small", 1024));
+        assert!(is_model_size_valid(
+            "small",
+            minimum_valid_model_size("small")
+        ));
     }
 }
 

@@ -117,6 +117,7 @@ export const selectLoadWhisperModels = (state: VideoEditorState) => state.loadWh
 export const selectSetSelectedModel = (state: VideoEditorState) => state.setSelectedModel;
 export const selectSetSelectedTranscriptionLanguage = (state: VideoEditorState) =>
   state.setSelectedTranscriptionLanguage;
+export const selectSetDownloadProgress = (state: VideoEditorState) => state.setDownloadProgress;
 export const selectDownloadModel = (state: VideoEditorState) => state.downloadModel;
 export const selectStartTranscription = (state: VideoEditorState) => state.startTranscription;
 export const selectTranscribeCaptionSegment = (state: VideoEditorState) => state.transcribeCaptionSegment;

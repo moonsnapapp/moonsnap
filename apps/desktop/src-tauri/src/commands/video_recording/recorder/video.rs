@@ -179,17 +179,24 @@ pub fn run_video_capture(
             settings.audio.microphone_device_index.is_some(),
         );
 
-    // Start multi-track audio recording
+    // Create shared start time using high-precision Timestamps.
+    // This captures both Instant (for cursor) and PerformanceCounter (for precise sync).
+    // The Timestamps struct ensures both use the exact same reference point.
+    let timestamps = Timestamps::now();
+    let start_time = timestamps.instant();
+
+    // Start multi-track audio recording on the exact same clock as video/cursor.
     if system_audio_path.is_some() || mic_audio_path.is_some() {
         log::debug!(
             "[AUDIO] Starting multi-track recording: system={:?}, mic={:?}",
             system_audio_path,
             mic_audio_path
         );
-        if let Err(e) = multitrack_audio.start_with_device(
+        if let Err(e) = multitrack_audio.start_with_device_at_time(
             system_audio_path.clone(),
             mic_audio_path.clone(),
             settings.audio.system_audio_device_id.clone(),
+            start_time,
         ) {
             log::warn!("Failed to start multi-track audio: {}", e);
         }
@@ -210,12 +217,6 @@ pub fn run_video_capture(
         settings.fps,
         webcam_encoder.is_some()
     );
-
-    // Create shared start time using high-precision Timestamps.
-    // This captures both Instant (for cursor) and PerformanceCounter (for precise sync).
-    // The Timestamps struct ensures both use the exact same reference point.
-    let timestamps = Timestamps::now();
-    let start_time = timestamps.instant();
 
     // === CURSOR EVENT CAPTURE ===
     // Record cursor positions and clicks for auto-zoom in video editor.

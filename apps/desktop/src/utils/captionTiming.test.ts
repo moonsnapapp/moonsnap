@@ -7,8 +7,10 @@ import {
   cloneCaptionSegments,
   distributeCaptionWordTiming,
   formatTime,
+  joinCaptionWordsForDisplay,
   parseEditableWords,
   segmentMatchesUpdate,
+  splitCaptionWords,
   type EditableCaptionWord,
 } from '@/utils/captionTiming';
 import type { CaptionSegment } from '@/types';
@@ -99,5 +101,37 @@ describe('captionTiming', () => {
         ],
       })
     ).toBe(true);
+  });
+
+  it('splits inline-script captions without collapsing everything into one token', () => {
+    expect(splitCaptionWords('中文字幕')).toEqual(['中', '文', '字', '幕']);
+    expect(splitCaptionWords('OpenAI中文字幕')).toEqual(['OpenAI', '中', '文', '字', '幕']);
+    expect(splitCaptionWords('OpenAI captions中文')).toEqual([
+      'OpenAI',
+      'captions',
+      '中',
+      '文',
+    ]);
+    expect(splitCaptionWords('第1章，开始！')).toEqual(['第', '1', '章，', '开', '始！']);
+  });
+
+  it('joins inline-script caption words without injecting spaces', () => {
+    expect(
+      joinCaptionWordsForDisplay([
+        { text: '中' },
+        { text: '文' },
+        { text: '字' },
+        { text: '幕' },
+      ])
+    ).toBe('中文字幕');
+
+    expect(
+      joinCaptionWordsForDisplay([
+        { text: 'OpenAI' },
+        { text: 'captions' },
+        { text: '中' },
+        { text: '文' },
+      ])
+    ).toBe('OpenAI captions中文');
   });
 });
