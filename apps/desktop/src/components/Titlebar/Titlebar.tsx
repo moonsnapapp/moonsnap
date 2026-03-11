@@ -45,7 +45,7 @@ export const Titlebar: React.FC<TitlebarProps> = ({
   const badgeLabel = licenseStatus === 'pro'
     ? 'Pro'
     : licenseStatus === 'trial' && trialDaysLeft !== null
-      ? `${trialDaysLeft} day${trialDaysLeft === 1 ? '' : 's'} left`
+      ? trialDaysLeft === 0 ? 'Last day' : `${trialDaysLeft} day${trialDaysLeft === 1 ? '' : 's'} left`
       : licenseStatus === 'free' || licenseStatus === 'expired'
         ? 'Free'
         : null;

@@ -69,7 +69,7 @@ export const LicenseTab: React.FC = () => {
   const badgeLabel = status === 'pro'
     ? 'Pro'
     : status === 'trial' && trialDaysLeft !== null
-      ? `${trialDaysLeft} day${trialDaysLeft === 1 ? '' : 's'} left`
+      ? trialDaysLeft === 0 ? 'Last day' : `${trialDaysLeft} day${trialDaysLeft === 1 ? '' : 's'} left`
       : status === 'free' || status === 'expired'
         ? 'Free'
         : null;
@@ -108,7 +108,7 @@ export const LicenseTab: React.FC = () => {
               </p>
               {status === 'trial' && trialDaysLeft !== null && (
                 <p className="text-xs text-[var(--coral-400)] mt-1">
-                  {trialDaysLeft} {trialDaysLeft === 1 ? 'day' : 'days'} remaining
+                  {trialDaysLeft === 0 ? 'Trial expires today' : `${trialDaysLeft} ${trialDaysLeft === 1 ? 'day' : 'days'} remaining`}
                 </p>
               )}
             </div>

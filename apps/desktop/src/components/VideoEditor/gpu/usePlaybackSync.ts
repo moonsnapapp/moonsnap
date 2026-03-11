@@ -80,9 +80,14 @@ export function usePlaybackSync(options: PlaybackSyncOptions): PlaybackSyncResul
 
   const getSourceTime = useTimelineToSourceTime();
 
-  // Initialize playback engine when project loads
+  // Initialize playback engine once when project first loads.
+  // Must NOT re-run on duration changes (e.g. reconcileProjectDuration from
+  // loadedmetadata) because initPlaybackEngine resets currentTimeMs to 0,
+  // which would discard the user's scrub position.
+  const hasInitRef = useRef(false);
   useEffect(() => {
-    if (durationMs) {
+    if (durationMs && !hasInitRef.current) {
+      hasInitRef.current = true;
       initPlaybackEngine(durationMs);
     }
   }, [durationMs]);
@@ -319,18 +324,17 @@ export function usePlaybackSync(options: PlaybackSyncOptions): PlaybackSyncResul
       const playheadTime = useVideoEditorStore.getState().currentTimeMs;
       const sourceTimeSec = getSourceTime(playheadTime) / 1000;
 
-      if (systemAudio) {
-        systemAudio.currentTime = sourceTimeSec;
-        systemAudio.play().catch(e => {
-          videoEditorLogger.warn('System audio play failed:', e);
+      const playAudio = (audio: HTMLAudioElement) => {
+        audio.currentTime = sourceTimeSec;
+        audio.play().catch(e => {
+          // AbortError is expected when pause() interrupts a pending play()
+          if (e.name !== 'AbortError') {
+            videoEditorLogger.warn('Audio play failed:', e);
+          }
         });
-      }
-      if (micAudio) {
-        micAudio.currentTime = sourceTimeSec;
-        micAudio.play().catch(e => {
-          videoEditorLogger.warn('Mic audio play failed:', e);
-        });
-      }
+      };
+      if (systemAudio) playAudio(systemAudio);
+      if (micAudio) playAudio(micAudio);
     } else {
       if (systemAudio) systemAudio.pause();
       if (micAudio) micAudio.pause();
@@ -340,7 +344,13 @@ export function usePlaybackSync(options: PlaybackSyncOptions): PlaybackSyncResul
   // Seek audio when preview time or current time changes.
   // Skip seeking when hovering over tracks (hoveredTrack !== null) since that's
   // just for segment preview indicators — only seek when scrubbing the ruler.
+  // Also skip during playhead drag to avoid scrub lag from repeated audio seeks.
   useEffect(() => {
+    // Skip audio seeking during playhead drag — it's the main source of scrub lag.
+    if (!isPlaying && useVideoEditorStore.getState().isDraggingPlayhead) {
+      return;
+    }
+
     const timelineTime = !isPlaying && previewTimeMs !== null ? previewTimeMs : currentTimeMs;
     const sourceTime = getSourceTime(timelineTime);
     const seekTokenChanged = lastSeekTokenRef.current !== lastSeekToken;
@@ -414,7 +424,11 @@ export function usePlaybackSync(options: PlaybackSyncOptions): PlaybackSyncResul
 
     const timelineTime = previewTimeMs !== null ? previewTimeMs : currentTimeMs;
     const sourceTime = getSourceTime(timelineTime);
-    video.currentTime = sourceTime / 1000;
+    const targetSec = sourceTime / 1000;
+    // Skip if video is already at the target position (avoids double-seek
+    // when controls.seek() already set video.currentTime directly).
+    if (Math.abs(video.currentTime - targetSec) < 0.001) return;
+    video.currentTime = targetSec;
   }, [previewTimeMs, currentTimeMs, isPlaying, getSourceTime, videoRef]);
 
   const handleVideoClick = useCallback(() => {
