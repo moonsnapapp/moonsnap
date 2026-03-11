@@ -99,7 +99,7 @@ export function useWebCodecsPreview(videoPath: string | null): WebCodecsPreviewR
         pendingTimestamps.current.delete(pendingTs);
       }
       // Only log unexpected errors, not "no sample" which is normal at boundaries
-      if (!error.includes('No sample')) {
+      if (!error.includes('No sample') && !error.includes('disposed')) {
         videoEditorLogger.warn('[WebCodecsPreview] Frame error:', error);
       }
     },

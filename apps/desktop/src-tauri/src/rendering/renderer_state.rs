@@ -31,20 +31,28 @@ impl RendererState {
     /// This lazily initializes the GPU renderer on first access,
     /// then returns the same instance for all subsequent calls.
     pub async fn get_renderer(&self) -> Result<Arc<Renderer>, String> {
-        // Fast path: check if already initialized
+        // Fast path: check if already initialized and healthy
         {
             let renderer = self.renderer.read().await;
             if let Some(r) = renderer.as_ref() {
-                return Ok(Arc::clone(r));
+                if !r.is_lost() {
+                    return Ok(Arc::clone(r));
+                }
+                log::warn!("[RendererState] GPU device lost, will re-initialize");
             }
         }
 
-        // Slow path: need to initialize
+        // Slow path: need to initialize (or re-initialize after device loss)
         let mut renderer = self.renderer.write().await;
 
         // Double-check after acquiring write lock
         if let Some(r) = renderer.as_ref() {
-            return Ok(Arc::clone(r));
+            if !r.is_lost() {
+                return Ok(Arc::clone(r));
+            }
+            // Drop the lost renderer
+            log::info!("[RendererState] Dropping lost GPU renderer");
+            *renderer = None;
         }
 
         // Initialize the renderer

@@ -2,6 +2,7 @@
 //!
 //! Handles GPU device/queue initialization and shader compilation.
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use wgpu::{Device, Queue, TextureFormat};
 
@@ -13,6 +14,8 @@ pub struct Renderer {
     queue: Arc<Queue>,
     /// Output texture format.
     format: TextureFormat,
+    /// Flag set when the GPU device is lost (e.g. after alt-tab or driver reset).
+    device_lost: Arc<AtomicBool>,
 }
 
 impl Renderer {
@@ -48,10 +51,18 @@ impl Renderer {
             .await
             .map_err(|e| format!("Failed to create GPU device: {}", e))?;
 
+        let device_lost = Arc::new(AtomicBool::new(false));
+        let device_lost_flag = Arc::clone(&device_lost);
+        device.set_device_lost_callback(move |reason, msg| {
+            log::error!("[Renderer] GPU device lost: reason={reason:?}, message={msg}");
+            device_lost_flag.store(true, Ordering::Release);
+        });
+
         Ok(Self {
             device: Arc::new(device),
             queue: Arc::new(queue),
             format: TextureFormat::Rgba8UnormSrgb,
+            device_lost,
         })
     }
 
@@ -68,6 +79,11 @@ impl Renderer {
     /// Get the output texture format.
     pub fn format(&self) -> TextureFormat {
         self.format
+    }
+
+    /// Check if the GPU device has been lost.
+    pub fn is_lost(&self) -> bool {
+        self.device_lost.load(Ordering::Acquire)
     }
 
     /// Create a texture from RGBA data.
@@ -195,6 +211,10 @@ impl Renderer {
 
         self.queue.submit(Some(encoder.finish()));
 
+        if self.is_lost() {
+            return Vec::new();
+        }
+
         let buffer_slice = staging_buffer.slice(..);
         let (tx, rx) = tokio::sync::oneshot::channel();
         buffer_slice.map_async(wgpu::MapMode::Read, move |result| {
@@ -287,6 +307,10 @@ impl Renderer {
         let bytes_per_row = 4 * width;
         let padded_bytes_per_row = (bytes_per_row + 255) & !255;
 
+        if self.is_lost() {
+            return Vec::new();
+        }
+
         let buffer_slice = staging_buffer.slice(..);
         let (tx, mut rx) = tokio::sync::oneshot::channel();
         buffer_slice.map_async(wgpu::MapMode::Read, move |result| {
@@ -298,11 +322,17 @@ impl Renderer {
         match rx.try_recv() {
             Ok(_) => {},
             Err(tokio::sync::oneshot::error::TryRecvError::Empty) => {
+                if self.is_lost() {
+                    return Vec::new();
+                }
                 // Buffer not ready yet (pipeline not fully primed) — block
                 let _ = self.device.poll(wgpu::PollType::Wait);
                 let _ = rx.await;
             },
             Err(tokio::sync::oneshot::error::TryRecvError::Closed) => {
+                if self.is_lost() {
+                    return Vec::new();
+                }
                 let _ = self.device.poll(wgpu::PollType::Wait);
             },
         }

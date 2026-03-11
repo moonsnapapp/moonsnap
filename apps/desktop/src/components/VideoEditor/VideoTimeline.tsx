@@ -106,6 +106,9 @@ function getMarkerAnchorClass(edge: TimelineMarkerEdge): string {
   return 'left-1/2 -translate-x-1/2';
 }
 
+/** Triangle tip must always align with the line center, even at edges. */
+const MARKER_HANDLE_CENTER_CLASS = 'left-1/2 -translate-x-1/2';
+
 /**
  * Preview scrubber - ghost playhead that follows mouse when not playing.
  */
@@ -136,7 +139,7 @@ const PreviewScrubber = memo(function PreviewScrubber({
     >
       {/* Scrubber handle */}
       <div
-        className={`absolute -top-1 ${getMarkerAnchorClass(edge)} w-3 h-4 rounded-b-sm`}
+        className={`absolute -top-1 ${MARKER_HANDLE_CENTER_CLASS} w-3 h-4 rounded-b-sm`}
         style={{
           clipPath: 'polygon(0 0, 100% 0, 100% 60%, 50% 100%, 0 60%)',
           backgroundColor: scrubberColor,
@@ -211,9 +214,9 @@ const Playhead = memo(function Playhead({
       }}
     >
       {/* Playhead handle */}
-      <div 
+      <div
         className={`
-          absolute -top-1 ${getMarkerAnchorClass(edge)} w-3 h-4
+          absolute -top-1 ${MARKER_HANDLE_CENTER_CLASS} w-3 h-4
           ${visible ? 'pointer-events-auto' : 'pointer-events-none'}
           rounded-b-sm
           shadow-lg

@@ -145,6 +145,10 @@ async function decodeFrame(msg: DecodeFrameMessage): Promise<void> {
     const sample = await sink.getSample(timestampSec);
 
     if (sample) {
+      if (isDisposed) {
+        sample.close();
+        return;
+      }
       const videoFrame = sample.toVideoFrame();
       const bitmap = await createImageBitmap(videoFrame);
       videoFrame.close();

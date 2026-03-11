@@ -29,6 +29,11 @@ class PlaybackEngine {
    * RAF loop that updates store with current video time.
    * Handles trim segment boundaries - skips deleted regions and converts to timeline time.
    */
+  private stopSelf() {
+    this.isPlayingInternal = false;
+    this.rafId = null;
+  }
+
   private rafLoop = () => {
     if (!this.isPlayingInternal) {
       this.rafId = null;
@@ -69,7 +74,7 @@ class PlaybackEngine {
             const effectiveDuration = getEffectiveDuration(segments, sourceDurationMs);
             useVideoEditorStore.getState().setCurrentTime(effectiveDuration);
             useVideoEditorStore.getState().setIsPlaying(false);
-            this.rafId = null;
+            this.stopSelf();
             return;
           }
         } else {
@@ -86,11 +91,17 @@ class PlaybackEngine {
         if (currentTimelineTime >= effectiveDuration) {
           useVideoEditorStore.getState().setCurrentTime(effectiveDuration);
           useVideoEditorStore.getState().setIsPlaying(false);
-          this.rafId = null;
+          this.stopSelf();
           return;
         }
       } else {
-        // No segments - use source time directly
+        // No segments - use source time directly, with duration check
+        if (sourceDurationMs > 0 && sourceTimeMs >= sourceDurationMs) {
+          useVideoEditorStore.getState().setCurrentTime(sourceDurationMs);
+          useVideoEditorStore.getState().setIsPlaying(false);
+          this.stopSelf();
+          return;
+        }
         useVideoEditorStore.getState().setCurrentTime(sourceTimeMs);
       }
     }

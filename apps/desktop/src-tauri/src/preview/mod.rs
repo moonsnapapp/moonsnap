@@ -218,6 +218,9 @@ impl PreviewRenderer {
 
     /// Render a single frame at the given time.
     pub async fn render_frame(&self, time_ms: u64) -> Result<(), String> {
+        if self.renderer.is_lost() {
+            return Err("GPU device lost".to_string());
+        }
         let project = self.project.lock().await;
         let project = project
             .as_ref()
