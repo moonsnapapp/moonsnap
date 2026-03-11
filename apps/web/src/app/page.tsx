@@ -91,6 +91,17 @@ export default async function Home() {
       <section className="relative pt-32 pb-20 px-6">
         <div className="max-w-7xl mx-auto">
           <div className="max-w-4xl mx-auto text-center">
+            {/* Beta badge */}
+            <div className="flex justify-center mb-5 animate-slide-up opacity-0">
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium tracking-wide border border-[var(--accent)]/30 bg-[var(--accent)]/10 text-[var(--accent)]">
+                <span className="relative flex h-2 w-2">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[var(--accent)] opacity-75" />
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-[var(--accent)]" />
+                </span>
+                Public Beta
+              </span>
+            </div>
+
             {/* Main headline */}
             <h1
               className="text-5xl sm:text-6xl md:text-7xl font-extrabold tracking-tight leading-[1.1] mb-6 animate-slide-up opacity-0 delay-100"
