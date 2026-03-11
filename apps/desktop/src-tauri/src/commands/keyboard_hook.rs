@@ -67,6 +67,7 @@ enum ManagerCommand {
         response: Sender<Result<bool, String>>,
     },
     Snapshot {
+        #[allow(clippy::type_complexity)]
         response: Sender<Result<Vec<(String, String, bool)>, String>>,
     },
     Shutdown,

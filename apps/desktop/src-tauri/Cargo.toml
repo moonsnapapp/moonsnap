@@ -53,7 +53,7 @@ urlencoding = "2"
 thiserror = "1"
 
 # Caching
-lru = "0.12"
+lru = "0.16"
 
 # TypeScript type generation (single source of truth for Rust <-> TS types)
 ts-rs = "10"
