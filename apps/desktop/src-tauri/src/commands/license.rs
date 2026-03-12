@@ -120,6 +120,71 @@ async fn should_attempt_profile_backfill() -> bool {
     true
 }
 
+/// If the cache says Pro/Expired but the grace period has lapsed, try to
+/// revalidate online right now so the user doesn't see a degraded status
+/// while waiting for the hourly background task.
+async fn revalidate_if_grace_expired(state: &LicenseState) {
+    let (key, activation_id) = {
+        let guard = state.cache.read();
+        let Some(cache) = guard.as_ref() else {
+            return;
+        };
+
+        // Only attempt for statuses that have a license key and could recover
+        if !matches!(cache.status, LicenseStatus::Pro | LicenseStatus::Expired) {
+            return;
+        }
+
+        let Some(key) = cache.license_key.clone() else {
+            return;
+        };
+
+        let effective = validation::resolve_status(cache, &app_version());
+        if !matches!(effective, LicenseStatus::Expired | LicenseStatus::Free) {
+            return;
+        }
+
+        (key, cache.activation_id.clone())
+    };
+
+    match validation::validate_online(&key, activation_id.as_deref()).await {
+        Ok(info) if info.valid => {
+            let mut guard = state.cache.write();
+            if let Some(ref mut cache) = *guard {
+                cache.status = LicenseStatus::Pro;
+                cache.last_validated = Some(chrono::Utc::now());
+                cache.seats_used = info.seats_used;
+                cache.seats_limit = info.seats_limit;
+                cache.device_name = info.device_name;
+                cache.customer_name = info.customer_name;
+                cache.customer_email = info.customer_email;
+                cache.customer_avatar_url = info.customer_avatar_url;
+                if let Err(e) = cache::save_cache(&state.cache_path, &state.encryption_key, cache) {
+                    log::error!("Failed to save revalidated license cache: {}", e);
+                }
+                log::info!("License revalidated on startup");
+            }
+        },
+        Ok(_) => {
+            // License genuinely revoked — mark Expired in cache
+            let mut guard = state.cache.write();
+            if let Some(ref mut cache) = *guard {
+                cache.status = LicenseStatus::Expired;
+                let _ = cache::save_cache(&state.cache_path, &state.encryption_key, cache);
+                log::warn!("License key revoked during startup revalidation");
+            }
+        },
+        Err(e) => {
+            // Network error — don't degrade the status, keep showing Pro
+            // with the stale last_validated. The background task will retry.
+            log::warn!(
+                "Startup revalidation network error (keeping current status): {}",
+                e
+            );
+        },
+    }
+}
+
 async fn backfill_pro_profile_if_missing(state: &LicenseState) {
     let (key, activation_id) = {
         let guard = state.cache.read();
@@ -169,20 +234,12 @@ async fn backfill_pro_profile_if_missing(state: &LicenseState) {
             }
         },
         Ok(_) => {
-            let mut guard = state.cache.write();
-            if let Some(ref mut cache) = *guard {
-                if cache.license_key.as_deref() != Some(key.as_str()) {
-                    return;
-                }
-
-                cache.status = LicenseStatus::Expired;
-                if let Err(e) = cache::save_cache(&state.cache_path, &state.encryption_key, cache) {
-                    log::error!(
-                        "Failed to save expired license state after profile refresh: {}",
-                        e
-                    );
-                }
-            }
+            // License invalid during profile backfill — don't permanently mark
+            // Expired here. The startup revalidation and background task will
+            // handle status changes with proper retry logic.
+            log::warn!(
+                "License reported invalid during profile backfill (not changing cached status)"
+            );
         },
         Err(e) => {
             log::warn!("License profile backfill skipped: {}", e);
@@ -195,6 +252,11 @@ pub async fn get_license_status(
     state: tauri::State<'_, LicenseState>,
 ) -> Result<LicenseInfo, String> {
     backfill_pro_profile_if_missing(&state).await;
+
+    // If the license looks expired (grace period lapsed) but we still have a key,
+    // attempt an online revalidation before returning a degraded status.
+    // This prevents the user seeing "Expired" for up to an hour on startup.
+    revalidate_if_grace_expired(&state).await;
 
     let guard = state.cache.read();
     let cache = guard.as_ref().ok_or("License not initialized")?;
@@ -349,8 +411,17 @@ pub async fn background_revalidation(
         let needs_validation = {
             let guard = cache_state.read();
             guard.as_ref().is_some_and(|c| {
-                if c.status != LicenseStatus::Pro {
+                // Expired licenses with a key should also be revalidated —
+                // they may have been transiently marked expired and can recover.
+                if !matches!(c.status, LicenseStatus::Pro | LicenseStatus::Expired) {
                     return false;
+                }
+                if c.license_key.is_none() {
+                    return false;
+                }
+                // Always revalidate Expired to attempt recovery
+                if c.status == LicenseStatus::Expired {
+                    return true;
                 }
                 let now = chrono::Utc::now();
                 if let Some(last) = c.last_validated {
@@ -377,6 +448,11 @@ pub async fn background_revalidation(
                     Ok(info) if info.valid => {
                         let mut guard = cache_state.write();
                         if let Some(ref mut c) = *guard {
+                            // Recover from Expired → Pro if revalidation succeeds
+                            if c.status == LicenseStatus::Expired {
+                                log::info!("License recovered from Expired → Pro via background revalidation");
+                            }
+                            c.status = LicenseStatus::Pro;
                             c.last_validated = Some(chrono::Utc::now());
                             c.seats_used = info.seats_used;
                             c.seats_limit = info.seats_limit;
