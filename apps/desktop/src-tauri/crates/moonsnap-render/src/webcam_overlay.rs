@@ -131,9 +131,9 @@ mod tests {
     use super::*;
     use moonsnap_domain::captions::{CaptionSegment, CaptionSettings};
     use moonsnap_domain::video_project::{
-        AudioTrackSettings, CornerStyle, CursorConfig, ExportConfig, MaskConfig, SceneConfig,
-        ShadowConfig, TextConfig, TimelineState, VideoSources, WebcamBorder, WebcamConfig,
-        ZoomConfig,
+        AnnotationConfig, AudioTrackSettings, CornerStyle, CursorConfig, ExportConfig, MaskConfig,
+        SceneConfig, ShadowConfig, TextConfig, TimelineState, VideoSources, WebcamBorder,
+        WebcamConfig, ZoomConfig,
     };
 
     fn make_project(
@@ -187,6 +187,7 @@ mod tests {
             export: ExportConfig::default(),
             scene: SceneConfig::default(),
             text: TextConfig::default(),
+            annotations: AnnotationConfig::default(),
             mask: MaskConfig::default(),
             captions: CaptionSettings::default(),
             caption_segments: Vec::<CaptionSegment>::new(),

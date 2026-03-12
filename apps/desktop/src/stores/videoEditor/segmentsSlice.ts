@@ -2,6 +2,8 @@ import type {
   SliceCreator,
   ZoomRegion,
   TextSegment,
+  AnnotationSegment,
+  AnnotationShape,
   MaskSegment,
   SceneSegment,
   VisibilitySegment,
@@ -10,6 +12,7 @@ import type {
   AudioTrackSettings,
 } from './types';
 import { createTextSegmentId, getTextSegmentIndexFromId } from '../../utils/textSegmentId';
+import { clampAnnotationShape, normalizeAnnotationConfig } from '../../utils/videoAnnotations';
 
 /**
  * Generate a unique zoom region ID
@@ -28,6 +31,8 @@ export interface SegmentsSlice {
   selectedWebcamSegmentIndex: number | null;
   selectedSceneSegmentId: string | null;
   selectedTextSegmentId: string | null;
+  selectedAnnotationSegmentId: string | null;
+  selectedAnnotationShapeId: string | null;
   selectedMaskSegmentId: string | null;
 
   // Zoom region actions
@@ -43,6 +48,16 @@ export interface SegmentsSlice {
   addTextSegment: (segment: TextSegment) => void;
   updateTextSegment: (id: string, updates: Partial<TextSegment>) => void;
   deleteTextSegment: (id: string) => void;
+
+  // Annotation segment actions
+  selectAnnotationSegment: (id: string | null) => void;
+  selectAnnotationShape: (id: string | null) => void;
+  addAnnotationSegment: (segment: AnnotationSegment) => void;
+  updateAnnotationSegment: (id: string, updates: Partial<AnnotationSegment>) => void;
+  deleteAnnotationSegment: (id: string) => void;
+  addAnnotationShape: (segmentId: string, shape: AnnotationShape) => void;
+  updateAnnotationShape: (segmentId: string, shapeId: string, updates: Partial<AnnotationShape>) => void;
+  deleteAnnotationShape: (segmentId: string, shapeId: string) => void;
 
   // Mask segment actions
   selectMaskSegment: (id: string | null) => void;
@@ -75,6 +90,8 @@ export const createSegmentsSlice: SliceCreator<SegmentsSlice> = (set, get) => ({
   selectedWebcamSegmentIndex: null,
   selectedSceneSegmentId: null,
   selectedTextSegmentId: null,
+  selectedAnnotationSegmentId: null,
+  selectedAnnotationShapeId: null,
   selectedMaskSegmentId: null,
 
   // Zoom region actions
@@ -83,6 +100,8 @@ export const createSegmentsSlice: SliceCreator<SegmentsSlice> = (set, get) => ({
       selectedZoomRegionId: id,
       selectedSceneSegmentId: null,
       selectedTextSegmentId: null,
+      selectedAnnotationSegmentId: null,
+      selectedAnnotationShapeId: null,
       selectedMaskSegmentId: null,
       selectedWebcamSegmentIndex: null,
     }),
@@ -199,6 +218,8 @@ export const createSegmentsSlice: SliceCreator<SegmentsSlice> = (set, get) => ({
       selectedTextSegmentId: id,
       selectedZoomRegionId: null,
       selectedSceneSegmentId: null,
+      selectedAnnotationSegmentId: null,
+      selectedAnnotationShapeId: null,
       selectedMaskSegmentId: null,
       selectedWebcamSegmentIndex: null,
     }),
@@ -281,12 +302,194 @@ export const createSegmentsSlice: SliceCreator<SegmentsSlice> = (set, get) => ({
     });
   },
 
+  // Annotation segment actions
+  selectAnnotationSegment: (id) =>
+    set((state) => {
+      const annotations = normalizeAnnotationConfig(state.project?.annotations);
+      const selectedSegment = id
+        ? annotations.segments.find((segment) => segment.id === id) ?? null
+        : null;
+
+      return {
+        selectedAnnotationSegmentId: id,
+        selectedAnnotationShapeId: selectedSegment?.shapes[0]?.id ?? null,
+        selectedZoomRegionId: null,
+        selectedSceneSegmentId: null,
+        selectedTextSegmentId: null,
+        selectedMaskSegmentId: null,
+        selectedWebcamSegmentIndex: null,
+      };
+    }),
+
+  selectAnnotationShape: (id) => set({ selectedAnnotationShapeId: id }),
+
+  addAnnotationSegment: (segment) => {
+    const { project } = get();
+    if (!project) return;
+    const annotations = normalizeAnnotationConfig(project.annotations);
+
+    const durationMs = project.timeline.durationMs;
+    const clampedSegment = {
+      ...segment,
+      startMs: Math.max(0, Math.min(segment.startMs, durationMs)),
+      endMs: Math.max(0, Math.min(segment.endMs, durationMs)),
+      shapes: segment.shapes.map(clampAnnotationShape),
+    };
+
+    const segments = [...annotations.segments, clampedSegment]
+      .sort((a, b) => a.startMs - b.startMs);
+
+    set({
+      project: {
+        ...project,
+        annotations: {
+          ...annotations,
+          segments,
+        },
+      },
+      selectedAnnotationSegmentId: clampedSegment.id,
+      selectedAnnotationShapeId: clampedSegment.shapes[0]?.id ?? null,
+    });
+  },
+
+  updateAnnotationSegment: (id, updates) => {
+    const { project } = get();
+    if (!project) return;
+    const annotations = normalizeAnnotationConfig(project.annotations);
+
+    set({
+      project: {
+        ...project,
+        annotations: {
+          ...annotations,
+          segments: annotations.segments
+            .map((segment) => {
+              if (segment.id !== id) {
+                return segment;
+              }
+
+              return {
+                ...segment,
+                ...updates,
+                shapes: (updates.shapes ?? segment.shapes).map(clampAnnotationShape),
+              };
+            })
+            .sort((a, b) => a.startMs - b.startMs),
+        },
+      },
+    });
+  },
+
+  deleteAnnotationSegment: (id) => {
+    const { project, selectedAnnotationSegmentId, selectedAnnotationShapeId } = get();
+    if (!project) return;
+    const annotations = normalizeAnnotationConfig(project.annotations);
+
+    set({
+      project: {
+        ...project,
+        annotations: {
+          ...annotations,
+          segments: annotations.segments.filter((segment) => segment.id !== id),
+        },
+      },
+      selectedAnnotationSegmentId: selectedAnnotationSegmentId === id ? null : selectedAnnotationSegmentId,
+      selectedAnnotationShapeId: selectedAnnotationSegmentId === id ? null : selectedAnnotationShapeId,
+    });
+  },
+
+  addAnnotationShape: (segmentId, shape) => {
+    const { project } = get();
+    if (!project) return;
+    const annotations = normalizeAnnotationConfig(project.annotations);
+
+    const clampedShape = clampAnnotationShape(shape);
+    set({
+      project: {
+        ...project,
+        annotations: {
+          ...annotations,
+          segments: annotations.segments.map((segment) =>
+            segment.id === segmentId
+              ? { ...segment, shapes: [...segment.shapes, clampedShape] }
+              : segment
+          ),
+        },
+      },
+      selectedAnnotationSegmentId: segmentId,
+      selectedAnnotationShapeId: clampedShape.id,
+    });
+  },
+
+  updateAnnotationShape: (segmentId, shapeId, updates) => {
+    const { project } = get();
+    if (!project) return;
+    const annotations = normalizeAnnotationConfig(project.annotations);
+
+    set({
+      project: {
+        ...project,
+        annotations: {
+          ...annotations,
+          segments: annotations.segments.map((segment) => {
+            if (segment.id !== segmentId) {
+              return segment;
+            }
+
+            return {
+              ...segment,
+              shapes: segment.shapes.map((shape) =>
+                shape.id === shapeId ? clampAnnotationShape({ ...shape, ...updates }) : shape
+              ),
+            };
+          }),
+        },
+      },
+    });
+  },
+
+  deleteAnnotationShape: (segmentId, shapeId) => {
+    const { project, selectedAnnotationShapeId } = get();
+    if (!project) return;
+    const annotations = normalizeAnnotationConfig(project.annotations);
+
+    let nextSelectedShapeId = selectedAnnotationShapeId;
+    const segments = annotations.segments.map((segment) => {
+      if (segment.id !== segmentId) {
+        return segment;
+      }
+
+      const nextShapes = segment.shapes.filter((shape) => shape.id !== shapeId);
+      if (selectedAnnotationShapeId === shapeId) {
+        nextSelectedShapeId = nextShapes[0]?.id ?? null;
+      }
+
+      return {
+        ...segment,
+        shapes: nextShapes,
+      };
+    });
+
+    set({
+      project: {
+        ...project,
+        annotations: {
+          ...annotations,
+          segments,
+        },
+      },
+      selectedAnnotationShapeId: nextSelectedShapeId,
+    });
+  },
+
   // Mask segment actions
   selectMaskSegment: (id) =>
     set({
       selectedMaskSegmentId: id,
       selectedZoomRegionId: null,
       selectedTextSegmentId: null,
+      selectedAnnotationSegmentId: null,
+      selectedAnnotationShapeId: null,
       selectedSceneSegmentId: null,
       selectedWebcamSegmentIndex: null,
     }),
@@ -355,6 +558,8 @@ export const createSegmentsSlice: SliceCreator<SegmentsSlice> = (set, get) => ({
       selectedSceneSegmentId: id,
       selectedZoomRegionId: null,
       selectedTextSegmentId: null,
+      selectedAnnotationSegmentId: null,
+      selectedAnnotationShapeId: null,
       selectedMaskSegmentId: null,
       selectedWebcamSegmentIndex: null,
     }),
@@ -424,6 +629,8 @@ export const createSegmentsSlice: SliceCreator<SegmentsSlice> = (set, get) => ({
       selectedZoomRegionId: null,
       selectedSceneSegmentId: null,
       selectedTextSegmentId: null,
+      selectedAnnotationSegmentId: null,
+      selectedAnnotationShapeId: null,
       selectedMaskSegmentId: null,
     }),
 

@@ -59,6 +59,7 @@ function hasRenderEdits(project: VideoProject): boolean {
   return (
     project.zoom.regions.length > 0 ||
     project.scene.segments.length > 0 ||
+    (project.annotations?.segments.length ?? 0) > 0 ||
     project.mask.segments.length > 0 ||
     project.text.segments.length > 0 ||
     project.captionSegments.length > 0 ||

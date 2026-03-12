@@ -1,5 +1,5 @@
 import { memo } from 'react';
-import { Film, Type, Square, Search, Video, Plus } from 'lucide-react';
+import { Film, Type, Square, Search, Video, Plus, Highlighter } from 'lucide-react';
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -20,7 +20,7 @@ import {
   selectTrackVisibility,
 } from '../../stores/videoEditor/selectors';
 
-type TrackType = 'video' | 'text' | 'mask' | 'zoom' | 'scene';
+type TrackType = 'video' | 'text' | 'annotation' | 'mask' | 'zoom' | 'scene';
 
 interface TrackDefinition {
   type: TrackType;
@@ -40,6 +40,11 @@ const trackDefinitions: TrackDefinition[] = [
     type: 'text',
     label: 'Text',
     icon: <Type className="w-4 h-4" />,
+  },
+  {
+    type: 'annotation',
+    label: 'Annotation',
+    icon: <Highlighter className="w-4 h-4" />,
   },
   {
     type: 'mask',

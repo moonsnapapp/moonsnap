@@ -4,51 +4,68 @@ import { STORAGE } from '../../constants';
 import { videoEditorLogger } from '../../utils/logger';
 import { DEFAULT_TIMELINE_ZOOM } from './timelineSlice';
 import { getEffectiveDuration } from './trimSlice';
+import { normalizeAnnotationConfig } from '../../utils/videoAnnotations';
+
+function normalizeProject(project: VideoProject): VideoProject {
+  return {
+    ...project,
+    annotations: normalizeAnnotationConfig(project.annotations),
+  };
+}
 
 /**
  * Sanitize project for saving - ensures all millisecond values are integers.
  * Rust backend expects u64 for timeline values, but JS may have floats.
  */
 export function sanitizeProjectForSave(project: VideoProject): VideoProject {
+  const normalizedProject = normalizeProject(project);
   return {
-    ...project,
+    ...normalizedProject,
     sources: {
-      ...project.sources,
-      durationMs: Math.round(project.sources.durationMs),
+      ...normalizedProject.sources,
+      durationMs: Math.round(normalizedProject.sources.durationMs),
     },
     timeline: {
-      ...project.timeline,
-      durationMs: Math.round(project.timeline.durationMs),
-      inPoint: Math.round(project.timeline.inPoint),
-      outPoint: Math.round(project.timeline.outPoint),
+      ...normalizedProject.timeline,
+      durationMs: Math.round(normalizedProject.timeline.durationMs),
+      inPoint: Math.round(normalizedProject.timeline.inPoint),
+      outPoint: Math.round(normalizedProject.timeline.outPoint),
     },
     zoom: {
-      ...project.zoom,
-      regions: project.zoom.regions.map((region) => ({
+      ...normalizedProject.zoom,
+      regions: normalizedProject.zoom.regions.map((region) => ({
         ...region,
         startMs: Math.round(region.startMs),
         endMs: Math.round(region.endMs),
       })),
     },
     mask: {
-      ...project.mask,
-      segments: project.mask.segments.map((segment) => ({
+      ...normalizedProject.mask,
+      segments: normalizedProject.mask.segments.map((segment) => ({
         ...segment,
         startMs: Math.round(segment.startMs),
         endMs: Math.round(segment.endMs),
       })),
     },
     scene: {
-      ...project.scene,
-      segments: project.scene.segments.map((segment) => ({
+      ...normalizedProject.scene,
+      segments: normalizedProject.scene.segments.map((segment) => ({
+        ...segment,
+        startMs: Math.round(segment.startMs),
+        endMs: Math.round(segment.endMs),
+      })),
+    },
+    annotations: {
+      ...normalizedProject.annotations,
+      segments: normalizedProject.annotations.segments.map((segment) => ({
         ...segment,
         startMs: Math.round(segment.startMs),
         endMs: Math.round(segment.endMs),
       })),
     },
     webcam: {
-      ...project.webcam,
-      visibilitySegments: project.webcam.visibilitySegments.map((segment) => ({
+      ...normalizedProject.webcam,
+      visibilitySegments: normalizedProject.webcam.visibilitySegments.map((segment) => ({
         ...segment,
         startMs: Math.round(segment.startMs),
         endMs: Math.round(segment.endMs),
@@ -153,40 +170,43 @@ export const createProjectSlice: SliceCreator<ProjectSlice> = (set, get) => ({
 
   // Project actions
   setProject: (project) => {
+    const normalizedProject = project ? normalizeProject(project) : null;
     // Restore IO markers from project. A full-range export keeps both markers hidden.
     let exportInPointMs: number | null = null;
     let exportOutPointMs: number | null = null;
 
-    if (project) {
+    if (normalizedProject) {
       const hasCustomRange =
-        project.timeline.inPoint > 0 ||
-        project.timeline.outPoint < project.timeline.durationMs;
+        normalizedProject.timeline.inPoint > 0 ||
+        normalizedProject.timeline.outPoint < normalizedProject.timeline.durationMs;
 
       if (hasCustomRange) {
-        exportInPointMs = project.timeline.inPoint;
-        exportOutPointMs = project.timeline.outPoint;
+        exportInPointMs = normalizedProject.timeline.inPoint;
+        exportOutPointMs = normalizedProject.timeline.outPoint;
       }
     }
 
     set({
-      project,
+      project: normalizedProject,
       cursorRecording: null, // Reset cursor recording when project changes
       currentTimeMs: 0,
       isPlaying: false,
       selectedZoomRegionId: null,
       selectedWebcamSegmentIndex: null,
+      selectedAnnotationSegmentId: null,
+      selectedAnnotationShapeId: null,
       // Load caption data from project if available
-      captionSegments: project?.captionSegments ?? [],
-      captionSettings: project?.captions ?? get().captionSettings,
+      captionSegments: normalizedProject?.captionSegments ?? [],
+      captionSettings: normalizedProject?.captions ?? get().captionSettings,
       // Restore IO markers
       exportInPointMs,
       exportOutPointMs,
     });
 
     // Save video project path to session storage for F5 persistence
-    if (project?.sources.screenVideo) {
+    if (normalizedProject?.sources.screenVideo) {
       try {
-        sessionStorage.setItem(STORAGE.SESSION_VIDEO_PROJECT_PATH_KEY, project.sources.screenVideo);
+        sessionStorage.setItem(STORAGE.SESSION_VIDEO_PROJECT_PATH_KEY, normalizedProject.sources.screenVideo);
         sessionStorage.setItem(STORAGE.SESSION_VIEW_KEY, 'videoEditor');
       } catch {
         // sessionStorage might be disabled
@@ -194,8 +214,8 @@ export const createProjectSlice: SliceCreator<ProjectSlice> = (set, get) => ({
     }
 
     // Auto-load cursor data if available
-    if (project?.sources.cursorData) {
-      get().loadCursorData(project.sources.cursorData);
+    if (normalizedProject?.sources.cursorData) {
+      get().loadCursorData(normalizedProject.sources.cursorData);
     }
   },
 
@@ -278,12 +298,16 @@ export const createProjectSlice: SliceCreator<ProjectSlice> = (set, get) => ({
       selectedWebcamSegmentIndex: null,
       selectedSceneSegmentId: null,
       selectedTextSegmentId: null,
+      selectedAnnotationSegmentId: null,
+      selectedAnnotationShapeId: null,
       selectedMaskSegmentId: null,
       isDraggingPlayhead: false,
       isDraggingZoomRegion: false,
       draggedZoomEdge: null,
       isDraggingSceneSegment: false,
       draggedSceneEdge: null,
+      isDraggingAnnotationSegment: false,
+      draggedAnnotationEdge: null,
       isDraggingMaskSegment: false,
       draggedMaskEdge: null,
       isDraggingTextSegment: false,
@@ -297,6 +321,7 @@ export const createProjectSlice: SliceCreator<ProjectSlice> = (set, get) => ({
       trackVisibility: {
         video: true,
         text: true,
+        annotation: true,
         mask: true,
         zoom: true,
         scene: true,

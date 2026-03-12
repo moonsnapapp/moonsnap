@@ -29,6 +29,8 @@ export interface TimelineSlice {
   draggedZoomEdge: DragEdge;
   isDraggingSceneSegment: boolean;
   draggedSceneEdge: DragEdge;
+  isDraggingAnnotationSegment: boolean;
+  draggedAnnotationEdge: DragEdge;
   isDraggingMaskSegment: boolean;
   draggedMaskEdge: DragEdge;
   isDraggingTextSegment: boolean;
@@ -54,6 +56,7 @@ export interface TimelineSlice {
   setDraggingPlayhead: (dragging: boolean) => void;
   setDraggingZoomRegion: (dragging: boolean, edge?: 'start' | 'end' | 'move') => void;
   setDraggingSceneSegment: (dragging: boolean, edge?: 'start' | 'end' | 'move') => void;
+  setDraggingAnnotationSegment: (dragging: boolean, edge?: 'start' | 'end' | 'move') => void;
   setDraggingMaskSegment: (dragging: boolean, edge?: 'start' | 'end' | 'move') => void;
   setDraggingTextSegment: (dragging: boolean, edge?: 'start' | 'end' | 'move') => void;
   setPreviewTime: (timeMs: number | null) => void;
@@ -77,6 +80,8 @@ export const createTimelineSlice: SliceCreator<TimelineSlice> = (set, get) => ({
   draggedZoomEdge: null,
   isDraggingSceneSegment: false,
   draggedSceneEdge: null,
+  isDraggingAnnotationSegment: false,
+  draggedAnnotationEdge: null,
   isDraggingMaskSegment: false,
   draggedMaskEdge: null,
   isDraggingTextSegment: false,
@@ -90,6 +95,7 @@ export const createTimelineSlice: SliceCreator<TimelineSlice> = (set, get) => ({
   trackVisibility: {
     video: true,
     text: true,
+    annotation: true,
     mask: true,
     zoom: true,
     scene: true,
@@ -144,6 +150,12 @@ export const createTimelineSlice: SliceCreator<TimelineSlice> = (set, get) => ({
     set({
       isDraggingSceneSegment: dragging,
       draggedSceneEdge: dragging ? edge ?? null : null,
+    }),
+
+  setDraggingAnnotationSegment: (dragging, edge) =>
+    set({
+      isDraggingAnnotationSegment: dragging,
+      draggedAnnotationEdge: dragging ? edge ?? null : null,
     }),
 
   setDraggingMaskSegment: (dragging, edge) =>

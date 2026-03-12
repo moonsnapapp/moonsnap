@@ -20,13 +20,14 @@ import { hasEnabledCrop } from '../../utils/videoContentDimensions';
 import { hasActiveTypewriterSound } from '../../utils/textSegmentAnimation';
 import { usePreviewOrPlaybackTime } from '../../hooks/usePlaybackEngine';
 import { useTimelineToSourceTime } from '../../hooks/useTimelineSourceTime';
-import { useZoomPreview } from '../../hooks/useZoomPreview';
+import { getZoomScaleAt, useZoomPreview } from '../../hooks/useZoomPreview';
 import { useInterpolatedScene, shouldRenderScreen, shouldRenderCursor, getCameraOnlyTransitionOpacity, getRegularCameraTransitionOpacity } from '../../hooks/useSceneMode';
 import { WebcamOverlay } from './WebcamOverlay';
 import { CursorOverlay } from './CursorOverlay';
 import { ClickHighlightOverlay } from './ClickHighlightOverlay';
 import { MaskOverlay } from './MaskOverlay';
 import { TextOverlay } from './TextOverlay';
+import { AnnotationOverlay } from './AnnotationOverlay';
 
 import { UnifiedCaptionOverlay } from './UnifiedCaptionOverlay';
 import {
@@ -36,7 +37,7 @@ import {
   usePreviewStyles,
   usePlaybackSync,
 } from './gpu';
-import type { SceneSegment, SceneMode, WebcamConfig, ZoomRegion, CursorRecording, CursorConfig, MaskSegment, TextSegment, CropConfig, AudioTrackSettings } from '../../types';
+import type { SceneSegment, SceneMode, WebcamConfig, ZoomRegion, CursorRecording, CursorConfig, AnnotationSegment, MaskSegment, TextSegment, CropConfig, AudioTrackSettings } from '../../types';
 
 const PlaybackSyncController = memo(function PlaybackSyncController({
   videoRef,
@@ -290,6 +291,38 @@ const TextOverlayController = memo(function TextOverlayController({
   );
 });
 
+const AnnotationOverlayController = memo(function AnnotationOverlayController({
+  segments,
+  displayWidth,
+  displayHeight,
+  zoomRegions,
+}: {
+  segments: AnnotationSegment[] | undefined;
+  displayWidth: number;
+  displayHeight: number;
+  zoomRegions: ZoomRegion[] | undefined;
+}) {
+  const currentTimeMs = usePreviewOrPlaybackTime();
+  const zoomScale = useMemo(
+    () => getZoomScaleAt(zoomRegions, currentTimeMs),
+    [zoomRegions, currentTimeMs]
+  );
+
+  if (!segments || segments.length === 0 || displayWidth <= 0 || displayHeight <= 0) {
+    return null;
+  }
+
+  return (
+    <AnnotationOverlay
+      segments={segments}
+      currentTimeMs={currentTimeMs}
+      previewWidth={displayWidth}
+      previewHeight={displayHeight}
+      zoomScale={zoomScale}
+    />
+  );
+});
+
 type SceneModeRendererProps = {
   videoRef: React.RefObject<HTMLVideoElement | null>;
   videoSrc: string | null | undefined;
@@ -308,6 +341,7 @@ type SceneModeRendererProps = {
   videoWidth: number;
   videoHeight: number;
   maskSegments: MaskSegment[] | undefined;
+  annotationSegments: AnnotationSegment[] | undefined;
   textSegments: TextSegment[] | undefined;
   isPlaying?: boolean;
   onVideoClick: () => void;
@@ -338,6 +372,7 @@ const StaticSceneModeRenderer = memo(function StaticSceneModeRenderer({
   backgroundPadding = 0,
   rounding = 0,
   maskSegments,
+  annotationSegments,
   textSegments,
   cropConfig,
   videoWidth,
@@ -425,6 +460,13 @@ const StaticSceneModeRenderer = memo(function StaticSceneModeRenderer({
           cropConfig={cropConfig}
         />
 
+        <AnnotationOverlayController
+          segments={annotationSegments}
+          displayWidth={containerWidth}
+          displayHeight={containerHeight}
+          zoomRegions={zoomRegions}
+        />
+
         <TextOverlayController
           segments={textSegments}
           renderWidth={frameRenderWidth}
@@ -460,6 +502,7 @@ const DynamicSceneModeRenderer = memo(function DynamicSceneModeRenderer({
   videoWidth,
   videoHeight,
   maskSegments,
+  annotationSegments,
   textSegments,
   isPlaying,
   onVideoClick,
@@ -482,6 +525,10 @@ const DynamicSceneModeRenderer = memo(function DynamicSceneModeRenderer({
   const showScreen = shouldRenderScreen(scene);
   const showCursor = shouldRenderCursor(scene);
   const cameraOnlyOpacity = getCameraOnlyTransitionOpacity(scene);
+  const annotationZoomScale = useMemo(
+    () => getZoomScaleAt(zoomRegions, currentTimeMs),
+    [zoomRegions, currentTimeMs]
+  );
 
   const originalVideoPath = useVideoEditorStore(selectScreenVideoPath);
 
@@ -628,6 +675,16 @@ const DynamicSceneModeRenderer = memo(function DynamicSceneModeRenderer({
             videoWidth={videoWidth}
             videoHeight={videoHeight}
             cropConfig={cropConfig}
+          />
+        )}
+
+        {showScreen && annotationSegments && annotationSegments.length > 0 && containerWidth > 0 && containerHeight > 0 && (
+          <AnnotationOverlay
+            segments={annotationSegments}
+            currentTimeMs={currentTimeMs}
+            previewWidth={containerWidth}
+            previewHeight={containerHeight}
+            zoomScale={annotationZoomScale}
           />
         )}
 
@@ -1052,6 +1109,7 @@ export function GPUVideoPreview({ isActive = true }: GPUVideoPreviewProps) {
               cropConfig={cropConfig}
               videoHeight={project?.sources.originalHeight ?? 1080}
               maskSegments={project?.mask?.segments}
+              annotationSegments={project?.annotations?.segments}
               textSegments={project?.text?.segments}
               isPlaying={effectiveIsPlaying}
               onVideoClick={togglePlayback}

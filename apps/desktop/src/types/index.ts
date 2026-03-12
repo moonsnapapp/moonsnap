@@ -483,6 +483,10 @@ export type {
   SceneConfig,
   XY,
   MaskType,
+  AnnotationShapeType,
+  AnnotationShape,
+  AnnotationSegment,
+  AnnotationConfig,
   MaskSegment,
   MaskConfig,
 } from './generated';

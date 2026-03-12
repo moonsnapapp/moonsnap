@@ -1,4 +1,4 @@
-import type { ZoomRegion, MaskSegment, SceneSegment, TextSegment, VisibilitySegment } from './types';
+import type { ZoomRegion, AnnotationSegment, MaskSegment, SceneSegment, TextSegment, VisibilitySegment } from './types';
 
 /**
  * Minimum overlay duration in milliseconds.
@@ -126,6 +126,7 @@ export function adjustTextSegmentsForDeletion(
  */
 export interface OverlaySnapshot {
   zoomRegions: ZoomRegion[];
+  annotationSegments: AnnotationSegment[];
   maskSegments: MaskSegment[];
   sceneSegments: SceneSegment[];
   textSegments: TextSegment[];
@@ -137,6 +138,7 @@ export interface OverlaySnapshot {
  */
 export function snapshotOverlayState(project: {
   zoom: { regions: ZoomRegion[] };
+  annotations: { segments: AnnotationSegment[] };
   mask: { segments: MaskSegment[] };
   scene: { segments: SceneSegment[] };
   text: { segments: TextSegment[] };
@@ -144,6 +146,7 @@ export function snapshotOverlayState(project: {
 }): OverlaySnapshot {
   return {
     zoomRegions: [...project.zoom.regions],
+    annotationSegments: [...(project.annotations?.segments ?? [])],
     maskSegments: [...project.mask.segments],
     sceneSegments: [...project.scene.segments],
     textSegments: [...project.text.segments],

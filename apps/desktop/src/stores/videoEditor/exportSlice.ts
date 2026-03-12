@@ -1,9 +1,10 @@
 import { invoke } from '@tauri-apps/api/core';
-import type { SliceCreator, ExportProgress, ExportResult, ExportConfig, AutoZoomConfig, VideoProject, ZoomRegion, SceneSegment, MaskSegment, TextSegment } from './types';
+import type { SliceCreator, ExportProgress, ExportResult, ExportConfig, AutoZoomConfig, VideoProject, ZoomRegion, AnnotationSegment, SceneSegment, MaskSegment, TextSegment } from './types';
 import { videoEditorLogger } from '../../utils/logger';
 import { sanitizeProjectForSave } from './projectSlice';
 import { clipSegmentsToTimelineRange, getEffectiveDuration } from './trimSlice';
 import { preRenderForExport } from '../../utils/textPreRenderer';
+import { preRenderAnnotationsForExport } from '../../utils/annotationPreRenderer';
 import {
   calculateCompositionOutputSize,
   calculateFrameBoundsInComposition,
@@ -175,6 +176,15 @@ export const createExportSlice: SliceCreator<ExportSlice> = (set, get) => ({
         }));
 
       // Clip mask segments to IO range
+      const clippedAnnotationSegments: AnnotationSegment[] = projectWithCaptions.annotations.segments
+        .filter((s) => s.startMs < effectiveOut && s.endMs > effectiveIn)
+        .map((s) => ({
+          ...s,
+          startMs: Math.max(s.startMs, effectiveIn) - effectiveIn,
+          endMs: Math.min(s.endMs, effectiveOut) - effectiveIn,
+        }));
+
+      // Clip mask segments to IO range
       const clippedMaskSegments: MaskSegment[] = projectWithCaptions.mask.segments
         .filter((s) => s.startMs < effectiveOut && s.endMs > effectiveIn)
         .map((s) => ({
@@ -203,6 +213,10 @@ export const createExportSlice: SliceCreator<ExportSlice> = (set, get) => ({
         zoom: {
           ...projectWithCaptions.zoom,
           regions: clippedZoomRegions,
+        },
+        annotations: {
+          ...projectWithCaptions.annotations,
+          segments: clippedAnnotationSegments,
         },
         scene: {
           ...projectWithCaptions.scene,
@@ -244,6 +258,24 @@ export const createExportSlice: SliceCreator<ExportSlice> = (set, get) => ({
           `Pre-rendering ${textSegments.length} text segments at ${textFrameSize.width}x${textFrameSize.height} (video-content frame)`
         );
         await preRenderForExport(textSegments, textFrameSize.width, textFrameSize.height);
+        await preRenderAnnotationsForExport(
+          sanitizedProject.annotations?.segments ?? [],
+          textFrameSize.width,
+          textFrameSize.height,
+          textSegments.length
+        );
+      } else if ((sanitizedProject.annotations?.segments.length ?? 0) > 0) {
+        const textFrameSize = calculateTextFrameSizeForExport(sanitizedProject);
+        videoEditorLogger.info(
+          `Pre-rendering ${sanitizedProject.annotations.segments.length} annotation segments at ${textFrameSize.width}x${textFrameSize.height} (video-content frame)`
+        );
+        await preRenderForExport([], textFrameSize.width, textFrameSize.height);
+        await preRenderAnnotationsForExport(
+          sanitizedProject.annotations.segments,
+          textFrameSize.width,
+          textFrameSize.height,
+          0
+        );
       }
 
       const result = await invoke<ExportResult>('export_video', {

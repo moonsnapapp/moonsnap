@@ -27,6 +27,7 @@ export function VideoEditorTimeline({ onExport, onResetTrimSegments, onSetInPoin
   let visibleTrackCount = 0;
   if (trackVisibility.video) visibleTrackCount += 1;
   if (project && trackVisibility.text) visibleTrackCount += 1;
+  if (project && trackVisibility.annotation) visibleTrackCount += 1;
   if (project && trackVisibility.zoom) visibleTrackCount += 1;
   if (project && trackVisibility.scene && project.sources.webcamVideo) visibleTrackCount += 1;
   if (project && trackVisibility.mask) visibleTrackCount += 1;

@@ -131,9 +131,9 @@ mod tests {
     use crate::frame_path_plan::WebcamOverlayPlan;
     use moonsnap_domain::captions::{CaptionSegment, CaptionSettings};
     use moonsnap_domain::video_project::{
-        AudioTrackSettings, CornerStyle, CursorConfig, ExportConfig, MaskConfig, SceneConfig,
-        ShadowConfig, TextConfig, TimelineState, VideoProject, VideoSources, WebcamBorder,
-        WebcamConfig, WebcamOverlayPosition, WebcamOverlayShape, ZoomConfig,
+        AnnotationConfig, AudioTrackSettings, CornerStyle, CursorConfig, ExportConfig, MaskConfig,
+        SceneConfig, ShadowConfig, TextConfig, TimelineState, VideoProject, VideoSources,
+        WebcamBorder, WebcamConfig, WebcamOverlayPosition, WebcamOverlayShape, ZoomConfig,
     };
     use moonsnap_render::types::PixelFormat;
 
@@ -184,6 +184,7 @@ mod tests {
             export: ExportConfig::default(),
             scene: SceneConfig::default(),
             text: TextConfig::default(),
+            annotations: AnnotationConfig::default(),
             mask: MaskConfig::default(),
             captions: CaptionSettings::default(),
             caption_segments: Vec::<CaptionSegment>::new(),

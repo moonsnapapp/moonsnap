@@ -52,7 +52,11 @@ export const selectRedoTrim = (state: VideoEditorState) => state.redoTrim;
 export const selectSaveProject = (state: VideoEditorState) => state.saveProject;
 export const selectIsSaving = (state: VideoEditorState) => state.isSaving;
 export const selectIsDraggingAnySegment = (state: VideoEditorState) =>
-  state.isDraggingZoomRegion || state.isDraggingSceneSegment || state.isDraggingMaskSegment || state.isDraggingTextSegment;
+  state.isDraggingZoomRegion ||
+  state.isDraggingSceneSegment ||
+  state.isDraggingAnnotationSegment ||
+  state.isDraggingMaskSegment ||
+  state.isDraggingTextSegment;
 
 export const selectTimelineSegments = (state: VideoEditorState) =>
   state.project?.timeline.segments as TrimSegment[] | undefined;
@@ -70,6 +74,18 @@ export const selectUpdateMaskSegment = (state: VideoEditorState) => state.update
 export const selectDeleteMaskSegment = (state: VideoEditorState) => state.deleteMaskSegment;
 export const selectAddMaskSegment = (state: VideoEditorState) => state.addMaskSegment;
 export const selectSetDraggingMaskSegment = (state: VideoEditorState) => state.setDraggingMaskSegment;
+
+export const selectSelectedAnnotationSegmentId = (state: VideoEditorState) => state.selectedAnnotationSegmentId;
+export const selectSelectedAnnotationShapeId = (state: VideoEditorState) => state.selectedAnnotationShapeId;
+export const selectSelectAnnotationSegment = (state: VideoEditorState) => state.selectAnnotationSegment;
+export const selectSelectAnnotationShape = (state: VideoEditorState) => state.selectAnnotationShape;
+export const selectAddAnnotationSegment = (state: VideoEditorState) => state.addAnnotationSegment;
+export const selectUpdateAnnotationSegment = (state: VideoEditorState) => state.updateAnnotationSegment;
+export const selectDeleteAnnotationSegment = (state: VideoEditorState) => state.deleteAnnotationSegment;
+export const selectAddAnnotationShape = (state: VideoEditorState) => state.addAnnotationShape;
+export const selectUpdateAnnotationShape = (state: VideoEditorState) => state.updateAnnotationShape;
+export const selectDeleteAnnotationShape = (state: VideoEditorState) => state.deleteAnnotationShape;
+export const selectSetDraggingAnnotationSegment = (state: VideoEditorState) => state.setDraggingAnnotationSegment;
 
 export const selectSelectedTextSegmentId = (state: VideoEditorState) => state.selectedTextSegmentId;
 export const selectSelectTextSegment = (state: VideoEditorState) => state.selectTextSegment;

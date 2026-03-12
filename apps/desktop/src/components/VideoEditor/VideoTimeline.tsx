@@ -11,6 +11,7 @@ import {
   Play,
   Pause,
   Type,
+  Highlighter,
   Video,
   EyeOff,
   Scissors,
@@ -51,7 +52,7 @@ import {
 import { usePlaybackTime, usePlaybackControls, getPlaybackState } from '../../hooks/usePlaybackEngine';
 import { getVideoPrimaryActionLabel } from '../../utils/videoExportMode';
 import { TimelineRuler } from './TimelineRuler';
-import { ZoomTrackContent, SceneTrackContent, MaskTrackContent, TextTrackContent, TrimTrackContent } from './tracks';
+import { ZoomTrackContent, AnnotationTrackContent, SceneTrackContent, MaskTrackContent, TextTrackContent, TrimTrackContent } from './tracks';
 import { TrackManager } from './TrackManager';
 
 function quantizeTimeMs(timeMs: number, stepMs: number): number {
@@ -499,6 +500,7 @@ export function VideoTimeline({ onExport, onResetTrimSegments, onSetInPoint, onS
   const timelineWidth = Math.max(durationWidth, containerWidth - TRACK_LABEL_WIDTH);
   const hasVideoTrack = trackVisibility.video;
   const hasTextTrack = !!project && trackVisibility.text;
+  const hasAnnotationTrack = !!project && trackVisibility.annotation;
   const hasZoomTrack = !!project && trackVisibility.zoom;
   const hasSceneTrack = !!project && !!project.sources.webcamVideo && trackVisibility.scene;
   const hasMaskTrack = !!project && trackVisibility.mask;
@@ -507,10 +509,11 @@ export function VideoTimeline({ onExport, onResetTrimSegments, onSetInPoint, onS
     ([
       hasVideoTrack ? 'video' : null,
       hasTextTrack ? 'text' : null,
+      hasAnnotationTrack ? 'annotation' : null,
       hasZoomTrack ? 'zoom' : null,
       hasSceneTrack ? 'scene' : null,
       hasMaskTrack ? 'mask' : null,
-    ].filter(Boolean).at(-1) ?? null) as 'video' | 'text' | 'zoom' | 'scene' | 'mask' | null;
+    ].filter(Boolean).at(-1) ?? null) as 'video' | 'text' | 'annotation' | 'zoom' | 'scene' | 'mask' | null;
 
   // Zoom % relative to fit-to-window (100% = timeline fills viewport)
   const fitZoom = getFitZoom(project, containerWidth);
@@ -1182,6 +1185,16 @@ export function VideoTimeline({ onExport, onResetTrimSegments, onSetInPoint, onS
             </div>
           )}
 
+          {/* Annotation label */}
+          {hasAnnotationTrack && (
+            <div className="h-12 border-b border-[var(--glass-border)] flex items-center justify-center">
+              <div className="flex items-center gap-1.5 text-[var(--ink-dark)]">
+                <Highlighter className="w-3.5 h-3.5" />
+                <span className="text-[11px] font-medium">Annotate</span>
+              </div>
+            </div>
+          )}
+
           {/* Zoom label */}
           {hasZoomTrack && (
             <div className="h-12 border-b border-[var(--glass-border)] flex items-center justify-center">
@@ -1260,6 +1273,17 @@ export function VideoTimeline({ onExport, onResetTrimSegments, onSetInPoint, onS
                 timelineZoom={timelineZoom}
                 width={timelineWidth}
                 tooltipPlacement={lastVisibleTrack === 'text' ? 'above' : 'below'}
+              />
+            )}
+
+            {/* Annotation Track Content */}
+            {hasAnnotationTrack && project && (
+              <AnnotationTrackContent
+                segments={project.annotations?.segments ?? []}
+                durationMs={effectiveDurationMs}
+                timelineZoom={timelineZoom}
+                width={timelineWidth}
+                tooltipPlacement={lastVisibleTrack === 'annotation' ? 'above' : 'below'}
               />
             )}
 

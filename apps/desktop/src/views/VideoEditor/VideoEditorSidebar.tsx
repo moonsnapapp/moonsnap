@@ -5,14 +5,22 @@
 import { useState } from 'react';
 import { useVideoEditorStore } from '../../stores/videoEditorStore';
 import {
+  selectAddAnnotationShape,
+  selectDeleteAnnotationSegment,
+  selectDeleteAnnotationShape,
   selectDeleteMaskSegment,
   selectDeleteSceneSegment,
   selectDeleteTextSegment,
   selectDeleteZoomRegion,
+  selectSelectAnnotationSegment,
+  selectSelectAnnotationShape,
   selectSelectMaskSegment,
   selectSelectSceneSegment,
   selectSelectTextSegment,
   selectSelectZoomRegion,
+  selectSelectedAnnotationSegmentId,
+  selectSelectedAnnotationShapeId,
+  selectUpdateAnnotationShape,
   selectSelectedMaskSegmentId,
   selectSelectedSceneSegmentId,
   selectSelectedTextSegmentId,
@@ -28,6 +36,7 @@ import {
 } from '../../stores/videoEditor/selectors';
 import { BackgroundSettings } from '../../components/VideoEditor/BackgroundSettings';
 import { ProFeature } from '../../components/ProFeature';
+import { AnnotationSegmentConfig } from './AnnotationSegmentConfig';
 import { ZoomRegionConfig } from './ZoomRegionConfig';
 import { MaskSegmentConfig } from './MaskSegmentConfig';
 import { TextSegmentConfig } from './TextSegmentConfig';
@@ -38,6 +47,7 @@ import { CursorConfigPanel } from './panels/CursorConfigPanel';
 import { WebcamConfigPanel } from './panels/WebcamConfigPanel';
 import { ExportConfigPanel } from './panels/ExportConfigPanel';
 import { findTextSegmentById } from '../../utils/textSegmentId';
+import { createDefaultAnnotationShape } from '../../utils/videoAnnotations';
 import type { SceneMode, VideoProject } from '../../types';
 
 export interface VideoEditorSidebarProps {
@@ -50,6 +60,14 @@ export function VideoEditorSidebar({ project, onOpenCropDialog }: VideoEditorSid
   const updateExportConfig = useVideoEditorStore(selectUpdateExportConfig);
   const updateCursorConfig = useVideoEditorStore(selectUpdateCursorConfig);
   const updateAudioConfig = useVideoEditorStore(selectUpdateAudioConfig);
+  const selectedAnnotationSegmentId = useVideoEditorStore(selectSelectedAnnotationSegmentId);
+  const selectedAnnotationShapeId = useVideoEditorStore(selectSelectedAnnotationShapeId);
+  const selectAnnotationSegment = useVideoEditorStore(selectSelectAnnotationSegment);
+  const selectAnnotationShape = useVideoEditorStore(selectSelectAnnotationShape);
+  const addAnnotationShape = useVideoEditorStore(selectAddAnnotationShape);
+  const updateAnnotationShape = useVideoEditorStore(selectUpdateAnnotationShape);
+  const deleteAnnotationSegment = useVideoEditorStore(selectDeleteAnnotationSegment);
+  const deleteAnnotationShape = useVideoEditorStore(selectDeleteAnnotationShape);
   const selectedZoomRegionId = useVideoEditorStore(selectSelectedZoomRegionId);
   const selectZoomRegion = useVideoEditorStore(selectSelectZoomRegion);
   const updateZoomRegion = useVideoEditorStore(selectUpdateZoomRegion);
@@ -74,13 +92,19 @@ export function VideoEditorSidebar({ project, onOpenCropDialog }: VideoEditorSid
   const handleTabChange = (tab: PropertiesTab) => {
     if (selectedZoomRegionId) selectZoomRegion(null);
     if (selectedSceneSegmentId) selectSceneSegment(null);
+    if (selectedAnnotationSegmentId) selectAnnotationSegment(null);
     if (selectedMaskSegmentId) selectMaskSegment(null);
     if (selectedTextSegmentId) selectTextSegment(null);
     setActiveTab(tab);
   };
 
   // Check if any segment is selected for overlay display
-  const hasSelectedSegment = selectedZoomRegionId || selectedSceneSegmentId || selectedMaskSegmentId || selectedTextSegmentId;
+  const hasSelectedSegment =
+    selectedZoomRegionId ||
+    selectedSceneSegmentId ||
+    selectedAnnotationSegmentId ||
+    selectedMaskSegmentId ||
+    selectedTextSegmentId;
 
   return (
     <div className="w-92 compositor-sidebar flex flex-col">
@@ -161,6 +185,34 @@ export function VideoEditorSidebar({ project, onOpenCropDialog }: VideoEditorSid
                     </div>
                   </div>
                 </div>
+              );
+            })()}
+
+            {/* Annotation Segment Properties */}
+            {selectedAnnotationSegmentId && (() => {
+              const segment = (project.annotations?.segments ?? []).find((entry) => entry.id === selectedAnnotationSegmentId);
+              if (!segment) return null;
+
+              return (
+                <AnnotationSegmentConfig
+                  segment={segment}
+                  selectedShapeId={selectedAnnotationShapeId}
+                  onSelectShape={selectAnnotationShape}
+                  onAddShape={(shapeType) => {
+                    addAnnotationShape(selectedAnnotationSegmentId, createDefaultAnnotationShape(shapeType));
+                  }}
+                  onUpdateShape={(shapeId, updates) => {
+                    updateAnnotationShape(selectedAnnotationSegmentId, shapeId, updates);
+                  }}
+                  onDeleteShape={(shapeId) => {
+                    deleteAnnotationShape(selectedAnnotationSegmentId, shapeId);
+                  }}
+                  onDeleteSegment={() => {
+                    deleteAnnotationSegment(selectedAnnotationSegmentId);
+                    selectAnnotationSegment(null);
+                  }}
+                  onDone={() => selectAnnotationSegment(null)}
+                />
               );
             })()}
 

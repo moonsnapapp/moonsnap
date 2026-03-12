@@ -6,6 +6,7 @@ import {
   snapshotOverlayState,
   type OverlaySnapshot,
 } from './overlayAdjustment';
+import { normalizeAnnotationConfig } from '../../utils/videoAnnotations';
 
 /**
  * Minimum segment duration in milliseconds.
@@ -476,6 +477,11 @@ export const createTrimSlice: SliceCreator<TrimSlice> = (set, get) => ({
 
     // Adjust all overlay segments for the deleted timeline range
     const newZoomRegions = adjustOverlaySegmentsForDeletion(project.zoom.regions, delStartMs, delEndMs);
+    const newAnnotationSegments = adjustOverlaySegmentsForDeletion(
+      normalizeAnnotationConfig(project.annotations).segments,
+      delStartMs,
+      delEndMs,
+    );
     const newMaskSegments = adjustOverlaySegmentsForDeletion(project.mask.segments, delStartMs, delEndMs);
     const newSceneSegments = adjustOverlaySegmentsForDeletion(project.scene.segments, delStartMs, delEndMs);
     const newTextSegments = adjustTextSegmentsForDeletion(project.text.segments, delStartMs, delEndMs);
@@ -489,6 +495,7 @@ export const createTrimSlice: SliceCreator<TrimSlice> = (set, get) => ({
       selectedId: newSelectedId,
       overlays: {
         zoomRegions: newZoomRegions,
+        annotationSegments: newAnnotationSegments,
         maskSegments: newMaskSegments,
         sceneSegments: newSceneSegments,
         textSegments: newTextSegments,
@@ -504,6 +511,10 @@ export const createTrimSlice: SliceCreator<TrimSlice> = (set, get) => ({
           segments: newSegments,
         },
         zoom: { ...project.zoom, regions: newZoomRegions },
+        annotations: {
+          ...normalizeAnnotationConfig(project.annotations),
+          segments: newAnnotationSegments,
+        },
         mask: { ...project.mask, segments: newMaskSegments },
         scene: { ...project.scene, segments: newSceneSegments },
         text: { ...project.text, segments: newTextSegments },
@@ -584,6 +595,7 @@ export const createTrimSlice: SliceCreator<TrimSlice> = (set, get) => ({
           segments: prevEntry.segments,
         },
         zoom: { ...project.zoom, regions: prevEntry.overlays.zoomRegions },
+        annotations: { ...project.annotations, segments: prevEntry.overlays.annotationSegments },
         mask: { ...project.mask, segments: prevEntry.overlays.maskSegments },
         scene: { ...project.scene, segments: prevEntry.overlays.sceneSegments },
         text: { ...project.text, segments: prevEntry.overlays.textSegments },
@@ -609,6 +621,7 @@ export const createTrimSlice: SliceCreator<TrimSlice> = (set, get) => ({
           segments: nextEntry.segments,
         },
         zoom: { ...project.zoom, regions: nextEntry.overlays.zoomRegions },
+        annotations: { ...project.annotations, segments: nextEntry.overlays.annotationSegments },
         mask: { ...project.mask, segments: nextEntry.overlays.maskSegments },
         scene: { ...project.scene, segments: nextEntry.overlays.sceneSegments },
         text: { ...project.text, segments: nextEntry.overlays.textSegments },

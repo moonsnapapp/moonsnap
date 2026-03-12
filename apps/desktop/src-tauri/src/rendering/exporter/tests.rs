@@ -4,8 +4,8 @@
 
 use moonsnap_domain::captions::{CaptionSegment, CaptionSettings};
 use moonsnap_domain::video_project::{
-    AudioTrackSettings, CornerStyle, CursorConfig, ExportConfig, MaskConfig, SceneConfig,
-    ShadowConfig, TextConfig, TimelineState, VideoProject, VideoSources, WebcamBorder,
+    AnnotationConfig, AudioTrackSettings, CornerStyle, CursorConfig, ExportConfig, MaskConfig,
+    SceneConfig, ShadowConfig, TextConfig, TimelineState, VideoProject, VideoSources, WebcamBorder,
     WebcamConfig, WebcamOverlayPosition, WebcamOverlayShape, ZoomConfig,
 };
 use moonsnap_export::frame_path_plan::can_use_nv12_fast_path;
@@ -91,6 +91,7 @@ fn make_test_project(
         export: ExportConfig::default(),
         scene: SceneConfig::default(),
         text: TextConfig::default(),
+        annotations: AnnotationConfig::default(),
         mask: MaskConfig::default(),
         captions: CaptionSettings::default(),
         caption_segments: Vec::<CaptionSegment>::new(),

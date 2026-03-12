@@ -63,7 +63,9 @@ use super::svg_cursor::get_svg_cursor;
 use crate::commands::text_prerender::PreRenderedTextState;
 use crate::commands::video_recording::cursor::events::load_cursor_recording;
 use crate::commands::video_recording::cursor::events::WindowsCursorShape;
-use moonsnap_domain::video_project::{CursorType, VideoProject};
+use moonsnap_domain::video_project::{
+    AnnotationSegment, CursorType, TextAnimation, TextSegment, VideoProject, XY,
+};
 use moonsnap_render::nv12_converter::{CropRect, Nv12Converter};
 use moonsnap_render::scene::SceneInterpolator;
 use moonsnap_render::types::{BackgroundStyle, PixelFormat};
@@ -96,6 +98,29 @@ struct CpuCompositeCtx<'a> {
 struct ExportRenderLoopContext<'a> {
     loop_state: ExportLoopState,
     compositor: &'a mut Compositor,
+}
+
+fn build_annotation_overlay_segments(segments: &[AnnotationSegment]) -> Vec<TextSegment> {
+    segments
+        .iter()
+        .map(|segment| TextSegment {
+            start: segment.start_ms as f64 / 1000.0,
+            end: segment.end_ms as f64 / 1000.0,
+            enabled: segment.enabled,
+            content: format!("annotation-{}", segment.id),
+            center: XY { x: 0.5, y: 0.5 },
+            size: XY { x: 1.0, y: 1.0 },
+            font_family: "sans-serif".to_string(),
+            font_size: 1.0,
+            font_weight: 400.0,
+            italic: false,
+            color: "#ffffff".to_string(),
+            fade_duration: 0.0,
+            animation: TextAnimation::None,
+            typewriter_chars_per_second: 1.0,
+            typewriter_sound_enabled: false,
+        })
+        .collect()
 }
 
 const EXPORT_TIMING_TOTAL_WARN_FACTOR: f64 = 1.10;
@@ -481,6 +506,11 @@ pub async fn export_video_gpu(
         None
     };
 
+    let mut overlay_segments = project.text.segments.clone();
+    overlay_segments.extend(build_annotation_overlay_segments(
+        &project.annotations.segments,
+    ));
+
     emit_progress(&app, 0.08, ExportStage::Encoding, "Rendering frames...");
 
     // Pre-allocate GPU resources reused across all frames (avoids per-frame allocation)
@@ -571,6 +601,7 @@ pub async fn export_video_gpu(
     let prerendered_text_store_ref = &prerendered_text_store;
     let cpu_ctx_ref = &cpu_ctx;
     let encode_tx_ref = &encode_tx;
+    let overlay_segments_ref = &overlay_segments;
 
     // Pipeline with triple-buffered staging (4-stage depth):
     //   1. complete_readback for frame N-2  → ~0ms fence (GPU done 2 iters ago) + data copy
@@ -789,7 +820,7 @@ pub async fn export_video_gpu(
                 &store,
                 FrameTextOverlayRequest {
                     frame_time_secs,
-                    text_segments: &project.text.segments,
+                    text_segments: overlay_segments_ref,
                     composition_width: composition_w,
                     composition_height: composition_h,
                     video_frame_x: composition_bounds.frame_x as u32,

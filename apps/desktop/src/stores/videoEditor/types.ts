@@ -15,6 +15,8 @@ import type {
   CursorConfig,
   SceneSegment,
   TextSegment,
+  AnnotationSegment,
+  AnnotationShape,
   MaskSegment,
   CursorRecording,
   TrimSegment,
@@ -37,6 +39,8 @@ export type {
   CursorConfig,
   SceneSegment,
   TextSegment,
+  AnnotationSegment,
+  AnnotationShape,
   MaskSegment,
   CursorRecording,
   TrimSegment,
@@ -75,6 +79,7 @@ export type SliceCreator<T> = StateCreator<VideoEditorState, [], [], T>;
 export interface TrackVisibility {
   video: boolean;
   text: boolean;
+  annotation: boolean;
   mask: boolean;
   zoom: boolean;
   scene: boolean;
@@ -83,7 +88,7 @@ export interface TrackVisibility {
 /**
  * Track types for hover state
  */
-export type HoveredTrack = 'video' | 'zoom' | 'audio' | 'scene' | 'text' | 'webcam' | 'mask' | null;
+export type HoveredTrack = 'video' | 'zoom' | 'audio' | 'scene' | 'text' | 'annotation' | 'webcam' | 'mask' | null;
 
 /**
  * Drag edge types

@@ -89,6 +89,12 @@ export type { XY } from './XY';
 export type { TextSegment } from './TextSegment';
 export type { TextConfig } from './TextConfig';
 
+// Video editor - Annotation types
+export type { AnnotationShapeType } from './AnnotationShapeType';
+export type { AnnotationShape } from './AnnotationShape';
+export type { AnnotationSegment } from './AnnotationSegment';
+export type { AnnotationConfig } from './AnnotationConfig';
+
 // Video editor - Mask types
 export type { MaskType } from './MaskType';
 export type { MaskSegment } from './MaskSegment';

@@ -2,6 +2,7 @@ export { LAYOUT, type LayoutConstants } from './layout';
 export { TIMING, type TimingConstants } from './timing';
 export { STORAGE, type StorageConstants } from './storage';
 export { TEXT_ANIMATION, type TextAnimationConstants } from './text';
+export { ANNOTATIONS, type AnnotationConstants } from './annotations';
 export { WAVEFORM, type WaveformConstants } from './waveform';
 export { CURSOR, type CursorConstants } from './cursor';
 export { APP, type AppConstants } from './app';

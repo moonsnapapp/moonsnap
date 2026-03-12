@@ -1,5 +1,6 @@
 // Track components
 export { ZoomTrackContent } from './ZoomTrack';
+export { AnnotationTrackContent } from './AnnotationTrack';
 export { MaskTrackContent } from './MaskTrack';
 export { TextTrackContent } from './TextTrack';
 export { SceneTrack, SceneTrackContent } from './SceneTrack';

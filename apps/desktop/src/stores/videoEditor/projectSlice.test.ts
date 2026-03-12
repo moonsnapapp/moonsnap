@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { VideoProject } from '../../types';
-import { reconcileProjectDuration } from './projectSlice';
+import { reconcileProjectDuration, sanitizeProjectForSave } from './projectSlice';
+import { useVideoEditorStore } from './index';
 
 function createTestProject(overrides: Partial<VideoProject> = {}): VideoProject {
   return {
@@ -80,6 +81,9 @@ function createTestProject(overrides: Partial<VideoProject> = {}): VideoProject 
     text: {
       segments: [],
     },
+    annotations: {
+      segments: [],
+    },
     mask: {
       segments: [],
     },
@@ -127,5 +131,28 @@ describe('reconcileProjectDuration', () => {
     ]);
     expect(reconciled.timeline.inPoint).toBe(1000);
     expect(reconciled.timeline.outPoint).toBe(6000);
+  });
+
+  it('fills in missing annotation config during save sanitization', () => {
+    const project = {
+      ...createTestProject(),
+      annotations: undefined,
+    } as unknown as VideoProject;
+
+    const sanitized = sanitizeProjectForSave(project);
+
+    expect(sanitized.annotations).toEqual({ segments: [] });
+  });
+});
+
+describe('project annotation normalization', () => {
+  it('normalizes missing annotations when loading a legacy project payload', () => {
+    const legacyProject = {
+      ...createTestProject(),
+      annotations: undefined,
+    } as unknown as VideoProject;
+
+    expect(() => useVideoEditorStore.getState().setProject(legacyProject)).not.toThrow();
+    expect(useVideoEditorStore.getState().project?.annotations?.segments).toEqual([]);
   });
 });
