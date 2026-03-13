@@ -3,8 +3,8 @@
 use tauri::{command, AppHandle, Manager, WebviewUrl, WebviewWindowBuilder};
 
 use super::{
-    apply_dwm_transparency, exclude_window_from_capture, set_physical_bounds,
-    COUNTDOWN_WINDOW_LABEL, RECORDING_BORDER_LABEL, RECORDING_CONTROLS_LABEL,
+    apply_dwm_transparency, exclude_window_from_capture, include_window_in_capture,
+    set_physical_bounds, COUNTDOWN_WINDOW_LABEL, RECORDING_BORDER_LABEL, RECORDING_CONTROLS_LABEL,
 };
 
 // ============================================================================
@@ -118,8 +118,8 @@ pub async fn hide_recording_border(app: AppHandle) -> Result<(), String> {
 // Recording Controls Window
 // ============================================================================
 
-const RECORDING_CONTROLS_INITIAL_WIDTH: u32 = 328;
-const RECORDING_CONTROLS_INITIAL_HEIGHT: u32 = 52;
+const RECORDING_CONTROLS_INITIAL_WIDTH: u32 = 360;
+const RECORDING_CONTROLS_INITIAL_HEIGHT: u32 = 60;
 
 /// Show the recording controls window used while the main toolbar is excluded from capture.
 #[command]
@@ -129,15 +129,14 @@ pub async fn show_recording_controls(
     y: i32,
     _width: u32,
     _height: u32,
+    include_in_capture: Option<bool>,
 ) -> Result<(), String> {
+    let include_in_capture = include_in_capture.unwrap_or(false);
+
     if let Some(window) = app.get_webview_window(RECORDING_CONTROLS_LABEL) {
-        set_physical_bounds(
-            &window,
-            x,
-            y,
-            RECORDING_CONTROLS_INITIAL_WIDTH,
-            RECORDING_CONTROLS_INITIAL_HEIGHT,
-        )?;
+        // Preserve the current position once the user has dragged the HUD.
+        // State transitions like pause/resume should only refresh visibility and
+        // capture affinity, not snap the controls back to their initial anchor.
         window
             .show()
             .map_err(|e| format!("Failed to show recording controls: {}", e))?;
@@ -147,7 +146,11 @@ pub async fn show_recording_controls(
                 e
             );
         }
-        exclude_window_from_capture(&window)?;
+        if include_in_capture {
+            include_window_in_capture(&window)?;
+        } else {
+            exclude_window_from_capture(&window)?;
+        }
         window
             .set_always_on_top(true)
             .map_err(|e| format!("Failed to keep recording controls on top: {}", e))?;
@@ -191,7 +194,11 @@ pub async fn show_recording_controls(
     window
         .show()
         .map_err(|e| format!("Failed to show recording controls window: {}", e))?;
-    exclude_window_from_capture(&window)?;
+    if include_in_capture {
+        include_window_in_capture(&window)?;
+    } else {
+        exclude_window_from_capture(&window)?;
+    }
     window
         .set_always_on_top(true)
         .map_err(|e| format!("Failed to set recording controls always on top: {}", e))?;

@@ -30,7 +30,7 @@ import { useWebcamSettingsStore } from '../stores/webcamSettingsStore';
 import { useSettingsStore } from '../stores/settingsStore';
 import { useTheme } from '../hooks/useTheme';
 import { useRecordingEvents } from '../hooks/useRecordingEvents';
-import { repositionToolbar, useSelectionEvents } from '../hooks/useSelectionEvents';
+import { useSelectionEvents } from '../hooks/useSelectionEvents';
 import { useWebcamCoordination } from '../hooks/useWebcamCoordination';
 import { useToolbarPositioning } from '../hooks/useToolbarPositioning';
 import type { CaptureType } from '../types';
@@ -145,11 +145,27 @@ const CaptureToolbarWindow: React.FC = () => {
     mode,
   });
 
+  const isRecordingHudMode =
+    mode === 'starting' ||
+    mode === 'recording' ||
+    mode === 'paused' ||
+    mode === 'processing' ||
+    mode === 'error';
+
   const suppressPrimaryToolbarDuringRecording = Boolean(
     selectionConfirmed &&
-    !showToolbarInRecording &&
-    (mode === 'starting' || mode === 'recording' || mode === 'paused' || mode === 'processing')
+    isRecordingHudMode
   );
+
+  useEffect(() => {
+    document.documentElement.classList.toggle('capture-toolbar-recording-window', isRecordingHudMode);
+    document.body.classList.toggle('capture-toolbar-recording-window', isRecordingHudMode);
+
+    return () => {
+      document.documentElement.classList.remove('capture-toolbar-recording-window');
+      document.body.classList.remove('capture-toolbar-recording-window');
+    };
+  }, [isRecordingHudMode]);
 
   useToolbarPositioning({
     containerRef,
@@ -588,49 +604,29 @@ const CaptureToolbarWindow: React.FC = () => {
     const timeoutId = window.setTimeout(async () => {
       const currentWindow = getCurrentWebviewWindow();
       const showToolbarInCapture = useCaptureSettingsStore.getState().showToolbarInRecording;
+      try {
+        const [position, size] = await Promise.all([
+          currentWindow.outerPosition(),
+          currentWindow.outerSize(),
+        ]);
 
-      if (!showToolbarInCapture) {
-        try {
-          const [position, size] = await Promise.all([
-            currentWindow.outerPosition(),
-            currentWindow.outerSize(),
-          ]);
-
-          await invoke('show_recording_controls', {
-            x: position.x,
-            y: position.y,
-            width: size.width,
-            height: size.height,
-          });
-          await currentWindow.hide();
-        } catch (e) {
-          toolbarLogger.error('Failed to swap to recording controls window:', e);
-        }
-        return;
-      }
-
-      invoke('close_recording_controls').catch((e) => {
-        toolbarLogger.error('Failed to close recording controls window:', e);
-      });
-
-      invoke('bring_capture_toolbar_to_front', {
-        includeInCapture: true,
-        focus: false,
-      }).catch((e) => {
-        toolbarLogger.error('Failed to refresh toolbar during recording:', e);
-      });
-
-      if (useCaptureSettingsStore.getState().snapToolbarToSelection) {
-        void repositionToolbar(selectionBounds).catch((e) => {
-          toolbarLogger.error('Failed to reposition toolbar during recording:', e);
+        await invoke('show_recording_controls', {
+          x: position.x,
+          y: position.y,
+          width: size.width,
+          height: size.height,
+          includeInCapture: showToolbarInCapture,
         });
+        await currentWindow.hide();
+      } catch (e) {
+        toolbarLogger.error('Failed to swap to recording controls window:', e);
       }
     }, 80);
 
     return () => {
       clearTimeout(timeoutId);
     };
-  }, [mode, selectionBounds, selectionConfirmed]);
+  }, [mode, selectionBounds, selectionConfirmed, showToolbarInRecording]);
 
   useEffect(() => {
     if (mode === 'starting' || mode === 'recording' || mode === 'paused' || mode === 'processing') {
@@ -674,14 +670,19 @@ const CaptureToolbarWindow: React.FC = () => {
   }, []);
 
   return (
-    <div ref={containerRef} className="app-container">
-      <Titlebar
-        title="MoonSnap Capture"
-        showMaximize={false}
-        onClose={handleTitlebarClose}
-        onOpenLibrary={handleOpenLibrary}
-        onOpenSettings={handleOpenSettings}
-      />
+    <div
+      ref={containerRef}
+      className={`app-container ${isRecordingHudMode ? 'app-container--recording-hud' : ''}`}
+    >
+      {!isRecordingHudMode && (
+        <Titlebar
+          title="MoonSnap Capture"
+          showMaximize={false}
+          onClose={handleTitlebarClose}
+          onOpenLibrary={handleOpenLibrary}
+          onOpenSettings={handleOpenSettings}
+        />
+      )}
       <div ref={toolbarRef} className="toolbar-container">
         <div className="toolbar-animated-wrapper">
           <div ref={contentRef} className="toolbar-content-measure">
@@ -712,6 +713,7 @@ const CaptureToolbarWindow: React.FC = () => {
                 onPause={handlePause}
                 onResume={handleResume}
                 onStop={handleStop}
+                minimalChrome={isRecordingHudMode ? 'floating' : 'window'}
                 countdownSeconds={countdownSeconds}
                 onDimensionChange={handleDimensionChange}
                 onOpenSettings={handleOpenSettings}
