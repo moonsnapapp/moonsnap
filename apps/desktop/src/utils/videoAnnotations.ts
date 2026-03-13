@@ -25,10 +25,88 @@ export interface AnnotationArrowRenderGeometry {
   headPoints: string;
 }
 
+interface AnnotationArrowShaftOutline {
+  headTopX: number;
+  headTopY: number;
+  headBottomX: number;
+  headBottomY: number;
+  tailTopX: number;
+  tailTopY: number;
+  tailBottomX: number;
+  tailBottomY: number;
+  tailBackX: number;
+  tailBackY: number;
+  curveTopControl1X: number;
+  curveTopControl1Y: number;
+  curveTopControl2X: number;
+  curveTopControl2Y: number;
+  curveBottomControl1X: number;
+  curveBottomControl1Y: number;
+  curveBottomControl2X: number;
+  curveBottomControl2Y: number;
+  path: string;
+}
+
+export interface AnnotationBoxSliderBounds {
+  xMin: number;
+  xMax: number;
+  yMin: number;
+  yMax: number;
+  widthMin: number;
+  widthMax: number;
+  heightMin: number;
+  heightMax: number;
+}
+
+export function isEndpointAnnotationShapeType(shapeType: AnnotationShapeType): boolean {
+  return shapeType === 'arrow' || shapeType === 'line';
+}
+
+export function isLegacyAnnotationShapeType(shapeType: AnnotationShapeType): boolean {
+  return shapeType === 'line' || shapeType === 'text';
+}
+
+export function getNextAnnotationStepNumber(segments: AnnotationSegment[]): number {
+  const existingNumbers = segments
+    .flatMap((segment) => segment.shapes)
+    .filter((shape) => shape.shapeType === 'step')
+    .map((shape) => Math.max(1, Math.round(shape.number)))
+    .sort((a, b) => a - b);
+
+  let nextNumber = 1;
+  for (const number of existingNumbers) {
+    if (number === nextNumber) {
+      nextNumber += 1;
+      continue;
+    }
+
+    if (number > nextNumber) {
+      break;
+    }
+  }
+
+  return nextNumber;
+}
+
+export function getAnnotationBoxSliderBounds(): AnnotationBoxSliderBounds {
+  return {
+    xMin: ANNOTATIONS.BOX_SLIDER_POSITION_MIN,
+    xMax: ANNOTATIONS.BOX_SLIDER_POSITION_MAX,
+    yMin: ANNOTATIONS.BOX_SLIDER_POSITION_MIN,
+    yMax: ANNOTATIONS.BOX_SLIDER_POSITION_MAX,
+    widthMin: ANNOTATIONS.MIN_NORMALIZED_SIZE,
+    widthMax: ANNOTATIONS.BOX_SLIDER_SIZE_MAX,
+    heightMin: ANNOTATIONS.MIN_NORMALIZED_SIZE,
+    heightMax: ANNOTATIONS.BOX_SLIDER_SIZE_MAX,
+  };
+}
+
 const FALLBACK_ARROW_DX = 1 / Math.sqrt(2);
 const FALLBACK_ARROW_DY = -1 / Math.sqrt(2);
 const ARROW_HEAD_HALF_ANGLE = Math.PI / 6;
 const ARROW_HEAD_BASE_FACTOR = Math.cos(ARROW_HEAD_HALF_ANGLE);
+const ARROW_TAIL_CURVE_KAPPA = (4 * (Math.sqrt(2) - 1)) / 3;
+const ARROW_HEAD_JOIN_OVERLAP_PX = 1.5;
 
 function clampArrowEndpoints(endpoints: AnnotationArrowEndpoints): AnnotationArrowEndpoints {
   const { tailX, tailY } = endpoints;
@@ -71,15 +149,20 @@ export function getAnnotationShapeLabel(shapeType: AnnotationShapeType): string 
       return 'Ellipse';
     case 'arrow':
       return 'Arrow';
+    case 'line':
+      return 'Line (Legacy)';
+    case 'step':
+      return 'Step';
     case 'text':
-      return 'Text';
+      return 'Text (Legacy)';
   }
 
   return 'Annotation';
 }
 
 export function createDefaultAnnotationShape(
-  shapeType: AnnotationShapeType = ANNOTATIONS.DEFAULT_SHAPE_TYPE
+  shapeType: AnnotationShapeType = ANNOTATIONS.DEFAULT_SHAPE_TYPE,
+  overrides: Partial<AnnotationShape> = {}
 ): AnnotationShape {
   const baseShape: AnnotationShape = {
     id: generateAnnotationShapeId(),
@@ -96,13 +179,14 @@ export function createDefaultAnnotationShape(
     fillColor: ANNOTATIONS.DEFAULT_FILL_COLOR,
     strokeWidth: ANNOTATIONS.DEFAULT_STROKE_WIDTH,
     opacity: ANNOTATIONS.DEFAULT_OPACITY,
+    number: 1,
     text: ANNOTATIONS.DEFAULT_TEXT,
     fontSize: ANNOTATIONS.DEFAULT_FONT_SIZE,
     fontFamily: ANNOTATIONS.DEFAULT_FONT_FAMILY,
     fontWeight: ANNOTATIONS.DEFAULT_FONT_WEIGHT,
   };
 
-  if (shapeType === 'arrow') {
+  if (shapeType === 'arrow' || shapeType === 'line') {
     return {
       ...baseShape,
       x: 0.2,
@@ -114,6 +198,20 @@ export function createDefaultAnnotationShape(
       arrowEndX: 0.5,
       arrowEndY: 0.28,
       fillColor: 'rgba(0, 0, 0, 0)',
+      ...overrides,
+    };
+  }
+
+  if (shapeType === 'step') {
+    return {
+      ...baseShape,
+      x: 0.2,
+      y: 0.2,
+      width: ANNOTATIONS.DEFAULT_STEP_SIZE,
+      height: ANNOTATIONS.DEFAULT_STEP_SIZE,
+      fillColor: ANNOTATIONS.DEFAULT_STROKE_COLOR,
+      strokeColor: 'rgba(0, 0, 0, 0)',
+      ...overrides,
     };
   }
 
@@ -126,10 +224,14 @@ export function createDefaultAnnotationShape(
       height: 0.12,
       fillColor: 'rgba(0, 0, 0, 0)',
       strokeColor: ANNOTATIONS.DEFAULT_TEXT_COLOR,
+      ...overrides,
     };
   }
 
-  return baseShape;
+  return {
+    ...baseShape,
+    ...overrides,
+  };
 }
 
 export function getAnnotationArrowEndpoints(shape: AnnotationShape): AnnotationArrowEndpoints {
@@ -210,7 +312,7 @@ export function normalizeAnnotationShape(
     id: shape?.id ?? defaults.id,
   };
 
-  if (mergedShape.shapeType === 'arrow') {
+  if (isEndpointAnnotationShapeType(mergedShape.shapeType)) {
     return clampAnnotationShape({
       ...mergedShape,
       ...getAnnotationArrowShapeUpdate(mergedShape, {}),
@@ -250,14 +352,14 @@ export function normalizeAnnotationConfig(
 }
 
 export function clampAnnotationShape(shape: AnnotationShape): AnnotationShape {
-  if (shape.shapeType === 'arrow') {
-    const clampedArrow = {
+  if (isEndpointAnnotationShapeType(shape.shapeType)) {
+    const clampedEndpointShape = {
       ...shape,
       ...getAnnotationArrowShapeUpdate(shape, {}),
     };
 
     return {
-      ...clampedArrow,
+      ...clampedEndpointShape,
       strokeWidth: Math.min(
         ANNOTATIONS.MAX_STROKE_WIDTH,
         Math.max(ANNOTATIONS.MIN_STROKE_WIDTH, shape.strokeWidth)
@@ -267,19 +369,18 @@ export function clampAnnotationShape(shape: AnnotationShape): AnnotationShape {
         Math.max(ANNOTATIONS.MIN_FONT_SIZE, shape.fontSize)
       ),
       opacity: Math.min(1, Math.max(0, shape.opacity)),
+      number: Math.max(1, Math.round(shape.number)),
     };
   }
 
   const minSize = ANNOTATIONS.MIN_NORMALIZED_SIZE;
-  const width = Math.min(1, Math.max(minSize, shape.width));
-  const height = Math.min(1, Math.max(minSize, shape.height));
-  const x = Math.min(1 - width, Math.max(0, shape.x));
-  const y = Math.min(1 - height, Math.max(0, shape.y));
+  const isStepShape = shape.shapeType === 'step';
+  const size = Math.max(minSize, shape.width, shape.height);
+  const width = isStepShape ? size : Math.max(minSize, shape.width);
+  const height = isStepShape ? size : Math.max(minSize, shape.height);
 
   return {
     ...shape,
-    x,
-    y,
     width,
     height,
     arrowStartX: null,
@@ -295,6 +396,7 @@ export function clampAnnotationShape(shape: AnnotationShape): AnnotationShape {
       Math.max(ANNOTATIONS.MIN_FONT_SIZE, shape.fontSize)
     ),
     opacity: Math.min(1, Math.max(0, shape.opacity)),
+    number: Math.max(1, Math.round(shape.number)),
   };
 }
 
@@ -316,7 +418,11 @@ export function getAnnotationArrowRenderGeometry(
   const unitY = dy / length;
   const desiredHeadLength = Math.max(strokeWidth * ANNOTATIONS.ARROW_HEAD_FACTOR, 14);
   const headLength = Math.min(desiredHeadLength, length * 0.55);
-  const shaftInset = Math.min(length * 0.8, headLength * ARROW_HEAD_BASE_FACTOR);
+  const headBaseInset = headLength * ARROW_HEAD_BASE_FACTOR;
+  const shaftInset = Math.max(
+    0,
+    Math.min(length * 0.8, headBaseInset - Math.min(ARROW_HEAD_JOIN_OVERLAP_PX, headBaseInset * 0.2))
+  );
   const shaftEndX = headX - unitX * shaftInset;
   const shaftEndY = headY - unitY * shaftInset;
   const headLeftX = headX - headLength * Math.cos(Math.atan2(dy, dx) - ARROW_HEAD_HALF_ANGLE);
@@ -336,7 +442,117 @@ export function getAnnotationArrowRenderGeometry(
   };
 }
 
+export function getAnnotationArrowShaftOutline(
+  geometry: AnnotationArrowRenderGeometry,
+  strokeWidth: number
+): AnnotationArrowShaftOutline {
+  const halfWidth = strokeWidth / 2;
+  const dx = geometry.shaftEndX - geometry.tailX;
+  const dy = geometry.shaftEndY - geometry.tailY;
+  const length = Math.max(1, Math.hypot(dx, dy));
+  const unitX = dx / length;
+  const unitY = dy / length;
+  const perpX = -unitY * halfWidth;
+  const perpY = unitX * halfWidth;
+  const controlDepth = halfWidth * ARROW_TAIL_CURVE_KAPPA;
+
+  const headTopX = geometry.shaftEndX + perpX;
+  const headTopY = geometry.shaftEndY + perpY;
+  const headBottomX = geometry.shaftEndX - perpX;
+  const headBottomY = geometry.shaftEndY - perpY;
+  const tailTopX = geometry.tailX + perpX;
+  const tailTopY = geometry.tailY + perpY;
+  const tailBottomX = geometry.tailX - perpX;
+  const tailBottomY = geometry.tailY - perpY;
+  const tailBackX = geometry.tailX - unitX * halfWidth;
+  const tailBackY = geometry.tailY - unitY * halfWidth;
+  const curveTopControl1X = tailTopX - unitX * controlDepth;
+  const curveTopControl1Y = tailTopY - unitY * controlDepth;
+  const curveTopControl2X = tailBackX + perpX * ARROW_TAIL_CURVE_KAPPA;
+  const curveTopControl2Y = tailBackY + perpY * ARROW_TAIL_CURVE_KAPPA;
+  const curveBottomControl1X = tailBackX - perpX * ARROW_TAIL_CURVE_KAPPA;
+  const curveBottomControl1Y = tailBackY - perpY * ARROW_TAIL_CURVE_KAPPA;
+  const curveBottomControl2X = tailBottomX - unitX * controlDepth;
+  const curveBottomControl2Y = tailBottomY - unitY * controlDepth;
+
+  return {
+    headTopX,
+    headTopY,
+    headBottomX,
+    headBottomY,
+    tailTopX,
+    tailTopY,
+    tailBottomX,
+    tailBottomY,
+    tailBackX,
+    tailBackY,
+    curveTopControl1X,
+    curveTopControl1Y,
+    curveTopControl2X,
+    curveTopControl2Y,
+    curveBottomControl1X,
+    curveBottomControl1Y,
+    curveBottomControl2X,
+    curveBottomControl2Y,
+    path: [
+      `M ${headTopX} ${headTopY}`,
+      `L ${tailTopX} ${tailTopY}`,
+      `C ${curveTopControl1X} ${curveTopControl1Y}, ${curveTopControl2X} ${curveTopControl2Y}, ${tailBackX} ${tailBackY}`,
+      `C ${curveBottomControl1X} ${curveBottomControl1Y}, ${curveBottomControl2X} ${curveBottomControl2Y}, ${tailBottomX} ${tailBottomY}`,
+      `L ${headBottomX} ${headBottomY}`,
+      'Z',
+    ].join(' '),
+  };
+}
+
 function drawArrow(
+  ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D,
+  shape: AnnotationShape,
+  renderWidth: number,
+  renderHeight: number,
+  strokeWidth: number,
+  color: string
+) {
+  const geometry = getAnnotationArrowRenderGeometry(shape, renderWidth, renderHeight, strokeWidth);
+  const shaftOutline = getAnnotationArrowShaftOutline(geometry, strokeWidth);
+
+  ctx.beginPath();
+  ctx.moveTo(shaftOutline.headTopX, shaftOutline.headTopY);
+  ctx.lineTo(shaftOutline.tailTopX, shaftOutline.tailTopY);
+  ctx.bezierCurveTo(
+    shaftOutline.curveTopControl1X,
+    shaftOutline.curveTopControl1Y,
+    shaftOutline.curveTopControl2X,
+    shaftOutline.curveTopControl2Y,
+    shaftOutline.tailBackX,
+    shaftOutline.tailBackY
+  );
+  ctx.bezierCurveTo(
+    shaftOutline.curveBottomControl1X,
+    shaftOutline.curveBottomControl1Y,
+    shaftOutline.curveBottomControl2X,
+    shaftOutline.curveBottomControl2Y,
+    shaftOutline.tailBottomX,
+    shaftOutline.tailBottomY
+  );
+  ctx.lineTo(shaftOutline.headBottomX, shaftOutline.headBottomY);
+  ctx.closePath();
+  ctx.fillStyle = color;
+  ctx.fill();
+
+  const [tip, leftPoint, rightPoint] = geometry.headPoints
+    .split(' ')
+    .map((pair) => pair.split(',').map(Number));
+
+  ctx.beginPath();
+  ctx.moveTo(tip[0], tip[1]);
+  ctx.lineTo(leftPoint[0], leftPoint[1]);
+  ctx.lineTo(rightPoint[0], rightPoint[1]);
+  ctx.closePath();
+  ctx.fill();
+}
+
+function drawLine(
   ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D,
   shape: AnnotationShape,
   renderWidth: number,
@@ -352,20 +568,8 @@ function drawArrow(
   ctx.lineJoin = 'round';
   ctx.beginPath();
   ctx.moveTo(geometry.tailX, geometry.tailY);
-  ctx.lineTo(geometry.shaftEndX, geometry.shaftEndY);
+  ctx.lineTo(geometry.headX, geometry.headY);
   ctx.stroke();
-
-  const [tip, leftPoint, rightPoint] = geometry.headPoints
-    .split(' ')
-    .map((pair) => pair.split(',').map(Number));
-
-  ctx.beginPath();
-  ctx.moveTo(tip[0], tip[1]);
-  ctx.lineTo(leftPoint[0], leftPoint[1]);
-  ctx.lineTo(rightPoint[0], rightPoint[1]);
-  ctx.closePath();
-  ctx.fillStyle = color;
-  ctx.fill();
 }
 
 function drawTextShape(
@@ -398,6 +602,32 @@ function drawTextShape(
   });
 }
 
+function drawStepShape(
+  ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D,
+  shape: AnnotationShape,
+  left: number,
+  top: number,
+  width: number,
+  height: number
+) {
+  const diameter = Math.min(width, height);
+  const radius = diameter / 2;
+  const centerX = left + width / 2;
+  const centerY = top + height / 2;
+  const fontSize = Math.max(12, radius * 0.93);
+
+  ctx.beginPath();
+  ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
+  ctx.fillStyle = shape.fillColor;
+  ctx.fill();
+
+  ctx.font = `${Math.max(700, shape.fontWeight)} ${fontSize}px ${shape.fontFamily}`;
+  ctx.fillStyle = ANNOTATIONS.DEFAULT_STEP_TEXT_COLOR;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(String(Math.max(1, Math.round(shape.number))), centerX, centerY);
+}
+
 export function drawAnnotationShape(
   ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D,
   shape: AnnotationShape,
@@ -421,8 +651,20 @@ export function drawAnnotationShape(
     return;
   }
 
+  if (clampedShape.shapeType === 'step') {
+    drawStepShape(ctx, clampedShape, left, top, width, height);
+    ctx.restore();
+    return;
+  }
+
   if (clampedShape.shapeType === 'arrow') {
     drawArrow(ctx, clampedShape, renderWidth, renderHeight, strokeWidth, clampedShape.strokeColor);
+    ctx.restore();
+    return;
+  }
+
+  if (clampedShape.shapeType === 'line') {
+    drawLine(ctx, clampedShape, renderWidth, renderHeight, strokeWidth, clampedShape.strokeColor);
     ctx.restore();
     return;
   }

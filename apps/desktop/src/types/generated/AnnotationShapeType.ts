@@ -3,4 +3,4 @@
 /**
  * Supported annotation shape types.
  */
-export type AnnotationShapeType = "rectangle" | "ellipse" | "arrow" | "text";
+export type AnnotationShapeType = "rectangle" | "ellipse" | "arrow" | "line" | "step" | "text";

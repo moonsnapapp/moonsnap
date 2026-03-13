@@ -24,6 +24,7 @@ export const selectToggleTrackVisibility = (state: VideoEditorState) => state.to
 export const selectHasWebcam = (state: VideoEditorState) => !!state.project?.sources.webcamVideo;
 export const selectExportInPointMs = (state: VideoEditorState) => state.exportInPointMs;
 export const selectExportOutPointMs = (state: VideoEditorState) => state.exportOutPointMs;
+export const selectActiveUndoDomain = (state: VideoEditorState) => state.activeUndoDomain;
 export const selectSetTimelineScrollLeft = (state: VideoEditorState) => state.setTimelineScrollLeft;
 export const selectSetTimelineContainerWidth = (state: VideoEditorState) => state.setTimelineContainerWidth;
 export const selectSetDraggingPlayhead = (state: VideoEditorState) => state.setDraggingPlayhead;
@@ -77,6 +78,7 @@ export const selectSetDraggingMaskSegment = (state: VideoEditorState) => state.s
 
 export const selectSelectedAnnotationSegmentId = (state: VideoEditorState) => state.selectedAnnotationSegmentId;
 export const selectSelectedAnnotationShapeId = (state: VideoEditorState) => state.selectedAnnotationShapeId;
+export const selectAnnotationDeleteMode = (state: VideoEditorState) => state.annotationDeleteMode;
 export const selectSelectAnnotationSegment = (state: VideoEditorState) => state.selectAnnotationSegment;
 export const selectSelectAnnotationShape = (state: VideoEditorState) => state.selectAnnotationShape;
 export const selectAddAnnotationSegment = (state: VideoEditorState) => state.addAnnotationSegment;

@@ -743,7 +743,7 @@ export const TextOverlay = memo(function TextOverlay({
 
   return (
     <div
-      className="absolute left-0 top-0"
+      className="absolute left-0 top-0 pointer-events-none"
       style={{
         width: `${safeDisplayWidth}px`,
         height: `${safeDisplayHeight}px`,

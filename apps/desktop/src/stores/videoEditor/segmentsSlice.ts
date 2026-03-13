@@ -10,9 +10,12 @@ import type {
   WebcamConfig,
   CursorConfig,
   AudioTrackSettings,
+  VideoProject,
 } from './types';
 import { createTextSegmentId, getTextSegmentIndexFromId } from '../../utils/textSegmentId';
 import { clampAnnotationShape, normalizeAnnotationConfig } from '../../utils/videoAnnotations';
+import { snapshotOverlayState } from './overlayAdjustment';
+import { pushTrimHistory } from './trimSlice';
 
 /**
  * Maximum annotation undo history size.
@@ -26,6 +29,7 @@ interface AnnotationHistoryEntry {
   segments: AnnotationSegment[];
   selectedSegmentId: string | null;
   selectedShapeId: string | null;
+  deleteMode: 'segment' | 'shape' | null;
 }
 
 /**
@@ -47,6 +51,23 @@ function pushAnnotationHistory(
   return { history: newHistory, index: newHistory.length - 1 };
 }
 
+function ensureTrimHistoryInitialized(
+  project: VideoProject,
+  trimHistory: Parameters<typeof pushTrimHistory>[0],
+  trimHistoryIndex: number,
+  selectedTrimSegmentId: string | null
+): ReturnType<typeof pushTrimHistory> {
+  if (trimHistory.length > 0) {
+    return { history: trimHistory, index: trimHistoryIndex };
+  }
+
+  return pushTrimHistory([], -1, {
+    segments: [...project.timeline.segments],
+    selectedId: selectedTrimSegmentId,
+    overlays: snapshotOverlayState(project),
+  });
+}
+
 /**
  * Generate a unique zoom region ID
  */
@@ -66,6 +87,7 @@ export interface SegmentsSlice {
   selectedTextSegmentId: string | null;
   selectedAnnotationSegmentId: string | null;
   selectedAnnotationShapeId: string | null;
+  annotationDeleteMode: 'segment' | 'shape' | null;
   selectedMaskSegmentId: string | null;
 
   // Zoom region actions
@@ -83,7 +105,7 @@ export interface SegmentsSlice {
   deleteTextSegment: (id: string) => void;
 
   // Annotation segment actions
-  selectAnnotationSegment: (id: string | null) => void;
+  selectAnnotationSegment: (id: string | null, shapeId?: string | null) => void;
   selectAnnotationShape: (id: string | null) => void;
   addAnnotationSegment: (segment: AnnotationSegment) => void;
   updateAnnotationSegment: (id: string, updates: Partial<AnnotationSegment>) => void;
@@ -136,6 +158,7 @@ export const createSegmentsSlice: SliceCreator<SegmentsSlice> = (set, get) => ({
   selectedTextSegmentId: null,
   selectedAnnotationSegmentId: null,
   selectedAnnotationShapeId: null,
+  annotationDeleteMode: null,
   annotationHistory: [],
   annotationHistoryIndex: -1,
   _annotationDragSnapshot: null,
@@ -149,6 +172,7 @@ export const createSegmentsSlice: SliceCreator<SegmentsSlice> = (set, get) => ({
       selectedTextSegmentId: null,
       selectedAnnotationSegmentId: null,
       selectedAnnotationShapeId: null,
+      annotationDeleteMode: null,
       selectedMaskSegmentId: null,
       selectedWebcamSegmentIndex: null,
     }),
@@ -178,33 +202,79 @@ export const createSegmentsSlice: SliceCreator<SegmentsSlice> = (set, get) => ({
   },
 
   updateZoomRegion: (id, updates) => {
-    const { project } = get();
+    const {
+      project,
+      selectedTrimSegmentId,
+      trimHistory,
+      trimHistoryIndex,
+    } = get();
     if (!project) return;
+
+    const seed = ensureTrimHistoryInitialized(
+      project,
+      trimHistory,
+      trimHistoryIndex,
+      selectedTrimSegmentId
+    );
+    const newRegions = project.zoom.regions.map((r) => (r.id === id ? { ...r, ...updates } : r));
+    const overlays = snapshotOverlayState(project);
+    overlays.zoomRegions = newRegions;
+    const { history, index } = pushTrimHistory(seed.history, seed.index, {
+      segments: [...project.timeline.segments],
+      selectedId: selectedTrimSegmentId,
+      overlays,
+    });
 
     set({
       project: {
         ...project,
         zoom: {
           ...project.zoom,
-          regions: project.zoom.regions.map((r) => (r.id === id ? { ...r, ...updates } : r)),
+          regions: newRegions,
         },
       },
+      activeUndoDomain: 'trim',
+      trimHistory: history,
+      trimHistoryIndex: index,
     });
   },
 
   deleteZoomRegion: (id) => {
-    const { project, selectedZoomRegionId } = get();
+    const {
+      project,
+      selectedZoomRegionId,
+      selectedTrimSegmentId,
+      trimHistory,
+      trimHistoryIndex,
+    } = get();
     if (!project) return;
+
+    const seed = ensureTrimHistoryInitialized(
+      project,
+      trimHistory,
+      trimHistoryIndex,
+      selectedTrimSegmentId
+    );
+    const overlays = snapshotOverlayState(project);
+    overlays.zoomRegions = project.zoom.regions.filter((r) => r.id !== id);
+    const { history, index } = pushTrimHistory(seed.history, seed.index, {
+      segments: [...project.timeline.segments],
+      selectedId: selectedTrimSegmentId,
+      overlays,
+    });
 
     set({
       project: {
         ...project,
         zoom: {
           ...project.zoom,
-          regions: project.zoom.regions.filter((r) => r.id !== id),
+          regions: overlays.zoomRegions,
         },
       },
       selectedZoomRegionId: selectedZoomRegionId === id ? null : selectedZoomRegionId,
+      activeUndoDomain: 'trim',
+      trimHistory: history,
+      trimHistoryIndex: index,
     });
   },
 
@@ -267,6 +337,7 @@ export const createSegmentsSlice: SliceCreator<SegmentsSlice> = (set, get) => ({
       selectedSceneSegmentId: null,
       selectedAnnotationSegmentId: null,
       selectedAnnotationShapeId: null,
+      annotationDeleteMode: null,
       selectedMaskSegmentId: null,
       selectedWebcamSegmentIndex: null,
     }),
@@ -306,60 +377,129 @@ export const createSegmentsSlice: SliceCreator<SegmentsSlice> = (set, get) => ({
   },
 
   updateTextSegment: (id, updates) => {
-    const { project } = get();
+    const {
+      project,
+      selectedTrimSegmentId,
+      trimHistory,
+      trimHistoryIndex,
+    } = get();
     if (!project) return;
 
     const targetIndex = getTextSegmentIndexFromId(id);
     if (targetIndex === null) return;
     if (targetIndex < 0 || targetIndex >= project.text.segments.length) return;
 
+    const seed = ensureTrimHistoryInitialized(
+      project,
+      trimHistory,
+      trimHistoryIndex,
+      selectedTrimSegmentId
+    );
+    const newSegments = project.text.segments.map((s, idx) => {
+      if (idx === targetIndex) {
+        return { ...s, ...updates };
+      }
+      return s;
+    });
+    const overlays = snapshotOverlayState(project);
+    overlays.textSegments = newSegments;
+    const { history, index } = pushTrimHistory(seed.history, seed.index, {
+      segments: [...project.timeline.segments],
+      selectedId: selectedTrimSegmentId,
+      overlays,
+    });
+
     set({
       project: {
         ...project,
         text: {
           ...project.text,
-          segments: project.text.segments.map((s, idx) => {
-            if (idx === targetIndex) {
-              return { ...s, ...updates };
-            }
-            return s;
-          }),
+          segments: newSegments,
         },
       },
+      activeUndoDomain: 'trim',
+      trimHistory: history,
+      trimHistoryIndex: index,
     });
   },
 
   deleteTextSegment: (id) => {
-    const { project, selectedTextSegmentId } = get();
+    const {
+      project,
+      selectedTextSegmentId,
+      selectedTrimSegmentId,
+      trimHistory,
+      trimHistoryIndex,
+    } = get();
     if (!project) return;
 
     const targetIndex = getTextSegmentIndexFromId(id);
     if (targetIndex === null) return;
     if (targetIndex < 0 || targetIndex >= project.text.segments.length) return;
 
+    const seed = ensureTrimHistoryInitialized(
+      project,
+      trimHistory,
+      trimHistoryIndex,
+      selectedTrimSegmentId
+    );
+    const overlays = snapshotOverlayState(project);
+    overlays.textSegments = project.text.segments.filter((_, idx) => idx !== targetIndex);
+    const { history, index } = pushTrimHistory(seed.history, seed.index, {
+      segments: [...project.timeline.segments],
+      selectedId: selectedTrimSegmentId,
+      overlays,
+    });
+
     set({
       project: {
         ...project,
         text: {
           ...project.text,
-          segments: project.text.segments.filter((_, idx) => idx !== targetIndex),
+          segments: overlays.textSegments,
         },
       },
       selectedTextSegmentId: selectedTextSegmentId === id ? null : selectedTextSegmentId,
+      activeUndoDomain: 'trim',
+      trimHistory: history,
+      trimHistoryIndex: index,
     });
   },
 
   // Annotation segment actions
-  selectAnnotationSegment: (id) =>
+  selectAnnotationSegment: (id, shapeId) =>
     set((state) => {
       const annotations = normalizeAnnotationConfig(state.project?.annotations);
       const selectedSegment = id
         ? annotations.segments.find((segment) => segment.id === id) ?? null
         : null;
+      const explicitShapeId =
+        shapeId != null &&
+        selectedSegment?.shapes.some((shape) => shape.id === shapeId)
+          ? shapeId
+          : null;
+      const currentSelectedShapeId = state.selectedAnnotationShapeId;
+      const preservedShapeId =
+        id != null &&
+        id === state.selectedAnnotationSegmentId &&
+        currentSelectedShapeId != null &&
+        selectedSegment?.shapes.some((shape) => shape.id === currentSelectedShapeId)
+          ? currentSelectedShapeId
+          : null;
 
       return {
         selectedAnnotationSegmentId: id,
-        selectedAnnotationShapeId: selectedSegment?.shapes[0]?.id ?? null,
+        selectedAnnotationShapeId:
+          explicitShapeId ??
+          preservedShapeId ??
+          selectedSegment?.shapes[0]?.id ??
+          null,
+        annotationDeleteMode:
+          id == null
+            ? null
+            : explicitShapeId != null
+              ? 'shape'
+              : 'segment',
         selectedZoomRegionId: null,
         selectedSceneSegmentId: null,
         selectedTextSegmentId: null,
@@ -368,7 +508,16 @@ export const createSegmentsSlice: SliceCreator<SegmentsSlice> = (set, get) => ({
       };
     }),
 
-  selectAnnotationShape: (id) => set({ selectedAnnotationShapeId: id }),
+  selectAnnotationShape: (id) =>
+    set((state) => ({
+      selectedAnnotationShapeId: id,
+      annotationDeleteMode:
+        id != null
+          ? 'shape'
+          : state.selectedAnnotationSegmentId != null
+            ? 'segment'
+            : null,
+    })),
 
   addAnnotationSegment: (segment) => {
     const { project, selectedAnnotationSegmentId, selectedAnnotationShapeId } = get();
@@ -382,6 +531,7 @@ export const createSegmentsSlice: SliceCreator<SegmentsSlice> = (set, get) => ({
         segments: annotations.segments,
         selectedSegmentId: selectedAnnotationSegmentId,
         selectedShapeId: selectedAnnotationShapeId,
+        deleteMode: get().annotationDeleteMode,
       });
       annotationHistory = init.history;
       annotationHistoryIndex = init.index;
@@ -406,6 +556,7 @@ export const createSegmentsSlice: SliceCreator<SegmentsSlice> = (set, get) => ({
       segments: newSegments,
       selectedSegmentId: newSelectedSegmentId,
       selectedShapeId: newSelectedShapeId,
+      deleteMode: 'segment',
     });
 
     set({
@@ -415,13 +566,15 @@ export const createSegmentsSlice: SliceCreator<SegmentsSlice> = (set, get) => ({
       },
       selectedAnnotationSegmentId: newSelectedSegmentId,
       selectedAnnotationShapeId: newSelectedShapeId,
+      annotationDeleteMode: 'segment',
+      activeUndoDomain: 'annotation',
       annotationHistory: history,
       annotationHistoryIndex: index,
     });
   },
 
   updateAnnotationSegment: (id, updates) => {
-    const { project, _annotationDragSnapshot } = get();
+    const { project, _annotationDragSnapshot, annotationDeleteMode } = get();
     if (!project) return;
     const annotations = normalizeAnnotationConfig(project.annotations);
 
@@ -455,6 +608,7 @@ export const createSegmentsSlice: SliceCreator<SegmentsSlice> = (set, get) => ({
         segments: annotations.segments,
         selectedSegmentId: selectedAnnotationSegmentId,
         selectedShapeId: selectedAnnotationShapeId,
+        deleteMode: annotationDeleteMode,
       });
       annotationHistory = init.history;
       annotationHistoryIndex = init.index;
@@ -464,6 +618,7 @@ export const createSegmentsSlice: SliceCreator<SegmentsSlice> = (set, get) => ({
       segments: newSegments,
       selectedSegmentId: selectedAnnotationSegmentId,
       selectedShapeId: selectedAnnotationShapeId,
+      deleteMode: annotationDeleteMode,
     });
 
     set({
@@ -471,13 +626,14 @@ export const createSegmentsSlice: SliceCreator<SegmentsSlice> = (set, get) => ({
         ...project,
         annotations: { ...annotations, segments: newSegments },
       },
+      activeUndoDomain: 'annotation',
       annotationHistory: history,
       annotationHistoryIndex: index,
     });
   },
 
   deleteAnnotationSegment: (id) => {
-    const { project, selectedAnnotationSegmentId, selectedAnnotationShapeId } = get();
+    const { project, selectedAnnotationSegmentId, selectedAnnotationShapeId, annotationDeleteMode } = get();
     let { annotationHistory, annotationHistoryIndex } = get();
     if (!project) return;
     const annotations = normalizeAnnotationConfig(project.annotations);
@@ -487,6 +643,7 @@ export const createSegmentsSlice: SliceCreator<SegmentsSlice> = (set, get) => ({
         segments: annotations.segments,
         selectedSegmentId: selectedAnnotationSegmentId,
         selectedShapeId: selectedAnnotationShapeId,
+        deleteMode: annotationDeleteMode,
       });
       annotationHistory = init.history;
       annotationHistoryIndex = init.index;
@@ -500,6 +657,7 @@ export const createSegmentsSlice: SliceCreator<SegmentsSlice> = (set, get) => ({
       segments: newSegments,
       selectedSegmentId: newSelectedSegmentId,
       selectedShapeId: newSelectedShapeId,
+      deleteMode: selectedAnnotationSegmentId === id ? null : annotationDeleteMode,
     });
 
     set({
@@ -509,13 +667,15 @@ export const createSegmentsSlice: SliceCreator<SegmentsSlice> = (set, get) => ({
       },
       selectedAnnotationSegmentId: newSelectedSegmentId,
       selectedAnnotationShapeId: newSelectedShapeId,
+      annotationDeleteMode: selectedAnnotationSegmentId === id ? null : annotationDeleteMode,
+      activeUndoDomain: 'annotation',
       annotationHistory: history,
       annotationHistoryIndex: index,
     });
   },
 
   addAnnotationShape: (segmentId, shape) => {
-    const { project, selectedAnnotationSegmentId, selectedAnnotationShapeId } = get();
+    const { project, selectedAnnotationSegmentId, selectedAnnotationShapeId, annotationDeleteMode } = get();
     let { annotationHistory, annotationHistoryIndex } = get();
     if (!project) return;
     const annotations = normalizeAnnotationConfig(project.annotations);
@@ -525,6 +685,7 @@ export const createSegmentsSlice: SliceCreator<SegmentsSlice> = (set, get) => ({
         segments: annotations.segments,
         selectedSegmentId: selectedAnnotationSegmentId,
         selectedShapeId: selectedAnnotationShapeId,
+        deleteMode: annotationDeleteMode,
       });
       annotationHistory = init.history;
       annotationHistoryIndex = init.index;
@@ -541,6 +702,7 @@ export const createSegmentsSlice: SliceCreator<SegmentsSlice> = (set, get) => ({
       segments: newSegments,
       selectedSegmentId: segmentId,
       selectedShapeId: clampedShape.id,
+      deleteMode: 'shape',
     });
 
     set({
@@ -550,13 +712,15 @@ export const createSegmentsSlice: SliceCreator<SegmentsSlice> = (set, get) => ({
       },
       selectedAnnotationSegmentId: segmentId,
       selectedAnnotationShapeId: clampedShape.id,
+      annotationDeleteMode: 'shape',
+      activeUndoDomain: 'annotation',
       annotationHistory: history,
       annotationHistoryIndex: index,
     });
   },
 
   updateAnnotationShape: (segmentId, shapeId, updates) => {
-    const { project, _annotationDragSnapshot } = get();
+    const { project, _annotationDragSnapshot, annotationDeleteMode } = get();
     if (!project) return;
     const annotations = normalizeAnnotationConfig(project.annotations);
 
@@ -589,6 +753,7 @@ export const createSegmentsSlice: SliceCreator<SegmentsSlice> = (set, get) => ({
         segments: annotations.segments,
         selectedSegmentId: selectedAnnotationSegmentId,
         selectedShapeId: selectedAnnotationShapeId,
+        deleteMode: annotationDeleteMode,
       });
       annotationHistory = init.history;
       annotationHistoryIndex = init.index;
@@ -598,6 +763,7 @@ export const createSegmentsSlice: SliceCreator<SegmentsSlice> = (set, get) => ({
       segments: newSegments,
       selectedSegmentId: selectedAnnotationSegmentId,
       selectedShapeId: selectedAnnotationShapeId,
+      deleteMode: annotationDeleteMode,
     });
 
     set({
@@ -605,13 +771,14 @@ export const createSegmentsSlice: SliceCreator<SegmentsSlice> = (set, get) => ({
         ...project,
         annotations: { ...annotations, segments: newSegments },
       },
+      activeUndoDomain: 'annotation',
       annotationHistory: history,
       annotationHistoryIndex: index,
     });
   },
 
   deleteAnnotationShape: (segmentId, shapeId) => {
-    const { project, selectedAnnotationSegmentId, selectedAnnotationShapeId } = get();
+    const { project, selectedAnnotationSegmentId, selectedAnnotationShapeId, annotationDeleteMode } = get();
     let { annotationHistory, annotationHistoryIndex } = get();
     if (!project) return;
     const annotations = normalizeAnnotationConfig(project.annotations);
@@ -621,6 +788,7 @@ export const createSegmentsSlice: SliceCreator<SegmentsSlice> = (set, get) => ({
         segments: annotations.segments,
         selectedSegmentId: selectedAnnotationSegmentId,
         selectedShapeId: selectedAnnotationShapeId,
+        deleteMode: annotationDeleteMode,
       });
       annotationHistory = init.history;
       annotationHistoryIndex = init.index;
@@ -642,6 +810,7 @@ export const createSegmentsSlice: SliceCreator<SegmentsSlice> = (set, get) => ({
       segments: newSegments,
       selectedSegmentId: selectedAnnotationSegmentId,
       selectedShapeId: nextSelectedShapeId,
+      deleteMode: nextSelectedShapeId != null ? 'shape' : 'segment',
     });
 
     set({
@@ -650,6 +819,8 @@ export const createSegmentsSlice: SliceCreator<SegmentsSlice> = (set, get) => ({
         annotations: { ...annotations, segments: newSegments },
       },
       selectedAnnotationShapeId: nextSelectedShapeId,
+      annotationDeleteMode: nextSelectedShapeId != null ? 'shape' : 'segment',
+      activeUndoDomain: 'annotation',
       annotationHistory: history,
       annotationHistoryIndex: index,
     });
@@ -671,6 +842,8 @@ export const createSegmentsSlice: SliceCreator<SegmentsSlice> = (set, get) => ({
       },
       selectedAnnotationSegmentId: prevEntry.selectedSegmentId,
       selectedAnnotationShapeId: prevEntry.selectedShapeId,
+      annotationDeleteMode: prevEntry.deleteMode,
+      activeUndoDomain: 'annotation',
       annotationHistoryIndex: annotationHistoryIndex - 1,
     });
   },
@@ -691,12 +864,14 @@ export const createSegmentsSlice: SliceCreator<SegmentsSlice> = (set, get) => ({
       },
       selectedAnnotationSegmentId: nextEntry.selectedSegmentId,
       selectedAnnotationShapeId: nextEntry.selectedShapeId,
+      annotationDeleteMode: nextEntry.deleteMode,
+      activeUndoDomain: 'annotation',
       annotationHistoryIndex: annotationHistoryIndex + 1,
     });
   },
 
   beginAnnotationDrag: () => {
-    const { project, selectedAnnotationSegmentId, selectedAnnotationShapeId } = get();
+    const { project, selectedAnnotationSegmentId, selectedAnnotationShapeId, annotationDeleteMode } = get();
     if (!project) return;
     const annotations = normalizeAnnotationConfig(project.annotations);
 
@@ -705,12 +880,19 @@ export const createSegmentsSlice: SliceCreator<SegmentsSlice> = (set, get) => ({
         segments: annotations.segments,
         selectedSegmentId: selectedAnnotationSegmentId,
         selectedShapeId: selectedAnnotationShapeId,
+        deleteMode: annotationDeleteMode,
       },
     });
   },
 
   commitAnnotationDrag: () => {
-    const { project, _annotationDragSnapshot, selectedAnnotationSegmentId, selectedAnnotationShapeId } = get();
+    const {
+      project,
+      _annotationDragSnapshot,
+      selectedAnnotationSegmentId,
+      selectedAnnotationShapeId,
+      annotationDeleteMode,
+    } = get();
     if (!project || !_annotationDragSnapshot) return;
     const annotations = normalizeAnnotationConfig(project.annotations);
 
@@ -728,9 +910,11 @@ export const createSegmentsSlice: SliceCreator<SegmentsSlice> = (set, get) => ({
       segments: annotations.segments,
       selectedSegmentId: selectedAnnotationSegmentId,
       selectedShapeId: selectedAnnotationShapeId,
+      deleteMode: annotationDeleteMode,
     });
 
     set({
+      activeUndoDomain: 'annotation',
       annotationHistory: history,
       annotationHistoryIndex: index,
       _annotationDragSnapshot: null,
@@ -745,6 +929,7 @@ export const createSegmentsSlice: SliceCreator<SegmentsSlice> = (set, get) => ({
       selectedTextSegmentId: null,
       selectedAnnotationSegmentId: null,
       selectedAnnotationShapeId: null,
+      annotationDeleteMode: null,
       selectedSceneSegmentId: null,
       selectedWebcamSegmentIndex: null,
     }),
@@ -777,33 +962,79 @@ export const createSegmentsSlice: SliceCreator<SegmentsSlice> = (set, get) => ({
   },
 
   updateMaskSegment: (id, updates) => {
-    const { project } = get();
+    const {
+      project,
+      selectedTrimSegmentId,
+      trimHistory,
+      trimHistoryIndex,
+    } = get();
     if (!project) return;
+
+    const seed = ensureTrimHistoryInitialized(
+      project,
+      trimHistory,
+      trimHistoryIndex,
+      selectedTrimSegmentId
+    );
+    const newSegments = project.mask.segments.map((s) => (s.id === id ? { ...s, ...updates } : s));
+    const overlays = snapshotOverlayState(project);
+    overlays.maskSegments = newSegments;
+    const { history, index } = pushTrimHistory(seed.history, seed.index, {
+      segments: [...project.timeline.segments],
+      selectedId: selectedTrimSegmentId,
+      overlays,
+    });
 
     set({
       project: {
         ...project,
         mask: {
           ...project.mask,
-          segments: project.mask.segments.map((s) => (s.id === id ? { ...s, ...updates } : s)),
+          segments: newSegments,
         },
       },
+      activeUndoDomain: 'trim',
+      trimHistory: history,
+      trimHistoryIndex: index,
     });
   },
 
   deleteMaskSegment: (id) => {
-    const { project, selectedMaskSegmentId } = get();
+    const {
+      project,
+      selectedMaskSegmentId,
+      selectedTrimSegmentId,
+      trimHistory,
+      trimHistoryIndex,
+    } = get();
     if (!project) return;
+
+    const seed = ensureTrimHistoryInitialized(
+      project,
+      trimHistory,
+      trimHistoryIndex,
+      selectedTrimSegmentId
+    );
+    const overlays = snapshotOverlayState(project);
+    overlays.maskSegments = project.mask.segments.filter((s) => s.id !== id);
+    const { history, index } = pushTrimHistory(seed.history, seed.index, {
+      segments: [...project.timeline.segments],
+      selectedId: selectedTrimSegmentId,
+      overlays,
+    });
 
     set({
       project: {
         ...project,
         mask: {
           ...project.mask,
-          segments: project.mask.segments.filter((s) => s.id !== id),
+          segments: overlays.maskSegments,
         },
       },
       selectedMaskSegmentId: selectedMaskSegmentId === id ? null : selectedMaskSegmentId,
+      activeUndoDomain: 'trim',
+      trimHistory: history,
+      trimHistoryIndex: index,
     });
   },
 
@@ -815,6 +1046,7 @@ export const createSegmentsSlice: SliceCreator<SegmentsSlice> = (set, get) => ({
       selectedTextSegmentId: null,
       selectedAnnotationSegmentId: null,
       selectedAnnotationShapeId: null,
+      annotationDeleteMode: null,
       selectedMaskSegmentId: null,
       selectedWebcamSegmentIndex: null,
     }),
@@ -847,33 +1079,79 @@ export const createSegmentsSlice: SliceCreator<SegmentsSlice> = (set, get) => ({
   },
 
   updateSceneSegment: (id, updates) => {
-    const { project } = get();
+    const {
+      project,
+      selectedTrimSegmentId,
+      trimHistory,
+      trimHistoryIndex,
+    } = get();
     if (!project) return;
+
+    const seed = ensureTrimHistoryInitialized(
+      project,
+      trimHistory,
+      trimHistoryIndex,
+      selectedTrimSegmentId
+    );
+    const newSegments = project.scene.segments.map((s) => (s.id === id ? { ...s, ...updates } : s));
+    const overlays = snapshotOverlayState(project);
+    overlays.sceneSegments = newSegments;
+    const { history, index } = pushTrimHistory(seed.history, seed.index, {
+      segments: [...project.timeline.segments],
+      selectedId: selectedTrimSegmentId,
+      overlays,
+    });
 
     set({
       project: {
         ...project,
         scene: {
           ...project.scene,
-          segments: project.scene.segments.map((s) => (s.id === id ? { ...s, ...updates } : s)),
+          segments: newSegments,
         },
       },
+      activeUndoDomain: 'trim',
+      trimHistory: history,
+      trimHistoryIndex: index,
     });
   },
 
   deleteSceneSegment: (id) => {
-    const { project, selectedSceneSegmentId } = get();
+    const {
+      project,
+      selectedSceneSegmentId,
+      selectedTrimSegmentId,
+      trimHistory,
+      trimHistoryIndex,
+    } = get();
     if (!project) return;
+
+    const seed = ensureTrimHistoryInitialized(
+      project,
+      trimHistory,
+      trimHistoryIndex,
+      selectedTrimSegmentId
+    );
+    const overlays = snapshotOverlayState(project);
+    overlays.sceneSegments = project.scene.segments.filter((s) => s.id !== id);
+    const { history, index } = pushTrimHistory(seed.history, seed.index, {
+      segments: [...project.timeline.segments],
+      selectedId: selectedTrimSegmentId,
+      overlays,
+    });
 
     set({
       project: {
         ...project,
         scene: {
           ...project.scene,
-          segments: project.scene.segments.filter((s) => s.id !== id),
+          segments: overlays.sceneSegments,
         },
       },
       selectedSceneSegmentId: selectedSceneSegmentId === id ? null : selectedSceneSegmentId,
+      activeUndoDomain: 'trim',
+      trimHistory: history,
+      trimHistoryIndex: index,
     });
   },
 
@@ -886,6 +1164,7 @@ export const createSegmentsSlice: SliceCreator<SegmentsSlice> = (set, get) => ({
       selectedTextSegmentId: null,
       selectedAnnotationSegmentId: null,
       selectedAnnotationShapeId: null,
+      annotationDeleteMode: null,
       selectedMaskSegmentId: null,
     }),
 
@@ -917,11 +1196,29 @@ export const createSegmentsSlice: SliceCreator<SegmentsSlice> = (set, get) => ({
   },
 
   updateWebcamSegment: (index, updates) => {
-    const { project } = get();
+    const {
+      project,
+      selectedTrimSegmentId,
+      trimHistory,
+      trimHistoryIndex,
+    } = get();
     if (!project) return;
 
+    const seed = ensureTrimHistoryInitialized(
+      project,
+      trimHistory,
+      trimHistoryIndex,
+      selectedTrimSegmentId
+    );
     const segments = [...project.webcam.visibilitySegments];
     segments[index] = { ...segments[index], ...updates };
+    const overlays = snapshotOverlayState(project);
+    overlays.webcamVisibilitySegments = segments;
+    const { history, index: nextIndex } = pushTrimHistory(seed.history, seed.index, {
+      segments: [...project.timeline.segments],
+      selectedId: selectedTrimSegmentId,
+      overlays,
+    });
 
     set({
       project: {
@@ -931,24 +1228,48 @@ export const createSegmentsSlice: SliceCreator<SegmentsSlice> = (set, get) => ({
           visibilitySegments: segments,
         },
       },
+      activeUndoDomain: 'trim',
+      trimHistory: history,
+      trimHistoryIndex: nextIndex,
     });
   },
 
   deleteWebcamSegment: (index) => {
-    const { project, selectedWebcamSegmentIndex } = get();
+    const {
+      project,
+      selectedWebcamSegmentIndex,
+      selectedTrimSegmentId,
+      trimHistory,
+      trimHistoryIndex,
+    } = get();
     if (!project) return;
 
-    const segments = project.webcam.visibilitySegments.filter((_, i) => i !== index);
+    const seed = ensureTrimHistoryInitialized(
+      project,
+      trimHistory,
+      trimHistoryIndex,
+      selectedTrimSegmentId
+    );
+    const overlays = snapshotOverlayState(project);
+    overlays.webcamVisibilitySegments = project.webcam.visibilitySegments.filter((_, i) => i !== index);
+    const { history, index: nextIndex } = pushTrimHistory(seed.history, seed.index, {
+      segments: [...project.timeline.segments],
+      selectedId: selectedTrimSegmentId,
+      overlays,
+    });
 
     set({
       project: {
         ...project,
         webcam: {
           ...project.webcam,
-          visibilitySegments: segments,
+          visibilitySegments: overlays.webcamVisibilitySegments,
         },
       },
       selectedWebcamSegmentIndex: selectedWebcamSegmentIndex === index ? null : selectedWebcamSegmentIndex,
+      activeUndoDomain: 'trim',
+      trimHistory: history,
+      trimHistoryIndex: nextIndex,
     });
   },
 

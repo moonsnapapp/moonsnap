@@ -1,11 +1,12 @@
 import { useMemo } from 'react';
 import { Plus } from 'lucide-react';
+import { ColorPicker } from '@/components/ui/color-picker';
 import { Slider } from '@/components/ui/slider';
 import type { AnnotationSegment, AnnotationShape, AnnotationShapeType } from '@/types';
 import {
-  getAnnotationArrowEndpoints,
-  getAnnotationArrowShapeUpdate,
   getAnnotationShapeLabel,
+  isEndpointAnnotationShapeType,
+  isLegacyAnnotationShapeType,
 } from '@/utils/videoAnnotations';
 
 export interface AnnotationSegmentConfigProps {
@@ -19,33 +20,18 @@ export interface AnnotationSegmentConfigProps {
   onDone: () => void;
 }
 
-const SHAPE_TYPES: AnnotationShapeType[] = ['rectangle', 'ellipse', 'arrow', 'text'];
-
-function NormalizedSlider({
-  label,
-  value,
-  onChange,
-  min = 0,
-  max = 1,
-  step = 0.01,
-}: {
-  label: string;
-  value: number;
-  onChange: (value: number) => void;
-  min?: number;
-  max?: number;
-  step?: number;
-}) {
-  return (
-    <div>
-      <div className="mb-2 flex items-center justify-between">
-        <span className="text-xs text-[var(--ink-muted)]">{label}</span>
-        <span className="font-mono text-xs text-[var(--ink-dark)]">{value.toFixed(2)}</span>
-      </div>
-      <Slider value={[value]} min={min} max={max} step={step} onValueChange={(values) => onChange(values[0])} />
-    </div>
-  );
-}
+const ADDABLE_SHAPE_TYPES: AnnotationShapeType[] = ['rectangle', 'ellipse', 'arrow', 'step'];
+const LEGACY_TEXT_SHAPE_TYPE: AnnotationShapeType = 'text';
+const COLOR_PRESETS = [
+  '#EF4444',
+  '#F97316',
+  '#22C55E',
+  '#3B82F6',
+  '#8B5CF6',
+  '#EC4899',
+  '#FFFFFF',
+  '#1A1A1A',
+];
 
 export function AnnotationSegmentConfig({
   segment,
@@ -58,15 +44,27 @@ export function AnnotationSegmentConfig({
   onDone,
 }: AnnotationSegmentConfigProps) {
   const selectedShape = useMemo(() => {
-    return segment.shapes.find((shape: AnnotationShape) => shape.id === selectedShapeId) ?? segment.shapes[0] ?? null;
-  }, [segment.shapes, selectedShapeId]);
-  const arrowEndpoints = useMemo(() => {
-    if (!selectedShape || selectedShape.shapeType !== 'arrow') {
+    if (selectedShapeId == null) {
       return null;
     }
 
-    return getAnnotationArrowEndpoints(selectedShape);
+    return segment.shapes.find((shape: AnnotationShape) => shape.id === selectedShapeId) ?? null;
+  }, [segment.shapes, selectedShapeId]);
+  const shapeTypeOptions = useMemo(() => {
+    if (selectedShape && isLegacyAnnotationShapeType(selectedShape.shapeType)) {
+      return [...ADDABLE_SHAPE_TYPES, selectedShape.shapeType];
+    }
+
+    return ADDABLE_SHAPE_TYPES;
   }, [selectedShape]);
+  const isStepShape = selectedShape?.shapeType === 'step';
+  const isLegacyTextShape = selectedShape?.shapeType === LEGACY_TEXT_SHAPE_TYPE;
+  const showStrokeControls = selectedShape != null && !isStepShape;
+  const showFillControls =
+    selectedShape != null &&
+    !isEndpointAnnotationShapeType(selectedShape.shapeType) &&
+    !isLegacyTextShape &&
+    !isStepShape;
 
   return (
     <div className="space-y-4">
@@ -113,7 +111,7 @@ export function AnnotationSegmentConfig({
       <div>
         <span className="mb-2 block text-xs text-[var(--ink-muted)]">Add Shape</span>
         <div className="grid grid-cols-2 gap-2">
-          {SHAPE_TYPES.map((shapeType) => (
+          {ADDABLE_SHAPE_TYPES.map((shapeType) => (
             <button
               key={shapeType}
               onClick={() => onAddShape(shapeType)}
@@ -135,7 +133,7 @@ export function AnnotationSegmentConfig({
               onChange={(event) => onUpdateShape(selectedShape.id, { shapeType: event.target.value as AnnotationShapeType })}
               className="h-8 w-full rounded-md border border-[var(--glass-border)] bg-[var(--polar-mist)] px-2 text-sm text-[var(--ink-dark)]"
             >
-              {SHAPE_TYPES.map((shapeType) => (
+              {shapeTypeOptions.map((shapeType) => (
                 <option key={shapeType} value={shapeType}>
                   {getAnnotationShapeLabel(shapeType)}
                 </option>
@@ -143,54 +141,38 @@ export function AnnotationSegmentConfig({
             </select>
           </div>
 
-          {selectedShape.shapeType === 'arrow' && arrowEndpoints ? (
-            <>
-              <NormalizedSlider
-                label="Tail X"
-                value={arrowEndpoints.tailX}
-                onChange={(tailX) => onUpdateShape(
-                  selectedShape.id,
-                  getAnnotationArrowShapeUpdate(selectedShape, { tailX })
-                )}
-              />
-              <NormalizedSlider
-                label="Tail Y"
-                value={arrowEndpoints.tailY}
-                onChange={(tailY) => onUpdateShape(
-                  selectedShape.id,
-                  getAnnotationArrowShapeUpdate(selectedShape, { tailY })
-                )}
-              />
-              <NormalizedSlider
-                label="Head X"
-                value={arrowEndpoints.headX}
-                onChange={(headX) => onUpdateShape(
-                  selectedShape.id,
-                  getAnnotationArrowShapeUpdate(selectedShape, { headX })
-                )}
-              />
-              <NormalizedSlider
-                label="Head Y"
-                value={arrowEndpoints.headY}
-                onChange={(headY) => onUpdateShape(
-                  selectedShape.id,
-                  getAnnotationArrowShapeUpdate(selectedShape, { headY })
-                )}
-              />
-            </>
-          ) : (
-            <>
-              <NormalizedSlider label="X" value={selectedShape.x} onChange={(x) => onUpdateShape(selectedShape.id, { x })} />
-              <NormalizedSlider label="Y" value={selectedShape.y} onChange={(y) => onUpdateShape(selectedShape.id, { y })} />
-              <NormalizedSlider label="Width" value={selectedShape.width} onChange={(width) => onUpdateShape(selectedShape.id, { width })} min={0.03} />
-              <NormalizedSlider label="Height" value={selectedShape.height} onChange={(height) => onUpdateShape(selectedShape.id, { height })} min={0.03} />
-            </>
+          {selectedShape.shapeType === LEGACY_TEXT_SHAPE_TYPE && (
+            <p className="text-xs text-[var(--ink-subtle)]">
+              Text annotations are legacy. Use the Text track for new text overlays.
+            </p>
           )}
 
-          {selectedShape.shapeType === 'arrow' && (
+          {isEndpointAnnotationShapeType(selectedShape.shapeType) && (
             <p className="text-xs text-[var(--ink-subtle)]">
-              Drag the tail and head dots in the preview to place the arrow.
+              Drag the start and end dots in the preview to position this shape.
             </p>
+          )}
+
+          {!isEndpointAnnotationShapeType(selectedShape.shapeType) && (
+            <p className="text-xs text-[var(--ink-subtle)]">
+              Drag the shape in the preview to move it, and use the resize handles to adjust its bounds.
+            </p>
+          )}
+
+          {isStepShape && (
+            <div>
+              <span className="mb-2 block text-xs text-[var(--ink-muted)]">Step Number</span>
+              <input
+                type="number"
+                min={1}
+                max={99}
+                value={selectedShape.number}
+                onChange={(event) => onUpdateShape(selectedShape.id, {
+                  number: Math.max(1, Math.round(Number(event.target.value) || 1)),
+                })}
+                className="h-8 w-full rounded-md border border-[var(--glass-border)] bg-[var(--polar-mist)] px-2 text-sm text-[var(--ink-dark)]"
+              />
+            </div>
           )}
 
           <div>
@@ -207,43 +189,58 @@ export function AnnotationSegmentConfig({
             />
           </div>
 
-          <div>
-            <div className="mb-2 flex items-center justify-between">
-              <span className="text-xs text-[var(--ink-muted)]">Stroke Width</span>
-              <span className="font-mono text-xs text-[var(--ink-dark)]">{selectedShape.strokeWidth.toFixed(0)}px</span>
-            </div>
-            <Slider
-              value={[selectedShape.strokeWidth]}
-              min={1}
-              max={24}
-              step={1}
-              onValueChange={(values) => onUpdateShape(selectedShape.id, { strokeWidth: values[0] })}
-            />
-          </div>
+          {showStrokeControls && (
+            <>
+              <div>
+                <div className="mb-2 flex items-center justify-between">
+                  <span className="text-xs text-[var(--ink-muted)]">Stroke Width</span>
+                  <span className="font-mono text-xs text-[var(--ink-dark)]">{selectedShape.strokeWidth.toFixed(0)}px</span>
+                </div>
+                <Slider
+                  value={[selectedShape.strokeWidth]}
+                  min={1}
+                  max={24}
+                  step={1}
+                  onValueChange={(values) => onUpdateShape(selectedShape.id, { strokeWidth: values[0] })}
+                />
+              </div>
 
-          <div className="flex items-center justify-between">
-            <span className="text-xs text-[var(--ink-muted)]">Stroke Color</span>
-            <input
-              type="color"
-              value={selectedShape.strokeColor}
-              onChange={(event) => onUpdateShape(selectedShape.id, { strokeColor: event.target.value })}
-              className="h-6 w-8 cursor-pointer rounded border border-[var(--glass-border)] bg-transparent"
-            />
-          </div>
+              <div className="space-y-3">
+                <span className="text-xs text-[var(--ink-muted)]">Stroke Color</span>
+                <ColorPicker
+                  value={selectedShape.strokeColor}
+                  onChange={(strokeColor) => onUpdateShape(selectedShape.id, { strokeColor })}
+                  presets={COLOR_PRESETS}
+                  showTransparent
+                />
+              </div>
+            </>
+          )}
 
-          {selectedShape.shapeType !== 'arrow' && selectedShape.shapeType !== 'text' && (
-            <div>
-              <span className="mb-2 block text-xs text-[var(--ink-muted)]">Fill</span>
-              <input
-                type="text"
+          {isStepShape && (
+            <div className="space-y-3">
+              <span className="text-xs text-[var(--ink-muted)]">Badge Color</span>
+              <ColorPicker
                 value={selectedShape.fillColor}
-                onChange={(event) => onUpdateShape(selectedShape.id, { fillColor: event.target.value })}
-                className="h-8 w-full rounded-md border border-[var(--glass-border)] bg-[var(--polar-mist)] px-2 text-sm text-[var(--ink-dark)]"
+                onChange={(fillColor) => onUpdateShape(selectedShape.id, { fillColor })}
+                presets={COLOR_PRESETS}
               />
             </div>
           )}
 
-          {selectedShape.shapeType === 'text' && (
+          {showFillControls && (
+            <div className="space-y-3">
+              <span className="text-xs text-[var(--ink-muted)]">Fill Color</span>
+              <ColorPicker
+                value={selectedShape.fillColor}
+                onChange={(fillColor) => onUpdateShape(selectedShape.id, { fillColor })}
+                presets={COLOR_PRESETS}
+                showTransparent
+              />
+            </div>
+          )}
+
+          {selectedShape.shapeType === LEGACY_TEXT_SHAPE_TYPE && (
             <>
               <div>
                 <span className="mb-2 block text-xs text-[var(--ink-muted)]">Text</span>

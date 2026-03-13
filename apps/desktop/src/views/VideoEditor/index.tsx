@@ -39,6 +39,7 @@ import {
   selectDeleteZoomRegion,
   selectExportProgress,
   selectExportVideo,
+  selectActiveUndoDomain,
   selectIsExporting,
   selectIsSaving,
   selectProject,
@@ -54,6 +55,7 @@ import {
   selectSelectZoomRegion,
   selectSelectedAnnotationSegmentId,
   selectSelectedAnnotationShapeId,
+  selectAnnotationDeleteMode,
   selectUndoAnnotation,
   selectSelectedMaskSegmentId,
   selectSelectedSceneSegmentId,
@@ -90,6 +92,7 @@ import {
   getVideoOutputMode,
   getVideoPrimaryActionLabel,
 } from '../../utils/videoExportMode';
+import { getDeleteSelectionAction } from './deleteSelection';
 
 // Lazy load CropDialog - only needed when crop tool is opened (861 lines)
 const CropDialog = lazy(() => import('../../components/VideoEditor/CropDialog').then(m => ({ default: m.CropDialog })));
@@ -182,6 +185,7 @@ export const VideoEditorView = forwardRef<VideoEditorViewRef, VideoEditorViewPro
   const deleteTextSegment = useVideoEditorStore(selectDeleteTextSegment);
   const selectedAnnotationSegmentId = useVideoEditorStore(selectSelectedAnnotationSegmentId);
   const selectedAnnotationShapeId = useVideoEditorStore(selectSelectedAnnotationShapeId);
+  const annotationDeleteMode = useVideoEditorStore(selectAnnotationDeleteMode);
   const selectAnnotationSegment = useVideoEditorStore(selectSelectAnnotationSegment);
   const deleteAnnotationSegment = useVideoEditorStore(selectDeleteAnnotationSegment);
   const deleteAnnotationShape = useVideoEditorStore(selectDeleteAnnotationShape);
@@ -190,6 +194,7 @@ export const VideoEditorView = forwardRef<VideoEditorViewRef, VideoEditorViewPro
   const selectedTrimSegmentId = useVideoEditorStore(selectSelectedTrimSegmentId);
   const selectTrimSegment = useVideoEditorStore(selectSelectTrimSegment);
   const deleteTrimSegment = useVideoEditorStore(selectDeleteTrimSegment);
+  const activeUndoDomain = useVideoEditorStore(selectActiveUndoDomain);
   const splitMode = useVideoEditorStore(selectSplitMode);
   const setSplitMode = useVideoEditorStore(selectSetSplitMode);
   const resetTrimSegments = useVideoEditorStore(selectResetTrimSegments);
@@ -236,24 +241,46 @@ export const VideoEditorView = forwardRef<VideoEditorViewRef, VideoEditorViewPro
     selectAnnotationSegment(null);
   }, [selectZoomRegion, selectSceneSegment, selectMaskSegment, selectTextSegment, selectTrimSegment, selectAnnotationSegment]);
 
-  // Delete whichever segment type is currently selected
+  // Delete whichever segment type is currently selected.
+  // Annotations use explicit segment-vs-shape intent from the store.
   const handleDeleteSelected = useCallback(() => {
-    if (selectedTrimSegmentId) {
-      deleteTrimSegment(selectedTrimSegmentId);
-    } else if (selectedZoomRegionId) {
-      deleteZoomRegion(selectedZoomRegionId);
-    } else if (selectedSceneSegmentId) {
-      deleteSceneSegment(selectedSceneSegmentId);
-    } else if (selectedMaskSegmentId) {
-      deleteMaskSegment(selectedMaskSegmentId);
-    } else if (selectedTextSegmentId) {
-      deleteTextSegment(selectedTextSegmentId);
-    } else if (selectedAnnotationSegmentId) {
-      if (selectedAnnotationShapeId) {
-        deleteAnnotationShape(selectedAnnotationSegmentId, selectedAnnotationShapeId);
-      } else {
-        deleteAnnotationSegment(selectedAnnotationSegmentId);
-      }
+    const deleteAction = getDeleteSelectionAction({
+      selectedTrimSegmentId,
+      selectedZoomRegionId,
+      selectedSceneSegmentId,
+      selectedMaskSegmentId,
+      selectedTextSegmentId,
+      selectedAnnotationSegmentId,
+      selectedAnnotationShapeId,
+      annotationDeleteMode,
+    });
+
+    if (!deleteAction) {
+      return;
+    }
+
+    switch (deleteAction.type) {
+      case 'trim-segment':
+        deleteTrimSegment(deleteAction.id);
+        break;
+      case 'zoom-region':
+        deleteZoomRegion(deleteAction.id);
+        break;
+      case 'scene-segment':
+        deleteSceneSegment(deleteAction.id);
+        break;
+      case 'mask-segment':
+        deleteMaskSegment(deleteAction.id);
+        break;
+      case 'text-segment':
+        deleteTextSegment(deleteAction.id);
+        break;
+      case 'annotation-segment':
+        deleteAnnotationSegment(deleteAction.id);
+        break;
+      case 'annotation-shape':
+        deleteAnnotationShape(deleteAction.segmentId, deleteAction.shapeId);
+        break;
     }
   }, [
     selectedTrimSegmentId,
@@ -263,6 +290,7 @@ export const VideoEditorView = forwardRef<VideoEditorViewRef, VideoEditorViewPro
     selectedTextSegmentId,
     selectedAnnotationSegmentId,
     selectedAnnotationShapeId,
+    annotationDeleteMode,
     deleteTrimSegment,
     deleteZoomRegion,
     deleteSceneSegment,
@@ -301,22 +329,23 @@ export const VideoEditorView = forwardRef<VideoEditorViewRef, VideoEditorViewPro
     resetTrimSegments();
   }, [resetTrimSegments]);
 
-  // Undo/redo handlers — context-aware: annotation undo when annotation selected, trim undo otherwise
+  // Undo/redo handlers follow the last mutated history domain so deletes remain recoverable
+  // even after they clear selection.
   const handleUndo = useCallback(() => {
-    if (selectedAnnotationSegmentId) {
+    if (activeUndoDomain === 'annotation') {
       undoAnnotation();
     } else {
       undoTrim();
     }
-  }, [selectedAnnotationSegmentId, undoAnnotation, undoTrim]);
+  }, [activeUndoDomain, undoAnnotation, undoTrim]);
 
   const handleRedo = useCallback(() => {
-    if (selectedAnnotationSegmentId) {
+    if (activeUndoDomain === 'annotation') {
       redoAnnotation();
     } else {
       redoTrim();
     }
-  }, [selectedAnnotationSegmentId, redoAnnotation, redoTrim]);
+  }, [activeUndoDomain, redoAnnotation, redoTrim]);
 
   // IO marker handlers
   const handleSetInPoint = useCallback(() => {

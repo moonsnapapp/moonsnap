@@ -223,7 +223,7 @@ export function clipSegmentsToTimelineRange(
 /**
  * Undo history entry for timeline operations (trim + overlays).
  */
-interface TimelineHistoryEntry {
+export interface TimelineHistoryEntry {
   segments: TrimSegment[];
   selectedId: string | null;
   overlays: OverlaySnapshot;
@@ -246,6 +246,7 @@ function createFullSegment(durationMs: number): TrimSegment {
 export interface TrimSlice {
   // Selection state
   selectedTrimSegmentId: string | null;
+  activeUndoDomain: 'trim' | 'annotation' | null;
 
   // Undo/redo history
   trimHistory: TimelineHistoryEntry[];
@@ -276,7 +277,7 @@ export interface TrimSlice {
 /**
  * Push a new state to history, clearing any redo states.
  */
-function pushTrimHistory(
+export function pushTrimHistory(
   history: TimelineHistoryEntry[],
   historyIndex: number,
   newEntry: TimelineHistoryEntry
@@ -299,6 +300,7 @@ function pushTrimHistory(
 export const createTrimSlice: SliceCreator<TrimSlice> = (set, get) => ({
   // Initial state
   selectedTrimSegmentId: null,
+  activeUndoDomain: null,
   trimHistory: [],
   trimHistoryIndex: -1,
 
@@ -331,6 +333,7 @@ export const createTrimSlice: SliceCreator<TrimSlice> = (set, get) => ({
         ...project,
         timeline: { ...project.timeline, segments: newSegments },
       },
+      activeUndoDomain: 'trim',
       trimHistory: history,
       trimHistoryIndex: index,
     });
@@ -354,6 +357,7 @@ export const createTrimSlice: SliceCreator<TrimSlice> = (set, get) => ({
         timeline: { ...project.timeline, segments: newSegments },
       },
       selectedTrimSegmentId: null,
+      activeUndoDomain: 'trim',
       trimHistory: history,
       trimHistoryIndex: index,
       currentTimeMs: 0,
@@ -444,6 +448,7 @@ export const createTrimSlice: SliceCreator<TrimSlice> = (set, get) => ({
         },
       },
       selectedTrimSegmentId: null,
+      activeUndoDomain: 'trim',
       trimHistory: history,
       trimHistoryIndex: index,
     });
@@ -521,6 +526,7 @@ export const createTrimSlice: SliceCreator<TrimSlice> = (set, get) => ({
         webcam: { ...project.webcam, visibilitySegments: newWebcamSegments },
       },
       selectedTrimSegmentId: newSelectedId,
+      activeUndoDomain: 'trim',
       trimHistory: history,
       trimHistoryIndex: index,
     });
@@ -575,6 +581,7 @@ export const createTrimSlice: SliceCreator<TrimSlice> = (set, get) => ({
           segments: newSegments,
         },
       },
+      activeUndoDomain: 'trim',
       trimHistory: history,
       trimHistoryIndex: index,
     });
@@ -602,6 +609,7 @@ export const createTrimSlice: SliceCreator<TrimSlice> = (set, get) => ({
         webcam: { ...project.webcam, visibilitySegments: prevEntry.overlays.webcamVisibilitySegments },
       },
       selectedTrimSegmentId: prevEntry.selectedId,
+      activeUndoDomain: 'trim',
       trimHistoryIndex: trimHistoryIndex - 1,
     });
   },
@@ -628,6 +636,7 @@ export const createTrimSlice: SliceCreator<TrimSlice> = (set, get) => ({
         webcam: { ...project.webcam, visibilitySegments: nextEntry.overlays.webcamVisibilitySegments },
       },
       selectedTrimSegmentId: nextEntry.selectedId,
+      activeUndoDomain: 'trim',
       trimHistoryIndex: trimHistoryIndex + 1,
     });
   },

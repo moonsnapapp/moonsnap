@@ -1083,10 +1083,12 @@ impl Default for SceneConfig {
 #[serde(rename_all = "camelCase")]
 #[ts(export, export_to = "../../../../src/types/generated/")]
 pub enum AnnotationShapeType {
-    #[default]
     Rectangle,
     Ellipse,
+    #[default]
     Arrow,
+    Line,
+    Step,
     Text,
 }
 
@@ -1124,16 +1126,16 @@ pub struct AnnotationShape {
     pub width: f32,
     /// Height (0-1, normalized).
     pub height: f32,
-    /// Arrow tail X position (0-1 normalized).
+    /// Arrow/line start X position (0-1 normalized).
     #[serde(default)]
     pub arrow_start_x: Option<f32>,
-    /// Arrow tail Y position (0-1 normalized).
+    /// Arrow/line start Y position (0-1 normalized).
     #[serde(default)]
     pub arrow_start_y: Option<f32>,
-    /// Arrow head X position (0-1 normalized).
+    /// Arrow/line end X position (0-1 normalized).
     #[serde(default)]
     pub arrow_end_x: Option<f32>,
-    /// Arrow head Y position (0-1 normalized).
+    /// Arrow/line end Y position (0-1 normalized).
     #[serde(default)]
     pub arrow_end_y: Option<f32>,
     /// Stroke color.
@@ -1148,6 +1150,9 @@ pub struct AnnotationShape {
     /// Opacity multiplier (0-1).
     #[serde(default = "AnnotationShape::default_opacity")]
     pub opacity: f32,
+    /// Step number for badge annotations.
+    #[serde(default = "AnnotationShape::default_number")]
+    pub number: u32,
     /// Text content for text annotations.
     #[serde(default = "default_annotation_text")]
     pub text: String,
@@ -1164,11 +1169,15 @@ pub struct AnnotationShape {
 
 impl AnnotationShape {
     fn default_stroke_width() -> f32 {
-        6.0
+        16.0
     }
 
     fn default_opacity() -> f32 {
         1.0
+    }
+
+    fn default_number() -> u32 {
+        1
     }
 
     fn default_font_size() -> f32 {
@@ -1184,7 +1193,7 @@ impl Default for AnnotationShape {
     fn default() -> Self {
         Self {
             id: "annotation-shape".to_string(),
-            shape_type: AnnotationShapeType::Rectangle,
+            shape_type: AnnotationShapeType::Arrow,
             x: 0.2,
             y: 0.2,
             width: 0.3,
@@ -1197,6 +1206,7 @@ impl Default for AnnotationShape {
             fill_color: default_annotation_fill_color(),
             stroke_width: Self::default_stroke_width(),
             opacity: Self::default_opacity(),
+            number: Self::default_number(),
             text: default_annotation_text(),
             font_size: Self::default_font_size(),
             font_family: default_annotation_font_family(),

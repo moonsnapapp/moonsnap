@@ -47,7 +47,7 @@ import { CursorConfigPanel } from './panels/CursorConfigPanel';
 import { WebcamConfigPanel } from './panels/WebcamConfigPanel';
 import { ExportConfigPanel } from './panels/ExportConfigPanel';
 import { findTextSegmentById } from '../../utils/textSegmentId';
-import { createDefaultAnnotationShape } from '../../utils/videoAnnotations';
+import { createDefaultAnnotationShape, getNextAnnotationStepNumber } from '../../utils/videoAnnotations';
 import type { SceneMode, VideoProject } from '../../types';
 
 export interface VideoEditorSidebarProps {
@@ -199,7 +199,16 @@ export function VideoEditorSidebar({ project, onOpenCropDialog }: VideoEditorSid
                   selectedShapeId={selectedAnnotationShapeId}
                   onSelectShape={selectAnnotationShape}
                   onAddShape={(shapeType) => {
-                    addAnnotationShape(selectedAnnotationSegmentId, createDefaultAnnotationShape(shapeType));
+                    const annotationSegments = project.annotations?.segments ?? [];
+                    addAnnotationShape(
+                      selectedAnnotationSegmentId,
+                      createDefaultAnnotationShape(
+                        shapeType,
+                        shapeType === 'step'
+                          ? { number: getNextAnnotationStepNumber(annotationSegments) }
+                          : {}
+                      )
+                    );
                   }}
                   onUpdateShape={(shapeId, updates) => {
                     updateAnnotationShape(selectedAnnotationSegmentId, shapeId, updates);

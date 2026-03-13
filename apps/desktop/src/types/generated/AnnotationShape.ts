@@ -30,19 +30,19 @@ width: number,
  */
 height: number, 
 /**
- * Arrow tail X position (0-1 normalized).
+ * Arrow/line start X position (0-1 normalized).
  */
 arrowStartX: number | null, 
 /**
- * Arrow tail Y position (0-1 normalized).
+ * Arrow/line start Y position (0-1 normalized).
  */
 arrowStartY: number | null, 
 /**
- * Arrow head X position (0-1 normalized).
+ * Arrow/line end X position (0-1 normalized).
  */
 arrowEndX: number | null, 
 /**
- * Arrow head Y position (0-1 normalized).
+ * Arrow/line end Y position (0-1 normalized).
  */
 arrowEndY: number | null, 
 /**
@@ -61,6 +61,10 @@ strokeWidth: number,
  * Opacity multiplier (0-1).
  */
 opacity: number, 
+/**
+ * Step number for badge annotations.
+ */
+number: number, 
 /**
  * Text content for text annotations.
  */

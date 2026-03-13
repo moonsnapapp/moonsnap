@@ -5,7 +5,9 @@ import { useVideoEditorStore } from '@/stores/videoEditorStore';
 import {
   getAnnotationArrowEndpoints,
   getAnnotationArrowRenderGeometry,
+  getAnnotationArrowShaftOutline,
   getAnnotationArrowShapeUpdate,
+  isEndpointAnnotationShapeType,
 } from '@/utils/videoAnnotations';
 import {
   selectSelectedAnnotationSegmentId,
@@ -83,9 +85,18 @@ function AnnotationShapeNode({
   const height = shape.height * previewHeight;
   const strokeWidth = getScaledStrokeWidth(shape, previewHeight);
   const fontSize = getScaledFontSize(shape, previewHeight);
-  const arrowGeometry = shape.shapeType === 'arrow'
+  const stepDiameter = Math.min(width, height);
+  const stepRadius = stepDiameter / 2;
+  const stepCenterX = left + width / 2;
+  const stepCenterY = top + height / 2;
+  const stepFontSize = Math.max(12, stepRadius * 0.93);
+  const endpointGeometry = isEndpointAnnotationShapeType(shape.shapeType)
     ? getAnnotationArrowRenderGeometry(shape, previewWidth, previewHeight, strokeWidth)
     : null;
+  const arrowShaftOutline = shape.shapeType === 'arrow' && endpointGeometry != null
+    ? getAnnotationArrowShaftOutline(endpointGeometry, strokeWidth)
+    : null;
+  const showEndpointSelection = isSelected && endpointGeometry != null;
 
   return (
     <g
@@ -119,23 +130,60 @@ function AnnotationShapeNode({
         />
       )}
 
-      {shape.shapeType === 'arrow' && arrowGeometry && (
+      {shape.shapeType === 'step' && (
+        <>
+          <circle
+            cx={stepCenterX}
+            cy={stepCenterY}
+            r={stepRadius}
+            fill={shape.fillColor}
+            opacity={shape.opacity}
+          />
+          <text
+            x={stepCenterX}
+            y={stepCenterY}
+            fill={ANNOTATIONS.DEFAULT_STEP_TEXT_COLOR}
+            fontSize={stepFontSize}
+            fontFamily={shape.fontFamily}
+            fontWeight={Math.max(700, shape.fontWeight)}
+            opacity={shape.opacity}
+            textAnchor="middle"
+            dominantBaseline="middle"
+            pointerEvents="none"
+          >
+            {Math.max(1, Math.round(shape.number))}
+          </text>
+        </>
+      )}
+
+      {shape.shapeType === 'arrow' && endpointGeometry && arrowShaftOutline && (
         <>
           <path
-            d={arrowGeometry.shaftLine}
-            fill="none"
-            stroke={shape.strokeColor}
-            strokeWidth={strokeWidth}
-            strokeLinecap="round"
-            strokeLinejoin="round"
+            d={arrowShaftOutline.path}
+            fill={shape.strokeColor}
             opacity={shape.opacity}
           />
           <polygon
-            points={arrowGeometry.headPoints}
+            points={endpointGeometry.headPoints}
             fill={shape.strokeColor}
             opacity={shape.opacity}
           />
         </>
+      )}
+
+      {shape.shapeType === 'line' && endpointGeometry && (
+        <line
+          x1={endpointGeometry.tailX}
+          y1={endpointGeometry.tailY}
+          x2={endpointGeometry.headX}
+          y2={endpointGeometry.headY}
+          fill="none"
+          stroke={shape.strokeColor}
+          strokeWidth={strokeWidth}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          opacity={shape.opacity}
+        />
       )}
 
       {shape.shapeType === 'text' && (
@@ -165,20 +213,11 @@ function AnnotationShapeNode({
 
       {isSelected && (
         <>
-          {shape.shapeType === 'arrow' && arrowGeometry ? (
+          {showEndpointSelection ? (
             <>
-              <path
-                d={arrowGeometry.shaftLine}
-                fill="none"
-                stroke="var(--coral-400)"
-                strokeWidth={Math.max(2, strokeWidth + 1)}
-                strokeDasharray="6 4"
-                opacity={0.8}
-                pointerEvents="none"
-              />
               {[
-                { cx: arrowGeometry.tailX, cy: arrowGeometry.tailY, mode: 'arrow-start' as const },
-                { cx: arrowGeometry.headX, cy: arrowGeometry.headY, mode: 'arrow-end' as const },
+                { cx: endpointGeometry.tailX, cy: endpointGeometry.tailY, mode: 'arrow-start' as const },
+                { cx: endpointGeometry.headX, cy: endpointGeometry.headY, mode: 'arrow-end' as const },
               ].map((handle) => (
                 <circle
                   key={`${shape.id}_${handle.mode}`}
@@ -279,7 +318,7 @@ export const AnnotationOverlay = memo(function AnnotationOverlay({
         | null = null;
 
       if (dragState.mode === 'move') {
-        if (dragState.initialShape.shapeType === 'arrow') {
+        if (isEndpointAnnotationShapeType(dragState.initialShape.shapeType)) {
           const endpoints = getAnnotationArrowEndpoints(dragState.initialShape);
           arrowUpdates = getAnnotationArrowShapeUpdate(dragState.initialShape, {
             tailX: endpoints.tailX + deltaX,
@@ -330,8 +369,35 @@ export const AnnotationOverlay = memo(function AnnotationOverlay({
 
       nextWidth = Math.max(minSize, nextWidth);
       nextHeight = Math.max(minSize, nextHeight);
-      nextX = Math.min(1 - nextWidth, Math.max(0, nextX));
-      nextY = Math.min(1 - nextHeight, Math.max(0, nextY));
+
+      if (
+        dragState.initialShape.shapeType === 'step' &&
+        (dragState.mode === 'resize-tl' ||
+          dragState.mode === 'resize-tr' ||
+          dragState.mode === 'resize-bl' ||
+          dragState.mode === 'resize-br')
+      ) {
+        const size = Math.max(nextWidth, nextHeight);
+        const initialRight = dragState.initialShape.x + dragState.initialShape.width;
+        const initialBottom = dragState.initialShape.y + dragState.initialShape.height;
+
+        nextWidth = size;
+        nextHeight = size;
+
+        if (dragState.mode === 'resize-tl') {
+          nextX = initialRight - size;
+          nextY = initialBottom - size;
+        } else if (dragState.mode === 'resize-tr') {
+          nextX = dragState.initialShape.x;
+          nextY = initialBottom - size;
+        } else if (dragState.mode === 'resize-bl') {
+          nextX = initialRight - size;
+          nextY = dragState.initialShape.y;
+        } else {
+          nextX = dragState.initialShape.x;
+          nextY = dragState.initialShape.y;
+        }
+      }
 
       updateAnnotationShape(dragState.segmentId, dragState.shapeId, {
         x: nextX,
@@ -361,8 +427,7 @@ export const AnnotationOverlay = memo(function AnnotationOverlay({
   ) => {
     event.preventDefault();
     event.stopPropagation();
-    selectAnnotationSegment(segmentId);
-    selectAnnotationShape(shape.id);
+    selectAnnotationSegment(segmentId, shape.id);
     beginAnnotationDrag();
     dragStateRef.current = {
       segmentId,
@@ -374,7 +439,7 @@ export const AnnotationOverlay = memo(function AnnotationOverlay({
       initialShape: shape,
     };
     document.body.style.cursor = 'grabbing';
-  }, [selectAnnotationSegment, selectAnnotationShape, beginAnnotationDrag, zoomScale]);
+  }, [selectAnnotationSegment, beginAnnotationDrag, zoomScale]);
 
   const handleHandlePointerDown = useCallback((
     event: React.PointerEvent<SVGCircleElement>,
@@ -384,8 +449,7 @@ export const AnnotationOverlay = memo(function AnnotationOverlay({
   ) => {
     event.preventDefault();
     event.stopPropagation();
-    selectAnnotationSegment(segmentId);
-    selectAnnotationShape(shape.id);
+    selectAnnotationSegment(segmentId, shape.id);
     beginAnnotationDrag();
     dragStateRef.current = {
       segmentId,
@@ -398,7 +462,7 @@ export const AnnotationOverlay = memo(function AnnotationOverlay({
     };
     document.body.style.cursor =
       mode === 'arrow-start' || mode === 'arrow-end' ? 'grab' : 'nwse-resize';
-  }, [selectAnnotationSegment, selectAnnotationShape, beginAnnotationDrag, zoomScale]);
+  }, [selectAnnotationSegment, beginAnnotationDrag, zoomScale]);
 
   const handleBackgroundPointerDown = useCallback(() => {
     selectAnnotationShape(null);
