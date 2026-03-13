@@ -10,7 +10,7 @@ import { useEffect, useRef, useState } from 'react';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { invoke } from '@tauri-apps/api/core';
 import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
-import { availableMonitors, type Monitor } from '@tauri-apps/api/window';
+import { type Monitor, availableMonitors } from '@tauri-apps/api/window';
 import type { CaptureType } from '@/types';
 import { useCaptureSettingsStore } from '@/stores/captureSettingsStore';
 import { toolbarLogger } from '@/utils/logger';
@@ -141,7 +141,6 @@ export function useSelectionEvents(): UseSelectionEventsReturn {
         const bounds = event.payload;
         setSelectionBounds(bounds);
         selectionBoundsRef.current = bounds;
-        setSelectionConfirmed(true);
 
         const captureSettingsStore = useCaptureSettingsStore.getState();
 
@@ -165,19 +164,16 @@ export function useSelectionEvents(): UseSelectionEventsReturn {
           }
         }
 
+        // With snapping disabled, preserve current toolbar window position.
+        // With snapping enabled, placement is handled by existing create/show paths.
+
+        setSelectionConfirmed(true);
+
         // Keep the auto-start latch false until preparation completes.
         // CaptureToolbarWindow watches this flag and immediately calls handleCapture()
         // for tray quick-record sessions; flipping it earlier regresses back to the
         // manual selection toolbar because recording starts before setup is ready.
         setAutoStartRecording(Boolean(bounds.autoStartRecording));
-
-        await new Promise((resolve) => window.setTimeout(resolve, 200));
-
-        try {
-          await repositionToolbar(bounds);
-        } catch (e) {
-          toolbarLogger.error('Failed to reposition toolbar:', e);
-        }
       });
 
       unlistenReset = await listen('reset-to-startup', () => {

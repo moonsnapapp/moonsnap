@@ -36,6 +36,7 @@ describe('RecordingsTab', () => {
       },
       afterRecordingAction: 'preview',
       promptRecordingMode: true,
+      snapToolbarToSelection: true,
       saveSettings: async () => {},
     });
   });

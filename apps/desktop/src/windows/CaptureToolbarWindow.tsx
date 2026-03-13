@@ -556,9 +556,11 @@ const CaptureToolbarWindow: React.FC = () => {
         toolbarLogger.error('Failed to show toolbar during recording:', e);
       });
 
-      void repositionToolbar(selectionBounds).catch((e) => {
-        toolbarLogger.error('Failed to reposition toolbar during recording:', e);
-      });
+      if (useCaptureSettingsStore.getState().snapToolbarToSelection) {
+        void repositionToolbar(selectionBounds).catch((e) => {
+          toolbarLogger.error('Failed to reposition toolbar during recording:', e);
+        });
+      }
     }, 80);
 
     return () => {

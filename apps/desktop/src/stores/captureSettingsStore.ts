@@ -95,6 +95,9 @@ interface CaptureSettingsState {
   // Whether to show the recording mode chooser before each video recording
   promptRecordingMode: boolean;
 
+  // Whether to snap the toolbar to the selection area
+  snapToolbarToSelection: boolean;
+
   // Actions - Settings management
   loadSettings: () => Promise<void>;
   saveSettings: () => Promise<void>;
@@ -111,6 +114,7 @@ interface CaptureSettingsState {
   // Actions - After recording
   setAfterRecordingAction: (action: AfterRecordingAction) => void;
   setPromptRecordingMode: (value: boolean) => void;
+  setSnapToolbarToSelection: (value: boolean) => void;
 
   // Actions - Mode
   setActiveMode: (mode: CaptureType) => void;
@@ -141,6 +145,7 @@ export const useCaptureSettingsStore = create<CaptureSettingsState>((set, get) =
   showPreviewAfterCapture: true,
   afterRecordingAction: 'preview',
   promptRecordingMode: true,
+  snapToolbarToSelection: true,
 
   loadSettings: async () => {
     set({ isLoading: true });
@@ -154,6 +159,7 @@ export const useCaptureSettingsStore = create<CaptureSettingsState>((set, get) =
       const savedShowPreview = await store.get<boolean>('showPreviewAfterCapture');
       const savedAfterRecording = await store.get<AfterRecordingAction>('afterRecordingAction');
       const savedPromptRecordingMode = await store.get<boolean>('promptRecordingMode');
+      const savedSnapToolbar = await store.get<boolean>('snapToolbarToSelection');
 
       // Merge with defaults (in case new settings were added)
       const settings: CaptureSettings = {
@@ -181,6 +187,7 @@ export const useCaptureSettingsStore = create<CaptureSettingsState>((set, get) =
         showPreviewAfterCapture: savedShowPreview ?? true,
         afterRecordingAction: savedAfterRecording ?? 'preview',
         promptRecordingMode: savedPromptRecordingMode ?? true,
+        snapToolbarToSelection: savedSnapToolbar ?? true,
         isLoading: false,
         isInitialized: true,
       });
@@ -194,6 +201,7 @@ export const useCaptureSettingsStore = create<CaptureSettingsState>((set, get) =
         showPreviewAfterCapture: true,
         afterRecordingAction: 'preview',
         promptRecordingMode: true,
+        snapToolbarToSelection: true,
         isLoading: false,
         isInitialized: true,
       });
@@ -201,7 +209,7 @@ export const useCaptureSettingsStore = create<CaptureSettingsState>((set, get) =
   },
 
   saveSettings: async () => {
-    const { settings, activeMode, sourceMode, copyToClipboardAfterCapture, showPreviewAfterCapture, afterRecordingAction, promptRecordingMode } = get();
+    const { settings, activeMode, sourceMode, copyToClipboardAfterCapture, showPreviewAfterCapture, afterRecordingAction, promptRecordingMode, snapToolbarToSelection } = get();
     try {
       const store = await getStore();
       await store.set('captureSettings', settings);
@@ -211,6 +219,7 @@ export const useCaptureSettingsStore = create<CaptureSettingsState>((set, get) =
       await store.set('showPreviewAfterCapture', showPreviewAfterCapture);
       await store.set('afterRecordingAction', afterRecordingAction);
       await store.set('promptRecordingMode', promptRecordingMode);
+      await store.set('snapToolbarToSelection', snapToolbarToSelection);
       await store.save();
       // Notify other windows to reload capture settings
       const { emit } = await import('@tauri-apps/api/event');
@@ -261,6 +270,13 @@ export const useCaptureSettingsStore = create<CaptureSettingsState>((set, get) =
 
   setPromptRecordingMode: (value) => {
     set({ promptRecordingMode: value });
+    get().saveSettings().catch(
+      createErrorHandler({ operation: 'save capture settings', silent: true })
+    );
+  },
+
+  setSnapToolbarToSelection: (value) => {
+    set({ snapToolbarToSelection: value });
     get().saveSettings().catch(
       createErrorHandler({ operation: 'save capture settings', silent: true })
     );
@@ -365,6 +381,7 @@ export const useCaptureSettingsStore = create<CaptureSettingsState>((set, get) =
       showPreviewAfterCapture: true,
       afterRecordingAction: 'preview',
       promptRecordingMode: true,
+      snapToolbarToSelection: true,
     });
     get().saveSettings().catch(
       createErrorHandler({ operation: 'save capture settings', silent: true })

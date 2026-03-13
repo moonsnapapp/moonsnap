@@ -71,6 +71,8 @@ export const RecordingsTab: React.FC = () => {
     setAfterRecordingAction,
     promptRecordingMode,
     setPromptRecordingMode,
+    snapToolbarToSelection,
+    setSnapToolbarToSelection,
   } = useCaptureSettingsStore();
   const { video, gif } = settings;
 
@@ -118,6 +120,22 @@ export const RecordingsTab: React.FC = () => {
               aria-label="Ask before recording"
               checked={promptRecordingMode}
               onCheckedChange={(checked) => setPromptRecordingMode(checked)}
+            />
+          </div>
+
+          <div className="flex items-center justify-between">
+            <div>
+              <label className="text-sm text-[var(--ink-black)] block">
+                Snap toolbar to selection
+              </label>
+              <p className="text-xs text-[var(--ink-muted)] mt-0.5">
+                Position the capture toolbar next to your selected area
+              </p>
+            </div>
+            <Switch
+              aria-label="Snap toolbar to selection"
+              checked={snapToolbarToSelection}
+              onCheckedChange={(checked) => setSnapToolbarToSelection(checked)}
             />
           </div>
         </div>

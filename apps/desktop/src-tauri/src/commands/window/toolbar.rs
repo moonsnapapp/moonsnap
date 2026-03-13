@@ -9,6 +9,8 @@ use super::{apply_dwm_transparency, set_physical_bounds, CAPTURE_TOOLBAR_LABEL};
 
 const STARTUP_TOOLBAR_WIDTH: u32 = 738;
 const STARTUP_TOOLBAR_HEIGHT: u32 = 147;
+const CAPTURE_TOOLBAR_DEFAULT_WIDTH: u32 = 1280;
+const CAPTURE_TOOLBAR_DEFAULT_HEIGHT: u32 = 144;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -63,6 +65,20 @@ fn build_selection_payload(
     }
 }
 
+fn calculate_capture_toolbar_position(
+    x: i32,
+    y: i32,
+    width: u32,
+    height: u32,
+    toolbar_width: u32,
+    toolbar_height: u32,
+) -> (i32, i32) {
+    // Position below the selection, centered horizontally.
+    let ix = x + (width as i32 / 2) - (toolbar_width as i32 / 2);
+    let iy = y + height as i32 + 8;
+    (ix, iy)
+}
+
 // ============================================================================
 // Capture Toolbar
 // ============================================================================
@@ -87,6 +103,7 @@ pub async fn show_capture_toolbar(
     capture_type: Option<String>,
     source_mode: Option<String>,
     auto_start_recording: Option<bool>,
+    snap_toolbar_to_selection: Option<bool>,
 ) -> Result<(), String> {
     let toolbar_state = app.state::<CaptureToolbarWindowState>();
     let _create_guard = toolbar_state
@@ -108,7 +125,17 @@ pub async fn show_capture_toolbar(
         source_mode,
         auto_start_recording,
     );
+    let snap_toolbar_to_selection = snap_toolbar_to_selection.unwrap_or(true);
     if let Some(window) = app.get_webview_window(CAPTURE_TOOLBAR_LABEL) {
+        if !auto_start_recording.unwrap_or(false) && snap_toolbar_to_selection {
+            let size = window
+                .inner_size()
+                .map_err(|e| format!("Failed to get toolbar size: {}", e))?;
+            let (next_x, next_y) =
+                calculate_capture_toolbar_position(x, y, width, height, size.width, size.height);
+            set_physical_bounds(&window, next_x, next_y, size.width, size.height)?;
+        }
+
         let mut pending_selection = toolbar_state
             .pending_selection
             .lock()
@@ -167,11 +194,25 @@ pub async fn show_capture_toolbar(
         },
     };
 
-    // Fixed toolbar size: 1280x144px
-    let toolbar_width = 1280u32;
-    let toolbar_height = 144u32;
-    let initial_x = x + (width as i32 / 2) - (toolbar_width as i32 / 2);
-    let initial_y = y + height as i32 + 8; // Below selection
+    // Fixed initial window size before frontend measures actual content.
+    let toolbar_width = CAPTURE_TOOLBAR_DEFAULT_WIDTH;
+    let toolbar_height = CAPTURE_TOOLBAR_DEFAULT_HEIGHT;
+    let (initial_x, initial_y) = if snap_toolbar_to_selection {
+        calculate_capture_toolbar_position(x, y, width, height, toolbar_width, toolbar_height)
+    } else {
+        let monitors = app
+            .available_monitors()
+            .map_err(|e| format!("Failed to get monitors: {}", e))?;
+        let monitor = monitors
+            .first()
+            .ok_or_else(|| "No monitors found".to_string())?;
+        let pos = monitor.position();
+        let size = monitor.size();
+        (
+            pos.x + (size.width as i32 - toolbar_width as i32) / 2,
+            pos.y + size.height as i32 - toolbar_height as i32 - 100,
+        )
+    };
 
     set_physical_bounds(&window, initial_x, initial_y, toolbar_width, toolbar_height)?;
 

@@ -36,17 +36,15 @@ export function useToolbarPositioning({
 
   const measureTargetSize = useCallback(() => {
     const isStartupToolbar = !selectionConfirmed && mode === 'selection';
-    if (isStartupToolbar) {
-      return {
-        width: LAYOUT.CAPTURE_TOOLBAR_STARTUP_WIDTH,
-        height: LAYOUT.CAPTURE_TOOLBAR_STARTUP_HEIGHT,
-      };
-    }
-
     const container = containerRef.current;
     const content = contentRef.current;
     if (!container || !content) {
-      return null;
+      return isStartupToolbar
+        ? {
+            width: LAYOUT.CAPTURE_TOOLBAR_STARTUP_WIDTH,
+            height: LAYOUT.CAPTURE_TOOLBAR_STARTUP_HEIGHT,
+          }
+        : null;
     }
 
     const contentRect = content.getBoundingClientRect();
@@ -70,9 +68,21 @@ export function useToolbarPositioning({
       titlebarWidth = leftWidth + controlsWidth + horizontalChrome;
     }
 
+    const measuredWidth = Math.max(contentRect.width, titlebarWidth);
+    const measuredHeight = containerRect.height;
+
+    if (isStartupToolbar) {
+      // Startup size should be content-driven; constants are only lower bounds
+      // for the first paint while assets/fonts settle.
+      return {
+        width: Math.max(measuredWidth, LAYOUT.CAPTURE_TOOLBAR_STARTUP_WIDTH),
+        height: Math.max(measuredHeight, LAYOUT.CAPTURE_TOOLBAR_STARTUP_HEIGHT),
+      };
+    }
+
     return {
-      width: Math.max(contentRect.width, titlebarWidth),
-      height: containerRect.height,
+      width: measuredWidth,
+      height: measuredHeight,
     };
   }, [containerRef, contentRef, mode, selectionConfirmed]);
 

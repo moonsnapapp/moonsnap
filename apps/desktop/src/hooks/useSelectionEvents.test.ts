@@ -13,24 +13,31 @@ function createDeferred<T>() {
   return { promise, resolve };
 }
 
+/** Flush enough microtasks for async handlers to complete */
+async function flush() {
+  await act(async () => {
+    for (let i = 0; i < 20; i++) {
+      await Promise.resolve();
+    }
+  });
+}
+
 describe('useSelectionEvents', () => {
   beforeEach(() => {
     useCaptureSettingsStore.setState({
       activeMode: 'video',
       sourceMode: 'area',
+      snapToolbarToSelection: false,
     });
+    setInvokeResponse('set_capture_toolbar_position', undefined);
   });
 
   it('waits for recording preparation before enabling tray auto-start', async () => {
     const prepareRecording = createDeferred<void>();
     setInvokeResponse('prepare_recording', prepareRecording.promise);
-    setInvokeResponse('set_capture_toolbar_position', undefined);
-
     const { result } = renderHook(() => useSelectionEvents());
 
-    await act(async () => {
-      await Promise.resolve();
-    });
+    await flush();
 
     await act(async () => {
       emitMockEvent('confirm-selection', {
@@ -43,18 +50,19 @@ describe('useSelectionEvents', () => {
         sourceMode: 'area',
         autoStartRecording: true,
       });
-      await Promise.resolve();
     });
 
-    expect(result.current.selectionConfirmed).toBe(true);
+    // Handler awaits prepareRecording, so selectionConfirmed not yet set
     expect(result.current.autoStartRecording).toBe(false);
     expect(mockInvoke).toHaveBeenCalledWith('prepare_recording', { format: 'mp4' });
 
     await act(async () => {
       prepareRecording.resolve();
-      await Promise.resolve();
     });
 
+    await flush();
+
+    expect(result.current.selectionConfirmed).toBe(true);
     expect(result.current.autoStartRecording).toBe(true);
   });
 });

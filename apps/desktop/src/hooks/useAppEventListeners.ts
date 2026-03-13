@@ -11,6 +11,7 @@ import { useEffect } from 'react';
 import { listen } from '@tauri-apps/api/event';
 import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
 import { useSettingsStore } from '../stores/settingsStore';
+import { useCaptureSettingsStore } from '../stores/captureSettingsStore';
 import type { CaptureType } from '../types';
 import { libraryLogger } from '../utils/logger';
 
@@ -119,15 +120,30 @@ export function useAppEventListeners(callbacks: AppEventCallbacks) {
         async (event) => {
           const { x, y, width, height, captureType, autoStartRecording, sourceType, windowId, sourceTitle, monitorIndex, monitorName } = event.payload;
           const sourceMode = sourceType ?? 'area';
+          const captureSettingsStore = useCaptureSettingsStore.getState();
+          if (!captureSettingsStore.isInitialized) {
+            await captureSettingsStore.loadSettings();
+          }
+          const { snapToolbarToSelection } = useCaptureSettingsStore.getState();
 
           // Check if toolbar already exists
           const existing = await WebviewWindow.getByLabel('capture-toolbar');
           if (existing) {
-            if (autoStartRecording) {
-              await existing.hide();
+            // Hide first to avoid flashing at old position
+            await existing.hide();
+
+            // Reposition before showing
+            if (!autoStartRecording && snapToolbarToSelection) {
+              // Snap to selection — position below, centered horizontally.
+              // When disabled, keep existing window position unchanged.
+              const { invoke: inv } = await import('@tauri-apps/api/core');
+              const outerSize = await existing.outerSize();
+              const toolbarX = Math.floor(x + width / 2 - outerSize.width / 2);
+              const toolbarY = y + height + 8;
+              await inv('set_capture_toolbar_position', { x: toolbarX, y: toolbarY });
             }
 
-            // Toolbar exists - emit confirm-selection to mark selection confirmed and reposition
+            // Toolbar exists - emit confirm-selection to mark selection confirmed
             // This is a NEW selection from overlay, not an adjustment update
             // Pass through all metadata for proper recording mode
             await existing.emit('confirm-selection', {
@@ -164,6 +180,7 @@ export function useAppEventListeners(callbacks: AppEventCallbacks) {
             sourceTitle,
             monitorIndex,
             monitorName,
+            snapToolbarToSelection,
           });
         }
       )
