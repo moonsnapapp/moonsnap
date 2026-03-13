@@ -43,6 +43,9 @@ pub(crate) const COUNTDOWN_WINDOW_LABEL: &str = "countdown";
 /// Recording controls window label
 pub(crate) const RECORDING_CONTROLS_LABEL: &str = "recording-controls";
 
+/// Recording mode chooser window label
+pub(crate) const RECORDING_MODE_CHOOSER_LABEL: &str = "recording-mode-chooser";
+
 /// Track if main window was visible before capture started
 pub(crate) static MAIN_WAS_VISIBLE: AtomicBool = AtomicBool::new(false);
 
@@ -220,6 +223,13 @@ pub(crate) fn close_recording_controls_window(app: &tauri::AppHandle) {
     }
 }
 
+/// Close recording mode chooser window.
+pub(crate) fn close_recording_mode_chooser_window(app: &tauri::AppHandle) {
+    if let Some(window) = app.get_webview_window(RECORDING_MODE_CHOOSER_LABEL) {
+        let _ = window.close();
+    }
+}
+
 /// Close all capture-related windows including toolbar
 pub(crate) fn close_all_capture_windows(app: &tauri::AppHandle) {
     if let Some(window) = app.get_webview_window(CAPTURE_TOOLBAR_LABEL) {
@@ -227,6 +237,7 @@ pub(crate) fn close_all_capture_windows(app: &tauri::AppHandle) {
     }
     close_recording_border_window(app);
     close_recording_controls_window(app);
+    close_recording_mode_chooser_window(app);
 }
 
 /// Show the library window, centering it the first time it is explicitly shown

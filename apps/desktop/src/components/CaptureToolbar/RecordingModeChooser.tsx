@@ -6,38 +6,52 @@ import type { AfterRecordingAction } from '@/stores/captureSettingsStore';
 interface RecordingModeChooserProps {
   onSelect: (action: AfterRecordingAction, remember: boolean) => void;
   onBack: () => void;
+  minimalChrome?: 'window' | 'floating';
 }
 
 export const RecordingModeChooser = memo(function RecordingModeChooser({
   onSelect,
   onBack,
+  minimalChrome = 'window',
 }: RecordingModeChooserProps) {
   const [remember, setRemember] = useState(false);
   const [hovered, setHovered] = useState<'quick' | 'studio' | null>(null);
+  const isFloating = minimalChrome === 'floating';
 
   const btnClass = (mode: 'quick' | 'studio') => cn(
-    'flex flex-col items-center gap-2 px-6 py-4 rounded-xl transition-all',
-    'hover:bg-white/10',
+    'recording-mode-chooser-card',
     'focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/30',
-    hovered === mode ? 'bg-white/10' : 'bg-white/5',
+    hovered === mode && 'recording-mode-chooser-card--active',
   );
 
   return (
-    <div className="glass-toolbar glass-toolbar--minimal pointer-events-auto">
-      <button
-        type="button"
-        onClick={onBack}
-        className="glass-btn glass-btn--md shrink-0 ml-1"
-        title="Back"
-      >
-        <ArrowLeft size={14} />
-      </button>
-      <div className="flex flex-col items-center gap-3 px-4 py-3 flex-1">
-        <span className="glass-text--muted text-[10px] uppercase tracking-wider select-none">
-          Choose recording mode
-        </span>
+    <div className={cn(
+      'glass-toolbar glass-toolbar--minimal pointer-events-auto',
+      isFloating && 'glass-toolbar--minimal-floating recording-mode-chooser-toolbar'
+    )}>
+      <div className={cn(
+        'flex flex-col items-center gap-3 px-4 py-3',
+        isFloating ? 'recording-mode-chooser-content' : 'flex-1'
+      )}>
+        <div className="recording-mode-chooser-header">
+          <button
+            type="button"
+            onClick={onBack}
+            className={cn(
+              'glass-btn glass-btn--md shrink-0 recording-mode-chooser-back',
+              !isFloating && 'ml-1'
+            )}
+            title="Back"
+          >
+            <ArrowLeft size={14} />
+          </button>
+          <span className="recording-mode-chooser-eyebrow glass-text--muted select-none">
+            Choose recording mode
+          </span>
+          <span className="recording-mode-chooser-header-spacer" aria-hidden="true" />
+        </div>
 
-        <div className="flex items-stretch gap-3">
+        <div className={cn('flex items-stretch gap-3', isFloating && 'recording-mode-chooser-options')}>
           <button
             type="button"
             className={btnClass('quick')}
@@ -45,10 +59,12 @@ export const RecordingModeChooser = memo(function RecordingModeChooser({
             onMouseEnter={() => setHovered('quick')}
             onMouseLeave={() => setHovered(null)}
           >
-            <Zap size={22} className="text-amber-400" />
-            <div className="text-center">
-              <div className="text-xs font-medium text-white">Quick</div>
-              <div className="text-[10px] text-white/50 mt-0.5">Ready-to-share .mp4</div>
+            <div className="recording-mode-chooser-card-icon recording-mode-chooser-card-icon--quick">
+              <Zap size={18} className="text-amber-300" />
+            </div>
+            <div className="recording-mode-chooser-card-text">
+              <div className="recording-mode-chooser-card-title">Quick</div>
+              <div className="recording-mode-chooser-card-subtitle">Ready-to-share .mp4</div>
             </div>
           </button>
 
@@ -59,10 +75,12 @@ export const RecordingModeChooser = memo(function RecordingModeChooser({
             onMouseEnter={() => setHovered('studio')}
             onMouseLeave={() => setHovered(null)}
           >
-            <Clapperboard size={22} className="text-blue-400" />
-            <div className="text-center">
-              <div className="text-xs font-medium text-white">Studio</div>
-              <div className="text-[10px] text-white/50 mt-0.5">Edit with effects</div>
+            <div className="recording-mode-chooser-card-icon recording-mode-chooser-card-icon--studio">
+              <Clapperboard size={18} className="text-sky-300" />
+            </div>
+            <div className="recording-mode-chooser-card-text">
+              <div className="recording-mode-chooser-card-title">Studio</div>
+              <div className="recording-mode-chooser-card-subtitle">Edit with effects</div>
             </div>
           </button>
         </div>
@@ -70,7 +88,7 @@ export const RecordingModeChooser = memo(function RecordingModeChooser({
         <button
           type="button"
           onClick={() => setRemember((v) => !v)}
-          className="flex items-center gap-1.5 cursor-pointer select-none group"
+          className="recording-mode-chooser-remember group"
         >
           <div className={cn(
             'w-3.5 h-3.5 rounded-[3px] border flex items-center justify-center transition-colors',
@@ -84,12 +102,14 @@ export const RecordingModeChooser = memo(function RecordingModeChooser({
               </svg>
             )}
           </div>
-          <span className="text-[9px] text-white/40 group-hover:text-white/60 transition-colors">
-            Remember my choice
-          </span>
-          <span className="text-[9px] text-white/25">
-            (can be changed in settings)
-          </span>
+          <div className="recording-mode-chooser-remember-copy">
+            <span className="recording-mode-chooser-remember-title">
+              Remember my choice
+            </span>
+            <span className="recording-mode-chooser-remember-subtitle">
+              You can change this later in settings.
+            </span>
+          </div>
         </button>
       </div>
     </div>

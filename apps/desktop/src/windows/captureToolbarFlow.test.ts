@@ -10,33 +10,15 @@ describe('shouldSuppressToolbarUntilRecording', () => {
     expect(
       shouldSuppressToolbarUntilRecording({
         autoStartRecording: false,
-        selectionAutoStartRecording: false,
-        captureType: 'video',
-        promptRecordingMode: true,
         mode: 'selection',
       })
     ).toBe(false);
   });
 
-  it('keeps quick video visible when the mode chooser must be shown', () => {
+  it('keeps quick sessions hidden while the chooser is handled in a separate window', () => {
     expect(
       shouldSuppressToolbarUntilRecording({
         autoStartRecording: true,
-        selectionAutoStartRecording: true,
-        captureType: 'video',
-        promptRecordingMode: true,
-        mode: 'selection',
-      })
-    ).toBe(false);
-  });
-
-  it('hides quick gif sessions until recording starts', () => {
-    expect(
-      shouldSuppressToolbarUntilRecording({
-        autoStartRecording: true,
-        selectionAutoStartRecording: true,
-        captureType: 'gif',
-        promptRecordingMode: true,
         mode: 'selection',
       })
     ).toBe(true);
@@ -46,9 +28,6 @@ describe('shouldSuppressToolbarUntilRecording', () => {
     expect(
       shouldSuppressToolbarUntilRecording({
         autoStartRecording: true,
-        selectionAutoStartRecording: true,
-        captureType: 'video',
-        promptRecordingMode: true,
         mode: 'starting',
       })
     ).toBe(true);
@@ -58,9 +37,6 @@ describe('shouldSuppressToolbarUntilRecording', () => {
     expect(
       shouldSuppressToolbarUntilRecording({
         autoStartRecording: true,
-        selectionAutoStartRecording: true,
-        captureType: 'gif',
-        promptRecordingMode: true,
         mode: 'recording',
       })
     ).toBe(false);

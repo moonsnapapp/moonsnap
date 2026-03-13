@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Recording Mode</title>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      html, body {
+        overflow: hidden;
+        background: transparent !important;
+      }
+      #root {
+        width: max-content;
+        height: max-content;
+      }
+      button {
+        -webkit-app-region: no-drag;
+        app-region: no-drag;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/windows/recording-mode-chooser-main.tsx"></script>
+  </body>
+</html>

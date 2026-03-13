@@ -39,12 +39,23 @@ import {
   isAutoStartRecordingSession,
   shouldSuppressToolbarUntilRecording,
 } from './captureToolbarFlow';
-import { RecordingModeChooser } from '../components/CaptureToolbar/RecordingModeChooser';
 
 interface StartupToolbarContext {
   captureType?: CaptureType;
   sourceMode?: CaptureSourceMode;
   autoStartAreaSelection?: boolean;
+}
+
+interface RecordingModeSelectedPayload {
+  x: number;
+  y: number;
+  action: AfterRecordingAction;
+  remember: boolean;
+}
+
+interface RecordingModeChooserBackPayload {
+  x: number;
+  y: number;
 }
 
 const CaptureToolbarWindow: React.FC = () => {
@@ -104,7 +115,7 @@ const CaptureToolbarWindow: React.FC = () => {
     recordingInitiatedRef,
   } = useRecordingEvents({ closeWindowOnCompleteRef });
 
-  const [showModeChooser, setShowModeChooser] = useState(false);
+  const [isModeChooserVisible, setIsModeChooserVisible] = useState(false);
   const skipModePromptRef = useRef(false);
 
   const pendingStartupContextRef = useRef<StartupToolbarContext | null>(null);
@@ -139,40 +150,21 @@ const CaptureToolbarWindow: React.FC = () => {
 
   const suppressToolbarUntilRecording = shouldSuppressToolbarUntilRecording({
     autoStartRecording,
-    selectionAutoStartRecording: selectionBounds.autoStartRecording,
-    captureType,
-    promptRecordingMode,
     mode,
   });
 
-  const isRecordingHudMode =
-    mode === 'starting' ||
-    mode === 'recording' ||
-    mode === 'paused' ||
-    mode === 'processing' ||
-    mode === 'error';
-
   const suppressPrimaryToolbarDuringRecording = Boolean(
     selectionConfirmed &&
-    isRecordingHudMode
+    (mode === 'starting' || mode === 'recording' || mode === 'paused' || mode === 'processing')
   );
-
-  useEffect(() => {
-    document.documentElement.classList.toggle('capture-toolbar-recording-window', isRecordingHudMode);
-    document.body.classList.toggle('capture-toolbar-recording-window', isRecordingHudMode);
-
-    return () => {
-      document.documentElement.classList.remove('capture-toolbar-recording-window');
-      document.body.classList.remove('capture-toolbar-recording-window');
-    };
-  }, [isRecordingHudMode]);
 
   useToolbarPositioning({
     containerRef,
     contentRef,
     selectionConfirmed,
     mode,
-    suppressWindowShow: suppressToolbarUntilRecording || suppressPrimaryToolbarDuringRecording,
+    suppressWindowShow:
+      suppressToolbarUntilRecording || suppressPrimaryToolbarDuringRecording || isModeChooserVisible,
   });
 
   useEffect(() => {
@@ -212,12 +204,6 @@ const CaptureToolbarWindow: React.FC = () => {
 
         if (escHandledRef.current) return;
 
-        // Dismiss mode chooser and return to toolbar
-        if (showModeChooser) {
-          setShowModeChooser(false);
-          return;
-        }
-
         await closeWebcamPreview();
 
         if (selectionConfirmed) {
@@ -240,7 +226,7 @@ const CaptureToolbarWindow: React.FC = () => {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [mode, selectionConfirmed, closeWebcamPreview, showModeChooser]);
+  }, [mode, selectionConfirmed, closeWebcamPreview]);
 
   const handleCapture = useCallback(async () => {
     try {
@@ -273,12 +259,33 @@ const CaptureToolbarWindow: React.FC = () => {
       if (captureType === 'screenshot') {
         await invoke('capture_overlay_confirm', { action: 'screenshot' });
       } else {
-        // Show mode chooser before video recording if enabled
         if (captureType === 'video' && !skipModePromptRef.current && promptRecordingMode) {
-          setShowModeChooser(true);
+          const currentWindow = getCurrentWebviewWindow();
+          const [position, size] = await Promise.all([
+            currentWindow.outerPosition(),
+            currentWindow.outerSize(),
+          ]);
+
+          setIsModeChooserVisible(true);
+          await currentWindow.hide();
+
+          try {
+            await invoke('show_recording_mode_chooser', {
+              x: position.x,
+              y: position.y,
+              width: size.width,
+              height: size.height,
+            });
+          } catch (error) {
+            setIsModeChooserVisible(false);
+            await currentWindow.show().catch(() => {});
+            throw error;
+          }
+
           return;
         }
         skipModePromptRef.current = false;
+        setIsModeChooserVisible(false);
 
         recordingInitiatedRef.current = true;
         setMode('starting');
@@ -376,6 +383,7 @@ const CaptureToolbarWindow: React.FC = () => {
     } catch (e) {
       toolbarLogger.error('Failed to capture:', e);
       recordingInitiatedRef.current = false;
+      setIsModeChooserVisible(false);
       setAutoStartRecording(false);
       setMode('selection');
     }
@@ -561,6 +569,57 @@ const CaptureToolbarWindow: React.FC = () => {
   ]);
 
   useEffect(() => {
+    const unlistenSelected = listen<RecordingModeSelectedPayload>('recording-mode-selected', (event) => {
+      const store = useCaptureSettingsStore.getState();
+      store.setAfterRecordingAction(event.payload.action);
+      if (event.payload.remember) {
+        store.setPromptRecordingMode(false);
+      }
+
+      void (async () => {
+        try {
+          await invoke('set_capture_toolbar_position', {
+            x: event.payload.x,
+            y: event.payload.y,
+          });
+        } catch (error) {
+          toolbarLogger.warn('Failed to sync capture toolbar position from mode chooser:', error);
+        }
+
+        skipModePromptRef.current = true;
+        window.setTimeout(() => {
+          void handleCapture();
+        }, 50);
+      })();
+    });
+
+    const unlistenBack = listen<RecordingModeChooserBackPayload>('recording-mode-chooser-back', (event) => {
+      setIsModeChooserVisible(false);
+      skipModePromptRef.current = false;
+      setAutoStartRecording(false);
+      void (async () => {
+        try {
+          await invoke('set_capture_toolbar_position', {
+            x: event.payload.x,
+            y: event.payload.y,
+          });
+        } catch (error) {
+          toolbarLogger.warn('Failed to restore capture toolbar position from mode chooser:', error);
+        }
+
+        await invoke('bring_capture_toolbar_to_front', { focus: true }).catch((error) => {
+          toolbarLogger.error('Failed to restore capture toolbar after mode chooser:', error);
+        });
+      })();
+    });
+
+    return () => {
+      unlistenSelected.then((fn) => fn()).catch(() => {});
+      unlistenBack.then((fn) => fn()).catch(() => {});
+    };
+  }, [handleCapture, setAutoStartRecording]);
+
+  useEffect(() => {
     if (
       !autoStartRecording ||
       autoStartRecordingTriggeredRef.current ||
@@ -647,20 +706,6 @@ const CaptureToolbarWindow: React.FC = () => {
     await closeWebcamPreview();
   }, [closeWebcamPreview]);
 
-  const handleModeChooserSelect = useCallback((action: AfterRecordingAction, remember: boolean) => {
-    const store = useCaptureSettingsStore.getState();
-    store.setAfterRecordingAction(action);
-    if (remember) {
-      store.setPromptRecordingMode(false);
-    }
-    setShowModeChooser(false);
-    // Skip the prompt check on the next handleCapture call
-    skipModePromptRef.current = true;
-    setTimeout(() => {
-      void handleCapture();
-    }, 50);
-  }, [handleCapture]);
-
   const handleOpenLibrary = useCallback(async () => {
     try {
       await invoke('show_library_window');
@@ -670,55 +715,45 @@ const CaptureToolbarWindow: React.FC = () => {
   }, []);
 
   return (
-    <div
-      ref={containerRef}
-      className={`app-container ${isRecordingHudMode ? 'app-container--recording-hud' : ''}`}
-    >
-      {!isRecordingHudMode && (
-        <Titlebar
-          title="MoonSnap Capture"
-          showMaximize={false}
-          onClose={handleTitlebarClose}
-          onOpenLibrary={handleOpenLibrary}
-          onOpenSettings={handleOpenSettings}
-        />
-      )}
+    <div ref={containerRef} className="app-container">
+      <Titlebar
+        title="MoonSnap Capture"
+        showMaximize={false}
+        onClose={handleTitlebarClose}
+        onOpenLibrary={handleOpenLibrary}
+        onOpenSettings={handleOpenSettings}
+      />
       <div ref={toolbarRef} className="toolbar-container">
         <div className="toolbar-animated-wrapper">
           <div ref={contentRef} className="toolbar-content-measure">
-            {showModeChooser ? (
-              <RecordingModeChooser onSelect={handleModeChooserSelect} onBack={() => setShowModeChooser(false)} />
-            ) : (
-              <CaptureToolbar
-                mode={mode}
-                captureType={captureType}
-                captureSource={captureSource}
-                width={selectionBounds.width}
-                height={selectionBounds.height}
-                sourceType={selectionBounds.sourceType}
-                sourceTitle={selectionBounds.sourceTitle}
-                monitorName={selectionBounds.monitorName}
-                monitorIndex={selectionBounds.monitorIndex}
-                selectionConfirmed={selectionConfirmed}
-                onCapture={handleCapture}
-                onCaptureTypeChange={handleModeChange}
-                onCaptureSourceChange={handleCaptureSourceChange}
-                onCaptureComplete={handleCaptureComplete}
-                onRedo={handleRedo}
-                onCancel={handleCancel}
-                format={format}
-                elapsedTime={elapsedTime}
-                progress={progress}
-                errorMessage={errorMessage}
-                onPause={handlePause}
-                onResume={handleResume}
-                onStop={handleStop}
-                minimalChrome={isRecordingHudMode ? 'floating' : 'window'}
-                countdownSeconds={countdownSeconds}
-                onDimensionChange={handleDimensionChange}
-                onOpenSettings={handleOpenSettings}
-              />
-            )}
+            <CaptureToolbar
+              mode={mode}
+              captureType={captureType}
+              captureSource={captureSource}
+              width={selectionBounds.width}
+              height={selectionBounds.height}
+              sourceType={selectionBounds.sourceType}
+              sourceTitle={selectionBounds.sourceTitle}
+              monitorName={selectionBounds.monitorName}
+              monitorIndex={selectionBounds.monitorIndex}
+              selectionConfirmed={selectionConfirmed}
+              onCapture={handleCapture}
+              onCaptureTypeChange={handleModeChange}
+              onCaptureSourceChange={handleCaptureSourceChange}
+              onCaptureComplete={handleCaptureComplete}
+              onRedo={handleRedo}
+              onCancel={handleCancel}
+              format={format}
+              elapsedTime={elapsedTime}
+              progress={progress}
+              errorMessage={errorMessage}
+              onPause={handlePause}
+              onResume={handleResume}
+              onStop={handleStop}
+              countdownSeconds={countdownSeconds}
+              onDimensionChange={handleDimensionChange}
+              onOpenSettings={handleOpenSettings}
+            />
           </div>
         </div>
       </div>

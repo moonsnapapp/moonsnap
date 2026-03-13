@@ -29,6 +29,8 @@ macro_rules! tauri_command_handler {
             crate::commands::window::recording::hide_recording_border,
             crate::commands::window::recording::show_recording_controls,
             crate::commands::window::recording::close_recording_controls,
+            crate::commands::window::recording::show_recording_mode_chooser,
+            crate::commands::window::recording::close_recording_mode_chooser,
             crate::commands::window::recording::show_countdown_window,
             crate::commands::window::recording::hide_countdown_window,
             // Window commands - toolbar

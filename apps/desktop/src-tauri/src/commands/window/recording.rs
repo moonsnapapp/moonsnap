@@ -5,6 +5,7 @@ use tauri::{command, AppHandle, Manager, WebviewUrl, WebviewWindowBuilder};
 use super::{
     apply_dwm_transparency, exclude_window_from_capture, include_window_in_capture,
     set_physical_bounds, COUNTDOWN_WINDOW_LABEL, RECORDING_BORDER_LABEL, RECORDING_CONTROLS_LABEL,
+    RECORDING_MODE_CHOOSER_LABEL,
 };
 
 // ============================================================================
@@ -120,6 +121,22 @@ pub async fn hide_recording_border(app: AppHandle) -> Result<(), String> {
 
 const RECORDING_CONTROLS_INITIAL_WIDTH: u32 = 360;
 const RECORDING_CONTROLS_INITIAL_HEIGHT: u32 = 60;
+const RECORDING_MODE_CHOOSER_INITIAL_WIDTH: u32 = 430;
+const RECORDING_MODE_CHOOSER_INITIAL_HEIGHT: u32 = 180;
+
+fn center_floating_window(
+    x: i32,
+    y: i32,
+    width: u32,
+    height: u32,
+    floating_width: u32,
+    floating_height: u32,
+) -> (i32, i32) {
+    (
+        x + (width as i32 - floating_width as i32) / 2,
+        y + (height as i32 - floating_height as i32) / 2,
+    )
+}
 
 /// Show the recording controls window used while the main toolbar is excluded from capture.
 #[command]
@@ -212,6 +229,110 @@ pub async fn close_recording_controls(app: AppHandle) -> Result<(), String> {
         window
             .close()
             .map_err(|e| format!("Failed to close recording controls: {}", e))?;
+    }
+    Ok(())
+}
+
+// ============================================================================
+// Recording Mode Chooser Window
+// ============================================================================
+
+#[command]
+pub async fn show_recording_mode_chooser(
+    app: AppHandle,
+    x: i32,
+    y: i32,
+    width: u32,
+    height: u32,
+) -> Result<(), String> {
+    let (window_x, window_y) = center_floating_window(
+        x,
+        y,
+        width,
+        height,
+        RECORDING_MODE_CHOOSER_INITIAL_WIDTH,
+        RECORDING_MODE_CHOOSER_INITIAL_HEIGHT,
+    );
+
+    if let Some(window) = app.get_webview_window(RECORDING_MODE_CHOOSER_LABEL) {
+        set_physical_bounds(
+            &window,
+            window_x,
+            window_y,
+            RECORDING_MODE_CHOOSER_INITIAL_WIDTH,
+            RECORDING_MODE_CHOOSER_INITIAL_HEIGHT,
+        )?;
+        if let Err(e) = apply_dwm_transparency(&window) {
+            log::warn!(
+                "Failed to re-apply DWM transparency to recording mode chooser: {}",
+                e
+            );
+        }
+        window
+            .show()
+            .map_err(|e| format!("Failed to show recording mode chooser: {}", e))?;
+        window
+            .set_always_on_top(true)
+            .map_err(|e| format!("Failed to keep recording mode chooser on top: {}", e))?;
+        window
+            .set_focus()
+            .map_err(|e| format!("Failed to focus recording mode chooser: {}", e))?;
+        return Ok(());
+    }
+
+    let url = WebviewUrl::App("windows/recording-mode-chooser.html".into());
+
+    let window = WebviewWindowBuilder::new(&app, RECORDING_MODE_CHOOSER_LABEL, url)
+        .title("Recording Mode")
+        .inner_size(
+            RECORDING_MODE_CHOOSER_INITIAL_WIDTH as f64,
+            RECORDING_MODE_CHOOSER_INITIAL_HEIGHT as f64,
+        )
+        .transparent(true)
+        .decorations(false)
+        .always_on_top(true)
+        .skip_taskbar(true)
+        .resizable(false)
+        .shadow(false)
+        .visible(false)
+        .focused(false)
+        .build()
+        .map_err(|e| format!("Failed to create recording mode chooser window: {}", e))?;
+
+    set_physical_bounds(
+        &window,
+        window_x,
+        window_y,
+        RECORDING_MODE_CHOOSER_INITIAL_WIDTH,
+        RECORDING_MODE_CHOOSER_INITIAL_HEIGHT,
+    )?;
+
+    if let Err(e) = apply_dwm_transparency(&window) {
+        log::warn!(
+            "Failed to apply DWM transparency to recording mode chooser: {}",
+            e
+        );
+    }
+
+    window
+        .show()
+        .map_err(|e| format!("Failed to show recording mode chooser window: {}", e))?;
+    window
+        .set_always_on_top(true)
+        .map_err(|e| format!("Failed to set recording mode chooser always on top: {}", e))?;
+    window
+        .set_focus()
+        .map_err(|e| format!("Failed to focus recording mode chooser: {}", e))?;
+
+    Ok(())
+}
+
+#[command]
+pub async fn close_recording_mode_chooser(app: AppHandle) -> Result<(), String> {
+    if let Some(window) = app.get_webview_window(RECORDING_MODE_CHOOSER_LABEL) {
+        window
+            .close()
+            .map_err(|e| format!("Failed to close recording mode chooser: {}", e))?;
     }
     Ok(())
 }

@@ -527,14 +527,6 @@ textarea,
   background: var(--polar-snow);
 }
 
-.app-container--recording-hud {
-  background: transparent;
-}
-
-.app-container--recording-hud .toolbar-animated-wrapper {
-  background: transparent;
-}
-
 .header-bar {
   flex-shrink: 0;
   padding: 12px 20px;
@@ -1279,26 +1271,14 @@ body.overlay-window #root {
   background-color: transparent !important;
 }
 
-html.recording-controls-window,
-body.recording-controls-window,
-body.recording-controls-window #root {
+html.floating-toolbar-window,
+body.floating-toolbar-window,
+body.floating-toolbar-window #root {
   background: transparent !important;
   background-color: transparent !important;
 }
 
-body.recording-controls-window #root {
-  width: max-content;
-  height: max-content;
-}
-
-html.capture-toolbar-recording-window,
-body.capture-toolbar-recording-window,
-body.capture-toolbar-recording-window #root {
-  background: transparent !important;
-  background-color: transparent !important;
-}
-
-body.capture-toolbar-recording-window #root {
+body.floating-toolbar-window #root {
   width: max-content;
   height: max-content;
 }
@@ -4635,6 +4615,14 @@ body.capture-toolbar-recording-window #root {
   cursor: move;
 }
 
+.recording-mode-chooser-shell {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  cursor: move;
+}
+
 .glass-toolbar--minimal-floating {
   width: max-content;
   padding: 10px 12px;
@@ -4681,7 +4669,206 @@ body.capture-toolbar-recording-window #root {
   height: 11px;
 }
 
+.recording-mode-chooser-toolbar {
+  align-items: stretch;
+  gap: 0;
+  padding: 14px 16px;
+  border-radius: 22px;
+}
+
+.recording-mode-chooser-back {
+  margin-left: 0;
+  align-self: center;
+}
+
+.recording-mode-chooser-content {
+  min-width: 304px;
+  gap: 12px;
+  padding: 0;
+}
+
+.recording-mode-chooser-options {
+  width: 100%;
+  gap: 10px;
+}
+
+.recording-mode-chooser-header {
+  display: grid;
+  grid-template-columns: 32px 1fr 32px;
+  align-items: center;
+  column-gap: 10px;
+  width: 100%;
+  padding: 2px 0 0;
+}
+
+.recording-mode-chooser-eyebrow {
+  justify-self: center;
+  font-size: 10px;
+  letter-spacing: 0.11em;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.recording-mode-chooser-header-spacer {
+  width: 32px;
+  height: 32px;
+}
+
+.recording-mode-chooser-card {
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 14px 14px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.06) 0%, rgba(255, 255, 255, 0.035) 100%),
+    rgba(255, 255, 255, 0.03);
+  cursor: pointer;
+  transition:
+    transform 140ms ease,
+    border-color 140ms ease,
+    background 140ms ease;
+}
+
+.recording-mode-chooser-card:hover,
+.recording-mode-chooser-card--active {
+  transform: translateY(-1px);
+  border-color: rgba(255, 255, 255, 0.16);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.1) 0%, rgba(255, 255, 255, 0.055) 100%),
+    rgba(255, 255, 255, 0.05);
+}
+
+.recording-mode-chooser-card-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.recording-mode-chooser-card-icon--quick {
+  background: linear-gradient(180deg, rgba(250, 204, 21, 0.18) 0%, rgba(250, 204, 21, 0.08) 100%);
+}
+
+.recording-mode-chooser-card-icon--studio {
+  background: linear-gradient(180deg, rgba(56, 189, 248, 0.18) 0%, rgba(56, 189, 248, 0.08) 100%);
+}
+
+.recording-mode-chooser-card-text {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  text-align: center;
+}
+
+.recording-mode-chooser-card-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.96);
+}
+
+.recording-mode-chooser-card-subtitle {
+  font-size: 11px;
+  line-height: 1.3;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.recording-mode-chooser-remember {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.035);
+  cursor: pointer;
+  text-align: left;
+  transition:
+    border-color 140ms ease,
+    background 140ms ease;
+}
+
+.recording-mode-chooser-remember:hover {
+  border-color: rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.recording-mode-chooser-remember-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.recording-mode-chooser-remember-title {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.62);
+  transition: color 140ms ease;
+}
+
+.recording-mode-chooser-remember-subtitle {
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.34);
+}
+
+.recording-mode-chooser-remember:hover .recording-mode-chooser-remember-title {
+  color: rgba(255, 255, 255, 0.8);
+}
+
 .light .glass-toolbar--minimal-floating {
   background: rgba(255, 255, 255, 0.96);
   border-color: rgba(0, 0, 0, 0.1);
+}
+
+.light .recording-mode-chooser-card {
+  border-color: rgba(15, 23, 42, 0.08);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.7) 0%, rgba(248, 250, 252, 0.92) 100%),
+    rgba(255, 255, 255, 0.9);
+}
+
+.light .recording-mode-chooser-card:hover,
+.light .recording-mode-chooser-card--active {
+  border-color: rgba(15, 23, 42, 0.14);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.95) 0%, rgba(241, 245, 249, 0.98) 100%),
+    rgba(255, 255, 255, 0.96);
+}
+
+.light .recording-mode-chooser-card-icon {
+  border-color: rgba(15, 23, 42, 0.08);
+}
+
+.light .recording-mode-chooser-card-title {
+  color: rgba(15, 23, 42, 0.92);
+}
+
+.light .recording-mode-chooser-card-subtitle {
+  color: rgba(15, 23, 42, 0.5);
+}
+
+.light .recording-mode-chooser-remember {
+  border-color: rgba(15, 23, 42, 0.08);
+  background: rgba(248, 250, 252, 0.92);
+}
+
+.light .recording-mode-chooser-remember:hover {
+  border-color: rgba(15, 23, 42, 0.14);
+  background: rgba(241, 245, 249, 0.98);
+}
+
+.light .recording-mode-chooser-remember-title {
+  color: rgba(15, 23, 42, 0.62);
+}
+
+.light .recording-mode-chooser-remember-subtitle {
+  color: rgba(15, 23, 42, 0.42);
 }
