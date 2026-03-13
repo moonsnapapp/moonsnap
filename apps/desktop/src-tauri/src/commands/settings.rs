@@ -333,37 +333,6 @@ pub async fn move_save_dir(
         }),
     );
 
-    // Update project.json files to reflect the new paths.
-    // Projects store absolute paths to original images, so after moving
-    // files we need to rewrite those paths from old_path → new_path.
-    let app_data_dir = app
-        .path()
-        .app_data_dir()
-        .map_err(|e| format!("Failed to get app data dir: {}", e))?;
-    let projects_dir = app_data_dir.join("projects");
-    if projects_dir.exists() {
-        let old_prefix = old.to_string_lossy().to_string();
-        let new_prefix = new.to_string_lossy().to_string();
-        if let Ok(entries) = std::fs::read_dir(&projects_dir) {
-            for entry in entries.flatten() {
-                let project_file = entry.path().join("project.json");
-                if let Ok(content) = std::fs::read_to_string(&project_file) {
-                    if let Ok(mut project) = serde_json::from_str::<serde_json::Value>(&content) {
-                        if let Some(img) = project.get("original_image").and_then(|v| v.as_str()) {
-                            if img.starts_with(&old_prefix) {
-                                let new_img = format!("{}{}", new_prefix, &img[old_prefix.len()..]);
-                                project["original_image"] = serde_json::Value::String(new_img);
-                                if let Ok(json) = serde_json::to_string_pretty(&project) {
-                                    let _ = std::fs::write(&project_file, json);
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
     // Remove old directory if empty
     if old.read_dir().map_or(false, |mut d| d.next().is_none()) {
         let _ = std::fs::remove_dir(&old);
