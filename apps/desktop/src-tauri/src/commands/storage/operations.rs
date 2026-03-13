@@ -425,7 +425,7 @@ pub async fn update_project_metadata(
 /// Returns None if the project can't be loaded.
 async fn load_project_item(
     project_dir: PathBuf,
-    base_dir: PathBuf,
+    captures_dir: PathBuf,
     thumbnails_dir: PathBuf,
 ) -> Option<CaptureListItem> {
     let project_file = project_dir.join("project.json");
@@ -442,13 +442,12 @@ async fn load_project_item(
         .to_string_lossy()
         .to_string();
 
-    // Handle both old format (filename only) and new format (full path)
+    // Resolve relative filenames against the user's save directory
     let original_path = PathBuf::from(&project.original_image);
     let image_path_buf = if original_path.is_absolute() {
         original_path
     } else {
-        // Legacy: construct path from app data dir
-        base_dir.join("captures").join(&project.original_image)
+        captures_dir.join(&project.original_image)
     };
     let image_path = image_path_buf.to_string_lossy().to_string();
 
@@ -856,9 +855,9 @@ pub async fn get_capture_list(app: AppHandle) -> Result<Vec<CaptureListItem>, St
         let project_futures: Vec<_> = project_dirs
             .into_iter()
             .map(|dir| {
-                let base = base_dir.clone();
+                let caps = captures_dir.clone();
                 let thumbs = thumbnails_dir.clone();
-                load_project_item(dir, base, thumbs)
+                load_project_item(dir, caps, thumbs)
             })
             .collect();
 
