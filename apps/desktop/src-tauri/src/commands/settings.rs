@@ -157,8 +157,8 @@ pub async fn reveal_file_in_explorer(path: String) -> Result<(), String> {
 pub async fn get_default_save_dir(app: tauri::AppHandle) -> Result<String, String> {
     let path = app
         .path()
-        .picture_dir()
-        .map_err(|e| format!("Failed to get pictures directory: {}", e))?;
+        .home_dir()
+        .map_err(|e| format!("Failed to get home directory: {}", e))?;
 
     let moonsnap_path = path.join("MoonSnap");
 
@@ -173,7 +173,7 @@ pub async fn get_default_save_dir(app: tauri::AppHandle) -> Result<String, Strin
 
 /// Get the default save directory path (synchronous version for internal use).
 pub fn get_default_save_dir_sync() -> Result<std::path::PathBuf, String> {
-    let path = dirs::picture_dir().ok_or_else(|| "Failed to get pictures directory".to_string())?;
+    let path = dirs::home_dir().ok_or_else(|| "Failed to get home directory".to_string())?;
 
     let moonsnap_path = path.join("MoonSnap");
 
@@ -184,6 +184,179 @@ pub fn get_default_save_dir_sync() -> Result<std::path::PathBuf, String> {
     }
 
     Ok(moonsnap_path)
+}
+
+/// Pre-check a directory before moving: count items and detect locked files.
+/// Returns { item_count: u32, locked_files: Vec<String> }.
+#[tauri::command]
+pub async fn check_dir_for_move(path: String) -> Result<serde_json::Value, String> {
+    let dir = std::path::PathBuf::from(&path);
+    if !dir.exists() {
+        return Ok(serde_json::json!({ "item_count": 0, "locked_files": [] }));
+    }
+
+    let entries: Vec<_> = std::fs::read_dir(&dir)
+        .map_err(|e| format!("Failed to read directory: {}", e))?
+        .filter_map(|e| e.ok())
+        .collect();
+
+    let item_count = entries.len() as u32;
+    let mut locked_files: Vec<String> = Vec::new();
+
+    for entry in &entries {
+        let file_path = entry.path();
+        // For files, try to open with exclusive write access to detect locks
+        if file_path.is_file() {
+            match std::fs::OpenOptions::new().write(true).open(&file_path) {
+                Ok(_) => {}, // File is accessible
+                Err(_) => {
+                    locked_files.push(entry.file_name().to_string_lossy().to_string());
+                },
+            }
+        } else if file_path.is_dir() {
+            // For directories, check if any immediate children are locked
+            collect_locked_files_in_dir(
+                &file_path,
+                &entry.file_name().to_string_lossy(),
+                &mut locked_files,
+            );
+        }
+    }
+
+    Ok(serde_json::json!({
+        "item_count": item_count,
+        "locked_files": locked_files,
+    }))
+}
+
+/// Check a directory for locked files (non-recursive, one level deep).
+fn collect_locked_files_in_dir(dir: &std::path::Path, parent_name: &str, locked: &mut Vec<String>) {
+    if let Ok(entries) = std::fs::read_dir(dir) {
+        for entry in entries.filter_map(|e| e.ok()) {
+            let file_path = entry.path();
+            if file_path.is_file() {
+                if std::fs::OpenOptions::new()
+                    .write(true)
+                    .open(&file_path)
+                    .is_err()
+                {
+                    locked.push(format!(
+                        "{}/{}",
+                        parent_name,
+                        entry.file_name().to_string_lossy()
+                    ));
+                }
+            }
+        }
+    }
+}
+
+/// Move save directory contents from old location to a new location.
+/// Emits `move-save-dir-progress` events with { moved: u32, total: u32, name: String }.
+#[tauri::command]
+pub async fn move_save_dir(
+    app: tauri::AppHandle,
+    old_path: String,
+    new_path: String,
+) -> Result<(), String> {
+    use tauri::Emitter;
+
+    let old = std::path::PathBuf::from(&old_path);
+    let new = std::path::PathBuf::from(&new_path);
+
+    if !old.exists() {
+        std::fs::create_dir_all(&new)
+            .map_err(|e| format!("Failed to create new directory: {}", e))?;
+        return Ok(());
+    }
+
+    if old == new {
+        return Ok(());
+    }
+
+    // Collect entries first to get total count
+    let entries: Vec<_> = std::fs::read_dir(&old)
+        .map_err(|e| format!("Failed to read old directory: {}", e))?
+        .filter_map(|e| e.ok())
+        .collect();
+
+    let total = entries.len() as u32;
+
+    // Create new directory
+    std::fs::create_dir_all(&new).map_err(|e| format!("Failed to create new directory: {}", e))?;
+
+    for (i, entry) in entries.iter().enumerate() {
+        let dest = new.join(entry.file_name());
+        let name = entry.file_name().to_string_lossy().to_string();
+
+        // Emit progress
+        let _ = app.emit(
+            "move-save-dir-progress",
+            serde_json::json!({
+                "moved": i as u32,
+                "total": total,
+                "name": name,
+            }),
+        );
+
+        // Skip if destination already exists
+        if dest.exists() {
+            continue;
+        }
+
+        // Try rename first (fast, same filesystem), fall back to copy
+        if std::fs::rename(entry.path(), &dest).is_err() {
+            if entry.path().is_dir() {
+                copy_dir_recursive(&entry.path(), &dest)?;
+                std::fs::remove_dir_all(entry.path()).map_err(|e| {
+                    format!("Failed to remove old directory {:?}: {}", entry.path(), e)
+                })?;
+            } else {
+                std::fs::copy(entry.path(), &dest)
+                    .map_err(|e| format!("Failed to copy file: {}", e))?;
+                std::fs::remove_file(entry.path())
+                    .map_err(|e| format!("Failed to remove old file: {}", e))?;
+            }
+        }
+    }
+
+    // Final progress emit
+    let _ = app.emit(
+        "move-save-dir-progress",
+        serde_json::json!({
+            "moved": total,
+            "total": total,
+            "name": "",
+        }),
+    );
+
+    // Remove old directory if empty
+    if old.read_dir().map_or(false, |mut d| d.next().is_none()) {
+        let _ = std::fs::remove_dir(&old);
+    }
+
+    Ok(())
+}
+
+/// Recursively copy a directory.
+fn copy_dir_recursive(src: &std::path::Path, dst: &std::path::Path) -> Result<(), String> {
+    std::fs::create_dir_all(dst)
+        .map_err(|e| format!("Failed to create directory {:?}: {}", dst, e))?;
+
+    for entry in
+        std::fs::read_dir(src).map_err(|e| format!("Failed to read directory {:?}: {}", src, e))?
+    {
+        let entry = entry.map_err(|e| format!("Failed to read entry: {}", e))?;
+        let dest = dst.join(entry.file_name());
+
+        if entry.path().is_dir() {
+            copy_dir_recursive(&entry.path(), &dest)?;
+        } else {
+            std::fs::copy(entry.path(), &dest)
+                .map_err(|e| format!("Failed to copy file: {}", e))?;
+        }
+    }
+    Ok(())
 }
 
 /// Open a file with the system's default application

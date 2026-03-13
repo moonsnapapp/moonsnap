@@ -87,6 +87,8 @@ macro_rules! tauri_command_handler {
             crate::commands::settings::open_file_with_default_app,
             crate::commands::settings::save_copy_of_file,
             crate::commands::settings::get_default_save_dir,
+            crate::commands::settings::move_save_dir,
+            crate::commands::settings::check_dir_for_move,
             crate::commands::settings::update_tray_shortcut,
             // App config commands (from centralized config module)
             crate::config::app::set_close_to_tray,

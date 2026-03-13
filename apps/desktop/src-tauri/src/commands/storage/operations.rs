@@ -1274,7 +1274,7 @@ pub async fn startup_cleanup(app: AppHandle) -> Result<StartupCleanupResult, Str
     // 0. Pre-create storage directories so first capture isn't slow (fast, do sync)
     ensure_directories(&app)?;
 
-    // Also pre-create the user's save directory (Pictures/MoonSnap or custom)
+    // Also pre-create the user's save directory (~/MoonSnap or custom)
     let captures_dir = get_captures_dir(&app)?;
 
     // Get paths for background work

@@ -185,6 +185,14 @@ pub fn run() {
                 let _ = window.hide();
             }
 
+            // Ensure default save directory (~/MoonSnap) exists on first launch
+            if let Ok(home) = app.path().home_dir() {
+                let moonsnap_dir = home.join("MoonSnap");
+                if !moonsnap_dir.exists() {
+                    let _ = std::fs::create_dir_all(&moonsnap_dir);
+                }
+            }
+
             // Show floating startup toolbar on app launch
             let app_handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {

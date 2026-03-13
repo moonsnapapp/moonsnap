@@ -261,6 +261,10 @@ export const useSettingsStore = create<SettingsState>()(
         },
       },
     }));
+    // Auto-persist to disk
+    get().saveSettings().catch((e) => {
+      settingsLogger.error('Failed to persist general settings:', e);
+    });
   },
 
   resetGeneralSettings: () => {

@@ -26,7 +26,7 @@ use tauri::{AppHandle, Manager};
 // Shared Helper Functions
 // ============================================================================
 
-/// Get the user's configured save directory from settings, falling back to Pictures/MoonSnap
+/// Get the user's configured save directory from settings, falling back to ~/MoonSnap
 pub(crate) fn get_captures_dir(app: &AppHandle) -> Result<PathBuf, String> {
     let app_data_dir = get_app_data_dir(app)?;
     let settings_path = app_data_dir.join("settings.json");
@@ -51,12 +51,12 @@ pub(crate) fn get_captures_dir(app: &AppHandle) -> Result<PathBuf, String> {
         }
     }
 
-    // Fallback to Pictures/MoonSnap
-    let pictures_dir = app
+    // Fallback to ~/MoonSnap
+    let home_dir = app
         .path()
-        .picture_dir()
-        .map_err(|e| format!("Failed to get pictures directory: {}", e))?;
-    let moonsnap_path = pictures_dir.join("MoonSnap");
+        .home_dir()
+        .map_err(|e| format!("Failed to get home directory: {}", e))?;
+    let moonsnap_path = home_dir.join("MoonSnap");
 
     if !moonsnap_path.exists() {
         fs::create_dir_all(&moonsnap_path)
