@@ -91,14 +91,14 @@ pub async fn save_capture(
         .save(&thumbnail_path)
         .map_err(|e| format!("Failed to save thumbnail: {}", e))?;
 
-    // Create project data - store full path to image
+    // Create project data - store relative filename only
     let project = CaptureProject {
         id: id.clone(),
         created_at: now,
         updated_at: now,
         capture_type: request.capture_type,
         source: request.source,
-        original_image: original_path.to_string_lossy().to_string(),
+        original_image: original_filename.clone(),
         dimensions: Dimensions { width, height },
         annotations: Vec::new(),
         tags: Vec::new(),
@@ -178,14 +178,14 @@ pub async fn save_capture_from_file(
         .save(&thumbnail_path)
         .map_err(|e| format!("Failed to save thumbnail: {}", e))?;
 
-    // Create project data - store full path to image
+    // Create project data - store relative filename only
     let project = CaptureProject {
         id: id.clone(),
         created_at: now,
         updated_at: now,
         capture_type,
         source,
-        original_image: original_path.to_string_lossy().to_string(),
+        original_image: original_filename.clone(),
         dimensions: Dimensions { width, height },
         annotations: Vec::new(),
         tags: Vec::new(),
@@ -278,7 +278,7 @@ pub async fn import_image_from_path(
             window_title: None,
             region: None,
         },
-        original_image: original_path.to_string_lossy().to_string(),
+        original_image: original_filename.clone(),
         dimensions: Dimensions { width, height },
         annotations: Vec::new(),
         tags: Vec::new(),
