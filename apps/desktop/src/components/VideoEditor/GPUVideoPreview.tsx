@@ -266,14 +266,20 @@ const TextOverlayController = memo(function TextOverlayController({
   renderHeight,
   displayWidth,
   displayHeight,
+  zoomRegions,
 }: {
   segments: TextSegment[] | undefined;
   renderWidth: number;
   renderHeight: number;
   displayWidth: number;
   displayHeight: number;
+  zoomRegions: ZoomRegion[] | undefined;
 }) {
   const currentTimeMs = usePreviewOrPlaybackTime();
+  const zoomScale = useMemo(
+    () => getZoomScaleAt(zoomRegions, currentTimeMs),
+    [zoomRegions, currentTimeMs]
+  );
 
   if (!segments || segments.length === 0 || displayWidth <= 0 || displayHeight <= 0) {
     return null;
@@ -287,6 +293,7 @@ const TextOverlayController = memo(function TextOverlayController({
       renderHeight={renderHeight}
       displayWidth={displayWidth}
       displayHeight={displayHeight}
+      zoomScale={zoomScale}
     />
   );
 });
@@ -473,6 +480,7 @@ const StaticSceneModeRenderer = memo(function StaticSceneModeRenderer({
           renderHeight={frameRenderHeight}
           displayWidth={containerWidth}
           displayHeight={containerHeight}
+          zoomRegions={zoomRegions}
         />
       </div>
 
@@ -697,6 +705,7 @@ const DynamicSceneModeRenderer = memo(function DynamicSceneModeRenderer({
             renderHeight={frameRenderHeight}
             displayWidth={containerWidth}
             displayHeight={containerHeight}
+            zoomScale={annotationZoomScale}
           />
         )}
 

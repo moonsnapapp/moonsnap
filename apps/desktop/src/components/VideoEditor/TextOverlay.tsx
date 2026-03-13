@@ -18,6 +18,7 @@ interface TextOverlayProps {
   renderHeight: number;
   displayWidth: number;
   displayHeight: number;
+  zoomScale?: number;
 }
 
 interface TextItemProps {
@@ -28,6 +29,7 @@ interface TextItemProps {
   opacity: number;
   renderSize: { width: number; height: number };
   interactionSize: { width: number; height: number };
+  zoomScale: number;
   onSelect: (id: string) => void;
   onUpdate: (id: string, updates: Partial<TextSegment>) => void;
 }
@@ -183,6 +185,7 @@ const TextItem = memo(function TextItem({
   opacity,
   renderSize,
   interactionSize,
+  zoomScale,
   onSelect,
   onUpdate,
 }: TextItemProps) {
@@ -201,6 +204,7 @@ const TextItem = memo(function TextItem({
     sizeX: number;
     sizeY: number;
   } | null>(null);
+  const contentZoomScale = Math.max(zoomScale, 0.001);
 
   // Calculate pixel position from center-based normalized coordinates
   // Match glyphon's calculation exactly
@@ -416,8 +420,8 @@ const TextItem = memo(function TextItem({
     const handleMouseMove = (moveEvent: MouseEvent) => {
       if (!dragStartRef.current) return;
 
-      const dx = (moveEvent.clientX - dragStartRef.current.x) / interactionSize.width;
-      const dy = (moveEvent.clientY - dragStartRef.current.y) / interactionSize.height;
+      const dx = (moveEvent.clientX - dragStartRef.current.x) / (interactionSize.width * contentZoomScale);
+      const dy = (moveEvent.clientY - dragStartRef.current.y) / (interactionSize.height * contentZoomScale);
 
       // Allow center anywhere in 0..1 — text can overflow edges and gets clipped in export
       finalCenterX = clamp(dragStartRef.current.centerX + dx, 0, 1);
@@ -440,7 +444,7 @@ const TextItem = memo(function TextItem({
 
     document.addEventListener('mousemove', handleMouseMove);
     document.addEventListener('mouseup', handleMouseUp);
-  }, [segment, interactionSize, renderSize, isSelected, segmentId, onSelect, onUpdate]);
+  }, [segment, interactionSize, renderSize, contentZoomScale, isSelected, segmentId, onSelect, onUpdate]);
 
   // Handle corner resize (bounds only, no font size change)
   // Updates DOM directly during drag, commits to store on mouseUp.
@@ -468,8 +472,8 @@ const TextItem = memo(function TextItem({
       const handleMouseMove = (moveEvent: MouseEvent) => {
         if (!dragStartRef.current) return;
 
-        const dx = (moveEvent.clientX - dragStartRef.current.x) / interactionSize.width;
-        const dy = (moveEvent.clientY - dragStartRef.current.y) / interactionSize.height;
+        const dx = (moveEvent.clientX - dragStartRef.current.x) / (interactionSize.width * contentZoomScale);
+        const dy = (moveEvent.clientY - dragStartRef.current.y) / (interactionSize.height * contentZoomScale);
 
         const targetWidth = dragStartRef.current.sizeX + dx * dirX;
         const targetHeight = dragStartRef.current.sizeY + dy * dirY;
@@ -519,7 +523,7 @@ const TextItem = memo(function TextItem({
       document.addEventListener('mousemove', handleMouseMove);
       document.addEventListener('mouseup', handleMouseUp);
     };
-  }, [segment, interactionSize, renderSize, segmentId, onUpdate, drawTextPreview]);
+  }, [segment, interactionSize, renderSize, contentZoomScale, segmentId, onUpdate, drawTextPreview]);
 
   // Handle side resize (width only, no font size change)
   // Updates DOM directly during drag, commits to store on mouseUp.
@@ -547,7 +551,7 @@ const TextItem = memo(function TextItem({
       const handleMouseMove = (moveEvent: MouseEvent) => {
         if (!dragStartRef.current) return;
 
-        const dx = (moveEvent.clientX - dragStartRef.current.x) / interactionSize.width;
+        const dx = (moveEvent.clientX - dragStartRef.current.x) / (interactionSize.width * contentZoomScale);
 
         const targetWidth = dragStartRef.current.sizeX + dx * dirX;
         const newSizeX = Math.max(targetWidth, minSize);
@@ -588,7 +592,7 @@ const TextItem = memo(function TextItem({
       document.addEventListener('mousemove', handleMouseMove);
       document.addEventListener('mouseup', handleMouseUp);
     };
-  }, [segment, interactionSize, renderSize, segmentId, onUpdate, drawTextPreview]);
+  }, [segment, interactionSize, renderSize, contentZoomScale, segmentId, onUpdate, drawTextPreview]);
 
   return (
     <div
@@ -645,6 +649,7 @@ const TextItem = memo(function TextItem({
   if (prev.segmentId !== next.segmentId) return false;
   if (prev.isSelected !== next.isSelected) return false;
   if (prev.opacity !== next.opacity) return false;
+  if (prev.zoomScale !== next.zoomScale) return false;
   if (prev.renderSize.width !== next.renderSize.width || prev.renderSize.height !== next.renderSize.height) {
     return false;
   }
@@ -682,6 +687,7 @@ export const TextOverlay = memo(function TextOverlay({
   renderHeight,
   displayWidth,
   displayHeight,
+  zoomScale = 1,
 }: TextOverlayProps) {
   const selectedTextSegmentId = useVideoEditorStore(selectSelectedTextSegmentId);
   const selectTextSegment = useVideoEditorStore(selectSelectTextSegment);
@@ -769,6 +775,7 @@ export const TextOverlay = memo(function TextOverlay({
             opacity={opacity}
             renderSize={renderSize}
             interactionSize={interactionSize}
+            zoomScale={zoomScale}
             onSelect={selectTextSegment}
             onUpdate={updateTextSegment}
           />
