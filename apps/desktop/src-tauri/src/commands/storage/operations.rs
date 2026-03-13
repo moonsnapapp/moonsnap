@@ -1363,6 +1363,11 @@ pub async fn startup_cleanup(app: AppHandle) -> Result<StartupCleanupResult, Str
                             if let Ok(project) = serde_json::from_str::<CaptureProject>(&content) {
                                 // Try to regenerate thumbnail from original image
                                 let original_path = PathBuf::from(&project.original_image);
+                                let original_path = if original_path.is_absolute() {
+                                    original_path
+                                } else {
+                                    captures_dir.join(&project.original_image)
+                                };
                                 if original_path.exists() {
                                     if let Ok(image) = image::open(&original_path) {
                                         if let Ok(thumbnail) = generate_thumbnail(&image) {
