@@ -454,3 +454,98 @@ pub async fn save_copy_of_file(
     .await
     .map_err(|e| format!("Copy task panicked: {}", e))?
 }
+
+/// Check if a filename matches known MoonSnap naming patterns.
+/// Used to filter migration and locked-file checks to only MoonSnap-owned files.
+fn is_moonsnap_file(name: &str) -> bool {
+    if name.starts_with("moonsnap_") || name.starts_with("recording_") {
+        return true;
+    }
+
+    // Legacy screenshot pattern: YYYY-MM-DD_HHMMSS_{hex_id}.png
+    if name.ends_with(".png") && name.len() > 20 {
+        let bytes = name.as_bytes();
+        if bytes.len() >= 18
+            && bytes[4] == b'-'
+            && bytes[7] == b'-'
+            && bytes[10] == b'_'
+            && bytes[0..4].iter().all(|b| b.is_ascii_digit())
+            && bytes[5..7].iter().all(|b| b.is_ascii_digit())
+            && bytes[8..10].iter().all(|b| b.is_ascii_digit())
+            && bytes[11..17].iter().all(|b| b.is_ascii_digit())
+            && bytes[17] == b'_'
+            && name[18..name.len() - 4]
+                .chars()
+                .all(|c| c.is_ascii_hexdigit())
+        {
+            return true;
+        }
+    }
+
+    false
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_moonsnap_file;
+
+    #[test]
+    fn test_new_prefix_screenshot() {
+        assert!(is_moonsnap_file("moonsnap_2024-03-13_143022_abc123.png"));
+    }
+
+    #[test]
+    fn test_new_prefix_mp4() {
+        assert!(is_moonsnap_file("moonsnap_20240313_143022_12345.mp4"));
+    }
+
+    #[test]
+    fn test_new_prefix_folder() {
+        assert!(is_moonsnap_file("moonsnap_20240313_143022_12345"));
+    }
+
+    #[test]
+    fn test_new_prefix_gif() {
+        assert!(is_moonsnap_file("moonsnap_20240313_143022_12345.gif"));
+    }
+
+    #[test]
+    fn test_legacy_recording_mp4() {
+        assert!(is_moonsnap_file("recording_20240313_143022_12345.mp4"));
+    }
+
+    #[test]
+    fn test_legacy_recording_folder() {
+        assert!(is_moonsnap_file("recording_20240313_143022_12345"));
+    }
+
+    #[test]
+    fn test_legacy_screenshot() {
+        assert!(is_moonsnap_file("2024-03-13_143022_abc123def456.png"));
+    }
+
+    #[test]
+    fn test_rejects_random_png() {
+        assert!(!is_moonsnap_file("vacation_photo.png"));
+    }
+
+    #[test]
+    fn test_rejects_date_named_non_moonsnap_png() {
+        assert!(!is_moonsnap_file("2024-01-15_vacation_photo.png"));
+    }
+
+    #[test]
+    fn test_rejects_random_folder() {
+        assert!(!is_moonsnap_file("my_documents"));
+    }
+
+    #[test]
+    fn test_rejects_random_mp4() {
+        assert!(!is_moonsnap_file("family_video.mp4"));
+    }
+
+    #[test]
+    fn test_rejects_empty() {
+        assert!(!is_moonsnap_file(""));
+    }
+}
