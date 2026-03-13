@@ -30,7 +30,7 @@ import { useWebcamSettingsStore } from '../stores/webcamSettingsStore';
 import { useSettingsStore } from '../stores/settingsStore';
 import { useTheme } from '../hooks/useTheme';
 import { useRecordingEvents } from '../hooks/useRecordingEvents';
-import { useSelectionEvents } from '../hooks/useSelectionEvents';
+import { repositionToolbar, useSelectionEvents } from '../hooks/useSelectionEvents';
 import { useWebcamCoordination } from '../hooks/useWebcamCoordination';
 import { useToolbarPositioning } from '../hooks/useToolbarPositioning';
 import type { CaptureType } from '../types';
@@ -228,6 +228,24 @@ const CaptureToolbarWindow: React.FC = () => {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [mode, selectionConfirmed, closeWebcamPreview]);
 
+  const showRecordingControlsWindow = useCallback(async () => {
+    const currentWindow = getCurrentWebviewWindow();
+    const showToolbarInCapture = useCaptureSettingsStore.getState().showToolbarInRecording;
+    const [position, size] = await Promise.all([
+      currentWindow.outerPosition(),
+      currentWindow.outerSize(),
+    ]);
+
+    await invoke('show_recording_controls', {
+      x: position.x,
+      y: position.y,
+      width: size.width,
+      height: size.height,
+      includeInCapture: showToolbarInCapture,
+    });
+    await currentWindow.hide();
+  }, []);
+
   const handleCapture = useCallback(async () => {
     try {
       if (!selectionConfirmed) {
@@ -259,8 +277,15 @@ const CaptureToolbarWindow: React.FC = () => {
       if (captureType === 'screenshot') {
         await invoke('capture_overlay_confirm', { action: 'screenshot' });
       } else {
+        const currentWindow = getCurrentWebviewWindow();
+
         if (captureType === 'video' && !skipModePromptRef.current && promptRecordingMode) {
-          const currentWindow = getCurrentWebviewWindow();
+          try {
+            await repositionToolbar(selectionBoundsRef.current);
+          } catch (error) {
+            toolbarLogger.warn('Failed to reposition toolbar before showing recording mode chooser:', error);
+          }
+
           const [position, size] = await Promise.all([
             currentWindow.outerPosition(),
             currentWindow.outerSize(),
@@ -289,6 +314,7 @@ const CaptureToolbarWindow: React.FC = () => {
 
         recordingInitiatedRef.current = true;
         setMode('starting');
+        await currentWindow.hide().catch(() => {});
 
         const systemAudioEnabled = captureType === 'video' ? settings.video.captureSystemAudio : false;
         const fps = captureType === 'video' ? settings.video.fps : settings.gif.fps;
@@ -322,6 +348,12 @@ const CaptureToolbarWindow: React.FC = () => {
 
         await invoke('capture_overlay_confirm', { action: 'recording' });
         await overlayReadyPromise;
+
+        try {
+          await showRecordingControlsWindow();
+        } catch (error) {
+          toolbarLogger.error('Failed to show recording controls window after overlay handoff:', error);
+        }
 
         const bounds = selectionBoundsRef.current;
 
@@ -384,10 +416,11 @@ const CaptureToolbarWindow: React.FC = () => {
       toolbarLogger.error('Failed to capture:', e);
       recordingInitiatedRef.current = false;
       setIsModeChooserVisible(false);
+      invoke('close_recording_controls').catch(() => {});
       setAutoStartRecording(false);
       setMode('selection');
     }
-  }, [captureType, captureSource, promptRecordingMode, selectionConfirmed, settings, webcamSettings.enabled, selectionBoundsRef, recordingInitiatedRef, setAutoStartRecording, setMode]);
+  }, [captureType, captureSource, promptRecordingMode, selectionConfirmed, settings, showRecordingControlsWindow, webcamSettings.enabled, selectionBoundsRef, recordingInitiatedRef, setAutoStartRecording, setMode]);
 
   const handleRedo = useCallback(async () => {
     try {
@@ -655,28 +688,14 @@ const CaptureToolbarWindow: React.FC = () => {
   useEffect(() => {
     if (
       !selectionConfirmed ||
-      (mode !== 'starting' && mode !== 'recording' && mode !== 'paused' && mode !== 'processing')
+      (mode !== 'recording' && mode !== 'paused' && mode !== 'processing')
     ) {
       return;
     }
 
     const timeoutId = window.setTimeout(async () => {
-      const currentWindow = getCurrentWebviewWindow();
-      const showToolbarInCapture = useCaptureSettingsStore.getState().showToolbarInRecording;
       try {
-        const [position, size] = await Promise.all([
-          currentWindow.outerPosition(),
-          currentWindow.outerSize(),
-        ]);
-
-        await invoke('show_recording_controls', {
-          x: position.x,
-          y: position.y,
-          width: size.width,
-          height: size.height,
-          includeInCapture: showToolbarInCapture,
-        });
-        await currentWindow.hide();
+        await showRecordingControlsWindow();
       } catch (e) {
         toolbarLogger.error('Failed to swap to recording controls window:', e);
       }
@@ -685,7 +704,7 @@ const CaptureToolbarWindow: React.FC = () => {
     return () => {
       clearTimeout(timeoutId);
     };
-  }, [mode, selectionBounds, selectionConfirmed, showToolbarInRecording]);
+  }, [mode, selectionConfirmed, showRecordingControlsWindow]);
 
   useEffect(() => {
     if (mode === 'starting' || mode === 'recording' || mode === 'paused' || mode === 'processing') {
