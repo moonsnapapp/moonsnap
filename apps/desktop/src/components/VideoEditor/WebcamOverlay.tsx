@@ -2,6 +2,7 @@ import { memo, useMemo, useRef, useEffect, useState, useCallback } from 'react';
 import { convertFileSrc } from '@tauri-apps/api/core';
 import { usePreviewOrPlaybackTime } from '../../hooks/usePlaybackEngine';
 import { useVideoEditorStore } from '../../stores/videoEditorStore';
+import { WEBCAM } from '../../constants';
 import {
   selectIsPlaying,
   selectPreviewTimeMs,
@@ -20,6 +21,8 @@ interface WebcamOverlayProps {
   renderWidth: number;
   /** Opacity from scene transitions (0-1). When transitioning to camera-only mode, this fades to 0. */
   sceneOpacity?: number;
+  /** Active screen zoom scale so the PiP can shrink with the zoom motion. */
+  zoomScale?: number;
 }
 
 /**
@@ -117,6 +120,18 @@ function getShadowFilter(
   return `drop-shadow(0 0 ${blur}px rgba(0, 0, 0, ${opacity}))`;
 }
 
+function getWebcamSizeFactorForZoom(zoomScale: number): number {
+  const safeZoomScale = Math.max(zoomScale, 1);
+  if (safeZoomScale <= 1.001) {
+    return 1;
+  }
+
+  return Math.max(
+    WEBCAM.MIN_ZOOM_SIZE_FACTOR,
+    1 - (safeZoomScale - 1) * WEBCAM.ZOOM_SHRINK_PER_SCALE_UNIT,
+  );
+}
+
 /**
  * Get shape style based on shape, rounding percentage, and corner style.
  * Implements proper squircle (superellipse) support like Cap.
@@ -174,6 +189,7 @@ export const WebcamOverlay = memo(function WebcamOverlay({
   containerHeight,
   renderWidth,
   sceneOpacity = 1,
+  zoomScale = 1,
 }: WebcamOverlayProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -293,8 +309,12 @@ export const WebcamOverlay = memo(function WebcamOverlay({
   // - Source: uses native video aspect ratio with squircle rounding (like Cap)
   // - Rectangle: forces 16:9 aspect ratio
   // - Circle/RoundedRectangle: forces 1:1 square
+  const zoomSizeFactor = useMemo(
+    () => getWebcamSizeFactorForZoom(zoomScale),
+    [zoomScale]
+  );
   const { webcamWidth, webcamHeight } = useMemo(() => {
-    const baseSize = containerWidth * config.size;
+    const baseSize = containerWidth * config.size * zoomSizeFactor;
 
     if (config.shape === 'source' && videoDimensions) {
       // Source shape: preserve native webcam aspect ratio (like Cap)
@@ -313,7 +333,7 @@ export const WebcamOverlay = memo(function WebcamOverlay({
       // Circle, RoundedRectangle, or Source (before video loads): force 1:1 square
       return { webcamWidth: baseSize, webcamHeight: baseSize };
     }
-  }, [containerWidth, config.size, config.shape, videoDimensions]);
+  }, [containerWidth, config.size, config.shape, videoDimensions, zoomSizeFactor]);
 
   // Scale the 16px margin to match export: at export resolution it's 16px,
   // in the scaled-down preview it must be proportionally the same.

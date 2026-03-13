@@ -2,7 +2,8 @@
 
 use moonsnap_domain::video_project::VideoProject;
 use moonsnap_render::types::{DecodedFrame, WebcamOverlay};
-use moonsnap_render::webcam_overlay::build_webcam_overlay;
+use moonsnap_render::webcam_overlay::build_webcam_overlay_with_zoom;
+use moonsnap_render::ZoomState;
 
 use crate::frame_ops::{blend_frames_alpha, crop_decoded_frame, scale_frame_to_fill};
 use crate::frame_path_plan::{BaseRenderMode, CropRectPlan, FrameRenderPlan};
@@ -16,6 +17,7 @@ pub struct FrameCompositionRequest<'a> {
     pub is_nv12: bool,
     pub use_nv12_gpu_path: bool,
     pub camera_only_opacity: f64,
+    pub zoom_state: ZoomState,
     pub crop_enabled: bool,
     pub crop: CropRectPlan,
     pub video_width: u32,
@@ -79,11 +81,12 @@ pub fn build_frame_composition(req: FrameCompositionRequest<'_>) -> FrameComposi
             );
 
             let webcam_overlay = if req.render_plan.webcam_overlay.enabled {
-                let mut overlay = build_webcam_overlay(
+                let mut overlay = build_webcam_overlay_with_zoom(
                     req.project,
                     webcam_frame.clone(),
                     req.composition_width,
                     req.composition_height,
+                    req.zoom_state.scale,
                 );
                 overlay.shadow_opacity *= req.render_plan.webcam_overlay.opacity;
                 Some(overlay)
@@ -100,11 +103,12 @@ pub fn build_frame_composition(req: FrameCompositionRequest<'_>) -> FrameComposi
             // Common path: normal screen render plus optional webcam overlay.
             let webcam_overlay = if req.render_plan.webcam_overlay.enabled {
                 req.webcam_frame.map(|frame| {
-                    build_webcam_overlay(
+                    build_webcam_overlay_with_zoom(
                         req.project,
                         frame.clone(),
                         req.composition_width,
                         req.composition_height,
+                        req.zoom_state.scale,
                     )
                 })
             } else {
@@ -231,6 +235,7 @@ mod tests {
             is_nv12: false,
             use_nv12_gpu_path: true,
             camera_only_opacity: 0.0,
+            zoom_state: ZoomState::identity(),
             crop_enabled: false,
             crop: CropRectPlan {
                 x: 0,
@@ -267,6 +272,7 @@ mod tests {
             is_nv12: true,
             use_nv12_gpu_path: false,
             camera_only_opacity: 0.4,
+            zoom_state: ZoomState::identity(),
             crop_enabled: true,
             crop: CropRectPlan {
                 x: 0,
@@ -307,6 +313,7 @@ mod tests {
             is_nv12: false,
             use_nv12_gpu_path: false,
             camera_only_opacity: 1.0,
+            zoom_state: ZoomState::identity(),
             crop_enabled: false,
             crop: CropRectPlan {
                 x: 0,

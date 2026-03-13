@@ -14,6 +14,7 @@ export {
 export { ANNOTATIONS, type AnnotationConstants } from './annotations';
 export { WAVEFORM, type WaveformConstants } from './waveform';
 export { CURSOR, type CursorConstants } from './cursor';
+export { WEBCAM, type WebcamConstants } from './webcam';
 export { APP, type AppConstants } from './app';
 export { RECORDING, formatCountdownOption, formatGifDurationOption } from './recording';
 export {

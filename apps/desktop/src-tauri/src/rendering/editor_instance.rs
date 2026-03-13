@@ -26,7 +26,7 @@ use moonsnap_domain::video_project::VideoProject;
 use moonsnap_render::types::{
     BackgroundStyle, EditorInstanceInfo, PlaybackEvent, PlaybackState, RenderOptions, RenderedFrame,
 };
-use moonsnap_render::webcam_overlay::{build_webcam_overlay, is_webcam_visible_at};
+use moonsnap_render::webcam_overlay::{build_webcam_overlay_with_zoom, is_webcam_visible_at};
 use moonsnap_render::zoom::ZoomInterpolator;
 
 /// Events sent from playback loop to main thread.
@@ -300,11 +300,12 @@ impl EditorInstance {
                 if let Some(ref mut webcam_decoder) = self.webcam_decoder {
                     let webcam_frame_num = webcam_decoder.timestamp_to_frame(timestamp_ms);
                     match webcam_decoder.seek(webcam_frame_num).await {
-                        Ok(webcam_frame) => Some(build_webcam_overlay(
+                        Ok(webcam_frame) => Some(build_webcam_overlay_with_zoom(
                             &self.project,
                             webcam_frame,
                             output_width,
                             output_height,
+                            zoom_state.scale,
                         )),
                         Err(e) => {
                             log::warn!("[GPU_EDITOR] Failed to decode webcam frame: {}", e);

@@ -3,6 +3,19 @@
 use crate::types::{DecodedFrame, WebcamOverlay, WebcamShape};
 use moonsnap_domain::video_project::{VideoProject, WebcamOverlayPosition, WebcamOverlayShape};
 
+const WEBCAM_ZOOM_SHRINK_PER_SCALE_UNIT: f32 = 0.2;
+const WEBCAM_MIN_ZOOM_SIZE_FACTOR: f32 = 0.72;
+
+fn webcam_size_factor_for_zoom(zoom_scale: f32) -> f32 {
+    let safe_zoom_scale = zoom_scale.max(1.0);
+    if safe_zoom_scale <= 1.001 {
+        return 1.0;
+    }
+
+    (1.0 - (safe_zoom_scale - 1.0) * WEBCAM_ZOOM_SHRINK_PER_SCALE_UNIT)
+        .max(WEBCAM_MIN_ZOOM_SIZE_FACTOR)
+}
+
 /// Build webcam overlay from frame and project settings.
 /// Positioning logic matches WebcamOverlay.tsx exactly for WYSIWYG export.
 pub fn build_webcam_overlay(
@@ -11,11 +24,23 @@ pub fn build_webcam_overlay(
     out_w: u32,
     out_h: u32,
 ) -> WebcamOverlay {
+    build_webcam_overlay_with_zoom(project, frame, out_w, out_h, 1.0)
+}
+
+/// Build webcam overlay from frame/project settings, shrinking the PiP as screen zoom increases.
+pub fn build_webcam_overlay_with_zoom(
+    project: &VideoProject,
+    frame: DecodedFrame,
+    out_w: u32,
+    out_h: u32,
+    zoom_scale: f32,
+) -> WebcamOverlay {
     const MARGIN_PX: f32 = 16.0;
 
     let webcam_aspect = frame.width as f32 / frame.height as f32;
     let use_source_aspect = matches!(project.webcam.shape, WebcamOverlayShape::Source);
-    let base_size_px = out_w as f32 * project.webcam.size;
+    let size_factor = webcam_size_factor_for_zoom(zoom_scale);
+    let base_size_px = out_w as f32 * project.webcam.size * size_factor;
 
     let (webcam_width_px, webcam_height_px) = if use_source_aspect {
         if webcam_aspect >= 1.0 {
@@ -96,7 +121,7 @@ pub fn build_webcam_overlay(
         frame,
         x: x_norm,
         y: y_norm,
-        size: project.webcam.size,
+        size: project.webcam.size * size_factor,
         shape,
         mirror: project.webcam.mirror,
         use_source_aspect,
@@ -219,6 +244,26 @@ mod tests {
         let actual_x = overlay.x * out_w as f32;
         let actual_y = overlay.y * out_h as f32;
 
+        assert!((actual_x - expected_x).abs() < 1.0);
+        assert!((actual_y - expected_y).abs() < 1.0);
+    }
+
+    #[test]
+    fn webcam_overlay_shrinks_with_zoom_while_preserving_corner_anchor() {
+        let project = make_project(WebcamOverlayPosition::BottomRight, 0.2, 0.0, 0.0);
+        let out_w = 2262u32;
+        let out_h = 1228u32;
+        let overlay =
+            build_webcam_overlay_with_zoom(&project, make_test_frame(1280, 720), out_w, out_h, 2.0);
+
+        let expected_size = 0.2 * 0.8;
+        let expected_size_px = out_w as f32 * expected_size;
+        let expected_x = out_w as f32 - expected_size_px - 16.0;
+        let expected_y = out_h as f32 - expected_size_px - 16.0;
+        let actual_x = overlay.x * out_w as f32;
+        let actual_y = overlay.y * out_h as f32;
+
+        assert!((overlay.size - expected_size).abs() < 0.0001);
         assert!((actual_x - expected_x).abs() < 1.0);
         assert!((actual_y - expected_y).abs() < 1.0);
     }

@@ -781,6 +781,7 @@ pub async fn export_video_gpu(
             is_nv12,
             use_nv12_gpu_path,
             camera_only_opacity,
+            zoom_state,
             crop_enabled,
             crop: CropRectPlan {
                 x: crop.x,

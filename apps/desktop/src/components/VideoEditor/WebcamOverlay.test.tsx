@@ -1,5 +1,6 @@
 import { render, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { WEBCAM } from '../../constants';
 import type { WebcamConfig } from '../../types';
 import { WebcamOverlay } from './WebcamOverlay';
 
@@ -99,5 +100,31 @@ describe('WebcamOverlay', () => {
     await waitFor(() => {
       expect(HTMLMediaElement.prototype.play).toHaveBeenCalled();
     });
+  });
+
+  it('shrinks the webcam overlay as preview zoom increases while preserving the anchor margin', () => {
+    const { container } = render(
+      <WebcamOverlay
+        webcamVideoPath="/tmp/webcam.mp4"
+        config={baseConfig}
+        containerWidth={1280}
+        containerHeight={720}
+        renderWidth={1920}
+        zoomScale={2}
+      />
+    );
+
+    const wrapper = container.firstElementChild as HTMLDivElement | null;
+    expect(wrapper).not.toBeNull();
+
+    const expectedSizeFactor = Math.max(
+      WEBCAM.MIN_ZOOM_SIZE_FACTOR,
+      1 - WEBCAM.ZOOM_SHRINK_PER_SCALE_UNIT
+    );
+
+    expect(parseFloat(wrapper!.style.width)).toBeCloseTo(1280 * baseConfig.size * expectedSizeFactor, 3);
+    expect(parseFloat(wrapper!.style.height)).toBeCloseTo(1280 * baseConfig.size * expectedSizeFactor, 3);
+    expect(parseFloat(wrapper!.style.right)).toBeCloseTo(16 * (1280 / 1920), 3);
+    expect(parseFloat(wrapper!.style.bottom)).toBeCloseTo(16 * (1280 / 1920), 3);
   });
 });

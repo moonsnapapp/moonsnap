@@ -144,6 +144,7 @@ const SceneAwareWebcamOverlay = memo(function SceneAwareWebcamOverlay({
   containerWidth,
   containerHeight,
   renderWidth,
+  zoomRegions,
   sceneSegments,
   defaultSceneMode,
 }: {
@@ -152,12 +153,17 @@ const SceneAwareWebcamOverlay = memo(function SceneAwareWebcamOverlay({
   containerWidth: number;
   containerHeight: number;
   renderWidth: number;
+  zoomRegions: ZoomRegion[] | undefined;
   sceneSegments: SceneSegment[] | undefined;
   defaultSceneMode: SceneMode;
 }) {
   const currentTimeMs = usePreviewOrPlaybackTime();
   const scene = useInterpolatedScene(sceneSegments, defaultSceneMode, currentTimeMs);
   const sceneOpacity = getRegularCameraTransitionOpacity(scene);
+  const zoomScale = useMemo(
+    () => getZoomScaleAt(zoomRegions, currentTimeMs),
+    [zoomRegions, currentTimeMs]
+  );
 
   return (
     <WebcamOverlay
@@ -167,6 +173,7 @@ const SceneAwareWebcamOverlay = memo(function SceneAwareWebcamOverlay({
       containerHeight={containerHeight}
       renderWidth={renderWidth}
       sceneOpacity={sceneOpacity}
+      zoomScale={zoomScale}
     />
   );
 });
@@ -1157,6 +1164,7 @@ export function GPUVideoPreview({ isActive = true }: GPUVideoPreviewProps) {
             containerWidth={compositionSize.width}
             containerHeight={compositionSize.height}
             renderWidth={compositeWidth}
+            zoomRegions={project?.zoom?.regions}
             sceneSegments={project.scene?.segments}
             defaultSceneMode={project.scene?.defaultMode ?? 'default'}
           />
