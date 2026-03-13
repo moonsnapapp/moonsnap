@@ -404,6 +404,8 @@ pub fn setup_system_tray(app: &App) -> Result<TrayState, Box<dyn std::error::Err
             },
             "show" => {
                 if let Some(window) = app.get_webview_window("library") {
+                    let _ = commands::window::reveal_library_window(&window, false);
+
                     // Use Windows API to forcefully bring window to front
                     #[cfg(target_os = "windows")]
                     {
@@ -422,13 +424,14 @@ pub fn setup_system_tray(app: &App) -> Result<TrayState, Box<dyn std::error::Err
                             }
                         }
                     }
-                    let _ = window.show();
                     let _ = window.set_focus();
                 }
             },
             "settings" => {
                 // Show library window and emit event to open settings modal
                 if let Some(window) = app.get_webview_window("library") {
+                    let _ = commands::window::reveal_library_window(&window, false);
+
                     // Use Windows API to forcefully bring window to front
                     #[cfg(target_os = "windows")]
                     {
@@ -447,7 +450,6 @@ pub fn setup_system_tray(app: &App) -> Result<TrayState, Box<dyn std::error::Err
                             }
                         }
                     }
-                    let _ = window.show();
                     let _ = window.set_focus();
                 }
                 let _ = app.emit("open-settings", ());

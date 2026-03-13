@@ -43,6 +43,11 @@ pub(crate) const COUNTDOWN_WINDOW_LABEL: &str = "countdown";
 /// Track if main window was visible before capture started
 pub(crate) static MAIN_WAS_VISIBLE: AtomicBool = AtomicBool::new(false);
 
+/// Track the first explicit library reveal in this process.
+/// The library starts hidden, and restoring a hidden saved position can leave
+/// the first reveal off-center. Recenter once, then preserve subsequent moves.
+pub(crate) static LIBRARY_WAS_REVEALED: AtomicBool = AtomicBool::new(false);
+
 // ============================================================================
 // Physical Coordinate Helpers
 // ============================================================================
@@ -213,11 +218,36 @@ pub(crate) fn close_all_capture_windows(app: &tauri::AppHandle) {
     close_recording_border_window(app);
 }
 
+/// Show the library window, centering it the first time it is explicitly shown
+/// in a process so startup restores do not leave it off-center.
+pub(crate) fn reveal_library_window(
+    window: &tauri::WebviewWindow,
+    focus: bool,
+) -> Result<(), String> {
+    if !LIBRARY_WAS_REVEALED.swap(true, Ordering::SeqCst) {
+        window
+            .center()
+            .map_err(|e| format!("Failed to center library window: {}", e))?;
+    }
+
+    window
+        .show()
+        .map_err(|e| format!("Failed to show library window: {}", e))?;
+
+    if focus {
+        window
+            .set_focus()
+            .map_err(|e| format!("Failed to focus library window: {}", e))?;
+    }
+
+    Ok(())
+}
+
 /// Restore main window if it was visible before capture started
 pub(crate) fn restore_main_if_visible(app: &tauri::AppHandle) {
     if MAIN_WAS_VISIBLE.load(Ordering::SeqCst) {
         if let Some(main_window) = app.get_webview_window("library") {
-            let _ = main_window.show();
+            let _ = reveal_library_window(&main_window, false);
         }
     }
 }

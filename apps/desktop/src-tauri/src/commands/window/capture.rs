@@ -6,7 +6,7 @@ use tauri::{command, AppHandle, Emitter, Manager};
 
 use super::{
     close_all_capture_windows, close_recording_border_window, restore_main_if_visible,
-    MAIN_WAS_VISIBLE,
+    reveal_library_window, MAIN_WAS_VISIBLE,
 };
 
 /// Trigger the capture overlay - uses DirectComposition overlay for all capture types.
@@ -68,7 +68,7 @@ pub fn trigger_capture_with_options(
                 // Restore main window before returning since we hid it earlier
                 if let Some(main_window) = app_clone.get_webview_window("library") {
                     if MAIN_WAS_VISIBLE.load(Ordering::SeqCst) {
-                        let _ = main_window.show();
+                        let _ = reveal_library_window(&main_window, false);
                     }
                 }
                 return;
@@ -202,8 +202,7 @@ pub async fn hide_overlay(app: AppHandle, restore_main_window: Option<bool>) -> 
     let should_restore = restore_main_window.unwrap_or(true);
     if should_restore && MAIN_WAS_VISIBLE.swap(false, Ordering::SeqCst) {
         if let Some(main_window) = app.get_webview_window("library") {
-            let _ = main_window.show();
-            let _ = main_window.set_focus();
+            let _ = reveal_library_window(&main_window, true);
         }
     }
 
@@ -216,8 +215,7 @@ pub async fn restore_main_window(app: AppHandle) -> Result<(), String> {
     // Check if main was visible before capture started
     if MAIN_WAS_VISIBLE.swap(false, Ordering::SeqCst) {
         if let Some(main_window) = app.get_webview_window("library") {
-            let _ = main_window.show();
-            let _ = main_window.set_focus();
+            let _ = reveal_library_window(&main_window, true);
         }
     }
     Ok(())
@@ -227,8 +225,7 @@ pub async fn restore_main_window(app: AppHandle) -> Result<(), String> {
 #[command]
 pub async fn show_library_window(app: AppHandle) -> Result<(), String> {
     if let Some(main_window) = app.get_webview_window("library") {
-        let _ = main_window.show();
-        let _ = main_window.set_focus();
+        reveal_library_window(&main_window, true)?;
     }
     Ok(())
 }
