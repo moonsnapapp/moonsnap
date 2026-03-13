@@ -33,7 +33,7 @@ All new captures get a `moonsnap_` prefix:
 
 1. **`moonsnap_*`** — new-format files/folders
 2. **`recording_*`** — legacy recording files/folders
-3. **`YYYY-MM-DD_*.png`** — legacy screenshot files (regex: `^\d{4}-\d{2}-\d{2}_.*\.png$`)
+3. **`YYYY-MM-DD_HHMMSS_{id}.png`** — legacy screenshot files (regex: `^\d{4}-\d{2}-\d{2}_\d{6}_[a-f0-9]+\.png$`)
 
 Everything else stays in the old directory. The old directory is only removed if empty after the filtered move.
 
@@ -51,12 +51,15 @@ Everything else stays in the old directory. The old directory is only removed if
 ### `settings.rs` — Migration filter (`move_save_dir`)
 - Lines 279-282: Add a filter to `entries` that only includes filenames matching `moonsnap_*`, `recording_*`, or the legacy screenshot date pattern.
 - Add a helper function `is_moonsnap_file(name: &str) -> bool` for the pattern matching.
+- Update `total` count in progress events to reflect only filtered entries (not all entries), so the progress bar is accurate.
+
+### `settings.rs` — Locked file check (`check_dir_for_move`)
+- Apply the same `is_moonsnap_file` filter so locked-file detection only checks MoonSnap files.
 
 ## No Changes Needed
 
 - **Gallery scan** (`operations.rs` ~line 875): Discovers files by extension (`.png`, `.mp4`, `.gif`) and folder contents (`screen.mp4`). Not prefix-dependent.
 - **Video project loading** (`metadata.rs`): Uses path-based sibling discovery. Works with any prefix.
-- **Locked file detection** (`settings.rs` `check_locked_files`): Should also be filtered to only check MoonSnap files, using the same `is_moonsnap_file` helper.
 
 ## Testing
 
