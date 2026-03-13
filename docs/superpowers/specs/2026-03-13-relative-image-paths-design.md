@@ -16,9 +16,12 @@ Lines 101, 188, 281: Currently store `original_path.to_string_lossy().to_string(
 
 ### Read side — `operations.rs` (3 locations)
 
-Lines 446-452, 961-966, 1009-1014: The existing code checks `is_absolute()` and falls back to `base_dir.join("captures")` for relative paths. Change the fallback to use `get_captures_dir(&app)` instead.
+Lines 446-452, 961-966, 1009-1014: The existing code checks `is_absolute()` and falls back to `base_dir.join("captures")` for relative paths. Change the fallback to resolve against the user's configured save directory instead.
 
-Note: `get_captures_dir` requires an `AppHandle`. Two of the three read locations (`project_to_list_item` at line 446 and `get_capture_project` at line 961) already have access to `app`. The third (`resolve_capture_path` at line 1009) also has `app`. Verify each call site has `app` available.
+Function availability:
+- `load_project_item` (line 446): Does **not** have `AppHandle`. Add a `captures_dir: PathBuf` parameter and pass it from the caller (`list_captures`, which has `app`).
+- `get_project_image` (line 961): Has `app: AppHandle`. Call `get_captures_dir(&app)` directly.
+- `determine_capture_type` (line 1009): Has `app: &AppHandle`. Call `get_captures_dir(app)` directly.
 
 ### Read side — `operations.rs` (1 location for thumbnail regen)
 
@@ -26,7 +29,7 @@ Line 1365: Uses `PathBuf::from(&project.original_image)` directly. Needs the sam
 
 ### Remove path rewriting from `move_save_dir` — `settings.rs`
 
-Lines 334-363: The block that rewrites `original_image` paths in project.json files after moving is no longer needed. Remove it entirely. With relative filenames, moving files to a new directory doesn't require metadata updates.
+Lines 336-365: The block that rewrites `original_image` paths in project.json files after moving is no longer needed. Remove it entirely. With relative filenames, moving files to a new directory doesn't require metadata updates.
 
 ### Backwards compatibility
 
