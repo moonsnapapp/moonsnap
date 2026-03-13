@@ -9,9 +9,9 @@ use windows::Win32::Graphics::Gdi::{BeginPaint, EndPaint, PAINTSTRUCT};
 use windows::Win32::UI::Input::KeyboardAndMouse::VK_SHIFT;
 use windows::Win32::UI::WindowsAndMessaging::{
     DefWindowProcW, GetWindowLongPtrW, LoadCursorW, SetCursor, SetWindowPos, GWLP_USERDATA,
-    HTCLIENT, HWND_TOPMOST, IDC_CROSS, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, WM_CREATE,
-    WM_DESTROY, WM_KEYDOWN, WM_KEYUP, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WM_PAINT,
-    WM_RBUTTONDOWN, WM_SETCURSOR,
+    HTCLIENT, HTTRANSPARENT, HWND_TOPMOST, IDC_CROSS, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,
+    WM_CREATE, WM_DESTROY, WM_KEYDOWN, WM_KEYUP, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE,
+    WM_NCHITTEST, WM_PAINT, WM_RBUTTONDOWN, WM_SETCURSOR,
 };
 
 use super::input::{get_window_at_point, hit_test_handle};
@@ -39,6 +39,7 @@ pub unsafe extern "system" fn wnd_proc(
         WM_CREATE => LRESULT(0),
         WM_DESTROY => LRESULT(0),
         WM_PAINT => handle_paint(hwnd),
+        WM_NCHITTEST => handle_nchittest(state_ptr, lparam),
         WM_SETCURSOR => handle_set_cursor(state_ptr, lparam),
         WM_LBUTTONDOWN => handle_mouse_down(state_ptr, lparam),
         WM_MOUSEMOVE => handle_mouse_move(state_ptr, lparam),
@@ -58,6 +59,50 @@ fn handle_paint(hwnd: HWND) -> LRESULT {
         let _ = EndPaint(hwnd, &ps);
     }
     LRESULT(0)
+}
+
+/// Handle WM_NCHITTEST - pass clicks through to windows below when not on a resize handle.
+///
+/// When the toolbar is visible (adjustment mode active, not locked), the overlay
+/// stays interactive for resize handles but returns HTTRANSPARENT for all other
+/// areas so the toolbar and desktop can receive clicks.
+fn handle_nchittest(state_ptr: *mut OverlayState, lparam: LPARAM) -> LRESULT {
+    unsafe {
+        if state_ptr.is_null() {
+            return LRESULT(HTCLIENT as isize);
+        }
+
+        let state = &*state_ptr;
+
+        // During initial selection (not yet in adjustment mode), keep overlay interactive
+        if !state.adjustment.is_active {
+            return LRESULT(HTCLIENT as isize);
+        }
+
+        // Locked selections are already fully click-through via WS_EX_TRANSPARENT
+        if state.adjustment.is_locked {
+            return LRESULT(HTCLIENT as isize);
+        }
+
+        // If actively dragging a handle, keep the overlay interactive
+        if state.adjustment.is_dragging {
+            return LRESULT(HTCLIENT as isize);
+        }
+
+        // Extract screen coordinates from lparam
+        let x = (lparam.0 & 0xFFFF) as i16 as i32;
+        let y = ((lparam.0 >> 16) & 0xFFFF) as i16 as i32;
+
+        // Check if the cursor is on a resize handle
+        let handle = hit_test_handle(x, y, state.adjustment.bounds);
+        if handle.is_active() {
+            // On a handle — overlay handles this click
+            LRESULT(HTCLIENT as isize)
+        } else {
+            // Not on a handle — pass click through to window below
+            LRESULT(HTTRANSPARENT as isize)
+        }
+    }
 }
 
 /// Handle WM_SETCURSOR - set appropriate cursor based on state
@@ -533,13 +578,12 @@ enum SourceType {
 }
 
 fn show_toolbar(state: &OverlayState, screen_bounds: Rect, source: SourceType) {
-    // For locked selections (display/window), make overlay click-through
-    // This is bulletproof - no Z-order fighting needed
+    // For locked selections (display/window), make overlay fully click-through.
+    // For unlocked selections (region), the overlay stays interactive for adjustment
+    // handles but uses WM_NCHITTEST to pass through clicks outside handles.
     if state.adjustment.is_locked {
         make_overlay_click_through(state);
     }
-    // For unlocked selections (region), overlay stays interactive for adjustment handles
-    // The toolbar will still appear on top due to TOPMOST flag
 
     let mut payload = serde_json::json!({
         "x": screen_bounds.left,

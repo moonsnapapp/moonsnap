@@ -35,6 +35,7 @@ describe('RecordingsTab', () => {
         },
       },
       afterRecordingAction: 'preview',
+      promptRecordingMode: true,
       saveSettings: async () => {},
     });
   });
@@ -57,5 +58,18 @@ describe('RecordingsTab', () => {
     expect(useCaptureSettingsStore.getState().settings.video.fps).toBe(60);
     expect(useCaptureSettingsStore.getState().settings.video.countdownSecs).toBe(0);
     expect(useCaptureSettingsStore.getState().settings.gif.maxDurationSecs).toBe(0);
+  });
+
+  it('toggles the "Ask before recording" switch', () => {
+    render(<RecordingsTab />);
+
+    const toggle = screen.getByRole('switch', { name: /ask before recording/i });
+    expect(toggle).toBeChecked();
+
+    fireEvent.click(toggle);
+    expect(useCaptureSettingsStore.getState().promptRecordingMode).toBe(false);
+
+    fireEvent.click(toggle);
+    expect(useCaptureSettingsStore.getState().promptRecordingMode).toBe(true);
   });
 });

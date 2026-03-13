@@ -115,6 +115,7 @@ export const RecordingsTab: React.FC = () => {
               </p>
             </div>
             <Switch
+              aria-label="Ask before recording"
               checked={promptRecordingMode}
               onCheckedChange={(checked) => setPromptRecordingMode(checked)}
             />
