@@ -2,21 +2,25 @@
  * CaptionPanel - Panel for caption transcription and editing.
  * Provides transcription controls, segment list, and settings.
  */
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Mic,
   Download,
   Loader2,
   AlertCircle,
   Check,
+  ChevronsUpDown,
   X,
   RotateCcw,
+  Trash2,
 } from 'lucide-react';
 import { listen } from '@tauri-apps/api/event';
-import { useVideoEditorStore } from '../../stores/videoEditorStore';
+import { TRANSCRIPTION_LANGUAGE_OPTIONS } from '../../constants';
+import { getEffectiveDuration, useVideoEditorStore } from '../../stores/videoEditorStore';
 import {
   selectCaptionSegments,
   selectCaptionSettings,
+  selectClearCaptions,
   selectDownloadModel,
   selectDownloadProgress,
   selectIsDownloadingModel,
@@ -25,13 +29,16 @@ import {
   selectProject,
   selectRequestSeek,
   selectSelectedModelName,
+  selectSelectedTranscriptionLanguage,
   selectSetCaptionSegments,
   selectSetCaptionsEnabled,
   selectSetIsPlaying,
   selectSetSelectedModel,
+  selectSetSelectedTranscriptionLanguage,
   selectSetTranscriptionProgress,
   selectStartTranscription,
   selectTogglePlayback,
+  selectTimelineSegments,
   selectTranscribeCaptionSegment,
   selectTranscriptionError,
   selectTranscriptionProgress,
@@ -42,19 +49,31 @@ import {
 } from '../../stores/videoEditor/selectors';
 import { Button } from '../../components/ui/button';
 import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from '../../components/ui/command';
+import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
 } from '../../components/ui/dialog';
 import { Input } from '../../components/ui/input';
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '../../components/ui/popover';
 import { Slider } from '../../components/ui/slider';
 import { Textarea } from '../../components/ui/textarea';
 import { CaptionOverlay } from '../../components/VideoEditor/CaptionOverlay';
 import type {
   CaptionSegment,
   CaptionSettings,
-  CaptionWord,
   TranscriptionProgress,
   DownloadProgress,
 } from '../../types';
@@ -77,6 +96,10 @@ import {
   type EditableCaptionWord,
 } from '../../utils/captionTiming';
 import {
+  remapCaptionSegmentToSource,
+  remapCaptionSegmentsToTimeline,
+} from '../../utils/captionTimeline';
+import {
   CaptionAuditionWatcher,
   CaptionPlaybackTransport,
   SegmentAuditionState,
@@ -84,6 +107,7 @@ import {
   WordDragState,
   WordTimingEditor,
 } from './components/CaptionPanelWidgets';
+import { cn } from '../../lib/utils';
 
 interface CaptionPanelProps {
   videoPath: string | null;
@@ -98,25 +122,113 @@ const MODEL_SIZES: Record<string, string> = {
 };
 
 const DEFAULT_VISIBLE_SEGMENTS = 20;
+const SORTED_TRANSCRIPTION_LANGUAGE_OPTIONS = [...TRANSCRIPTION_LANGUAGE_OPTIONS].sort(
+  (left, right) => {
+    if (left.value === 'auto') return -1;
+    if (right.value === 'auto') return 1;
+    return left.label.localeCompare(right.label);
+  }
+);
 
 interface CaptionSnapshot {
   segments: CaptionSegment[];
   settings: CaptionSettings;
 }
+
+interface TranscriptionLanguageComboboxProps {
+  value: string;
+  onChange: (value: string) => void;
+  className?: string;
+  placeholder?: string;
+}
+
+function TranscriptionLanguageCombobox({
+  value,
+  onChange,
+  className,
+  placeholder = 'Select language',
+}: TranscriptionLanguageComboboxProps) {
+  const [open, setOpen] = useState(false);
+  const selectedOption = SORTED_TRANSCRIPTION_LANGUAGE_OPTIONS.find(
+    (option) => option.value === value
+  );
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          role="combobox"
+          aria-expanded={open}
+          className={cn(
+            'flex h-9 w-full items-center justify-between rounded-md border border-[var(--glass-border)] bg-[var(--polar-mist)] px-3 text-left text-sm text-[var(--ink-dark)] transition-colors hover:bg-[var(--glass-highlight)]',
+            className
+          )}
+        >
+          <span className="truncate">{selectedOption?.label ?? placeholder}</span>
+          <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 text-[var(--ink-subtle)]" />
+        </button>
+      </PopoverTrigger>
+      {open && (
+        <PopoverContent
+          align="start"
+          className="w-[var(--radix-popover-trigger-width)] border-[var(--glass-border)] bg-[var(--glass-surface-dark)] p-0"
+        >
+          <Command className="bg-transparent text-[var(--ink-dark)]">
+            <CommandInput placeholder="Search languages..." className="h-9" />
+            <CommandList className="max-h-[260px]">
+              <CommandEmpty>No language found.</CommandEmpty>
+              <CommandGroup>
+                {SORTED_TRANSCRIPTION_LANGUAGE_OPTIONS.map((option) => (
+                  <CommandItem
+                    key={`transcription-language-${option.value}`}
+                    value={`${option.label} ${option.value}`}
+                    onSelect={() => {
+                      onChange(option.value);
+                      setOpen(false);
+                    }}
+                    className="text-sm"
+                  >
+                    <Check
+                      className={cn(
+                        'mr-2 h-4 w-4',
+                        value === option.value ? 'opacity-100' : 'opacity-0'
+                      )}
+                    />
+                    <span className="truncate">{option.label}</span>
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+            </CommandList>
+          </Command>
+        </PopoverContent>
+      )}
+    </Popover>
+  );
+}
+
 export function CaptionPanel({ videoPath }: CaptionPanelProps) {
   const project = useVideoEditorStore(selectProject);
   const captionSegments = useVideoEditorStore(selectCaptionSegments);
   const captionSettings = useVideoEditorStore(selectCaptionSettings);
+  const clearCaptions = useVideoEditorStore(selectClearCaptions);
+  const timelineSegments = useVideoEditorStore(selectTimelineSegments);
   const isTranscribing = useVideoEditorStore(selectIsTranscribing);
   const transcriptionProgress = useVideoEditorStore(selectTranscriptionProgress);
   const transcriptionStage = useVideoEditorStore(selectTranscriptionStage);
   const transcriptionError = useVideoEditorStore(selectTranscriptionError);
   const whisperModels = useVideoEditorStore(selectWhisperModels);
   const selectedModelName = useVideoEditorStore(selectSelectedModelName);
+  const selectedTranscriptionLanguage = useVideoEditorStore(
+    selectSelectedTranscriptionLanguage
+  );
   const isDownloadingModel = useVideoEditorStore(selectIsDownloadingModel);
   const downloadProgress = useVideoEditorStore(selectDownloadProgress);
   const loadWhisperModels = useVideoEditorStore(selectLoadWhisperModels);
   const setSelectedModel = useVideoEditorStore(selectSetSelectedModel);
+  const setSelectedTranscriptionLanguage = useVideoEditorStore(
+    selectSetSelectedTranscriptionLanguage
+  );
   const downloadModel = useVideoEditorStore(selectDownloadModel);
   const startTranscription = useVideoEditorStore(selectStartTranscription);
   const transcribeCaptionSegment = useVideoEditorStore(selectTranscribeCaptionSegment);
@@ -192,15 +304,26 @@ export function CaptionPanel({ videoPath }: CaptionPanelProps) {
   const isModelDownloaded = selectedModel?.downloaded ?? false;
   const regenerateModel = whisperModels.find((m) => m.name === regenerateModelName);
   const isRegenerateModelDownloaded = regenerateModel?.downloaded ?? false;
+  const displayCaptionSegments = useMemo(
+    () => remapCaptionSegmentsToTimeline(captionSegments, timelineSegments),
+    [captionSegments, timelineSegments]
+  );
+  const displayCaptionSegmentsById = useMemo(
+    () => new Map(displayCaptionSegments.map((segment) => [segment.id, segment])),
+    [displayCaptionSegments]
+  );
   const visibleSegments = showAllSegments
-    ? captionSegments
-    : captionSegments.slice(0, DEFAULT_VISIBLE_SEGMENTS);
+    ? displayCaptionSegments
+    : displayCaptionSegments.slice(0, DEFAULT_VISIBLE_SEGMENTS);
   const selectedEditingSegment = editingSegmentId
-    ? captionSegments.find((segment) => segment.id === editingSegmentId) ?? null
+    ? displayCaptionSegmentsById.get(editingSegmentId) ??
+      captionSegments.find((segment) => segment.id === editingSegmentId) ??
+      null
     : null;
   const projectDurationSeconds = Math.max(
-    (project?.timeline.durationMs ?? 0) / 1000,
-    captionSegments.reduce((max, segment) => Math.max(max, segment.end), 0),
+    (project ? getEffectiveDuration(timelineSegments ?? [], project.timeline.durationMs) : 0) /
+      1000,
+    displayCaptionSegments.reduce((max, segment) => Math.max(max, segment.end), 0),
     1
   );
   const previewSourceWidth = project?.sources.originalWidth ?? 1920;
@@ -256,17 +379,29 @@ export function CaptionPanel({ videoPath }: CaptionPanelProps) {
     }
   };
 
+  const handleClearCaptions = () => {
+    clearCaptions();
+    setCaptionsEnabled(false);
+    setSegmentAuditionState(null);
+    setOriginalSegmentsById({});
+    setLastRegenSnapshot(null);
+    setIsEditorOpen(false);
+    cancelEditingSegment();
+  };
+
   const startEditingSegment = (segment: CaptionSegment) => {
+    const displaySegment = displayCaptionSegmentsById.get(segment.id) ?? segment;
+
     setOriginalSegmentsById((previous) =>
       previous[segment.id]
         ? previous
         : { ...previous, [segment.id]: cloneCaptionSegment(segment) }
     );
     setEditingSegmentId(segment.id);
-    setEditingText(segment.text);
-    setEditingStart(segment.start.toFixed(2));
-    setEditingEnd(segment.end.toFixed(2));
-    setEditingWords(buildEditableWordsForSegment(segment));
+    setEditingText(displaySegment.text);
+    setEditingStart(displaySegment.start.toFixed(2));
+    setEditingEnd(displaySegment.end.toFixed(2));
+    setEditingWords(buildEditableWordsForSegment(displaySegment));
     setDidEditWordTiming(false);
     setWordCompressionRange([0, 100]);
     setCompressionBaseWords(null);
@@ -301,10 +436,12 @@ export function CaptionPanel({ videoPath }: CaptionPanelProps) {
     });
 
     if (editingSegmentId === segmentId) {
-      setEditingText(resetSegment.text);
-      setEditingStart(resetSegment.start.toFixed(2));
-      setEditingEnd(resetSegment.end.toFixed(2));
-      setEditingWords(buildEditableWordsForSegment(resetSegment));
+      const resetDisplaySegment =
+        remapCaptionSegmentsToTimeline([resetSegment], timelineSegments)[0] ?? resetSegment;
+      setEditingText(resetDisplaySegment.text);
+      setEditingStart(resetDisplaySegment.start.toFixed(2));
+      setEditingEnd(resetDisplaySegment.end.toFixed(2));
+      setEditingWords(buildEditableWordsForSegment(resetDisplaySegment));
       setDidEditWordTiming(false);
       setWordDragState(null);
       setWordCompressionRange([0, 100]);
@@ -812,8 +949,10 @@ export function CaptionPanel({ videoPath }: CaptionPanelProps) {
   const saveEditingSegment = () => {
     if (!editingSegmentId) return;
 
-    const currentSegment = captionSegments.find((s) => s.id === editingSegmentId);
-    if (!currentSegment) {
+    const currentRawSegment = captionSegments.find((segment) => segment.id === editingSegmentId);
+    const currentSegment =
+      displayCaptionSegmentsById.get(editingSegmentId) ?? currentRawSegment ?? null;
+    if (!currentRawSegment || !currentSegment) {
       cancelEditingSegment();
       return;
     }
@@ -834,18 +973,27 @@ export function CaptionPanel({ videoPath }: CaptionPanelProps) {
       : null;
     if (didEditWordTiming && manualWords === null) return;
 
-    updateCaptionSegment(editingSegmentId, {
-      start: nextStart,
-      end: nextEnd,
-      text: nextText,
-      words:
-        manualWords ??
-        buildUpdatedWords(currentSegment, nextText, nextStart, nextEnd),
-    });
-
     const savedWords =
       manualWords ??
       buildUpdatedWords(currentSegment, nextText, nextStart, nextEnd);
+    const timelineSegmentUpdate: CaptionSegment = {
+      id: editingSegmentId,
+      start: nextStart,
+      end: nextEnd,
+      text: nextText,
+      words: savedWords,
+    };
+    const sourceSegmentUpdate = displayCaptionSegmentsById.has(editingSegmentId)
+      ? remapCaptionSegmentToSource(timelineSegmentUpdate, timelineSegments)
+      : timelineSegmentUpdate;
+
+    updateCaptionSegment(editingSegmentId, {
+      start: sourceSegmentUpdate.start,
+      end: sourceSegmentUpdate.end,
+      text: sourceSegmentUpdate.text,
+      words: sourceSegmentUpdate.words,
+    });
+
     setEditingStart(nextStart.toFixed(2));
     setEditingEnd(nextEnd.toFixed(2));
     setEditingText(nextText);
@@ -853,34 +1001,36 @@ export function CaptionPanel({ videoPath }: CaptionPanelProps) {
     setDidEditWordTiming(false);
   };
 
-  const applyRegeneratedSegment = (
-    segmentId: string,
-    segmentStart: number,
-    segmentEnd: number,
-    text: string,
-    words: CaptionWord[]
-  ) => {
+  const applyRegeneratedSegment = (segmentId: string, segment: CaptionSegment) => {
     const regeneratedWords =
-      words.length > 0
-        ? words
+      segment.words.length > 0
+        ? segment.words
         : distributeCaptionWordTiming(
-            splitCaptionWords(text),
-            segmentStart,
-            segmentEnd
+            splitCaptionWords(segment.text),
+            segment.start,
+            segment.end
           );
 
     updateCaptionSegment(segmentId, {
-      start: segmentStart,
-      end: segmentEnd,
-      text,
+      start: segment.start,
+      end: segment.end,
+      text: segment.text,
       words: regeneratedWords,
     });
 
     if (editingSegmentId === segmentId) {
-      setEditingStart(segmentStart.toFixed(2));
-      setEditingEnd(segmentEnd.toFixed(2));
-      setEditingText(text);
-      setEditingWords(toEditableCaptionWords(regeneratedWords));
+      const displaySegment =
+        remapCaptionSegmentsToTimeline([{
+          ...segment,
+          words: regeneratedWords,
+        }], timelineSegments)[0] ?? {
+          ...segment,
+          words: regeneratedWords,
+        };
+      setEditingStart(displaySegment.start.toFixed(2));
+      setEditingEnd(displaySegment.end.toFixed(2));
+      setEditingText(displaySegment.text);
+      setEditingWords(toEditableCaptionWords(displaySegment.words));
       setDidEditWordTiming(true);
       setWordDragState(null);
       setWordCompressionRange([0, 100]);
@@ -902,10 +1052,12 @@ export function CaptionPanel({ videoPath }: CaptionPanelProps) {
       const restored =
         snapshot.segments.find((segment) => segment.id === editingSegmentId) ?? null;
       if (restored) {
-        setEditingText(restored.text);
-        setEditingStart(restored.start.toFixed(2));
-        setEditingEnd(restored.end.toFixed(2));
-        setEditingWords(buildEditableWordsForSegment(restored));
+        const restoredDisplaySegment =
+          remapCaptionSegmentsToTimeline([restored], timelineSegments)[0] ?? restored;
+        setEditingText(restoredDisplaySegment.text);
+        setEditingStart(restoredDisplaySegment.start.toFixed(2));
+        setEditingEnd(restoredDisplaySegment.end.toFixed(2));
+        setEditingWords(buildEditableWordsForSegment(restoredDisplaySegment));
         setDidEditWordTiming(false);
         setWordDragState(null);
         setWordCompressionRange([0, 100]);
@@ -933,6 +1085,16 @@ export function CaptionPanel({ videoPath }: CaptionPanelProps) {
       nextStart + MIN_SEGMENT_DURATION_SECONDS,
       parsedEnd
     );
+    const timelineWindow: CaptionSegment = {
+      id: editingSegmentId,
+      start: nextStart,
+      end: nextEnd,
+      text: '',
+      words: [],
+    };
+    const sourceWindow = displayCaptionSegmentsById.has(editingSegmentId)
+      ? remapCaptionSegmentToSource(timelineWindow, timelineSegments)
+      : timelineWindow;
 
     const snapshot = createCaptionSnapshot();
     setIsRegeneratingSegment(true);
@@ -940,18 +1102,12 @@ export function CaptionPanel({ videoPath }: CaptionPanelProps) {
     try {
       const regenerated = await transcribeCaptionSegment(
         videoPath,
-        nextStart,
-        nextEnd,
-        'auto',
+        sourceWindow.start,
+        sourceWindow.end,
+        selectedTranscriptionLanguage,
         regenerateModelName
       );
-      applyRegeneratedSegment(
-        editingSegmentId,
-        nextStart,
-        nextEnd,
-        regenerated.text,
-        regenerated.words
-      );
+      applyRegeneratedSegment(editingSegmentId, regenerated);
       setLastRegenSnapshot(snapshot);
     } catch (error) {
       videoEditorLogger.error('Failed to regenerate caption segment:', error);
@@ -1006,6 +1162,15 @@ export function CaptionPanel({ videoPath }: CaptionPanelProps) {
   };
 
   const openEditor = () => {
+    if (!editingSegmentId && displayCaptionSegments.length > 0) {
+      const firstVisibleSegment = captionSegments.find(
+        (segment) => segment.id === displayCaptionSegments[0].id
+      );
+      if (firstVisibleSegment) {
+        startEditingSegment(firstVisibleSegment);
+        return;
+      }
+    }
     if (!editingSegmentId && captionSegments.length > 0) {
       startEditingSegment(captionSegments[0]);
       return;
@@ -1023,13 +1188,20 @@ export function CaptionPanel({ videoPath }: CaptionPanelProps) {
     }
   };
 
-  const auditionSegment = (segment: CaptionSegment) => {
-    startEditingSegment(segment);
-    const startMs = Math.max(0, Math.floor(segment.start * 1000));
-    const endMs = Math.max(startMs + 1, Math.floor(segment.end * 1000));
+  const auditionSegment = (segmentId: string) => {
+    const rawSegment = captionSegments.find((segment) => segment.id === segmentId);
+    if (!rawSegment) return;
+
+    startEditingSegment(rawSegment);
+
+    const timelineSegment = displayCaptionSegmentsById.get(segmentId);
+    if (!timelineSegment) return;
+
+    const startMs = Math.max(0, Math.floor(timelineSegment.start * 1000));
+    const endMs = Math.max(startMs + 1, Math.floor(timelineSegment.end * 1000));
     requestSeek(startMs);
     setSegmentAuditionState({
-      segmentId: segment.id,
+      segmentId,
       startMs,
       endMs,
     });
@@ -1127,42 +1299,65 @@ export function CaptionPanel({ videoPath }: CaptionPanelProps) {
           )}
         </div>
 
+        <div className="mb-3">
+          <label className="text-xs text-[var(--ink-muted)] block mb-1">
+            Language
+          </label>
+          <TranscriptionLanguageCombobox
+            value={selectedTranscriptionLanguage}
+            onChange={setSelectedTranscriptionLanguage}
+          />
+        </div>
+
         {/* Transcribe Button */}
-        <Button
-          onClick={handleTranscribe}
-          disabled={!videoPath || isTranscribing || isDownloadingModel}
-          className="w-full"
-          variant={captionSegments.length > 0 ? 'outline' : 'default'}
-        >
-          {isDownloadingModel ? (
-            <>
-              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-              Downloading... {Math.round(downloadProgress)}%
-            </>
-          ) : isTranscribing ? (
-            <>
-              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-              {transcriptionStage === 'extracting_audio'
-                ? 'Extracting audio...'
-                : `Transcribing... ${Math.round(transcriptionProgress)}%`}
-            </>
-          ) : !isModelDownloaded ? (
-            <>
-              <Download className="w-4 h-4 mr-2" />
-              Download & Transcribe
-            </>
-          ) : captionSegments.length > 0 ? (
-            <>
-              <Mic className="w-4 h-4 mr-2" />
-              Re-transcribe
-            </>
-          ) : (
-            <>
-              <Mic className="w-4 h-4 mr-2" />
-              Transcribe Audio
-            </>
+        <div className="flex gap-2">
+          <Button
+            onClick={handleTranscribe}
+            disabled={!videoPath || isTranscribing || isDownloadingModel}
+            className="flex-1"
+            variant={captionSegments.length > 0 ? 'outline' : 'default'}
+          >
+            {isDownloadingModel ? (
+              <>
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                Downloading... {Math.round(downloadProgress)}%
+              </>
+            ) : isTranscribing ? (
+              <>
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                {transcriptionStage === 'extracting_audio'
+                  ? 'Extracting audio...'
+                  : `Transcribing... ${Math.round(transcriptionProgress)}%`}
+              </>
+            ) : !isModelDownloaded ? (
+              <>
+                <Download className="w-4 h-4 mr-2" />
+                Download & Transcribe
+              </>
+            ) : captionSegments.length > 0 ? (
+              <>
+                <Mic className="w-4 h-4 mr-2" />
+                Re-transcribe
+              </>
+            ) : (
+              <>
+                <Mic className="w-4 h-4 mr-2" />
+                Transcribe Audio
+              </>
+            )}
+          </Button>
+          {captionSegments.length > 0 && (
+            <Button
+              type="button"
+              variant="destructive"
+              onClick={handleClearCaptions}
+              disabled={isTranscribing || isDownloadingModel}
+            >
+              <Trash2 className="w-4 h-4 mr-2" />
+              Clear Captions
+            </Button>
           )}
-        </Button>
+        </div>
 
         {/* Error Display */}
         {transcriptionError && (
@@ -1176,11 +1371,11 @@ export function CaptionPanel({ videoPath }: CaptionPanelProps) {
       </div>
 
       {/* Segments List */}
-      {captionSegments.length > 0 && (
+      {displayCaptionSegments.length > 0 && (
         <div className="pt-3 border-t border-[var(--glass-border)]">
           <div className="flex items-center justify-between mb-2">
             <span className="text-[11px] text-[var(--ink-subtle)] uppercase tracking-wide">
-              Segments ({captionSegments.length})
+              Segments ({displayCaptionSegments.length})
             </span>
             <Button
               type="button"
@@ -1205,14 +1400,14 @@ export function CaptionPanel({ videoPath }: CaptionPanelProps) {
               </div>
             ))}
           </div>
-          {captionSegments.length > DEFAULT_VISIBLE_SEGMENTS && (
+          {displayCaptionSegments.length > DEFAULT_VISIBLE_SEGMENTS && (
             <button
               onClick={() => setShowAllSegments((prev) => !prev)}
               className="mt-2 w-full px-2 py-1.5 rounded text-xs text-[var(--ink-subtle)] hover:text-[var(--ink-dark)] hover:bg-[var(--polar-mist)] transition-colors"
             >
               {showAllSegments
                 ? `Show fewer (first ${DEFAULT_VISIBLE_SEGMENTS})`
-                : `Show all ${captionSegments.length} segments`}
+                : `Show all ${displayCaptionSegments.length} segments`}
             </button>
           )}
         </div>
@@ -1420,8 +1615,9 @@ export function CaptionPanel({ videoPath }: CaptionPanelProps) {
               <p className="text-[10px] text-[var(--ink-subtle)] mb-2">
                 Click a segment to audition. Edits auto-apply live; use reset per row to revert.
               </p>
-              {captionSegments.map((segment) => {
-                const dirty = isSegmentDirty(segment);
+              {displayCaptionSegments.map((segment) => {
+                const rawSegment = captionSegments.find((entry) => entry.id === segment.id);
+                const dirty = rawSegment ? isSegmentDirty(rawSegment) : false;
                 return (
                   <div
                     key={`editor-segment-${segment.id}`}
@@ -1429,7 +1625,7 @@ export function CaptionPanel({ videoPath }: CaptionPanelProps) {
                   >
                     <button
                       type="button"
-                      onClick={() => auditionSegment(segment)}
+                      onClick={() => auditionSegment(segment.id)}
                       className={`flex-1 text-left rounded-md px-2 py-1.5 transition-colors ${
                         editingSegmentId === segment.id
                           ? 'bg-[var(--coral-100)] text-[var(--coral-500)]'
@@ -1460,7 +1656,7 @@ export function CaptionPanel({ videoPath }: CaptionPanelProps) {
 
             <div className="min-w-0 min-h-0 flex flex-col p-4 gap-3 overflow-hidden">
               <CaptionPlaybackTransport
-                captionSegments={captionSegments}
+                captionSegments={displayCaptionSegments}
                 projectDurationSeconds={projectDurationSeconds}
                 onTogglePlayback={handleTransportToggle}
                 onBeginPlaybackScrub={beginPlaybackScrub}
@@ -1568,7 +1764,7 @@ export function CaptionPanel({ videoPath }: CaptionPanelProps) {
                   />
 
                   <div className="flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-2 min-w-0">
+                    <div className="flex items-center gap-2 min-w-0 flex-wrap">
                       <span className="text-[10px] uppercase tracking-wide text-[var(--ink-subtle)] whitespace-nowrap">
                         Regen Model
                       </span>
@@ -1589,6 +1785,14 @@ export function CaptionPanel({ videoPath }: CaptionPanelProps) {
                           Downloads on regenerate
                         </span>
                       )}
+                      <span className="text-[10px] uppercase tracking-wide text-[var(--ink-subtle)] whitespace-nowrap">
+                        Language
+                      </span>
+                      <TranscriptionLanguageCombobox
+                        value={selectedTranscriptionLanguage}
+                        onChange={setSelectedTranscriptionLanguage}
+                        className="min-w-[160px] text-xs"
+                      />
                     </div>
                     <div className="flex items-center gap-2">
                       <Button
@@ -1669,4 +1873,3 @@ export function CaptionPanel({ videoPath }: CaptionPanelProps) {
     </div>
   );
 }
-

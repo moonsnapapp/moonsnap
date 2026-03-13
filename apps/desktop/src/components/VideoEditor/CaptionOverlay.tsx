@@ -5,9 +5,14 @@
  */
 import { memo, useMemo } from 'react';
 import { useVideoEditorStore } from '../../stores/videoEditorStore';
-import { selectCaptionSegments, selectCaptionSettings } from '../../stores/videoEditor/selectors';
+import {
+  selectCaptionSegments,
+  selectCaptionSettings,
+  selectTimelineSegments,
+} from '../../stores/videoEditor/selectors';
 import { usePreviewOrPlaybackTime } from '../../hooks/usePlaybackEngine';
 import { useScaledLayout } from '@/hooks/useParityLayout';
+import { remapCaptionSegmentsToTimeline } from '@/utils/captionTimeline';
 
 interface CaptionOverlayProps {
   containerWidth: number;
@@ -161,8 +166,13 @@ export const CaptionOverlay = memo(function CaptionOverlay({
 }: CaptionOverlayProps) {
   const captionSegments = useVideoEditorStore(selectCaptionSegments);
   const captionSettings = useVideoEditorStore(selectCaptionSettings);
+  const timelineSegments = useVideoEditorStore(selectTimelineSegments);
   const currentTimeMs = usePreviewOrPlaybackTime();
   const currentTimeSecs = currentTimeMs / 1000;
+  const timelineCaptionSegments = useMemo(
+    () => remapCaptionSegmentsToTimeline(captionSegments, timelineSegments),
+    [captionSegments, timelineSegments]
+  );
 
   // Use parity system for layout values (synced with Rust export)
   // Must be called before any early returns to respect React hooks rules
@@ -170,18 +180,18 @@ export const CaptionOverlay = memo(function CaptionOverlay({
 
   // Find active caption segment
   const activeSegment = useMemo(() => {
-    if (!captionSettings.enabled || captionSegments.length === 0) {
+    if (!captionSettings.enabled || timelineCaptionSegments.length === 0) {
       return null;
     }
     const lingerDuration = Math.max(0, captionSettings.lingerDuration || 0);
-    return captionSegments.find(
+    return timelineCaptionSegments.find(
       (s) => currentTimeSecs >= s.start && currentTimeSecs <= s.end + lingerDuration
     ) || null;
   }, [
-    captionSegments,
     captionSettings.enabled,
     captionSettings.lingerDuration,
     currentTimeSecs,
+    timelineCaptionSegments,
   ]);
 
   // Don't render if captions are disabled, no active segment, or layout not loaded

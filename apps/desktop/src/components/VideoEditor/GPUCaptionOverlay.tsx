@@ -1,11 +1,16 @@
-import { memo, useCallback, useEffect, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { useVideoEditorStore } from '../../stores/videoEditorStore';
-import { selectCaptionSegments, selectCaptionSettings } from '../../stores/videoEditor/selectors';
+import {
+  selectCaptionSegments,
+  selectCaptionSettings,
+  selectTimelineSegments,
+} from '../../stores/videoEditor/selectors';
 import type { VideoEditorState } from '../../stores/videoEditor/types';
 import { usePreviewOrPlaybackTime } from '../../hooks/usePlaybackEngine';
 import { usePreviewStream } from '../../hooks/usePreviewStream';
 import { videoEditorLogger } from '../../utils/logger';
+import { remapCaptionSegmentsToTimeline } from '@/utils/captionTimeline';
 
 interface GPUCaptionOverlayProps {
   renderWidth: number;
@@ -35,8 +40,13 @@ export const GPUCaptionOverlay = memo(function GPUCaptionOverlay({
 }: GPUCaptionOverlayProps) {
   const captionSegments = useVideoEditorStore(selectCaptionSegments);
   const captionSettings = useVideoEditorStore(selectCaptionSettings);
+  const timelineSegments = useVideoEditorStore(selectTimelineSegments);
   const currentTimeMs = usePreviewOrPlaybackTime();
   const [gpuFailed, setGpuFailed] = useState(false);
+  const timelineCaptionSegments = useMemo(
+    () => remapCaptionSegmentsToTimeline(captionSegments, timelineSegments),
+    [captionSegments, timelineSegments]
+  );
 
   const canUseGpu = !gpuFailed;
   const roundedRenderWidth = Math.max(1, Math.round(renderWidth));
@@ -166,16 +176,16 @@ export const GPUCaptionOverlay = memo(function GPUCaptionOverlay({
     }
 
     queuedCaptionDataRef.current = {
-      segments: captionSegments,
+      segments: timelineCaptionSegments,
       settings: captionSettings,
     };
     flushQueuedCaptionData();
   }, [
     canUseGpu,
     captionSettings,
-    captionSegments,
     flushQueuedCaptionData,
     isConnected,
+    timelineCaptionSegments,
   ]);
 
   useEffect(() => {

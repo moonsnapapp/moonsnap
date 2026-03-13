@@ -128,15 +128,20 @@ export const selectTranscriptionStage = (state: VideoEditorState) => state.trans
 export const selectTranscriptionError = (state: VideoEditorState) => state.transcriptionError;
 export const selectWhisperModels = (state: VideoEditorState) => state.whisperModels;
 export const selectSelectedModelName = (state: VideoEditorState) => state.selectedModelName;
+export const selectSelectedTranscriptionLanguage = (state: VideoEditorState) =>
+  state.selectedTranscriptionLanguage;
 export const selectIsDownloadingModel = (state: VideoEditorState) => state.isDownloadingModel;
 export const selectDownloadProgress = (state: VideoEditorState) => state.downloadProgress;
 export const selectLoadWhisperModels = (state: VideoEditorState) => state.loadWhisperModels;
 export const selectSetSelectedModel = (state: VideoEditorState) => state.setSelectedModel;
+export const selectSetSelectedTranscriptionLanguage = (state: VideoEditorState) =>
+  state.setSelectedTranscriptionLanguage;
 export const selectDownloadModel = (state: VideoEditorState) => state.downloadModel;
 export const selectStartTranscription = (state: VideoEditorState) => state.startTranscription;
 export const selectTranscribeCaptionSegment = (state: VideoEditorState) => state.transcribeCaptionSegment;
 export const selectUpdateCaptionSettings = (state: VideoEditorState) => state.updateCaptionSettings;
 export const selectUpdateCaptionSegment = (state: VideoEditorState) => state.updateCaptionSegment;
 export const selectSetCaptionSegments = (state: VideoEditorState) => state.setCaptionSegments;
+export const selectClearCaptions = (state: VideoEditorState) => state.clearCaptions;
 export const selectSetCaptionsEnabled = (state: VideoEditorState) => state.setCaptionsEnabled;
 export const selectSetTranscriptionProgress = (state: VideoEditorState) => state.setTranscriptionProgress;

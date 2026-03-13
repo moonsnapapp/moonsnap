@@ -91,6 +91,7 @@ export interface CaptionSlice {
   // Model state
   whisperModels: WhisperModelInfo[];
   selectedModelName: string;
+  selectedTranscriptionLanguage: string;
   isDownloadingModel: boolean;
   downloadProgress: number;
 
@@ -120,6 +121,7 @@ export interface CaptionSlice {
   // Model actions
   loadWhisperModels: () => Promise<void>;
   setSelectedModel: (modelName: string) => void;
+  setSelectedTranscriptionLanguage: (language: string) => void;
   downloadModel: (modelName: string) => Promise<void>;
   deleteModel: (modelName: string) => Promise<void>;
 
@@ -143,6 +145,7 @@ export const createCaptionSlice: SliceCreator<CaptionSlice> = (set, get) => ({
   // Initial model state
   whisperModels: [],
   selectedModelName: 'base',
+  selectedTranscriptionLanguage: 'auto',
   isDownloadingModel: false,
   downloadProgress: 0,
 
@@ -207,7 +210,7 @@ export const createCaptionSlice: SliceCreator<CaptionSlice> = (set, get) => ({
 
   // Transcription actions
   startTranscription: async (videoPath) => {
-    const { selectedModelName } = get();
+    const { selectedModelName, selectedTranscriptionLanguage } = get();
 
     set({
       isTranscribing: true,
@@ -220,7 +223,7 @@ export const createCaptionSlice: SliceCreator<CaptionSlice> = (set, get) => ({
       const result = await invoke<CaptionData>('transcribe_video', {
         videoPath,
         modelName: selectedModelName,
-        language: 'auto',
+        language: selectedTranscriptionLanguage,
       });
 
       set({
@@ -245,11 +248,17 @@ export const createCaptionSlice: SliceCreator<CaptionSlice> = (set, get) => ({
     videoPath,
     segmentStart,
     segmentEnd,
-    language = 'auto',
+    language,
     modelName
   ) => {
-    const { selectedModelName, whisperModels, downloadModel } = get();
+    const {
+      selectedModelName,
+      selectedTranscriptionLanguage,
+      whisperModels,
+      downloadModel,
+    } = get();
     const requestedModelName = modelName ?? selectedModelName;
+    const requestedLanguage = language ?? selectedTranscriptionLanguage;
     const selectedModel = whisperModels.find(
       (model) => model.name === requestedModelName
     );
@@ -261,7 +270,7 @@ export const createCaptionSlice: SliceCreator<CaptionSlice> = (set, get) => ({
     return await invoke<CaptionSegment>('transcribe_caption_segment', {
       videoPath,
       modelName: requestedModelName,
-      language,
+      language: requestedLanguage,
       segmentStart,
       segmentEnd,
     });
@@ -292,6 +301,11 @@ export const createCaptionSlice: SliceCreator<CaptionSlice> = (set, get) => ({
   setSelectedModel: (modelName) =>
     set({
       selectedModelName: modelName,
+    }),
+
+  setSelectedTranscriptionLanguage: (language) =>
+    set({
+      selectedTranscriptionLanguage: language,
     }),
 
   downloadModel: async (modelName) => {
