@@ -956,12 +956,13 @@ pub async fn get_project_image(app: AppHandle, project_id: String) -> Result<Str
     let project: CaptureProject =
         serde_json::from_str(&content).map_err(|e| format!("Failed to parse project: {}", e))?;
 
-    // Handle both old format (filename only) and new format (full path)
+    // Resolve relative filenames against the user's save directory
+    let captures_dir = get_captures_dir(&app)?;
     let original_path = PathBuf::from(&project.original_image);
     let image_path = if original_path.is_absolute() {
         original_path
     } else {
-        base_dir.join("captures").join(&project.original_image)
+        captures_dir.join(&project.original_image)
     };
 
     let image_data = fs::read(&image_path).map_err(|e| format!("Failed to read image: {}", e))?;
