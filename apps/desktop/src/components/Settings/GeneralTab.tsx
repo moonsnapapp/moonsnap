@@ -2,7 +2,7 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { open } from '@tauri-apps/plugin-dialog';
-import { FolderOpen, ExternalLink, Sun, Moon, Monitor, FileText, RotateCcw, FolderInput, CheckCircle2, AlertTriangle } from 'lucide-react';
+import { FolderOpen, ExternalLink, Sun, Moon, Monitor, FileText, RotateCcw, CheckCircle2, AlertTriangle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
@@ -187,32 +187,6 @@ export const GeneralTab: React.FC = () => {
       setMoveDialogOpen(true);
     } catch (error) {
       settingsLogger.error('Failed to reset save dir:', error);
-    }
-  };
-
-  /** Dedicated move button — skip ask-move, go straight to check */
-  const handleMoveSaveDir = async () => {
-    try {
-      const selected = await open({
-        directory: true,
-        multiple: false,
-        title: 'Select New Save Location',
-      });
-      if (!selected || typeof selected !== 'string' || !general.defaultSaveDir) return;
-
-      const saveDir = ensureMoonSnapFolder(selected);
-      if (saveDir === general.defaultSaveDir) return;
-
-      setMoveSource(general.defaultSaveDir);
-      setMoveTarget(saveDir);
-      setMoveError(null);
-      setMoveProgress({ moved: 0, total: 0, name: '' });
-      setLockedFiles([]);
-      setMoveDialogOpen(true);
-      // Go straight to check (skips ask-move since user explicitly chose "move")
-      await runMoveCheck(general.defaultSaveDir);
-    } catch (error) {
-      settingsLogger.error('Failed to open directory picker:', error);
     }
   };
 
@@ -410,16 +384,6 @@ export const GeneralTab: React.FC = () => {
                     className="shrink-0 text-[var(--ink-muted)] hover:text-[var(--ink-black)] hover:bg-[var(--polar-mist)]"
                   >
                     <ExternalLink className="w-4 h-4" />
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={handleMoveSaveDir}
-                    disabled={moveStage === 'moving'}
-                    title="Move folder to new location"
-                    className="shrink-0 text-[var(--ink-muted)] hover:text-[var(--ink-black)] hover:bg-[var(--polar-mist)]"
-                  >
-                    <FolderInput className="w-4 h-4" />
                   </Button>
                   <Button
                     variant="ghost"
