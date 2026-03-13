@@ -1010,7 +1010,7 @@ fn determine_capture_type(
                 let image_path = if original_path.is_absolute() {
                     original_path
                 } else {
-                    base_dir.join("captures").join(&project.original_image)
+                    captures_dir.join(&project.original_image)
                 };
                 return Ok(("project".to_string(), Some(image_path)));
             }
