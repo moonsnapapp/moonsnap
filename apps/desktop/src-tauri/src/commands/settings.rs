@@ -280,6 +280,7 @@ pub async fn move_save_dir(
     let entries: Vec<_> = std::fs::read_dir(&old)
         .map_err(|e| format!("Failed to read old directory: {}", e))?
         .filter_map(|e| e.ok())
+        .filter(|e| is_moonsnap_file(&e.file_name().to_string_lossy()))
         .collect();
 
     let total = entries.len() as u32;
