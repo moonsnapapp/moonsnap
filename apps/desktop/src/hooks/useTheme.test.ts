@@ -114,7 +114,8 @@ describe('useTheme', () => {
     });
     
     expect(result.current.theme).toBe('dark');
-    expect(saveSettings).toHaveBeenCalledTimes(1);
+    // Called twice: once from useTheme.setTheme, once from auto-persist in updateGeneralSettings
+    expect(saveSettings).toHaveBeenCalledTimes(2);
     expect(mockEmit).toHaveBeenCalledWith('theme-changed', { theme: 'dark' });
   });
 
