@@ -1441,11 +1441,11 @@ pub fn generate_output_path(settings: &RecordingSettings) -> Result<PathBuf, Str
         RecordingFormat::Mp4 => {
             if settings.quick_capture {
                 // Quick capture: flat file, skip editor
-                let filename = format!("recording_{}_{}.mp4", timestamp, rand::random::<u16>());
+                let filename = format!("moonsnap_{}_{}.mp4", timestamp, rand::random::<u16>());
                 Ok(save_dir.join(filename))
             } else {
                 // Editor flow: create a project folder
-                let folder_name = format!("recording_{}_{}", timestamp, rand::random::<u16>());
+                let folder_name = format!("moonsnap_{}_{}", timestamp, rand::random::<u16>());
                 let folder_path = save_dir.join(&folder_name);
                 std::fs::create_dir_all(&folder_path)
                     .map_err(|e| format!("Failed to create recording folder: {}", e))?;
@@ -1454,7 +1454,7 @@ pub fn generate_output_path(settings: &RecordingSettings) -> Result<PathBuf, Str
         },
         RecordingFormat::Gif => {
             // For GIF, use flat file (no complex artifacts)
-            let filename = format!("recording_{}_{}.gif", timestamp, rand::random::<u16>());
+            let filename = format!("moonsnap_{}_{}.gif", timestamp, rand::random::<u16>());
             Ok(save_dir.join(filename))
         },
     }

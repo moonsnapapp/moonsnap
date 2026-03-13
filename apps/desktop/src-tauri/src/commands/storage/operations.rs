@@ -74,7 +74,7 @@ pub async fn save_capture(
     let (width, height) = image.dimensions();
 
     let date_str = now.format("%Y-%m-%d_%H%M%S").to_string();
-    let original_filename = format!("{}_{}.png", date_str, &id);
+    let original_filename = format!("moonsnap_{}_{}.png", date_str, &id);
     let thumbnail_filename = format!("{}_thumb.png", &id);
 
     // Save original image to user's configured directory
@@ -161,7 +161,7 @@ pub async fn save_capture_from_file(
         .into();
 
     let date_str = now.format("%Y-%m-%d_%H%M%S").to_string();
-    let original_filename = format!("{}_{}.png", date_str, &id);
+    let original_filename = format!("moonsnap_{}_{}.png", date_str, &id);
     let thumbnail_filename = format!("{}_thumb.png", &id);
 
     // Save original image to user's configured directory
@@ -249,7 +249,7 @@ pub async fn import_image_from_path(
     let now = Utc::now();
 
     let date_str = now.format("%Y-%m-%d_%H%M%S").to_string();
-    let original_filename = format!("{}_{}.png", date_str, &id);
+    let original_filename = format!("moonsnap_{}_{}.png", date_str, &id);
     let thumbnail_filename = format!("{}_thumb.png", &id);
 
     // Save as PNG to user's configured directory
