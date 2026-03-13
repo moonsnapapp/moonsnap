@@ -13,6 +13,8 @@ import {
   selectSelectAnnotationSegment,
   selectSelectAnnotationShape,
   selectUpdateAnnotationShape,
+  selectBeginAnnotationDrag,
+  selectCommitAnnotationDrag,
 } from '@/stores/videoEditor/selectors';
 
 interface AnnotationOverlayProps {
@@ -240,6 +242,8 @@ export const AnnotationOverlay = memo(function AnnotationOverlay({
   const selectAnnotationSegment = useVideoEditorStore(selectSelectAnnotationSegment);
   const selectAnnotationShape = useVideoEditorStore(selectSelectAnnotationShape);
   const updateAnnotationShape = useVideoEditorStore(selectUpdateAnnotationShape);
+  const beginAnnotationDrag = useVideoEditorStore(selectBeginAnnotationDrag);
+  const commitAnnotationDrag = useVideoEditorStore(selectCommitAnnotationDrag);
   const dragStateRef = useRef<DragState | null>(null);
 
   const activeSegments = segments.filter(
@@ -247,9 +251,12 @@ export const AnnotationOverlay = memo(function AnnotationOverlay({
   );
 
   const finishDrag = useCallback(() => {
+    if (dragStateRef.current) {
+      commitAnnotationDrag();
+    }
     dragStateRef.current = null;
     document.body.style.cursor = '';
-  }, []);
+  }, [commitAnnotationDrag]);
 
   useEffect(() => {
     const handlePointerMove = (event: PointerEvent) => {
@@ -356,6 +363,7 @@ export const AnnotationOverlay = memo(function AnnotationOverlay({
     event.stopPropagation();
     selectAnnotationSegment(segmentId);
     selectAnnotationShape(shape.id);
+    beginAnnotationDrag();
     dragStateRef.current = {
       segmentId,
       shapeId: shape.id,
@@ -366,7 +374,7 @@ export const AnnotationOverlay = memo(function AnnotationOverlay({
       initialShape: shape,
     };
     document.body.style.cursor = 'grabbing';
-  }, [selectAnnotationSegment, selectAnnotationShape, zoomScale]);
+  }, [selectAnnotationSegment, selectAnnotationShape, beginAnnotationDrag, zoomScale]);
 
   const handleHandlePointerDown = useCallback((
     event: React.PointerEvent<SVGCircleElement>,
@@ -378,6 +386,7 @@ export const AnnotationOverlay = memo(function AnnotationOverlay({
     event.stopPropagation();
     selectAnnotationSegment(segmentId);
     selectAnnotationShape(shape.id);
+    beginAnnotationDrag();
     dragStateRef.current = {
       segmentId,
       shapeId: shape.id,
@@ -389,7 +398,7 @@ export const AnnotationOverlay = memo(function AnnotationOverlay({
     };
     document.body.style.cursor =
       mode === 'arrow-start' || mode === 'arrow-end' ? 'grab' : 'nwse-resize';
-  }, [selectAnnotationSegment, selectAnnotationShape, zoomScale]);
+  }, [selectAnnotationSegment, selectAnnotationShape, beginAnnotationDrag, zoomScale]);
 
   const handleBackgroundPointerDown = useCallback(() => {
     selectAnnotationShape(null);

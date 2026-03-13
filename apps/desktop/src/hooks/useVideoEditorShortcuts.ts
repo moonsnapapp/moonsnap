@@ -11,7 +11,7 @@ import { isTextInputTarget } from '../utils/keyboard';
  * - ArrowLeft: Skip back 5 seconds
  * - ArrowRight: Skip forward 5 seconds
  * - S: Toggle cut mode
- * - Delete/Backspace: Delete selected segment (trim/zoom/scene/mask/text)
+ * - Delete/Backspace: Delete selected segment (trim/zoom/scene/mask/text/annotation)
  * - Escape: Deselect all
  *
  * With modifiers:

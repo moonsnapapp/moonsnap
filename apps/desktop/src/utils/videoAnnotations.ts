@@ -30,69 +30,25 @@ const FALLBACK_ARROW_DY = -1 / Math.sqrt(2);
 const ARROW_HEAD_HALF_ANGLE = Math.PI / 6;
 const ARROW_HEAD_BASE_FACTOR = Math.cos(ARROW_HEAD_HALF_ANGLE);
 
-function clamp01(value: number): number {
-  return Math.max(0, Math.min(1, value));
-}
-
-function getArrowLengthToBounds(
-  startX: number,
-  startY: number,
-  unitX: number,
-  unitY: number
-): number {
-  let maxDistance = Number.POSITIVE_INFINITY;
-
-  if (Math.abs(unitX) > 0.0001) {
-    maxDistance = Math.min(
-      maxDistance,
-      unitX > 0 ? (1 - startX) / unitX : (0 - startX) / unitX
-    );
-  }
-
-  if (Math.abs(unitY) > 0.0001) {
-    maxDistance = Math.min(
-      maxDistance,
-      unitY > 0 ? (1 - startY) / unitY : (0 - startY) / unitY
-    );
-  }
-
-  return Math.max(0, maxDistance);
-}
-
 function clampArrowEndpoints(endpoints: AnnotationArrowEndpoints): AnnotationArrowEndpoints {
-  const tailX = clamp01(endpoints.tailX);
-  const tailY = clamp01(endpoints.tailY);
-  let headX = clamp01(endpoints.headX);
-  let headY = clamp01(endpoints.headY);
+  const { tailX, tailY } = endpoints;
+  let { headX, headY } = endpoints;
 
-  let dx = headX - tailX;
-  let dy = headY - tailY;
+  const dx = headX - tailX;
+  const dy = headY - tailY;
   const length = Math.hypot(dx, dy);
 
   if (length >= ANNOTATIONS.MIN_NORMALIZED_SIZE) {
     return { tailX, tailY, headX, headY };
   }
 
+  // Enforce minimum arrow length without clamping to 0-1 bounds
   const unitX = length > 0 ? dx / length : FALLBACK_ARROW_DX;
   const unitY = length > 0 ? dy / length : FALLBACK_ARROW_DY;
-  const maxLength = getArrowLengthToBounds(tailX, tailY, unitX, unitY);
-  const nextLength = Math.min(Math.max(maxLength, 0), ANNOTATIONS.MIN_NORMALIZED_SIZE);
+  headX = tailX + unitX * ANNOTATIONS.MIN_NORMALIZED_SIZE;
+  headY = tailY + unitY * ANNOTATIONS.MIN_NORMALIZED_SIZE;
 
-  headX = clamp01(tailX + unitX * nextLength);
-  headY = clamp01(tailY + unitY * nextLength);
-
-  dx = headX - tailX;
-  dy = headY - tailY;
-  if (Math.hypot(dx, dy) > 0) {
-    return { tailX, tailY, headX, headY };
-  }
-
-  return {
-    tailX,
-    tailY,
-    headX: clamp01(tailX + FALLBACK_ARROW_DX * ANNOTATIONS.MIN_NORMALIZED_SIZE),
-    headY: clamp01(tailY + FALLBACK_ARROW_DY * ANNOTATIONS.MIN_NORMALIZED_SIZE),
-  };
+  return { tailX, tailY, headX, headY };
 }
 
 function randomIdFragment(): string {

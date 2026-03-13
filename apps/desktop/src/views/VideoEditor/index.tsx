@@ -31,6 +31,9 @@ import {
   selectClearExportRange,
   selectDeleteMaskSegment,
   selectDeleteSceneSegment,
+  selectDeleteAnnotationSegment,
+  selectDeleteAnnotationShape,
+  selectRedoAnnotation,
   selectDeleteTextSegment,
   selectDeleteTrimSegment,
   selectDeleteZoomRegion,
@@ -47,7 +50,11 @@ import {
   selectSelectSceneSegment,
   selectSelectTextSegment,
   selectSelectTrimSegment,
+  selectSelectAnnotationSegment,
   selectSelectZoomRegion,
+  selectSelectedAnnotationSegmentId,
+  selectSelectedAnnotationShapeId,
+  selectUndoAnnotation,
   selectSelectedMaskSegmentId,
   selectSelectedSceneSegmentId,
   selectSelectedTextSegmentId,
@@ -173,6 +180,13 @@ export const VideoEditorView = forwardRef<VideoEditorViewRef, VideoEditorViewPro
   const selectedTextSegmentId = useVideoEditorStore(selectSelectedTextSegmentId);
   const selectTextSegment = useVideoEditorStore(selectSelectTextSegment);
   const deleteTextSegment = useVideoEditorStore(selectDeleteTextSegment);
+  const selectedAnnotationSegmentId = useVideoEditorStore(selectSelectedAnnotationSegmentId);
+  const selectedAnnotationShapeId = useVideoEditorStore(selectSelectedAnnotationShapeId);
+  const selectAnnotationSegment = useVideoEditorStore(selectSelectAnnotationSegment);
+  const deleteAnnotationSegment = useVideoEditorStore(selectDeleteAnnotationSegment);
+  const deleteAnnotationShape = useVideoEditorStore(selectDeleteAnnotationShape);
+  const undoAnnotation = useVideoEditorStore(selectUndoAnnotation);
+  const redoAnnotation = useVideoEditorStore(selectRedoAnnotation);
   const selectedTrimSegmentId = useVideoEditorStore(selectSelectedTrimSegmentId);
   const selectTrimSegment = useVideoEditorStore(selectSelectTrimSegment);
   const deleteTrimSegment = useVideoEditorStore(selectDeleteTrimSegment);
@@ -219,7 +233,8 @@ export const VideoEditorView = forwardRef<VideoEditorViewRef, VideoEditorViewPro
     selectMaskSegment(null);
     selectTextSegment(null);
     selectTrimSegment(null);
-  }, [selectZoomRegion, selectSceneSegment, selectMaskSegment, selectTextSegment, selectTrimSegment]);
+    selectAnnotationSegment(null);
+  }, [selectZoomRegion, selectSceneSegment, selectMaskSegment, selectTextSegment, selectTrimSegment, selectAnnotationSegment]);
 
   // Delete whichever segment type is currently selected
   const handleDeleteSelected = useCallback(() => {
@@ -233,6 +248,12 @@ export const VideoEditorView = forwardRef<VideoEditorViewRef, VideoEditorViewPro
       deleteMaskSegment(selectedMaskSegmentId);
     } else if (selectedTextSegmentId) {
       deleteTextSegment(selectedTextSegmentId);
+    } else if (selectedAnnotationSegmentId) {
+      if (selectedAnnotationShapeId) {
+        deleteAnnotationShape(selectedAnnotationSegmentId, selectedAnnotationShapeId);
+      } else {
+        deleteAnnotationSegment(selectedAnnotationSegmentId);
+      }
     }
   }, [
     selectedTrimSegmentId,
@@ -240,11 +261,15 @@ export const VideoEditorView = forwardRef<VideoEditorViewRef, VideoEditorViewPro
     selectedSceneSegmentId,
     selectedMaskSegmentId,
     selectedTextSegmentId,
+    selectedAnnotationSegmentId,
+    selectedAnnotationShapeId,
     deleteTrimSegment,
     deleteZoomRegion,
     deleteSceneSegment,
     deleteMaskSegment,
     deleteTextSegment,
+    deleteAnnotationSegment,
+    deleteAnnotationShape,
   ]);
 
   const handleTimelineZoomIn = useCallback(() => {
@@ -276,14 +301,22 @@ export const VideoEditorView = forwardRef<VideoEditorViewRef, VideoEditorViewPro
     resetTrimSegments();
   }, [resetTrimSegments]);
 
-  // Undo/redo handlers for trim operations
-  const handleUndoTrim = useCallback(() => {
-    undoTrim();
-  }, [undoTrim]);
+  // Undo/redo handlers — context-aware: annotation undo when annotation selected, trim undo otherwise
+  const handleUndo = useCallback(() => {
+    if (selectedAnnotationSegmentId) {
+      undoAnnotation();
+    } else {
+      undoTrim();
+    }
+  }, [selectedAnnotationSegmentId, undoAnnotation, undoTrim]);
 
-  const handleRedoTrim = useCallback(() => {
-    redoTrim();
-  }, [redoTrim]);
+  const handleRedo = useCallback(() => {
+    if (selectedAnnotationSegmentId) {
+      redoAnnotation();
+    } else {
+      redoTrim();
+    }
+  }, [selectedAnnotationSegmentId, redoAnnotation, redoTrim]);
 
   // IO marker handlers
   const handleSetInPoint = useCallback(() => {
@@ -561,8 +594,8 @@ export const VideoEditorView = forwardRef<VideoEditorViewRef, VideoEditorViewPro
     onDeselect: handleDeselect,
     onSave: handleSave,
     onExport: () => handleExportRef.current(),
-    onUndoTrim: handleUndoTrim,
-    onRedoTrim: handleRedoTrim,
+    onUndoTrim: handleUndo,
+    onRedoTrim: handleRedo,
     onFitTimeline: fitTimelineToWindow,
     onSetInPoint: handleSetInPoint,
     onSetOutPoint: handleSetOutPoint,

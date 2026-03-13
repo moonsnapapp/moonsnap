@@ -85,6 +85,10 @@ export const selectDeleteAnnotationSegment = (state: VideoEditorState) => state.
 export const selectAddAnnotationShape = (state: VideoEditorState) => state.addAnnotationShape;
 export const selectUpdateAnnotationShape = (state: VideoEditorState) => state.updateAnnotationShape;
 export const selectDeleteAnnotationShape = (state: VideoEditorState) => state.deleteAnnotationShape;
+export const selectUndoAnnotation = (state: VideoEditorState) => state.undoAnnotation;
+export const selectRedoAnnotation = (state: VideoEditorState) => state.redoAnnotation;
+export const selectBeginAnnotationDrag = (state: VideoEditorState) => state.beginAnnotationDrag;
+export const selectCommitAnnotationDrag = (state: VideoEditorState) => state.commitAnnotationDrag;
 export const selectSetDraggingAnnotationSegment = (state: VideoEditorState) => state.setDraggingAnnotationSegment;
 
 export const selectSelectedTextSegmentId = (state: VideoEditorState) => state.selectedTextSegmentId;

@@ -5,6 +5,8 @@ import type { AnnotationSegment } from '@/types';
 import { useVideoEditorStore } from '@/stores/videoEditorStore';
 import {
   selectAddAnnotationSegment,
+  selectBeginAnnotationDrag,
+  selectCommitAnnotationDrag,
   selectDeleteAnnotationSegment,
   selectHoveredTrack,
   selectIsDraggingAnySegment,
@@ -146,9 +148,17 @@ export const AnnotationTrackContent = memo(function AnnotationTrackContent({
     addAnnotationSegment(createDefaultAnnotationSegment(previewSegmentDetails.startMs, previewSegmentDetails.endMs));
   }, [addAnnotationSegment, previewSegmentDetails]);
 
+  const beginAnnotationDrag = useVideoEditorStore(selectBeginAnnotationDrag);
+  const commitAnnotationDrag = useVideoEditorStore(selectCommitAnnotationDrag);
+
   const handleDragStart = useCallback((dragging: boolean, edge?: 'start' | 'end' | 'move') => {
+    if (dragging) {
+      beginAnnotationDrag();
+    } else {
+      commitAnnotationDrag();
+    }
     setDraggingAnnotationSegment(dragging, edge);
-  }, [setDraggingAnnotationSegment]);
+  }, [setDraggingAnnotationSegment, beginAnnotationDrag, commitAnnotationDrag]);
 
   return (
     <div

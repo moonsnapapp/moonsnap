@@ -167,10 +167,37 @@ function createTestProject(textSegments: TextSegment[]): VideoProject {
   };
 }
 
-describe('exportSlice text pre-render sizing parity', () => {
+describe('exportSlice', () => {
   beforeEach(() => {
     useVideoEditorStore.getState().clearEditor();
     vi.clearAllMocks();
+  });
+
+  it('updateExportConfig merges partial config into project', () => {
+    const project = createTestProject([]);
+    useVideoEditorStore.getState().setProject(project);
+
+    useVideoEditorStore.getState().updateExportConfig({ quality: 95, fps: 60 });
+
+    const updated = useVideoEditorStore.getState().project!;
+    expect(updated.export.quality).toBe(95);
+    expect(updated.export.fps).toBe(60);
+    // Other fields remain unchanged
+    expect(updated.export.format).toBe('mp4');
+  });
+
+  it('setExportProgress updates progress state', () => {
+    const progress: import('./types').ExportProgress = {
+      progress: 0.5,
+      stage: 'encoding',
+      message: 'Encoding frame 150/300',
+    };
+
+    useVideoEditorStore.getState().setExportProgress(progress);
+    expect(useVideoEditorStore.getState().exportProgress).toEqual(progress);
+
+    useVideoEditorStore.getState().setExportProgress(null);
+    expect(useVideoEditorStore.getState().exportProgress).toBeNull();
   });
 
   it('uses manual composition frame size (not raw crop size) for text pre-render', async () => {

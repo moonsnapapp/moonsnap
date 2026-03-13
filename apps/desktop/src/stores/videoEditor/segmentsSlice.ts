@@ -15,6 +15,39 @@ import { createTextSegmentId, getTextSegmentIndexFromId } from '../../utils/text
 import { clampAnnotationShape, normalizeAnnotationConfig } from '../../utils/videoAnnotations';
 
 /**
+ * Maximum annotation undo history size.
+ */
+const MAX_ANNOTATION_HISTORY = 50;
+
+/**
+ * Undo history entry for annotation operations.
+ */
+interface AnnotationHistoryEntry {
+  segments: AnnotationSegment[];
+  selectedSegmentId: string | null;
+  selectedShapeId: string | null;
+}
+
+/**
+ * Push a new state to annotation history, clearing any redo states.
+ */
+function pushAnnotationHistory(
+  history: AnnotationHistoryEntry[],
+  historyIndex: number,
+  newEntry: AnnotationHistoryEntry
+): { history: AnnotationHistoryEntry[]; index: number } {
+  const newHistory = history.slice(0, historyIndex + 1);
+  newHistory.push(newEntry);
+
+  if (newHistory.length > MAX_ANNOTATION_HISTORY) {
+    newHistory.shift();
+    return { history: newHistory, index: newHistory.length - 1 };
+  }
+
+  return { history: newHistory, index: newHistory.length - 1 };
+}
+
+/**
  * Generate a unique zoom region ID
  */
 export function generateZoomRegionId(): string {
@@ -59,6 +92,17 @@ export interface SegmentsSlice {
   updateAnnotationShape: (segmentId: string, shapeId: string, updates: Partial<AnnotationShape>) => void;
   deleteAnnotationShape: (segmentId: string, shapeId: string) => void;
 
+  // Annotation undo/redo
+  annotationHistory: AnnotationHistoryEntry[];
+  annotationHistoryIndex: number;
+  undoAnnotation: () => void;
+  redoAnnotation: () => void;
+
+  // Annotation drag batching — call before/after continuous operations (move/resize)
+  _annotationDragSnapshot: AnnotationHistoryEntry | null;
+  beginAnnotationDrag: () => void;
+  commitAnnotationDrag: () => void;
+
   // Mask segment actions
   selectMaskSegment: (id: string | null) => void;
   addMaskSegment: (segment: MaskSegment) => void;
@@ -92,6 +136,9 @@ export const createSegmentsSlice: SliceCreator<SegmentsSlice> = (set, get) => ({
   selectedTextSegmentId: null,
   selectedAnnotationSegmentId: null,
   selectedAnnotationShapeId: null,
+  annotationHistory: [],
+  annotationHistoryIndex: -1,
+  _annotationDragSnapshot: null,
   selectedMaskSegmentId: null,
 
   // Zoom region actions
@@ -324,9 +371,21 @@ export const createSegmentsSlice: SliceCreator<SegmentsSlice> = (set, get) => ({
   selectAnnotationShape: (id) => set({ selectedAnnotationShapeId: id }),
 
   addAnnotationSegment: (segment) => {
-    const { project } = get();
+    const { project, selectedAnnotationSegmentId, selectedAnnotationShapeId } = get();
+    let { annotationHistory, annotationHistoryIndex } = get();
     if (!project) return;
     const annotations = normalizeAnnotationConfig(project.annotations);
+
+    // Push initial state on first mutation so undo can restore it
+    if (annotationHistory.length === 0) {
+      const init = pushAnnotationHistory([], -1, {
+        segments: annotations.segments,
+        selectedSegmentId: selectedAnnotationSegmentId,
+        selectedShapeId: selectedAnnotationShapeId,
+      });
+      annotationHistory = init.history;
+      annotationHistoryIndex = init.index;
+    }
 
     const durationMs = project.timeline.durationMs;
     const clampedSegment = {
@@ -336,149 +395,345 @@ export const createSegmentsSlice: SliceCreator<SegmentsSlice> = (set, get) => ({
       shapes: segment.shapes.map(clampAnnotationShape),
     };
 
-    const segments = [...annotations.segments, clampedSegment]
+    const newSegments = [...annotations.segments, clampedSegment]
       .sort((a, b) => a.startMs - b.startMs);
+
+    const newSelectedSegmentId = clampedSegment.id;
+    const newSelectedShapeId = clampedSegment.shapes[0]?.id ?? null;
+
+    // Push result state to history
+    const { history, index } = pushAnnotationHistory(annotationHistory, annotationHistoryIndex, {
+      segments: newSegments,
+      selectedSegmentId: newSelectedSegmentId,
+      selectedShapeId: newSelectedShapeId,
+    });
 
     set({
       project: {
         ...project,
-        annotations: {
-          ...annotations,
-          segments,
-        },
+        annotations: { ...annotations, segments: newSegments },
       },
-      selectedAnnotationSegmentId: clampedSegment.id,
-      selectedAnnotationShapeId: clampedSegment.shapes[0]?.id ?? null,
+      selectedAnnotationSegmentId: newSelectedSegmentId,
+      selectedAnnotationShapeId: newSelectedShapeId,
+      annotationHistory: history,
+      annotationHistoryIndex: index,
     });
   },
 
   updateAnnotationSegment: (id, updates) => {
-    const { project } = get();
+    const { project, _annotationDragSnapshot } = get();
     if (!project) return;
     const annotations = normalizeAnnotationConfig(project.annotations);
+
+    const newSegments = annotations.segments
+      .map((segment) => {
+        if (segment.id !== id) return segment;
+        return {
+          ...segment,
+          ...updates,
+          shapes: (updates.shapes ?? segment.shapes).map(clampAnnotationShape),
+        };
+      })
+      .sort((a, b) => a.startMs - b.startMs);
+
+    // During a drag, skip history — it will be committed in commitAnnotationDrag
+    if (_annotationDragSnapshot) {
+      set({
+        project: {
+          ...project,
+          annotations: { ...annotations, segments: newSegments },
+        },
+      });
+      return;
+    }
+
+    const { selectedAnnotationSegmentId, selectedAnnotationShapeId } = get();
+    let { annotationHistory, annotationHistoryIndex } = get();
+
+    if (annotationHistory.length === 0) {
+      const init = pushAnnotationHistory([], -1, {
+        segments: annotations.segments,
+        selectedSegmentId: selectedAnnotationSegmentId,
+        selectedShapeId: selectedAnnotationShapeId,
+      });
+      annotationHistory = init.history;
+      annotationHistoryIndex = init.index;
+    }
+
+    const { history, index } = pushAnnotationHistory(annotationHistory, annotationHistoryIndex, {
+      segments: newSegments,
+      selectedSegmentId: selectedAnnotationSegmentId,
+      selectedShapeId: selectedAnnotationShapeId,
+    });
 
     set({
       project: {
         ...project,
-        annotations: {
-          ...annotations,
-          segments: annotations.segments
-            .map((segment) => {
-              if (segment.id !== id) {
-                return segment;
-              }
-
-              return {
-                ...segment,
-                ...updates,
-                shapes: (updates.shapes ?? segment.shapes).map(clampAnnotationShape),
-              };
-            })
-            .sort((a, b) => a.startMs - b.startMs),
-        },
+        annotations: { ...annotations, segments: newSegments },
       },
+      annotationHistory: history,
+      annotationHistoryIndex: index,
     });
   },
 
   deleteAnnotationSegment: (id) => {
     const { project, selectedAnnotationSegmentId, selectedAnnotationShapeId } = get();
+    let { annotationHistory, annotationHistoryIndex } = get();
     if (!project) return;
     const annotations = normalizeAnnotationConfig(project.annotations);
+
+    if (annotationHistory.length === 0) {
+      const init = pushAnnotationHistory([], -1, {
+        segments: annotations.segments,
+        selectedSegmentId: selectedAnnotationSegmentId,
+        selectedShapeId: selectedAnnotationShapeId,
+      });
+      annotationHistory = init.history;
+      annotationHistoryIndex = init.index;
+    }
+
+    const newSegments = annotations.segments.filter((segment) => segment.id !== id);
+    const newSelectedSegmentId = selectedAnnotationSegmentId === id ? null : selectedAnnotationSegmentId;
+    const newSelectedShapeId = selectedAnnotationSegmentId === id ? null : selectedAnnotationShapeId;
+
+    const { history, index } = pushAnnotationHistory(annotationHistory, annotationHistoryIndex, {
+      segments: newSegments,
+      selectedSegmentId: newSelectedSegmentId,
+      selectedShapeId: newSelectedShapeId,
+    });
 
     set({
       project: {
         ...project,
-        annotations: {
-          ...annotations,
-          segments: annotations.segments.filter((segment) => segment.id !== id),
-        },
+        annotations: { ...annotations, segments: newSegments },
       },
-      selectedAnnotationSegmentId: selectedAnnotationSegmentId === id ? null : selectedAnnotationSegmentId,
-      selectedAnnotationShapeId: selectedAnnotationSegmentId === id ? null : selectedAnnotationShapeId,
+      selectedAnnotationSegmentId: newSelectedSegmentId,
+      selectedAnnotationShapeId: newSelectedShapeId,
+      annotationHistory: history,
+      annotationHistoryIndex: index,
     });
   },
 
   addAnnotationShape: (segmentId, shape) => {
-    const { project } = get();
+    const { project, selectedAnnotationSegmentId, selectedAnnotationShapeId } = get();
+    let { annotationHistory, annotationHistoryIndex } = get();
     if (!project) return;
     const annotations = normalizeAnnotationConfig(project.annotations);
 
+    if (annotationHistory.length === 0) {
+      const init = pushAnnotationHistory([], -1, {
+        segments: annotations.segments,
+        selectedSegmentId: selectedAnnotationSegmentId,
+        selectedShapeId: selectedAnnotationShapeId,
+      });
+      annotationHistory = init.history;
+      annotationHistoryIndex = init.index;
+    }
+
     const clampedShape = clampAnnotationShape(shape);
+    const newSegments = annotations.segments.map((segment) =>
+      segment.id === segmentId
+        ? { ...segment, shapes: [...segment.shapes, clampedShape] }
+        : segment
+    );
+
+    const { history, index } = pushAnnotationHistory(annotationHistory, annotationHistoryIndex, {
+      segments: newSegments,
+      selectedSegmentId: segmentId,
+      selectedShapeId: clampedShape.id,
+    });
+
     set({
       project: {
         ...project,
-        annotations: {
-          ...annotations,
-          segments: annotations.segments.map((segment) =>
-            segment.id === segmentId
-              ? { ...segment, shapes: [...segment.shapes, clampedShape] }
-              : segment
-          ),
-        },
+        annotations: { ...annotations, segments: newSegments },
       },
       selectedAnnotationSegmentId: segmentId,
       selectedAnnotationShapeId: clampedShape.id,
+      annotationHistory: history,
+      annotationHistoryIndex: index,
     });
   },
 
   updateAnnotationShape: (segmentId, shapeId, updates) => {
-    const { project } = get();
+    const { project, _annotationDragSnapshot } = get();
     if (!project) return;
     const annotations = normalizeAnnotationConfig(project.annotations);
+
+    const newSegments = annotations.segments.map((segment) => {
+      if (segment.id !== segmentId) return segment;
+      return {
+        ...segment,
+        shapes: segment.shapes.map((shape) =>
+          shape.id === shapeId ? clampAnnotationShape({ ...shape, ...updates }) : shape
+        ),
+      };
+    });
+
+    // During a drag, skip history — it will be committed in commitAnnotationDrag
+    if (_annotationDragSnapshot) {
+      set({
+        project: {
+          ...project,
+          annotations: { ...annotations, segments: newSegments },
+        },
+      });
+      return;
+    }
+
+    const { selectedAnnotationSegmentId, selectedAnnotationShapeId } = get();
+    let { annotationHistory, annotationHistoryIndex } = get();
+
+    if (annotationHistory.length === 0) {
+      const init = pushAnnotationHistory([], -1, {
+        segments: annotations.segments,
+        selectedSegmentId: selectedAnnotationSegmentId,
+        selectedShapeId: selectedAnnotationShapeId,
+      });
+      annotationHistory = init.history;
+      annotationHistoryIndex = init.index;
+    }
+
+    const { history, index } = pushAnnotationHistory(annotationHistory, annotationHistoryIndex, {
+      segments: newSegments,
+      selectedSegmentId: selectedAnnotationSegmentId,
+      selectedShapeId: selectedAnnotationShapeId,
+    });
 
     set({
       project: {
         ...project,
-        annotations: {
-          ...annotations,
-          segments: annotations.segments.map((segment) => {
-            if (segment.id !== segmentId) {
-              return segment;
-            }
-
-            return {
-              ...segment,
-              shapes: segment.shapes.map((shape) =>
-                shape.id === shapeId ? clampAnnotationShape({ ...shape, ...updates }) : shape
-              ),
-            };
-          }),
-        },
+        annotations: { ...annotations, segments: newSegments },
       },
+      annotationHistory: history,
+      annotationHistoryIndex: index,
     });
   },
 
   deleteAnnotationShape: (segmentId, shapeId) => {
-    const { project, selectedAnnotationShapeId } = get();
+    const { project, selectedAnnotationSegmentId, selectedAnnotationShapeId } = get();
+    let { annotationHistory, annotationHistoryIndex } = get();
     if (!project) return;
     const annotations = normalizeAnnotationConfig(project.annotations);
 
+    if (annotationHistory.length === 0) {
+      const init = pushAnnotationHistory([], -1, {
+        segments: annotations.segments,
+        selectedSegmentId: selectedAnnotationSegmentId,
+        selectedShapeId: selectedAnnotationShapeId,
+      });
+      annotationHistory = init.history;
+      annotationHistoryIndex = init.index;
+    }
+
     let nextSelectedShapeId = selectedAnnotationShapeId;
-    const segments = annotations.segments.map((segment) => {
-      if (segment.id !== segmentId) {
-        return segment;
-      }
+    const newSegments = annotations.segments.map((segment) => {
+      if (segment.id !== segmentId) return segment;
 
       const nextShapes = segment.shapes.filter((shape) => shape.id !== shapeId);
       if (selectedAnnotationShapeId === shapeId) {
         nextSelectedShapeId = nextShapes[0]?.id ?? null;
       }
 
-      return {
-        ...segment,
-        shapes: nextShapes,
-      };
+      return { ...segment, shapes: nextShapes };
+    });
+
+    const { history, index } = pushAnnotationHistory(annotationHistory, annotationHistoryIndex, {
+      segments: newSegments,
+      selectedSegmentId: selectedAnnotationSegmentId,
+      selectedShapeId: nextSelectedShapeId,
     });
 
     set({
       project: {
         ...project,
-        annotations: {
-          ...annotations,
-          segments,
-        },
+        annotations: { ...annotations, segments: newSegments },
       },
       selectedAnnotationShapeId: nextSelectedShapeId,
+      annotationHistory: history,
+      annotationHistoryIndex: index,
+    });
+  },
+
+  undoAnnotation: () => {
+    const { project, annotationHistory, annotationHistoryIndex } = get();
+    if (!project || annotationHistoryIndex <= 0) return;
+
+    const prevEntry = annotationHistory[annotationHistoryIndex - 1];
+
+    set({
+      project: {
+        ...project,
+        annotations: {
+          ...normalizeAnnotationConfig(project.annotations),
+          segments: prevEntry.segments,
+        },
+      },
+      selectedAnnotationSegmentId: prevEntry.selectedSegmentId,
+      selectedAnnotationShapeId: prevEntry.selectedShapeId,
+      annotationHistoryIndex: annotationHistoryIndex - 1,
+    });
+  },
+
+  redoAnnotation: () => {
+    const { project, annotationHistory, annotationHistoryIndex } = get();
+    if (!project || annotationHistoryIndex >= annotationHistory.length - 1) return;
+
+    const nextEntry = annotationHistory[annotationHistoryIndex + 1];
+
+    set({
+      project: {
+        ...project,
+        annotations: {
+          ...normalizeAnnotationConfig(project.annotations),
+          segments: nextEntry.segments,
+        },
+      },
+      selectedAnnotationSegmentId: nextEntry.selectedSegmentId,
+      selectedAnnotationShapeId: nextEntry.selectedShapeId,
+      annotationHistoryIndex: annotationHistoryIndex + 1,
+    });
+  },
+
+  beginAnnotationDrag: () => {
+    const { project, selectedAnnotationSegmentId, selectedAnnotationShapeId } = get();
+    if (!project) return;
+    const annotations = normalizeAnnotationConfig(project.annotations);
+
+    set({
+      _annotationDragSnapshot: {
+        segments: annotations.segments,
+        selectedSegmentId: selectedAnnotationSegmentId,
+        selectedShapeId: selectedAnnotationShapeId,
+      },
+    });
+  },
+
+  commitAnnotationDrag: () => {
+    const { project, _annotationDragSnapshot, selectedAnnotationSegmentId, selectedAnnotationShapeId } = get();
+    if (!project || !_annotationDragSnapshot) return;
+    const annotations = normalizeAnnotationConfig(project.annotations);
+
+    let { annotationHistory, annotationHistoryIndex } = get();
+
+    // Push pre-drag snapshot as initial state if history is empty
+    if (annotationHistory.length === 0) {
+      const init = pushAnnotationHistory([], -1, _annotationDragSnapshot);
+      annotationHistory = init.history;
+      annotationHistoryIndex = init.index;
+    }
+
+    // Push result state (current state after drag)
+    const { history, index } = pushAnnotationHistory(annotationHistory, annotationHistoryIndex, {
+      segments: annotations.segments,
+      selectedSegmentId: selectedAnnotationSegmentId,
+      selectedShapeId: selectedAnnotationShapeId,
+    });
+
+    set({
+      annotationHistory: history,
+      annotationHistoryIndex: index,
+      _annotationDragSnapshot: null,
     });
   },
 
