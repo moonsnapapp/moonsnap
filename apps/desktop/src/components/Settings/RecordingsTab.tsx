@@ -69,6 +69,8 @@ export const RecordingsTab: React.FC = () => {
     updateGifSettings,
     afterRecordingAction,
     setAfterRecordingAction,
+    promptRecordingMode,
+    setPromptRecordingMode,
   } = useCaptureSettingsStore();
   const { video, gif } = settings;
 
@@ -101,6 +103,21 @@ export const RecordingsTab: React.FC = () => {
               {afterRecordingAction === 'editor' && 'Open the video editor immediately after recording stops'}
               {afterRecordingAction === 'save' && 'Save directly to file. Cursor is baked in, countdown is skipped.'}
             </p>
+          </div>
+
+          <div className="flex items-center justify-between">
+            <div>
+              <label className="text-sm text-[var(--ink-black)] block">
+                Ask before recording
+              </label>
+              <p className="text-xs text-[var(--ink-muted)] mt-0.5">
+                Choose between Quick and Studio mode each time you record
+              </p>
+            </div>
+            <Switch
+              checked={promptRecordingMode}
+              onCheckedChange={(checked) => setPromptRecordingMode(checked)}
+            />
           </div>
         </div>
       </section>

@@ -13,7 +13,7 @@
  * - useWebcamCoordination: Webcam preview lifecycle
  */
 
-import React, { useEffect, useCallback, useRef } from 'react';
+import React, { useEffect, useCallback, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { emit, listen, once } from '@tauri-apps/api/event';
 import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
@@ -24,6 +24,7 @@ import type { CaptureSource } from '../components/CaptureToolbar/SourceSelector'
 import {
   useCaptureSettingsStore,
   type CaptureSourceMode,
+  type AfterRecordingAction,
 } from '../stores/captureSettingsStore';
 import { useWebcamSettingsStore } from '../stores/webcamSettingsStore';
 import { useSettingsStore } from '../stores/settingsStore';
@@ -34,6 +35,7 @@ import { useWebcamCoordination } from '../hooks/useWebcamCoordination';
 import { useToolbarPositioning } from '../hooks/useToolbarPositioning';
 import type { CaptureType } from '../types';
 import { toolbarLogger } from '../utils/logger';
+import { RecordingModeChooser } from '../components/CaptureToolbar/RecordingModeChooser';
 
 interface StartupToolbarContext {
   captureType?: CaptureType;
@@ -94,6 +96,9 @@ const CaptureToolbarWindow: React.FC = () => {
     countdownSeconds,
     recordingInitiatedRef,
   } = useRecordingEvents();
+
+  const [showModeChooser, setShowModeChooser] = useState(false);
+  const skipModePromptRef = useRef(false);
 
   const pendingStartupContextRef = useRef<StartupToolbarContext | null>(null);
   const shouldAutoStartAreaSelectionRef = useRef(false);
@@ -156,6 +161,12 @@ const CaptureToolbarWindow: React.FC = () => {
 
         if (escHandledRef.current) return;
 
+        // Dismiss mode chooser and return to toolbar
+        if (showModeChooser) {
+          setShowModeChooser(false);
+          return;
+        }
+
         await closeWebcamPreview();
 
         if (selectionConfirmed) {
@@ -178,7 +189,7 @@ const CaptureToolbarWindow: React.FC = () => {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [mode, selectionConfirmed, closeWebcamPreview]);
+  }, [mode, selectionConfirmed, closeWebcamPreview, showModeChooser]);
 
   const handleCapture = useCallback(async () => {
     try {
@@ -211,6 +222,13 @@ const CaptureToolbarWindow: React.FC = () => {
       if (captureType === 'screenshot') {
         await invoke('capture_overlay_confirm', { action: 'screenshot' });
       } else {
+        // Show mode chooser before video recording if enabled
+        if (captureType === 'video' && !skipModePromptRef.current && useCaptureSettingsStore.getState().promptRecordingMode) {
+          setShowModeChooser(true);
+          return;
+        }
+        skipModePromptRef.current = false;
+
         recordingInitiatedRef.current = true;
         setMode('starting');
 
@@ -557,6 +575,20 @@ const CaptureToolbarWindow: React.FC = () => {
     await closeWebcamPreview();
   }, [closeWebcamPreview]);
 
+  const handleModeChooserSelect = useCallback((action: AfterRecordingAction, remember: boolean) => {
+    const store = useCaptureSettingsStore.getState();
+    store.setAfterRecordingAction(action);
+    if (remember) {
+      store.setPromptRecordingMode(false);
+    }
+    setShowModeChooser(false);
+    // Skip the prompt check on the next handleCapture call
+    skipModePromptRef.current = true;
+    setTimeout(() => {
+      void handleCapture();
+    }, 50);
+  }, [handleCapture]);
+
   const handleOpenLibrary = useCallback(async () => {
     try {
       await invoke('show_library_window');
@@ -577,34 +609,38 @@ const CaptureToolbarWindow: React.FC = () => {
       <div ref={toolbarRef} className="toolbar-container">
         <div className="toolbar-animated-wrapper">
           <div ref={contentRef} className="toolbar-content-measure">
-            <CaptureToolbar
-              mode={mode}
-              captureType={captureType}
-              captureSource={captureSource}
-              width={selectionBounds.width}
-              height={selectionBounds.height}
-              sourceType={selectionBounds.sourceType}
-              sourceTitle={selectionBounds.sourceTitle}
-              monitorName={selectionBounds.monitorName}
-              monitorIndex={selectionBounds.monitorIndex}
-              selectionConfirmed={selectionConfirmed}
-              onCapture={handleCapture}
-              onCaptureTypeChange={handleModeChange}
-              onCaptureSourceChange={handleCaptureSourceChange}
-              onCaptureComplete={handleCaptureComplete}
-              onRedo={handleRedo}
-              onCancel={handleCancel}
-              format={format}
-              elapsedTime={elapsedTime}
-              progress={progress}
-              errorMessage={errorMessage}
-              onPause={handlePause}
-              onResume={handleResume}
-              onStop={handleStop}
-              countdownSeconds={countdownSeconds}
-              onDimensionChange={handleDimensionChange}
-              onOpenSettings={handleOpenSettings}
-            />
+            {showModeChooser ? (
+              <RecordingModeChooser onSelect={handleModeChooserSelect} onBack={() => setShowModeChooser(false)} />
+            ) : (
+              <CaptureToolbar
+                mode={mode}
+                captureType={captureType}
+                captureSource={captureSource}
+                width={selectionBounds.width}
+                height={selectionBounds.height}
+                sourceType={selectionBounds.sourceType}
+                sourceTitle={selectionBounds.sourceTitle}
+                monitorName={selectionBounds.monitorName}
+                monitorIndex={selectionBounds.monitorIndex}
+                selectionConfirmed={selectionConfirmed}
+                onCapture={handleCapture}
+                onCaptureTypeChange={handleModeChange}
+                onCaptureSourceChange={handleCaptureSourceChange}
+                onCaptureComplete={handleCaptureComplete}
+                onRedo={handleRedo}
+                onCancel={handleCancel}
+                format={format}
+                elapsedTime={elapsedTime}
+                progress={progress}
+                errorMessage={errorMessage}
+                onPause={handlePause}
+                onResume={handleResume}
+                onStop={handleStop}
+                countdownSeconds={countdownSeconds}
+                onDimensionChange={handleDimensionChange}
+                onOpenSettings={handleOpenSettings}
+              />
+            )}
           </div>
         </div>
       </div>
