@@ -199,6 +199,7 @@ pub async fn check_dir_for_move(path: String) -> Result<serde_json::Value, Strin
     let entries: Vec<_> = std::fs::read_dir(&dir)
         .map_err(|e| format!("Failed to read directory: {}", e))?
         .filter_map(|e| e.ok())
+        .filter(|e| is_moonsnap_file(&e.file_name().to_string_lossy()))
         .collect();
 
     let item_count = entries.len() as u32;
