@@ -1,31 +1,108 @@
-/**
- * Shared offscreen text measurement utility used by text overlay + timeline.
- */
-let measureCanvas: OffscreenCanvas | null = null;
+import { TEXT_LAYOUT } from '../constants';
+import { measureTextLayout, type RenderTextOptions } from './textPreRenderer';
 
-export function measureTextSize(
-  content: string,
-  fontFamily: string,
-  fontSize: number,
-  fontWeight: number,
-  maxWidthPx: number
-): { width: number; height: number } {
-  if (!measureCanvas) {
-    measureCanvas = new OffscreenCanvas(1, 1);
+type MeasureContext = CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
+
+export type MeasureTextInput = Pick<
+  RenderTextOptions,
+  'content' | 'fontFamily' | 'fontWeight' | 'italic' | 'fontSize'
+>;
+
+function createMeasurementContext(): MeasureContext | null {
+  if (typeof OffscreenCanvas !== 'undefined') {
+    return new OffscreenCanvas(1, 1).getContext('2d');
   }
 
-  const ctx = measureCanvas.getContext('2d');
-  if (!ctx) return { width: 100, height: fontSize * 1.2 };
+  if (typeof document !== 'undefined') {
+    return document.createElement('canvas').getContext('2d');
+  }
 
-  ctx.font = `${fontWeight} ${fontSize}px ${fontFamily}`;
-  const metrics = ctx.measureText(content);
-  const textWidth = metrics.width;
+  return null;
+}
 
-  // Approximate line wrapping.
-  const lines = Math.max(1, Math.ceil(textWidth / maxWidthPx));
-  const lineHeight = fontSize * 1.2;
-  const totalHeight = lines * lineHeight;
-  const effectiveWidth = lines > 1 ? maxWidthPx : textWidth;
+function clampRatio(value: number, min: number): number {
+  return Math.min(TEXT_LAYOUT.MAX_SIZE_RATIO, Math.max(min, value));
+}
 
-  return { width: effectiveWidth, height: totalHeight };
+/**
+ * Shared text measurement utility used by the text overlay, timeline, and
+ * text segment editor. Mirrors the same wrap rules as preview/export.
+ */
+export function measureTextSize(
+  input: MeasureTextInput,
+  maxWidthPx: number,
+  referenceHeight: number,
+): { width: number; height: number } {
+  const safeWidth = Math.max(1, maxWidthPx);
+  const safeReferenceHeight = Math.max(1, referenceHeight);
+  const ctx = createMeasurementContext();
+
+  if (!ctx) {
+    const scaledFontSize = Math.max(1, input.fontSize * (safeReferenceHeight / 1080));
+    const estimatedCharsPerLine = Math.max(1, Math.floor(safeWidth / Math.max(scaledFontSize * 0.6, 1)));
+    const estimatedLineCount = Math.max(
+      1,
+      Math.ceil(Array.from(input.content || '').length / estimatedCharsPerLine),
+    );
+
+    return {
+      width: safeWidth,
+      height: estimatedLineCount * scaledFontSize * 1.2,
+    };
+  }
+
+  const { maxLineWidthPx, totalHeightPx } = measureTextLayout(
+    ctx,
+    {
+      ...input,
+      color: '#ffffff',
+    },
+    safeWidth,
+    safeReferenceHeight,
+  );
+
+  return {
+    width: maxLineWidthPx,
+    height: totalHeightPx,
+  };
+}
+
+export function fitTextSegmentToContent(
+  input: MeasureTextInput,
+  videoWidth: number,
+  videoHeight: number,
+  maxWidthRatio: number = TEXT_LAYOUT.DEFAULT_MAX_WIDTH_RATIO,
+): { x: number; y: number } {
+  const safeVideoWidth = Math.max(1, videoWidth);
+  const safeVideoHeight = Math.max(1, videoHeight);
+  const safeMaxWidthRatio = clampRatio(maxWidthRatio, TEXT_LAYOUT.MIN_WIDTH_RATIO);
+  const measured = measureTextSize(input, safeVideoWidth * safeMaxWidthRatio, safeVideoHeight);
+
+  return {
+    x: clampRatio(
+      (measured.width * TEXT_LAYOUT.BOX_PADDING_FACTOR) / safeVideoWidth,
+      TEXT_LAYOUT.MIN_WIDTH_RATIO,
+    ),
+    y: clampRatio(
+      (measured.height * TEXT_LAYOUT.BOX_PADDING_FACTOR) / safeVideoHeight,
+      TEXT_LAYOUT.MIN_HEIGHT_RATIO,
+    ),
+  };
+}
+
+export function calculateTextSegmentHeightRatio(
+  input: MeasureTextInput,
+  widthRatio: number,
+  videoWidth: number,
+  videoHeight: number,
+): number {
+  const safeVideoWidth = Math.max(1, videoWidth);
+  const safeVideoHeight = Math.max(1, videoHeight);
+  const safeWidthRatio = clampRatio(widthRatio, TEXT_LAYOUT.MIN_WIDTH_RATIO);
+  const measured = measureTextSize(input, safeVideoWidth * safeWidthRatio, safeVideoHeight);
+
+  return clampRatio(
+    (measured.height * TEXT_LAYOUT.BOX_PADDING_FACTOR) / safeVideoHeight,
+    TEXT_LAYOUT.MIN_HEIGHT_RATIO,
+  );
 }

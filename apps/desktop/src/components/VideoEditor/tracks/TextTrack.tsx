@@ -3,6 +3,7 @@ import { Type, GripVertical, Plus } from 'lucide-react';
 import type { TextSegment } from '../../../types';
 import { TEXT_ANIMATION } from '../../../constants';
 import { useVideoEditorStore, formatTimeSimple } from '../../../stores/videoEditorStore';
+import { fitTextSegmentToContent } from '../../../utils/textMeasure';
 import {
   selectAddTextSegment,
   selectDeleteTextSegment,
@@ -19,7 +20,6 @@ import {
   selectUpdateTextSegment,
 } from '../../../stores/videoEditor/selectors';
 import { createTextSegmentId } from '../../../utils/textSegmentId';
-import { measureTextSize } from '../../../utils/textMeasure';
 import type { DragEdge, SegmentTooltipPlacement } from './BaseTrack';
 
 /**
@@ -389,16 +389,17 @@ export const TextTrackContent = memo(function TextTrackContent({
     const fontFamily = 'sans-serif';
     const fontSize = 48;
     const fontWeight = 700;
-
-    // Measure text to auto-size the gizmo
-    const scaledFontSize = fontSize * (videoHeight / 1080);
-    const maxWidthPx = videoWidth * 0.8;
-    const measured = measureTextSize(content, fontFamily, scaledFontSize, fontWeight, maxWidthPx);
-
-    // Convert pixel measurements to normalized coordinates with padding
-    const paddingFactor = 1.4;
-    const sizeX = Math.min(0.9, Math.max(0.06, (measured.width * paddingFactor) / videoWidth));
-    const sizeY = Math.min(0.9, Math.max(0.05, (measured.height * paddingFactor) / videoHeight));
+    const size = fitTextSegmentToContent(
+      {
+        content,
+        fontFamily,
+        fontSize,
+        fontWeight,
+        italic: false,
+      },
+      videoWidth,
+      videoHeight,
+    );
 
     // Create new segment with Cap's model
     const newSegment: TextSegment = {
@@ -407,7 +408,7 @@ export const TextTrackContent = memo(function TextTrackContent({
       enabled: true,
       content,
       center: { x: 0.5, y: 0.5 },
-      size: { x: sizeX, y: sizeY },
+      size,
       fontFamily,
       fontSize,
       fontWeight,

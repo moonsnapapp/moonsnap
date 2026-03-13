@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { VideoProject } from '../../types';
 import { createDefaultAnnotationShape } from '../../utils/videoAnnotations';
 import { createTextSegmentId } from '../../utils/textSegmentId';
@@ -90,6 +90,27 @@ function createTestProject(overrides: Partial<VideoProject> = {}): VideoProject 
     },
     ...overrides,
   };
+}
+
+function createMockTextMeasureContext(): CanvasRenderingContext2D {
+  return {
+    font: '',
+    textAlign: 'center',
+    textBaseline: 'alphabetic',
+    measureText: (text: string) => ({
+      width: text.length * 12,
+      fontBoundingBoxAscent: 10,
+      fontBoundingBoxDescent: 4,
+    } as TextMetrics),
+  } as CanvasRenderingContext2D;
+}
+
+class MockOffscreenCanvas {
+  constructor(_width: number, _height: number) {}
+
+  getContext(_contextId: '2d') {
+    return createMockTextMeasureContext();
+  }
 }
 
 describe('annotation shape selection', () => {
@@ -246,6 +267,7 @@ describe('annotation shape selection', () => {
 
 describe('segment delete undo history', () => {
   beforeEach(() => {
+    vi.stubGlobal('OffscreenCanvas', MockOffscreenCanvas);
     useVideoEditorStore.setState({
       project: null,
       selectedAnnotationSegmentId: null,
@@ -258,6 +280,10 @@ describe('segment delete undo history', () => {
       annotationHistoryIndex: -1,
       selectedZoomRegionId: null,
     });
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
   });
 
   it('records zoom region deletions in trim history so undo restores them', () => {
@@ -390,6 +416,41 @@ describe('segment delete undo history', () => {
       start: 2.5,
       end: 4.25,
     });
+  });
+
+  it('auto-fits text segment height when content changes', () => {
+    useVideoEditorStore.getState().setProject(createTestProject({
+      text: {
+        segments: [
+          {
+            start: 1,
+            end: 2,
+            enabled: true,
+            content: 'Hello',
+            center: { x: 0.5, y: 0.5 },
+            size: { x: 0.18, y: 0.08 },
+            fontFamily: 'Arial',
+            fontSize: 48,
+            fontWeight: 700,
+            italic: false,
+            color: '#ffffff',
+            fadeDuration: 0,
+            animation: 'none',
+            typewriterCharsPerSecond: 24,
+            typewriterSoundEnabled: false,
+          },
+        ],
+      },
+    }));
+
+    const store = useVideoEditorStore.getState();
+    const textSegmentId = createTextSegmentId(1, 0);
+    store.updateTextSegment(
+      textSegmentId,
+      { content: 'word '.repeat(24).trim() },
+    );
+
+    expect(useVideoEditorStore.getState().project?.text.segments[0]?.size.y).toBeGreaterThan(0.08);
   });
 
   it('records mask segment updates in trim history so undo and redo restore moved bounds', () => {

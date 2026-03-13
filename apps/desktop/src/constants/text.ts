@@ -12,3 +12,16 @@ export const TEXT_ANIMATION = {
 } as const;
 
 export type TextAnimationConstants = typeof TEXT_ANIMATION;
+
+/**
+ * Layout rules for auto-sizing text overlay bounds.
+ */
+export const TEXT_LAYOUT = {
+  BOX_PADDING_FACTOR: 1.4,
+  DEFAULT_MAX_WIDTH_RATIO: 0.8,
+  MIN_WIDTH_RATIO: 0.06,
+  MIN_HEIGHT_RATIO: 0.05,
+  MAX_SIZE_RATIO: 0.9,
+} as const;
+
+export type TextLayoutConstants = typeof TEXT_LAYOUT;

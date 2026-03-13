@@ -43,6 +43,14 @@ export interface RenderTextOptions {
 
 type RenderContext = CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
 
+export interface TextLayoutMetrics {
+  lines: string[];
+  lineHeightPx: number;
+  totalHeightPx: number;
+  baselineInLinePx: number;
+  maxLineWidthPx: number;
+}
+
 type GraphemeSegmenter = {
   segment(input: string): Iterable<{ segment: string }>;
 };
@@ -142,6 +150,60 @@ function wordWrap(
   return lines.length > 0 ? lines : [''];
 }
 
+function configureTextContext(
+  ctx: RenderContext,
+  opts: RenderTextOptions,
+  referenceHeight: number,
+): { lineHeightPx: number; baselineInLinePx: number } {
+  const heightScale = referenceHeight / 1080;
+  const fontSizePx = Math.max(1, opts.fontSize * heightScale);
+  const lineHeightPx = fontSizePx * 1.2;
+
+  const fontStyle = opts.italic ? 'italic ' : '';
+  ctx.font = `${fontStyle}${opts.fontWeight} ${fontSizePx}px ${opts.fontFamily}`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'alphabetic';
+
+  const fontMetrics = ctx.measureText('Ag');
+  const fontAscent = fontMetrics.fontBoundingBoxAscent || fontSizePx * 0.8;
+  const fontDescent = fontMetrics.fontBoundingBoxDescent || fontSizePx * 0.2;
+  const contentArea = fontAscent + fontDescent;
+  const halfLeading = Math.max(0, (lineHeightPx - contentArea) / 2);
+
+  return {
+    lineHeightPx,
+    baselineInLinePx: halfLeading + fontAscent,
+  };
+}
+
+/**
+ * Measure the wrapped text layout using the same font and word-wrap rules
+ * as preview/export rendering.
+ */
+export function measureTextLayout(
+  ctx: RenderContext,
+  opts: RenderTextOptions,
+  canvasWidth: number,
+  referenceHeight: number,
+): TextLayoutMetrics {
+  const safeWidth = Math.max(1, canvasWidth);
+  const { lineHeightPx, baselineInLinePx } = configureTextContext(ctx, opts, referenceHeight);
+  const lines = wordWrap(ctx, opts.content, safeWidth);
+
+  let maxLineWidthPx = 0;
+  for (const line of lines) {
+    maxLineWidthPx = Math.max(maxLineWidthPx, ctx.measureText(line).width);
+  }
+
+  return {
+    lines,
+    lineHeightPx,
+    totalHeightPx: lines.length * lineHeightPx,
+    baselineInLinePx,
+    maxLineWidthPx,
+  };
+}
+
 /** Line layout info returned by renderTextOnCanvas for typewriter export. */
 export interface RenderedLineInfo {
   /** Text content of this line. */
@@ -177,30 +239,15 @@ export function renderTextOnCanvas(
   canvasHeight: number,
   referenceHeight: number,
 ): RenderedLineInfo[] {
-  const heightScale = referenceHeight / 1080;
-  const fontSize = Math.max(1, opts.fontSize * heightScale);
-  const lineHeight = fontSize * 1.2;
-
-  const fontStyle = opts.italic ? 'italic ' : '';
-  ctx.font = `${fontStyle}${opts.fontWeight} ${fontSize}px ${opts.fontFamily}`;
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'alphabetic';
-
-  // Measure font metrics for vertical positioning.
-  // CSS line-height creates line boxes with half-leading above/below the
-  // font content area. We replicate this using fontBoundingBoxAscent/Descent.
-  const fontMetrics = ctx.measureText('Ag');
-  const fontAscent = fontMetrics.fontBoundingBoxAscent;
-  const fontDescent = fontMetrics.fontBoundingBoxDescent;
-  const contentArea = fontAscent + fontDescent;
-  const halfLeading = Math.max(0, (lineHeight - contentArea) / 2);
-  const baselineInLine = halfLeading + fontAscent;
-
-  const lines = wordWrap(ctx, opts.content, canvasWidth);
+  const {
+    lines,
+    lineHeightPx,
+    totalHeightPx,
+    baselineInLinePx,
+  } = measureTextLayout(ctx, opts, canvasWidth, referenceHeight);
 
   // Vertically center the text block
-  const totalTextHeight = lines.length * lineHeight;
-  const startY = Math.max(0, (canvasHeight - totalTextHeight) / 2);
+  const startY = Math.max(0, (canvasHeight - totalHeightPx) / 2);
 
   // Text shadow
   ctx.shadowColor = 'rgba(0, 0, 0, 0.5)';
@@ -212,9 +259,9 @@ export function renderTextOnCanvas(
   const centerX = canvasWidth / 2;
   const lineInfos: RenderedLineInfo[] = [];
   for (let i = 0; i < lines.length; i++) {
-    const lineTopPx = startY + i * lineHeight;
+    const lineTopPx = startY + i * lineHeightPx;
     const lineText = lines[i];
-    ctx.fillText(lineText, centerX, lineTopPx + baselineInLine);
+    ctx.fillText(lineText, centerX, lineTopPx + baselineInLinePx);
     const graphemes = splitGraphemes(lineText);
     const revealWidthsPx: number[] = [];
     let prefix = '';
@@ -226,7 +273,7 @@ export function renderTextOnCanvas(
     lineInfos.push({
       text: lineText,
       topPx: lineTopPx,
-      heightPx: lineHeight,
+      heightPx: lineHeightPx,
       contentWidthPx: ctx.measureText(lineText).width,
       revealWidthsPx,
     });

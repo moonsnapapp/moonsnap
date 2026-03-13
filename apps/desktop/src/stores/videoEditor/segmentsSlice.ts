@@ -13,6 +13,7 @@ import type {
   VideoProject,
 } from './types';
 import { createTextSegmentId, getTextSegmentIndexFromId } from '../../utils/textSegmentId';
+import { calculateTextSegmentHeightRatio } from '../../utils/textMeasure';
 import { clampAnnotationShape, normalizeAnnotationConfig } from '../../utils/videoAnnotations';
 import { snapshotOverlayState } from './overlayAdjustment';
 import { pushTrimHistory } from './trimSlice';
@@ -31,6 +32,14 @@ interface AnnotationHistoryEntry {
   selectedShapeId: string | null;
   deleteMode: 'segment' | 'shape' | null;
 }
+
+const TEXT_AUTO_HEIGHT_KEYS: Array<keyof TextSegment> = [
+  'content',
+  'fontFamily',
+  'fontSize',
+  'fontWeight',
+  'italic',
+];
 
 /**
  * Push a new state to annotation history, clearing any redo states.
@@ -66,6 +75,10 @@ function ensureTrimHistoryInitialized(
     selectedId: selectedTrimSegmentId,
     overlays: snapshotOverlayState(project),
   });
+}
+
+function shouldAutoFitTextSegmentHeight(updates: Partial<TextSegment>): boolean {
+  return TEXT_AUTO_HEIGHT_KEYS.some((key) => key in updates);
 }
 
 /**
@@ -395,9 +408,32 @@ export const createSegmentsSlice: SliceCreator<SegmentsSlice> = (set, get) => ({
       trimHistoryIndex,
       selectedTrimSegmentId
     );
+    const shouldAutoFitHeight = shouldAutoFitTextSegmentHeight(updates);
     const newSegments = project.text.segments.map((s, idx) => {
       if (idx === targetIndex) {
-        return { ...s, ...updates };
+        const nextSegment = { ...s, ...updates };
+        if (!shouldAutoFitHeight) {
+          return nextSegment;
+        }
+
+        return {
+          ...nextSegment,
+          size: {
+            ...nextSegment.size,
+            y: calculateTextSegmentHeightRatio(
+              {
+                content: nextSegment.content,
+                fontFamily: nextSegment.fontFamily,
+                fontSize: nextSegment.fontSize,
+                fontWeight: nextSegment.fontWeight,
+                italic: nextSegment.italic,
+              },
+              nextSegment.size.x,
+              project.sources.originalWidth,
+              project.sources.originalHeight,
+            ),
+          },
+        };
       }
       return s;
     });
