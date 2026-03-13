@@ -107,7 +107,15 @@ export const GeneralTab: React.FC = () => {
     }
   }, []);
 
-  /** Open folder picker, then show ask-move dialog if there are existing files */
+  /** If the picked folder is already called "MoonSnap" use it as-is,
+   *  otherwise append a MoonSnap subfolder so captures stay organised. */
+  const ensureMoonSnapFolder = (dir: string): string => {
+    const trimmed = dir.replace(/[\\/]+$/, '');
+    const basename = trimmed.split(/[\\/]/).pop() ?? '';
+    return basename === 'MoonSnap' ? trimmed : `${trimmed}\\MoonSnap`;
+  };
+
+  /** Open folder picker, then show ask-move dialog if there are existing files. */
   const handleBrowseSaveDir = async () => {
     try {
       const selected = await open({
@@ -116,12 +124,15 @@ export const GeneralTab: React.FC = () => {
         title: 'Select Default Save Location',
       });
       if (!selected || typeof selected !== 'string') return;
-      if (selected === general.defaultSaveDir) return;
+
+      const saveDir = ensureMoonSnapFolder(selected);
+
+      if (saveDir === general.defaultSaveDir) return;
 
       const currentDir = general.defaultSaveDir;
       if (!currentDir) {
         // No previous dir — just set it
-        updateGeneralSettings({ defaultSaveDir: selected });
+        updateGeneralSettings({ defaultSaveDir: saveDir });
         return;
       }
 
@@ -129,13 +140,13 @@ export const GeneralTab: React.FC = () => {
       const result = await invoke<DirCheckResult>('check_dir_for_move', { path: currentDir });
       if (result.item_count === 0) {
         // Nothing to move — just change the setting
-        updateGeneralSettings({ defaultSaveDir: selected });
+        updateGeneralSettings({ defaultSaveDir: saveDir });
         return;
       }
 
       // Has files — ask the user
       setMoveSource(currentDir);
-      setMoveTarget(selected);
+      setMoveTarget(saveDir);
       setMoveItemCount(result.item_count);
       setMoveError(null);
       setMoveProgress({ moved: 0, total: 0, name: '' });
@@ -188,10 +199,12 @@ export const GeneralTab: React.FC = () => {
         title: 'Select New Save Location',
       });
       if (!selected || typeof selected !== 'string' || !general.defaultSaveDir) return;
-      if (selected === general.defaultSaveDir) return;
+
+      const saveDir = ensureMoonSnapFolder(selected);
+      if (saveDir === general.defaultSaveDir) return;
 
       setMoveSource(general.defaultSaveDir);
-      setMoveTarget(selected);
+      setMoveTarget(saveDir);
       setMoveError(null);
       setMoveProgress({ moved: 0, total: 0, name: '' });
       setLockedFiles([]);

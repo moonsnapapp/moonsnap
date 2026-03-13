@@ -51,12 +51,12 @@ pub(crate) fn get_captures_dir(app: &AppHandle) -> Result<PathBuf, String> {
         }
     }
 
-    // Fallback to ~/MoonSnap
-    let home_dir = app
+    // Fallback to ~/Documents/MoonSnap
+    let docs_dir = app
         .path()
-        .home_dir()
-        .map_err(|e| format!("Failed to get home directory: {}", e))?;
-    let moonsnap_path = home_dir.join("MoonSnap");
+        .document_dir()
+        .map_err(|e| format!("Failed to get documents directory: {}", e))?;
+    let moonsnap_path = docs_dir.join("MoonSnap");
 
     if !moonsnap_path.exists() {
         fs::create_dir_all(&moonsnap_path)

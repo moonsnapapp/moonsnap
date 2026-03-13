@@ -30,8 +30,6 @@ export const SettingsPopover: React.FC<SettingsPopoverProps> = ({
     updateVideoSettings,
     updateGifSettings,
     updateScreenshotSettings,
-    afterRecordingAction,
-    setAfterRecordingAction,
   } = useCaptureSettingsStore();
   const buttonRef = useRef<HTMLButtonElement>(null);
 
@@ -181,30 +179,6 @@ export const SettingsPopover: React.FC<SettingsPopoverProps> = ({
         menuItems.push(await PredefinedMenuItem.new({ item: 'Separator' }));
       }
 
-      // After Recording submenu (video only)
-      if (mode === 'video') {
-        const afterRecordingItems = await Promise.all(
-          ([
-            { id: 'preview', label: 'Floating Preview' },
-            { id: 'editor', label: 'Open Editor' },
-            { id: 'save', label: 'Quick Save (Skip Editor)' },
-          ] as const).map(opt =>
-            CheckMenuItem.new({
-              id: `after-${opt.id}`,
-              text: opt.label,
-              checked: afterRecordingAction === opt.id,
-              action: () => setAfterRecordingAction(opt.id),
-            })
-          )
-        );
-        const afterLabel = { preview: 'Floating Preview', editor: 'Open Editor', save: 'Quick Save' }[afterRecordingAction];
-        menuItems.push(await Submenu.new({
-          id: 'after-recording-submenu',
-          text: `After Recording: ${afterLabel}`,
-          items: afterRecordingItems,
-        }));
-      }
-
       // Cursor capture toggle
       menuItems.push(await CheckMenuItem.new({
         id: 'cursor',
@@ -254,8 +228,6 @@ export const SettingsPopover: React.FC<SettingsPopoverProps> = ({
     setCountdown,
     updateVideoSettings,
     updateGifSettings,
-    afterRecordingAction,
-    setAfterRecordingAction,
     onOpenSettings,
   ]);
 

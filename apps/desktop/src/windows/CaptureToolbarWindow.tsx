@@ -118,6 +118,18 @@ const CaptureToolbarWindow: React.FC = () => {
     });
   }, []);
 
+  const showToolbarInRecording = useCaptureSettingsStore(
+    (s) => s.showToolbarInRecording
+  );
+
+  useEffect(() => {
+    invoke('set_toolbar_recording_visibility', {
+      show: showToolbarInRecording,
+    }).catch((e) => {
+      toolbarLogger.warn('Failed to set toolbar recording visibility:', e);
+    });
+  }, [showToolbarInRecording]);
+
   const suppressToolbarUntilRecording =
     (autoStartRecording || Boolean(selectionBounds.autoStartRecording)) &&
     (mode === 'selection' || mode === 'starting');

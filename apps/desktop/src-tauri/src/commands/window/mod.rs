@@ -170,6 +170,30 @@ pub(crate) fn exclude_window_from_capture(_window: &tauri::WebviewWindow) -> Res
     Ok(())
 }
 
+/// Include a window in screen capture by resetting display affinity.
+/// This reverses `exclude_window_from_capture`.
+#[cfg(target_os = "windows")]
+pub(crate) fn include_window_in_capture(window: &tauri::WebviewWindow) -> Result<(), String> {
+    use windows::Win32::Foundation::HWND;
+    use windows::Win32::UI::WindowsAndMessaging::{SetWindowDisplayAffinity, WDA_NONE};
+
+    let hwnd = window
+        .hwnd()
+        .map_err(|e| format!("Failed to get HWND: {}", e))?;
+
+    unsafe {
+        SetWindowDisplayAffinity(HWND(hwnd.0), WDA_NONE)
+            .map_err(|e| format!("Failed to reset display affinity: {:?}", e))?;
+    }
+
+    Ok(())
+}
+
+#[cfg(not(target_os = "windows"))]
+pub(crate) fn include_window_in_capture(_window: &tauri::WebviewWindow) -> Result<(), String> {
+    Ok(())
+}
+
 // ============================================================================
 // Internal Helpers
 // ============================================================================

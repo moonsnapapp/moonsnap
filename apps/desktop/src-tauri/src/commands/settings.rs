@@ -157,8 +157,8 @@ pub async fn reveal_file_in_explorer(path: String) -> Result<(), String> {
 pub async fn get_default_save_dir(app: tauri::AppHandle) -> Result<String, String> {
     let path = app
         .path()
-        .home_dir()
-        .map_err(|e| format!("Failed to get home directory: {}", e))?;
+        .document_dir()
+        .map_err(|e| format!("Failed to get documents directory: {}", e))?;
 
     let moonsnap_path = path.join("MoonSnap");
 
@@ -173,7 +173,8 @@ pub async fn get_default_save_dir(app: tauri::AppHandle) -> Result<String, Strin
 
 /// Get the default save directory path (synchronous version for internal use).
 pub fn get_default_save_dir_sync() -> Result<std::path::PathBuf, String> {
-    let path = dirs::home_dir().ok_or_else(|| "Failed to get home directory".to_string())?;
+    let path =
+        dirs::document_dir().ok_or_else(|| "Failed to get documents directory".to_string())?;
 
     let moonsnap_path = path.join("MoonSnap");
 

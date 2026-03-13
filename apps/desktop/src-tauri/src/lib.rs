@@ -185,9 +185,9 @@ pub fn run() {
                 let _ = window.hide();
             }
 
-            // Ensure default save directory (~/MoonSnap) exists on first launch
-            if let Ok(home) = app.path().home_dir() {
-                let moonsnap_dir = home.join("MoonSnap");
+            // Ensure default save directory (~/Documents/MoonSnap) exists on first launch
+            if let Ok(docs) = app.path().document_dir() {
+                let moonsnap_dir = docs.join("MoonSnap");
                 if !moonsnap_dir.exists() {
                     let _ = std::fs::create_dir_all(&moonsnap_dir);
                 }

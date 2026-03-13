@@ -5,7 +5,10 @@ use std::sync::Mutex;
 use serde::{Deserialize, Serialize};
 use tauri::{command, AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 
-use super::{apply_dwm_transparency, set_physical_bounds, CAPTURE_TOOLBAR_LABEL};
+use super::{
+    apply_dwm_transparency, exclude_window_from_capture, include_window_in_capture,
+    set_physical_bounds, CAPTURE_TOOLBAR_LABEL,
+};
 
 const STARTUP_TOOLBAR_WIDTH: u32 = 738;
 const STARTUP_TOOLBAR_HEIGHT: u32 = 147;
@@ -302,6 +305,21 @@ pub async fn hide_capture_toolbar(app: AppHandle) -> Result<(), String> {
             .map_err(|e| format!("Failed to hide capture toolbar: {}", e))?;
     }
     Ok(())
+}
+
+/// Set whether the capture toolbar is visible in screen recordings.
+/// When `show` is true, the toolbar will appear in recordings.
+/// When `show` is false, the toolbar is excluded from screen capture.
+#[command]
+pub async fn set_toolbar_recording_visibility(app: AppHandle, show: bool) -> Result<(), String> {
+    let Some(window) = app.get_webview_window(CAPTURE_TOOLBAR_LABEL) else {
+        return Ok(());
+    };
+    if show {
+        include_window_in_capture(&window)
+    } else {
+        exclude_window_from_capture(&window)
+    }
 }
 
 /// Close the capture toolbar window (actually destroys it).
