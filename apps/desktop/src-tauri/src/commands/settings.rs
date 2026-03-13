@@ -476,9 +476,10 @@ fn is_moonsnap_file(name: &str) -> bool {
             && bytes[8..10].iter().all(|b| b.is_ascii_digit())
             && bytes[11..17].iter().all(|b| b.is_ascii_digit())
             && bytes[17] == b'_'
+            && !name[18..name.len() - 4].is_empty()
             && name[18..name.len() - 4]
-                .chars()
-                .all(|c| c.is_ascii_hexdigit())
+                .bytes()
+                .all(|b| b.is_ascii_digit() || (b >= b'a' && b <= b'f'))
         {
             return true;
         }
@@ -549,5 +550,15 @@ mod tests {
     #[test]
     fn test_rejects_empty() {
         assert!(!is_moonsnap_file(""));
+    }
+
+    #[test]
+    fn test_rejects_empty_hex_segment() {
+        assert!(!is_moonsnap_file("2024-03-13_143022_.png"));
+    }
+
+    #[test]
+    fn test_rejects_uppercase_hex() {
+        assert!(!is_moonsnap_file("2024-03-13_143022_ABC123.png"));
     }
 }
