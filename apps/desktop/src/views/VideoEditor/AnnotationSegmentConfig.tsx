@@ -1,6 +1,13 @@
 import { useMemo } from 'react';
 import { Plus } from 'lucide-react';
 import { ColorPicker } from '@/components/ui/color-picker';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { Slider } from '@/components/ui/slider';
 import type { AnnotationSegment, AnnotationShape, AnnotationShapeType } from '@/types';
 import {
@@ -128,17 +135,27 @@ export function AnnotationSegmentConfig({
         <>
           <div>
             <span className="mb-2 block text-xs text-[var(--ink-muted)]">Shape Type</span>
-            <select
+            <Select
               value={selectedShape.shapeType}
-              onChange={(event) => onUpdateShape(selectedShape.id, { shapeType: event.target.value as AnnotationShapeType })}
-              className="h-8 w-full rounded-md border border-[var(--glass-border)] bg-[var(--polar-mist)] px-2 text-sm text-[var(--ink-dark)]"
+              onValueChange={(value) =>
+                onUpdateShape(selectedShape.id, { shapeType: value as AnnotationShapeType })
+              }
             >
-              {shapeTypeOptions.map((shapeType) => (
-                <option key={shapeType} value={shapeType}>
-                  {getAnnotationShapeLabel(shapeType)}
-                </option>
-              ))}
-            </select>
+              <SelectTrigger className="h-8 w-full border-[var(--glass-border)] bg-[var(--polar-mist)] px-2 text-sm text-[var(--ink-dark)]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent className="border-[var(--glass-border)] bg-[var(--glass-surface-dark)] text-[var(--ink-dark)]">
+                {shapeTypeOptions.map((shapeType) => (
+                  <SelectItem
+                    key={shapeType}
+                    value={shapeType}
+                    className="text-sm"
+                  >
+                    {getAnnotationShapeLabel(shapeType)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
 
           {selectedShape.shapeType === LEGACY_TEXT_SHAPE_TYPE && (

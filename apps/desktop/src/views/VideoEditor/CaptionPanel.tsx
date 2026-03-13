@@ -68,6 +68,13 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from '../../components/ui/popover';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '../../components/ui/select';
 import { Slider } from '../../components/ui/slider';
 import { Textarea } from '../../components/ui/textarea';
 import { CaptionOverlay } from '../../components/VideoEditor/CaptionOverlay';
@@ -207,6 +214,42 @@ function TranscriptionLanguageCombobox({
   );
 }
 
+interface WhisperModelSelectProps {
+  value: string;
+  models: Array<{ name: string; downloaded: boolean }>;
+  onChange: (value: string) => void;
+  className?: string;
+}
+
+function WhisperModelSelect({
+  value,
+  models,
+  onChange,
+  className,
+}: WhisperModelSelectProps) {
+  return (
+    <Select value={value} onValueChange={onChange}>
+      <SelectTrigger
+        className={cn(
+          'h-9 border-[var(--glass-border)] bg-[var(--polar-mist)] px-3 text-sm text-[var(--ink-dark)]',
+          className
+        )}
+      >
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent className="border-[var(--glass-border)] bg-[var(--glass-surface-dark)] text-[var(--ink-dark)]">
+        {models.map((model) => (
+          <SelectItem key={model.name} value={model.name}>
+            {`${model.name}${MODEL_SIZES[model.name] ? ` (${MODEL_SIZES[model.name]})` : ''}${
+              model.downloaded ? '' : ' - download'
+            }`}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
+}
+
 export function CaptionPanel({ videoPath }: CaptionPanelProps) {
   const project = useVideoEditorStore(selectProject);
   const captionSegments = useVideoEditorStore(selectCaptionSegments);
@@ -241,7 +284,6 @@ export function CaptionPanel({ videoPath }: CaptionPanelProps) {
   const setIsPlaying = useVideoEditorStore(selectSetIsPlaying);
   const togglePlayback = useVideoEditorStore(selectTogglePlayback);
 
-  const [showModelSelector, setShowModelSelector] = useState(false);
   const [showAllSegments, setShowAllSegments] = useState(true);
   const [isEditorOpen, setIsEditorOpen] = useState(false);
   const [editingSegmentId, setEditingSegmentId] = useState<string | null>(null);
@@ -1252,51 +1294,15 @@ export function CaptionPanel({ videoPath }: CaptionPanelProps) {
 
         {/* Model Selector */}
         <div className="mb-3">
-          <button
-            onClick={() => setShowModelSelector(!showModelSelector)}
-            className="w-full flex items-center justify-between px-3 py-2 bg-[var(--polar-mist)] border border-[var(--glass-border)] rounded-md text-sm text-[var(--ink-dark)] hover:bg-[var(--glass-highlight)] transition-colors"
-          >
-            <span className="flex items-center gap-2">
-              <span>{selectedModelName}</span>
-              {isModelDownloaded ? (
-                <Check className="w-3.5 h-3.5 text-green-500" />
-              ) : (
-                <Download className="w-3.5 h-3.5 text-[var(--ink-subtle)]" />
-              )}
-            </span>
-            <span className="text-xs text-[var(--ink-subtle)]">
-              {MODEL_SIZES[selectedModelName] || ''}
-            </span>
-          </button>
-
-          {showModelSelector && (
-            <div className="mt-1 bg-[var(--glass-surface-dark)] border border-[var(--glass-border)] rounded-md overflow-hidden">
-              {whisperModels.map((model) => (
-                <button
-                  key={model.name}
-                  onClick={() => {
-                    setSelectedModel(model.name);
-                    setShowModelSelector(false);
-                  }}
-                  className={`w-full flex items-center justify-between px-3 py-2 text-sm hover:bg-[var(--glass-highlight)] transition-colors ${
-                    model.name === selectedModelName
-                      ? 'bg-[var(--coral-50)] text-[var(--coral-400)]'
-                      : 'text-[var(--ink-dark)]'
-                  }`}
-                >
-                  <span className="flex items-center gap-2">
-                    <span>{model.name}</span>
-                    {model.downloaded && (
-                      <Check className="w-3.5 h-3.5 text-green-500" />
-                    )}
-                  </span>
-                  <span className="text-xs text-[var(--ink-subtle)]">
-                    {MODEL_SIZES[model.name] || ''}
-                  </span>
-                </button>
-              ))}
-            </div>
-          )}
+          <WhisperModelSelect
+            value={selectedModelName}
+            models={whisperModels}
+            onChange={setSelectedModel}
+            className="w-full"
+          />
+          <div className="mt-1 text-[10px] text-[var(--ink-subtle)]">
+            {isModelDownloaded ? 'Model downloaded' : 'Downloads on transcribe'}
+          </div>
         </div>
 
         <div className="mb-3">
@@ -1768,18 +1774,12 @@ export function CaptionPanel({ videoPath }: CaptionPanelProps) {
                       <span className="text-[10px] uppercase tracking-wide text-[var(--ink-subtle)] whitespace-nowrap">
                         Regen Model
                       </span>
-                      <select
+                      <WhisperModelSelect
                         value={regenerateModelName}
-                        onChange={(event) => setRegenerateModelName(event.target.value)}
-                        className="h-8 rounded-md border border-[var(--glass-border)] bg-[var(--polar-mist)] px-2 text-xs text-[var(--ink-dark)] min-w-[140px]"
-                      >
-                        {whisperModels.map((model) => (
-                          <option key={`regen-model-${model.name}`} value={model.name}>
-                            {model.name}
-                            {model.downloaded ? '' : ' (download)'}
-                          </option>
-                        ))}
-                      </select>
+                        models={whisperModels}
+                        onChange={setRegenerateModelName}
+                        className="h-8 min-w-[140px] text-xs"
+                      />
                       {!isRegenerateModelDownloaded && (
                         <span className="text-[10px] text-[var(--ink-subtle)] whitespace-nowrap">
                           Downloads on regenerate

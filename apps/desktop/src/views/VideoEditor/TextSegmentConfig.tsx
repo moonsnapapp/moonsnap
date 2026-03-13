@@ -4,11 +4,32 @@
  */
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { Italic } from 'lucide-react';
+import { Check, ChevronsUpDown, Italic } from 'lucide-react';
 import { TEXT_ANIMATION } from '@/constants';
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from '@/components/ui/command';
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { videoEditorLogger } from '@/utils/logger';
 import { getSystemFonts, getSystemFontsSnapshot } from '@/utils/systemFonts';
 import { getTypewriterCharsPerSecond, normalizeTextAnimation } from '@/utils/textSegmentAnimation';
+import { cn } from '@/lib/utils';
 import { Slider } from '../../components/ui/slider';
 import type { TextAnimation, TextSegment } from '../../types';
 
@@ -48,6 +69,7 @@ export function TextSegmentConfig({ segment, onUpdate, onDelete, onDone }: TextS
   const cachedFonts = getSystemFontsSnapshot();
   // System fonts state - start with defaults + current font
   const [systemFonts, setSystemFonts] = useState<string[]>(() => cachedFonts ?? []);
+  const [fontComboboxOpen, setFontComboboxOpen] = useState(false);
   const [isLoadingFonts, setIsLoadingFonts] = useState(false);
   const [hasRequestedFonts, setHasRequestedFonts] = useState(() => cachedFonts !== null);
   // Available font weights for the selected font
@@ -114,7 +136,7 @@ export function TextSegmentConfig({ segment, onUpdate, onDelete, onDone }: TextS
         videoEditorLogger.warn('Failed to load font weights:', err);
         setAvailableWeights([400, 700]); // Fallback
       });
-  }, [segment.fontFamily]);
+  }, [onUpdate, segment.fontFamily, segment.fontWeight]);
 
   return (
     <div className="space-y-4">
@@ -151,22 +173,63 @@ export function TextSegmentConfig({ segment, onUpdate, onDelete, onDone }: TextS
       {/* Font Family */}
       <div>
         <span className="text-xs text-[var(--ink-muted)] block mb-2">Font</span>
-        <select
-          value={segment.fontFamily}
-          onChange={(e) => onUpdate({ fontFamily: e.target.value })}
-          onFocus={ensureSystemFontsLoaded}
-          onPointerDown={ensureSystemFontsLoaded}
-          className="w-full h-8 bg-[var(--polar-mist)] border border-[var(--glass-border)] rounded-md text-sm text-[var(--ink-dark)] px-2"
+        <Popover
+          open={fontComboboxOpen}
+          onOpenChange={(open) => {
+            setFontComboboxOpen(open);
+            if (open) {
+              ensureSystemFontsLoaded();
+            }
+          }}
         >
-          {isLoadingFonts && systemFonts.length === 0 && (
-            <option value={segment.fontFamily}>Loading fonts...</option>
+          <PopoverTrigger asChild>
+            <button
+              type="button"
+              className="flex h-8 w-full items-center justify-between rounded-md border border-[var(--glass-border)] bg-[var(--polar-mist)] px-2 text-left text-sm text-[var(--ink-dark)]"
+              style={{ fontFamily: segment.fontFamily }}
+            >
+              <span className="truncate">{segment.fontFamily}</span>
+              <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 text-[var(--ink-subtle)]" />
+            </button>
+          </PopoverTrigger>
+          {fontComboboxOpen && (
+            <PopoverContent
+              className="w-[var(--radix-popover-trigger-width)] border-[var(--glass-border)] bg-[var(--glass-surface-dark)] p-0"
+              align="start"
+            >
+              <Command className="bg-transparent text-[var(--ink-dark)]">
+                <CommandInput placeholder="Search fonts..." className="h-9" />
+                <CommandList className="max-h-[260px]">
+                  <CommandEmpty>
+                    {isLoadingFonts ? 'Loading fonts...' : 'No font found.'}
+                  </CommandEmpty>
+                  <CommandGroup>
+                    {fontFamilies.map((font) => (
+                      <CommandItem
+                        key={font}
+                        value={font}
+                        onSelect={() => {
+                          onUpdate({ fontFamily: font });
+                          setFontComboboxOpen(false);
+                        }}
+                        style={{ fontFamily: font }}
+                        className="text-sm"
+                      >
+                        <Check
+                          className={cn(
+                            'mr-2 h-4 w-4',
+                            segment.fontFamily === font ? 'opacity-100' : 'opacity-0'
+                          )}
+                        />
+                        {font}
+                      </CommandItem>
+                    ))}
+                  </CommandGroup>
+                </CommandList>
+              </Command>
+            </PopoverContent>
           )}
-          {fontFamilies.map((font) => (
-            <option key={font} value={font} style={{ fontFamily: font }}>
-              {font}
-            </option>
-          ))}
-        </select>
+        </Popover>
       </div>
 
       {/* Font Size */}
@@ -189,17 +252,21 @@ export function TextSegmentConfig({ segment, onUpdate, onDelete, onDone }: TextS
         {/* Font Weight */}
         <div className="flex-1">
           <span className="text-xs text-[var(--ink-muted)] block mb-2">Weight</span>
-          <select
-            value={segment.fontWeight}
-            onChange={(e) => onUpdate({ fontWeight: parseInt(e.target.value) })}
-            className="w-full h-8 bg-[var(--polar-mist)] border border-[var(--glass-border)] rounded-md text-sm text-[var(--ink-dark)] px-2"
+          <Select
+            value={String(segment.fontWeight)}
+            onValueChange={(value) => onUpdate({ fontWeight: Number.parseInt(value, 10) })}
           >
-            {availableWeights.map((weight) => (
-              <option key={weight} value={weight}>
-                {WEIGHT_LABELS[weight] || `Weight ${weight}`}
-              </option>
-            ))}
-          </select>
+            <SelectTrigger className="h-8 w-full border-[var(--glass-border)] bg-[var(--polar-mist)] px-2 text-sm text-[var(--ink-dark)]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent className="border-[var(--glass-border)] bg-[var(--glass-surface-dark)] text-[var(--ink-dark)]">
+              {availableWeights.map((weight) => (
+                <SelectItem key={weight} value={String(weight)}>
+                  {WEIGHT_LABELS[weight] || `Weight ${weight}`}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
 
         {/* Italic Toggle */}
@@ -247,10 +314,10 @@ export function TextSegmentConfig({ segment, onUpdate, onDelete, onDone }: TextS
       {/* Animation Effect */}
       <div>
         <span className="text-xs text-[var(--ink-muted)] block mb-2">Animation</span>
-        <select
+        <Select
           value={animation}
-          onChange={(e) => {
-            const nextAnimation = e.target.value as TextAnimation;
+          onValueChange={(value) => {
+            const nextAnimation = value as TextAnimation;
             const updates: Partial<TextSegment> = { animation: nextAnimation };
             if (nextAnimation === 'typeWriter' && segment.typewriterCharsPerSecond == null) {
               updates.typewriterCharsPerSecond = TEXT_ANIMATION.DEFAULT_TYPEWRITER_CHARS_PER_SECOND;
@@ -260,14 +327,18 @@ export function TextSegmentConfig({ segment, onUpdate, onDelete, onDone }: TextS
             }
             onUpdate(updates);
           }}
-          className="w-full h-8 bg-[var(--polar-mist)] border border-[var(--glass-border)] rounded-md text-sm text-[var(--ink-dark)] px-2"
         >
-          {ANIMATION_OPTIONS.map((option) => (
-            <option key={option.value} value={option.value}>
-              {option.label}
-            </option>
-          ))}
-        </select>
+          <SelectTrigger className="h-8 w-full border-[var(--glass-border)] bg-[var(--polar-mist)] px-2 text-sm text-[var(--ink-dark)]">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent className="border-[var(--glass-border)] bg-[var(--glass-surface-dark)] text-[var(--ink-dark)]">
+            {ANIMATION_OPTIONS.map((option) => (
+              <SelectItem key={option.value} value={option.value}>
+                {option.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
 
       {animation === 'typeWriter' && (

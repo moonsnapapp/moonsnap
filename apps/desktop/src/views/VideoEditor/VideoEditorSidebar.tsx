@@ -36,6 +36,13 @@ import {
 } from '../../stores/videoEditor/selectors';
 import { BackgroundSettings } from '../../components/VideoEditor/BackgroundSettings';
 import { ProFeature } from '../../components/ProFeature';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '../../components/ui/select';
 import { AnnotationSegmentConfig } from './AnnotationSegmentConfig';
 import { ZoomRegionConfig } from './ZoomRegionConfig';
 import { MaskSegmentConfig } from './MaskSegmentConfig';
@@ -171,17 +178,22 @@ export function VideoEditorSidebar({ project, onOpenCropDialog }: VideoEditorSid
                           This segment already matches the default scene mode. Delete it to remove the redundant override.
                         </p>
                       )}
-                      <select
-                        value={isRedundantDefaultSegment ? '' : segment.mode}
-                        onChange={(e) => updateSceneSegment(selectedSceneSegmentId, { mode: e.target.value as SceneMode })}
-                        className="w-full h-8 bg-[var(--polar-mist)] border border-[var(--glass-border)] rounded-md text-sm text-[var(--ink-dark)] px-2"
+                      <Select
+                        value={isRedundantDefaultSegment ? undefined : segment.mode}
+                        onValueChange={(value) =>
+                          updateSceneSegment(selectedSceneSegmentId, {
+                            mode: value as SceneMode,
+                          })
+                        }
                       >
-                        {isRedundantDefaultSegment && (
-                          <option value="" disabled>No override selected</option>
-                        )}
-                        <option value="cameraOnly">Camera Only</option>
-                        <option value="screenOnly">Screen Only</option>
-                      </select>
+                        <SelectTrigger className="h-8 w-full border-[var(--glass-border)] bg-[var(--polar-mist)] px-2 text-sm text-[var(--ink-dark)]">
+                          <SelectValue placeholder="No override selected" />
+                        </SelectTrigger>
+                        <SelectContent className="border-[var(--glass-border)] bg-[var(--glass-surface-dark)] text-[var(--ink-dark)]">
+                          <SelectItem value="cameraOnly">Camera Only</SelectItem>
+                          <SelectItem value="screenOnly">Screen Only</SelectItem>
+                        </SelectContent>
+                      </Select>
                     </div>
                   </div>
                 </div>

@@ -4,6 +4,13 @@
 import { useEffect, useMemo } from 'react';
 import { Crop, X, Lock } from 'lucide-react';
 import { Button } from '../../../components/ui/button';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '../../../components/ui/select';
 import { AudioControlsPanel } from './AudioControlsPanel';
 import type { VideoProject, ExportConfig, ExportFormat, AudioTrackSettings } from '../../../types';
 import { calculateCompositionOutputSize } from '@/utils/compositionBounds';
@@ -62,17 +69,23 @@ export function ExportConfigPanel({ project, onUpdateExportConfig, onUpdateAudio
       {/* Format */}
       <div>
         <span className="text-xs text-[var(--ink-muted)] block mb-2">Format</span>
-        <select
+        <Select
           value={project.export.format}
-          onChange={(e) => onUpdateExportConfig({ format: e.target.value as ExportFormat })}
-          className="w-full h-8 bg-[var(--polar-mist)] border border-[var(--glass-border)] rounded-md text-sm text-[var(--ink-dark)] px-2"
+          onValueChange={(value) =>
+            onUpdateExportConfig({ format: value as ExportFormat })
+          }
         >
-          <option value="mp4">MP4</option>
-          <option value="webm">WebM</option>
-          <option value="gif" disabled={!isPro}>
-            {isPro ? 'GIF' : 'GIF (Pro)'}
-          </option>
-        </select>
+          <SelectTrigger className="h-8 w-full border-[var(--glass-border)] bg-[var(--polar-mist)] px-2 text-sm text-[var(--ink-dark)]">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent className="border-[var(--glass-border)] bg-[var(--glass-surface-dark)] text-[var(--ink-dark)]">
+            <SelectItem value="mp4">MP4</SelectItem>
+            <SelectItem value="webm">WebM</SelectItem>
+            <SelectItem value="gif" disabled={!isPro}>
+              {isPro ? 'GIF' : 'GIF (Pro)'}
+            </SelectItem>
+          </SelectContent>
+        </Select>
         {!isPro && project.export.format === 'gif' && (
           <div className="flex items-center gap-1.5 mt-1.5 text-xs text-[var(--coral-500)]">
             <Lock size={12} />
@@ -84,13 +97,19 @@ export function ExportConfigPanel({ project, onUpdateExportConfig, onUpdateAudio
       {/* FPS */}
       <div>
         <span className="text-xs text-[var(--ink-muted)] block mb-2">Frame Rate</span>
-        <select
-          value={sourceFps}
+        <Select
+          value={String(sourceFps)}
           disabled
-          className="w-full h-8 bg-[var(--polar-mist)] border border-[var(--glass-border)] rounded-md text-sm text-[var(--ink-dark)] px-2"
         >
-          <option value={sourceFps}>Match Source ({sourceFps} fps)</option>
-        </select>
+          <SelectTrigger className="h-8 w-full border-[var(--glass-border)] bg-[var(--polar-mist)] px-2 text-sm text-[var(--ink-dark)]">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent className="border-[var(--glass-border)] bg-[var(--glass-surface-dark)] text-[var(--ink-dark)]">
+            <SelectItem value={String(sourceFps)}>
+              Match Source ({sourceFps} fps)
+            </SelectItem>
+          </SelectContent>
+        </Select>
         <p className="mt-1.5 text-[11px] text-[var(--ink-muted)]">
           Frame-rate conversion is not supported yet, so exports match the source.
         </p>
@@ -99,14 +118,13 @@ export function ExportConfigPanel({ project, onUpdateExportConfig, onUpdateAudio
       {/* Output Canvas */}
       <div>
         <span className="text-xs text-[var(--ink-muted)] block mb-2">Output Canvas</span>
-        <select
+        <Select
           value={
             project.export.composition?.mode === 'manual' && project.export.composition?.width && project.export.composition?.height
               ? `${project.export.composition.width}x${project.export.composition.height}`
               : 'auto'
           }
-          onChange={(e) => {
-            const value = e.target.value;
+          onValueChange={(value) => {
             if (value === 'auto') {
               onUpdateExportConfig({
                 composition: { mode: 'auto', aspectRatio: null, aspectPreset: null, width: null, height: null }
@@ -118,15 +136,19 @@ export function ExportConfigPanel({ project, onUpdateExportConfig, onUpdateAudio
               });
             }
           }}
-          className="w-full h-8 bg-[var(--polar-mist)] border border-[var(--glass-border)] rounded-md text-sm text-[var(--ink-dark)] px-2"
         >
-          <option value="auto">Match Source</option>
-          <option value="3840x2160">4K Canvas (3840x2160)</option>
-          <option value="1920x1080">1080p Canvas (1920x1080)</option>
-          <option value="1280x720">720p Canvas (1280x720)</option>
-          <option value="1080x1920">Portrait Canvas (1080x1920)</option>
-          <option value="1080x1080">Square Canvas (1080x1080)</option>
-        </select>
+          <SelectTrigger className="h-8 w-full border-[var(--glass-border)] bg-[var(--polar-mist)] px-2 text-sm text-[var(--ink-dark)]">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent className="border-[var(--glass-border)] bg-[var(--glass-surface-dark)] text-[var(--ink-dark)]">
+            <SelectItem value="auto">Match Source</SelectItem>
+            <SelectItem value="3840x2160">4K Canvas (3840x2160)</SelectItem>
+            <SelectItem value="1920x1080">1080p Canvas (1920x1080)</SelectItem>
+            <SelectItem value="1280x720">720p Canvas (1280x720)</SelectItem>
+            <SelectItem value="1080x1920">Portrait Canvas (1080x1920)</SelectItem>
+            <SelectItem value="1080x1080">Square Canvas (1080x1080)</SelectItem>
+          </SelectContent>
+        </Select>
         <p className="mt-1.5 text-[11px] text-[var(--ink-muted)]">
           The video keeps its aspect ratio and is fit inside the output canvas.
         </p>
