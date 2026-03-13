@@ -4,7 +4,7 @@ use tauri::{command, AppHandle, Manager, WebviewUrl, WebviewWindowBuilder};
 
 use super::{
     apply_dwm_transparency, exclude_window_from_capture, set_physical_bounds,
-    COUNTDOWN_WINDOW_LABEL, RECORDING_BORDER_LABEL,
+    COUNTDOWN_WINDOW_LABEL, RECORDING_BORDER_LABEL, RECORDING_CONTROLS_LABEL,
 };
 
 // ============================================================================
@@ -110,6 +110,101 @@ pub async fn hide_recording_border(app: AppHandle) -> Result<(), String> {
         window
             .close()
             .map_err(|e| format!("Failed to close recording border: {}", e))?;
+    }
+    Ok(())
+}
+
+// ============================================================================
+// Recording Controls Window
+// ============================================================================
+
+const RECORDING_CONTROLS_INITIAL_WIDTH: u32 = 328;
+const RECORDING_CONTROLS_INITIAL_HEIGHT: u32 = 52;
+
+/// Show the recording controls window used while the main toolbar is excluded from capture.
+#[command]
+pub async fn show_recording_controls(
+    app: AppHandle,
+    x: i32,
+    y: i32,
+    _width: u32,
+    _height: u32,
+) -> Result<(), String> {
+    if let Some(window) = app.get_webview_window(RECORDING_CONTROLS_LABEL) {
+        set_physical_bounds(
+            &window,
+            x,
+            y,
+            RECORDING_CONTROLS_INITIAL_WIDTH,
+            RECORDING_CONTROLS_INITIAL_HEIGHT,
+        )?;
+        window
+            .show()
+            .map_err(|e| format!("Failed to show recording controls: {}", e))?;
+        if let Err(e) = apply_dwm_transparency(&window) {
+            log::warn!(
+                "Failed to re-apply DWM transparency to recording controls: {}",
+                e
+            );
+        }
+        exclude_window_from_capture(&window)?;
+        window
+            .set_always_on_top(true)
+            .map_err(|e| format!("Failed to keep recording controls on top: {}", e))?;
+        return Ok(());
+    }
+
+    let url = WebviewUrl::App("windows/recording-controls.html".into());
+
+    let window = WebviewWindowBuilder::new(&app, RECORDING_CONTROLS_LABEL, url)
+        .title("Recording Controls")
+        .inner_size(
+            RECORDING_CONTROLS_INITIAL_WIDTH as f64,
+            RECORDING_CONTROLS_INITIAL_HEIGHT as f64,
+        )
+        .transparent(true)
+        .decorations(false)
+        .always_on_top(true)
+        .skip_taskbar(true)
+        .resizable(false)
+        .shadow(false)
+        .visible(false)
+        .focused(false)
+        .build()
+        .map_err(|e| format!("Failed to create recording controls window: {}", e))?;
+
+    set_physical_bounds(
+        &window,
+        x,
+        y,
+        RECORDING_CONTROLS_INITIAL_WIDTH,
+        RECORDING_CONTROLS_INITIAL_HEIGHT,
+    )?;
+
+    if let Err(e) = apply_dwm_transparency(&window) {
+        log::warn!(
+            "Failed to apply DWM transparency to recording controls: {}",
+            e
+        );
+    }
+
+    window
+        .show()
+        .map_err(|e| format!("Failed to show recording controls window: {}", e))?;
+    exclude_window_from_capture(&window)?;
+    window
+        .set_always_on_top(true)
+        .map_err(|e| format!("Failed to set recording controls always on top: {}", e))?;
+
+    Ok(())
+}
+
+#[command]
+pub async fn close_recording_controls(app: AppHandle) -> Result<(), String> {
+    if let Some(window) = app.get_webview_window(RECORDING_CONTROLS_LABEL) {
+        window
+            .close()
+            .map_err(|e| format!("Failed to close recording controls: {}", e))?;
     }
     Ok(())
 }

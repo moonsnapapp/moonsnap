@@ -77,6 +77,8 @@ interface CaptureToolbarProps {
   onDimensionChange?: (width: number, height: number) => void;
   /** Open settings modal */
   onOpenSettings?: () => void;
+  /** Alternate chrome for recording-only surfaces */
+  minimalChrome?: 'window' | 'floating';
 }
 
 function formatTime(seconds: number): string {
@@ -110,6 +112,7 @@ export const CaptureToolbar: React.FC<CaptureToolbarProps> = ({
   countdownSeconds,
   onDimensionChange,
   onOpenSettings,
+  minimalChrome = 'window',
 }) => {
   const isGif = captureType === 'gif' || format === 'gif';
   const isRecording = mode === 'recording' || mode === 'paused';
@@ -160,7 +163,11 @@ export const CaptureToolbar: React.FC<CaptureToolbarProps> = ({
   // Render recording UI
   if (isRecording || isStarting || isProcessing || isError) {
     return (
-      <div className="glass-toolbar glass-toolbar--minimal pointer-events-auto">
+      <div
+        className={`glass-toolbar glass-toolbar--minimal ${
+          minimalChrome === 'floating' ? 'glass-toolbar--minimal-floating' : ''
+        } pointer-events-auto`}
+      >
         {/* Recording status */}
         {isRecording && (
           <div className="glass-recording-section">

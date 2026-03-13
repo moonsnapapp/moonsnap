@@ -315,11 +315,20 @@ pub async fn set_toolbar_recording_visibility(app: AppHandle, show: bool) -> Res
     let Some(window) = app.get_webview_window(CAPTURE_TOOLBAR_LABEL) else {
         return Ok(());
     };
-    if show {
+    let result = if show {
         include_window_in_capture(&window)
     } else {
         exclude_window_from_capture(&window)
+    };
+
+    if let Err(e) = apply_dwm_transparency(&window) {
+        log::warn!(
+            "Failed to re-apply DWM transparency after capture affinity change: {}",
+            e
+        );
     }
+
+    result
 }
 
 /// Close the capture toolbar window (actually destroys it).
@@ -335,10 +344,22 @@ pub async fn close_capture_toolbar(app: AppHandle) -> Result<(), String> {
 
 /// Show and bring the capture toolbar to front.
 #[command]
-pub async fn bring_capture_toolbar_to_front(app: AppHandle) -> Result<(), String> {
+pub async fn bring_capture_toolbar_to_front(
+    app: AppHandle,
+    include_in_capture: Option<bool>,
+    focus: Option<bool>,
+) -> Result<(), String> {
     let Some(window) = app.get_webview_window(CAPTURE_TOOLBAR_LABEL) else {
         return Ok(());
     };
+
+    if let Some(include_in_capture) = include_in_capture {
+        if include_in_capture {
+            include_window_in_capture(&window)?;
+        } else {
+            exclude_window_from_capture(&window)?;
+        }
+    }
 
     #[cfg(target_os = "windows")]
     {
@@ -361,7 +382,9 @@ pub async fn bring_capture_toolbar_to_front(app: AppHandle) -> Result<(), String
                     0,
                     SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW,
                 );
-                let _ = SetForegroundWindow(HWND(hwnd.0));
+                if focus.unwrap_or(true) {
+                    let _ = SetForegroundWindow(HWND(hwnd.0));
+                }
             }
         }
     }
@@ -370,8 +393,21 @@ pub async fn bring_capture_toolbar_to_front(app: AppHandle) -> Result<(), String
         .show()
         .map_err(|e| format!("Failed to show toolbar: {}", e))?;
     window
-        .set_focus()
-        .map_err(|e| format!("Failed to focus toolbar: {}", e))?;
+        .set_always_on_top(true)
+        .map_err(|e| format!("Failed to set toolbar always on top: {}", e))?;
+
+    if let Err(e) = apply_dwm_transparency(&window) {
+        log::warn!(
+            "Failed to re-apply DWM transparency when bringing toolbar to front: {}",
+            e
+        );
+    }
+
+    if focus.unwrap_or(true) {
+        window
+            .set_focus()
+            .map_err(|e| format!("Failed to focus toolbar: {}", e))?;
+    }
 
     Ok(())
 }

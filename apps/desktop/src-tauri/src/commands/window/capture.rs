@@ -5,8 +5,8 @@ use std::sync::atomic::Ordering;
 use tauri::{command, AppHandle, Emitter, Manager};
 
 use super::{
-    close_all_capture_windows, close_recording_border_window, restore_main_if_visible,
-    reveal_library_window, MAIN_WAS_VISIBLE,
+    close_all_capture_windows, close_recording_border_window, close_recording_controls_window,
+    restore_main_if_visible, reveal_library_window, MAIN_WAS_VISIBLE,
 };
 
 /// Trigger the capture overlay - uses DirectComposition overlay for all capture types.
@@ -168,6 +168,7 @@ pub fn trigger_capture_with_options(
                         OverlayAction::Cancelled => {
                             // User cancelled - close recording border only (toolbar persists)
                             close_recording_border_window(&app_clone);
+                            close_recording_controls_window(&app_clone);
                             restore_main_if_visible(&app_clone);
                         },
                     }
@@ -175,11 +176,13 @@ pub fn trigger_capture_with_options(
                 Ok(None) => {
                     // Cancelled (no selection made) - toolbar persists, just restore main
                     close_recording_border_window(&app_clone);
+                    close_recording_controls_window(&app_clone);
                     restore_main_if_visible(&app_clone);
                 },
                 Err(e) => {
                     log::error!("Capture overlay error: {}", e);
                     close_recording_border_window(&app_clone);
+                    close_recording_controls_window(&app_clone);
                     restore_main_if_visible(&app_clone);
                 },
             }

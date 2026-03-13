@@ -35,6 +35,10 @@ import { useWebcamCoordination } from '../hooks/useWebcamCoordination';
 import { useToolbarPositioning } from '../hooks/useToolbarPositioning';
 import type { CaptureType } from '../types';
 import { toolbarLogger } from '../utils/logger';
+import {
+  isAutoStartRecordingSession,
+  shouldSuppressToolbarUntilRecording,
+} from './captureToolbarFlow';
 import { RecordingModeChooser } from '../components/CaptureToolbar/RecordingModeChooser';
 
 interface StartupToolbarContext {
@@ -58,6 +62,7 @@ const CaptureToolbarWindow: React.FC = () => {
     loadSettings,
     setActiveMode: setCaptureType,
     setSourceMode: setCaptureSource,
+    promptRecordingMode,
   } = useCaptureSettingsStore();
 
   const { settings: webcamSettings } = useWebcamSettingsStore();
@@ -86,6 +91,8 @@ const CaptureToolbarWindow: React.FC = () => {
 
   const { closeWebcamPreview, openWebcamPreviewIfEnabled } = useWebcamCoordination();
 
+  const closeWindowOnCompleteRef = useRef(false);
+
   const {
     mode,
     setMode,
@@ -95,7 +102,7 @@ const CaptureToolbarWindow: React.FC = () => {
     errorMessage,
     countdownSeconds,
     recordingInitiatedRef,
-  } = useRecordingEvents();
+  } = useRecordingEvents({ closeWindowOnCompleteRef });
 
   const [showModeChooser, setShowModeChooser] = useState(false);
   const skipModePromptRef = useRef(false);
@@ -130,16 +137,26 @@ const CaptureToolbarWindow: React.FC = () => {
     });
   }, [showToolbarInRecording]);
 
-  const suppressToolbarUntilRecording =
-    (autoStartRecording || Boolean(selectionBounds.autoStartRecording)) &&
-    (mode === 'selection' || mode === 'starting');
+  const suppressToolbarUntilRecording = shouldSuppressToolbarUntilRecording({
+    autoStartRecording,
+    selectionAutoStartRecording: selectionBounds.autoStartRecording,
+    captureType,
+    promptRecordingMode,
+    mode,
+  });
+
+  const suppressPrimaryToolbarDuringRecording = Boolean(
+    selectionConfirmed &&
+    !showToolbarInRecording &&
+    (mode === 'starting' || mode === 'recording' || mode === 'paused' || mode === 'processing')
+  );
 
   useToolbarPositioning({
     containerRef,
     contentRef,
     selectionConfirmed,
     mode,
-    suppressWindowShow: suppressToolbarUntilRecording,
+    suppressWindowShow: suppressToolbarUntilRecording || suppressPrimaryToolbarDuringRecording,
   });
 
   useEffect(() => {
@@ -155,6 +172,12 @@ const CaptureToolbarWindow: React.FC = () => {
       autoStartRecordingTriggeredRef.current = false;
     }
   }, [autoStartRecording]);
+
+  useEffect(() => {
+    closeWindowOnCompleteRef.current = isAutoStartRecordingSession(
+      selectionConfirmed ? selectionBounds.autoStartRecording : false
+    );
+  }, [selectionBounds.autoStartRecording, selectionConfirmed]);
 
   useEffect(() => {
     const handleBlur = () => {
@@ -235,7 +258,7 @@ const CaptureToolbarWindow: React.FC = () => {
         await invoke('capture_overlay_confirm', { action: 'screenshot' });
       } else {
         // Show mode chooser before video recording if enabled
-        if (captureType === 'video' && !skipModePromptRef.current && useCaptureSettingsStore.getState().promptRecordingMode) {
+        if (captureType === 'video' && !skipModePromptRef.current && promptRecordingMode) {
           setShowModeChooser(true);
           return;
         }
@@ -340,7 +363,7 @@ const CaptureToolbarWindow: React.FC = () => {
       setAutoStartRecording(false);
       setMode('selection');
     }
-  }, [captureType, captureSource, selectionConfirmed, settings, webcamSettings.enabled, selectionBoundsRef, recordingInitiatedRef, setAutoStartRecording, setMode]);
+  }, [captureType, captureSource, promptRecordingMode, selectionConfirmed, settings, webcamSettings.enabled, selectionBoundsRef, recordingInitiatedRef, setAutoStartRecording, setMode]);
 
   const handleRedo = useCallback(async () => {
     try {
@@ -557,15 +580,44 @@ const CaptureToolbarWindow: React.FC = () => {
   useEffect(() => {
     if (
       !selectionConfirmed ||
-      (mode !== 'recording' && mode !== 'paused')
+      (mode !== 'starting' && mode !== 'recording' && mode !== 'paused' && mode !== 'processing')
     ) {
       return;
     }
 
-    const timeoutId = window.setTimeout(() => {
+    const timeoutId = window.setTimeout(async () => {
       const currentWindow = getCurrentWebviewWindow();
-      currentWindow.show().catch((e) => {
-        toolbarLogger.error('Failed to show toolbar during recording:', e);
+      const showToolbarInCapture = useCaptureSettingsStore.getState().showToolbarInRecording;
+
+      if (!showToolbarInCapture) {
+        try {
+          const [position, size] = await Promise.all([
+            currentWindow.outerPosition(),
+            currentWindow.outerSize(),
+          ]);
+
+          await invoke('show_recording_controls', {
+            x: position.x,
+            y: position.y,
+            width: size.width,
+            height: size.height,
+          });
+          await currentWindow.hide();
+        } catch (e) {
+          toolbarLogger.error('Failed to swap to recording controls window:', e);
+        }
+        return;
+      }
+
+      invoke('close_recording_controls').catch((e) => {
+        toolbarLogger.error('Failed to close recording controls window:', e);
+      });
+
+      invoke('bring_capture_toolbar_to_front', {
+        includeInCapture: true,
+        focus: false,
+      }).catch((e) => {
+        toolbarLogger.error('Failed to refresh toolbar during recording:', e);
       });
 
       if (useCaptureSettingsStore.getState().snapToolbarToSelection) {
@@ -579,6 +631,16 @@ const CaptureToolbarWindow: React.FC = () => {
       clearTimeout(timeoutId);
     };
   }, [mode, selectionBounds, selectionConfirmed]);
+
+  useEffect(() => {
+    if (mode === 'starting' || mode === 'recording' || mode === 'paused' || mode === 'processing') {
+      return;
+    }
+
+    invoke('close_recording_controls').catch((e) => {
+      toolbarLogger.error('Failed to close recording controls window after recording:', e);
+    });
+  }, [mode]);
 
   const handleTitlebarClose = useCallback(async () => {
     try {

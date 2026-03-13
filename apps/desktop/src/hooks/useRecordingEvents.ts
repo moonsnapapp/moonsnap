@@ -38,7 +38,13 @@ interface UseRecordingEventsReturn {
   isRecordingActiveRef: React.MutableRefObject<boolean>;
 }
 
-export function useRecordingEvents(): UseRecordingEventsReturn {
+interface UseRecordingEventsOptions {
+  closeWindowOnCompleteRef?: React.MutableRefObject<boolean>;
+}
+
+export function useRecordingEvents(
+  options: UseRecordingEventsOptions = {}
+): UseRecordingEventsReturn {
   const [mode, setModeState] = useState<ToolbarMode>('selection');
   const [format, setFormat] = useState<RecordingFormat>('mp4');
   const [elapsedTime, setElapsedTime] = useState(0);
@@ -56,6 +62,7 @@ export function useRecordingEvents(): UseRecordingEventsReturn {
   // - timerStartedAt: timestamp when current timer segment started (null if paused)
   const timerBaseTimeRef = useRef(0);
   const timerStartedAtRef = useRef<number | null>(null);
+  const closeWindowOnCompleteRef = options.closeWindowOnCompleteRef;
 
   // Wrapper to update both state and ref
   const setMode = useCallback((newMode: ToolbarMode) => {
@@ -94,9 +101,9 @@ export function useRecordingEvents(): UseRecordingEventsReturn {
     };
   }, [mode]);
 
-  // Listen for recording state changes
-  // IMPORTANT: Empty dependency array - listeners set up once and never recreated
-  // This prevents race conditions where listeners are recreated during recording
+  // Listen for recording state changes.
+  // The close-on-complete ref is stable for the window lifetime, so keeping it
+  // in the dependency list does not churn listeners during normal recording.
   useEffect(() => {
     let unlistenState: UnlistenFn | null = null;
     let unlistenFormat: UnlistenFn | null = null;
@@ -154,11 +161,12 @@ export function useRecordingEvents(): UseRecordingEventsReturn {
             setProgress(state.progress);
             break;
 
-          case 'completed':
+          case 'completed': {
             recordingLogger.info('Recording COMPLETED. Backend duration:', state.durationSecs, 's, file:', state.outputPath);
             isRecordingActiveRef.current = false;
             timerBaseTimeRef.current = 0;
             timerStartedAtRef.current = null;
+            const closeWindowOnComplete = closeWindowOnCompleteRef?.current ?? false;
             setMode('selection');
             setElapsedTime(0);
             setProgress(0);
@@ -179,6 +187,17 @@ export function useRecordingEvents(): UseRecordingEventsReturn {
               emit('reset-to-startup', null).catch(
                 createErrorHandler({ operation: 'reset toolbar to startup', silent: true })
               ).finally(() => {
+                if (closeWindowOnCompleteRef) {
+                  closeWindowOnCompleteRef.current = false;
+                }
+
+                if (closeWindowOnComplete) {
+                  currentWindow.close().catch(
+                    createErrorHandler({ operation: 'close toolbar window', silent: true })
+                  );
+                  return;
+                }
+
                 currentWindow.show().catch(
                   createErrorHandler({ operation: 'show toolbar window', silent: true })
                 );
@@ -188,10 +207,14 @@ export function useRecordingEvents(): UseRecordingEventsReturn {
               });
             });
             break;
+          }
           case 'idle':
             isRecordingActiveRef.current = false;
             timerBaseTimeRef.current = 0;
             timerStartedAtRef.current = null;
+            if (closeWindowOnCompleteRef) {
+              closeWindowOnCompleteRef.current = false;
+            }
             setMode('selection');
             setElapsedTime(0);
             setProgress(0);
@@ -219,6 +242,9 @@ export function useRecordingEvents(): UseRecordingEventsReturn {
             isRecordingActiveRef.current = false;
             timerBaseTimeRef.current = 0;
             timerStartedAtRef.current = null;
+            if (closeWindowOnCompleteRef) {
+              closeWindowOnCompleteRef.current = false;
+            }
             setErrorMessage(state.message);
             setMode('error');
             invoke('hide_recording_border').catch(
@@ -286,7 +312,7 @@ export function useRecordingEvents(): UseRecordingEventsReturn {
       unlistenReselecting?.();
       unlistenCountdownTick?.();
     };
-  }, []); // Empty deps - listeners must not be recreated
+  }, [closeWindowOnCompleteRef, setMode]);
 
   return {
     mode,
