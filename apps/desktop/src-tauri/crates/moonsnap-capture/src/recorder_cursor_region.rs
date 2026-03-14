@@ -3,7 +3,7 @@
 //! Keeps capture-mode interpretation in `moonsnap-capture` while allowing the app shell
 //! to inject platform/app-specific lookups (window rect + monitor bounds).
 
-use moonsnap_domain::recording::RecordingMode;
+use moonsnap_capture_types::recording::RecordingMode;
 
 /// Cursor normalization region in screen coordinates `(x, y, width, height)`.
 pub type CursorRegion = (i32, i32, u32, u32);
@@ -85,7 +85,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::resolve_cursor_region;
-    use moonsnap_domain::recording::RecordingMode;
+    use moonsnap_capture_types::recording::RecordingMode;
     use std::cell::Cell;
 
     #[test]

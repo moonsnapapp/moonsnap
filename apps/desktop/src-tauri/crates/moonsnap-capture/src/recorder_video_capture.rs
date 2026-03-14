@@ -2,7 +2,7 @@
 
 use crate::capture_source::{CaptureSource, CapturedFrame};
 use crate::recording_runtime::find_monitor_for_point;
-use moonsnap_domain::recording::RecordingMode;
+use moonsnap_capture_types::recording::RecordingMode;
 
 /// Planned capture selection derived from recording mode.
 #[derive(Debug, Clone, Copy)]
@@ -134,7 +134,7 @@ pub fn resolve_capture_dimensions(
 #[cfg(test)]
 mod tests {
     use super::{resolve_capture_dimensions, CapturePlan};
-    use moonsnap_domain::recording::RecordingMode;
+    use moonsnap_capture_types::recording::RecordingMode;
 
     #[test]
     fn capture_plan_from_window_mode() {

@@ -1,6 +1,6 @@
 //! Shared helpers for recording progress emission.
 
-use moonsnap_domain::recording::RecordingState;
+use moonsnap_capture_types::recording::RecordingState;
 
 /// Emit a periodic `Recording` state using a caller-provided callback.
 ///
@@ -30,7 +30,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::maybe_emit_recording_progress;
-    use moonsnap_domain::recording::RecordingState;
+    use moonsnap_capture_types::recording::RecordingState;
 
     #[test]
     fn emits_on_cadence() {

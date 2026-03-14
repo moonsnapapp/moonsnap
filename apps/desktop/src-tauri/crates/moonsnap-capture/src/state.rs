@@ -12,7 +12,7 @@ use std::time::Instant;
 use crossbeam_channel::{bounded, Receiver, Sender};
 use lazy_static::lazy_static;
 
-use moonsnap_domain::recording::{RecordingSettings, RecordingState};
+use moonsnap_capture_types::recording::{RecordingSettings, RecordingState};
 
 lazy_static! {
     /// Global recording controller.
@@ -344,7 +344,7 @@ impl Default for RecordingController {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use moonsnap_domain::recording::RecordingFormat;
+    use moonsnap_capture_types::recording::RecordingFormat;
 
     fn active_controller(
         format: RecordingFormat,

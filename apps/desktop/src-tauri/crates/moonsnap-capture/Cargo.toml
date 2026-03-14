@@ -16,7 +16,7 @@ scap-direct3d = { path = "../scap-direct3d" }
 scap-targets = { path = "../scap-targets" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-moonsnap-domain = { path = "../moonsnap-domain" }
+moonsnap-capture-types = { path = "../moonsnap-capture-types" }
 moonsnap-media = { path = "../moonsnap-media" }
 wasapi = "0.22"
 

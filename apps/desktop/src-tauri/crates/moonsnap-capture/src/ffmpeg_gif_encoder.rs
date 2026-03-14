@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use std::process::Stdio;
 
 use crate::gif_encoder::GifFrame;
-pub use moonsnap_domain::recording::GifQualityPreset;
+pub use moonsnap_capture_types::recording::GifQualityPreset;
 use moonsnap_media::ffmpeg::{create_hidden_command, find_ffmpeg};
 
 /// Get the FFmpeg filter string for a GIF quality preset.

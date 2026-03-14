@@ -12,7 +12,7 @@
 #![allow(dead_code)]
 
 use crossbeam_channel::Sender;
-use moonsnap_domain::recording::AudioOutputDevice;
+use moonsnap_capture_types::recording::AudioOutputDevice;
 use std::collections::VecDeque;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;

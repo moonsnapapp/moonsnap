@@ -4,7 +4,7 @@
 
 use std::path::{Path, PathBuf};
 
-use moonsnap_domain::recording::RecordingMode;
+use moonsnap_capture_types::recording::RecordingMode;
 use moonsnap_media::ffmpeg::{create_hidden_command, find_ffmpeg, find_ffprobe};
 
 // ============================================================================

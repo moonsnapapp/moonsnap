@@ -8,7 +8,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 use crossbeam_channel::Receiver;
-use moonsnap_domain::recording::RecordingState;
+use moonsnap_capture_types::recording::RecordingState;
 
 use crate::recorder_loop_control::{handle_loop_control, LoopControl, PauseState};
 use crate::recorder_pacing::compute_frame_pacing_sleep;

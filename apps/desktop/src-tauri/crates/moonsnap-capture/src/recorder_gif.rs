@@ -14,7 +14,7 @@ use crate::recorder_helpers::is_window_mode;
 use crate::recorder_loop_control::{handle_loop_control, LoopControl, PauseState};
 use crate::recording_runtime::find_monitor_for_point;
 use crate::state::{RecorderCommand, RecordingProgress};
-use moonsnap_domain::recording::{RecordingMode, RecordingSettings, RecordingState};
+use moonsnap_capture_types::recording::{RecordingMode, RecordingSettings, RecordingState};
 
 /// Run GIF capture.
 ///

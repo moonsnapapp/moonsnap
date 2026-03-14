@@ -59,7 +59,7 @@ mod tests {
         let flipped = buffers.flip_vertical(8, 8);
         assert_eq!(flipped.len(), 8 * 8 * 4);
 
-        let mode = moonsnap_domain::recording::RecordingMode::AllMonitors;
+        let mode = moonsnap_capture_types::recording::RecordingMode::AllMonitors;
         assert!(recorder_helpers::is_window_mode(&mode).is_none());
 
         let captured = capture_source::CapturedFrame {
