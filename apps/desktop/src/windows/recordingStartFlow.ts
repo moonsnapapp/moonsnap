@@ -74,8 +74,12 @@ export async function startRecordingCaptureFlow({
     ? (quickCapture ? settings.video.includeCursor : false)
     : settings.gif.includeCursor;
   const maxDurationSecs =
-    captureType === 'video' ? settings.video.maxDurationSecs : settings.gif.maxDurationSecs;
-  const microphoneDeviceIndex = settings.video.microphoneDeviceIndex;
+    captureType === 'video'
+      ? settings.video.maxDurationSecs
+      : (settings.gif.maxDurationSecs === 0 ? null : settings.gif.maxDurationSecs);
+  const microphoneDeviceIndex = captureType === 'video'
+    ? settings.video.microphoneDeviceIndex
+    : null;
 
   if (captureType === 'video') {
     await invoke('set_hide_desktop_icons', { enabled: settings.video.hideDesktopIcons });
@@ -107,6 +111,7 @@ export async function startRecordingCaptureFlow({
     centerOnSelection: hudAnchor.centerOnSelection ?? false,
     microphoneDeviceIndex: microphoneDeviceIndex ?? null,
     systemAudioEnabled: systemAudioEnabled,
+    recordingFormat: format,
   });
 
   await invoke('show_recording_border', {

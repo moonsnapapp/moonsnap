@@ -131,7 +131,8 @@ export const CaptureToolbar: React.FC<CaptureToolbarProps> = ({
   const isProcessing = mode === 'processing';
   const isError = mode === 'error';
   const isPaused = mode === 'paused';
-  const isVideoMode = captureType === 'video'; // Only video supports webcam/audio
+  const isVideoMode = captureType === 'video'; // Selection UI: only video supports webcam/audio
+  const supportsRecordingAudio = isVideoMode && !isGif;
   const isBusy = isRecording || isStarting || isProcessing; // Disable controls during capture
 
   // Get audio settings for level meters
@@ -143,7 +144,7 @@ export const CaptureToolbar: React.FC<CaptureToolbarProps> = ({
   const shouldShowRecordingAudioIndicators = Boolean(
     showRecordingAudioIndicators &&
     isRecording &&
-    isVideoMode
+    supportsRecordingAudio
   );
 
   // Use Rust WASAPI audio monitoring for both mic and system audio
@@ -151,7 +152,7 @@ export const CaptureToolbar: React.FC<CaptureToolbarProps> = ({
   const { micLevel, systemLevel, micActive, systemActive } = useRustAudioLevels({
     micDeviceIndex: isMicEnabled ? micDeviceIndex : null,
     monitorSystemAudio: isSystemAudioEnabled,
-    enabled: isVideoMode && (!isBusy || shouldShowRecordingAudioIndicators),
+    enabled: supportsRecordingAudio && (!isBusy || shouldShowRecordingAudioIndicators),
   });
 
   // Handle pause/resume toggle

@@ -15,6 +15,7 @@ import { toolbarLogger } from '@/utils/logger';
 declare global {
   interface Window {
     __MOONSNAP_RECORDING_AUDIO_CONFIG?: RecordingAudioConfig;
+    __MOONSNAP_RECORDING_FORMAT?: RecordingFormat;
   }
 }
 
@@ -25,11 +26,15 @@ function getInitialRecordingAudioConfig(): RecordingAudioConfig {
   };
 }
 
+function getInitialRecordingFormat(): RecordingFormat {
+  return window.__MOONSNAP_RECORDING_FORMAT ?? 'mp4';
+}
+
 const RecordingControlsWindow: React.FC = () => {
   useTheme();
 
   const [mode, setMode] = useState<ToolbarMode>('starting');
-  const [format, setFormat] = useState<RecordingFormat>('mp4');
+  const [format, setFormat] = useState<RecordingFormat>(getInitialRecordingFormat);
   const [elapsedTime, setElapsedTime] = useState(0);
   const [countdownSeconds, setCountdownSeconds] = useState<number | undefined>();
   const [recordingAudioConfig] = useState<RecordingAudioConfig>(getInitialRecordingAudioConfig);
@@ -238,7 +243,7 @@ const RecordingControlsWindow: React.FC = () => {
         onResume={handleResume}
         onStop={handleStop}
         minimalChrome="floating"
-        showRecordingAudioIndicators
+        showRecordingAudioIndicators={format !== 'gif'}
         recordingAudioConfig={recordingAudioConfig}
       />
     </div>

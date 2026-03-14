@@ -179,11 +179,10 @@ impl RecordingSettings {
             self.audio.capture_system_audio = false;
             self.audio.microphone_device_index = None;
 
-            // Limit GIF duration to 60 seconds max
+            // Limit GIF duration to 60 seconds max when specified.
+            // `None` is preserved for unlimited GIF recordings.
             if let Some(duration) = self.max_duration_secs {
                 self.max_duration_secs = Some(duration.min(60));
-            } else {
-                self.max_duration_secs = Some(30); // Default 30s for GIF
             }
         }
     }
@@ -283,4 +282,39 @@ pub struct StopRecordingResult {
     #[ts(type = "number")]
     pub file_size_bytes: u64,
     pub format: RecordingFormat,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{RecordingFormat, RecordingMode, RecordingSettings};
+
+    #[test]
+    fn gif_validation_preserves_unlimited_duration() {
+        let mut settings = RecordingSettings {
+            format: RecordingFormat::Gif,
+            mode: RecordingMode::Monitor { monitor_index: 0 },
+            max_duration_secs: None,
+            ..RecordingSettings::default()
+        };
+
+        settings.validate();
+
+        assert_eq!(settings.max_duration_secs, None);
+        assert!(!settings.audio.capture_system_audio);
+        assert_eq!(settings.audio.microphone_device_index, None);
+    }
+
+    #[test]
+    fn gif_validation_caps_explicit_duration() {
+        let mut settings = RecordingSettings {
+            format: RecordingFormat::Gif,
+            mode: RecordingMode::Monitor { monitor_index: 0 },
+            max_duration_secs: Some(120),
+            ..RecordingSettings::default()
+        };
+
+        settings.validate();
+
+        assert_eq!(settings.max_duration_secs, Some(60));
+    }
 }

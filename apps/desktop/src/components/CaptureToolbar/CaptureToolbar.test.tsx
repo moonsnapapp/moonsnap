@@ -210,4 +210,37 @@ describe('CaptureToolbar recording audio indicators', () => {
       enabled: true,
     });
   });
+
+  it('does not show or enable recording audio indicators for GIF recordings', () => {
+    const { container } = render(
+      <CaptureToolbar
+        mode="recording"
+        captureType="gif"
+        width={0}
+        height={0}
+        format="gif"
+        elapsedTime={17}
+        onCapture={() => {}}
+        onCaptureTypeChange={() => {}}
+        onRedo={() => {}}
+        onCancel={() => {}}
+        onPause={() => {}}
+        onResume={() => {}}
+        onStop={() => {}}
+        minimalChrome="floating"
+        showRecordingAudioIndicators
+        recordingAudioConfig={{
+          microphoneDeviceIndex: 4,
+          systemAudioEnabled: true,
+        }}
+      />
+    );
+
+    expect(container.querySelector('.glass-recording-audio-section')).not.toBeInTheDocument();
+    expect(mockUseRustAudioLevels).toHaveBeenCalledWith({
+      micDeviceIndex: 4,
+      monitorSystemAudio: true,
+      enabled: false,
+    });
+  });
 });

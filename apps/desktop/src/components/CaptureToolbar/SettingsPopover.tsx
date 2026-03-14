@@ -9,7 +9,7 @@ import React, { useRef, useCallback } from 'react';
 import { Settings } from 'lucide-react';
 import { Menu, MenuItem, PredefinedMenuItem, CheckMenuItem, Submenu } from '@tauri-apps/api/menu';
 import { LogicalPosition } from '@tauri-apps/api/dpi';
-import { RECORDING, formatCountdownOption } from '@/constants';
+import { RECORDING, formatCountdownOption, formatGifDurationOption } from '@/constants';
 import { useCaptureSettingsStore } from '@/stores/captureSettingsStore';
 import { settingsLogger } from '@/utils/logger';
 import type { CaptureType } from '@/types';
@@ -155,6 +155,23 @@ export const SettingsPopover: React.FC<SettingsPopoverProps> = ({
             id: 'preset-submenu',
             text: `Quality: ${presetLabels[settings.gif.qualityPreset]}`,
             items: presetItems,
+          }));
+
+          const currentDuration = settings.gif.maxDurationSecs;
+          const durationItems = await Promise.all(
+            RECORDING.GIF_MAX_DURATION_OPTIONS.map((seconds) =>
+              CheckMenuItem.new({
+                id: `duration-${seconds}`,
+                text: formatGifDurationOption(seconds),
+                checked: currentDuration === seconds,
+                action: () => updateGifSettings({ maxDurationSecs: seconds }),
+              })
+            )
+          );
+          menuItems.push(await Submenu.new({
+            id: 'duration-submenu',
+            text: `Duration: ${formatGifDurationOption(currentDuration)}`,
+            items: durationItems,
           }));
         }
 

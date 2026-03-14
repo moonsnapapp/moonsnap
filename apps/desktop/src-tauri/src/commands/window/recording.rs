@@ -150,10 +150,12 @@ pub async fn show_recording_controls(
     center_on_selection: Option<bool>,
     microphone_device_index: Option<usize>,
     system_audio_enabled: Option<bool>,
+    recording_format: Option<String>,
 ) -> Result<(), String> {
     let include_in_capture = include_in_capture.unwrap_or(false);
     let center_on_selection = center_on_selection.unwrap_or(false);
     let system_audio_enabled = system_audio_enabled.unwrap_or(true);
+    let recording_format = recording_format.unwrap_or_else(|| "mp4".to_string());
 
     let (window_x, window_y) = if center_on_selection {
         center_floating_window(
@@ -169,12 +171,14 @@ pub async fn show_recording_controls(
     };
 
     let audio_config_script = format!(
-        "window.__MOONSNAP_RECORDING_AUDIO_CONFIG = {};",
+        "window.__MOONSNAP_RECORDING_AUDIO_CONFIG = {}; window.__MOONSNAP_RECORDING_FORMAT = {};",
         serde_json::to_string(&serde_json::json!({
             "microphoneDeviceIndex": microphone_device_index,
             "systemAudioEnabled": system_audio_enabled,
         }))
-        .map_err(|e| format!("Failed to serialize recording audio config: {}", e))?
+        .map_err(|e| format!("Failed to serialize recording audio config: {}", e))?,
+        serde_json::to_string(&recording_format)
+            .map_err(|e| format!("Failed to serialize recording format: {}", e))?
     );
 
     if let Some(window) = app.get_webview_window(RECORDING_CONTROLS_LABEL) {

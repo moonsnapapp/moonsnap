@@ -1,0 +1,105 @@
+import { beforeEach, describe, expect, it } from 'vitest';
+
+import { startRecordingCaptureFlow } from './recordingStartFlow';
+import { useCaptureSettingsStore } from '@/stores/captureSettingsStore';
+import { useWebcamSettingsStore } from '@/stores/webcamSettingsStore';
+import { mockInvoke, mockOnce } from '@/test/mocks/tauri';
+
+describe('startRecordingCaptureFlow', () => {
+  beforeEach(() => {
+    useCaptureSettingsStore.setState({
+      settings: {
+        screenshot: {
+          format: 'png',
+          jpgQuality: 85,
+          includeCursor: true,
+        },
+        video: {
+          format: 'mp4',
+          quality: 80,
+          fps: 30,
+          maxDurationSecs: null,
+          includeCursor: true,
+          captureSystemAudio: true,
+          systemAudioDeviceId: null,
+          microphoneDeviceIndex: 3,
+          captureWebcam: false,
+          countdownSecs: 3,
+          hideDesktopIcons: false,
+          quickCapture: false,
+        },
+        gif: {
+          qualityPreset: 'balanced',
+          fps: 15,
+          maxDurationSecs: 0,
+          includeCursor: true,
+          countdownSecs: 3,
+        },
+      },
+      afterRecordingAction: 'preview',
+      showToolbarInRecording: false,
+      saveSettings: async () => {},
+    });
+
+    useWebcamSettingsStore.setState({
+      settings: {
+        enabled: false,
+        deviceIndex: 0,
+        position: { type: 'bottomRight' },
+        size: 'small',
+        shape: 'squircle',
+        mirror: true,
+      },
+    });
+
+    mockOnce.mockImplementation((_event: string, handler?: () => void) => {
+      handler?.();
+      return Promise.resolve(() => {});
+    });
+  });
+
+  it('maps unlimited GIF duration to null and initializes the HUD as GIF', async () => {
+    await startRecordingCaptureFlow({
+      captureType: 'gif',
+      selection: {
+        x: 100,
+        y: 150,
+        width: 800,
+        height: 450,
+        captureType: 'gif',
+        sourceType: 'area',
+        sourceMode: 'area',
+      },
+      hudAnchor: {
+        x: 100,
+        y: 150,
+        width: 800,
+        height: 450,
+        centerOnSelection: true,
+      },
+    });
+
+    expect(mockInvoke).toHaveBeenCalledWith(
+      'show_recording_controls',
+      expect.objectContaining({
+        recordingFormat: 'gif',
+        microphoneDeviceIndex: null,
+        systemAudioEnabled: false,
+      })
+    );
+
+    expect(mockInvoke).toHaveBeenCalledWith(
+      'start_recording',
+      expect.objectContaining({
+        settings: expect.objectContaining({
+          format: 'gif',
+          maxDurationSecs: null,
+          audio: expect.objectContaining({
+            captureSystemAudio: false,
+            microphoneDeviceIndex: null,
+          }),
+        }),
+      })
+    );
+  });
+});

@@ -259,6 +259,11 @@ const CaptureToolbarWindow: React.FC = () => {
       showToolbarInRecording: showToolbarInCapture,
       settings,
     } = useCaptureSettingsStore.getState();
+    const recordingMicrophoneDeviceIndex =
+      captureType === 'video' ? settings.video.microphoneDeviceIndex : null;
+    const recordingSystemAudioEnabled =
+      captureType === 'video' ? settings.video.captureSystemAudio : false;
+    const recordingFormat = captureType === 'gif' ? 'gif' : 'mp4';
     const [position, size] = await Promise.all([
       currentWindow.outerPosition(),
       currentWindow.outerSize(),
@@ -270,11 +275,12 @@ const CaptureToolbarWindow: React.FC = () => {
       width: size.width,
       height: size.height,
       includeInCapture: showToolbarInCapture,
-      microphoneDeviceIndex: settings.video.microphoneDeviceIndex ?? null,
-      systemAudioEnabled: settings.video.captureSystemAudio,
+      microphoneDeviceIndex: recordingMicrophoneDeviceIndex ?? null,
+      systemAudioEnabled: recordingSystemAudioEnabled,
+      recordingFormat,
     });
     await currentWindow.hide();
-  }, []);
+  }, [captureType]);
 
   const handleCapture = useCallback(async () => {
     try {
