@@ -1,13 +1,15 @@
 import React, { useCallback, useEffect, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { emit, listen } from '@tauri-apps/api/event';
-import { getCurrentWindow, LogicalSize } from '@tauri-apps/api/window';
+import { getCurrentWindow, LogicalSize, PhysicalPosition } from '@tauri-apps/api/window';
 
 import { RecordingModeChooser } from '@/components/CaptureToolbar/RecordingModeChooser';
 import { useFocusedShortcutDispatch } from '@/hooks/useFocusedShortcutDispatch';
 import { useTheme } from '@/hooks/useTheme';
 import type { AfterRecordingAction } from '@/stores/captureSettingsStore';
 import { toolbarLogger } from '@/utils/logger';
+
+import { getCenteredResizePosition } from './recordingModeChooserPosition';
 
 const RecordingModeChooserWindow: React.FC = () => {
   useTheme();
@@ -74,7 +76,28 @@ const RecordingModeChooserWindow: React.FC = () => {
       lastSizeRef.current = { width, height };
 
       try {
-        await getCurrentWindow().setSize(new LogicalSize(width, height));
+        const currentWindow = getCurrentWindow();
+        const nextLogicalSize = new LogicalSize(width, height);
+        const [scaleFactor, previousPosition, previousSize] = await Promise.all([
+          currentWindow.scaleFactor(),
+          currentWindow.outerPosition(),
+          currentWindow.outerSize(),
+        ]);
+        const nextPhysicalSize = nextLogicalSize.toPhysical(scaleFactor);
+
+        await currentWindow.setSize(nextLogicalSize);
+
+        if (
+          previousSize.width !== nextPhysicalSize.width ||
+          previousSize.height !== nextPhysicalSize.height
+        ) {
+          const nextPosition = getCenteredResizePosition(
+            previousPosition,
+            previousSize,
+            nextPhysicalSize,
+          );
+          await currentWindow.setPosition(new PhysicalPosition(nextPosition.x, nextPosition.y));
+        }
       } catch (error) {
         toolbarLogger.error('Failed to resize recording mode chooser window:', error);
       }
