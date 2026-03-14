@@ -4728,13 +4728,24 @@ body.floating-toolbar-window #root {
   pointer-events: none;
 }
 
-.glass-toolbar--capture-floating::after {
-  content: 'MoonSnap';
+.glass-toolbar--capture-floating .glass-toolbar-brand {
   position: absolute;
-  top: calc((var(--capture-toolbar-top-strip-height) / 2) + 4px);
+  top: 0;
   left: 50%;
-  padding: 0 10px 1px;
-  transform: translate(-50%, -50%);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: var(--capture-toolbar-top-strip-height);
+  box-sizing: border-box;
+  padding: 6px 12px 0;
+  transform: translateX(-50%);
+  pointer-events: none;
+  user-select: none;
+  white-space: nowrap;
+  z-index: 1;
+}
+
+.glass-toolbar--capture-floating .glass-toolbar-brand-wordmark {
   font-size: 14px;
   line-height: 1;
   font-weight: 650;
@@ -4747,8 +4758,28 @@ body.floating-toolbar-window #root {
     0 1px 0 rgba(255, 255, 255, 0.025),
     0 -1px 0 rgba(0, 0, 0, 0.42),
     0 -2px 2px rgba(0, 0, 0, 0.08);
-  pointer-events: none;
-  user-select: none;
+}
+
+.glass-toolbar--capture-floating .glass-toolbar-brand-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  height: 16px;
+  padding: 0 7px 1px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 999px;
+  background: linear-gradient(180deg, rgba(86, 93, 103, 0.16) 0%, rgba(37, 41, 46, 0.28) 100%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.035), inset 0 -1px 0 rgba(0, 0, 0, 0.28); /* tauri-shadow-allow */
+  color: rgba(174, 181, 189, 0.58);
+  font-size: 8px;
+  line-height: 1;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  text-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.02),
+    0 -1px 0 rgba(0, 0, 0, 0.34);
 }
 
 .glass-toolbar--capture-floating .glass-toolbar-row {
@@ -4994,7 +5025,7 @@ body.floating-toolbar-window #root {
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.34) 0%, rgba(255, 255, 255, 0.08) 24%, transparent 60%);
 }
 
-.light .glass-toolbar--capture-floating::after {
+.light .glass-toolbar--capture-floating .glass-toolbar-brand-wordmark {
   background: none;
   -webkit-background-clip: border-box;
   background-clip: border-box;
@@ -5003,6 +5034,16 @@ body.floating-toolbar-window #root {
   text-shadow:
     0 1px 0 rgba(255, 255, 255, 0.82),
     0 -1px 0 rgba(148, 163, 184, 0.14);
+}
+
+.light .glass-toolbar--capture-floating .glass-toolbar-brand-badge {
+  border-color: rgba(148, 163, 184, 0.18);
+  background: linear-gradient(180deg, rgba(231, 235, 240, 0.86) 0%, rgba(213, 219, 227, 0.94) 100%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.62), inset 0 -1px 0 rgba(100, 116, 139, 0.12); /* tauri-shadow-allow */
+  color: rgba(101, 111, 123, 0.72);
+  text-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.62),
+    0 -1px 0 rgba(148, 163, 184, 0.12);
 }
 
 .light .glass-toolbar--capture-floating .glass-mode-group {

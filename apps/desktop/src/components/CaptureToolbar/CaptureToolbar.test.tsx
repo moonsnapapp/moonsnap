@@ -304,8 +304,10 @@ describe('CaptureToolbar selection HUD', () => {
   });
 
   it('renders inline library and close actions for the floating capture HUD', async () => {
+    let container: HTMLElement;
+
     await act(async () => {
-      render(
+      ({ container } = render(
         <CaptureToolbar
           mode="selection"
           captureType="video"
@@ -318,9 +320,11 @@ describe('CaptureToolbar selection HUD', () => {
           onOpenLibrary={() => {}}
           minimalChrome="floating"
         />
-      );
+      ));
     });
 
+    expect(container.querySelector('.glass-toolbar-brand-wordmark')?.textContent).toBe('MoonSnap');
+    expect(container.querySelector('.glass-toolbar-brand-badge')?.textContent).toBe('PRO');
     expect(screen.getByTitle('Open library')).toBeInTheDocument();
     expect(screen.getByTitle('Close capture toolbar')).toBeInTheDocument();
   });

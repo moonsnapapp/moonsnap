@@ -341,6 +341,13 @@ export const CaptureToolbar: React.FC<CaptureToolbarProps> = ({
         minimalChrome === 'floating' ? 'glass-toolbar--capture-floating' : ''
       } pointer-events-auto`}
     >
+      {minimalChrome === 'floating' && (
+        <div className="glass-toolbar-brand" aria-hidden="true">
+          <span className="glass-toolbar-brand-wordmark">MoonSnap</span>
+          <span className="glass-toolbar-brand-badge">PRO</span>
+        </div>
+      )}
+
       {/* Row 1: Mode selector (Video/GIF/Screenshot) - full width */}
       <div className="glass-toolbar-row">
         <ModeSelector
