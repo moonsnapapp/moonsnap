@@ -7,7 +7,7 @@ use serde::Serialize;
 use std::collections::HashMap;
 use std::fs;
 use std::io::Cursor;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{LazyLock, Mutex};
 use tauri::{command, AppHandle, Emitter};
 use tokio::fs as async_fs;
@@ -1043,12 +1043,42 @@ pub fn get_library_folder(app: AppHandle) -> Result<String, String> {
 // Delete Operations
 // ============================================================================
 
+fn resolve_capture_project_image_path(project_file: &Path, captures_dir: &Path) -> Option<PathBuf> {
+    let content = fs::read_to_string(project_file).ok()?;
+    let project = serde_json::from_str::<CaptureProject>(&content).ok()?;
+
+    // Video/media sidecars use an empty original_image and should not be treated as screenshot projects.
+    if project.original_image.is_empty() {
+        return None;
+    }
+
+    let original_path = PathBuf::from(&project.original_image);
+    let image_path = if original_path.is_absolute() {
+        original_path
+    } else {
+        captures_dir.join(&project.original_image)
+    };
+
+    Some(image_path)
+}
+
+fn delete_project_metadata_dir(base_dir: &Path, project_id: &str) -> Result<(), String> {
+    let project_dir = base_dir.join("projects").join(project_id);
+    if project_dir.exists() {
+        fs::remove_dir_all(&project_dir)
+            .map_err(|e| format!("Failed to delete project metadata: {}", e))?;
+    }
+
+    Ok(())
+}
+
 /// Determines the type of capture based on its ID and returns the appropriate file path.
 /// Returns (capture_type, file_path) where capture_type is:
 ///   - "project": Screenshot project (in app_data/projects/)
 ///   - "video_folder": Video project folder (in captures_dir/)
 ///   - "video": Legacy flat MP4 file (in captures_dir/)
 ///   - "gif": GIF file (in captures_dir/)
+///   - "metadata": Metadata-only sidecar (in app_data/projects/)
 ///   - "unknown": Not found
 fn determine_capture_type(
     app: &AppHandle,
@@ -1061,25 +1091,14 @@ fn determine_capture_type(
     let project_dir = base_dir.join("projects").join(project_id);
     let project_file = project_dir.join("project.json");
     if project_file.exists() {
-        // It's a screenshot project - get the image path from project.json
-        if let Ok(content) = fs::read_to_string(&project_file) {
-            if let Ok(project) = serde_json::from_str::<CaptureProject>(&content) {
-                let original_path = PathBuf::from(&project.original_image);
-                let image_path = if original_path.is_absolute() {
-                    original_path
-                } else {
-                    captures_dir.join(&project.original_image)
-                };
-                return Ok(("project".to_string(), Some(image_path)));
-            }
+        if let Some(image_path) = resolve_capture_project_image_path(&project_file, &captures_dir) {
+            return Ok(("project".to_string(), Some(image_path)));
         }
-        // project.json exists but couldn't be parsed - still treat as project
-        return Ok(("project".to_string(), None));
     }
 
-    // 2. Check if it's a video project folder (folder with screen.mp4 inside)
-    let video_folder = captures_dir.join(project_id);
-    if video_folder.is_dir() && video_folder.join("screen.mp4").exists() {
+    // 2. Check if it's a video project folder. Video project IDs live inside project.json,
+    // so the folder name and the project ID are not guaranteed to match.
+    if let Ok(video_folder) = find_project_bundle(&captures_dir, project_id) {
         return Ok(("video_folder".to_string(), Some(video_folder)));
     }
 
@@ -1093,6 +1112,11 @@ fn determine_capture_type(
     let gif_path = captures_dir.join(format!("{}.gif", project_id));
     if gif_path.exists() {
         return Ok(("gif".to_string(), Some(gif_path)));
+    }
+
+    // 5. Metadata-only sidecars can remain after a broken import or missing media file.
+    if project_file.exists() {
+        return Ok(("metadata".to_string(), Some(project_dir)));
     }
 
     // Unknown type - might be already deleted or invalid ID
@@ -1114,11 +1138,7 @@ pub async fn delete_project(app: AppHandle, project_id: String) -> Result<(), St
                 let _ = fs::remove_file(image_path);
             }
 
-            let project_dir = base_dir.join("projects").join(&project_id);
-            if project_dir.exists() {
-                fs::remove_dir_all(&project_dir)
-                    .map_err(|e| format!("Failed to delete project: {}", e))?;
-            }
+            delete_project_metadata_dir(&base_dir, &project_id)?;
         },
         "video_folder" => {
             // Video project folder - delete the entire folder and all its contents
@@ -1130,6 +1150,7 @@ pub async fn delete_project(app: AppHandle, project_id: String) -> Result<(), St
                     log::info!("[DELETE] Removed video project folder: {:?}", folder_path);
                 }
             }
+            delete_project_metadata_dir(&base_dir, &project_id)?;
         },
         "video" => {
             // Legacy flat MP4 file - delete main file and any associated files
@@ -1152,6 +1173,7 @@ pub async fn delete_project(app: AppHandle, project_id: String) -> Result<(), St
                 // Also remove legacy .moonsnap sidecar if present
                 let _ = fs::remove_file(parent.join(format!("{}.moonsnap", stem)));
             }
+            delete_project_metadata_dir(&base_dir, &project_id)?;
         },
         "gif" => {
             // GIF file - just delete the file
@@ -1159,6 +1181,10 @@ pub async fn delete_project(app: AppHandle, project_id: String) -> Result<(), St
                 fs::remove_file(&gif_path)
                     .map_err(|e| format!("Failed to delete GIF file: {}", e))?;
             }
+            delete_project_metadata_dir(&base_dir, &project_id)?;
+        },
+        "metadata" => {
+            delete_project_metadata_dir(&base_dir, &project_id)?;
         },
         _ => {
             // Unknown type - nothing to delete, but don't error
@@ -1799,4 +1825,79 @@ pub async fn repair_project(
         bundle_path
     );
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{find_project_bundle, resolve_capture_project_image_path};
+    use chrono::Utc;
+    use moonsnap_domain::storage::{CaptureProject, CaptureSource, Dimensions};
+    use std::fs;
+    use tempfile::TempDir;
+
+    fn make_capture_project(original_image: &str, capture_type: &str) -> CaptureProject {
+        CaptureProject {
+            id: "project-123".to_string(),
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+            capture_type: capture_type.to_string(),
+            source: CaptureSource {
+                monitor: None,
+                window_id: None,
+                window_title: None,
+                region: None,
+            },
+            original_image: original_image.to_string(),
+            dimensions: Dimensions {
+                width: 1920,
+                height: 1080,
+            },
+            annotations: Vec::new(),
+            tags: Vec::new(),
+            favorite: false,
+        }
+    }
+
+    #[test]
+    fn find_project_bundle_matches_project_json_id_when_folder_name_differs() {
+        let temp_dir = TempDir::new().unwrap();
+        let bundle_path = temp_dir.path().join("recording_2026-03-15_123456");
+        fs::create_dir_all(&bundle_path).unwrap();
+        fs::write(
+            bundle_path.join("project.json"),
+            r#"{"id":"proj_12345678","name":"Recording"}"#,
+        )
+        .unwrap();
+
+        let resolved = find_project_bundle(temp_dir.path(), "proj_12345678").unwrap();
+
+        assert_eq!(resolved, bundle_path);
+    }
+
+    #[test]
+    fn resolve_capture_project_image_path_skips_metadata_only_video_sidecars() {
+        let temp_dir = TempDir::new().unwrap();
+        let project_file = temp_dir.path().join("project.json");
+        let project = make_capture_project("", "video");
+        fs::write(&project_file, serde_json::to_string(&project).unwrap()).unwrap();
+
+        let resolved = resolve_capture_project_image_path(&project_file, temp_dir.path());
+
+        assert_eq!(resolved, None);
+    }
+
+    #[test]
+    fn resolve_capture_project_image_path_returns_relative_screenshot_image_path() {
+        let temp_dir = TempDir::new().unwrap();
+        let captures_dir = temp_dir.path().join("captures");
+        fs::create_dir_all(&captures_dir).unwrap();
+
+        let project_file = temp_dir.path().join("project.json");
+        let project = make_capture_project("shot.png", "image");
+        fs::write(&project_file, serde_json::to_string(&project).unwrap()).unwrap();
+
+        let resolved = resolve_capture_project_image_path(&project_file, &captures_dir);
+
+        assert_eq!(resolved, Some(captures_dir.join("shot.png")));
+    }
 }

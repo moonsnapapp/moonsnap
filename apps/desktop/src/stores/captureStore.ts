@@ -605,6 +605,7 @@ export const useCaptureStore = create<CaptureState>()(
       }
     } catch (error) {
       set({ error: String(error) });
+      throw error;
     }
   },
 
@@ -614,6 +615,7 @@ export const useCaptureStore = create<CaptureState>()(
       await get().loadCaptures();
     } catch (error) {
       set({ error: String(error) });
+      throw error;
     }
   },
 

@@ -404,7 +404,9 @@ describe('captureStore', () => {
       useCaptureStore.setState({ captures: [capture] });
       mockInvoke.mockRejectedValue(new Error('Permission denied'));
 
-      await useCaptureStore.getState().deleteCapture('cap1');
+      await expect(useCaptureStore.getState().deleteCapture('cap1')).rejects.toThrow(
+        'Permission denied'
+      );
 
       expect(useCaptureStore.getState().error).toContain('Permission denied');
     });
