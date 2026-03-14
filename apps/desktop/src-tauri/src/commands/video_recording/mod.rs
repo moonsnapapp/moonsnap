@@ -1482,7 +1482,8 @@ pub fn generate_output_path(settings: &RecordingSettings) -> Result<PathBuf, Str
                 Ok(save_dir.join(filename))
             } else {
                 // Editor flow: create a project folder
-                let folder_name = format!("moonsnap_{}_{}", timestamp, rand::random::<u16>());
+                let folder_name =
+                    format!("moonsnap_{}_{}.moonsnap", timestamp, rand::random::<u16>());
                 let folder_path = save_dir.join(&folder_name);
                 std::fs::create_dir_all(&folder_path)
                     .map_err(|e| format!("Failed to create recording folder: {}", e))?;
@@ -1550,4 +1551,41 @@ pub fn stop_audio_monitoring() -> Result<(), String> {
 #[command]
 pub fn is_audio_monitoring() -> bool {
     audio_monitor::is_monitoring()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_generate_output_path_editor_flow_has_moonsnap_extension() {
+        let settings = RecordingSettings {
+            format: RecordingFormat::Mp4,
+            quick_capture: false,
+            ..Default::default()
+        };
+        let path = generate_output_path(&settings).unwrap();
+        assert!(
+            path.to_string_lossy().ends_with(".moonsnap"),
+            "Editor flow path should end with .moonsnap, got: {:?}",
+            path
+        );
+        let _ = std::fs::remove_dir(&path);
+    }
+
+    #[test]
+    fn test_generate_output_path_quick_capture_no_moonsnap() {
+        let settings = RecordingSettings {
+            format: RecordingFormat::Mp4,
+            quick_capture: true,
+            ..Default::default()
+        };
+        let path = generate_output_path(&settings).unwrap();
+        assert!(
+            path.to_string_lossy().ends_with(".mp4"),
+            "Quick capture should end with .mp4, got: {:?}",
+            path
+        );
+        let _ = std::fs::remove_file(&path);
+    }
 }
