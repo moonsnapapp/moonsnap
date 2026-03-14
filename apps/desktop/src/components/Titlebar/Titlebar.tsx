@@ -5,6 +5,7 @@ import { Minus, Square, X, Maximize2, Aperture, Sun, Moon, FolderOpen, Camera, S
 import { useFocusedShortcutDispatch } from '@/hooks/useFocusedShortcutDispatch';
 import { useTheme } from '@/hooks/useTheme';
 import { useLicenseStore } from '@/stores/licenseStore';
+import { logger } from '@/utils/logger';
 
 interface TitlebarProps {
   title?: string;
@@ -107,7 +108,7 @@ export const Titlebar: React.FC<TitlebarProps> = ({
     }).then((fn) => {
       unlistenFn = fn;
     }).catch((error) => {
-      console.error('Failed to listen for license-status-changed:', error);
+      logger.error('Failed to listen for license-status-changed:', error);
     });
 
     return () => {

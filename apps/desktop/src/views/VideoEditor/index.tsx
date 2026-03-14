@@ -133,7 +133,7 @@ export const VideoEditorView = forwardRef<VideoEditorViewRef, VideoEditorViewPro
     try {
       const obs = new PerformanceObserver((list) => {
         for (const entry of list.getEntries()) {
-          console.warn(`[LONG-TASK] Main thread blocked for ${entry.duration.toFixed(0)}ms (name: ${entry.name})`);
+          videoEditorLogger.warn(`Main thread blocked for ${entry.duration.toFixed(0)}ms (name: ${entry.name})`);
         }
       });
       obs.observe({ type: 'longtask', buffered: true });
@@ -148,7 +148,7 @@ export const VideoEditorView = forwardRef<VideoEditorViewRef, VideoEditorViewPro
     let count = 0;
     const id = setInterval(() => {
       count++;
-      console.warn(`[EDITOR-DIAG] Heartbeat #${count} - main thread alive at ${Date.now()}`);
+      videoEditorLogger.info(`Heartbeat #${count} - main thread alive at ${Date.now()}`);
       if (count >= 7) clearInterval(id);
     }, 2000);
     return () => clearInterval(id);
@@ -213,7 +213,7 @@ export const VideoEditorView = forwardRef<VideoEditorViewRef, VideoEditorViewPro
 
   // Diagnostic: log when VideoEditorView renders
   useEffect(() => {
-    console.warn('[EDITOR-DIAG] VideoEditorView mounted, project:', project?.id ?? 'null', 'isActive:', isActive);
+    videoEditorLogger.info('VideoEditorView mounted, project:', project?.id ?? 'null', 'isActive:', isActive);
   }, [project?.id, isActive]);
 
 

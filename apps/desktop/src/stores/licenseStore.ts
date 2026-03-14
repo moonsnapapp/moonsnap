@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { devtools } from 'zustand/middleware';
 import { invoke } from '@tauri-apps/api/core';
 import { emit } from '@tauri-apps/api/event';
+import { licenseLogger } from '../utils/logger';
 import type { LicenseStatus, ActivationResult } from '../types/generated';
 
 const LICENSE_STATUS_CHANGED_EVENT = 'license-status-changed';
@@ -73,7 +74,7 @@ export const useLicenseStore = create<LicenseState>()(
             isLoading: false,
           });
         } catch (e) {
-          console.error('Failed to fetch license status:', e);
+          licenseLogger.error('Failed to fetch license status:', e);
           set({ isLoading: false });
         }
       },
@@ -103,7 +104,7 @@ export const useLicenseStore = create<LicenseState>()(
           set({ isLoading: false });
           return { success: true, message: 'License deactivated successfully' };
         } catch (e) {
-          console.error('Failed to deactivate license:', e);
+          licenseLogger.error('Failed to deactivate license:', e);
           set({ isLoading: false });
           return { success: false, message: String(e) };
         }
