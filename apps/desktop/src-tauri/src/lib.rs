@@ -26,7 +26,7 @@
 #![allow(clippy::manual_abs_diff)]
 #![allow(clippy::nonminimal_bool)]
 
-use tauri::{image::Image, Manager};
+use tauri::{image::Image, Emitter, Manager};
 
 #[cfg(desktop)]
 use tauri_plugin_autostart::MacosLauncher;
@@ -214,6 +214,24 @@ pub fn run() {
                         }
                     },
                     Err(e) => log::error!("[STARTUP] Migration failed: {}", e),
+                }
+            }
+
+            // Handle file association: check if app was launched with a .moonsnap bundle path
+            // TODO: Add macOS UTI bundle declaration when macOS support is added
+            {
+                let args: Vec<String> = std::env::args().collect();
+                if let Some(path_arg) = args.get(1) {
+                    let path = std::path::Path::new(path_arg);
+                    if path.is_dir()
+                        && path.extension().and_then(|e| e.to_str()) == Some("moonsnap")
+                    {
+                        let app_handle = app.handle().clone();
+                        let path_str = path_arg.clone();
+                        tauri::async_runtime::spawn(async move {
+                            let _ = app_handle.emit("open-moonsnap-bundle", path_str);
+                        });
+                    }
                 }
             }
 
