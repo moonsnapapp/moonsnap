@@ -90,6 +90,8 @@ pub struct CaptureListItem {
     pub quick_capture: bool,
     /// True if the original image file is missing from disk
     pub is_missing: bool,
+    /// True if the bundle's screen.mp4 is missing or zero-length
+    pub damaged: bool,
 }
 
 /// Request to save a new capture.

@@ -467,6 +467,7 @@ async fn load_project_item(
         favorite: project.favorite,
         quick_capture: false,
         is_missing,
+        damaged: false,
     })
 }
 
@@ -488,10 +489,19 @@ async fn load_video_project_folder(
     let project_json = folder_path.join("project.json");
     let screen_mp4 = folder_path.join("screen.mp4");
 
-    // Must have at least screen.mp4
-    if !async_fs::try_exists(&screen_mp4).await.unwrap_or(false) {
+    // Must have at least screen.mp4 (or show as damaged for .moonsnap bundles)
+    let screen_mp4_meta = async_fs::metadata(&screen_mp4).await.ok();
+    let screen_ok = screen_mp4_meta
+        .as_ref()
+        .map(|m| m.len() > 0)
+        .unwrap_or(false);
+    let is_bundle = folder_path.extension().and_then(|e| e.to_str()) == Some("moonsnap");
+
+    // For .moonsnap bundles, show as damaged instead of hiding
+    if !screen_ok && !is_bundle {
         return None;
     }
+    let damaged = !screen_ok;
 
     // Compute fallback ID from folder name (stripped of .moonsnap extension)
     let folder_name = folder_path
@@ -689,6 +699,7 @@ async fn load_video_project_folder(
         favorite: final_favorite,
         quick_capture: json_quick_capture,
         is_missing: false,
+        damaged,
     })
 }
 
@@ -838,6 +849,7 @@ async fn load_media_item(
         favorite: sidecar_favorite,
         quick_capture: capture_type == "video" || capture_type == "gif",
         is_missing: false,
+        damaged: false,
     })
 }
 

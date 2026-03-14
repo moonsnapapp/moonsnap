@@ -12,4 +12,8 @@ quick_capture: boolean,
 /**
  * True if the original image file is missing from disk
  */
-is_missing: boolean, };
+is_missing: boolean, 
+/**
+ * True if the bundle's screen.mp4 is missing or zero-length
+ */
+damaged: boolean, };

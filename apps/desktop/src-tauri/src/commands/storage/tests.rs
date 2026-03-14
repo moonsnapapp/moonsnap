@@ -198,6 +198,7 @@ fn test_capture_list_item_serialization() {
         favorite: false,
         quick_capture: false,
         is_missing: false,
+        damaged: false,
     };
 
     let json = serde_json::to_string(&item).expect("Failed to serialize");
