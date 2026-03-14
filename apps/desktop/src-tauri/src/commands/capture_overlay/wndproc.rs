@@ -6,7 +6,7 @@
 use tauri::{Emitter, Manager};
 use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
 use windows::Win32::Graphics::Gdi::{BeginPaint, EndPaint, PAINTSTRUCT};
-use windows::Win32::UI::Input::KeyboardAndMouse::VK_SHIFT;
+use windows::Win32::UI::Input::KeyboardAndMouse::{ReleaseCapture, SetCapture, VK_SHIFT};
 use windows::Win32::UI::WindowsAndMessaging::{
     DefWindowProcW, GetWindowLongPtrW, LoadCursorW, SetCursor, SetWindowPos, GWLP_USERDATA,
     HTCLIENT, HTTRANSPARENT, HWND_TOPMOST, IDC_CROSS, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,
@@ -159,6 +159,9 @@ fn handle_mouse_down(state_ptr: *mut OverlayState, lparam: LPARAM) -> LRESULT {
             let handle = hit_test_handle(x, y, state.adjustment.bounds);
             if handle.is_active() {
                 state.adjustment.start_drag(handle, Point::new(x, y));
+                if state.adjustment.is_dragging {
+                    capture_mouse(state.hwnd);
+                }
             }
         } else {
             // Mode-specific behavior for initial click
@@ -177,6 +180,7 @@ fn handle_mouse_down(state_ptr: *mut OverlayState, lparam: LPARAM) -> LRESULT {
                     state.drag.is_dragging = false;
                     state.drag.start = Point::new(x, y);
                     state.drag.current = Point::new(x, y);
+                    capture_mouse(state.hwnd);
                 },
             }
         }
@@ -256,6 +260,7 @@ fn handle_mouse_up(state_ptr: *mut OverlayState) -> LRESULT {
         }
 
         let state = &mut *state_ptr;
+        release_mouse_capture();
 
         if state.adjustment.is_active {
             // End adjustment drag
@@ -455,6 +460,7 @@ fn handle_key_down(state_ptr: *mut OverlayState, wparam: WPARAM) -> LRESULT {
 
         match key {
             VK_ESCAPE => {
+                release_mouse_capture();
                 if state.adjustment.is_active {
                     state.adjustment.reset();
                 }
@@ -515,6 +521,18 @@ fn mouse_coords(lparam: LPARAM) -> (i32, i32) {
     let x = (lparam.0 & 0xFFFF) as i16 as i32;
     let y = ((lparam.0 >> 16) & 0xFFFF) as i16 as i32;
     (x, y)
+}
+
+fn capture_mouse(hwnd: HWND) {
+    unsafe {
+        let _ = SetCapture(hwnd);
+    }
+}
+
+fn release_mouse_capture() {
+    unsafe {
+        let _ = ReleaseCapture();
+    }
 }
 
 fn update_adjustment_drag(state: &mut OverlayState, constrain_proportions: bool) {
