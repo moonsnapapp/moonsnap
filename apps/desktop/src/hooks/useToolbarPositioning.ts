@@ -75,11 +75,14 @@ export function useToolbarPositioning({
     const measuredHeight = containerRect.height;
 
     if (isStartupToolbar) {
-      // Startup size should be content-driven; constants are only lower bounds
-      // for the first paint while assets/fonts settle.
+      // Startup size should be content-driven once the toolbar has mounted.
+      // The constants remain as a fallback before refs are available.
       return {
         width: Math.max(measuredWidth, LAYOUT.CAPTURE_TOOLBAR_STARTUP_WIDTH),
-        height: Math.max(measuredHeight, LAYOUT.CAPTURE_TOOLBAR_STARTUP_HEIGHT),
+        height:
+          measuredHeight > 0
+            ? measuredHeight
+            : LAYOUT.CAPTURE_TOOLBAR_STARTUP_HEIGHT,
       };
     }
 

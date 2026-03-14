@@ -123,6 +123,9 @@ const RECORDING_CONTROLS_INITIAL_WIDTH: u32 = 360;
 const RECORDING_CONTROLS_INITIAL_HEIGHT: u32 = 60;
 const RECORDING_MODE_CHOOSER_INITIAL_WIDTH: u32 = 430;
 const RECORDING_MODE_CHOOSER_INITIAL_HEIGHT: u32 = 180;
+const FLOATING_WINDOW_EDGE_MARGIN: i32 = 16;
+const RECORDING_MODE_CHOOSER_VERTICAL_GAP: i32 = 14;
+const RECORDING_MODE_CHOOSER_UPWARD_BIAS: i32 = 20;
 
 fn center_floating_window(
     x: i32,
@@ -136,6 +139,66 @@ fn center_floating_window(
         x + (width as i32 - floating_width as i32) / 2,
         y + (height as i32 - floating_height as i32) / 2,
     )
+}
+
+fn center_horizontally_over_anchor(x: i32, width: u32, floating_width: u32) -> i32 {
+    x + (width as i32 - floating_width as i32) / 2
+}
+
+fn clamp_floating_window_to_monitor(
+    app: &AppHandle,
+    anchor_x: i32,
+    anchor_y: i32,
+    anchor_width: u32,
+    anchor_height: u32,
+    window_x: i32,
+    window_y: i32,
+    floating_width: u32,
+    floating_height: u32,
+) -> (i32, i32) {
+    let Ok(monitors) = app.available_monitors() else {
+        return (window_x, window_y);
+    };
+
+    let anchor_center_x = anchor_x + anchor_width as i32 / 2;
+    let anchor_center_y = anchor_y + anchor_height as i32 / 2;
+
+    let Some(monitor) = monitors
+        .iter()
+        .find(|monitor| {
+            let pos = monitor.position();
+            let size = monitor.size();
+
+            anchor_center_x >= pos.x
+                && anchor_center_x < pos.x + size.width as i32
+                && anchor_center_y >= pos.y
+                && anchor_center_y < pos.y + size.height as i32
+        })
+        .or_else(|| monitors.first())
+    else {
+        return (window_x, window_y);
+    };
+
+    let pos = monitor.position();
+    let size = monitor.size();
+    let min_x = pos.x + FLOATING_WINDOW_EDGE_MARGIN;
+    let min_y = pos.y + FLOATING_WINDOW_EDGE_MARGIN;
+    let max_x = pos.x + size.width as i32 - floating_width as i32 - FLOATING_WINDOW_EDGE_MARGIN;
+    let max_y = pos.y + size.height as i32 - floating_height as i32 - FLOATING_WINDOW_EDGE_MARGIN;
+
+    let clamped_x = if max_x >= min_x {
+        window_x.clamp(min_x, max_x)
+    } else {
+        pos.x
+    };
+
+    let clamped_y = if max_y >= min_y {
+        window_y.clamp(min_y, max_y)
+    } else {
+        pos.y
+    };
+
+    (clamped_x, clamped_y)
 }
 
 /// Show the recording controls window used while the main toolbar is excluded from capture.
@@ -279,15 +342,34 @@ pub async fn show_recording_mode_chooser(
     height: u32,
     owner: Option<String>,
 ) -> Result<(), String> {
-    let (window_x, window_y) = center_floating_window(
+    let owner = owner.unwrap_or_else(|| "capture-toolbar".to_string());
+    let (preferred_x, preferred_y) = if owner == "capture-toolbar" {
+        (
+            center_horizontally_over_anchor(x, width, RECORDING_MODE_CHOOSER_INITIAL_WIDTH),
+            y - RECORDING_MODE_CHOOSER_INITIAL_HEIGHT as i32 - RECORDING_MODE_CHOOSER_VERTICAL_GAP,
+        )
+    } else {
+        let (centered_x, centered_y) = center_floating_window(
+            x,
+            y,
+            width,
+            height,
+            RECORDING_MODE_CHOOSER_INITIAL_WIDTH,
+            RECORDING_MODE_CHOOSER_INITIAL_HEIGHT,
+        );
+        (centered_x, centered_y - RECORDING_MODE_CHOOSER_UPWARD_BIAS)
+    };
+    let (window_x, window_y) = clamp_floating_window_to_monitor(
+        &app,
         x,
         y,
         width,
         height,
+        preferred_x,
+        preferred_y,
         RECORDING_MODE_CHOOSER_INITIAL_WIDTH,
         RECORDING_MODE_CHOOSER_INITIAL_HEIGHT,
     );
-    let owner = owner.unwrap_or_else(|| "capture-toolbar".to_string());
 
     if let Some(window) = app.get_webview_window(RECORDING_MODE_CHOOSER_LABEL) {
         set_physical_bounds(

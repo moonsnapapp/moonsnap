@@ -121,6 +121,7 @@ const CaptureToolbarWindow: React.FC = () => {
   const recordingStartupInProgressRef = useRef(false);
   const chooserSelectionHandledRef = useRef(false);
   const chooserRestorePositionRef = useRef<RecordingModeChooserBackPayload | null>(null);
+  const chooserAnchorPositionRef = useRef<{ x: number; y: number } | null>(null);
 
   const pendingStartupContextRef = useRef<StartupToolbarContext | null>(null);
   const shouldAutoStartAreaSelectionRef = useRef(false);
@@ -325,6 +326,10 @@ const CaptureToolbarWindow: React.FC = () => {
             currentWindow.outerPosition(),
             currentWindow.outerSize(),
           ]);
+          chooserAnchorPositionRef.current = {
+            x: position.x,
+            y: position.y,
+          };
 
           setIsModeChooserVisible(true);
           await currentWindow.hide().catch(() => {});
@@ -383,6 +388,7 @@ const CaptureToolbarWindow: React.FC = () => {
       recordingStartupInProgressRef.current = false;
       chooserSelectionHandledRef.current = false;
       chooserRestorePositionRef.current = null;
+      chooserAnchorPositionRef.current = null;
       skipModePromptRef.current = false;
       setIsModeChooserVisible(false);
       setIsRecordingControlsPending(false);
@@ -593,6 +599,7 @@ const CaptureToolbarWindow: React.FC = () => {
       }
 
       chooserSelectionHandledRef.current = true;
+      chooserAnchorPositionRef.current = null;
       const store = useCaptureSettingsStore.getState();
       store.setAfterRecordingAction(event.payload.action);
       if (event.payload.remember) {
@@ -623,7 +630,8 @@ const CaptureToolbarWindow: React.FC = () => {
 
       chooserSelectionHandledRef.current = false;
       recordingStartupInProgressRef.current = false;
-      chooserRestorePositionRef.current = event.payload;
+      chooserRestorePositionRef.current = chooserAnchorPositionRef.current ?? event.payload;
+      chooserAnchorPositionRef.current = null;
       setIsModeChooserVisible(false);
       setIsRecordingControlsPending(false);
       setIsRecordingHudActive(false);
@@ -674,6 +682,7 @@ const CaptureToolbarWindow: React.FC = () => {
     if (mode === 'selection') {
       chooserSelectionHandledRef.current = false;
       recordingStartupInProgressRef.current = false;
+      chooserAnchorPositionRef.current = null;
       skipModePromptRef.current = false;
       setIsRecordingControlsPending(false);
       setIsRecordingHudActive(false);

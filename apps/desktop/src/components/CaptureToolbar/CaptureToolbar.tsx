@@ -8,7 +8,7 @@
  */
 
 import React, { useCallback } from 'react';
-import { X, Square, Pause, Circle, Mic, Volume2, Zap, FolderOpen } from 'lucide-react';
+import { X, Square, Pause, Circle, Mic, Volume2, FolderOpen } from 'lucide-react';
 import type { CaptureType, RecordingFormat } from '../../types';
 import { ModeSelector } from './ModeSelector';
 import { SourceSelector, type CaptureSource } from './SourceSelector';
@@ -142,7 +142,7 @@ export const CaptureToolbar: React.FC<CaptureToolbarProps> = ({
   const isBusy = isRecording || isStarting || isProcessing; // Disable controls during capture
 
   // Get audio settings for level meters
-  const { settings, afterRecordingAction } = useCaptureSettingsStore();
+  const { settings } = useCaptureSettingsStore();
   const micDeviceIndex = recordingAudioConfig?.microphoneDeviceIndex ?? settings.video.microphoneDeviceIndex;
   const isMicEnabled = micDeviceIndex !== null;
   const isSystemAudioEnabled = recordingAudioConfig?.systemAudioEnabled ?? settings.video.captureSystemAudio;
@@ -447,12 +447,9 @@ export const CaptureToolbar: React.FC<CaptureToolbarProps> = ({
           type="button"
           onClick={onCapture}
           className="glass-capture-btn-hardware"
-          title={captureType === 'screenshot' ? 'Take screenshot' : (isVideoMode && afterRecordingAction === 'save' ? 'Start quick recording' : 'Start recording')}
+          title={captureType === 'screenshot' ? 'Take screenshot' : 'Start recording'}
           disabled={!selectionConfirmed}
         >
-          {isVideoMode && afterRecordingAction === 'save' && (
-            <Zap size={10} strokeWidth={2.5} className="glass-capture-btn-zap" />
-          )}
           <Circle size={14} fill="currentColor" strokeWidth={0} />
         </button>
       </div>
