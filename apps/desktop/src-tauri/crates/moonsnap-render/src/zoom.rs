@@ -7,7 +7,7 @@
 #![allow(dead_code)]
 
 use crate::zoom_state::ZoomState;
-use moonsnap_domain::video_project::{ZoomConfig, ZoomRegion, ZoomRegionMode};
+use moonsnap_project_types::video_project::{ZoomConfig, ZoomRegion, ZoomRegionMode};
 
 /// Fixed zoom transition duration in seconds (matches Cap).
 pub const ZOOM_DURATION: f64 = 1.0;
@@ -385,7 +385,7 @@ impl ZoomInterpolator {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use moonsnap_domain::video_project::{EasingFunction, ZoomTransition};
+    use moonsnap_project_types::video_project::{EasingFunction, ZoomTransition};
     use proptest::prelude::*;
 
     fn make_region(start_ms: u64, end_ms: u64, scale: f32, x: f32, y: f32) -> ZoomRegion {
@@ -408,7 +408,7 @@ mod tests {
 
     fn make_interpolator(regions: Vec<ZoomRegion>) -> ZoomInterpolator {
         ZoomInterpolator::new(&ZoomConfig {
-            mode: moonsnap_domain::video_project::ZoomMode::Manual,
+            mode: moonsnap_project_types::video_project::ZoomMode::Manual,
             auto_zoom_scale: 2.0,
             regions,
         })
@@ -878,7 +878,7 @@ mod tests {
             let end_ms = start_ms + duration;
             let regions = vec![make_region(start_ms, end_ms, 2.0, 0.5, 0.5)];
             let config = ZoomConfig {
-                mode: moonsnap_domain::video_project::ZoomMode::Manual,
+                mode: moonsnap_project_types::video_project::ZoomMode::Manual,
                 auto_zoom_scale: 2.0,
                 regions,
             };

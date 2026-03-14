@@ -1,7 +1,7 @@
 //! Shared per-frame overlay planning (render options + caption preparation).
 
-use moonsnap_domain::captions::{CaptionSegment, CaptionSettings};
-use moonsnap_domain::video_project::TextSegment;
+use moonsnap_project_types::captions::{CaptionSegment, CaptionSettings};
+use moonsnap_project_types::video_project::TextSegment;
 use moonsnap_render::caption_layer::prepare_captions;
 use moonsnap_render::prerendered_text::{PreRenderedTextStore, TextFrameLayout, TextFrameRequest};
 use moonsnap_render::text::PreparedText;
@@ -99,7 +99,7 @@ pub fn build_frame_text_overlay_quads(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use moonsnap_domain::captions::CaptionWord;
+    use moonsnap_project_types::captions::CaptionWord;
     use moonsnap_render::prerendered_text::{LineMetric, PreRenderedTextImage};
     use moonsnap_render::types::{DecodedFrame, PixelFormat, WebcamShape};
     use std::sync::Arc;
@@ -265,15 +265,15 @@ mod tests {
             end: 2.0,
             enabled: true,
             content: "hello".to_string(),
-            center: moonsnap_domain::video_project::XY { x: 0.5, y: 0.5 },
-            size: moonsnap_domain::video_project::XY { x: 0.3, y: 0.1 },
+            center: moonsnap_project_types::video_project::XY { x: 0.5, y: 0.5 },
+            size: moonsnap_project_types::video_project::XY { x: 0.3, y: 0.1 },
             font_family: "Arial".to_string(),
             font_size: 42.0,
             font_weight: 500.0,
             italic: false,
             color: "#ffffff".to_string(),
             fade_duration: 0.2,
-            animation: moonsnap_domain::video_project::TextAnimation::None,
+            animation: moonsnap_project_types::video_project::TextAnimation::None,
             typewriter_chars_per_second: 24.0,
             typewriter_sound_enabled: false,
         }];

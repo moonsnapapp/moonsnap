@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 use crate::types::{TextOverlayQuad, ZoomState};
 use crate::zoom::apply_zoom_to_normalized_point;
-use moonsnap_domain::video_project::{TextAnimation, TextSegment};
+use moonsnap_project_types::video_project::{TextAnimation, TextSegment};
 
 /// A pre-rendered text image from the frontend.
 #[derive(Debug, Clone)]

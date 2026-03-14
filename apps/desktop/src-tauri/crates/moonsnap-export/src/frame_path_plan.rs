@@ -1,6 +1,6 @@
 //! Frame-path planning helpers for decode/render fast paths.
 
-use moonsnap_domain::video_project::SceneMode;
+use moonsnap_project_types::video_project::SceneMode;
 
 /// Decision for how a decoded frame should flow through the exporter.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

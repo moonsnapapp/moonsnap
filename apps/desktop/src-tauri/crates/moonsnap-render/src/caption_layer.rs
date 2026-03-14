@@ -5,7 +5,7 @@
 
 use crate::parity::{layout, scale_factor};
 use crate::text::{PreparedText, WordColor};
-use moonsnap_domain::captions::{CaptionSegment, CaptionSettings, CaptionWord};
+use moonsnap_project_types::captions::{CaptionSegment, CaptionSettings, CaptionWord};
 
 /// Find the active caption segment at a given time.
 pub fn find_active_segment<'a>(

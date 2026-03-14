@@ -3,7 +3,7 @@
 //! Ported from Cap's scene.rs - provides smooth transitions between scene modes
 //! (Default, CameraOnly, ScreenOnly) with blur, zoom, and opacity effects.
 
-use moonsnap_domain::video_project::{SceneMode, SceneSegment};
+use moonsnap_project_types::video_project::{SceneMode, SceneSegment};
 
 /// Scene transition duration in seconds (matches Cap).
 pub const SCENE_TRANSITION_DURATION: f64 = 0.3;

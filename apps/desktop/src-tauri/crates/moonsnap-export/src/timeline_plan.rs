@@ -1,6 +1,6 @@
 //! Timeline/decode planning helpers for export pipelines.
 
-use moonsnap_domain::video_project::TimelineState;
+use moonsnap_project_types::video_project::TimelineState;
 
 /// Planned timeline/decode metrics for an export run.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -69,7 +69,7 @@ pub fn should_skip_source_frame(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use moonsnap_domain::video_project::TrimSegment;
+    use moonsnap_project_types::video_project::TrimSegment;
 
     #[test]
     fn plans_without_segments() {

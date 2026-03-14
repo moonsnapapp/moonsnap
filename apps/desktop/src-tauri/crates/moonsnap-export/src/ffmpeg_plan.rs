@@ -1,7 +1,7 @@
 //! FFmpeg argument planning helpers for export pipelines.
 
-use moonsnap_domain::video_project::{ExportFormat, TextAnimation, VideoProject};
 use moonsnap_media::ffmpeg::{find_ffprobe, video_has_audio_stream};
+use moonsnap_project_types::video_project::{ExportFormat, TextAnimation, VideoProject};
 
 use crate::encoder_selection::{EncoderConfig, EncoderType};
 

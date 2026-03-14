@@ -1,7 +1,7 @@
 //! Caption remapping helpers for edited timeline exports.
 
-use moonsnap_domain::captions::{CaptionSegment, CaptionWord};
-use moonsnap_domain::video_project::TimelineState;
+use moonsnap_project_types::captions::{CaptionSegment, CaptionWord};
+use moonsnap_project_types::video_project::TimelineState;
 
 const CAPTION_TIMELINE_EPSILON: f32 = 0.0005;
 
@@ -178,7 +178,7 @@ pub fn remap_captions_to_timeline(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use moonsnap_domain::video_project::TrimSegment;
+    use moonsnap_project_types::video_project::TrimSegment;
 
     fn caption(id: &str, start: f32, end: f32, text: &str) -> CaptionSegment {
         CaptionSegment {

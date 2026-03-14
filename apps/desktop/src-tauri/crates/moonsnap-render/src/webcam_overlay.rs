@@ -1,7 +1,9 @@
 //! Webcam overlay planning and visibility helpers.
 
 use crate::types::{DecodedFrame, WebcamOverlay, WebcamShape};
-use moonsnap_domain::video_project::{VideoProject, WebcamOverlayPosition, WebcamOverlayShape};
+use moonsnap_project_types::video_project::{
+    VideoProject, WebcamOverlayPosition, WebcamOverlayShape,
+};
 
 const WEBCAM_ZOOM_SHRINK_PER_SCALE_UNIT: f32 = 0.2;
 const WEBCAM_MIN_ZOOM_SIZE_FACTOR: f32 = 0.72;
@@ -154,8 +156,8 @@ pub fn is_webcam_visible_at(project: &VideoProject, timestamp_ms: u64) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use moonsnap_domain::captions::{CaptionSegment, CaptionSettings};
-    use moonsnap_domain::video_project::{
+    use moonsnap_project_types::captions::{CaptionSegment, CaptionSettings};
+    use moonsnap_project_types::video_project::{
         AnnotationConfig, AudioTrackSettings, CornerStyle, CursorConfig, ExportConfig, MaskConfig,
         SceneConfig, ShadowConfig, TextConfig, TimelineState, VideoSources, WebcamBorder,
         WebcamConfig, ZoomConfig,

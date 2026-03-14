@@ -1,6 +1,6 @@
 //! Shared frame timeline/scene context planning for export loops.
 
-use moonsnap_domain::video_project::TimelineState;
+use moonsnap_project_types::video_project::TimelineState;
 use moonsnap_render::scene::{InterpolatedScene, SceneInterpolator};
 use moonsnap_render::zoom::ZoomInterpolator;
 use moonsnap_render::ZoomState;
@@ -92,7 +92,9 @@ pub fn should_log_camera_transition_debug(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use moonsnap_domain::video_project::{SceneSegment, TimelineState, TrimSegment, ZoomConfig};
+    use moonsnap_project_types::video_project::{
+        SceneSegment, TimelineState, TrimSegment, ZoomConfig,
+    };
 
     #[test]
     fn frame_timeline_context_computes_source_relative_and_skip() {

@@ -1,6 +1,6 @@
 //! Base-frame composition helpers for export render paths.
 
-use moonsnap_domain::video_project::VideoProject;
+use moonsnap_project_types::video_project::VideoProject;
 use moonsnap_render::types::{DecodedFrame, WebcamOverlay};
 use moonsnap_render::webcam_overlay::build_webcam_overlay_with_zoom;
 use moonsnap_render::ZoomState;
@@ -133,8 +133,8 @@ pub fn build_frame_composition(req: FrameCompositionRequest<'_>) -> FrameComposi
 mod tests {
     use super::*;
     use crate::frame_path_plan::WebcamOverlayPlan;
-    use moonsnap_domain::captions::{CaptionSegment, CaptionSettings};
-    use moonsnap_domain::video_project::{
+    use moonsnap_project_types::captions::{CaptionSegment, CaptionSettings};
+    use moonsnap_project_types::video_project::{
         AnnotationConfig, AudioTrackSettings, CornerStyle, CursorConfig, ExportConfig, MaskConfig,
         SceneConfig, ShadowConfig, TextConfig, TimelineState, VideoProject, VideoSources,
         WebcamBorder, WebcamConfig, WebcamOverlayPosition, WebcamOverlayShape, ZoomConfig,

@@ -1,6 +1,6 @@
 //! Reusable per-frame CPU cursor overlay compositing for export pipelines.
 
-use moonsnap_domain::video_project::CursorType;
+use moonsnap_project_types::video_project::CursorType;
 use moonsnap_render::cursor_composite::{
     composite_cursor, composite_cursor_with_motion_blur, CursorCompositeInput,
     CursorCompositeState, DecodedCursorImage, VideoContentBounds,

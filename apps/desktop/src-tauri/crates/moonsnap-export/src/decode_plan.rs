@@ -2,7 +2,7 @@
 
 use std::path::Path;
 
-use moonsnap_domain::video_project::VideoProject;
+use moonsnap_project_types::video_project::VideoProject;
 
 use crate::timeline_plan::ExportTimelinePlan;
 
@@ -47,7 +47,7 @@ pub fn plan_stream_decode(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use moonsnap_domain::video_project::{VideoProject, WebcamConfig};
+    use moonsnap_project_types::video_project::{VideoProject, WebcamConfig};
 
     fn timeline_plan() -> ExportTimelinePlan {
         ExportTimelinePlan {

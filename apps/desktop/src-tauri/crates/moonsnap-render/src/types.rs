@@ -5,7 +5,7 @@ use std::path::Path;
 use super::background::hex_to_linear_rgba;
 use super::coord::{Coord, FrameSpace, Size};
 pub use crate::zoom_state::ZoomState;
-use moonsnap_domain::video_project::{
+use moonsnap_project_types::video_project::{
     BackgroundConfig, BackgroundType as ProjectBackgroundType, CornerStyle as ProjectCornerStyle,
 };
 use serde::{Deserialize, Serialize};

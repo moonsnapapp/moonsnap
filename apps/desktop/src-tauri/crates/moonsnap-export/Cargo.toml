@@ -6,7 +6,7 @@ license = "MIT"
 
 [dependencies]
 log = "0.4"
-moonsnap-domain = { path = "../moonsnap-domain" }
+moonsnap-project-types = { path = "../moonsnap-project-types" }
 moonsnap-media = { path = "../moonsnap-media" }
 moonsnap-render = { path = "../moonsnap-render" }
 tokio = { version = "1", features = ["rt-multi-thread", "sync"] }

@@ -12,6 +12,7 @@ members = [
     "crates/moonsnap-hotkeys",
     "crates/moonsnap-capture",
     "crates/moonsnap-capture-types",
+    "crates/moonsnap-project-types",
     "crates/scap-direct3d",
     "crates/scap-targets",
     "crates/moonsnap-core",

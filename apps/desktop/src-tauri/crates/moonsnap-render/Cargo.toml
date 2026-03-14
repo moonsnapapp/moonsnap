@@ -11,7 +11,7 @@ glyphon = "0.9"
 image = "0.25"
 log = "0.4"
 serde = { version = "1", features = ["derive"] }
-moonsnap-domain = { path = "../moonsnap-domain" }
+moonsnap-project-types = { path = "../moonsnap-project-types" }
 tokio = { version = "1", features = ["sync"] }
 ts-rs = "10"
 wgpu = "25"

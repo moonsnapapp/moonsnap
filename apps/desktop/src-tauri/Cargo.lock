@@ -4088,8 +4088,8 @@ name = "moonsnap-export"
 version = "0.1.0"
 dependencies = [
  "log",
- "moonsnap-domain",
  "moonsnap-media",
+ "moonsnap-project-types",
  "moonsnap-render",
  "tokio",
 ]
@@ -4122,6 +4122,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "moonsnap-project-types"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "rand 0.8.5",
+ "serde",
+ "serde_json",
+ "ts-rs",
+]
+
+[[package]]
 name = "moonsnap-render"
 version = "0.1.0"
 dependencies = [
@@ -4130,7 +4141,7 @@ dependencies = [
  "glyphon",
  "image",
  "log",
- "moonsnap-domain",
+ "moonsnap-project-types",
  "proptest",
  "serde",
  "tokio",

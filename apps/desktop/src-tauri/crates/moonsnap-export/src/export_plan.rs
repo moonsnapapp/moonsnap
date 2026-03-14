@@ -1,6 +1,6 @@
 //! High-level export planning from project config.
 
-use moonsnap_domain::video_project::VideoProject;
+use moonsnap_project_types::video_project::VideoProject;
 
 use crate::composition_plan::{plan_export_dimensions, ExportDimensions};
 use crate::decode_plan::{plan_stream_decode, StreamDecodePlan};
@@ -64,7 +64,7 @@ pub fn plan_video_export(project: &VideoProject) -> VideoExportPlan {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use moonsnap_domain::video_project::VideoProject;
+    use moonsnap_project_types::video_project::VideoProject;
 
     #[test]
     fn builds_export_plan_for_default_project() {

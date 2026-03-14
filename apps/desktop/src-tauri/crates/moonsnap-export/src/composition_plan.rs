@@ -1,6 +1,6 @@
 //! Export dimension planning helpers.
 
-use moonsnap_domain::video_project::{CompositionConfig, CompositionMode, CropConfig};
+use moonsnap_project_types::video_project::{CompositionConfig, CompositionMode, CropConfig};
 
 /// Planned dimensions for export decode/composition/output stages.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
