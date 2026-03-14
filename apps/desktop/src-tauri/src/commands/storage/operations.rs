@@ -489,7 +489,8 @@ async fn load_video_project_folder(
     let project_json = folder_path.join("project.json");
     let mut screen_mp4 = folder_path.join("screen.mp4");
 
-    // If screen.mp4 is missing, scan for any .mp4 file (user may have renamed it)
+    // If screen.mp4 is missing, scan for any .mp4 file (user may have renamed it).
+    // Only auto-recover if exactly one .mp4 exists — multiple means we can't guess.
     let mut screen_mp4_meta = async_fs::metadata(&screen_mp4).await.ok();
     if screen_mp4_meta.is_none()
         || screen_mp4_meta
@@ -497,23 +498,27 @@ async fn load_video_project_folder(
             .map(|m| m.len() == 0)
             .unwrap_or(true)
     {
+        let mut found_mp4s: Vec<(PathBuf, std::fs::Metadata)> = Vec::new();
         if let Ok(mut entries) = async_fs::read_dir(&folder_path).await {
             while let Ok(Some(entry)) = entries.next_entry().await {
                 let path = entry.path();
                 if path.extension().and_then(|e| e.to_str()) == Some("mp4") && path.is_file() {
                     if let Ok(meta) = async_fs::metadata(&path).await {
                         if meta.len() > 0 {
-                            log::info!(
-                                "[RECOVERY] Found renamed video: {:?} (screen.mp4 missing)",
-                                path
-                            );
-                            screen_mp4 = path;
-                            screen_mp4_meta = Some(meta);
-                            break;
+                            found_mp4s.push((path, meta));
                         }
                     }
                 }
             }
+        }
+        if found_mp4s.len() == 1 {
+            let (path, meta) = found_mp4s.into_iter().next().unwrap();
+            log::info!(
+                "[RECOVERY] Found renamed video: {:?} (screen.mp4 missing)",
+                path
+            );
+            screen_mp4 = path;
+            screen_mp4_meta = Some(meta);
         }
     }
 
