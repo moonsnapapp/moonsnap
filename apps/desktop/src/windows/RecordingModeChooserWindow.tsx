@@ -29,13 +29,22 @@ const RecordingModeChooserWindow: React.FC = () => {
     (
       window as Window & {
         __MOONSNAP_RECORDING_MODE_CHOOSER_OWNER?: string;
+        __MOONSNAP_RECORDING_MODE_CHOOSER_ALLOW_DRAG?: boolean;
       }
     ).__MOONSNAP_RECORDING_MODE_CHOOSER_OWNER ?? 'capture-toolbar'
   );
+  const allowDragRef = useRef(
+    (
+      window as Window & {
+        __MOONSNAP_RECORDING_MODE_CHOOSER_ALLOW_DRAG?: boolean;
+      }
+    ).__MOONSNAP_RECORDING_MODE_CHOOSER_ALLOW_DRAG ?? false
+  );
 
   useEffect(() => {
-    const unlisten = listen<{ owner?: string }>('recording-mode-chooser-context', (event) => {
+    const unlisten = listen<{ owner?: string; allowDrag?: boolean }>('recording-mode-chooser-context', (event) => {
       ownerRef.current = event.payload.owner ?? 'capture-toolbar';
+      allowDragRef.current = event.payload.allowDrag ?? false;
     });
 
     return () => {
@@ -185,6 +194,10 @@ const RecordingModeChooserWindow: React.FC = () => {
   }, [flushDragDelta]);
 
   const handlePointerDown = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    if (!allowDragRef.current) {
+      return;
+    }
+
     if (event.button !== 0) {
       return;
     }

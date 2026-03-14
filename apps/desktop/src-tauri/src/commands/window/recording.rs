@@ -422,8 +422,10 @@ pub async fn show_recording_mode_chooser(
     width: u32,
     height: u32,
     owner: Option<String>,
+    allow_drag: Option<bool>,
 ) -> Result<(), String> {
     let owner = owner.unwrap_or_else(|| "capture-toolbar".to_string());
+    let allow_drag = allow_drag.unwrap_or(false);
     let (window_x, window_y, chooser_width, chooser_height) = chooser_window_bounds(
         &app,
         x,
@@ -445,16 +447,17 @@ pub async fn show_recording_mode_chooser(
         bring_floating_window_to_front(&window, true)?;
         let _ = window.emit(
             "recording-mode-chooser-context",
-            serde_json::json!({ "owner": owner }),
+            serde_json::json!({ "owner": owner, "allowDrag": allow_drag }),
         );
         return Ok(());
     }
 
     let url = WebviewUrl::App("windows/recording-mode-chooser.html".into());
-    let owner_script = format!(
-        "window.__MOONSNAP_RECORDING_MODE_CHOOSER_OWNER = {};",
+    let chooser_context_script = format!(
+        "window.__MOONSNAP_RECORDING_MODE_CHOOSER_OWNER = {}; window.__MOONSNAP_RECORDING_MODE_CHOOSER_ALLOW_DRAG = {};",
         serde_json::to_string(&owner)
-            .map_err(|e| format!("Failed to serialize recording mode chooser owner: {}", e))?
+            .map_err(|e| format!("Failed to serialize recording mode chooser owner: {}", e))?,
+        if allow_drag { "true" } else { "false" },
     );
 
     let window = WebviewWindowBuilder::new(&app, RECORDING_MODE_CHOOSER_LABEL, url)
@@ -471,7 +474,7 @@ pub async fn show_recording_mode_chooser(
         .shadow(false)
         .visible(false)
         .focused(false)
-        .initialization_script(owner_script)
+        .initialization_script(chooser_context_script)
         .build()
         .map_err(|e| format!("Failed to create recording mode chooser window: {}", e))?;
 
@@ -487,7 +490,7 @@ pub async fn show_recording_mode_chooser(
     bring_floating_window_to_front(&window, true)?;
     let _ = window.emit(
         "recording-mode-chooser-context",
-        serde_json::json!({ "owner": owner }),
+        serde_json::json!({ "owner": owner, "allowDrag": allow_drag }),
     );
 
     Ok(())

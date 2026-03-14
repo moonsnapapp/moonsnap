@@ -366,6 +366,7 @@ const CaptureToolbarWindow: React.FC = () => {
               width: selection.width,
               height: selection.height,
               owner: 'capture-toolbar',
+              allowDrag: selection.sourceType === 'area',
             });
           } catch (error) {
             setIsModeChooserVisible(false);

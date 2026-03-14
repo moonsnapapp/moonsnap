@@ -515,6 +515,10 @@ fn run_overlay(
                         }
                     },
                     OverlayCommand::MoveSelectionBy => {
+                        if state.adjustment.is_locked {
+                            continue;
+                        }
+
                         let (dx, dy) = take_pending_move_delta();
                         if dx != 0 || dy != 0 {
                             state.adjustment.bounds = state.adjustment.bounds.offset(dx, dy);

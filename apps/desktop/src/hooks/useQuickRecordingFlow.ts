@@ -213,6 +213,7 @@ export function useQuickRecordingFlow() {
               width: selection.width,
               height: selection.height,
               owner: QUICK_RECORDING_OWNER,
+              allowDrag: selection.sourceType === 'area',
             });
             return;
           }
