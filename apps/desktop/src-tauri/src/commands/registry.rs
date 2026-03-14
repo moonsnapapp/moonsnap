@@ -22,6 +22,8 @@ macro_rules! tauri_command_handler {
             crate::commands::window::capture::show_overlay,
             crate::commands::window::capture::hide_overlay,
             crate::commands::window::capture::open_editor_fast,
+            crate::commands::window::capture::capture_fullscreen_to_editor,
+            crate::commands::window::capture::capture_all_monitors_to_editor,
             crate::commands::window::capture::restore_main_window,
             crate::commands::window::capture::show_library_window,
             // Window commands - recording

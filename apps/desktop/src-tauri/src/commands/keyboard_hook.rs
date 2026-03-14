@@ -13,12 +13,11 @@ use std::sync::{Arc, Mutex, OnceLock};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
-use moonsnap_domain::capture::ScreenRegionSelection;
 use moonsnap_hotkeys::{Hotkey, HotkeyId, HotkeyManager, HotkeyState as HotkeyEventState};
 use serde::Deserialize;
 use tauri::AppHandle;
 
-use crate::commands::{capture, storage, window};
+use crate::commands::{storage, window};
 
 const DEFAULT_SHORTCUTS: [(&str, &str); 6] = [
     ("open_capture_toolbar", "Ctrl+Shift+Space"),
@@ -201,25 +200,9 @@ fn dispatch_global_shortcut_inner(app: &AppHandle, id: &str) -> Result<(), Strin
         "fullscreen_capture" => {
             let app_handle = app.clone();
             tauri::async_runtime::spawn(async move {
-                match capture::capture_fullscreen_fast().await {
-                    Ok(result) => {
-                        if let Err(error) = window::open_editor_fast(
-                            app_handle,
-                            result.file_path,
-                            result.width,
-                            result.height,
-                        )
-                        .await
-                        {
-                            log::error!(
-                                "Failed to open fullscreen capture from shortcut: {}",
-                                error
-                            );
-                        }
-                    },
-                    Err(error) => {
-                        log::error!("Failed to capture fullscreen from shortcut: {}", error);
-                    },
+                if let Err(error) = window::capture::capture_fullscreen_to_editor(app_handle).await
+                {
+                    log::error!("Failed to capture fullscreen from shortcut: {}", error);
                 }
             });
             Ok(())
@@ -227,45 +210,10 @@ fn dispatch_global_shortcut_inner(app: &AppHandle, id: &str) -> Result<(), Strin
         "all_monitors_capture" => {
             let app_handle = app.clone();
             tauri::async_runtime::spawn(async move {
-                match capture::get_virtual_screen_bounds().await {
-                    Ok(bounds) => {
-                        let selection = ScreenRegionSelection {
-                            x: bounds.x,
-                            y: bounds.y,
-                            width: bounds.width,
-                            height: bounds.height,
-                        };
-
-                        match capture::capture_screen_region_fast(selection).await {
-                            Ok(result) => {
-                                if let Err(error) = window::open_editor_fast(
-                                    app_handle,
-                                    result.file_path,
-                                    result.width,
-                                    result.height,
-                                )
-                                .await
-                                {
-                                    log::error!(
-                                        "Failed to open all-monitors capture from shortcut: {}",
-                                        error
-                                    );
-                                }
-                            },
-                            Err(error) => {
-                                log::error!(
-                                    "Failed to capture all monitors from shortcut: {}",
-                                    error
-                                );
-                            },
-                        }
-                    },
-                    Err(error) => {
-                        log::error!(
-                            "Failed to resolve virtual screen bounds from shortcut: {}",
-                            error
-                        );
-                    },
+                if let Err(error) =
+                    window::capture::capture_all_monitors_to_editor(app_handle).await
+                {
+                    log::error!("Failed to capture all monitors from shortcut: {}", error);
                 }
             });
             Ok(())

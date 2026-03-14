@@ -38,6 +38,7 @@ pub mod webcam;
 use lazy_static::lazy_static;
 use std::path::PathBuf;
 use std::sync::Mutex;
+use std::time::{Duration, Instant};
 use tauri::{command, AppHandle, Emitter, Manager};
 
 // ============================================================================
@@ -93,6 +94,11 @@ static PREPARED_WEBCAM_PIPE: OnceLock<StdMutex<Option<webcam::WebcamEncoderPipe>
 
 /// Pre-generated output path for the next recording.
 static PREPARED_OUTPUT_PATH: OnceLock<StdMutex<Option<std::path::PathBuf>>> = OnceLock::new();
+static LAST_CAPTURE_BLOCKED_NOTICE: OnceLock<StdMutex<Option<Instant>>> = OnceLock::new();
+
+const CAPTURE_BLOCKED_NOTICE_DEBOUNCE: Duration = Duration::from_millis(1200);
+const CAPTURE_BLOCKED_EVENT: &str = "capture-blocked-while-recording";
+const CAPTURE_BLOCKED_MESSAGE: &str = "Recording in progress...";
 
 fn get_prepared_webcam_pipe() -> &'static StdMutex<Option<webcam::WebcamEncoderPipe>> {
     PREPARED_WEBCAM_PIPE.get_or_init(|| StdMutex::new(None))
@@ -100,6 +106,37 @@ fn get_prepared_webcam_pipe() -> &'static StdMutex<Option<webcam::WebcamEncoderP
 
 fn get_prepared_output_path() -> &'static StdMutex<Option<std::path::PathBuf>> {
     PREPARED_OUTPUT_PATH.get_or_init(|| StdMutex::new(None))
+}
+
+fn should_emit_capture_blocked_notice() -> bool {
+    let state = LAST_CAPTURE_BLOCKED_NOTICE.get_or_init(|| StdMutex::new(None));
+    let Ok(mut last_notice) = state.lock() else {
+        return true;
+    };
+
+    let now = Instant::now();
+    if let Some(last_notice_at) = *last_notice {
+        if now.duration_since(last_notice_at) < CAPTURE_BLOCKED_NOTICE_DEBOUNCE {
+            return false;
+        }
+    }
+
+    *last_notice = Some(now);
+    true
+}
+
+pub fn block_capture_attempt_while_recording(app: &AppHandle) -> Result<bool, String> {
+    let controller = RECORDING_CONTROLLER.lock().map_err(|e| e.to_string())?;
+    if !controller.is_active() {
+        return Ok(false);
+    }
+    drop(controller);
+
+    if should_emit_capture_blocked_notice() {
+        let _ = app.emit(CAPTURE_BLOCKED_EVENT, CAPTURE_BLOCKED_MESSAGE);
+    }
+
+    Ok(true)
 }
 
 /// Take the pre-generated output path if available.

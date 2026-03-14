@@ -25,6 +25,19 @@ interface VirtualScreenBounds {
  */
 export const CaptureService = {
   /**
+   * Capture the current display and open directly in the editor.
+   * Uses the guarded backend entrypoint so active recordings cannot be interrupted.
+   */
+  async captureFullscreenToEditor(): Promise<void> {
+    try {
+      await invoke('capture_fullscreen_to_editor');
+    } catch (error) {
+      reportError(error, { operation: 'fullscreen capture' });
+      throw error;
+    }
+  },
+
+  /**
    * Show the region selection overlay for screenshot capture.
    * The overlay handles the actual capture when user confirms selection.
    */
@@ -77,12 +90,12 @@ export const CaptureService = {
    * Convenience method that combines capture + open.
    */
   async captureAllMonitorsToEditor(): Promise<void> {
-    const result = await this.captureAllMonitors();
-    await invoke('open_editor_fast', {
-      filePath: result.file_path,
-      width: result.width,
-      height: result.height,
-    });
+    try {
+      await invoke('capture_all_monitors_to_editor');
+    } catch (error) {
+      reportError(error, { operation: 'monitors capture' });
+      throw error;
+    }
   },
 
   /**

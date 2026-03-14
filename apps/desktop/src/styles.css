@@ -4645,6 +4645,52 @@ body.floating-toolbar-window #root {
   cursor: move;
 }
 
+.capture-blocked-feedback {
+  transform-origin: center center;
+  will-change: transform, filter;
+}
+
+.capture-blocked-feedback--active {
+  animation: capture-blocked-pulse 200ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+.capture-blocked-feedback--countdown {
+  cursor: default;
+}
+
+@keyframes capture-blocked-pulse {
+  0% {
+    transform: scale(1);
+    filter: brightness(1);
+  }
+  38% {
+    transform: scale(1.028);
+    filter: brightness(1.09);
+  }
+  100% {
+    transform: scale(1);
+    filter: brightness(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .capture-blocked-feedback--active {
+    animation: capture-blocked-flash 180ms ease-out;
+  }
+}
+
+@keyframes capture-blocked-flash {
+  0% {
+    filter: brightness(1);
+  }
+  45% {
+    filter: brightness(1.1);
+  }
+  100% {
+    filter: brightness(1);
+  }
+}
+
 .glass-toolbar--minimal-floating {
   width: max-content;
   padding: 10px 12px;

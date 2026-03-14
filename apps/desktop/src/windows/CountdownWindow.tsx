@@ -9,10 +9,13 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { emit, listen } from '@tauri-apps/api/event';
 import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
+import { useCaptureBlockedPulse } from '../hooks/useCaptureBlockedPulse';
 import { recordingLogger } from '../utils/logger';
 import type { RecordingState } from '../types';
 
 const CountdownWindow: React.FC = () => {
+  const isCaptureBlockedPulseActive = useCaptureBlockedPulse();
+
   const params = new URLSearchParams(window.location.search);
   const totalSecs = parseInt(params.get('secs') || '3', 10);
 
@@ -87,8 +90,10 @@ const CountdownWindow: React.FC = () => {
   // The circle is sized relative to the smaller viewport dimension
   return (
     <div className="fixed inset-0 flex items-center justify-center pointer-events-none">
-      {/* Countdown container - no backdrop, just the countdown circle */}
-      <div className="relative flex flex-col items-center">
+      <div
+        className={`relative flex flex-col items-center capture-blocked-feedback capture-blocked-feedback--countdown${isCaptureBlockedPulseActive ? ' capture-blocked-feedback--active' : ''}`}
+      >
+        {/* Countdown container - no backdrop, just the countdown circle */}
         {/* Countdown circle - responsive size using min(vw, vh) */}
         <div
           key={count}

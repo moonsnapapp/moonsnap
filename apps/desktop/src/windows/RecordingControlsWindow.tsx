@@ -8,6 +8,7 @@ import {
   type RecordingAudioConfig,
   type ToolbarMode,
 } from '@/components/CaptureToolbar/CaptureToolbar';
+import { useCaptureBlockedPulse } from '@/hooks/useCaptureBlockedPulse';
 import { useTheme } from '@/hooks/useTheme';
 import type { RecordingFormat, RecordingState } from '@/types';
 import { toolbarLogger } from '@/utils/logger';
@@ -32,6 +33,7 @@ function getInitialRecordingFormat(): RecordingFormat {
 
 const RecordingControlsWindow: React.FC = () => {
   useTheme();
+  const isCaptureBlockedPulseActive = useCaptureBlockedPulse();
 
   const [mode, setMode] = useState<ToolbarMode>('starting');
   const [format, setFormat] = useState<RecordingFormat>(getInitialRecordingFormat);
@@ -224,7 +226,7 @@ const RecordingControlsWindow: React.FC = () => {
   return (
     <div
       ref={containerRef}
-      className="recording-controls-shell"
+      className={`recording-controls-shell capture-blocked-feedback${isCaptureBlockedPulseActive ? ' capture-blocked-feedback--active' : ''}`}
       onMouseDown={handleMouseDown}
     >
       <CaptureToolbar

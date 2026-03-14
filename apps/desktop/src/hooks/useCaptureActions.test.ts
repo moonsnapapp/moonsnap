@@ -10,11 +10,13 @@ vi.mock('@tauri-apps/api/core', () => ({
 
 // Mock CaptureService
 const mockShowScreenshotOverlay = vi.fn();
+const mockCaptureFullscreenToEditor = vi.fn();
 const mockCaptureAllMonitorsToEditor = vi.fn();
 
 vi.mock('../services/captureService', () => ({
   CaptureService: {
     showScreenshotOverlay: () => mockShowScreenshotOverlay(),
+    captureFullscreenToEditor: () => mockCaptureFullscreenToEditor(),
     captureAllMonitorsToEditor: () => mockCaptureAllMonitorsToEditor(),
   },
 }));
@@ -37,16 +39,7 @@ describe('useCaptureActions', () => {
   });
 
   it('should trigger fullscreen capture and open editor', async () => {
-    const captureResult = {
-      file_path: '/path/to/capture.png',
-      width: 1920,
-      height: 1080,
-    };
-    mockInvoke.mockImplementation((cmd: string) => {
-      if (cmd === 'capture_fullscreen_fast') return Promise.resolve(captureResult);
-      if (cmd === 'open_editor_fast') return Promise.resolve(undefined);
-      return Promise.resolve(undefined);
-    });
+    mockCaptureFullscreenToEditor.mockResolvedValue(undefined);
 
     const { result } = renderHook(() => useCaptureActions());
 
@@ -54,12 +47,7 @@ describe('useCaptureActions', () => {
       await result.current.triggerFullscreenCapture();
     });
 
-    expect(mockInvoke).toHaveBeenCalledWith('capture_fullscreen_fast');
-    expect(mockInvoke).toHaveBeenCalledWith('open_editor_fast', {
-      filePath: '/path/to/capture.png',
-      width: 1920,
-      height: 1080,
-    });
+    expect(mockCaptureFullscreenToEditor).toHaveBeenCalledTimes(1);
   });
 
   it('should trigger all monitors capture', async () => {

@@ -17,7 +17,6 @@ import React, { useEffect, useCallback, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { emit, listen } from '@tauri-apps/api/event';
 import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
-import { Toaster } from 'sonner';
 import { CaptureToolbar } from '../components/CaptureToolbar/CaptureToolbar';
 import type { CaptureSource } from '../components/CaptureToolbar/SourceSelector';
 import {
@@ -854,17 +853,6 @@ const CaptureToolbarWindow: React.FC = () => {
           </div>
         </div>
       </div>
-      <Toaster
-        position="top-center"
-        toastOptions={{
-          style: {
-            background: 'rgba(0, 0, 0, 0.85)',
-            color: '#fff',
-            border: '1px solid rgba(255, 255, 255, 0.1)',
-            borderRadius: '8px',
-          },
-        }}
-      />
     </div>
   );
 };

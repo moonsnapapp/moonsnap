@@ -5,7 +5,6 @@
 
 use std::sync::Mutex;
 
-use moonsnap_domain::capture::ScreenRegionSelection;
 use moonsnap_domain::recording::{RecordingFormat, RecordingState};
 use tauri::{
     image::Image,
@@ -310,14 +309,10 @@ pub fn setup_system_tray(app: &App) -> Result<TrayState, Box<dyn std::error::Err
                 // Fast fullscreen capture - no overlay, no PNG encoding
                 let app_handle = app.clone();
                 tauri::async_runtime::spawn(async move {
-                    if let Ok(result) = commands::capture::capture_fullscreen_fast().await {
-                        let _ = commands::window::open_editor_fast(
-                            app_handle,
-                            result.file_path,
-                            result.width,
-                            result.height,
-                        )
-                        .await;
+                    if let Err(error) =
+                        commands::window::capture::capture_fullscreen_to_editor(app_handle).await
+                    {
+                        log::error!("Failed to capture fullscreen from tray: {}", error);
                     }
                 });
             },
@@ -325,24 +320,10 @@ pub fn setup_system_tray(app: &App) -> Result<TrayState, Box<dyn std::error::Err
                 // Capture all monitors combined
                 let app_handle = app.clone();
                 tauri::async_runtime::spawn(async move {
-                    if let Ok(bounds) = commands::capture::get_virtual_screen_bounds().await {
-                        let selection = ScreenRegionSelection {
-                            x: bounds.x,
-                            y: bounds.y,
-                            width: bounds.width,
-                            height: bounds.height,
-                        };
-                        if let Ok(result) =
-                            commands::capture::capture_screen_region_fast(selection).await
-                        {
-                            let _ = commands::window::open_editor_fast(
-                                app_handle,
-                                result.file_path,
-                                result.width,
-                                result.height,
-                            )
-                            .await;
-                        }
+                    if let Err(error) =
+                        commands::window::capture::capture_all_monitors_to_editor(app_handle).await
+                    {
+                        log::error!("Failed to capture all monitors from tray: {}", error);
                     }
                 });
             },

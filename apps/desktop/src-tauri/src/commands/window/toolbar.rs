@@ -129,6 +129,10 @@ pub async fn show_capture_toolbar(
     auto_start_recording: Option<bool>,
     snap_toolbar_to_selection: Option<bool>,
 ) -> Result<(), String> {
+    if crate::commands::video_recording::block_capture_attempt_while_recording(&app)? {
+        return Ok(());
+    }
+
     let toolbar_state = app.state::<CaptureToolbarWindowState>();
     let _create_guard = toolbar_state
         .create_lock
@@ -583,6 +587,10 @@ pub async fn show_startup_toolbar(
     source_mode: Option<String>,
     auto_start_area_selection: Option<bool>,
 ) -> Result<(), String> {
+    if crate::commands::video_recording::block_capture_attempt_while_recording(&app)? {
+        return Ok(());
+    }
+
     let auto_start_area_selection = auto_start_area_selection.unwrap_or(false);
     let startup_context = build_startup_toolbar_context(
         capture_type.clone(),

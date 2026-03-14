@@ -34,6 +34,10 @@ pub fn trigger_capture_with_options(
     capture_type: Option<&str>,
     auto_start_recording: bool,
 ) -> Result<(), String> {
+    if crate::commands::video_recording::block_capture_attempt_while_recording(app)? {
+        return Ok(());
+    }
+
     log::info!(
         "[trigger_capture] Called with capture_type: {:?}",
         capture_type
@@ -194,6 +198,33 @@ pub fn trigger_capture_with_options(
     });
 
     Ok(())
+}
+
+#[command]
+pub async fn capture_fullscreen_to_editor(app: AppHandle) -> Result<(), String> {
+    if crate::commands::video_recording::block_capture_attempt_while_recording(&app)? {
+        return Ok(());
+    }
+
+    let result = crate::commands::capture::capture_fullscreen_fast().await?;
+    open_editor_fast(app, result.file_path, result.width, result.height).await
+}
+
+#[command]
+pub async fn capture_all_monitors_to_editor(app: AppHandle) -> Result<(), String> {
+    if crate::commands::video_recording::block_capture_attempt_while_recording(&app)? {
+        return Ok(());
+    }
+
+    let bounds = crate::commands::capture::get_virtual_screen_bounds().await?;
+    let selection = ScreenRegionSelection {
+        x: bounds.x,
+        y: bounds.y,
+        width: bounds.width,
+        height: bounds.height,
+    };
+    let result = crate::commands::capture::capture_screen_region_fast(selection).await?;
+    open_editor_fast(app, result.file_path, result.width, result.height).await
 }
 
 #[command]

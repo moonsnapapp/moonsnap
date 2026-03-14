@@ -3,10 +3,11 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 fn main() {
-    // Only re-run the FFmpeg setup when the build script itself changes
-    // or when the binaries directory is missing expected files.
+    // Keep the custom build script stable across normal source edits.
+    // tauri-build already emits rerun directives for the specific bundled
+    // binaries, so watching the whole directory here just broadens the
+    // invalidation surface and causes avoidable rebuilds.
     println!("cargo:rerun-if-changed=build.rs");
-    println!("cargo:rerun-if-changed=binaries/");
 
     // Ensure FFmpeg binaries are in the binaries folder for Tauri to bundle
     if let Err(e) = ensure_ffmpeg_binaries() {
