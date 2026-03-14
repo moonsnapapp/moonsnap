@@ -199,7 +199,7 @@ export const CaptureToolbar: React.FC<CaptureToolbarProps> = ({
             <span className="glass-text glass-text--mono text-sm font-medium">
               {formatTime(elapsedTime)}
             </span>
-            <div className={`glass-badge px-2 py-0.5 text-[9px] uppercase tracking-wider select-none ${
+            <div className={`glass-badge glass-recording-format-badge uppercase select-none ${
               isGif ? 'glass-badge--purple' : 'glass-badge--blue'
             }`}>
               {format}

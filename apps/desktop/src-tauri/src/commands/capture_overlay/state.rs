@@ -170,7 +170,14 @@ impl AdjustmentState {
     /// Apply a mouse movement delta to the current handle.
     ///
     /// Updates bounds based on which handle is being dragged.
-    pub fn apply_delta(&mut self, dx: i32, dy: i32) {
+    pub fn apply_delta(&mut self, dx: i32, dy: i32, constrain_proportions: bool) {
+        if constrain_proportions {
+            if let Some(bounds) = self.constrained_bounds(dx, dy) {
+                self.bounds = bounds;
+                return;
+            }
+        }
+
         match self.handle {
             HandlePosition::TopLeft => {
                 self.bounds.left = self.original_bounds.left + dx;
@@ -208,6 +215,129 @@ impl AdjustmentState {
 
         // Ensure minimum size
         self.bounds = self.bounds.ensure_min_size(MIN_SELECTION_SIZE);
+    }
+
+    fn constrained_bounds(&self, dx: i32, dy: i32) -> Option<Rect> {
+        let original_width = (self.original_bounds.right - self.original_bounds.left).max(0);
+        let original_height = (self.original_bounds.bottom - self.original_bounds.top).max(0);
+
+        if original_width == 0 || original_height == 0 {
+            return None;
+        }
+
+        let min_scale = (MIN_SELECTION_SIZE as f64 / original_width as f64)
+            .max(MIN_SELECTION_SIZE as f64 / original_height as f64);
+
+        let scale = match self.handle {
+            HandlePosition::TopLeft
+            | HandlePosition::TopRight
+            | HandlePosition::BottomRight
+            | HandlePosition::BottomLeft => {
+                let target_width = match self.handle {
+                    HandlePosition::TopLeft | HandlePosition::BottomLeft => {
+                        (original_width - dx) as f64
+                    },
+                    HandlePosition::TopRight | HandlePosition::BottomRight => {
+                        (original_width + dx) as f64
+                    },
+                    _ => unreachable!(),
+                };
+                let target_height = match self.handle {
+                    HandlePosition::TopLeft | HandlePosition::TopRight => {
+                        (original_height - dy) as f64
+                    },
+                    HandlePosition::BottomLeft | HandlePosition::BottomRight => {
+                        (original_height + dy) as f64
+                    },
+                    _ => unreachable!(),
+                };
+
+                let axis_length_squared = (original_width.pow(2) + original_height.pow(2)) as f64;
+                ((target_width * original_width as f64) + (target_height * original_height as f64))
+                    / axis_length_squared
+            },
+            HandlePosition::Left => (original_width - dx) as f64 / original_width as f64,
+            HandlePosition::Right => (original_width + dx) as f64 / original_width as f64,
+            HandlePosition::Top => (original_height - dy) as f64 / original_height as f64,
+            HandlePosition::Bottom => (original_height + dy) as f64 / original_height as f64,
+            HandlePosition::Interior | HandlePosition::None => return None,
+        }
+        .max(min_scale);
+
+        let new_width = ((original_width as f64 * scale).round() as i32).max(MIN_SELECTION_SIZE);
+        let new_height = ((original_height as f64 * scale).round() as i32).max(MIN_SELECTION_SIZE);
+
+        Some(match self.handle {
+            HandlePosition::TopLeft => Rect::new(
+                self.original_bounds.right - new_width,
+                self.original_bounds.bottom - new_height,
+                self.original_bounds.right,
+                self.original_bounds.bottom,
+            ),
+            HandlePosition::TopRight => Rect::new(
+                self.original_bounds.left,
+                self.original_bounds.bottom - new_height,
+                self.original_bounds.left + new_width,
+                self.original_bounds.bottom,
+            ),
+            HandlePosition::BottomRight => Rect::new(
+                self.original_bounds.left,
+                self.original_bounds.top,
+                self.original_bounds.left + new_width,
+                self.original_bounds.top + new_height,
+            ),
+            HandlePosition::BottomLeft => Rect::new(
+                self.original_bounds.right - new_width,
+                self.original_bounds.top,
+                self.original_bounds.right,
+                self.original_bounds.top + new_height,
+            ),
+            HandlePosition::Left => {
+                let center_y =
+                    (self.original_bounds.top + self.original_bounds.bottom) as f64 / 2.0;
+                let top = (center_y - new_height as f64 / 2.0).round() as i32;
+                Rect::new(
+                    self.original_bounds.right - new_width,
+                    top,
+                    self.original_bounds.right,
+                    top + new_height,
+                )
+            },
+            HandlePosition::Right => {
+                let center_y =
+                    (self.original_bounds.top + self.original_bounds.bottom) as f64 / 2.0;
+                let top = (center_y - new_height as f64 / 2.0).round() as i32;
+                Rect::new(
+                    self.original_bounds.left,
+                    top,
+                    self.original_bounds.left + new_width,
+                    top + new_height,
+                )
+            },
+            HandlePosition::Top => {
+                let center_x =
+                    (self.original_bounds.left + self.original_bounds.right) as f64 / 2.0;
+                let left = (center_x - new_width as f64 / 2.0).round() as i32;
+                Rect::new(
+                    left,
+                    self.original_bounds.bottom - new_height,
+                    left + new_width,
+                    self.original_bounds.bottom,
+                )
+            },
+            HandlePosition::Bottom => {
+                let center_x =
+                    (self.original_bounds.left + self.original_bounds.right) as f64 / 2.0;
+                let left = (center_x - new_width as f64 / 2.0).round() as i32;
+                Rect::new(
+                    left,
+                    self.original_bounds.top,
+                    left + new_width,
+                    self.original_bounds.top + new_height,
+                )
+            },
+            HandlePosition::Interior | HandlePosition::None => return None,
+        })
     }
 
     /// Start dragging a handle.
@@ -538,7 +668,7 @@ mod tests {
         let mut state = AdjustmentState::default();
         state.bounds = Rect::new(100, 100, 200, 200);
         state.start_drag(HandlePosition::Interior, Point::new(150, 150));
-        state.apply_delta(10, 20);
+        state.apply_delta(10, 20, false);
 
         assert_eq!(state.bounds.left, 110);
         assert_eq!(state.bounds.top, 120);
@@ -551,7 +681,7 @@ mod tests {
         let mut state = AdjustmentState::default();
         state.bounds = Rect::new(100, 100, 200, 200);
         state.start_drag(HandlePosition::BottomRight, Point::new(200, 200));
-        state.apply_delta(50, 30);
+        state.apply_delta(50, 30, false);
 
         assert_eq!(state.bounds.left, 100);
         assert_eq!(state.bounds.top, 100);
@@ -564,9 +694,35 @@ mod tests {
         let mut state = AdjustmentState::default();
         state.bounds = Rect::new(100, 100, 150, 150);
         state.start_drag(HandlePosition::Right, Point::new(150, 125));
-        state.apply_delta(-100, 0); // Try to make width negative
+        state.apply_delta(-100, 0, false); // Try to make width negative
 
         assert!(state.bounds.width() >= MIN_SELECTION_SIZE as u32);
+    }
+
+    #[test]
+    fn test_adjustment_apply_delta_corner_with_aspect_constraint() {
+        let mut state = AdjustmentState::default();
+        state.bounds = Rect::new(100, 100, 300, 200);
+        state.start_drag(HandlePosition::BottomRight, Point::new(300, 200));
+        state.apply_delta(50, 10, true);
+
+        assert_eq!(state.bounds.left, 100);
+        assert_eq!(state.bounds.top, 100);
+        assert_eq!(state.bounds.width(), 244);
+        assert_eq!(state.bounds.height(), 122);
+    }
+
+    #[test]
+    fn test_adjustment_apply_delta_edge_with_aspect_constraint() {
+        let mut state = AdjustmentState::default();
+        state.bounds = Rect::new(100, 100, 300, 200);
+        state.start_drag(HandlePosition::Right, Point::new(300, 150));
+        state.apply_delta(50, 0, true);
+
+        assert_eq!(state.bounds.left, 100);
+        assert_eq!(state.bounds.right, 350);
+        assert_eq!(state.bounds.width(), 250);
+        assert_eq!(state.bounds.height(), 125);
     }
 
     #[test]

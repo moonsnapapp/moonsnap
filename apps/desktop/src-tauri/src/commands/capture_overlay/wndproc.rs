@@ -199,9 +199,7 @@ fn handle_mouse_move(state_ptr: *mut OverlayState, lparam: LPARAM) -> LRESULT {
         if state.adjustment.is_active {
             if state.adjustment.is_dragging {
                 // Calculate delta from drag start
-                let dx = x - state.adjustment.drag_start.x;
-                let dy = y - state.adjustment.drag_start.y;
-                state.adjustment.apply_delta(dx, dy);
+                update_adjustment_drag(state, state.drag.shift_held);
 
                 // Emit dimension updates to toolbar (throttled)
                 if state.should_emit(50) {
@@ -474,6 +472,10 @@ fn handle_key_down(state_ptr: *mut OverlayState, wparam: WPARAM) -> LRESULT {
             },
             k if k == VK_SHIFT.0 as u32 => {
                 state.drag.shift_held = true;
+                if state.adjustment.is_dragging {
+                    update_adjustment_drag(state, true);
+                    emit_dimensions_update(state);
+                }
                 let _ = render::render(state);
             },
             _ => {},
@@ -494,6 +496,10 @@ fn handle_key_up(state_ptr: *mut OverlayState, wparam: WPARAM) -> LRESULT {
 
         if key == VK_SHIFT.0 as u32 {
             state.drag.shift_held = false;
+            if state.adjustment.is_dragging {
+                update_adjustment_drag(state, false);
+                emit_dimensions_update(state);
+            }
             let _ = render::render(state);
         }
     }
@@ -509,6 +515,12 @@ fn mouse_coords(lparam: LPARAM) -> (i32, i32) {
     let x = (lparam.0 & 0xFFFF) as i16 as i32;
     let y = ((lparam.0 >> 16) & 0xFFFF) as i16 as i32;
     (x, y)
+}
+
+fn update_adjustment_drag(state: &mut OverlayState, constrain_proportions: bool) {
+    let dx = state.cursor.position.x - state.adjustment.drag_start.x;
+    let dy = state.cursor.position.y - state.adjustment.drag_start.y;
+    state.adjustment.apply_delta(dx, dy, constrain_proportions);
 }
 
 /// Emit adjustment ready event to show the toolbar
