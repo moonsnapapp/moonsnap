@@ -201,7 +201,7 @@ pub async fn show_capture_toolbar(
         .always_on_top(true)
         .skip_taskbar(true)
         .resizable(false) // Auto-resized by frontend
-        .shadow(true)
+        .shadow(false)
         .visible(false) // Hidden until frontend configures bounds
         .focused(false)
         .build();
@@ -683,7 +683,7 @@ pub async fn show_startup_toolbar(
         .always_on_top(true)
         .skip_taskbar(false)
         .resizable(false) // Auto-resized by frontend
-        .shadow(true)
+        .shadow(false)
         .visible(false)
         .focused(false)
         .build()

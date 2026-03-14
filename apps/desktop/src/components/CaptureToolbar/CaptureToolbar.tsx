@@ -8,7 +8,7 @@
  */
 
 import React, { useCallback } from 'react';
-import { X, Square, Pause, Circle, Mic, Volume2, Zap } from 'lucide-react';
+import { X, Square, Pause, Circle, Mic, Volume2, Zap, FolderOpen } from 'lucide-react';
 import type { CaptureType, RecordingFormat } from '../../types';
 import { ModeSelector } from './ModeSelector';
 import { SourceSelector, type CaptureSource } from './SourceSelector';
@@ -82,6 +82,10 @@ interface CaptureToolbarProps {
   onDimensionChange?: (width: number, height: number) => void;
   /** Open settings modal */
   onOpenSettings?: () => void;
+  /** Open capture library */
+  onOpenLibrary?: () => void;
+  /** Close the toolbar window */
+  onCloseToolbar?: () => void;
   /** Alternate chrome for recording-only surfaces */
   minimalChrome?: 'window' | 'floating';
   /** Show live audio indicators in the recording HUD */
@@ -121,6 +125,8 @@ export const CaptureToolbar: React.FC<CaptureToolbarProps> = ({
   countdownSeconds,
   onDimensionChange,
   onOpenSettings,
+  onOpenLibrary,
+  onCloseToolbar,
   minimalChrome = 'window',
   showRecordingAudioIndicators = false,
   recordingAudioConfig,
@@ -330,7 +336,11 @@ export const CaptureToolbar: React.FC<CaptureToolbarProps> = ({
 
   // Render selection UI (default state)
   return (
-    <div className="glass-toolbar glass-toolbar--two-row pointer-events-auto">
+    <div
+      className={`glass-toolbar glass-toolbar--two-row ${
+        minimalChrome === 'floating' ? 'glass-toolbar--capture-floating' : ''
+      } pointer-events-auto`}
+    >
       {/* Row 1: Mode selector (Video/GIF/Screenshot) - full width */}
       <div className="glass-toolbar-row">
         <ModeSelector
@@ -411,9 +421,30 @@ export const CaptureToolbar: React.FC<CaptureToolbarProps> = ({
           onOpenSettings={onOpenSettings}
         />
 
-        <div className="w-2" />
+        <div className="glass-toolbar-actions">
+          {onOpenLibrary && (
+            <button
+              type="button"
+              onClick={onOpenLibrary}
+              className="glass-btn glass-btn--md glass-toolbar-action-btn"
+              title="Open library"
+            >
+              <FolderOpen size={14} strokeWidth={2.2} />
+            </button>
+          )}
+
+          <button
+            type="button"
+            onClick={onCloseToolbar ?? onCancel}
+            className="glass-btn glass-btn--md glass-btn--danger glass-toolbar-action-btn"
+            title="Close capture toolbar"
+          >
+            <X size={14} strokeWidth={2.5} />
+          </button>
+        </div>
 
         <button
+          type="button"
           onClick={onCapture}
           className="glass-capture-btn-hardware"
           title={captureType === 'screenshot' ? 'Take screenshot' : (isVideoMode && afterRecordingAction === 'save' ? 'Start quick recording' : 'Start recording')}

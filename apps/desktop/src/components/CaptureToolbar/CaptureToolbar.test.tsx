@@ -1,8 +1,9 @@
-import { render, screen } from '@testing-library/react';
+import { act, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { CaptureToolbar } from './CaptureToolbar';
 import { useCaptureSettingsStore } from '@/stores/captureSettingsStore';
+import { clearInvokeResponses, setInvokeResponse } from '@/test/mocks/tauri';
 
 const mockUseRustAudioLevels = vi.fn();
 
@@ -12,6 +13,12 @@ vi.mock('@/hooks/useRustAudioLevels', () => ({
 
 describe('CaptureToolbar recording audio indicators', () => {
   beforeEach(() => {
+    clearInvokeResponses();
+    setInvokeResponse('get_monitors', []);
+    setInvokeResponse('list_webcam_devices', []);
+    setInvokeResponse('list_audio_input_devices', []);
+    setInvokeResponse('list_audio_output_devices', []);
+
     useCaptureSettingsStore.setState({
       settings: {
         screenshot: {
@@ -242,5 +249,79 @@ describe('CaptureToolbar recording audio indicators', () => {
       monitorSystemAudio: true,
       enabled: false,
     });
+  });
+});
+
+describe('CaptureToolbar selection HUD', () => {
+  beforeEach(() => {
+    clearInvokeResponses();
+    setInvokeResponse('get_monitors', []);
+    setInvokeResponse('list_webcam_devices', []);
+    setInvokeResponse('list_audio_input_devices', []);
+    setInvokeResponse('list_audio_output_devices', []);
+
+    useCaptureSettingsStore.setState({
+      settings: {
+        screenshot: {
+          format: 'png',
+          jpgQuality: 85,
+          includeCursor: true,
+        },
+        video: {
+          format: 'mp4',
+          quality: 80,
+          fps: 30,
+          maxDurationSecs: null,
+          includeCursor: true,
+          captureSystemAudio: true,
+          systemAudioDeviceId: null,
+          microphoneDeviceIndex: 0,
+          captureWebcam: false,
+          countdownSecs: 3,
+          hideDesktopIcons: false,
+          quickCapture: false,
+        },
+        gif: {
+          qualityPreset: 'balanced',
+          fps: 15,
+          maxDurationSecs: 30,
+          includeCursor: true,
+          countdownSecs: 3,
+        },
+      },
+      afterRecordingAction: 'preview',
+      saveSettings: async () => {},
+    });
+
+    mockUseRustAudioLevels.mockReturnValue({
+      micLevel: 0,
+      systemLevel: 0,
+      micActive: false,
+      systemActive: false,
+      error: null,
+      isStarting: false,
+    });
+  });
+
+  it('renders inline library and close actions for the floating capture HUD', async () => {
+    await act(async () => {
+      render(
+        <CaptureToolbar
+          mode="selection"
+          captureType="video"
+          width={1280}
+          height={720}
+          onCapture={() => {}}
+          onCaptureTypeChange={() => {}}
+          onRedo={() => {}}
+          onCancel={() => {}}
+          onOpenLibrary={() => {}}
+          minimalChrome="floating"
+        />
+      );
+    });
+
+    expect(screen.getByTitle('Open library')).toBeInTheDocument();
+    expect(screen.getByTitle('Close capture toolbar')).toBeInTheDocument();
   });
 });

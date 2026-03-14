@@ -8,6 +8,9 @@ import { initializeLogging } from '../utils/logger';
 // Initialize logging
 initializeLogging().catch(console.error);
 
+document.documentElement.classList.add('floating-toolbar-window', 'capture-toolbar-window');
+document.body.classList.add('floating-toolbar-window', 'capture-toolbar-window');
+
 ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
   <CaptureToolbarWindow />
 );

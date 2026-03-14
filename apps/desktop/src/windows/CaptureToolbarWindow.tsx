@@ -18,7 +18,6 @@ import { invoke } from '@tauri-apps/api/core';
 import { emit, listen } from '@tauri-apps/api/event';
 import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
 import { Toaster } from 'sonner';
-import { Titlebar } from '../components/Titlebar/Titlebar';
 import { CaptureToolbar } from '../components/CaptureToolbar/CaptureToolbar';
 import type { CaptureSource } from '../components/CaptureToolbar/SourceSelector';
 import {
@@ -64,7 +63,6 @@ const CaptureToolbarWindow: React.FC = () => {
   useTheme();
 
   const containerRef = useRef<HTMLDivElement>(null);
-  const toolbarRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
 
   const {
@@ -760,20 +758,39 @@ const CaptureToolbarWindow: React.FC = () => {
     });
   }, [mode]);
 
-  const handleTitlebarClose = useCallback(async () => {
-    try {
-      await invoke('capture_overlay_cancel');
-    } catch {
-      // Overlay may not be running.
-    }
-    await closeWebcamPreview();
-  }, [closeWebcamPreview]);
-
   const handleOpenLibrary = useCallback(async () => {
     try {
       await invoke('show_library_window');
     } catch (e) {
       toolbarLogger.error('Failed to open library:', e);
+    }
+  }, []);
+
+  const handleCloseToolbar = useCallback(async () => {
+    try {
+      await invoke('capture_overlay_cancel');
+    } catch {
+      // Overlay may not be running.
+    }
+
+    await closeWebcamPreview();
+    await getCurrentWebviewWindow().close();
+  }, [closeWebcamPreview]);
+
+  const handleToolbarMouseDown = useCallback(async (event: React.MouseEvent<HTMLDivElement>) => {
+    const target = event.target as HTMLElement;
+    if (
+      target.closest(
+        'button, input, textarea, select, [role="button"], [data-no-window-drag], [contenteditable="true"]'
+      )
+    ) {
+      return;
+    }
+
+    try {
+      await getCurrentWebviewWindow().startDragging();
+    } catch {
+      // Dragging is best-effort only.
     }
   }, []);
 
@@ -787,15 +804,11 @@ const CaptureToolbarWindow: React.FC = () => {
             : undefined
         }
       >
-        <Titlebar
-          title="MoonSnap Capture"
-          showMaximize={false}
-          onClose={handleTitlebarClose}
-          onOpenLibrary={handleOpenLibrary}
-          onOpenSettings={handleOpenSettings}
-        />
-        <div ref={toolbarRef} className="toolbar-container">
-          <div className="toolbar-animated-wrapper">
+        <div className="toolbar-container">
+          <div
+            className="toolbar-animated-wrapper capture-toolbar-shell"
+            onMouseDown={handleToolbarMouseDown}
+          >
             <div ref={contentRef} className="toolbar-content-measure">
               <CaptureToolbar
                 mode={mode}
@@ -824,6 +837,9 @@ const CaptureToolbarWindow: React.FC = () => {
                 countdownSeconds={countdownSeconds}
                 onDimensionChange={handleDimensionChange}
                 onOpenSettings={handleOpenSettings}
+                onOpenLibrary={handleOpenLibrary}
+                onCloseToolbar={handleCloseToolbar}
+                minimalChrome="floating"
               />
             </div>
           </div>
