@@ -31,6 +31,7 @@ interface VirtualizedGridProps {
   onCopyToClipboard: (capture: CaptureListItem) => void;
   onPlayMedia: (capture: CaptureListItem) => void;
   onEditVideo?: (capture: CaptureListItem) => void;
+  onSaveCopy?: (capture: CaptureListItem) => void;
   onRepair?: (captureId: string) => void;
   formatDate: (dateStr: string) => string;
   // Marquee selection props
@@ -99,6 +100,7 @@ export function VirtualizedGrid({
   onCopyToClipboard,
   onPlayMedia,
   onEditVideo,
+  onSaveCopy,
   onRepair,
   formatDate,
   containerRef: externalContainerRef,
@@ -250,6 +252,7 @@ export function VirtualizedGrid({
                 onCopyToClipboard={() => onCopyToClipboard(capture)}
                 onPlayMedia={() => onPlayMedia(capture)}
                 onEditVideo={capture.capture_type === 'video' && onEditVideo ? () => onEditVideo(capture) : undefined}
+                onSaveCopy={capture.quick_capture && onSaveCopy ? () => onSaveCopy(capture) : undefined}
                 onRepair={onRepair ? () => onRepair(capture.id) : undefined}
                 formatDate={formatDate}
               />
@@ -274,6 +277,7 @@ export function VirtualizedGrid({
       onCopyToClipboard,
       onPlayMedia,
       onEditVideo,
+      onSaveCopy,
       onRepair,
       formatDate,
     ]

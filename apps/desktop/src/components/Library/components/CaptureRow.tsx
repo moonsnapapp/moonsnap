@@ -32,6 +32,7 @@ export const CaptureRow: React.FC<CaptureCardProps> = memo(
     onCopyToClipboard,
     onPlayMedia,
     onEditVideo,
+    onSaveCopy,
     formatDate,
   }) => {
     const [thumbLoaded, setThumbLoaded] = useState(false);
@@ -267,6 +268,7 @@ export const CaptureRow: React.FC<CaptureCardProps> = memo(
           onDelete={onDelete}
           onPlayMedia={onPlayMedia}
           onEditVideo={onEditVideo}
+          onSaveCopy={onSaveCopy}
         />
       </ContextMenu>
     );

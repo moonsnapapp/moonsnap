@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef, useCallback, useMemo } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { open as openFileDialog } from '@tauri-apps/plugin-dialog';
+import { open as openFileDialog, save as saveFileDialog } from '@tauri-apps/plugin-dialog';
 import { toast } from 'sonner';
 import { isToday, isYesterday, isThisWeek, isThisMonth, isThisYear, format, formatDistanceToNow } from 'date-fns';
 import { reportError } from '../../utils/errorReporting';
@@ -377,6 +377,28 @@ export const CaptureLibrary: React.FC = () => {
     }
   }, [loadCaptures]);
 
+  const handleSaveCopy = useCallback(async (capture: CaptureListItem) => {
+    try {
+      const ext = capture.capture_type === 'gif' ? 'gif' : 'mp4';
+      const filterName = capture.capture_type === 'gif' ? 'GIF' : 'Video';
+      const destination = await saveFileDialog({
+        title: 'Save Copy',
+        defaultPath: `recording.${ext}`,
+        filters: [{ name: filterName, extensions: [ext] }],
+      });
+      if (destination) {
+        await invoke('save_copy_of_file', {
+          sourcePath: capture.image_path,
+          destinationPath: destination,
+        });
+        toast.success('Copy saved');
+      }
+    } catch (error) {
+      reportError(error, { operation: 'save copy' });
+      toast.error('Failed to save copy');
+    }
+  }, []);
+
   const getDeleteCount = () => {
     if (deleteDialog?.type === 'bulk') return selectedIds.size;
     return deleteDialog?.type === 'single' ? 1 : 0;
@@ -412,6 +434,7 @@ export const CaptureLibrary: React.FC = () => {
                 onCopyToClipboard={() => handleCopyToClipboard(capture)}
                 onPlayMedia={() => handlePlayMedia(capture)}
                 onEditVideo={capture.capture_type === 'video' ? () => handleEditVideo(capture) : undefined}
+                onSaveCopy={capture.quick_capture ? () => handleSaveCopy(capture) : undefined}
                 onRepair={() => handleRepair(capture.id)}
                 formatDate={formatDate}
               />
@@ -466,6 +489,7 @@ export const CaptureLibrary: React.FC = () => {
             onCopyToClipboard={handleCopyToClipboard}
             onPlayMedia={handlePlayMedia}
             onEditVideo={handleEditVideo}
+            onSaveCopy={handleSaveCopy}
             onRepair={handleRepair}
             formatDate={formatDate}
             containerRef={containerRef as React.RefObject<HTMLDivElement>}

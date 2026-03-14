@@ -1,5 +1,5 @@
 import React from 'react';
-import { Star, Trash2, Copy, ExternalLink, Play, Tag, Film, Wrench } from 'lucide-react';
+import { Star, Trash2, Copy, ExternalLink, Play, Tag, Film, Wrench, Download } from 'lucide-react';
 import {
   ContextMenuContent,
   ContextMenuItem,
@@ -19,6 +19,7 @@ interface CaptureContextMenuProps {
   onDelete: () => void;
   onPlayMedia?: () => void;
   onEditVideo?: () => void;
+  onSaveCopy?: () => void;
   damaged?: boolean;
   onRepair?: () => void;
 }
@@ -38,6 +39,7 @@ export const CaptureContextMenu: React.FC<CaptureContextMenuProps> = ({
   onDelete,
   onPlayMedia,
   onEditVideo,
+  onSaveCopy,
   damaged = false,
   onRepair,
 }) => {
@@ -64,6 +66,16 @@ export const CaptureContextMenu: React.FC<CaptureContextMenuProps> = ({
         >
           <Film className="w-4 h-4 mr-2" />
           {quickCapture ? 'Open Quick Capture' : 'Edit Video'}
+        </ContextMenuItem>
+      )}
+      {isMedia && quickCapture && onSaveCopy && (
+        <ContextMenuItem
+          onClick={onSaveCopy}
+          disabled={isMissing}
+          className={isMissing ? 'opacity-50 cursor-not-allowed' : ''}
+        >
+          <Download className="w-4 h-4 mr-2" />
+          Save Copy
         </ContextMenuItem>
       )}
       {damaged && onRepair && (

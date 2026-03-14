@@ -27,6 +27,7 @@ export const CaptureCard: React.FC<CaptureCardProps> = memo(
     onCopyToClipboard,
     onPlayMedia,
     onEditVideo,
+    onSaveCopy,
     onRepair,
     formatDate,
   }) => {
@@ -294,6 +295,7 @@ export const CaptureCard: React.FC<CaptureCardProps> = memo(
           onDelete={onDelete}
           onPlayMedia={onPlayMedia}
           onEditVideo={onEditVideo}
+          onSaveCopy={onSaveCopy}
           damaged={capture.damaged}
           onRepair={onRepair}
         />

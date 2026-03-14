@@ -14,6 +14,7 @@ export interface CaptureCardProps {
   onCopyToClipboard: () => void;
   onPlayMedia?: () => void; // For video/gif - opens in system player
   onEditVideo?: () => void; // For video - opens in video editor
+  onSaveCopy?: () => void; // For quick captures - save copy without re-encoding
   onRepair?: () => void; // For damaged bundles - opens repair flow
   formatDate: (date: string) => string;
 }
