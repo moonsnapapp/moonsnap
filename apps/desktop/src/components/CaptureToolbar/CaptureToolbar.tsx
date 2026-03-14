@@ -349,7 +349,7 @@ export const CaptureToolbar: React.FC<CaptureToolbarProps> = ({
       )}
 
       {/* Row 1: Mode selector (Video/GIF/Screenshot) - full width */}
-      <div className="glass-toolbar-row">
+      <div className="glass-toolbar-row glass-toolbar-row--capture-primary">
         <ModeSelector
           activeMode={captureType}
           onModeChange={handleModeChange}
@@ -359,7 +359,7 @@ export const CaptureToolbar: React.FC<CaptureToolbarProps> = ({
       </div>
 
       {/* Row 2: Source selector OR dimensions/info, devices, settings */}
-      <div className="glass-toolbar-row">
+      <div className="glass-toolbar-row glass-toolbar-row--capture-secondary">
         {/* Show source info based on selection type, or source selector if no selection */}
         {selectionConfirmed ? (
           // Selection confirmed - show appropriate info based on source type
@@ -443,7 +443,7 @@ export const CaptureToolbar: React.FC<CaptureToolbarProps> = ({
           <button
             type="button"
             onClick={onCloseToolbar ?? onCancel}
-            className="glass-btn glass-btn--md glass-btn--danger glass-toolbar-action-btn"
+            className="glass-btn glass-btn--md glass-toolbar-action-btn glass-toolbar-action-btn--close"
             title="Close capture toolbar"
           >
             <X size={14} strokeWidth={2.5} />
