@@ -53,7 +53,7 @@ describe('AnnotationSegmentConfig', () => {
       />
     );
 
-    expect(screen.getByRole('option', { name: 'Line (Legacy)' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '1. Line (Legacy)' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /^Line$/i })).not.toBeInTheDocument();
   });
 
@@ -80,7 +80,7 @@ describe('AnnotationSegmentConfig', () => {
     );
 
     expect(screen.getByText('Text annotations are legacy. Use the Text track for new text overlays.')).toBeInTheDocument();
-    expect(screen.getByRole('option', { name: 'Text (Legacy)' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '1. Text (Legacy)' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /^Text$/i })).not.toBeInTheDocument();
   });
 
