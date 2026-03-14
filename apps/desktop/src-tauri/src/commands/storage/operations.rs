@@ -493,16 +493,22 @@ async fn load_video_project_folder(
         return None;
     }
 
-    // Use folder name as ID
-    let id = folder_path
+    // Compute fallback ID from folder name (stripped of .moonsnap extension)
+    let folder_name = folder_path
         .file_name()
         .and_then(|n| n.to_str())
-        .unwrap_or("recording")
+        .unwrap_or("recording");
+    let fallback_id = folder_name
+        .strip_suffix(".moonsnap")
+        .unwrap_or(folder_name)
         .to_string();
 
     // Check for metadata sidecar in projects/{id}/project.json
     let base_dir = get_app_data_dir(&app).ok()?;
-    let sidecar_path = base_dir.join("projects").join(&id).join("project.json");
+    let sidecar_path = base_dir
+        .join("projects")
+        .join(&fallback_id)
+        .join("project.json");
     let (sidecar_tags, sidecar_favorite) =
         if async_fs::try_exists(&sidecar_path).await.unwrap_or(false) {
             if let Ok(content) = async_fs::read_to_string(&sidecar_path).await {
@@ -612,6 +618,20 @@ async fn load_video_project_folder(
                 false,
             )
         };
+
+    // Extract project ID from project.json, falling back to folder name
+    let json_id: Option<String> = if async_fs::try_exists(&project_json).await.unwrap_or(false) {
+        if let Ok(content) = async_fs::read_to_string(&project_json).await {
+            serde_json::from_str::<serde_json::Value>(&content)
+                .ok()
+                .and_then(|p| p.get("id").and_then(|v| v.as_str()).map(String::from))
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+    let id = json_id.unwrap_or(fallback_id);
 
     // Sidecar metadata (from projects/ dir) takes priority over video project.json
     let final_tags = if !sidecar_tags.is_empty() {
@@ -1019,10 +1039,33 @@ fn determine_capture_type(
         return Ok(("project".to_string(), None));
     }
 
-    // 2. Check if it's a video project folder (folder with screen.mp4 inside)
-    let video_folder = captures_dir.join(project_id);
-    if video_folder.is_dir() && video_folder.join("screen.mp4").exists() {
-        return Ok(("video_folder".to_string(), Some(video_folder)));
+    // 2. Check if project_id directly points to a .moonsnap bundle or bare folder
+    let direct_path = captures_dir.join(project_id);
+    if direct_path.is_dir() && direct_path.join("screen.mp4").exists() {
+        return Ok(("video_folder".to_string(), Some(direct_path)));
+    }
+    // Try appending .moonsnap (ID from project.json won't have the extension)
+    let bundle_path = captures_dir.join(format!("{}.moonsnap", project_id));
+    if bundle_path.is_dir() && bundle_path.join("screen.mp4").exists() {
+        return Ok(("video_folder".to_string(), Some(bundle_path)));
+    }
+    // Scan all project folders for matching project.json ID (handles renamed bundles)
+    if let Ok(entries) = std::fs::read_dir(&captures_dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() && path.join("screen.mp4").exists() {
+                let pj = path.join("project.json");
+                if pj.exists() {
+                    if let Ok(content) = std::fs::read_to_string(&pj) {
+                        if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&content) {
+                            if parsed.get("id").and_then(|v| v.as_str()) == Some(project_id) {
+                                return Ok(("video_folder".to_string(), Some(path)));
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 
     // 3. Check if it's a legacy flat video file (.mp4)
