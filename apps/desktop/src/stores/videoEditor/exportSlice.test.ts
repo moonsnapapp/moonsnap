@@ -9,6 +9,10 @@ vi.mock('../../utils/textPreRenderer', () => ({
   preRenderForExport: vi.fn().mockResolvedValue(undefined),
 }));
 
+vi.mock('../../utils/annotationPreRenderer', () => ({
+  preRenderAnnotationsForExport: vi.fn().mockResolvedValue(undefined),
+}));
+
 function createTestTextSegment(): TextSegment {
   return {
     start: 0,
@@ -198,6 +202,47 @@ describe('exportSlice', () => {
 
     useVideoEditorStore.getState().setExportProgress(null);
     expect(useVideoEditorStore.getState().exportProgress).toBeNull();
+  });
+
+  it('cancelExport resets exporting state', () => {
+    useVideoEditorStore.setState({ isExporting: true, exportProgress: { progress: 0.5, stage: 'encoding', message: 'test' } });
+
+    useVideoEditorStore.getState().cancelExport();
+
+    expect(useVideoEditorStore.getState().isExporting).toBe(false);
+    expect(useVideoEditorStore.getState().exportProgress).toBeNull();
+  });
+
+  it('generateAutoZoom throws when no cursor data', async () => {
+    const project = createTestProject([]);
+    useVideoEditorStore.getState().setProject(project);
+
+    await expect(useVideoEditorStore.getState().generateAutoZoom()).rejects.toThrow(
+      'No cursor data available'
+    );
+    expect(useVideoEditorStore.getState().isGeneratingAutoZoom).toBe(false);
+  });
+
+  it('exportVideo clips segments to IO range when markers are set', async () => {
+    const project = createTestProject([createTestTextSegment()]);
+    project.zoom.regions = [{ startMs: 1000, endMs: 5000, targetX: 0.5, targetY: 0.5, scale: 2 }];
+    project.scene.segments = [{ startMs: 0, endMs: 10000, mode: 'default' }];
+    project.annotations = { segments: [{ startMs: 500, endMs: 8000, type: 'highlight', id: 'a1', x: 0, y: 0, width: 100, height: 100, color: '#ff0000', opacity: 50, shape: 'rectangle' }] };
+    project.mask.segments = [{ startMs: 0, endMs: 6000, id: 'm1', x: 10, y: 10, width: 50, height: 50, type: 'blur', blurAmount: 10 }];
+
+    setInvokeResponse('export_video', {
+      outputPath: 'C:/tmp/out.mp4',
+      durationSecs: 5,
+      fileSizeBytes: 500_000,
+      format: 'mp4',
+    });
+
+    useVideoEditorStore.getState().setProject(project);
+    useVideoEditorStore.setState({ exportInPointMs: 2000, exportOutPointMs: 7000 });
+
+    await useVideoEditorStore.getState().exportVideo('C:/tmp/out.mp4');
+
+    expect(useVideoEditorStore.getState().isExporting).toBe(false);
   });
 
   it('uses manual composition frame size (not raw crop size) for text pre-render', async () => {
