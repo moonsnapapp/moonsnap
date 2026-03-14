@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
+import { availableMonitors } from '@tauri-apps/api/window';
+import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
 
+import { LAYOUT } from '@/constants/layout';
 import type { SelectionBounds } from '@/hooks/useSelectionEvents';
 import {
   useCaptureSettingsStore,
@@ -10,6 +13,11 @@ import {
 import { useWebcamSettingsStore } from '@/stores/webcamSettingsStore';
 import type { CaptureType, RecordingState } from '@/types';
 import { logger } from '@/utils/logger';
+import {
+  getSelectionMonitor,
+  getSnappedRecordingHudAnchor,
+  type RecordingHudAnchor,
+} from '@/windows/recordingHudAnchor';
 import { startRecordingCaptureFlow } from '@/windows/recordingStartFlow';
 
 const QUICK_RECORDING_OWNER = 'quick-recording';
@@ -34,6 +42,75 @@ function getQuickRecordingCaptureType(
   selection: QuickRecordingSelectionPayload
 ): Extract<CaptureType, 'video' | 'gif'> {
   return selection.captureType === 'gif' ? 'gif' : 'video';
+}
+
+async function resolveQuickRecordingHudAnchor(
+  selection: QuickRecordingSelectionPayload
+): Promise<RecordingHudAnchor> {
+  const monitors = await availableMonitors();
+  const selectionMonitor = getSelectionMonitor(monitors, selection);
+  const { snapToolbarToSelection } = useCaptureSettingsStore.getState();
+
+  if (snapToolbarToSelection) {
+    return getSnappedRecordingHudAnchor(selection, selectionMonitor ?? monitors[0]);
+  }
+
+  const existingToolbar = await WebviewWindow.getByLabel('capture-toolbar');
+  if (existingToolbar) {
+    const [position, size] = await Promise.all([
+      existingToolbar.outerPosition(),
+      existingToolbar.outerSize(),
+    ]);
+
+    return {
+      x: position.x,
+      y: position.y,
+      width: size.width,
+      height: size.height,
+    };
+  }
+
+  const monitor = selectionMonitor ?? monitors[0];
+
+  if (!monitor) {
+    return {
+      x: selection.x,
+      y: selection.y,
+      width: selection.width,
+      height: selection.height,
+      centerOnSelection: true,
+    };
+  }
+
+  const minX = monitor.position.x + LAYOUT.FLOATING_WINDOW_EDGE_MARGIN;
+  const maxX =
+    monitor.position.x +
+    monitor.size.width -
+    LAYOUT.RECORDING_HUD_WIDTH -
+    LAYOUT.FLOATING_WINDOW_EDGE_MARGIN;
+  const centeredX =
+    monitor.position.x + Math.floor((monitor.size.width - LAYOUT.RECORDING_HUD_WIDTH) / 2);
+  const x = maxX >= minX ? Math.min(Math.max(centeredX, minX), maxX) : monitor.position.x;
+
+  const minY = monitor.position.y + LAYOUT.FLOATING_WINDOW_EDGE_MARGIN;
+  const maxY =
+    monitor.position.y +
+    monitor.size.height -
+    LAYOUT.RECORDING_HUD_HEIGHT -
+    LAYOUT.FLOATING_WINDOW_EDGE_MARGIN;
+  const preferredY =
+    monitor.position.y +
+    monitor.size.height -
+    LAYOUT.RECORDING_HUD_HEIGHT -
+    LAYOUT.FLOATING_WINDOW_BOTTOM_OFFSET;
+  const y = maxY >= minY ? Math.min(Math.max(preferredY, minY), maxY) : monitor.position.y;
+
+  return {
+    x,
+    y,
+    width: LAYOUT.RECORDING_HUD_WIDTH,
+    height: LAYOUT.RECORDING_HUD_HEIGHT,
+  };
 }
 
 export function useQuickRecordingFlow() {
@@ -63,7 +140,7 @@ export function useQuickRecordingFlow() {
   const startQuickRecording = useCallback(
     async (
       selection: QuickRecordingSelectionPayload,
-      hudAnchor: { x: number; y: number; width: number; height: number; centerOnSelection?: boolean }
+      hudAnchor: RecordingHudAnchor
     ) => {
       if (recordingStartupInProgressRef.current) {
         return;
@@ -140,13 +217,8 @@ export function useQuickRecordingFlow() {
             return;
           }
 
-          await startQuickRecording(selection, {
-            x: selection.x,
-            y: selection.y,
-            width: selection.width,
-            height: selection.height,
-            centerOnSelection: true,
-          });
+          const hudAnchor = await resolveQuickRecordingHudAnchor(selection);
+          await startQuickRecording(selection, hudAnchor);
         })();
       }
     );
@@ -176,12 +248,8 @@ export function useQuickRecordingFlow() {
             captureSettingsStore.setPromptRecordingMode(false);
           }
 
-          await startQuickRecording(selection, {
-            x: event.payload.x,
-            y: event.payload.y,
-            width: selection.width,
-            height: selection.height,
-          });
+          const hudAnchor = await resolveQuickRecordingHudAnchor(selection);
+          await startQuickRecording(selection, hudAnchor);
         })();
       }
     );

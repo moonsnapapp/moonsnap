@@ -16,6 +16,7 @@
 import React, { useEffect, useCallback, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { emit, listen } from '@tauri-apps/api/event';
+import { availableMonitors } from '@tauri-apps/api/window';
 import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
 import { CaptureToolbar } from '../components/CaptureToolbar/CaptureToolbar';
 import type { CaptureSource } from '../components/CaptureToolbar/SourceSelector';
@@ -37,6 +38,11 @@ import {
   isAutoStartRecordingSession,
   shouldSuppressToolbarUntilRecording,
 } from './captureToolbarFlow';
+import {
+  getSelectionMonitor,
+  getSnappedRecordingHudAnchor,
+  type RecordingHudAnchor,
+} from './recordingHudAnchor';
 import { startRecordingCaptureFlow } from './recordingStartFlow';
 
 interface StartupToolbarContext {
@@ -144,6 +150,9 @@ const CaptureToolbarWindow: React.FC = () => {
 
   const showToolbarInRecording = useCaptureSettingsStore(
     (s) => s.showToolbarInRecording
+  );
+  const snapToolbarToSelection = useCaptureSettingsStore(
+    (s) => s.snapToolbarToSelection
   );
 
   useEffect(() => {
@@ -268,19 +277,34 @@ const CaptureToolbarWindow: React.FC = () => {
       currentWindow.outerPosition(),
       currentWindow.outerSize(),
     ]);
-
-    await invoke('show_recording_controls', {
+    let hudAnchor: RecordingHudAnchor = {
       x: position.x,
       y: position.y,
       width: size.width,
       height: size.height,
+    };
+
+    if (snapToolbarToSelection && selectionConfirmed) {
+      const monitors = await availableMonitors().catch(() => []);
+      const selectionMonitor =
+        monitors.length > 0
+          ? getSelectionMonitor(monitors, selectionBoundsRef.current) ?? monitors[0]
+          : undefined;
+      hudAnchor = getSnappedRecordingHudAnchor(selectionBoundsRef.current, selectionMonitor);
+    }
+
+    await invoke('show_recording_controls', {
+      x: hudAnchor.x,
+      y: hudAnchor.y,
+      width: hudAnchor.width,
+      height: hudAnchor.height,
       includeInCapture: showToolbarInCapture,
       microphoneDeviceIndex: recordingMicrophoneDeviceIndex ?? null,
       systemAudioEnabled: recordingSystemAudioEnabled,
       recordingFormat,
     });
     await currentWindow.hide();
-  }, [captureType]);
+  }, [captureType, selectionBoundsRef, selectionConfirmed, snapToolbarToSelection]);
 
   const handleCapture = useCallback(async () => {
     try {
@@ -317,10 +341,12 @@ const CaptureToolbarWindow: React.FC = () => {
 
         if (captureType === 'video' && !skipModePromptRef.current && promptRecordingMode) {
           chooserSelectionHandledRef.current = false;
-          try {
-            await repositionToolbar(selectionBoundsRef.current);
-          } catch (error) {
-            toolbarLogger.warn('Failed to reposition toolbar before showing recording mode chooser:', error);
+          if (snapToolbarToSelection) {
+            try {
+              await repositionToolbar(selectionBoundsRef.current);
+            } catch (error) {
+              toolbarLogger.warn('Failed to reposition toolbar before showing recording mode chooser:', error);
+            }
           }
 
           const [position, size] = await Promise.all([
@@ -366,16 +392,26 @@ const CaptureToolbarWindow: React.FC = () => {
           currentWindow.outerPosition(),
           currentWindow.outerSize(),
         ]);
+        let hudAnchor: RecordingHudAnchor = {
+          x: position.x,
+          y: position.y,
+          width: size.width,
+          height: size.height,
+        };
+
+        if (snapToolbarToSelection) {
+          const monitors = await availableMonitors().catch(() => []);
+          const selectionMonitor =
+            monitors.length > 0
+              ? getSelectionMonitor(monitors, selectionBoundsRef.current) ?? monitors[0]
+              : undefined;
+          hudAnchor = getSnappedRecordingHudAnchor(selectionBoundsRef.current, selectionMonitor);
+        }
 
         await startRecordingCaptureFlow({
           captureType,
           selection: selectionBoundsRef.current,
-          hudAnchor: {
-            x: position.x,
-            y: position.y,
-            width: size.width,
-            height: size.height,
-          },
+          hudAnchor,
           onBeforeOverlayConfirm: async () => {
             await currentWindow.hide().catch(() => {});
           },
@@ -399,7 +435,7 @@ const CaptureToolbarWindow: React.FC = () => {
       clearSelectionAutoStartRecording();
       setMode('selection');
     }
-  }, [captureType, captureSource, clearSelectionAutoStartRecording, promptRecordingMode, selectionConfirmed, selectionBoundsRef, recordingInitiatedRef, setMode]);
+  }, [captureType, captureSource, clearSelectionAutoStartRecording, promptRecordingMode, selectionConfirmed, selectionBoundsRef, recordingInitiatedRef, setMode, snapToolbarToSelection]);
 
   useEffect(() => {
     handleCaptureRef.current = () => {
@@ -608,15 +644,6 @@ const CaptureToolbarWindow: React.FC = () => {
       }
 
       void (async () => {
-        try {
-          await invoke('set_capture_toolbar_position', {
-            x: event.payload.x,
-            y: event.payload.y,
-          });
-        } catch (error) {
-          toolbarLogger.warn('Failed to sync capture toolbar position from mode chooser:', error);
-        }
-
         skipModePromptRef.current = true;
         window.setTimeout(() => {
           handleCaptureRef.current();

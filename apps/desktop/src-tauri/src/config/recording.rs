@@ -4,6 +4,7 @@
 //! thread-safe access via RwLock. Replaces 10+ scattered atomic variables.
 
 use lazy_static::lazy_static;
+use moonsnap_capture::desktop_icons::set_hide_desktop_icons_enabled;
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
 
@@ -157,6 +158,7 @@ pub fn get_hide_desktop_icons() -> bool {
 pub fn reset_recording_config() {
     let mut config = RECORDING_CONFIG.write();
     config.reset();
+    set_hide_desktop_icons_enabled(config.hide_desktop_icons);
     log::debug!("[CONFIG] Recording settings reset to defaults");
 }
 
@@ -172,6 +174,7 @@ pub fn set_recording_config(config: RecordingConfig) {
     let mut current = RECORDING_CONFIG.write();
     *current = config;
     current.validate();
+    set_hide_desktop_icons_enabled(current.hide_desktop_icons);
     log::debug!("[CONFIG] Recording config updated: {:?}", *current);
 }
 
@@ -257,6 +260,7 @@ pub fn set_recording_microphone_device(index: Option<u32>) {
 pub fn set_hide_desktop_icons(enabled: bool) {
     log::debug!("[CONFIG] set_hide_desktop_icons({})", enabled);
     RECORDING_CONFIG.write().hide_desktop_icons = enabled;
+    set_hide_desktop_icons_enabled(enabled);
 }
 
 #[cfg(test)]
@@ -318,6 +322,18 @@ mod tests {
             ),
             (10, 60, 100)
         );
+    }
+
+    #[test]
+    fn test_hide_desktop_icons_setting_syncs_capture_state() {
+        set_hide_desktop_icons(false);
+        assert!(!moonsnap_capture::desktop_icons::is_hide_desktop_icons_enabled());
+
+        set_hide_desktop_icons(true);
+        assert!(moonsnap_capture::desktop_icons::is_hide_desktop_icons_enabled());
+
+        reset_recording_config();
+        assert!(!moonsnap_capture::desktop_icons::is_hide_desktop_icons_enabled());
     }
 
     #[test]
