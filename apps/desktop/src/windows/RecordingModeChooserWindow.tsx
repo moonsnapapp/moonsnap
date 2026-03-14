@@ -1,118 +1,35 @@
 import React, { useCallback, useEffect, useRef } from 'react';
-import { invoke } from '@tauri-apps/api/core';
-import { emit, listen } from '@tauri-apps/api/event';
-import { getCurrentWindow, LogicalSize, PhysicalPosition } from '@tauri-apps/api/window';
+import { emit } from '@tauri-apps/api/event';
+import { getCurrentWindow } from '@tauri-apps/api/window';
 
 import { RecordingModeChooser } from '@/components/CaptureToolbar/RecordingModeChooser';
+import { useAutoResizeWindow } from '@/hooks/useAutoResizeWindow';
+import { useChooserContext } from '@/hooks/useChooserContext';
+import { useDragToMoveSelection } from '@/hooks/useDragToMoveSelection';
 import { useFocusedShortcutDispatch } from '@/hooks/useFocusedShortcutDispatch';
 import { useTheme } from '@/hooks/useTheme';
 import type { AfterRecordingAction } from '@/stores/captureSettingsStore';
 import { toolbarLogger } from '@/utils/logger';
-
-import { getCenteredResizePosition } from './recordingModeChooserPosition';
 
 const RecordingModeChooserWindow: React.FC = () => {
   useTheme();
   useFocusedShortcutDispatch();
 
   const containerRef = useRef<HTMLDivElement>(null);
-  const lastSizeRef = useRef({ width: 0, height: 0 });
   const closeHandledRef = useRef(false);
-  const dragStateRef = useRef({
-    active: false,
-    pointerId: -1,
-    lastScreenX: 0,
-    lastScreenY: 0,
-    pendingDx: 0,
-    pendingDy: 0,
-    frameId: 0 as number | 0,
-  });
-  const ownerRef = useRef(
-    (
-      window as Window & {
-        __MOONSNAP_RECORDING_MODE_CHOOSER_OWNER?: string;
-        __MOONSNAP_RECORDING_MODE_CHOOSER_ALLOW_DRAG?: boolean;
-      }
-    ).__MOONSNAP_RECORDING_MODE_CHOOSER_OWNER ?? 'capture-toolbar'
-  );
-  const allowDragRef = useRef(
-    (
-      window as Window & {
-        __MOONSNAP_RECORDING_MODE_CHOOSER_ALLOW_DRAG?: boolean;
-      }
-    ).__MOONSNAP_RECORDING_MODE_CHOOSER_ALLOW_DRAG ?? false
-  );
+  const { ownerRef, allowDragRef } = useChooserContext();
 
-  useEffect(() => {
-    const unlisten = listen<{ owner?: string; allowDrag?: boolean }>('recording-mode-chooser-context', (event) => {
-      ownerRef.current = event.payload.owner ?? 'capture-toolbar';
-      allowDragRef.current = event.payload.allowDrag ?? false;
-    });
+  useAutoResizeWindow(containerRef);
+  const dragHandlers = useDragToMoveSelection(allowDragRef);
 
-    return () => {
-      unlisten.then((fn) => fn()).catch(() => {});
-    };
-  }, []);
-
-  useEffect(() => {
-    const container = containerRef.current;
-    if (!container) {
-      return;
+  const getWindowPositionPayload = useCallback(async () => {
+    try {
+      const position = await getCurrentWindow().outerPosition();
+      return { x: position.x, y: position.y };
+    } catch (error) {
+      toolbarLogger.warn('Failed to read recording mode chooser window position:', error);
+      return { x: 0, y: 0 };
     }
-
-    const resizeWindow = async () => {
-      const rect = container.getBoundingClientRect();
-      const width = Math.ceil(rect.width);
-      const height = Math.ceil(rect.height);
-
-      if (
-        width === 0 ||
-        height === 0 ||
-        (width === lastSizeRef.current.width && height === lastSizeRef.current.height)
-      ) {
-        return;
-      }
-
-      lastSizeRef.current = { width, height };
-
-      try {
-        const currentWindow = getCurrentWindow();
-        const nextLogicalSize = new LogicalSize(width, height);
-        const [scaleFactor, previousPosition, previousSize] = await Promise.all([
-          currentWindow.scaleFactor(),
-          currentWindow.outerPosition(),
-          currentWindow.outerSize(),
-        ]);
-        const nextPhysicalSize = nextLogicalSize.toPhysical(scaleFactor);
-
-        await currentWindow.setSize(nextLogicalSize);
-
-        if (
-          previousSize.width !== nextPhysicalSize.width ||
-          previousSize.height !== nextPhysicalSize.height
-        ) {
-          const nextPosition = getCenteredResizePosition(
-            previousPosition,
-            previousSize,
-            nextPhysicalSize,
-          );
-          await currentWindow.setPosition(new PhysicalPosition(nextPosition.x, nextPosition.y));
-        }
-      } catch (error) {
-        toolbarLogger.error('Failed to resize recording mode chooser window:', error);
-      }
-    };
-
-    void resizeWindow();
-
-    const observer = new ResizeObserver(() => {
-      void resizeWindow();
-    });
-    observer.observe(container);
-
-    return () => {
-      observer.disconnect();
-    };
   }, []);
 
   const closeWindow = useCallback(async () => {
@@ -121,27 +38,14 @@ const RecordingModeChooserWindow: React.FC = () => {
     });
   }, []);
 
-  const getWindowPositionPayload = useCallback(async () => {
-    try {
-      const position = await getCurrentWindow().outerPosition();
-      return {
-        x: position.x,
-        y: position.y,
-      };
-    } catch (error) {
-      toolbarLogger.warn('Failed to read recording mode chooser window position:', error);
-      return { x: 0, y: 0 };
-    }
-  }, []);
-
-  const handleBack = useCallback(async () => {
+  const emitBack = useCallback(async () => {
     closeHandledRef.current = true;
     await emit('recording-mode-chooser-back', {
       ...(await getWindowPositionPayload()),
       owner: ownerRef.current,
     });
     await closeWindow();
-  }, [closeWindow, getWindowPositionPayload]);
+  }, [closeWindow, getWindowPositionPayload, ownerRef]);
 
   const handleSelect = useCallback(async (action: AfterRecordingAction, remember: boolean) => {
     closeHandledRef.current = true;
@@ -152,7 +56,7 @@ const RecordingModeChooserWindow: React.FC = () => {
       owner: ownerRef.current,
     });
     await closeWindow();
-  }, [closeWindow, getWindowPositionPayload]);
+  }, [closeWindow, getWindowPositionPayload, ownerRef]);
 
   useEffect(() => {
     const currentWindow = getCurrentWindow();
@@ -173,7 +77,7 @@ const RecordingModeChooserWindow: React.FC = () => {
     return () => {
       unlisten.then((fn) => fn()).catch(() => {});
     };
-  }, [getWindowPositionPayload]);
+  }, [getWindowPositionPayload, ownerRef]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -182,150 +86,25 @@ const RecordingModeChooserWindow: React.FC = () => {
       }
 
       event.preventDefault();
-      void handleBack();
+      void emitBack();
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [handleBack]);
-
-  const flushDragDelta = useCallback(() => {
-    const drag = dragStateRef.current;
-    drag.frameId = 0;
-
-    const dx = drag.pendingDx;
-    const dy = drag.pendingDy;
-    drag.pendingDx = 0;
-    drag.pendingDy = 0;
-
-    if (!drag.active || (dx === 0 && dy === 0)) {
-      return;
-    }
-
-    void invoke('capture_overlay_move_selection_by', { dx, dy }).catch((error) => {
-      toolbarLogger.warn('Failed to move overlay selection from chooser:', error);
-    });
-  }, []);
-
-  const scheduleDragFlush = useCallback(() => {
-    const drag = dragStateRef.current;
-    if (drag.frameId) {
-      return;
-    }
-
-    drag.frameId = window.requestAnimationFrame(flushDragDelta);
-  }, [flushDragDelta]);
-
-  const handlePointerDown = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
-    if (!allowDragRef.current) {
-      return;
-    }
-
-    if (event.button !== 0) {
-      return;
-    }
-
-    if ((event.target as HTMLElement).closest('button, input, label')) {
-      return;
-    }
-
-    event.preventDefault();
-
-    try {
-      event.currentTarget.setPointerCapture(event.pointerId);
-    } catch {
-      // Pointer capture is best-effort.
-    }
-
-    dragStateRef.current.active = true;
-    dragStateRef.current.pointerId = event.pointerId;
-    dragStateRef.current.lastScreenX = event.screenX;
-    dragStateRef.current.lastScreenY = event.screenY;
-    dragStateRef.current.pendingDx = 0;
-    dragStateRef.current.pendingDy = 0;
-  }, []);
-
-  const handlePointerMove = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
-    const drag = dragStateRef.current;
-    if (!drag.active || drag.pointerId !== event.pointerId) {
-      return;
-    }
-
-    const dx = event.screenX - drag.lastScreenX;
-    const dy = event.screenY - drag.lastScreenY;
-    drag.lastScreenX = event.screenX;
-    drag.lastScreenY = event.screenY;
-
-    if (dx === 0 && dy === 0) {
-      return;
-    }
-
-    drag.pendingDx += dx;
-    drag.pendingDy += dy;
-    scheduleDragFlush();
-  }, [scheduleDragFlush]);
-
-  const stopPointerDrag = useCallback((event?: React.PointerEvent<HTMLDivElement>) => {
-    const drag = dragStateRef.current;
-    if (!drag.active || (event && drag.pointerId !== event.pointerId)) {
-      return;
-    }
-
-    if (event) {
-      try {
-        event.currentTarget.releasePointerCapture(event.pointerId);
-      } catch {
-        // Release is best-effort.
-      }
-    }
-
-    drag.active = false;
-    drag.pointerId = -1;
-
-    if (drag.frameId) {
-      window.cancelAnimationFrame(drag.frameId);
-      drag.frameId = 0;
-    }
-
-    const dx = drag.pendingDx;
-    const dy = drag.pendingDy;
-    drag.pendingDx = 0;
-    drag.pendingDy = 0;
-
-    if (dx === 0 && dy === 0) {
-      return;
-    }
-
-    void invoke('capture_overlay_move_selection_by', { dx, dy }).catch((error) => {
-      toolbarLogger.warn('Failed to finish moving overlay selection from chooser:', error);
-    });
-  }, []);
-
-  useEffect(() => {
-    const dragState = dragStateRef.current;
-    return () => {
-      if (dragState.frameId) {
-        window.cancelAnimationFrame(dragState.frameId);
-        dragState.frameId = 0;
-      }
-    };
-  }, []);
+  }, [emitBack]);
 
   return (
     <div
       ref={containerRef}
       className="recording-mode-chooser-shell"
-      onPointerDown={handlePointerDown}
-      onPointerMove={handlePointerMove}
-      onPointerUp={stopPointerDrag}
-      onPointerCancel={stopPointerDrag}
+      {...dragHandlers}
     >
       <RecordingModeChooser
         onSelect={(action, remember) => {
           void handleSelect(action, remember);
         }}
         onBack={() => {
-          void handleBack();
+          void emitBack();
         }}
         minimalChrome="floating"
       />
