@@ -51,9 +51,20 @@ const CountdownWindow: React.FC = () => {
       unlisten = await listen<RecordingState>('recording-state-changed', (event) => {
         const state = event.payload;
 
-        if (state.status === 'recording' || state.status === 'idle' || state.status === 'error') {
-          // Recording started or was cancelled - close this window
+        if (state.status === 'recording') {
+          // Recording started - close this window immediately.
           currentWindow.close().catch((e) => recordingLogger.error('Failed to close countdown window:', e));
+          return;
+        }
+
+        if (state.status === 'idle' || state.status === 'error') {
+          // Recording was cancelled or failed. Stop emitting ticks immediately
+          // and let the main capture window own the actual close command.
+          if (timerRef.current) {
+            clearInterval(timerRef.current);
+            timerRef.current = null;
+          }
+          setCount(0);
         }
       });
 

@@ -28,6 +28,14 @@ impl<F: FnOnce()> Drop for RunOnDrop<F> {
 }
 
 /// Finalize capture-thread result handling using callback-driven adapters.
+fn remove_output_path(output_path: &Path) {
+    if output_path.is_dir() {
+        let _ = std::fs::remove_dir_all(output_path);
+    } else {
+        let _ = std::fs::remove_file(output_path);
+    }
+}
+
 pub fn finalize_capture_thread_result<FValidateVideo, FOnCancelled, FOnCompleted, FOnError>(
     output_path: &Path,
     capture_result: Result<f64, String>,
@@ -43,7 +51,7 @@ pub fn finalize_capture_thread_result<FValidateVideo, FOnCancelled, FOnCompleted
     FOnError: FnMut(String),
 {
     if was_cancelled {
-        let _ = std::fs::remove_file(output_path);
+        remove_output_path(output_path);
         on_cancelled();
         return;
     }
@@ -79,7 +87,7 @@ pub fn finalize_capture_thread_result<FValidateVideo, FOnCancelled, FOnCompleted
             );
         },
         Err(error_message) => {
-            let _ = std::fs::remove_file(output_path);
+            remove_output_path(output_path);
             on_error(error_message);
         },
     }
@@ -298,6 +306,47 @@ mod tests {
         );
 
         assert!(!output_path.exists());
+        assert_eq!(cancelled_calls.load(Ordering::Relaxed), 1);
+        assert_eq!(completed_calls.load(Ordering::Relaxed), 0);
+        assert_eq!(error_calls.load(Ordering::Relaxed), 0);
+    }
+
+    #[test]
+    fn cancelled_flow_removes_project_dir_and_calls_cancelled_callback() {
+        let output_dir = temp_path("cancelled_project");
+        std::fs::create_dir_all(&output_dir).expect("create output dir");
+        std::fs::write(output_dir.join("screen.mp4"), [1u8, 2]).expect("write screen.mp4");
+
+        let cancelled_calls = Arc::new(AtomicU64::new(0));
+        let completed_calls = Arc::new(AtomicU64::new(0));
+        let error_calls = Arc::new(AtomicU64::new(0));
+
+        finalize_capture_thread_result(
+            &output_dir,
+            Ok(1.2),
+            true,
+            |_| Ok(()),
+            {
+                let cancelled_calls = Arc::clone(&cancelled_calls);
+                move || {
+                    cancelled_calls.fetch_add(1, Ordering::Relaxed);
+                }
+            },
+            {
+                let completed_calls = Arc::clone(&completed_calls);
+                move |_, _, _| {
+                    completed_calls.fetch_add(1, Ordering::Relaxed);
+                }
+            },
+            {
+                let error_calls = Arc::clone(&error_calls);
+                move |_| {
+                    error_calls.fetch_add(1, Ordering::Relaxed);
+                }
+            },
+        );
+
+        assert!(!output_dir.exists());
         assert_eq!(cancelled_calls.load(Ordering::Relaxed), 1);
         assert_eq!(completed_calls.load(Ordering::Relaxed), 0);
         assert_eq!(error_calls.load(Ordering::Relaxed), 0);

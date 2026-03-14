@@ -21,6 +21,18 @@ const RecordingControlsWindow: React.FC = () => {
   const timerBaseTimeRef = useRef(0);
   const timerStartedAtRef = useRef<number | null>(null);
   const isRecordingActiveRef = useRef(false);
+  const isClosingRef = useRef(false);
+
+  useEffect(() => {
+    const currentWindow = getCurrentWindow();
+    const unlisten = currentWindow.onCloseRequested(() => {
+      isClosingRef.current = true;
+    });
+
+    return () => {
+      unlisten.then((fn) => fn()).catch(() => {});
+    };
+  }, []);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -29,6 +41,10 @@ const RecordingControlsWindow: React.FC = () => {
     }
 
     const resizeWindow = async () => {
+      if (isClosingRef.current) {
+        return;
+      }
+
       const rect = container.getBoundingClientRect();
       const width = Math.ceil(rect.width);
       const height = Math.ceil(rect.height);
@@ -93,14 +109,6 @@ const RecordingControlsWindow: React.FC = () => {
     let unlistenFormat: UnlistenFn | null = null;
     let unlistenCountdown: UnlistenFn | null = null;
 
-    const currentWindow = getCurrentWindow();
-
-    const closeWindow = async () => {
-      await currentWindow.close().catch((error) => {
-        toolbarLogger.error('Failed to close recording controls window:', error);
-      });
-    };
-
     const setup = async () => {
       unlistenState = await listen<RecordingState>('recording-state-changed', (event) => {
         const state = event.payload;
@@ -130,7 +138,7 @@ const RecordingControlsWindow: React.FC = () => {
           case 'completed':
           case 'error':
             isRecordingActiveRef.current = false;
-            void closeWindow();
+            setCountdownSeconds(undefined);
             break;
         }
       });
