@@ -381,9 +381,11 @@ export const CaptureLibrary: React.FC = () => {
     try {
       const ext = capture.capture_type === 'gif' ? 'gif' : 'mp4';
       const filterName = capture.capture_type === 'gif' ? 'GIF' : 'Video';
+      // Use original filename as default save name
+      const originalName = capture.image_path.replace(/\\/g, '/').split('/').pop() || `recording.${ext}`;
       const destination = await saveFileDialog({
         title: 'Save Copy',
-        defaultPath: `recording.${ext}`,
+        defaultPath: originalName,
         filters: [{ name: filterName, extensions: [ext] }],
       });
       if (destination) {
