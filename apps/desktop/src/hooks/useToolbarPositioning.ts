@@ -22,6 +22,8 @@ interface UseToolbarPositioningOptions {
   mode?: string;
   /** Keep the toolbar window hidden even after the selection is confirmed. */
   suppressWindowShow?: boolean;
+  /** Whether the current window has enough context to be shown. */
+  windowReadyToShow?: boolean;
 }
 
 export function useToolbarPositioning({
@@ -30,6 +32,7 @@ export function useToolbarPositioning({
   selectionConfirmed,
   mode,
   suppressWindowShow = false,
+  windowReadyToShow = Boolean(selectionConfirmed),
 }: UseToolbarPositioningOptions): void {
   const windowShownRef = useRef(false);
   const lastSizeRef = useRef({ width: 0, height: 0 });
@@ -94,6 +97,7 @@ export function useToolbarPositioning({
     const syncWindowVisibility = async () => {
       const currentWindow = getCurrentWebviewWindow();
       const isVisible = await currentWindow.isVisible().catch(() => windowShownRef.current);
+      const shouldShowWindow = !suppressWindowShow && windowReadyToShow;
 
       if (suppressWindowShow) {
         if (isVisible) {
@@ -103,8 +107,9 @@ export function useToolbarPositioning({
         return;
       }
 
-      if (selectionConfirmed && !isVisible) {
+      if (shouldShowWindow && !isVisible) {
         await currentWindow.show();
+        await currentWindow.setFocus().catch(() => {});
         windowShownRef.current = true;
         return;
       }
@@ -147,7 +152,14 @@ export function useToolbarPositioning({
     observer.observe(container);
     observer.observe(content);
     return () => observer.disconnect();
-  }, [containerRef, contentRef, measureTargetSize, selectionConfirmed, suppressWindowShow]);
+  }, [
+    containerRef,
+    contentRef,
+    measureTargetSize,
+    selectionConfirmed,
+    suppressWindowShow,
+    windowReadyToShow,
+  ]);
 
   useEffect(() => {
     const container = containerRef.current;

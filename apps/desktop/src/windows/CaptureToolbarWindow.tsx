@@ -117,6 +117,7 @@ const CaptureToolbarWindow: React.FC = () => {
   const [isRecordingControlsPending, setIsRecordingControlsPending] = useState(false);
   const [isRecordingHudActive, setIsRecordingHudActive] = useState(false);
   const [isRestoringToolbarFromChooser, setIsRestoringToolbarFromChooser] = useState(false);
+  const [isStartupContextReady, setIsStartupContextReady] = useState(false);
   const skipModePromptRef = useRef(false);
   const handleCaptureRef = useRef<() => void>(() => {});
   const recordingStartupInProgressRef = useRef(false);
@@ -182,6 +183,7 @@ const CaptureToolbarWindow: React.FC = () => {
     contentRef,
     selectionConfirmed,
     mode,
+    windowReadyToShow: selectionConfirmed || isStartupContextReady,
     suppressWindowShow:
       suppressToolbarUntilRecording ||
       suppressPrimaryToolbarDuringRecording ||
@@ -523,6 +525,8 @@ const CaptureToolbarWindow: React.FC = () => {
 
   useEffect(() => {
     const unlisten = listen<StartupToolbarContext>('startup-toolbar-context', (event) => {
+      setIsStartupContextReady(true);
+
       if (!isInitialized) {
         pendingStartupContextRef.current = event.payload;
         return;
@@ -541,6 +545,7 @@ const CaptureToolbarWindow: React.FC = () => {
       return;
     }
 
+    setIsStartupContextReady(true);
     applyStartupToolbarContext(pendingStartupContextRef.current);
     pendingStartupContextRef.current = null;
   }, [applyStartupToolbarContext, isInitialized]);

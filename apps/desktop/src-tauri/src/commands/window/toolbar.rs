@@ -32,10 +32,19 @@ pub struct CaptureToolbarSelectionPayload {
     pub auto_start_recording: Option<bool>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StartupToolbarContextPayload {
+    pub capture_type: Option<String>,
+    pub source_mode: Option<String>,
+    pub auto_start_area_selection: bool,
+}
+
 #[derive(Default)]
 pub struct CaptureToolbarWindowState {
     create_lock: Mutex<()>,
     pending_selection: Mutex<Option<CaptureToolbarSelectionPayload>>,
+    pending_startup_context: Mutex<Option<StartupToolbarContextPayload>>,
 }
 
 fn build_selection_payload(
@@ -80,6 +89,18 @@ fn calculate_capture_toolbar_position(
     let ix = x + (width as i32 / 2) - (toolbar_width as i32 / 2);
     let iy = y + height as i32 + 8;
     (ix, iy)
+}
+
+fn build_startup_toolbar_context(
+    capture_type: Option<String>,
+    source_mode: Option<String>,
+    auto_start_area_selection: bool,
+) -> StartupToolbarContextPayload {
+    StartupToolbarContextPayload {
+        capture_type,
+        source_mode,
+        auto_start_area_selection,
+    }
 }
 
 // ============================================================================
@@ -233,16 +254,30 @@ pub async fn capture_toolbar_ready(app: AppHandle) -> Result<(), String> {
             .map_err(|_| "Failed to lock pending capture toolbar selection".to_string())?;
         pending_selection.take()
     };
-
-    let Some(selection) = pending_selection else {
-        return Ok(());
+    let pending_startup_context = {
+        let mut pending_startup_context = toolbar_state
+            .pending_startup_context
+            .lock()
+            .map_err(|_| "Failed to lock pending startup toolbar context".to_string())?;
+        pending_startup_context.take()
     };
+
+    if pending_selection.is_none() && pending_startup_context.is_none() {
+        return Ok(());
+    }
 
     let Some(window) = app.get_webview_window(CAPTURE_TOOLBAR_LABEL) else {
         return Ok(());
     };
 
-    let _ = window.emit("confirm-selection", selection);
+    if let Some(selection) = pending_selection {
+        let _ = window.emit("confirm-selection", selection);
+    }
+
+    if let Some(startup_context) = pending_startup_context {
+        let _ = window.emit("startup-toolbar-context", startup_context);
+    }
+
     Ok(())
 }
 
@@ -541,32 +576,6 @@ pub async fn set_capture_toolbar_ignore_cursor(
 /// Show the startup toolbar window (floating, centered on primary monitor).
 /// This is the main toolbar shown on app startup for initiating captures.
 /// Different from capture toolbar which appears during region selection.
-fn emit_startup_toolbar_context(
-    app: &AppHandle,
-    capture_type: Option<String>,
-    source_mode: Option<String>,
-    auto_start_area_selection: Option<bool>,
-) {
-    if capture_type.is_none() && source_mode.is_none() && auto_start_area_selection.is_none() {
-        return;
-    }
-
-    let app_handle = app.clone();
-    tauri::async_runtime::spawn(async move {
-        tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
-        if let Some(window) = app_handle.get_webview_window(CAPTURE_TOOLBAR_LABEL) {
-            let _ = window.emit(
-                "startup-toolbar-context",
-                serde_json::json!({
-                    "captureType": capture_type,
-                    "sourceMode": source_mode,
-                    "autoStartAreaSelection": auto_start_area_selection.unwrap_or(false),
-                }),
-            );
-        }
-    });
-}
-
 #[command]
 pub async fn show_startup_toolbar(
     app: AppHandle,
@@ -575,6 +584,11 @@ pub async fn show_startup_toolbar(
     auto_start_area_selection: Option<bool>,
 ) -> Result<(), String> {
     let auto_start_area_selection = auto_start_area_selection.unwrap_or(false);
+    let startup_context = build_startup_toolbar_context(
+        capture_type.clone(),
+        source_mode.clone(),
+        auto_start_area_selection,
+    );
     let toolbar_state = app.state::<CaptureToolbarWindowState>();
     let _create_guard = toolbar_state
         .create_lock
@@ -622,12 +636,7 @@ pub async fn show_startup_toolbar(
                 .set_focus()
                 .map_err(|e| format!("Failed to focus toolbar: {}", e))?;
         }
-        emit_startup_toolbar_context(
-            &app,
-            capture_type,
-            source_mode,
-            Some(auto_start_area_selection),
-        );
+        let _ = window.emit("startup-toolbar-context", startup_context);
         return Ok(());
     }
 
@@ -675,29 +684,19 @@ pub async fn show_startup_toolbar(
         .skip_taskbar(false)
         .resizable(false) // Auto-resized by frontend
         .shadow(true)
-        .visible(!auto_start_area_selection)
-        .focused(!auto_start_area_selection)
+        .visible(false)
+        .focused(false)
         .build()
         .map_err(|e| format!("Failed to create startup toolbar window: {}", e))?;
 
     // Set position/size using physical coordinates
     set_physical_bounds(&window, x, y, initial_width, initial_height)?;
 
-    if !auto_start_area_selection {
-        window
-            .show()
-            .map_err(|e| format!("Failed to show toolbar: {}", e))?;
-        window
-            .set_focus()
-            .map_err(|e| format!("Failed to focus toolbar: {}", e))?;
-    }
-
-    emit_startup_toolbar_context(
-        &app,
-        capture_type,
-        source_mode,
-        Some(auto_start_area_selection),
-    );
+    let mut pending_startup_context = toolbar_state
+        .pending_startup_context
+        .lock()
+        .map_err(|_| "Failed to lock pending startup toolbar context".to_string())?;
+    *pending_startup_context = Some(startup_context);
 
     log::info!("[show_startup_toolbar] Toolbar ready");
 
