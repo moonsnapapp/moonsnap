@@ -9,6 +9,7 @@ import {
   type ToolbarMode,
 } from '@/components/CaptureToolbar/CaptureToolbar';
 import { useCaptureBlockedPulse } from '@/hooks/useCaptureBlockedPulse';
+import { useFocusedShortcutDispatch } from '@/hooks/useFocusedShortcutDispatch';
 import { useTheme } from '@/hooks/useTheme';
 import type { RecordingFormat, RecordingState } from '@/types';
 import { toolbarLogger } from '@/utils/logger';
@@ -33,6 +34,7 @@ function getInitialRecordingFormat(): RecordingFormat {
 
 const RecordingControlsWindow: React.FC = () => {
   useTheme();
+  useFocusedShortcutDispatch();
   const isCaptureBlockedPulseActive = useCaptureBlockedPulse();
 
   const [mode, setMode] = useState<ToolbarMode>('starting');

@@ -25,6 +25,7 @@ import {
   type AfterRecordingAction,
 } from '../stores/captureSettingsStore';
 import { useSettingsStore } from '../stores/settingsStore';
+import { useFocusedShortcutDispatch } from '../hooks/useFocusedShortcutDispatch';
 import { useTheme } from '../hooks/useTheme';
 import { useRecordingEvents } from '../hooks/useRecordingEvents';
 import { repositionToolbar, useSelectionEvents } from '../hooks/useSelectionEvents';
@@ -60,6 +61,7 @@ interface RecordingModeChooserBackPayload {
 
 const CaptureToolbarWindow: React.FC = () => {
   useTheme();
+  useFocusedShortcutDispatch();
 
   const containerRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);

@@ -64,7 +64,7 @@ export const RecordingModeChooser = memo(function RecordingModeChooser({
             </div>
             <div className="recording-mode-chooser-card-text">
               <div className="recording-mode-chooser-card-title">Quick</div>
-              <div className="recording-mode-chooser-card-subtitle">Ready-to-share .mp4</div>
+              <div className="recording-mode-chooser-card-subtitle">Ready to share</div>
             </div>
           </button>
 

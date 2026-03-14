@@ -4821,8 +4821,8 @@ body.floating-toolbar-window #root {
   border: none;
   border-radius: 15px;
   background:
-    radial-gradient(140% 120% at 0% 0%, rgba(255, 255, 255, 0.06) 0%, transparent 44%),
-    linear-gradient(180deg, rgba(34, 34, 37, 0.95) 0%, rgba(21, 21, 24, 0.975) 52%, rgba(12, 12, 14, 0.995) 100%);
+    radial-gradient(140% 120% at 0% 0%, rgba(255, 255, 255, 0.035) 0%, transparent 40%),
+    linear-gradient(180deg, rgba(29, 29, 32, 0.955) 0%, rgba(22, 22, 25, 0.975) 50%, rgba(16, 16, 19, 0.988) 100%);
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
   filter: none;
@@ -4834,7 +4834,7 @@ body.floating-toolbar-window #root {
   content: '';
   position: absolute;
   inset: 0;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.055) 0%, transparent 28%, transparent 100%);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.03) 0%, rgba(255, 255, 255, 0.012) 18%, transparent 52%);
   pointer-events: none;
 }
 
@@ -5239,13 +5239,13 @@ body.floating-toolbar-window #root {
 
 .light .glass-toolbar--capture-floating {
   background:
-    radial-gradient(140% 120% at 0% 0%, rgba(255, 255, 255, 0.92) 0%, transparent 42%),
-    linear-gradient(180deg, rgba(248, 249, 251, 0.94) 0%, rgba(238, 241, 245, 0.97) 52%, rgba(228, 232, 238, 0.99) 100%);
+    radial-gradient(140% 120% at 0% 0%, rgba(255, 255, 255, 0.5) 0%, transparent 38%),
+    linear-gradient(180deg, rgba(247, 248, 250, 0.955) 0%, rgba(240, 243, 247, 0.975) 50%, rgba(233, 237, 242, 0.99) 100%);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.82), inset 0 -1px 0 rgba(148, 163, 184, 0.18); /* tauri-shadow-allow */
 }
 
 .light .glass-toolbar--capture-floating::before {
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.34) 0%, rgba(255, 255, 255, 0.08) 24%, transparent 60%);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.16) 0%, rgba(255, 255, 255, 0.04) 18%, transparent 52%);
 }
 
 .light .glass-toolbar--capture-floating .glass-toolbar-brand-wordmark {

@@ -10,10 +10,12 @@ import React, { useEffect, useState, useRef } from 'react';
 import { emit, listen } from '@tauri-apps/api/event';
 import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
 import { useCaptureBlockedPulse } from '../hooks/useCaptureBlockedPulse';
+import { useFocusedShortcutDispatch } from '../hooks/useFocusedShortcutDispatch';
 import { recordingLogger } from '../utils/logger';
 import type { RecordingState } from '../types';
 
 const CountdownWindow: React.FC = () => {
+  useFocusedShortcutDispatch();
   const isCaptureBlockedPulseActive = useCaptureBlockedPulse();
 
   const params = new URLSearchParams(window.location.search);

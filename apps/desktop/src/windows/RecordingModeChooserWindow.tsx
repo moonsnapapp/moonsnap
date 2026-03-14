@@ -3,12 +3,14 @@ import { emit, listen } from '@tauri-apps/api/event';
 import { getCurrentWindow, LogicalSize } from '@tauri-apps/api/window';
 
 import { RecordingModeChooser } from '@/components/CaptureToolbar/RecordingModeChooser';
+import { useFocusedShortcutDispatch } from '@/hooks/useFocusedShortcutDispatch';
 import { useTheme } from '@/hooks/useTheme';
 import type { AfterRecordingAction } from '@/stores/captureSettingsStore';
 import { toolbarLogger } from '@/utils/logger';
 
 const RecordingModeChooserWindow: React.FC = () => {
   useTheme();
+  useFocusedShortcutDispatch();
 
   const containerRef = useRef<HTMLDivElement>(null);
   const lastSizeRef = useRef({ width: 0, height: 0 });
