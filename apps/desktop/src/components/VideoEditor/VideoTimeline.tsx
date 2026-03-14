@@ -50,6 +50,7 @@ import {
   selectTrackVisibility,
 } from '../../stores/videoEditor/selectors';
 import { usePlaybackTime, usePlaybackControls, getPlaybackState } from '../../hooks/usePlaybackEngine';
+import { usePlaybackTimeThrottled } from '../../hooks/usePlaybackTimeThrottled';
 import { getVideoPrimaryActionLabel } from '../../utils/videoExportMode';
 import { TimelineRuler } from './TimelineRuler';
 import { ZoomTrackContent, AnnotationTrackContent, SceneTrackContent, MaskTrackContent, TextTrackContent, TrimTrackContent } from './tracks';
@@ -168,7 +169,7 @@ interface VideoTimelineProps {
  * Time display component - uses usePlaybackTime for smooth updates.
  */
 const TimeDisplay = memo(function TimeDisplay({ durationMs }: { durationMs: number }) {
-  const currentTimeMs = usePlaybackTime();
+  const currentTimeMs = usePlaybackTimeThrottled(10);
 
   return (
     <div className="px-2 py-0.5 bg-[var(--polar-mist)]/60 rounded text-xs font-mono text-[var(--ink-dark)] tabular-nums">

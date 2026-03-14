@@ -19,6 +19,7 @@ import { computeDPRCappedFitScale } from '../../utils/compositionBounds';
 import { hasEnabledCrop } from '../../utils/videoContentDimensions';
 import { hasActiveTypewriterSound } from '../../utils/textSegmentAnimation';
 import { usePreviewOrPlaybackTime } from '../../hooks/usePlaybackEngine';
+import { usePreviewOrPlaybackTimeThrottled } from '../../hooks/usePlaybackTimeThrottled';
 import { useTimelineToSourceTime } from '../../hooks/useTimelineSourceTime';
 import { getZoomScaleAt, useZoomPreview } from '../../hooks/useZoomPreview';
 import { useInterpolatedScene, shouldRenderScreen, shouldRenderCursor, getCameraOnlyTransitionOpacity, getRegularCameraTransitionOpacity } from '../../hooks/useSceneMode';
@@ -96,7 +97,7 @@ const TypewriterAudioController = memo(function TypewriterAudioController({
   audioConfig: AudioTrackSettings | undefined;
   textSegments: TextSegment[] | undefined;
 }) {
-  const currentTimeMs = usePreviewOrPlaybackTime();
+  const currentTimeMs = usePreviewOrPlaybackTimeThrottled(20);
   const shouldPlayTypewriterAudio = useMemo(
     () => hasActiveTypewriterSound(textSegments, currentTimeMs / 1000),
     [textSegments, currentTimeMs]
@@ -157,7 +158,7 @@ const SceneAwareWebcamOverlay = memo(function SceneAwareWebcamOverlay({
   sceneSegments: SceneSegment[] | undefined;
   defaultSceneMode: SceneMode;
 }) {
-  const currentTimeMs = usePreviewOrPlaybackTime();
+  const currentTimeMs = usePreviewOrPlaybackTimeThrottled(20);
   const scene = useInterpolatedScene(sceneSegments, defaultSceneMode, currentTimeMs);
   const sceneOpacity = getRegularCameraTransitionOpacity(scene);
   const zoomScale = useMemo(
@@ -247,7 +248,7 @@ const MaskOverlayController = memo(function MaskOverlayController({
   videoHeight: number;
   cropConfig?: CropConfig;
 }) {
-  const currentTimeMs = usePreviewOrPlaybackTime();
+  const currentTimeMs = usePreviewOrPlaybackTimeThrottled(10);
 
   if (!segments || segments.length === 0 || previewWidth <= 0 || previewHeight <= 0) {
     return null;
@@ -282,7 +283,7 @@ const TextOverlayController = memo(function TextOverlayController({
   displayHeight: number;
   zoomRegions: ZoomRegion[] | undefined;
 }) {
-  const currentTimeMs = usePreviewOrPlaybackTime();
+  const currentTimeMs = usePreviewOrPlaybackTimeThrottled(20);
   const zoomScale = useMemo(
     () => getZoomScaleAt(zoomRegions, currentTimeMs),
     [zoomRegions, currentTimeMs]
@@ -316,7 +317,7 @@ const AnnotationOverlayController = memo(function AnnotationOverlayController({
   displayHeight: number;
   zoomRegions: ZoomRegion[] | undefined;
 }) {
-  const currentTimeMs = usePreviewOrPlaybackTime();
+  const currentTimeMs = usePreviewOrPlaybackTimeThrottled(10);
   const zoomScale = useMemo(
     () => getZoomScaleAt(zoomRegions, currentTimeMs),
     [zoomRegions, currentTimeMs]

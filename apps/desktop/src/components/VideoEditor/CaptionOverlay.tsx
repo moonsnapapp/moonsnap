@@ -10,7 +10,7 @@ import {
   selectCaptionSettings,
   selectTimelineSegments,
 } from '../../stores/videoEditor/selectors';
-import { usePreviewOrPlaybackTime } from '../../hooks/usePlaybackEngine';
+import { usePreviewOrPlaybackTimeThrottled } from '../../hooks/usePlaybackTimeThrottled';
 import { useScaledLayout } from '@/hooks/useParityLayout';
 import { remapCaptionSegmentsToTimeline } from '@/utils/captionTimeline';
 
@@ -167,7 +167,7 @@ export const CaptionOverlay = memo(function CaptionOverlay({
   const captionSegments = useVideoEditorStore(selectCaptionSegments);
   const captionSettings = useVideoEditorStore(selectCaptionSettings);
   const timelineSegments = useVideoEditorStore(selectTimelineSegments);
-  const currentTimeMs = usePreviewOrPlaybackTime();
+  const currentTimeMs = usePreviewOrPlaybackTimeThrottled(10);
   const currentTimeSecs = currentTimeMs / 1000;
   const timelineCaptionSegments = useMemo(
     () => remapCaptionSegmentsToTimeline(captionSegments, timelineSegments),
