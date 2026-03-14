@@ -48,7 +48,7 @@ export const CaptureContextMenu: React.FC<CaptureContextMenuProps> = ({
 
   return (
     <ContextMenuContent>
-      {isMedia && onPlayMedia && (
+      {isMedia && (quickCapture || captureType === 'gif') && onPlayMedia && (
         <ContextMenuItem
           onClick={onPlayMedia}
           disabled={isMissing}
@@ -65,7 +65,7 @@ export const CaptureContextMenu: React.FC<CaptureContextMenuProps> = ({
           className={isMissing ? 'opacity-50 cursor-not-allowed' : ''}
         >
           <Film className="w-4 h-4 mr-2" />
-          {quickCapture ? 'Open Quick Capture' : 'Edit Video'}
+          {quickCapture ? 'Open as Project' : 'Edit Video'}
         </ContextMenuItem>
       )}
       {isMedia && quickCapture && onSaveCopy && (
