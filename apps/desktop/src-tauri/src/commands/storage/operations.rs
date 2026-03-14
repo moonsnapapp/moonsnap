@@ -1823,9 +1823,6 @@ pub async fn repair_project(
         }
     }
 
-    // Set Hidden attribute on the new file (Windows)
-    super::bundle_utils::set_hidden_on_bundle_contents(&bundle_path);
-
     log::info!(
         "[REPAIR] Successfully repaired project {} in {:?}",
         project_id,

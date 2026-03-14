@@ -1,8 +1,6 @@
 use std::fs;
 use tauri::AppHandle;
 
-use super::bundle_utils;
-
 /// Result of migrating project folders to .moonsnap bundles.
 pub struct MigrationResult {
     pub migrated: usize,
@@ -62,7 +60,6 @@ pub fn migrate_captures_dir(
         match fs::rename(&path, &target) {
             Ok(()) => {
                 log::info!("[MIGRATION] Renamed {:?} -> {:?}", path, target);
-                bundle_utils::set_hidden_on_bundle_contents(&target);
 
                 if let Some(projects_dir) = projects_dir {
                     migrate_sidecar_dir(&target, &folder_name, projects_dir);

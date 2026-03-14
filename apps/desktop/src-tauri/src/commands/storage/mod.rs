@@ -12,7 +12,6 @@
 //! Shared FFmpeg utilities now come from `moonsnap-media::ffmpeg`.
 //! ```
 
-pub mod bundle_utils;
 pub mod migration;
 pub mod operations;
 #[cfg(test)]
