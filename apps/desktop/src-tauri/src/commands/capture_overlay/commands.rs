@@ -24,6 +24,8 @@ static PENDING_COMMAND: AtomicU8 = AtomicU8::new(0);
 /// Pending dimensions for SetDimensions command
 static PENDING_WIDTH: AtomicU32 = AtomicU32::new(0);
 static PENDING_HEIGHT: AtomicU32 = AtomicU32::new(0);
+static PENDING_MOVE_X: AtomicI32 = AtomicI32::new(0);
+static PENDING_MOVE_Y: AtomicI32 = AtomicI32::new(0);
 
 /// Get and clear the pending command.
 ///
@@ -43,6 +45,13 @@ pub fn take_pending_dimensions() -> (u32, u32) {
     (width, height)
 }
 
+/// Get and clear the pending move delta.
+pub fn take_pending_move_delta() -> (i32, i32) {
+    let dx = PENDING_MOVE_X.swap(0, Ordering::SeqCst);
+    let dy = PENDING_MOVE_Y.swap(0, Ordering::SeqCst);
+    (dx, dy)
+}
+
 /// Set a pending command for the overlay.
 fn set_pending_command(cmd: OverlayCommand) {
     PENDING_COMMAND.store(cmd as u8, Ordering::SeqCst);
@@ -54,6 +63,8 @@ pub fn clear_pending_command() {
     PENDING_COMMAND.store(0, Ordering::SeqCst);
     PENDING_WIDTH.store(0, Ordering::SeqCst);
     PENDING_HEIGHT.store(0, Ordering::SeqCst);
+    PENDING_MOVE_X.store(0, Ordering::SeqCst);
+    PENDING_MOVE_Y.store(0, Ordering::SeqCst);
 }
 
 /// Confirm the overlay selection.
@@ -108,6 +119,22 @@ pub async fn capture_overlay_set_dimensions(width: u32, height: u32) -> Result<(
     PENDING_WIDTH.store(width, Ordering::SeqCst);
     PENDING_HEIGHT.store(height, Ordering::SeqCst);
     set_pending_command(OverlayCommand::SetDimensions);
+    Ok(())
+}
+
+/// Move the current selection by a screen-space delta.
+///
+/// Used by floating HUDs that keep pointer capture locally and drive the D2D
+/// selection directly.
+#[tauri::command]
+pub async fn capture_overlay_move_selection_by(dx: i32, dy: i32) -> Result<(), String> {
+    if dx == 0 && dy == 0 {
+        return Ok(());
+    }
+
+    PENDING_MOVE_X.fetch_add(dx, Ordering::SeqCst);
+    PENDING_MOVE_Y.fetch_add(dy, Ordering::SeqCst);
+    set_pending_command(OverlayCommand::MoveSelectionBy);
     Ok(())
 }
 
@@ -177,5 +204,16 @@ mod tests {
         set_pending_command(OverlayCommand::Cancel);
 
         assert_eq!(take_pending_command(), OverlayCommand::Cancel);
+    }
+
+    #[test]
+    fn test_move_selection_by_command() {
+        PENDING_MOVE_X.store(12, Ordering::SeqCst);
+        PENDING_MOVE_Y.store(-4, Ordering::SeqCst);
+        set_pending_command(OverlayCommand::MoveSelectionBy);
+
+        assert_eq!(take_pending_command(), OverlayCommand::MoveSelectionBy);
+        assert_eq!(take_pending_move_delta(), (12, -4));
+        assert_eq!(take_pending_move_delta(), (0, 0));
     }
 }

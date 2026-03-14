@@ -382,6 +382,7 @@ pub enum OverlayCommand {
     Reselect = 3,
     Cancel = 4,
     SetDimensions = 5,
+    MoveSelectionBy = 6,
 }
 
 impl From<u8> for OverlayCommand {
@@ -392,6 +393,7 @@ impl From<u8> for OverlayCommand {
             3 => Self::Reselect,
             4 => Self::Cancel,
             5 => Self::SetDimensions,
+            6 => Self::MoveSelectionBy,
             _ => Self::None,
         }
     }

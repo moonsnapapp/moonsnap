@@ -57,7 +57,9 @@ use windows::Win32::UI::WindowsAndMessaging::{
     WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_POPUP,
 };
 
-use commands::{clear_pending_command, take_pending_command, take_pending_dimensions};
+use commands::{
+    clear_pending_command, take_pending_command, take_pending_dimensions, take_pending_move_delta,
+};
 use graphics::{compositor, d2d, d3d};
 use state::{GraphicsState, MonitorInfo, OverlayState};
 use types::*;
@@ -506,6 +508,25 @@ fn run_overlay(
                             // Emit selection update and re-render
                             let screen_sel =
                                 state.monitor.local_rect_to_screen(state.adjustment.bounds);
+                            let _ = state
+                                .app_handle
+                                .emit("selection-updated", SelectionEvent::from(screen_sel));
+                            let _ = render::render(&state);
+                        }
+                    },
+                    OverlayCommand::MoveSelectionBy => {
+                        let (dx, dy) = take_pending_move_delta();
+                        if dx != 0 || dy != 0 {
+                            state.adjustment.bounds = state.adjustment.bounds.offset(dx, dy);
+                            let screen_sel =
+                                state.monitor.local_rect_to_screen(state.adjustment.bounds);
+                            let _ = crate::commands::window::recording::reposition_recording_mode_chooser(
+                                &state.app_handle,
+                                screen_sel.left,
+                                screen_sel.top,
+                                screen_sel.width(),
+                                screen_sel.height(),
+                            );
                             let _ = state
                                 .app_handle
                                 .emit("selection-updated", SelectionEvent::from(screen_sel));
