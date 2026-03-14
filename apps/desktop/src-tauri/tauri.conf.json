@@ -69,15 +69,7 @@
         "type": "downloadBootstrapper"
       },
       "allowDowngrades": true
-    },
-    "fileAssociations": [
-      {
-        "ext": ["moonsnap"],
-        "mimeType": "application/x-moonsnap",
-        "description": "MoonSnap Project",
-        "role": "Editor"
-      }
-    ]
+    }
   },
   "plugins": {
     "updater": {

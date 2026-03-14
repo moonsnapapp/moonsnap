@@ -326,15 +326,13 @@ export const CaptureLibrary: React.FC = () => {
   const handleOpenInFolder = useCallback(async (capture: CaptureListItem) => {
     try {
       let revealPath = capture.image_path;
-      // For video projects inside .moonsnap bundles, reveal the bundle folder
-      // instead of exposing internal files like screen.mp4 to the user
-      if (capture.capture_type === 'video' && capture.image_path.includes('.moonsnap')) {
-        // Split on either separator, find the .moonsnap folder, reconstruct with original separators
+      // For video projects, reveal the project folder instead of screen.mp4 inside it
+      if (capture.capture_type === 'video' && !capture.quick_capture) {
         const sep = capture.image_path.includes('\\') ? '\\' : '/';
         const parts = capture.image_path.split(/[/\\]/);
-        const bundleIdx = parts.findIndex(p => p.endsWith('.moonsnap'));
-        if (bundleIdx !== -1) {
-          revealPath = parts.slice(0, bundleIdx + 1).join(sep);
+        // Remove the filename (screen.mp4) to get the folder path
+        if (parts.length > 1) {
+          revealPath = parts.slice(0, -1).join(sep);
         }
       }
       await invoke('reveal_file_in_explorer', { path: revealPath });

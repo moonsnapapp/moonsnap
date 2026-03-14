@@ -521,22 +521,17 @@ async fn load_video_project_folder(
         .as_ref()
         .map(|m| m.len() > 0)
         .unwrap_or(false);
-    let is_bundle = folder_path.extension().and_then(|e| e.to_str()) == Some("moonsnap");
 
-    // For .moonsnap bundles, show as damaged instead of hiding
-    if !screen_ok && !is_bundle {
+    if !screen_ok {
         return None;
     }
-    let damaged = !screen_ok;
+    let damaged = false;
 
-    // Compute fallback ID from folder name (stripped of .moonsnap extension)
-    let folder_name = folder_path
+    // Use folder name as fallback ID
+    let fallback_id = folder_path
         .file_name()
         .and_then(|n| n.to_str())
-        .unwrap_or("recording");
-    let fallback_id = folder_name
-        .strip_suffix(".moonsnap")
-        .unwrap_or(folder_name)
+        .unwrap_or("recording")
         .to_string();
 
     // Check for metadata sidecar in projects/{id}/project.json
@@ -1077,33 +1072,10 @@ fn determine_capture_type(
         return Ok(("project".to_string(), None));
     }
 
-    // 2. Check if project_id directly points to a .moonsnap bundle or bare folder
-    let direct_path = captures_dir.join(project_id);
-    if direct_path.is_dir() && direct_path.join("screen.mp4").exists() {
-        return Ok(("video_folder".to_string(), Some(direct_path)));
-    }
-    // Try appending .moonsnap (ID from project.json won't have the extension)
-    let bundle_path = captures_dir.join(format!("{}.moonsnap", project_id));
-    if bundle_path.is_dir() && bundle_path.join("screen.mp4").exists() {
-        return Ok(("video_folder".to_string(), Some(bundle_path)));
-    }
-    // Scan all project folders for matching project.json ID (handles renamed bundles)
-    if let Ok(entries) = std::fs::read_dir(&captures_dir) {
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.is_dir() && path.join("screen.mp4").exists() {
-                let pj = path.join("project.json");
-                if pj.exists() {
-                    if let Ok(content) = std::fs::read_to_string(&pj) {
-                        if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&content) {
-                            if parsed.get("id").and_then(|v| v.as_str()) == Some(project_id) {
-                                return Ok(("video_folder".to_string(), Some(path)));
-                            }
-                        }
-                    }
-                }
-            }
-        }
+    // 2. Check if it's a video project folder (folder with screen.mp4 inside)
+    let video_folder = captures_dir.join(project_id);
+    if video_folder.is_dir() && video_folder.join("screen.mp4").exists() {
+        return Ok(("video_folder".to_string(), Some(video_folder)));
     }
 
     // 3. Check if it's a legacy flat video file (.mp4)
@@ -1712,24 +1684,17 @@ fn create_migration_project_json(
 // ============================================================================
 
 /// Find the bundle folder for a given project_id.
-/// Tries direct path, .moonsnap extension, then scans all bundles for matching project.json ID.
+/// Find a project folder by project ID.
 fn find_project_bundle(
     captures_dir: &std::path::Path,
     project_id: &str,
 ) -> Result<std::path::PathBuf, String> {
-    // Try direct path (folder named exactly as project_id)
     let direct_path = captures_dir.join(project_id);
     if direct_path.is_dir() {
         return Ok(direct_path);
     }
 
-    // Try .moonsnap bundle (e.g. "recording_123.moonsnap")
-    let bundle = captures_dir.join(format!("{}.moonsnap", project_id));
-    if bundle.is_dir() {
-        return Ok(bundle);
-    }
-
-    // Scan all bundles for matching project.json ID
+    // Scan all project folders for matching project.json ID
     if let Ok(entries) = std::fs::read_dir(captures_dir) {
         for entry in entries.flatten() {
             let path = entry.path();
@@ -1748,7 +1713,7 @@ fn find_project_bundle(
         }
     }
 
-    Err(format!("Project bundle not found for ID: {}", project_id))
+    Err(format!("Project folder not found for ID: {}", project_id))
 }
 
 /// Repair a damaged project bundle by re-linking a video file.

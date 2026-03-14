@@ -1482,8 +1482,7 @@ pub fn generate_output_path(settings: &RecordingSettings) -> Result<PathBuf, Str
                 Ok(save_dir.join(filename))
             } else {
                 // Editor flow: create a project folder
-                let folder_name =
-                    format!("moonsnap_{}_{}.moonsnap", timestamp, rand::random::<u16>());
+                let folder_name = format!("moonsnap_{}_{}", timestamp, rand::random::<u16>());
                 let folder_path = save_dir.join(&folder_name);
                 std::fs::create_dir_all(&folder_path)
                     .map_err(|e| format!("Failed to create recording folder: {}", e))?;
@@ -1558,16 +1557,17 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_generate_output_path_editor_flow_has_moonsnap_extension() {
+    fn test_generate_output_path_editor_flow_creates_folder() {
         let settings = RecordingSettings {
             format: RecordingFormat::Mp4,
             quick_capture: false,
             ..Default::default()
         };
         let path = generate_output_path(&settings).unwrap();
+        assert!(path.is_dir(), "Editor flow should create a directory");
         assert!(
-            path.to_string_lossy().ends_with(".moonsnap"),
-            "Editor flow path should end with .moonsnap, got: {:?}",
+            !path.to_string_lossy().ends_with(".mp4"),
+            "Editor flow path should not end with .mp4, got: {:?}",
             path
         );
         let _ = std::fs::remove_dir(&path);

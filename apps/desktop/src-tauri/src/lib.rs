@@ -193,48 +193,6 @@ pub fn run() {
                 }
             }
 
-            // Migrate legacy project folders to .moonsnap bundles (runs synchronously
-            // before UI to prevent race conditions with library scanning)
-            {
-                let app_handle = app.handle().clone();
-                match commands::storage::migration::migrate_to_bundles(&app_handle) {
-                    Ok(result) => {
-                        if result.migrated > 0 {
-                            log::info!(
-                                "[STARTUP] Migrated {} project folders to .moonsnap bundles",
-                                result.migrated
-                            );
-                        }
-                        if !result.failed.is_empty() {
-                            log::warn!(
-                                "[STARTUP] {} folders failed to migrate: {:?}",
-                                result.failed.len(),
-                                result.failed
-                            );
-                        }
-                    },
-                    Err(e) => log::error!("[STARTUP] Migration failed: {}", e),
-                }
-            }
-
-            // Handle file association: check if app was launched with a .moonsnap bundle path
-            // TODO: Add macOS UTI bundle declaration when macOS support is added
-            {
-                let args: Vec<String> = std::env::args().collect();
-                if let Some(path_arg) = args.get(1) {
-                    let path = std::path::Path::new(path_arg);
-                    if path.is_dir()
-                        && path.extension().and_then(|e| e.to_str()) == Some("moonsnap")
-                    {
-                        let app_handle = app.handle().clone();
-                        let path_str = path_arg.clone();
-                        tauri::async_runtime::spawn(async move {
-                            let _ = app_handle.emit("open-moonsnap-bundle", path_str);
-                        });
-                    }
-                }
-            }
-
             // Show floating startup toolbar on app launch
             let app_handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
