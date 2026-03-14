@@ -148,9 +148,12 @@ pub async fn show_recording_controls(
     height: u32,
     include_in_capture: Option<bool>,
     center_on_selection: Option<bool>,
+    microphone_device_index: Option<usize>,
+    system_audio_enabled: Option<bool>,
 ) -> Result<(), String> {
     let include_in_capture = include_in_capture.unwrap_or(false);
     let center_on_selection = center_on_selection.unwrap_or(false);
+    let system_audio_enabled = system_audio_enabled.unwrap_or(true);
 
     let (window_x, window_y) = if center_on_selection {
         center_floating_window(
@@ -165,10 +168,20 @@ pub async fn show_recording_controls(
         (x, y)
     };
 
+    let audio_config_script = format!(
+        "window.__MOONSNAP_RECORDING_AUDIO_CONFIG = {};",
+        serde_json::to_string(&serde_json::json!({
+            "microphoneDeviceIndex": microphone_device_index,
+            "systemAudioEnabled": system_audio_enabled,
+        }))
+        .map_err(|e| format!("Failed to serialize recording audio config: {}", e))?
+    );
+
     if let Some(window) = app.get_webview_window(RECORDING_CONTROLS_LABEL) {
         // Preserve the current position once the user has dragged the HUD.
         // State transitions like pause/resume should only refresh visibility and
         // capture affinity, not snap the controls back to their initial anchor.
+        let _ = window.eval(&audio_config_script);
         window
             .show()
             .map_err(|e| format!("Failed to show recording controls: {}", e))?;
@@ -205,6 +218,7 @@ pub async fn show_recording_controls(
         .shadow(false)
         .visible(false)
         .focused(false)
+        .initialization_script(audio_config_script)
         .build()
         .map_err(|e| format!("Failed to create recording controls window: {}", e))?;
 

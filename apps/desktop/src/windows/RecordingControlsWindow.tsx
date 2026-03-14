@@ -3,10 +3,27 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { getCurrentWindow, LogicalSize } from '@tauri-apps/api/window';
 
-import { CaptureToolbar, type ToolbarMode } from '@/components/CaptureToolbar/CaptureToolbar';
+import {
+  CaptureToolbar,
+  type RecordingAudioConfig,
+  type ToolbarMode,
+} from '@/components/CaptureToolbar/CaptureToolbar';
 import { useTheme } from '@/hooks/useTheme';
 import type { RecordingFormat, RecordingState } from '@/types';
 import { toolbarLogger } from '@/utils/logger';
+
+declare global {
+  interface Window {
+    __MOONSNAP_RECORDING_AUDIO_CONFIG?: RecordingAudioConfig;
+  }
+}
+
+function getInitialRecordingAudioConfig(): RecordingAudioConfig {
+  return window.__MOONSNAP_RECORDING_AUDIO_CONFIG ?? {
+    microphoneDeviceIndex: null,
+    systemAudioEnabled: true,
+  };
+}
 
 const RecordingControlsWindow: React.FC = () => {
   useTheme();
@@ -15,6 +32,7 @@ const RecordingControlsWindow: React.FC = () => {
   const [format, setFormat] = useState<RecordingFormat>('mp4');
   const [elapsedTime, setElapsedTime] = useState(0);
   const [countdownSeconds, setCountdownSeconds] = useState<number | undefined>();
+  const [recordingAudioConfig] = useState<RecordingAudioConfig>(getInitialRecordingAudioConfig);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const lastSizeRef = useRef({ width: 0, height: 0 });
@@ -220,6 +238,8 @@ const RecordingControlsWindow: React.FC = () => {
         onResume={handleResume}
         onStop={handleStop}
         minimalChrome="floating"
+        showRecordingAudioIndicators
+        recordingAudioConfig={recordingAudioConfig}
       />
     </div>
   );

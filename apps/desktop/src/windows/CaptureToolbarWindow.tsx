@@ -255,7 +255,10 @@ const CaptureToolbarWindow: React.FC = () => {
 
   const showRecordingControlsWindow = useCallback(async () => {
     const currentWindow = getCurrentWebviewWindow();
-    const showToolbarInCapture = useCaptureSettingsStore.getState().showToolbarInRecording;
+    const {
+      showToolbarInRecording: showToolbarInCapture,
+      settings,
+    } = useCaptureSettingsStore.getState();
     const [position, size] = await Promise.all([
       currentWindow.outerPosition(),
       currentWindow.outerSize(),
@@ -267,6 +270,8 @@ const CaptureToolbarWindow: React.FC = () => {
       width: size.width,
       height: size.height,
       includeInCapture: showToolbarInCapture,
+      microphoneDeviceIndex: settings.video.microphoneDeviceIndex ?? null,
+      systemAudioEnabled: settings.video.captureSystemAudio,
     });
     await currentWindow.hide();
   }, []);

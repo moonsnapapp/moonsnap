@@ -3930,6 +3930,30 @@ body.floating-toolbar-window #root {
   flex-shrink: 0; /* Don't shrink controls */
 }
 
+.glass-recording-audio-section {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.glass-recording-audio-indicator {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.glass-recording-audio-indicator--inactive {
+  opacity: 0.45;
+}
+
+.glass-audio-meter--recording {
+  width: 28px;
+  height: 4px;
+  border-radius: 999px;
+}
+
 /* ========================================
    POPOVER STYLES - Dark Glass
    ======================================== */
@@ -4646,6 +4670,18 @@ body.floating-toolbar-window #root {
   padding: 0 10px;
 }
 
+.glass-toolbar--minimal-floating .glass-recording-audio-section {
+  gap: 10px;
+}
+
+.glass-toolbar--minimal-floating .glass-recording-audio-indicator {
+  gap: 7px;
+}
+
+.glass-toolbar--minimal-floating .glass-audio-meter--recording {
+  width: 32px;
+}
+
 .glass-toolbar--minimal-floating .glass-controls-section {
   gap: 6px;
 }
@@ -4826,6 +4862,10 @@ body.floating-toolbar-window #root {
 .light .glass-toolbar--minimal-floating {
   background: rgba(255, 255, 255, 0.96);
   border-color: rgba(0, 0, 0, 0.1);
+}
+
+.light .glass-recording-audio-indicator {
+  color: rgba(15, 23, 42, 0.68);
 }
 
 .light .recording-mode-chooser-card {

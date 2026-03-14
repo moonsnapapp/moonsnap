@@ -105,6 +105,8 @@ export async function startRecordingCaptureFlow({
     height: hudAnchor.height,
     includeInCapture: showToolbarInRecording,
     centerOnSelection: hudAnchor.centerOnSelection ?? false,
+    microphoneDeviceIndex: microphoneDeviceIndex ?? null,
+    systemAudioEnabled: systemAudioEnabled,
   });
 
   await invoke('show_recording_border', {

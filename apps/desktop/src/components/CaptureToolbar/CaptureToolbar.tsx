@@ -8,7 +8,7 @@
  */
 
 import React, { useCallback } from 'react';
-import { X, Square, Pause, Circle, Zap } from 'lucide-react';
+import { X, Square, Pause, Circle, Mic, Volume2, Zap } from 'lucide-react';
 import type { CaptureType, RecordingFormat } from '../../types';
 import { ModeSelector } from './ModeSelector';
 import { SourceSelector, type CaptureSource } from './SourceSelector';
@@ -23,6 +23,11 @@ import { useCaptureSettingsStore } from '@/stores/captureSettingsStore';
 import { useRustAudioLevels } from '@/hooks/useRustAudioLevels';
 
 export type ToolbarMode = 'selection' | 'starting' | 'recording' | 'paused' | 'processing' | 'error';
+
+export interface RecordingAudioConfig {
+  microphoneDeviceIndex: number | null;
+  systemAudioEnabled: boolean;
+}
 
 interface CaptureToolbarProps {
   /** Toolbar mode */
@@ -79,6 +84,10 @@ interface CaptureToolbarProps {
   onOpenSettings?: () => void;
   /** Alternate chrome for recording-only surfaces */
   minimalChrome?: 'window' | 'floating';
+  /** Show live audio indicators in the recording HUD */
+  showRecordingAudioIndicators?: boolean;
+  /** Explicit recording audio config for separate HUD windows */
+  recordingAudioConfig?: RecordingAudioConfig;
 }
 
 function formatTime(seconds: number): string {
@@ -113,6 +122,8 @@ export const CaptureToolbar: React.FC<CaptureToolbarProps> = ({
   onDimensionChange,
   onOpenSettings,
   minimalChrome = 'window',
+  showRecordingAudioIndicators = false,
+  recordingAudioConfig,
 }) => {
   const isGif = captureType === 'gif' || format === 'gif';
   const isRecording = mode === 'recording' || mode === 'paused';
@@ -125,16 +136,22 @@ export const CaptureToolbar: React.FC<CaptureToolbarProps> = ({
 
   // Get audio settings for level meters
   const { settings, afterRecordingAction } = useCaptureSettingsStore();
-  const micDeviceIndex = settings.video.microphoneDeviceIndex;
+  const micDeviceIndex = recordingAudioConfig?.microphoneDeviceIndex ?? settings.video.microphoneDeviceIndex;
   const isMicEnabled = micDeviceIndex !== null;
-  const isSystemAudioEnabled = settings.video.captureSystemAudio;
+  const isSystemAudioEnabled = recordingAudioConfig?.systemAudioEnabled ?? settings.video.captureSystemAudio;
+
+  const shouldShowRecordingAudioIndicators = Boolean(
+    showRecordingAudioIndicators &&
+    isRecording &&
+    isVideoMode
+  );
 
   // Use Rust WASAPI audio monitoring for both mic and system audio
   // This provides accurate levels from the same sources used during recording
-  const { micLevel, systemLevel } = useRustAudioLevels({
+  const { micLevel, systemLevel, micActive, systemActive } = useRustAudioLevels({
     micDeviceIndex: isMicEnabled ? micDeviceIndex : null,
     monitorSystemAudio: isSystemAudioEnabled,
-    enabled: isVideoMode && !isBusy,
+    enabled: isVideoMode && (!isBusy || shouldShowRecordingAudioIndicators),
   });
 
   // Handle pause/resume toggle
@@ -217,6 +234,53 @@ export const CaptureToolbar: React.FC<CaptureToolbarProps> = ({
         )}
 
         {/* Divider */}
+        {shouldShowRecordingAudioIndicators && (
+          <>
+            <div className="glass-divider-vertical" />
+            <div className="glass-recording-audio-section">
+              <div
+                className={`glass-recording-audio-indicator ${
+                  !isMicEnabled || !micActive ? 'glass-recording-audio-indicator--inactive' : ''
+                }`}
+                title={
+                  !isMicEnabled
+                    ? 'Microphone disabled'
+                    : micActive
+                      ? 'Microphone level'
+                      : 'Microphone idle'
+                }
+              >
+                <Mic size={12} strokeWidth={2} />
+                <AudioLevelMeter
+                  enabled={isMicEnabled}
+                  level={isMicEnabled ? micLevel : 0}
+                  className="glass-audio-meter--recording"
+                />
+              </div>
+
+              <div
+                className={`glass-recording-audio-indicator ${
+                  !isSystemAudioEnabled || !systemActive ? 'glass-recording-audio-indicator--inactive' : ''
+                }`}
+                title={
+                  !isSystemAudioEnabled
+                    ? 'System audio disabled'
+                    : systemActive
+                      ? 'System audio level'
+                      : 'System audio idle'
+                }
+              >
+                <Volume2 size={12} strokeWidth={2} />
+                <AudioLevelMeter
+                  enabled={isSystemAudioEnabled}
+                  level={isSystemAudioEnabled ? systemLevel : 0}
+                  className="glass-audio-meter--recording"
+                />
+              </div>
+            </div>
+          </>
+        )}
+
         <div className="glass-divider-vertical" />
 
         {/* Controls */}
