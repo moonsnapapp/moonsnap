@@ -1172,6 +1172,8 @@ pub async fn delete_project(app: AppHandle, project_id: String) -> Result<(), St
                 let _ = fs::remove_file(parent.join(format!("{}_cursor.json", stem)));
                 let _ = fs::remove_file(parent.join(format!("{}_system.wav", stem)));
                 let _ = fs::remove_file(parent.join(format!("{}_mic.wav", stem)));
+                // Also remove legacy .moonsnap sidecar if present
+                let _ = fs::remove_file(parent.join(format!("{}.moonsnap", stem)));
             }
         },
         "gif" => {
