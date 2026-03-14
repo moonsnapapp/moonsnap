@@ -86,6 +86,7 @@ macro_rules! tauri_command_handler {
             crate::commands::storage::operations::startup_cleanup,
             crate::commands::storage::operations::import_image_from_path,
             crate::commands::storage::operations::ensure_ffmpeg,
+            crate::commands::storage::operations::repair_project,
             // Settings commands
             crate::commands::settings::set_autostart,
             crate::commands::settings::is_autostart_enabled,

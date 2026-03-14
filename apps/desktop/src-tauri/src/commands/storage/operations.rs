@@ -1678,3 +1678,130 @@ fn create_migration_project_json(
 
     serde_json::to_string_pretty(&project).unwrap_or_else(|_| "{}".to_string())
 }
+
+// ============================================================================
+// Repair Operations
+// ============================================================================
+
+/// Find the bundle folder for a given project_id.
+/// Tries direct path, .moonsnap extension, then scans all bundles for matching project.json ID.
+fn find_project_bundle(
+    captures_dir: &std::path::Path,
+    project_id: &str,
+) -> Result<std::path::PathBuf, String> {
+    // Try direct path (folder named exactly as project_id)
+    let direct_path = captures_dir.join(project_id);
+    if direct_path.is_dir() {
+        return Ok(direct_path);
+    }
+
+    // Try .moonsnap bundle (e.g. "recording_123.moonsnap")
+    let bundle = captures_dir.join(format!("{}.moonsnap", project_id));
+    if bundle.is_dir() {
+        return Ok(bundle);
+    }
+
+    // Scan all bundles for matching project.json ID
+    if let Ok(entries) = std::fs::read_dir(captures_dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                let project_json = path.join("project.json");
+                if project_json.exists() {
+                    if let Ok(content) = std::fs::read_to_string(&project_json) {
+                        if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&content) {
+                            if parsed.get("id").and_then(|v| v.as_str()) == Some(project_id) {
+                                return Ok(path);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    Err(format!("Project bundle not found for ID: {}", project_id))
+}
+
+/// Repair a damaged project bundle by re-linking a video file.
+///
+/// Steps:
+/// 1. Move (or copy+delete) the selected video file into the bundle as `screen.mp4`
+/// 2. Re-extract metadata via ffprobe and update `project.json`
+/// 3. Set the Hidden attribute on the new file (Windows)
+#[command]
+pub async fn repair_project(
+    app: AppHandle,
+    project_id: String,
+    new_video_path: String,
+) -> Result<(), String> {
+    let captures_dir = get_captures_dir(&app)?;
+    let bundle_path = find_project_bundle(&captures_dir, &project_id)?;
+
+    let target = bundle_path.join("screen.mp4");
+    let source = std::path::Path::new(&new_video_path);
+
+    if !source.exists() {
+        return Err("Selected video file does not exist".to_string());
+    }
+
+    // Move the file into the bundle (try rename first, fall back to copy+delete for cross-device)
+    std::fs::rename(source, &target)
+        .or_else(|_| {
+            std::fs::copy(source, &target)
+                .and_then(|_| std::fs::remove_file(source))
+                .map(|_| ())
+        })
+        .map_err(|e| format!("Failed to move video into bundle: {}", e))?;
+
+    // Re-extract metadata via ffprobe and update project.json
+    let project_json_path = bundle_path.join("project.json");
+    if project_json_path.exists() {
+        // Extract video metadata using ffprobe
+        let (width, height, duration_ms, fps) = if let Some(ffprobe) = find_ffprobe() {
+            get_video_metadata_for_migration(&ffprobe, &target).unwrap_or((0, 0, 0, 30))
+        } else {
+            log::warn!("[REPAIR] ffprobe not found; metadata fields will remain unchanged");
+            (0, 0, 0, 0)
+        };
+
+        // Read existing project.json and patch the relevant fields
+        if let Ok(content) = std::fs::read_to_string(&project_json_path) {
+            if let Ok(mut parsed) = serde_json::from_str::<serde_json::Value>(&content) {
+                let now = chrono::Utc::now().to_rfc3339();
+                parsed["updatedAt"] = serde_json::Value::String(now);
+
+                if width > 0 {
+                    if let Some(sources) = parsed.get_mut("sources") {
+                        sources["originalWidth"] = serde_json::json!(width);
+                        sources["originalHeight"] = serde_json::json!(height);
+                        sources["durationMs"] = serde_json::json!(duration_ms);
+                        if fps > 0 {
+                            sources["fps"] = serde_json::json!(fps);
+                        }
+                    }
+                    if let Some(timeline) = parsed.get_mut("timeline") {
+                        timeline["durationMs"] = serde_json::json!(duration_ms);
+                        timeline["outPoint"] = serde_json::json!(duration_ms);
+                    }
+                }
+
+                if let Ok(updated) = serde_json::to_string_pretty(&parsed) {
+                    if let Err(e) = std::fs::write(&project_json_path, updated) {
+                        log::warn!("[REPAIR] Failed to write updated project.json: {}", e);
+                    }
+                }
+            }
+        }
+    }
+
+    // Set Hidden attribute on the new file (Windows)
+    super::bundle_utils::set_hidden_on_bundle_contents(&bundle_path);
+
+    log::info!(
+        "[REPAIR] Successfully repaired project {} in {:?}",
+        project_id,
+        bundle_path
+    );
+    Ok(())
+}
