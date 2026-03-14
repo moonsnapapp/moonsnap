@@ -14,6 +14,7 @@ export interface CaptureCardProps {
   onCopyToClipboard: () => void;
   onPlayMedia?: () => void; // For video/gif - opens in system player
   onEditVideo?: () => void; // For video - opens in video editor
+  onRepair?: () => void; // For damaged bundles - opens repair flow
   formatDate: (date: string) => string;
 }
 
@@ -33,6 +34,7 @@ export const capturePropsAreEqual = (
     prev.capture.favorite === next.capture.favorite &&
     prev.capture.quick_capture === next.capture.quick_capture &&
     prev.capture.thumbnail_path === next.capture.thumbnail_path &&
+    prev.capture.damaged === next.capture.damaged &&
     tagsEqual(prev.capture.tags, next.capture.tags) &&
     prev.selected === next.selected &&
     prev.isLoading === next.isLoading

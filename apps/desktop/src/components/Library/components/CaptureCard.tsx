@@ -27,6 +27,7 @@ export const CaptureCard: React.FC<CaptureCardProps> = memo(
     onCopyToClipboard,
     onPlayMedia,
     onEditVideo,
+    onRepair,
     formatDate,
   }) => {
     const [thumbLoaded, setThumbLoaded] = useState(false);
@@ -84,7 +85,13 @@ export const CaptureCard: React.FC<CaptureCardProps> = memo(
             className={`capture-card group ${selected ? 'selected' : ''} ${isVisible ? 'in-view' : ''}`}
             data-capture-id={capture.id}
             onClick={(e) => onSelect(capture.id, e)}
-            onDoubleClick={() => onOpen(capture.id)}
+            onDoubleClick={() => {
+              if (capture.damaged) {
+                onRepair?.();
+                return;
+              }
+              onOpen(capture.id);
+            }}
             onContextMenu={(e) => {
               // Select on right-click if not already selected
               if (!selected) {
@@ -196,6 +203,13 @@ export const CaptureCard: React.FC<CaptureCardProps> = memo(
               {/* Hover Overlay */}
               <div className="absolute inset-0 bg-gradient-to-t from-black/30 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
 
+              {/* Damaged Bundle Overlay */}
+              {capture.damaged && (
+                <div className="absolute inset-0 flex items-center justify-center bg-black/50 rounded">
+                  <AlertTriangle className="w-8 h-8 text-yellow-400" />
+                </div>
+              )}
+
               {/* Loading Overlay - shown when opening this capture */}
               {isLoading && (
                 <div className="absolute inset-0 bg-[var(--polar-snow)]/95 flex items-center justify-center z-10 animate-fade-in">
@@ -280,6 +294,8 @@ export const CaptureCard: React.FC<CaptureCardProps> = memo(
           onDelete={onDelete}
           onPlayMedia={onPlayMedia}
           onEditVideo={onEditVideo}
+          damaged={capture.damaged}
+          onRepair={onRepair}
         />
       </ContextMenu>
     );

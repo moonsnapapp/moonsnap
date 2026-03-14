@@ -1,5 +1,6 @@
 import { useEffect, useState, useRef, useCallback, useMemo } from 'react';
 import { invoke } from '@tauri-apps/api/core';
+import { open as openFileDialog } from '@tauri-apps/plugin-dialog';
 import { toast } from 'sonner';
 import { isToday, isYesterday, isThisWeek, isThisMonth, isThisYear, format, formatDistanceToNow } from 'date-fns';
 import { reportError } from '../../utils/errorReporting';
@@ -347,6 +348,23 @@ export const CaptureLibrary: React.FC = () => {
     }
   }, []);
 
+  const handleRepair = useCallback(async (captureId: string) => {
+    try {
+      const selected = await openFileDialog({
+        title: 'Select video file to repair project',
+        filters: [{ name: 'Video', extensions: ['mp4', 'mov', 'webm'] }],
+      });
+      if (selected && typeof selected === 'string') {
+        await invoke('repair_project', { projectId: captureId, newVideoPath: selected });
+        toast.success('Project repaired successfully');
+        await loadCaptures();
+      }
+    } catch (error) {
+      reportError(error, { operation: 'repair project' });
+      toast.error('Failed to repair project');
+    }
+  }, [loadCaptures]);
+
   const getDeleteCount = () => {
     if (deleteDialog?.type === 'bulk') return selectedIds.size;
     return deleteDialog?.type === 'single' ? 1 : 0;
@@ -382,6 +400,7 @@ export const CaptureLibrary: React.FC = () => {
                 onCopyToClipboard={() => handleCopyToClipboard(capture)}
                 onPlayMedia={() => handlePlayMedia(capture)}
                 onEditVideo={capture.capture_type === 'video' ? () => handleEditVideo(capture) : undefined}
+                onRepair={() => handleRepair(capture.id)}
                 formatDate={formatDate}
               />
             ))}
@@ -435,6 +454,7 @@ export const CaptureLibrary: React.FC = () => {
             onCopyToClipboard={handleCopyToClipboard}
             onPlayMedia={handlePlayMedia}
             onEditVideo={handleEditVideo}
+            onRepair={handleRepair}
             formatDate={formatDate}
             containerRef={containerRef as React.RefObject<HTMLDivElement>}
             onMouseDown={handleMarqueeMouseDown}

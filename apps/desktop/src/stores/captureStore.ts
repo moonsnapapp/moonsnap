@@ -207,6 +207,7 @@ function createPlaceholderCapture(
     favorite: false,
     quick_capture: false,
     is_missing: false,
+    damaged: false,
   };
 }
 
@@ -225,6 +226,7 @@ function createCaptureFromResponse(result: SaveCaptureResponse): CaptureListItem
     favorite: result.project.favorite,
     quick_capture: false,
     is_missing: false,
+    damaged: false,
   };
 }
 

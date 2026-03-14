@@ -1,5 +1,5 @@
 import React from 'react';
-import { Star, Trash2, Copy, ExternalLink, Play, Tag, Film } from 'lucide-react';
+import { Star, Trash2, Copy, ExternalLink, Play, Tag, Film, Wrench } from 'lucide-react';
 import {
   ContextMenuContent,
   ContextMenuItem,
@@ -19,6 +19,8 @@ interface CaptureContextMenuProps {
   onDelete: () => void;
   onPlayMedia?: () => void;
   onEditVideo?: () => void;
+  damaged?: boolean;
+  onRepair?: () => void;
 }
 
 // Check if capture is a video or gif
@@ -36,6 +38,8 @@ export const CaptureContextMenu: React.FC<CaptureContextMenuProps> = ({
   onDelete,
   onPlayMedia,
   onEditVideo,
+  damaged = false,
+  onRepair,
 }) => {
   const isMedia = isMediaType(captureType);
   const isVideo = captureType === 'video';
@@ -60,6 +64,12 @@ export const CaptureContextMenu: React.FC<CaptureContextMenuProps> = ({
         >
           <Film className="w-4 h-4 mr-2" />
           {quickCapture ? 'Open Quick Capture' : 'Edit Video'}
+        </ContextMenuItem>
+      )}
+      {damaged && onRepair && (
+        <ContextMenuItem onClick={onRepair}>
+          <Wrench className="w-4 h-4 mr-2" />
+          Repair Project
         </ContextMenuItem>
       )}
       {!isMedia && (
