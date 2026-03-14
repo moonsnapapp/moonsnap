@@ -342,6 +342,17 @@ export const CaptureToolbar: React.FC<CaptureToolbarProps> = ({
       } pointer-events-auto`}
     >
       {minimalChrome === 'floating' && (
+        <button
+          type="button"
+          onClick={onCloseToolbar ?? onCancel}
+          className="glass-btn glass-btn--md glass-toolbar-action-btn glass-toolbar-action-btn--close glass-toolbar-close-corner"
+          title="Close capture toolbar"
+        >
+          <X size={14} strokeWidth={2.5} />
+        </button>
+      )}
+
+      {minimalChrome === 'floating' && (
         <div className="glass-toolbar-brand" aria-hidden="true">
           <span className="glass-toolbar-brand-wordmark">MoonSnap</span>
           <span className="glass-toolbar-brand-badge">PRO</span>
@@ -428,27 +439,31 @@ export const CaptureToolbar: React.FC<CaptureToolbarProps> = ({
           onOpenSettings={onOpenSettings}
         />
 
-        <div className="glass-toolbar-actions">
-          {onOpenLibrary && (
-            <button
-              type="button"
-              onClick={onOpenLibrary}
-              className="glass-btn glass-btn--md glass-toolbar-action-btn"
-              title="Open library"
-            >
-              <FolderOpen size={14} strokeWidth={2.2} />
-            </button>
-          )}
+        {(onOpenLibrary || minimalChrome !== 'floating') && (
+          <div className="glass-toolbar-actions">
+            {onOpenLibrary && (
+              <button
+                type="button"
+                onClick={onOpenLibrary}
+                className="glass-btn glass-btn--md glass-toolbar-action-btn"
+                title="Open library"
+              >
+                <FolderOpen size={14} strokeWidth={2.2} />
+              </button>
+            )}
 
-          <button
-            type="button"
-            onClick={onCloseToolbar ?? onCancel}
-            className="glass-btn glass-btn--md glass-toolbar-action-btn glass-toolbar-action-btn--close"
-            title="Close capture toolbar"
-          >
-            <X size={14} strokeWidth={2.5} />
-          </button>
-        </div>
+            {minimalChrome !== 'floating' && (
+              <button
+                type="button"
+                onClick={onCloseToolbar ?? onCancel}
+                className="glass-btn glass-btn--md glass-toolbar-action-btn glass-toolbar-action-btn--close"
+                title="Close capture toolbar"
+              >
+                <X size={14} strokeWidth={2.5} />
+              </button>
+            )}
+          </div>
+        )}
 
         <button
           type="button"

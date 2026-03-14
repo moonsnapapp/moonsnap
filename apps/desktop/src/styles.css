@@ -4815,6 +4815,8 @@ body.floating-toolbar-window #root {
 
 .glass-toolbar--capture-floating {
   --capture-toolbar-top-strip-height: 28px;
+  --capture-toolbar-shell-inset-x: 12px;
+  --capture-toolbar-shell-inset-top: 4px;
   width: max-content;
   gap: 0;
   padding-top: var(--capture-toolbar-top-strip-height);
@@ -4847,12 +4849,22 @@ body.floating-toolbar-window #root {
   gap: 6px;
   height: var(--capture-toolbar-top-strip-height);
   box-sizing: border-box;
-  padding: 6px 12px 0;
+  padding: calc(var(--capture-toolbar-shell-inset-top) + 2px) var(--capture-toolbar-shell-inset-x) 0;
   transform: translateX(-50%);
   pointer-events: none;
   user-select: none;
   white-space: nowrap;
   z-index: 1;
+}
+
+.glass-toolbar--capture-floating .glass-toolbar-close-corner {
+  position: absolute;
+  top: var(--capture-toolbar-shell-inset-top);
+  right: var(--capture-toolbar-shell-inset-x);
+  z-index: 2;
+  width: 24px;
+  height: 24px;
+  border-radius: 8px;
 }
 
 .glass-toolbar--capture-floating .glass-toolbar-brand-wordmark {
@@ -4893,11 +4905,13 @@ body.floating-toolbar-window #root {
 }
 
 .glass-toolbar--capture-floating .glass-toolbar-row {
-  padding: 9px 12px;
+  padding-left: var(--capture-toolbar-shell-inset-x);
+  padding-right: var(--capture-toolbar-shell-inset-x);
 }
 
 .glass-toolbar--capture-floating .glass-toolbar-row--capture-primary {
   position: relative;
+  padding-top: 9px;
   padding-bottom: 8px;
 }
 
@@ -4943,6 +4957,8 @@ body.floating-toolbar-window #root {
 }
 
 .glass-toolbar--capture-floating .glass-toolbar-row--capture-secondary {
+  padding-left: var(--capture-toolbar-shell-inset-x);
+  padding-right: var(--capture-toolbar-shell-inset-x);
   padding-top: 12px;
   padding-bottom: 6px;
 }
@@ -5257,6 +5273,10 @@ body.floating-toolbar-window #root {
   text-shadow:
     0 1px 0 rgba(255, 255, 255, 0.82),
     0 -1px 0 rgba(148, 163, 184, 0.14);
+}
+
+.light .glass-toolbar--capture-floating .glass-toolbar-close-corner {
+  color: rgba(95, 105, 118, 0.76);
 }
 
 .light .glass-toolbar--capture-floating .glass-toolbar-brand-badge {
