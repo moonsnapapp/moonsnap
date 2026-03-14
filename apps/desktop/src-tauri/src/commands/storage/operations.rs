@@ -487,10 +487,36 @@ async fn load_video_project_folder(
 ) -> Option<CaptureListItem> {
     // Check if this is a video project folder
     let project_json = folder_path.join("project.json");
-    let screen_mp4 = folder_path.join("screen.mp4");
+    let mut screen_mp4 = folder_path.join("screen.mp4");
 
-    // Must have at least screen.mp4 (or show as damaged for .moonsnap bundles)
-    let screen_mp4_meta = async_fs::metadata(&screen_mp4).await.ok();
+    // If screen.mp4 is missing, scan for any .mp4 file (user may have renamed it)
+    let mut screen_mp4_meta = async_fs::metadata(&screen_mp4).await.ok();
+    if screen_mp4_meta.is_none()
+        || screen_mp4_meta
+            .as_ref()
+            .map(|m| m.len() == 0)
+            .unwrap_or(true)
+    {
+        if let Ok(mut entries) = async_fs::read_dir(&folder_path).await {
+            while let Ok(Some(entry)) = entries.next_entry().await {
+                let path = entry.path();
+                if path.extension().and_then(|e| e.to_str()) == Some("mp4") && path.is_file() {
+                    if let Ok(meta) = async_fs::metadata(&path).await {
+                        if meta.len() > 0 {
+                            log::info!(
+                                "[RECOVERY] Found renamed video: {:?} (screen.mp4 missing)",
+                                path
+                            );
+                            screen_mp4 = path;
+                            screen_mp4_meta = Some(meta);
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     let screen_ok = screen_mp4_meta
         .as_ref()
         .map(|m| m.len() > 0)
@@ -692,7 +718,7 @@ async fn load_video_project_folder(
         capture_type: "video".to_string(),
         dimensions,
         thumbnail_path: thumbnail_path_str,
-        // Point to the screen.mp4 inside the folder
+        // Point to the video file inside the folder (used to load the video in editor)
         image_path: screen_mp4.to_string_lossy().to_string(),
         has_annotations: false,
         tags: final_tags,
