@@ -183,6 +183,66 @@ describe('useQuickRecordingFlow', () => {
     );
   });
 
+  it('uses the latest adjusted selection bounds when starting from the quick chooser', async () => {
+    useCaptureSettingsStore.setState({ promptRecordingMode: true, snapToolbarToSelection: true });
+
+    renderHook(() => useQuickRecordingFlow());
+    await flush();
+
+    await act(async () => {
+      emitMockEvent('quick-recording-selection-ready', {
+        x: 100,
+        y: 150,
+        width: 800,
+        height: 450,
+        captureType: 'video',
+        sourceMode: 'area',
+      });
+    });
+
+    await flush();
+
+    await act(async () => {
+      emitMockEvent('selection-updated', {
+        x: 180,
+        y: 240,
+        width: 640,
+        height: 360,
+      });
+    });
+
+    await flush();
+
+    await act(async () => {
+      emitMockEvent('recording-mode-selected', {
+        x: 480,
+        y: 120,
+        action: 'save',
+        remember: false,
+        owner: 'quick-recording',
+      });
+    });
+
+    await flush();
+
+    expect(startRecordingCaptureFlow).toHaveBeenCalledWith(
+      expect.objectContaining({
+        selection: expect.objectContaining({
+          x: 180,
+          y: 240,
+          width: 640,
+          height: 360,
+        }),
+        hudAnchor: {
+          x: 320,
+          y: 608,
+          width: LAYOUT.RECORDING_HUD_WIDTH,
+          height: LAYOUT.RECORDING_HUD_HEIGHT,
+        },
+      })
+    );
+  });
+
   it('ignores the chooser anchor for quick video when snapping is disabled', async () => {
     useCaptureSettingsStore.setState({ promptRecordingMode: true, snapToolbarToSelection: false });
 

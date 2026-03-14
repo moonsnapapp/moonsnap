@@ -223,6 +223,30 @@ export function useQuickRecordingFlow() {
       }
     );
 
+    const unlistenSelectionUpdated = listen<SelectionBounds>('selection-updated', (event) => {
+      if (recordingStartupInProgressRef.current || quickSessionActiveRef.current) {
+        return;
+      }
+
+      const pendingSelection = pendingSelectionRef.current;
+      if (!pendingSelection) {
+        return;
+      }
+
+      const { x, y, width, height } = event.payload;
+      if (width <= 0 || height <= 0) {
+        return;
+      }
+
+      pendingSelectionRef.current = {
+        ...pendingSelection,
+        x,
+        y,
+        width,
+        height,
+      };
+    });
+
     const unlistenSelected = listen<QuickRecordingModeSelectedPayload>(
       'recording-mode-selected',
       (event) => {
@@ -294,6 +318,7 @@ export function useQuickRecordingFlow() {
 
     return () => {
       unlistenQuickSelection.then((fn) => fn()).catch(() => {});
+      unlistenSelectionUpdated.then((fn) => fn()).catch(() => {});
       unlistenSelected.then((fn) => fn()).catch(() => {});
       unlistenBack.then((fn) => fn()).catch(() => {});
       unlistenRecordingState.then((fn) => fn()).catch(() => {});
