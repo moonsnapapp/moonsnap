@@ -316,7 +316,7 @@ export const CaptureToolbar: React.FC<CaptureToolbarProps> = ({
               className="glass-btn glass-btn--md"
               title="Stop and save"
             >
-              <Square size={14} className="text-white" fill="currentColor" />
+              <Square size={14} className="glass-recording-stop-icon" fill="currentColor" />
             </button>
           )}
 
