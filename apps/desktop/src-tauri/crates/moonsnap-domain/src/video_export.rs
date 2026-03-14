@@ -3,7 +3,7 @@
 use serde::Serialize;
 use ts_rs::TS;
 
-use crate::video_project::ExportFormat;
+use moonsnap_project_types::video_project::ExportFormat;
 
 // ============================================================================
 // Export Types

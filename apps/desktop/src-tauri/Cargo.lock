@@ -4077,7 +4077,8 @@ name = "moonsnap-domain"
 version = "0.1.0"
 dependencies = [
  "chrono",
- "rand 0.8.5",
+ "moonsnap-capture-types",
+ "moonsnap-project-types",
  "serde",
  "serde_json",
  "ts-rs",
