@@ -8,12 +8,12 @@ use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use std::time::Duration;
 
+use super::super::project_file::{create_video_project_file, CreateVideoProjectRequest};
 use crossbeam_channel::Receiver;
 use moonsnap_capture::audio_multitrack::MultiTrackAudioRecorder;
 use moonsnap_capture::frame_buffer::FrameBufferPool;
 use moonsnap_capture::recorder_helpers::{
-    create_video_project_file, get_window_rect, make_video_faststart, mux_audio_to_video,
-    CreateVideoProjectRequest,
+    get_window_rect, make_video_faststart, mux_audio_to_video,
 };
 use moonsnap_capture::state::{RecorderCommand, RecordingProgress};
 use moonsnap_capture::timestamp::Timestamps;

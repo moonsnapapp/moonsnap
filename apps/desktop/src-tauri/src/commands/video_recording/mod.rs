@@ -31,6 +31,7 @@
 pub mod audio_monitor;
 pub mod cursor;
 pub mod gpu_editor;
+pub mod project_file;
 pub mod recorder;
 pub mod video_project;
 pub mod webcam;
