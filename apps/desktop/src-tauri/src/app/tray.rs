@@ -122,15 +122,14 @@ impl TrayState {
             },
             RecordingState::Recording { .. } => {
                 self.set_capture_actions_enabled(false)?;
-                let is_video = matches!(format, Some(RecordingFormat::Mp4));
                 self.set_recording_controls(
-                    if is_video {
+                    if matches!(format, Some(RecordingFormat::Mp4)) {
                         "Recording Video…"
                     } else {
                         "Recording GIF…"
                     },
                     "Pause Recording",
-                    is_video,
+                    true,
                     true,
                     "Discard Recording",
                     true,

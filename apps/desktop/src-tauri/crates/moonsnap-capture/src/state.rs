@@ -26,7 +26,7 @@ pub enum RecorderCommand {
     Stop,
     /// Cancel recording without saving.
     Cancel,
-    /// Pause recording (MP4 only).
+    /// Pause recording.
     Pause,
     /// Resume recording.
     Resume,
@@ -303,18 +303,10 @@ impl RecordingController {
         self.send_command(RecorderCommand::Cancel)
     }
 
-    /// Request pause for an active MP4 recording.
+    /// Request pause for an active recording.
     pub fn request_pause(&mut self) -> Result<(), String> {
         if !matches!(self.state, RecordingState::Recording { .. }) {
             return Err("No active recording to pause".to_string());
-        }
-
-        if self
-            .settings
-            .as_ref()
-            .is_some_and(|s| s.format == RecordingFormat::Gif)
-        {
-            return Err("GIF recording cannot be paused".to_string());
         }
 
         self.send_command(RecorderCommand::Pause)?;
@@ -383,10 +375,10 @@ mod tests {
     }
 
     #[test]
-    fn request_pause_rejects_gif_recording() {
+    fn request_pause_allows_gif_recording() {
         let (mut controller, _command_rx) = active_controller(RecordingFormat::Gif);
-        let err = controller.request_pause().expect_err("expected error");
-        assert_eq!(err, "GIF recording cannot be paused");
+        controller.request_pause().expect("pause should succeed");
+        assert!(matches!(controller.state, RecordingState::Paused { .. }));
     }
 
     #[test]

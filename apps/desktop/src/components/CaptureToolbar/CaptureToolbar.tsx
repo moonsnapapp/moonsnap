@@ -221,8 +221,8 @@ export const CaptureToolbar: React.FC<CaptureToolbarProps> = ({
 
         {/* Controls */}
         <div className="glass-controls-section">
-          {/* Pause/Resume button (not for GIF, not during starting/processing/error) */}
-          {isRecording && !isGif && (
+          {/* Pause/Resume button */}
+          {isRecording && (
             <button
               type="button"
               onClick={handlePauseResume}

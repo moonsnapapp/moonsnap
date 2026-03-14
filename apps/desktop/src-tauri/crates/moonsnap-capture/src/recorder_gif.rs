@@ -11,6 +11,7 @@ use crossbeam_channel::Receiver;
 use crate::capture_source::CaptureSource;
 use crate::gif_encoder::GifRecorder;
 use crate::recorder_helpers::is_window_mode;
+use crate::recorder_loop_control::{handle_loop_control, LoopControl, PauseState};
 use crate::recording_runtime::find_monitor_for_point;
 use crate::state::{RecorderCommand, RecordingProgress};
 use moonsnap_domain::recording::{RecordingMode, RecordingSettings, RecordingState};
@@ -129,18 +130,25 @@ where
 
     let start_time = Instant::now();
     let mut last_frame_time = start_time;
+    let should_stop = std::sync::atomic::AtomicBool::new(false);
+    let is_paused = std::sync::atomic::AtomicBool::new(false);
+    let mut pause_state = PauseState::new();
 
     loop {
-        match command_rx.try_recv() {
-            Ok(RecorderCommand::Cancel) => {
-                progress.mark_cancelled();
-                break;
-            },
-            Ok(RecorderCommand::Stop) => break,
-            _ => {},
+        match handle_loop_control(
+            &command_rx,
+            &mut pause_state,
+            progress.as_ref(),
+            &should_stop,
+            &is_paused,
+            Duration::from_millis(frame_timeout_ms),
+        ) {
+            LoopControl::Stop => break,
+            LoopControl::SkipFrame => continue,
+            LoopControl::Continue => {},
         }
 
-        let elapsed = start_time.elapsed();
+        let elapsed = pause_state.active_elapsed(start_time);
         if let Some(max_dur) = max_duration {
             if elapsed >= max_dur {
                 break;
@@ -181,7 +189,7 @@ where
 
     capture.stop();
 
-    let recording_duration = start_time.elapsed().as_secs_f64();
+    let recording_duration = pause_state.active_elapsed(start_time).as_secs_f64();
 
     if progress.was_cancelled() {
         return Ok(recording_duration);
@@ -189,7 +197,7 @@ where
 
     emit_state(RecordingState::Processing { progress: 0.0 });
 
-    let total_duration = start_time.elapsed();
+    let total_duration = pause_state.active_elapsed(start_time);
     let recorder_guard = recorder.lock().map_err(|_| "Failed to lock recorder")?;
     let frame_count = recorder_guard.frame_count();
 

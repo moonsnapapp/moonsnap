@@ -288,17 +288,12 @@ export const useVideoRecordingStore = create<VideoRecordingStore>((set, get) => 
     }
   },
 
-  // Pause recording (MP4 only)
+  // Pause recording
   pauseRecording: async () => {
-    const { recordingState, settings } = get();
+    const { recordingState } = get();
 
     if (recordingState.status !== 'recording') {
       recordingLogger.warn('Cannot pause: not recording');
-      return;
-    }
-
-    if (settings.format === 'gif') {
-      recordingLogger.warn('Cannot pause GIF recording');
       return;
     }
 

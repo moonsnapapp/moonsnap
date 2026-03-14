@@ -230,7 +230,7 @@ pub enum RecordingState {
         #[ts(type = "number")]
         frame_count: u64,
     },
-    /// Paused (MP4 only).
+    /// Paused.
     Paused {
         #[serde(rename = "elapsedSecs")]
         elapsed_secs: f64,

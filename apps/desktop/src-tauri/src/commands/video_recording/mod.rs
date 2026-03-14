@@ -974,7 +974,7 @@ pub async fn cancel_recording(app: AppHandle) -> Result<(), String> {
     recorder::cancel_recording(app).await
 }
 
-/// Pause the current recording (MP4 only).
+/// Pause the current recording.
 #[command]
 pub async fn pause_recording(app: AppHandle) -> Result<(), String> {
     recorder::pause_recording(app).await
