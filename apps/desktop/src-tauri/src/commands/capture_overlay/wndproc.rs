@@ -533,6 +533,8 @@ fn emit_dimensions_update(state: &OverlayState) {
             "height": screen_bounds.height()
         }),
     );
+
+    keep_auxiliary_windows_above_overlay(state);
 }
 
 /// Emit final selection when adjustment drag ends
@@ -550,22 +552,7 @@ fn emit_final_selection(state: &OverlayState) {
         }),
     );
 
-    // Bring toolbar window to front
-    if let Some(win) = state.app_handle.get_webview_window("capture-toolbar") {
-        if let Ok(hwnd) = win.hwnd() {
-            unsafe {
-                let _ = SetWindowPos(
-                    HWND(hwnd.0),
-                    HWND_TOPMOST,
-                    0,
-                    0,
-                    0,
-                    0,
-                    SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE,
-                );
-            }
-        }
-    }
+    keep_auxiliary_windows_above_overlay(state);
 }
 
 /// Emit event to create capture toolbar window from frontend
@@ -657,6 +644,36 @@ fn bring_webcam_preview_to_front(state: &OverlayState) {
                 );
                 let _ = BringWindowToTop(hwnd);
             }
+        }
+    }
+}
+
+fn keep_auxiliary_windows_above_overlay(state: &OverlayState) {
+    for label in ["recording-mode-chooser", "capture-toolbar"] {
+        bring_auxiliary_window_to_front(state, label);
+    }
+}
+
+fn bring_auxiliary_window_to_front(state: &OverlayState, label: &str) {
+    let Some(win) = state.app_handle.get_webview_window(label) else {
+        return;
+    };
+
+    if !matches!(win.is_visible(), Ok(true)) {
+        return;
+    }
+
+    if let Ok(hwnd) = win.hwnd() {
+        unsafe {
+            let _ = SetWindowPos(
+                HWND(hwnd.0),
+                HWND_TOPMOST,
+                0,
+                0,
+                0,
+                0,
+                SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE,
+            );
         }
     }
 }

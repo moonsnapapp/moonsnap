@@ -201,6 +201,56 @@ fn clamp_floating_window_to_monitor(
     (clamped_x, clamped_y)
 }
 
+fn bring_floating_window_to_front(
+    window: &tauri::WebviewWindow,
+    focus: bool,
+) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        use windows::Win32::Foundation::HWND;
+        use windows::Win32::UI::WindowsAndMessaging::{
+            BringWindowToTop, SetForegroundWindow, SetWindowPos, ShowWindow, HWND_TOPMOST,
+            SWP_NOMOVE, SWP_NOSIZE, SWP_SHOWWINDOW, SW_RESTORE, SW_SHOW,
+        };
+
+        if let Ok(hwnd) = window.hwnd() {
+            unsafe {
+                let hwnd = HWND(hwnd.0);
+                let _ = ShowWindow(hwnd, SW_RESTORE);
+                let _ = ShowWindow(hwnd, SW_SHOW);
+                let _ = SetWindowPos(
+                    hwnd,
+                    HWND_TOPMOST,
+                    0,
+                    0,
+                    0,
+                    0,
+                    SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW,
+                );
+                let _ = BringWindowToTop(hwnd);
+                if focus {
+                    let _ = SetForegroundWindow(hwnd);
+                }
+            }
+        }
+    }
+
+    window
+        .show()
+        .map_err(|e| format!("Failed to show floating window: {}", e))?;
+    window
+        .set_always_on_top(true)
+        .map_err(|e| format!("Failed to keep floating window on top: {}", e))?;
+
+    if focus {
+        window
+            .set_focus()
+            .map_err(|e| format!("Failed to focus floating window: {}", e))?;
+    }
+
+    Ok(())
+}
+
 /// Show the recording controls window used while the main toolbar is excluded from capture.
 #[command]
 pub async fn show_recording_controls(
@@ -385,15 +435,7 @@ pub async fn show_recording_mode_chooser(
                 e
             );
         }
-        window
-            .show()
-            .map_err(|e| format!("Failed to show recording mode chooser: {}", e))?;
-        window
-            .set_always_on_top(true)
-            .map_err(|e| format!("Failed to keep recording mode chooser on top: {}", e))?;
-        window
-            .set_focus()
-            .map_err(|e| format!("Failed to focus recording mode chooser: {}", e))?;
+        bring_floating_window_to_front(&window, true)?;
         let _ = window.emit(
             "recording-mode-chooser-context",
             serde_json::json!({ "owner": owner }),
@@ -441,15 +483,7 @@ pub async fn show_recording_mode_chooser(
         );
     }
 
-    window
-        .show()
-        .map_err(|e| format!("Failed to show recording mode chooser window: {}", e))?;
-    window
-        .set_always_on_top(true)
-        .map_err(|e| format!("Failed to set recording mode chooser always on top: {}", e))?;
-    window
-        .set_focus()
-        .map_err(|e| format!("Failed to focus recording mode chooser: {}", e))?;
+    bring_floating_window_to_front(&window, true)?;
     let _ = window.emit(
         "recording-mode-chooser-context",
         serde_json::json!({ "owner": owner }),
