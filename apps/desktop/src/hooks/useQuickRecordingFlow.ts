@@ -262,8 +262,8 @@ export function useQuickRecordingFlow() {
         }
 
         resetQuickFlowState();
-        invoke('capture_overlay_reselect').catch((error) => {
-          logger.error('Failed to reselect quick recording overlay:', error);
+        invoke('capture_overlay_cancel').catch((error) => {
+          logger.error('Failed to cancel quick recording overlay from chooser back:', error);
         });
       }
     );

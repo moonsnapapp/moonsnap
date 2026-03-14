@@ -124,8 +124,6 @@ const RECORDING_CONTROLS_INITIAL_HEIGHT: u32 = 60;
 const RECORDING_MODE_CHOOSER_INITIAL_WIDTH: u32 = 430;
 const RECORDING_MODE_CHOOSER_INITIAL_HEIGHT: u32 = 180;
 const FLOATING_WINDOW_EDGE_MARGIN: i32 = 16;
-const RECORDING_MODE_CHOOSER_VERTICAL_GAP: i32 = 14;
-const RECORDING_MODE_CHOOSER_UPWARD_BIAS: i32 = 20;
 
 fn center_floating_window(
     x: i32,
@@ -139,10 +137,6 @@ fn center_floating_window(
         x + (width as i32 - floating_width as i32) / 2,
         y + (height as i32 - floating_height as i32) / 2,
     )
-}
-
-fn center_horizontally_over_anchor(x: i32, width: u32, floating_width: u32) -> i32 {
-    x + (width as i32 - floating_width as i32) / 2
 }
 
 fn clamp_floating_window_to_monitor(
@@ -199,6 +193,43 @@ fn clamp_floating_window_to_monitor(
     };
 
     (clamped_x, clamped_y)
+}
+
+fn get_window_size_or_default(
+    window: &tauri::WebviewWindow,
+    fallback_width: u32,
+    fallback_height: u32,
+) -> (u32, u32) {
+    window
+        .outer_size()
+        .map(|size| (size.width.max(1), size.height.max(1)))
+        .unwrap_or((fallback_width, fallback_height))
+}
+
+fn chooser_window_bounds(
+    app: &AppHandle,
+    x: i32,
+    y: i32,
+    width: u32,
+    height: u32,
+    chooser_width: u32,
+    chooser_height: u32,
+) -> (i32, i32, u32, u32) {
+    let (preferred_x, preferred_y) =
+        center_floating_window(x, y, width, height, chooser_width, chooser_height);
+    let (window_x, window_y) = clamp_floating_window_to_monitor(
+        app,
+        x,
+        y,
+        width,
+        height,
+        preferred_x,
+        preferred_y,
+        chooser_width,
+        chooser_height,
+    );
+
+    (window_x, window_y, chooser_width, chooser_height)
 }
 
 fn bring_floating_window_to_front(
@@ -393,42 +424,18 @@ pub async fn show_recording_mode_chooser(
     owner: Option<String>,
 ) -> Result<(), String> {
     let owner = owner.unwrap_or_else(|| "capture-toolbar".to_string());
-    let (preferred_x, preferred_y) = if owner == "capture-toolbar" {
-        (
-            center_horizontally_over_anchor(x, width, RECORDING_MODE_CHOOSER_INITIAL_WIDTH),
-            y - RECORDING_MODE_CHOOSER_INITIAL_HEIGHT as i32 - RECORDING_MODE_CHOOSER_VERTICAL_GAP,
-        )
-    } else {
-        let (centered_x, centered_y) = center_floating_window(
-            x,
-            y,
-            width,
-            height,
-            RECORDING_MODE_CHOOSER_INITIAL_WIDTH,
-            RECORDING_MODE_CHOOSER_INITIAL_HEIGHT,
-        );
-        (centered_x, centered_y - RECORDING_MODE_CHOOSER_UPWARD_BIAS)
-    };
-    let (window_x, window_y) = clamp_floating_window_to_monitor(
+    let (window_x, window_y, chooser_width, chooser_height) = chooser_window_bounds(
         &app,
         x,
         y,
         width,
         height,
-        preferred_x,
-        preferred_y,
         RECORDING_MODE_CHOOSER_INITIAL_WIDTH,
         RECORDING_MODE_CHOOSER_INITIAL_HEIGHT,
     );
 
     if let Some(window) = app.get_webview_window(RECORDING_MODE_CHOOSER_LABEL) {
-        set_physical_bounds(
-            &window,
-            window_x,
-            window_y,
-            RECORDING_MODE_CHOOSER_INITIAL_WIDTH,
-            RECORDING_MODE_CHOOSER_INITIAL_HEIGHT,
-        )?;
+        reposition_recording_mode_chooser(&app, x, y, width, height)?;
         if let Err(e) = apply_dwm_transparency(&window) {
             log::warn!(
                 "Failed to re-apply DWM transparency to recording mode chooser: {}",
@@ -468,13 +475,7 @@ pub async fn show_recording_mode_chooser(
         .build()
         .map_err(|e| format!("Failed to create recording mode chooser window: {}", e))?;
 
-    set_physical_bounds(
-        &window,
-        window_x,
-        window_y,
-        RECORDING_MODE_CHOOSER_INITIAL_WIDTH,
-        RECORDING_MODE_CHOOSER_INITIAL_HEIGHT,
-    )?;
+    set_physical_bounds(&window, window_x, window_y, chooser_width, chooser_height)?;
 
     if let Err(e) = apply_dwm_transparency(&window) {
         log::warn!(
@@ -490,6 +491,28 @@ pub async fn show_recording_mode_chooser(
     );
 
     Ok(())
+}
+
+pub(crate) fn reposition_recording_mode_chooser(
+    app: &AppHandle,
+    x: i32,
+    y: i32,
+    width: u32,
+    height: u32,
+) -> Result<(), String> {
+    let Some(window) = app.get_webview_window(RECORDING_MODE_CHOOSER_LABEL) else {
+        return Ok(());
+    };
+
+    let (chooser_width, chooser_height) = get_window_size_or_default(
+        &window,
+        RECORDING_MODE_CHOOSER_INITIAL_WIDTH,
+        RECORDING_MODE_CHOOSER_INITIAL_HEIGHT,
+    );
+    let (window_x, window_y, chooser_width, chooser_height) =
+        chooser_window_bounds(app, x, y, width, height, chooser_width, chooser_height);
+
+    set_physical_bounds(&window, window_x, window_y, chooser_width, chooser_height)
 }
 
 #[command]

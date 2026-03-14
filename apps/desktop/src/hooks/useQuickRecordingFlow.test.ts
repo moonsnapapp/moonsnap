@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { LAYOUT } from '@/constants/layout';
 import { useCaptureSettingsStore } from '@/stores/captureSettingsStore';
-import { emitMockEvent, mockAvailableMonitors, setInvokeResponse } from '@/test/mocks/tauri';
+import { emitMockEvent, mockAvailableMonitors, mockInvoke, setInvokeResponse } from '@/test/mocks/tauri';
 import { startRecordingCaptureFlow } from '@/windows/recordingStartFlow';
 
 import { useQuickRecordingFlow } from './useQuickRecordingFlow';
@@ -41,6 +41,7 @@ describe('useQuickRecordingFlow', () => {
 
     setInvokeResponse('close_capture_toolbar', null);
     setInvokeResponse('show_recording_mode_chooser', null);
+    setInvokeResponse('capture_overlay_cancel', null);
     vi.mocked(WebviewWindow.getByLabel).mockReturnValue(null);
   });
 
@@ -223,5 +224,21 @@ describe('useQuickRecordingFlow', () => {
         },
       })
     );
+  });
+
+  it('cancels the selection flow when backing out of the quick chooser', async () => {
+    renderHook(() => useQuickRecordingFlow());
+    await flush();
+
+    await act(async () => {
+      emitMockEvent('recording-mode-chooser-back', {
+        owner: 'quick-recording',
+      });
+    });
+
+    await flush();
+
+    expect(mockInvoke).toHaveBeenCalledWith('capture_overlay_cancel');
+    expect(mockInvoke).not.toHaveBeenCalledWith('capture_overlay_reselect');
   });
 });

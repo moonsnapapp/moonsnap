@@ -349,10 +349,8 @@ const CaptureToolbarWindow: React.FC = () => {
             }
           }
 
-          const [position, size] = await Promise.all([
-            currentWindow.outerPosition(),
-            currentWindow.outerSize(),
-          ]);
+          const position = await currentWindow.outerPosition();
+          const selection = selectionBoundsRef.current;
           chooserAnchorPositionRef.current = {
             x: position.x,
             y: position.y,
@@ -363,10 +361,10 @@ const CaptureToolbarWindow: React.FC = () => {
 
           try {
             await invoke('show_recording_mode_chooser', {
-              x: position.x,
-              y: position.y,
-              width: size.width,
-              height: size.height,
+              x: selection.x,
+              y: selection.y,
+              width: selection.width,
+              height: selection.height,
               owner: 'capture-toolbar',
             });
           } catch (error) {
@@ -658,14 +656,17 @@ const CaptureToolbarWindow: React.FC = () => {
 
       chooserSelectionHandledRef.current = false;
       recordingStartupInProgressRef.current = false;
-      chooserRestorePositionRef.current = chooserAnchorPositionRef.current ?? event.payload;
+      chooserRestorePositionRef.current = null;
       chooserAnchorPositionRef.current = null;
       setIsModeChooserVisible(false);
       setIsRecordingControlsPending(false);
       setIsRecordingHudActive(false);
-      setIsRestoringToolbarFromChooser(true);
+      setIsRestoringToolbarFromChooser(false);
       skipModePromptRef.current = false;
       clearSelectionAutoStartRecording();
+      invoke('capture_overlay_cancel').catch((error) => {
+        toolbarLogger.error('Failed to cancel selection from recording mode chooser back:', error);
+      });
     });
 
     return () => {

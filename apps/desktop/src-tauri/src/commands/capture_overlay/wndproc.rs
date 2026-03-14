@@ -3,6 +3,7 @@
 //! Handles all window messages including mouse input, keyboard input,
 //! and cursor management.
 
+use crate::commands::window::recording::reposition_recording_mode_chooser;
 use tauri::{Emitter, Manager};
 use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
 use windows::Win32::Graphics::Gdi::{BeginPaint, EndPaint, PAINTSTRUCT};
@@ -204,6 +205,7 @@ fn handle_mouse_move(state_ptr: *mut OverlayState, lparam: LPARAM) -> LRESULT {
             if state.adjustment.is_dragging {
                 // Calculate delta from drag start
                 update_adjustment_drag(state, state.drag.shift_held);
+                sync_recording_mode_chooser_to_selection(state);
 
                 // Emit dimension updates to toolbar (throttled)
                 if state.should_emit(50) {
@@ -539,6 +541,18 @@ fn update_adjustment_drag(state: &mut OverlayState, constrain_proportions: bool)
     let dx = state.cursor.position.x - state.adjustment.drag_start.x;
     let dy = state.cursor.position.y - state.adjustment.drag_start.y;
     state.adjustment.apply_delta(dx, dy, constrain_proportions);
+}
+
+fn sync_recording_mode_chooser_to_selection(state: &OverlayState) {
+    let screen_bounds = state.monitor.local_rect_to_screen(state.adjustment.bounds);
+    let _ = reposition_recording_mode_chooser(
+        &state.app_handle,
+        screen_bounds.left,
+        screen_bounds.top,
+        screen_bounds.width(),
+        screen_bounds.height(),
+    );
+    bring_auxiliary_window_to_front(state, "recording-mode-chooser");
 }
 
 /// Emit adjustment ready event to show the toolbar
