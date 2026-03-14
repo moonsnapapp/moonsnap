@@ -2,6 +2,34 @@
 
 All notable changes to MoonSnap are documented in this file.
 
+## [0.5.12] - 2026-03-14
+
+### Added
+- Save Copy option for quick capture videos and GIFs.
+- Recording mode chooser prompt before video capture with audio indicators.
+- Repair UI for damaged projects in the library.
+- Automatic migration from legacy project folders to the new bundle format.
+- File association for `.moonsnap` project files.
+- Annotation delete and undo/redo support with unclamped arrow endpoints.
+- Caption language dropdown in the video editor.
+
+### Changed
+- Screenshot filenames now use a `moonsnap_` prefix for clearer identification.
+- Save directory migration only moves MoonSnap-owned files.
+- Redesigned recording HUD and capture toolbar appearance.
+- Default save path changed to ~/MoonSnap with move folder dialog.
+
+### Fixed
+- Recording mode chooser stays centered when resizing.
+- Save Copy dialog now defaults to the original filename.
+- Library no longer shows File Missing after moving save directory.
+- License status flickering on startup.
+- GPU device loss recovery and playback robustness.
+- Playhead jump-to-start after scrub.
+- Library window centering.
+- Hotkey shortcut handling.
+- Various recording HUD and capture toolbar stability fixes.
+
 ## [0.5.11] - 2026-03-10
 
 ### Fixed
