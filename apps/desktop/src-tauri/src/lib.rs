@@ -193,6 +193,30 @@ pub fn run() {
                 }
             }
 
+            // Migrate legacy project folders to .moonsnap bundles (runs synchronously
+            // before UI to prevent race conditions with library scanning)
+            {
+                let app_handle = app.handle().clone();
+                match commands::storage::migration::migrate_to_bundles(&app_handle) {
+                    Ok(result) => {
+                        if result.migrated > 0 {
+                            log::info!(
+                                "[STARTUP] Migrated {} project folders to .moonsnap bundles",
+                                result.migrated
+                            );
+                        }
+                        if !result.failed.is_empty() {
+                            log::warn!(
+                                "[STARTUP] {} folders failed to migrate: {:?}",
+                                result.failed.len(),
+                                result.failed
+                            );
+                        }
+                    },
+                    Err(e) => log::error!("[STARTUP] Migration failed: {}", e),
+                }
+            }
+
             // Show floating startup toolbar on app launch
             let app_handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {

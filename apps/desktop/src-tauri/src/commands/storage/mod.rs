@@ -13,6 +13,7 @@
 //! ```
 
 pub mod bundle_utils;
+pub mod migration;
 pub mod operations;
 #[cfg(test)]
 mod tests;
