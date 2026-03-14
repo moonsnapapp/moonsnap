@@ -13,6 +13,7 @@ import { useUpdater } from './hooks/useUpdater';
 import { useTheme } from './hooks/useTheme';
 import { useAppEventListeners } from './hooks/useAppEventListeners';
 import { useAppInitialization } from './hooks/useAppInitialization';
+import { useQuickRecordingFlow } from './hooks/useQuickRecordingFlow';
 import { logger } from './utils/logger';
 import { useCaptureActions } from './hooks/useCaptureActions';
 
@@ -122,6 +123,7 @@ function App() {
 
   // Consolidated Tauri event listeners
   useAppEventListeners(eventCallbacks);
+  useQuickRecordingFlow();
 
   // Settings handler
   const handleOpenSettings = useCallback(() => {

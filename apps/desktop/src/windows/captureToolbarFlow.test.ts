@@ -10,15 +10,27 @@ describe('shouldSuppressToolbarUntilRecording', () => {
     expect(
       shouldSuppressToolbarUntilRecording({
         autoStartRecording: false,
+        selectionAutoStartRecording: false,
         mode: 'selection',
       })
     ).toBe(false);
+  });
+
+  it('keeps quick selections hidden before the auto-start latch flips', () => {
+    expect(
+      shouldSuppressToolbarUntilRecording({
+        autoStartRecording: false,
+        selectionAutoStartRecording: true,
+        mode: 'selection',
+      })
+    ).toBe(true);
   });
 
   it('keeps quick sessions hidden while the chooser is handled in a separate window', () => {
     expect(
       shouldSuppressToolbarUntilRecording({
         autoStartRecording: true,
+        selectionAutoStartRecording: true,
         mode: 'selection',
       })
     ).toBe(true);
@@ -28,6 +40,7 @@ describe('shouldSuppressToolbarUntilRecording', () => {
     expect(
       shouldSuppressToolbarUntilRecording({
         autoStartRecording: true,
+        selectionAutoStartRecording: true,
         mode: 'starting',
       })
     ).toBe(true);
@@ -37,6 +50,7 @@ describe('shouldSuppressToolbarUntilRecording', () => {
     expect(
       shouldSuppressToolbarUntilRecording({
         autoStartRecording: true,
+        selectionAutoStartRecording: true,
         mode: 'recording',
       })
     ).toBe(false);

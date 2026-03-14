@@ -51,7 +51,7 @@ pub fn trigger_capture_with_options(
 
     if auto_start_recording {
         if let Some(toolbar_window) = app.get_webview_window("capture-toolbar") {
-            let _ = toolbar_window.hide();
+            let _ = toolbar_window.close();
         }
     }
 

@@ -614,7 +614,13 @@ fn show_toolbar(state: &OverlayState, screen_bounds: Rect, source: SourceType) {
         },
     }
 
-    let _ = state.app_handle.emit("create-capture-toolbar", payload);
+    let event_name = if state.auto_start_recording {
+        "quick-recording-selection-ready"
+    } else {
+        "create-capture-toolbar"
+    };
+
+    let _ = state.app_handle.emit(event_name, payload);
 }
 
 /// Make the overlay click-through so the toolbar receives all mouse events.

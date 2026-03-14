@@ -65,4 +65,36 @@ describe('useSelectionEvents', () => {
     expect(result.current.selectionConfirmed).toBe(true);
     expect(result.current.autoStartRecording).toBe(true);
   });
+
+  it('clears the embedded quick-record marker when auto-start is cancelled', async () => {
+    setInvokeResponse('prepare_recording', null);
+    const { result } = renderHook(() => useSelectionEvents());
+
+    await flush();
+
+    await act(async () => {
+      emitMockEvent('confirm-selection', {
+        x: 100,
+        y: 150,
+        width: 800,
+        height: 450,
+        captureType: 'video',
+        sourceType: 'area',
+        sourceMode: 'area',
+        autoStartRecording: true,
+      });
+    });
+
+    await flush();
+
+    expect(result.current.selectionBounds.autoStartRecording).toBe(true);
+    expect(result.current.autoStartRecording).toBe(true);
+
+    await act(async () => {
+      result.current.clearSelectionAutoStartRecording();
+    });
+
+    expect(result.current.selectionBounds.autoStartRecording).toBe(false);
+    expect(result.current.autoStartRecording).toBe(false);
+  });
 });

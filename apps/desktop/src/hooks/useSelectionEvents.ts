@@ -6,7 +6,7 @@
  * - confirm-selection: User confirmed selection (from preselection flow)
  */
 
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { invoke } from '@tauri-apps/api/core';
 import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
@@ -39,6 +39,7 @@ interface UseSelectionEventsReturn {
   setSelectionConfirmed: (confirmed: boolean) => void;
   autoStartRecording: boolean;
   setAutoStartRecording: (enabled: boolean) => void;
+  clearSelectionAutoStartRecording: () => void;
 }
 
 const MARGIN = 8;
@@ -114,14 +115,30 @@ export function useSelectionEvents(): UseSelectionEventsReturn {
   const [selectionConfirmed, setSelectionConfirmed] = useState(false);
   const [autoStartRecording, setAutoStartRecording] = useState(false);
 
+  const clearSelectionAutoStartRecording = useCallback(() => {
+    setAutoStartRecording(false);
+    setSelectionBounds((prev) => {
+      if (!prev.autoStartRecording) {
+        return prev;
+      }
+
+      const nextBounds = { ...prev, autoStartRecording: false };
+      selectionBoundsRef.current = nextBounds;
+      return nextBounds;
+    });
+  }, []);
+
   useEffect(() => {
     let unlistenSelection: UnlistenFn | null = null;
 
     const setup = async () => {
       unlistenSelection = await listen<SelectionBounds>('selection-updated', (event) => {
         const bounds = event.payload;
-        setSelectionBounds(bounds);
-        selectionBoundsRef.current = bounds;
+        setSelectionBounds((prev) => {
+          const nextBounds = { ...prev, ...bounds };
+          selectionBoundsRef.current = nextBounds;
+          return nextBounds;
+        });
       });
     };
 
@@ -199,5 +216,6 @@ export function useSelectionEvents(): UseSelectionEventsReturn {
     setSelectionConfirmed,
     autoStartRecording,
     setAutoStartRecording,
+    clearSelectionAutoStartRecording,
   };
 }

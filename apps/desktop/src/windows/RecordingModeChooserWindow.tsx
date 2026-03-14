@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef } from 'react';
-import { emit } from '@tauri-apps/api/event';
+import { emit, listen } from '@tauri-apps/api/event';
 import { getCurrentWindow, LogicalSize } from '@tauri-apps/api/window';
 
 import { RecordingModeChooser } from '@/components/CaptureToolbar/RecordingModeChooser';
@@ -13,6 +13,23 @@ const RecordingModeChooserWindow: React.FC = () => {
   const containerRef = useRef<HTMLDivElement>(null);
   const lastSizeRef = useRef({ width: 0, height: 0 });
   const closeHandledRef = useRef(false);
+  const ownerRef = useRef(
+    (
+      window as Window & {
+        __MOONSNAP_RECORDING_MODE_CHOOSER_OWNER?: string;
+      }
+    ).__MOONSNAP_RECORDING_MODE_CHOOSER_OWNER ?? 'capture-toolbar'
+  );
+
+  useEffect(() => {
+    const unlisten = listen<{ owner?: string }>('recording-mode-chooser-context', (event) => {
+      ownerRef.current = event.payload.owner ?? 'capture-toolbar';
+    });
+
+    return () => {
+      unlisten.then((fn) => fn()).catch(() => {});
+    };
+  }, []);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -75,7 +92,10 @@ const RecordingModeChooserWindow: React.FC = () => {
 
   const handleBack = useCallback(async () => {
     closeHandledRef.current = true;
-    await emit('recording-mode-chooser-back', await getWindowPositionPayload());
+    await emit('recording-mode-chooser-back', {
+      ...(await getWindowPositionPayload()),
+      owner: ownerRef.current,
+    });
     await closeWindow();
   }, [closeWindow, getWindowPositionPayload]);
 
@@ -85,6 +105,7 @@ const RecordingModeChooserWindow: React.FC = () => {
       ...(await getWindowPositionPayload()),
       action,
       remember,
+      owner: ownerRef.current,
     });
     await closeWindow();
   }, [closeWindow, getWindowPositionPayload]);
@@ -97,7 +118,10 @@ const RecordingModeChooserWindow: React.FC = () => {
       }
 
       closeHandledRef.current = true;
-      await emit('recording-mode-chooser-back', await getWindowPositionPayload()).catch((error) => {
+      await emit('recording-mode-chooser-back', {
+        ...(await getWindowPositionPayload()),
+        owner: ownerRef.current,
+      }).catch((error) => {
         toolbarLogger.error('Failed to emit chooser back event on close:', error);
       });
     });

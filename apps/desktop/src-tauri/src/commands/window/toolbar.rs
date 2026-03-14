@@ -74,7 +74,7 @@ fn calculate_capture_toolbar_position(
     width: u32,
     height: u32,
     toolbar_width: u32,
-    toolbar_height: u32,
+    _toolbar_height: u32,
 ) -> (i32, i32) {
     // Position below the selection, centered horizontally.
     let ix = x + (width as i32 / 2) - (toolbar_width as i32 / 2);

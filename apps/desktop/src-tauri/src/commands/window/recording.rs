@@ -1,6 +1,6 @@
 //! Recording border and countdown window commands.
 
-use tauri::{command, AppHandle, Manager, WebviewUrl, WebviewWindowBuilder};
+use tauri::{command, AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 
 use super::{
     apply_dwm_transparency, exclude_window_from_capture, include_window_in_capture,
@@ -144,11 +144,26 @@ pub async fn show_recording_controls(
     app: AppHandle,
     x: i32,
     y: i32,
-    _width: u32,
-    _height: u32,
+    width: u32,
+    height: u32,
     include_in_capture: Option<bool>,
+    center_on_selection: Option<bool>,
 ) -> Result<(), String> {
     let include_in_capture = include_in_capture.unwrap_or(false);
+    let center_on_selection = center_on_selection.unwrap_or(false);
+
+    let (window_x, window_y) = if center_on_selection {
+        center_floating_window(
+            x,
+            y,
+            width,
+            height,
+            RECORDING_CONTROLS_INITIAL_WIDTH,
+            RECORDING_CONTROLS_INITIAL_HEIGHT,
+        )
+    } else {
+        (x, y)
+    };
 
     if let Some(window) = app.get_webview_window(RECORDING_CONTROLS_LABEL) {
         // Preserve the current position once the user has dragged the HUD.
@@ -195,8 +210,8 @@ pub async fn show_recording_controls(
 
     set_physical_bounds(
         &window,
-        x,
-        y,
+        window_x,
+        window_y,
         RECORDING_CONTROLS_INITIAL_WIDTH,
         RECORDING_CONTROLS_INITIAL_HEIGHT,
     )?;
@@ -244,6 +259,7 @@ pub async fn show_recording_mode_chooser(
     y: i32,
     width: u32,
     height: u32,
+    owner: Option<String>,
 ) -> Result<(), String> {
     let (window_x, window_y) = center_floating_window(
         x,
@@ -253,6 +269,7 @@ pub async fn show_recording_mode_chooser(
         RECORDING_MODE_CHOOSER_INITIAL_WIDTH,
         RECORDING_MODE_CHOOSER_INITIAL_HEIGHT,
     );
+    let owner = owner.unwrap_or_else(|| "capture-toolbar".to_string());
 
     if let Some(window) = app.get_webview_window(RECORDING_MODE_CHOOSER_LABEL) {
         set_physical_bounds(
@@ -277,10 +294,19 @@ pub async fn show_recording_mode_chooser(
         window
             .set_focus()
             .map_err(|e| format!("Failed to focus recording mode chooser: {}", e))?;
+        let _ = window.emit(
+            "recording-mode-chooser-context",
+            serde_json::json!({ "owner": owner }),
+        );
         return Ok(());
     }
 
     let url = WebviewUrl::App("windows/recording-mode-chooser.html".into());
+    let owner_script = format!(
+        "window.__MOONSNAP_RECORDING_MODE_CHOOSER_OWNER = {};",
+        serde_json::to_string(&owner)
+            .map_err(|e| format!("Failed to serialize recording mode chooser owner: {}", e))?
+    );
 
     let window = WebviewWindowBuilder::new(&app, RECORDING_MODE_CHOOSER_LABEL, url)
         .title("Recording Mode")
@@ -296,6 +322,7 @@ pub async fn show_recording_mode_chooser(
         .shadow(false)
         .visible(false)
         .focused(false)
+        .initialization_script(owner_script)
         .build()
         .map_err(|e| format!("Failed to create recording mode chooser window: {}", e))?;
 
@@ -323,6 +350,10 @@ pub async fn show_recording_mode_chooser(
     window
         .set_focus()
         .map_err(|e| format!("Failed to focus recording mode chooser: {}", e))?;
+    let _ = window.emit(
+        "recording-mode-chooser-context",
+        serde_json::json!({ "owner": owner }),
+    );
 
     Ok(())
 }

@@ -2,14 +2,18 @@ type ToolbarMode = 'selection' | 'starting' | 'recording' | 'paused' | 'processi
 
 interface ToolbarSuppressionOptions {
   autoStartRecording: boolean;
+  selectionAutoStartRecording?: boolean;
   mode: ToolbarMode;
 }
 
 export function shouldSuppressToolbarUntilRecording({
   autoStartRecording,
+  selectionAutoStartRecording,
   mode,
 }: ToolbarSuppressionOptions): boolean {
-  if (!autoStartRecording) {
+  const isAutoStartSession = autoStartRecording || Boolean(selectionAutoStartRecording);
+
+  if (!isAutoStartSession) {
     return false;
   }
 

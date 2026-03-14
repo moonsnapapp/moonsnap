@@ -591,15 +591,17 @@ fn run_overlay(
             // Emit reset event so frontend resets selectionConfirmed=false
             let _ = state.app_handle.emit("reset-to-startup", ());
 
-            let app_handle = state.app_handle.clone();
-            tauri::async_runtime::spawn(async move {
-                if let Err(e) =
-                    crate::commands::window::show_startup_toolbar(app_handle, None, None, None)
-                        .await
-                {
-                    log::error!("Failed to show startup toolbar after cancel: {}", e);
-                }
-            });
+            if !state.auto_start_recording {
+                let app_handle = state.app_handle.clone();
+                tauri::async_runtime::spawn(async move {
+                    if let Err(e) =
+                        crate::commands::window::show_startup_toolbar(app_handle, None, None, None)
+                            .await
+                    {
+                        log::error!("Failed to show startup toolbar after cancel: {}", e);
+                    }
+                });
+            }
         } else {
             log::debug!("[Overlay] Selection confirmed");
         }
