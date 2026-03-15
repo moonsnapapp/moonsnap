@@ -13,4 +13,4 @@ pub mod hit_test;
 pub mod window_detect;
 
 pub use hit_test::hit_test_handle;
-pub use window_detect::get_window_at_point;
+pub use window_detect::{get_area_target_at_point, get_window_at_point};

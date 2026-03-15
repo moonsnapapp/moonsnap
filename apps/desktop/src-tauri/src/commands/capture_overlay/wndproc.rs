@@ -15,7 +15,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
     WM_NCHITTEST, WM_PAINT, WM_RBUTTONDOWN, WM_SETCURSOR,
 };
 
-use super::input::{get_window_at_point, hit_test_handle};
+use super::input::{get_area_target_at_point, get_window_at_point, hit_test_handle};
 use super::render;
 use super::state::OverlayState;
 use super::types::*;
@@ -243,7 +243,7 @@ fn handle_mouse_move(state_ptr: *mut OverlayState, lparam: LPARAM) -> LRESULT {
                         let screen_x = state.monitor.x + x;
                         let screen_y = state.monitor.y + y;
                         state.cursor.hovered_window =
-                            get_window_at_point(screen_x, screen_y, state.hwnd);
+                            get_area_target_at_point(screen_x, screen_y, state.hwnd);
                     }
                 },
             }
@@ -297,7 +297,11 @@ fn handle_mouse_up(state_ptr: *mut OverlayState) -> LRESULT {
                         } else if let Some(ref win) = state.cursor.hovered_window {
                             // Area mode smart-select: adopt hovered window bounds as a region-sized area.
                             // This keeps sourceType="area" and shows dimensions in the toolbar.
-                            handle_window_sized_area_selection(state, win.bounds);
+                            handle_window_sized_area_selection(
+                                state,
+                                win.hwnd.0 as isize,
+                                win.bounds,
+                            );
                         } else {
                             // Click on empty desktop: capture the full monitor
                             handle_monitor_selection(state);
@@ -340,7 +344,22 @@ fn handle_region_selection_complete(state: &mut OverlayState) {
 
 /// Handle smart area selection from a hovered window.
 /// Uses window bounds as the initial area size without switching to window capture mode.
-fn handle_window_sized_area_selection(state: &mut OverlayState, window_bounds: Rect) {
+fn handle_window_sized_area_selection(
+    state: &mut OverlayState,
+    window_id: isize,
+    window_bounds: Rect,
+) {
+    crate::app_log!(
+        crate::commands::logging::LogLevel::Info,
+        "OverlayArea",
+        "Selected area target hwnd={} bounds=({}, {}) {}x{}",
+        window_id,
+        window_bounds.left,
+        window_bounds.top,
+        window_bounds.width(),
+        window_bounds.height()
+    );
+
     if state.capture_type == CaptureType::Screenshot {
         // Area screenshot: capture selected rectangle immediately (region capture semantics).
         state
