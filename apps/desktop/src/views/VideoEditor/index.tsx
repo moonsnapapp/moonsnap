@@ -657,11 +657,11 @@ export const VideoEditorView = forwardRef<VideoEditorViewRef, VideoEditorViewPro
   }), [togglePlayback, handleSeekToStart, handleSeekToEnd, handleExport]);
 
   return (
-    <div className="flex-1 flex flex-col min-h-0 bg-[var(--polar-snow)]">
+    <div className="editor-workspace video-editor-workspace flex-1 flex flex-col min-h-0">
       {/* Main content area - Preview and Properties */}
-      <div className="flex-1 flex min-h-0">
+      <div className="editor-workspace__main flex-1 flex min-h-0">
         {/* Left side: Top bar + Video Preview */}
-        <div className="flex-1 flex flex-col min-w-0">
+        <div className="video-editor-main-pane flex-1 flex flex-col min-w-0">
           {/* Top Bar - hidden when embedded in window with its own titlebar */}
           {!hideTopBar && (
             <VideoEditorToolbar project={project} onBack={handleBack} />

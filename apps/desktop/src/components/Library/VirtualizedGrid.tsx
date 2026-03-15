@@ -286,7 +286,7 @@ export function VirtualizedGrid({
   return (
     <div
       ref={scrollContainerRef}
-      className="flex-1 overflow-auto relative select-none library-scroll"
+      className="library-stage flex-1 overflow-auto relative select-none library-scroll"
       style={{ contain: 'strict' }}
       onMouseDown={onMouseDown}
       onMouseMove={onMouseMove}

@@ -112,10 +112,6 @@ export function BackgroundSettingsPanel<TType extends SharedBackgroundType>({
           <BackgroundTypeTabs
             currentType={type}
             onTypeChange={(next) => onTypeChange(next as TType)}
-            gradientAngle={gradientAngle}
-            gradientStart={gradientStart}
-            gradientEnd={gradientEnd}
-            solidColor={solidColor}
           />
 
           <div className="border-t border-dashed border-[var(--glass-border)]" />

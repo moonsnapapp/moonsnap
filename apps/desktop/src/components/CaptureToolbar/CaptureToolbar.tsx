@@ -345,33 +345,35 @@ export const CaptureToolbar: React.FC<CaptureToolbarProps> = ({
       } pointer-events-auto`}
     >
       {minimalChrome === 'floating' && (
-        <div className="glass-toolbar-window-controls">
-          {onMinimizeToolbar && (
+        <div className="glass-toolbar-top-strip">
+          <div className="glass-toolbar-top-strip-spacer" aria-hidden="true" />
+
+          <div className="glass-toolbar-brand" aria-hidden="true">
+            <span className="glass-toolbar-brand-wordmark">MoonSnap</span>
+            <span className="glass-toolbar-brand-badge">PRO</span>
+          </div>
+
+          <div className="glass-toolbar-window-controls">
+            {onMinimizeToolbar && (
+              <button
+                type="button"
+                onClick={onMinimizeToolbar}
+                className="glass-btn glass-btn--md glass-toolbar-action-btn glass-toolbar-window-control"
+                title="Minimize capture toolbar"
+              >
+                <Minus size={14} strokeWidth={2.5} />
+              </button>
+            )}
+
             <button
               type="button"
-              onClick={onMinimizeToolbar}
-              className="glass-btn glass-btn--md glass-toolbar-action-btn glass-toolbar-window-control"
-              title="Minimize capture toolbar"
+              onClick={onCloseToolbar ?? onCancel}
+              className="glass-btn glass-btn--md glass-toolbar-action-btn glass-toolbar-action-btn--close glass-toolbar-window-control"
+              title="Close capture toolbar"
             >
-              <Minus size={14} strokeWidth={2.5} />
+              <X size={14} strokeWidth={2.5} />
             </button>
-          )}
-
-          <button
-            type="button"
-            onClick={onCloseToolbar ?? onCancel}
-            className="glass-btn glass-btn--md glass-toolbar-action-btn glass-toolbar-action-btn--close glass-toolbar-window-control"
-            title="Close capture toolbar"
-          >
-            <X size={14} strokeWidth={2.5} />
-          </button>
-        </div>
-      )}
-
-      {minimalChrome === 'floating' && (
-        <div className="glass-toolbar-brand" aria-hidden="true">
-          <span className="glass-toolbar-brand-wordmark">MoonSnap</span>
-          <span className="glass-toolbar-brand-badge">PRO</span>
+          </div>
         </div>
       )}
 

@@ -225,37 +225,31 @@ export const TextToolSettings: React.FC<TextToolSettingsProps> = ({
       {/* Bold, Italic, Underline */}
       <div className="space-y-3">
         <Label className="text-xs text-[var(--ink-muted)] uppercase tracking-wide font-medium">Style</Label>
-        <div className="flex gap-2">
+        <div className="flex gap-1.5">
           <button
             onClick={toggleBold}
             disabled={!textShape}
-            className={`flex-1 h-9 rounded-lg flex items-center justify-center transition-all border ${
-              isBold
-                ? 'bg-[var(--coral-50)] text-[var(--coral-500)] border-[var(--coral-200)]'
-                : 'bg-[var(--card)] text-[var(--ink-muted)] border-[var(--polar-frost)] hover:bg-[var(--polar-ice)]'
-            } disabled:opacity-50 disabled:cursor-not-allowed`}
+            className={`editor-choice-pill flex-1 flex items-center justify-center px-2 py-2 disabled:opacity-50 disabled:cursor-not-allowed ${
+              isBold ? 'editor-choice-pill--active' : ''
+            }`}
           >
             <Bold className="w-4 h-4" />
           </button>
           <button
             onClick={toggleItalic}
             disabled={!textShape}
-            className={`flex-1 h-9 rounded-lg flex items-center justify-center transition-all border ${
-              isItalic
-                ? 'bg-[var(--coral-50)] text-[var(--coral-500)] border-[var(--coral-200)]'
-                : 'bg-[var(--card)] text-[var(--ink-muted)] border-[var(--polar-frost)] hover:bg-[var(--polar-ice)]'
-            } disabled:opacity-50 disabled:cursor-not-allowed`}
+            className={`editor-choice-pill flex-1 flex items-center justify-center px-2 py-2 disabled:opacity-50 disabled:cursor-not-allowed ${
+              isItalic ? 'editor-choice-pill--active' : ''
+            }`}
           >
             <Italic className="w-4 h-4" />
           </button>
           <button
             onClick={toggleUnderline}
             disabled={!textShape}
-            className={`flex-1 h-9 rounded-lg flex items-center justify-center transition-all border ${
-              isUnderline
-                ? 'bg-[var(--coral-50)] text-[var(--coral-500)] border-[var(--coral-200)]'
-                : 'bg-[var(--card)] text-[var(--ink-muted)] border-[var(--polar-frost)] hover:bg-[var(--polar-ice)]'
-            } disabled:opacity-50 disabled:cursor-not-allowed`}
+            className={`editor-choice-pill flex-1 flex items-center justify-center px-2 py-2 disabled:opacity-50 disabled:cursor-not-allowed ${
+              isUnderline ? 'editor-choice-pill--active' : ''
+            }`}
           >
             <Underline className="w-4 h-4" />
           </button>
@@ -265,37 +259,31 @@ export const TextToolSettings: React.FC<TextToolSettingsProps> = ({
       {/* Text Alignment - Horizontal */}
       <div className="space-y-3">
         <Label className="text-xs text-[var(--ink-muted)] uppercase tracking-wide font-medium">Horizontal Align</Label>
-        <div className="flex gap-2">
+        <div className="flex gap-1.5">
           <button
             onClick={() => setAlignment('left')}
             disabled={!textShape}
-            className={`flex-1 h-9 rounded-lg flex items-center justify-center transition-all border ${
-              currentAlign === 'left'
-                ? 'bg-[var(--coral-50)] text-[var(--coral-500)] border-[var(--coral-200)]'
-                : 'bg-[var(--card)] text-[var(--ink-muted)] border-[var(--polar-frost)] hover:bg-[var(--polar-ice)]'
-            } disabled:opacity-50 disabled:cursor-not-allowed`}
+            className={`editor-choice-pill flex-1 flex items-center justify-center px-2 py-2 disabled:opacity-50 disabled:cursor-not-allowed ${
+              currentAlign === 'left' ? 'editor-choice-pill--active' : ''
+            }`}
           >
             <AlignLeft className="w-4 h-4" />
           </button>
           <button
             onClick={() => setAlignment('center')}
             disabled={!textShape}
-            className={`flex-1 h-9 rounded-lg flex items-center justify-center transition-all border ${
-              currentAlign === 'center'
-                ? 'bg-[var(--coral-50)] text-[var(--coral-500)] border-[var(--coral-200)]'
-                : 'bg-[var(--card)] text-[var(--ink-muted)] border-[var(--polar-frost)] hover:bg-[var(--polar-ice)]'
-            } disabled:opacity-50 disabled:cursor-not-allowed`}
+            className={`editor-choice-pill flex-1 flex items-center justify-center px-2 py-2 disabled:opacity-50 disabled:cursor-not-allowed ${
+              currentAlign === 'center' ? 'editor-choice-pill--active' : ''
+            }`}
           >
             <AlignCenter className="w-4 h-4" />
           </button>
           <button
             onClick={() => setAlignment('right')}
             disabled={!textShape}
-            className={`flex-1 h-9 rounded-lg flex items-center justify-center transition-all border ${
-              currentAlign === 'right'
-                ? 'bg-[var(--coral-50)] text-[var(--coral-500)] border-[var(--coral-200)]'
-                : 'bg-[var(--card)] text-[var(--ink-muted)] border-[var(--polar-frost)] hover:bg-[var(--polar-ice)]'
-            } disabled:opacity-50 disabled:cursor-not-allowed`}
+            className={`editor-choice-pill flex-1 flex items-center justify-center px-2 py-2 disabled:opacity-50 disabled:cursor-not-allowed ${
+              currentAlign === 'right' ? 'editor-choice-pill--active' : ''
+            }`}
           >
             <AlignRight className="w-4 h-4" />
           </button>
@@ -305,37 +293,31 @@ export const TextToolSettings: React.FC<TextToolSettingsProps> = ({
       {/* Text Alignment - Vertical */}
       <div className="space-y-3">
         <Label className="text-xs text-[var(--ink-muted)] uppercase tracking-wide font-medium">Vertical Align</Label>
-        <div className="flex gap-2">
+        <div className="flex gap-1.5">
           <button
             onClick={() => setVerticalAlignment('top')}
             disabled={!textShape}
-            className={`flex-1 h-9 rounded-lg flex items-center justify-center transition-all border text-xs font-medium ${
-              currentVerticalAlign === 'top'
-                ? 'bg-[var(--coral-50)] text-[var(--coral-500)] border-[var(--coral-200)]'
-                : 'bg-[var(--card)] text-[var(--ink-muted)] border-[var(--polar-frost)] hover:bg-[var(--polar-ice)]'
-            } disabled:opacity-50 disabled:cursor-not-allowed`}
+            className={`editor-choice-pill flex-1 px-2 py-2 text-xs disabled:opacity-50 disabled:cursor-not-allowed ${
+              currentVerticalAlign === 'top' ? 'editor-choice-pill--active' : ''
+            }`}
           >
             Top
           </button>
           <button
             onClick={() => setVerticalAlignment('middle')}
             disabled={!textShape}
-            className={`flex-1 h-9 rounded-lg flex items-center justify-center transition-all border text-xs font-medium ${
-              currentVerticalAlign === 'middle'
-                ? 'bg-[var(--coral-50)] text-[var(--coral-500)] border-[var(--coral-200)]'
-                : 'bg-[var(--card)] text-[var(--ink-muted)] border-[var(--polar-frost)] hover:bg-[var(--polar-ice)]'
-            } disabled:opacity-50 disabled:cursor-not-allowed`}
+            className={`editor-choice-pill flex-1 px-2 py-2 text-xs disabled:opacity-50 disabled:cursor-not-allowed ${
+              currentVerticalAlign === 'middle' ? 'editor-choice-pill--active' : ''
+            }`}
           >
             Middle
           </button>
           <button
             onClick={() => setVerticalAlignment('bottom')}
             disabled={!textShape}
-            className={`flex-1 h-9 rounded-lg flex items-center justify-center transition-all border text-xs font-medium ${
-              currentVerticalAlign === 'bottom'
-                ? 'bg-[var(--coral-50)] text-[var(--coral-500)] border-[var(--coral-200)]'
-                : 'bg-[var(--card)] text-[var(--ink-muted)] border-[var(--polar-frost)] hover:bg-[var(--polar-ice)]'
-            } disabled:opacity-50 disabled:cursor-not-allowed`}
+            className={`editor-choice-pill flex-1 px-2 py-2 text-xs disabled:opacity-50 disabled:cursor-not-allowed ${
+              currentVerticalAlign === 'bottom' ? 'editor-choice-pill--active' : ''
+            }`}
           >
             Bottom
           </button>

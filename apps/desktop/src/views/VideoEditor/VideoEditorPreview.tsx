@@ -12,7 +12,7 @@ interface VideoEditorPreviewProps {
 export function VideoEditorPreview({ isActive = true }: VideoEditorPreviewProps) {
 
   return (
-    <div className="flex-1 min-h-0 p-4">
+    <div className="editor-preview-shell flex-1 min-h-0 p-4">
       <GPUErrorBoundary>
         <GPUVideoPreview isActive={isActive} />
       </GPUErrorBoundary>

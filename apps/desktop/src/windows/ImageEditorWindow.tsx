@@ -236,9 +236,9 @@ const ImageEditorContent: React.FC<{
           </div>
         }
       >
-        <div className="flex-1 flex flex-col min-h-0">
-          <div className="flex-1 flex min-h-0">
-            <div className="flex-1 overflow-hidden min-h-0 relative">
+        <div className="editor-workspace image-editor-workspace flex-1 flex flex-col min-h-0">
+          <div className="editor-workspace__main flex-1 flex min-h-0">
+            <div className="editor-stage-shell flex-1 overflow-hidden min-h-0 relative">
               <EditorCanvas
                 ref={editorCanvasRef}
                 imageData={imageData}
@@ -764,9 +764,16 @@ const ImageEditorWindow: React.FC = () => {
   // Loading state
   if (isLoading) {
     return (
-      <div className="h-screen w-screen flex flex-col bg-card overflow-hidden">
-        <Titlebar title="Loading..." showLogo={true} showMaximize={true} />
-        <div className="flex-1 flex items-center justify-center">
+      <div className="editor-window h-screen w-screen flex flex-col overflow-hidden">
+        <Titlebar
+          title="MoonSnap"
+          variant="hud"
+          contextLabel="Image Editor"
+          detailLabel="Loading"
+          showLogo={true}
+          showMaximize={true}
+        />
+        <div className="editor-window__state flex-1 flex items-center justify-center">
           <div className="flex flex-col items-center gap-4">
             <Loader2 className="w-8 h-8 animate-spin text-(--coral-400)" />
             <p className="text-sm text-(--ink-muted)">Loading image...</p>
@@ -779,9 +786,16 @@ const ImageEditorWindow: React.FC = () => {
   // Error state
   if (error) {
     return (
-      <div className="h-screen w-screen flex flex-col bg-card overflow-hidden">
-        <Titlebar title="Error" showLogo={true} showMaximize={true} />
-        <div className="flex-1 flex items-center justify-center">
+      <div className="editor-window h-screen w-screen flex flex-col overflow-hidden">
+        <Titlebar
+          title="MoonSnap"
+          variant="hud"
+          contextLabel="Image Editor"
+          detailLabel="Error"
+          showLogo={true}
+          showMaximize={true}
+        />
+        <div className="editor-window__state flex-1 flex items-center justify-center">
           <div className="flex flex-col items-center gap-4 max-w-md text-center">
             <div className="w-12 h-12 rounded-full bg-(--error-light) flex items-center justify-center">
               <span className="text-2xl">!</span>
@@ -799,9 +813,16 @@ const ImageEditorWindow: React.FC = () => {
   // No image data loaded
   if (!imageData) {
     return (
-      <div className="h-screen w-screen flex flex-col bg-card overflow-hidden">
-        <Titlebar title="Image Editor" showLogo={true} showMaximize={true} />
-        <div className="flex-1 flex items-center justify-center">
+      <div className="editor-window h-screen w-screen flex flex-col overflow-hidden">
+        <Titlebar
+          title="MoonSnap"
+          variant="hud"
+          contextLabel="Image Editor"
+          detailLabel="No image"
+          showLogo={true}
+          showMaximize={true}
+        />
+        <div className="editor-window__state flex-1 flex items-center justify-center">
           <p className="text-sm text-(--ink-muted)">No image data loaded</p>
         </div>
       </div>
@@ -810,9 +831,12 @@ const ImageEditorWindow: React.FC = () => {
 
   // Main editor UI
   return (
-    <div className="h-screen w-screen flex flex-col bg-card overflow-hidden">
+    <div className="editor-window h-screen w-screen flex flex-col overflow-hidden">
       <Titlebar
-        title={getTitle()}
+        title="MoonSnap"
+        variant="hud"
+        contextLabel="Image Editor"
+        detailLabel={getTitle()}
         showLogo={true}
         showMaximize={true}
         onClose={handleClose}

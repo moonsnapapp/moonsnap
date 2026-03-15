@@ -15,7 +15,7 @@ export function VideoEditorToolbar({ project, onBack }: VideoEditorToolbarProps)
   const statusLabel = getVideoEditorStatusLabel(project);
 
   return (
-    <div className="h-10 flex items-center px-3 border-b border-[var(--glass-border)] bg-[var(--polar-mist)]">
+    <div className="video-editor-toolbar h-11 flex items-center px-3">
       <button
         onClick={onBack}
         className="glass-btn h-7 w-7 flex items-center justify-center"
@@ -30,11 +30,11 @@ export function VideoEditorToolbar({ project, onBack }: VideoEditorToolbarProps)
         {project && (
           <>
             {isQuickCapture && (
-              <span className="px-2 py-0.5 rounded-full bg-[var(--coral-400)]/12 text-[10px] font-medium text-[var(--coral-500)] whitespace-nowrap">
+              <span className="editor-meta-pill px-2 py-0.5 bg-[var(--coral-400)]/12 text-[10px] font-medium text-[var(--coral-500)] whitespace-nowrap">
                 Quick Capture
               </span>
             )}
-            <span className="px-2 py-0.5 rounded-full bg-[var(--polar-frost)] text-[10px] font-medium text-[var(--ink-subtle)] whitespace-nowrap">
+            <span className="editor-meta-pill px-2 py-0.5 bg-[var(--polar-frost)] text-[10px] font-medium text-[var(--ink-subtle)] whitespace-nowrap">
               {statusLabel}
             </span>
           </>

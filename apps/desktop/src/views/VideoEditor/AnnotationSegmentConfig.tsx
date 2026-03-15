@@ -98,15 +98,13 @@ export function AnnotationSegmentConfig({
           <span className="text-xs text-[var(--ink-muted)]">Shapes</span>
           <span className="text-xs text-[var(--ink-subtle)]">{segment.shapes.length} total</span>
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap gap-1.5">
           {segment.shapes.map((shape: AnnotationShape, index: number) => (
             <button
               key={shape.id}
               onClick={() => onSelectShape(shape.id)}
-              className={`rounded-md border px-2.5 py-1 text-xs transition-colors ${
-                shape.id === selectedShape?.id
-                  ? 'border-[var(--coral-400)] bg-[var(--coral-50)] text-[var(--coral-500)]'
-                  : 'border-[var(--glass-border)] bg-[var(--polar-mist)] text-[var(--ink-dark)]'
+              className={`editor-choice-pill px-2.5 py-1 text-xs ${
+                shape.id === selectedShape?.id ? 'editor-choice-pill--active' : ''
               }`}
             >
               {index + 1}. {getAnnotationShapeLabel(shape.shapeType)}

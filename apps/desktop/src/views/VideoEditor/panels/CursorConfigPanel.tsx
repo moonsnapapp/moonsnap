@@ -3,7 +3,6 @@
  */
 import { CURSOR } from '../../../constants';
 import { Slider } from '../../../components/ui/slider';
-import { ToggleGroup, ToggleGroupItem } from '../../../components/ui/toggle-group';
 import type { VideoProject, CursorConfig } from '../../../types';
 
 export interface CursorConfigPanelProps {
@@ -37,21 +36,19 @@ export function CursorConfigPanel({ project, onUpdateCursorConfig }: CursorConfi
       {/* Cursor Type */}
       <div>
         <span className="text-[11px] text-[var(--ink-subtle)] block mb-2">Cursor Type</span>
-        <ToggleGroup
-          type="single"
-          value={project.cursor.cursorType}
-          onValueChange={(value) => {
-            if (value) onUpdateCursorConfig({ cursorType: value as 'auto' | 'circle' });
-          }}
-          className="justify-start"
-        >
-          <ToggleGroupItem value="auto" className="text-xs h-7 px-2.5 data-[state=on]:bg-[var(--polar-frost)]">
-            Auto
-          </ToggleGroupItem>
-          <ToggleGroupItem value="circle" className="text-xs h-7 px-2.5 data-[state=on]:bg-[var(--polar-frost)]">
-            Circle
-          </ToggleGroupItem>
-        </ToggleGroup>
+        <div className="flex gap-1.5">
+          {(['auto', 'circle'] as const).map((type) => (
+            <button
+              key={type}
+              onClick={() => onUpdateCursorConfig({ cursorType: type })}
+              className={`editor-choice-pill px-2.5 py-1.5 text-xs ${
+                project.cursor.cursorType === type ? 'editor-choice-pill--active' : ''
+              }`}
+            >
+              {type === 'auto' ? 'Auto' : 'Circle'}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Size Slider */}
@@ -157,26 +154,21 @@ export function CursorConfigPanel({ project, onUpdateCursorConfig }: CursorConfi
             {/* Highlight Style */}
             <div>
               <span className="text-[11px] text-[var(--ink-subtle)] block mb-2">Style</span>
-              <ToggleGroup
-                type="single"
-                value={project.cursor.clickHighlight.style}
-                onValueChange={(value) => {
-                  if (value) onUpdateCursorConfig({
-                    clickHighlight: { ...project.cursor.clickHighlight, style: value as 'ripple' | 'spotlight' | 'ring' }
-                  });
-                }}
-                className="justify-start"
-              >
-                <ToggleGroupItem value="ripple" className="text-xs h-7 px-2.5 data-[state=on]:bg-[var(--polar-frost)]">
-                  Ripple
-                </ToggleGroupItem>
-                <ToggleGroupItem value="spotlight" className="text-xs h-7 px-2.5 data-[state=on]:bg-[var(--polar-frost)]">
-                  Spotlight
-                </ToggleGroupItem>
-                <ToggleGroupItem value="ring" className="text-xs h-7 px-2.5 data-[state=on]:bg-[var(--polar-frost)]">
-                  Ring
-                </ToggleGroupItem>
-              </ToggleGroup>
+              <div className="flex gap-1.5">
+                {(['ripple', 'spotlight', 'ring'] as const).map((style) => (
+                  <button
+                    key={style}
+                    onClick={() => onUpdateCursorConfig({
+                      clickHighlight: { ...project.cursor.clickHighlight, style }
+                    })}
+                    className={`editor-choice-pill px-2.5 py-1.5 text-xs capitalize ${
+                      project.cursor.clickHighlight.style === style ? 'editor-choice-pill--active' : ''
+                    }`}
+                  >
+                    {style}
+                  </button>
+                ))}
+              </div>
             </div>
 
             {/* Highlight Color */}

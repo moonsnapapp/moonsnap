@@ -1,6 +1,5 @@
 import React from 'react';
 import { Switch } from '@/components/ui/switch';
-import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import {
   Select,
   SelectContent,
@@ -11,53 +10,33 @@ import {
 import { RECORDING, formatCountdownOption, formatGifDurationOption } from '@/constants';
 import { useCaptureSettingsStore } from '@/stores/captureSettingsStore';
 
-interface OptionToggleGroupProps {
-  ariaLabel: string;
+interface OptionPillGroupProps {
   value: number;
   options: readonly number[];
   formatLabel: (value: number) => string;
   onChange: (value: number) => void;
 }
 
-const TOGGLE_GROUP_CLASS =
-  'justify-start flex-wrap gap-2';
-
-const TOGGLE_GROUP_ITEM_CLASS =
-  'h-8 px-3 text-xs border border-[var(--polar-frost)] bg-[var(--card)] text-[var(--ink-black)] hover:bg-[var(--polar-ice)] data-[state=on]:bg-[var(--polar-frost)] data-[state=on]:text-[var(--ink-black)]';
-
-const OptionToggleGroup: React.FC<OptionToggleGroupProps> = ({
-  ariaLabel,
+const OptionPillGroup: React.FC<OptionPillGroupProps> = ({
   value,
   options,
   formatLabel,
   onChange,
 }) => {
-  const currentValue = options.includes(value) ? String(value) : undefined;
-
   return (
-    <ToggleGroup
-      type="single"
-      value={currentValue}
-      onValueChange={(nextValue) => {
-        if (!nextValue) return;
-        onChange(parseInt(nextValue, 10));
-      }}
-      className={TOGGLE_GROUP_CLASS}
-      aria-label={ariaLabel}
-    >
+    <div className="flex flex-wrap gap-1.5">
       {options.map((option) => (
-        <ToggleGroupItem
+        <button
           key={option}
-          value={String(option)}
-          variant="outline"
-          size="sm"
-          className={TOGGLE_GROUP_ITEM_CLASS}
-          aria-label={formatLabel(option)}
+          onClick={() => onChange(option)}
+          className={`editor-choice-pill px-3 py-2 text-xs ${
+            value === option ? 'editor-choice-pill--active' : ''
+          }`}
         >
           {formatLabel(option)}
-        </ToggleGroupItem>
+        </button>
       ))}
-    </ToggleGroup>
+    </div>
   );
 };
 
@@ -141,8 +120,7 @@ export const RecordingsTab: React.FC = () => {
             <label className="text-sm text-[var(--ink-black)] mb-2 block">
               Frame rate
             </label>
-            <OptionToggleGroup
-              ariaLabel="Video frame rate"
+            <OptionPillGroup
               value={video.fps}
               options={RECORDING.VIDEO_FPS_OPTIONS}
               formatLabel={(fps) => `${fps} fps`}
@@ -154,8 +132,7 @@ export const RecordingsTab: React.FC = () => {
             <label className="text-sm text-[var(--ink-black)] mb-2 block">
               Quality
             </label>
-            <OptionToggleGroup
-              ariaLabel="Video quality"
+            <OptionPillGroup
               value={video.quality}
               options={RECORDING.VIDEO_QUALITY_OPTIONS}
               formatLabel={(quality) => `${quality}%`}
@@ -170,8 +147,7 @@ export const RecordingsTab: React.FC = () => {
             <label className="text-sm text-[var(--ink-black)] mb-2 block">
               Countdown
             </label>
-            <OptionToggleGroup
-              ariaLabel="Video countdown"
+            <OptionPillGroup
               value={video.countdownSecs}
               options={RECORDING.COUNTDOWN_OPTIONS}
               formatLabel={formatCountdownOption}
@@ -220,8 +196,7 @@ export const RecordingsTab: React.FC = () => {
             <label className="text-sm text-[var(--ink-black)] mb-2 block">
               Frame rate
             </label>
-            <OptionToggleGroup
-              ariaLabel="GIF frame rate"
+            <OptionPillGroup
               value={gif.fps}
               options={RECORDING.GIF_FPS_OPTIONS}
               formatLabel={(fps) => `${fps} fps`}
@@ -233,8 +208,7 @@ export const RecordingsTab: React.FC = () => {
             <label className="text-sm text-[var(--ink-black)] mb-2 block">
               Max duration
             </label>
-            <OptionToggleGroup
-              ariaLabel="GIF max duration"
+            <OptionPillGroup
               value={gif.maxDurationSecs}
               options={RECORDING.GIF_MAX_DURATION_OPTIONS}
               formatLabel={formatGifDurationOption}
@@ -265,8 +239,7 @@ export const RecordingsTab: React.FC = () => {
             <label className="text-sm text-[var(--ink-black)] mb-2 block">
               Countdown
             </label>
-            <OptionToggleGroup
-              ariaLabel="GIF countdown"
+            <OptionPillGroup
               value={gif.countdownSecs}
               options={RECORDING.COUNTDOWN_OPTIONS}
               formatLabel={formatCountdownOption}

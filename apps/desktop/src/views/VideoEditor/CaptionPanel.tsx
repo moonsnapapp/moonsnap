@@ -47,7 +47,6 @@ import {
   selectUpdateCaptionSettings,
   selectWhisperModels,
 } from '../../stores/videoEditor/selectors';
-import { Button } from '../../components/ui/button';
 import {
   Command,
   CommandEmpty,
@@ -1316,52 +1315,51 @@ export function CaptionPanel({ videoPath }: CaptionPanelProps) {
         </div>
 
         {/* Transcribe Button */}
-        <div className="flex gap-2">
-          <Button
+        <div className="flex gap-1.5">
+          <button
             onClick={handleTranscribe}
             disabled={!videoPath || isTranscribing || isDownloadingModel}
-            className="flex-1"
-            variant={captionSegments.length > 0 ? 'outline' : 'default'}
+            className={`editor-choice-pill editor-choice-pill--active flex-1 flex items-center justify-center gap-2 px-2 py-2 text-xs disabled:opacity-50 disabled:cursor-not-allowed`}
           >
             {isDownloadingModel ? (
               <>
-                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                <Loader2 className="w-4 h-4 animate-spin" />
                 Downloading... {Math.round(downloadProgress)}%
               </>
             ) : isTranscribing ? (
               <>
-                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                <Loader2 className="w-4 h-4 animate-spin" />
                 {transcriptionStage === 'extracting_audio'
                   ? 'Extracting audio...'
                   : `Transcribing... ${Math.round(transcriptionProgress)}%`}
               </>
             ) : !isModelDownloaded ? (
               <>
-                <Download className="w-4 h-4 mr-2" />
+                <Download className="w-4 h-4" />
                 Download & Transcribe
               </>
             ) : captionSegments.length > 0 ? (
               <>
-                <Mic className="w-4 h-4 mr-2" />
+                <Mic className="w-4 h-4" />
                 Re-transcribe
               </>
             ) : (
               <>
-                <Mic className="w-4 h-4 mr-2" />
+                <Mic className="w-4 h-4" />
                 Transcribe Audio
               </>
             )}
-          </Button>
+          </button>
           {captionSegments.length > 0 && (
-            <Button
+            <button
               type="button"
-              variant="destructive"
               onClick={handleClearCaptions}
               disabled={isTranscribing || isDownloadingModel}
+              className="editor-choice-pill flex items-center justify-center gap-2 px-2 py-2 text-xs disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              <Trash2 className="w-4 h-4 mr-2" />
-              Clear Captions
-            </Button>
+              <Trash2 className="w-4 h-4" />
+              Clear
+            </button>
           )}
         </div>
 
@@ -1383,15 +1381,13 @@ export function CaptionPanel({ videoPath }: CaptionPanelProps) {
             <span className="text-[11px] text-[var(--ink-subtle)] uppercase tracking-wide">
               Segments ({displayCaptionSegments.length})
             </span>
-            <Button
+            <button
               type="button"
-              size="sm"
-              variant="outline"
-              className="h-6 px-2 text-[10px]"
               onClick={openEditor}
+              className="editor-choice-pill editor-choice-pill--active px-2 py-1 text-[10px]"
             >
               Open Editor
-            </Button>
+            </button>
           </div>
           <div className="max-h-48 overflow-y-auto space-y-1">
             {visibleSegments.map((segment) => (
@@ -1543,23 +1539,19 @@ export function CaptionPanel({ videoPath }: CaptionPanelProps) {
             <span className="text-xs text-[var(--ink-muted)] block mb-2">
               Position
             </span>
-            <div className="flex gap-2">
+            <div className="flex gap-1.5">
               <button
                 onClick={() => updateCaptionSettings({ position: 'top' })}
-                className={`flex-1 px-3 py-1.5 text-xs rounded-md transition-colors ${
-                  captionSettings.position === 'top'
-                    ? 'bg-[var(--coral-100)] text-[var(--coral-400)]'
-                    : 'bg-[var(--polar-mist)] text-[var(--ink-muted)] hover:bg-[var(--glass-highlight)]'
+                className={`editor-choice-pill flex-1 px-2 py-2 text-xs ${
+                  captionSettings.position === 'top' ? 'editor-choice-pill--active' : ''
                 }`}
               >
                 Top
               </button>
               <button
                 onClick={() => updateCaptionSettings({ position: 'bottom' })}
-                className={`flex-1 px-3 py-1.5 text-xs rounded-md transition-colors ${
-                  captionSettings.position === 'bottom'
-                    ? 'bg-[var(--coral-100)] text-[var(--coral-400)]'
-                    : 'bg-[var(--polar-mist)] text-[var(--ink-muted)] hover:bg-[var(--glass-highlight)]'
+                className={`editor-choice-pill flex-1 px-2 py-2 text-xs ${
+                  captionSettings.position === 'bottom' ? 'editor-choice-pill--active' : ''
                 }`}
               >
                 Bottom
@@ -1632,10 +1624,8 @@ export function CaptionPanel({ videoPath }: CaptionPanelProps) {
                     <button
                       type="button"
                       onClick={() => auditionSegment(segment.id)}
-                      className={`flex-1 text-left rounded-md px-2 py-1.5 transition-colors ${
-                        editingSegmentId === segment.id
-                          ? 'bg-[var(--coral-100)] text-[var(--coral-500)]'
-                          : 'bg-[var(--polar-mist)] hover:bg-[var(--glass-highlight)] text-[var(--ink-dark)]'
+                      className={`editor-choice-pill flex-1 text-left px-2 py-1.5 ${
+                        editingSegmentId === segment.id ? 'editor-choice-pill--active' : ''
                       }`}
                     >
                       <div className="text-[10px] font-mono text-[var(--ink-subtle)]">
@@ -1794,65 +1784,61 @@ export function CaptionPanel({ videoPath }: CaptionPanelProps) {
                         className="min-w-[160px] text-xs"
                       />
                     </div>
-                    <div className="flex items-center gap-2">
-                      <Button
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <button
                         type="button"
-                        variant="outline"
-                        size="sm"
                         onClick={cancelEditingSegment}
+                        className="editor-choice-pill flex items-center gap-1 px-2 py-1.5 text-xs"
                       >
-                        <X className="w-3.5 h-3.5 mr-1" />
+                        <X className="w-3.5 h-3.5" />
                         Clear Selection
-                      </Button>
-                      <Button
+                      </button>
+                      <button
                         type="button"
-                        variant="outline"
-                        size="sm"
                         onClick={regenerateEditingSegment}
                         disabled={isRegenerateDisabled}
+                        className="editor-choice-pill flex items-center gap-1 px-2 py-1.5 text-xs disabled:opacity-50 disabled:cursor-not-allowed"
                       >
                         {isRegeneratingSegment ? (
                           <>
-                            <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" />
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
                             Regenerating...
                           </>
                         ) : (
                           'Regenerate Segment'
                         )}
-                      </Button>
-                      <Button
+                      </button>
+                      <button
                         type="button"
-                        variant="outline"
-                        size="sm"
                         onClick={regenerateAllSegments}
                         disabled={isRegenerateAllDisabled}
+                        className="editor-choice-pill flex items-center gap-1 px-2 py-1.5 text-xs disabled:opacity-50 disabled:cursor-not-allowed"
                       >
                         {isRegeneratingAllSegments ? (
                           <>
-                            <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" />
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
                             Re-transcribing All... {Math.round(transcriptionProgress)}%
                           </>
                         ) : (
                           'Re-transcribe All'
                         )}
-                      </Button>
-                      <Button
+                      </button>
+                      <button
                         type="button"
-                        variant="outline"
-                        size="sm"
                         onClick={undoLastRegenerate}
                         disabled={!lastRegenSnapshot || isRegeneratingSegment || isRegeneratingAllSegments}
+                        className="editor-choice-pill px-2 py-1.5 text-xs disabled:opacity-50 disabled:cursor-not-allowed"
                       >
                         Undo Regen
-                      </Button>
-                      <Button
+                      </button>
+                      <button
                         type="button"
-                        size="sm"
                         onClick={saveEditingSegment}
                         disabled={isSaveDisabled}
+                        className="editor-choice-pill editor-choice-pill--active px-2 py-1.5 text-xs disabled:opacity-50 disabled:cursor-not-allowed"
                       >
                         Save Segment
-                      </Button>
+                      </button>
                     </div>
                   </div>
                   {segmentRegenerateError && (

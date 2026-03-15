@@ -159,10 +159,8 @@ export function WallpaperSelector({
           <button
             key={theme}
             onClick={() => setWallpaperTheme(theme)}
-            className={`flex-shrink-0 px-3 py-1.5 text-xs rounded-md transition-colors ${
-              wallpaperTheme === theme
-                ? 'bg-[var(--coral-100)] text-[var(--coral-500)] border border-[var(--coral-300)]'
-                : 'bg-[var(--polar-mist)] text-[var(--ink-muted)] border border-[var(--glass-border)] hover:bg-[var(--polar-frost)]'
+            className={`editor-choice-pill flex-shrink-0 px-3 py-1.5 text-xs ${
+              wallpaperTheme === theme ? 'editor-choice-pill--active' : ''
             }`}
           >
             {WALLPAPER_THEMES[theme]}

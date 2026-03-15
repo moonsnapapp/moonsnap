@@ -90,7 +90,7 @@ export const GlassBlobToolbar: React.FC<GlassBlobToolbarProps> = ({
     }
   };
   return (
-    <div className="cloud-toolbar">
+    <div className="cloud-toolbar" role="toolbar" aria-label="Library filters and actions">
       <div className="cloud-toolbar__glass" />
       <div className="cloud-toolbar__inner">
         {/* LEFT: Search, Folder, Favorites */}
@@ -113,7 +113,7 @@ export const GlassBlobToolbar: React.FC<GlassBlobToolbarProps> = ({
             </TooltipContent>
           </Tooltip>
           {searchExpanded && (
-          <input
+            <input
               ref={searchInputRef}
               type="text"
               value={searchQuery}

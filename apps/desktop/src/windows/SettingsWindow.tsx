@@ -163,7 +163,7 @@ const SettingsWindow: React.FC = () => {
 
   return (
     <div className="h-screen w-screen flex flex-col bg-card overflow-hidden">
-      <Titlebar title="Settings" showLogo={true} showMaximize={true} />
+      <Titlebar title="MoonSnap" variant="hud" contextLabel="Settings" showMaximize={true} />
 
       <div className="flex-1 flex min-h-0">
         {/* Sidebar */}
@@ -173,10 +173,8 @@ const SettingsWindow: React.FC = () => {
               <button
                 key={item.id}
                 onClick={() => setActiveSection(item.id)}
-                className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-150 w-full text-left ${
-                  activeSection === item.id
-                    ? 'bg-(--coral-400) text-white shadow-sm'
-                    : 'text-(--ink-muted) hover:text-(--ink-dark) hover:bg-(--polar-frost)/50'
+                className={`editor-choice-pill flex items-center gap-3 px-3 py-2 text-sm w-full text-left ${
+                  activeSection === item.id ? 'editor-choice-pill--active' : ''
                 }`}
               >
                 {item.icon}

@@ -447,17 +447,17 @@ export const CaptureLibrary: React.FC = () => {
 
   return (
     <TooltipProvider delayDuration={300} skipDelayDuration={300}>
-      <div className="flex flex-col h-full bg-[var(--polar-snow)] relative">
+      <div className="library-panel flex flex-col h-full relative">
         {/* Drop Zone Overlay */}
         {isDragOver && <DropZoneOverlay />}
 
         {/* Content - use virtualization for large libraries, regular rendering for small ones */}
         {loading || !initialized ? (
-          <div className="flex-1 flex items-center justify-center">
+          <div className="library-state-pane flex-1 flex items-center justify-center">
             <Loader2 className="w-12 h-12 text-[var(--coral-400)] animate-spin" />
           </div>
         ) : captures.length === 0 && hasActiveFilters && totalCaptureCount > 0 ? (
-          <div className="flex-1 flex flex-col items-center justify-center gap-4 p-8">
+          <div className="library-state-pane flex-1 flex flex-col items-center justify-center gap-4 p-8">
             <div className="text-center space-y-2">
               <p className="text-sm text-[var(--ink-muted)]">No captures match the current filters</p>
               <p className="text-xs text-[var(--ink-faint)]">{totalCaptureCount} capture{totalCaptureCount !== 1 ? 's' : ''} hidden by filters</p>
@@ -470,7 +470,7 @@ export const CaptureLibrary: React.FC = () => {
             </button>
           </div>
         ) : captures.length === 0 ? (
-          <div className="flex-1 overflow-auto p-8 pb-32">
+          <div className="library-stage flex-1 overflow-auto p-8 pb-32">
             <EmptyState onNewCapture={handleNewImage} />
           </div>
         ) : useVirtualization ? (
@@ -503,7 +503,7 @@ export const CaptureLibrary: React.FC = () => {
           /* Non-virtualized rendering with marquee selection for smaller libraries */
           <div
             ref={containerRef}
-            className="flex-1 overflow-auto p-8 pb-32 relative select-none library-scroll"
+            className="library-stage flex-1 overflow-auto p-8 pb-32 relative select-none library-scroll"
             onMouseDown={handleMarqueeMouseDown}
             onMouseMove={handleMarqueeMouseMove}
             onMouseUp={handleMarqueeMouseUp}

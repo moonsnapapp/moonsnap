@@ -148,20 +148,16 @@ export function CornerRadiusSection({
       <div className="flex gap-1 mt-2">
         <button
           onClick={() => onKindChange('squircle')}
-          className={`flex-1 px-2 py-1.5 text-xs rounded-md transition-colors ${
-            kind === 'squircle'
-              ? 'bg-[var(--coral-100)] text-[var(--coral-500)] border border-[var(--coral-300)]'
-              : 'bg-[var(--polar-mist)] text-[var(--ink-muted)] border border-[var(--glass-border)] hover:bg-[var(--polar-frost)]'
+          className={`editor-choice-pill flex-1 px-2 py-1.5 text-xs ${
+            kind === 'squircle' ? 'editor-choice-pill--active' : ''
           }`}
         >
           Squircle
         </button>
         <button
           onClick={() => onKindChange('rounded')}
-          className={`flex-1 px-2 py-1.5 text-xs rounded-md transition-colors ${
-            kind === 'rounded'
-              ? 'bg-[var(--coral-100)] text-[var(--coral-500)] border border-[var(--coral-300)]'
-              : 'bg-[var(--polar-mist)] text-[var(--ink-muted)] border border-[var(--glass-border)] hover:bg-[var(--polar-frost)]'
+          className={`editor-choice-pill flex-1 px-2 py-1.5 text-xs ${
+            kind === 'rounded' ? 'editor-choice-pill--active' : ''
           }`}
         >
           Rounded

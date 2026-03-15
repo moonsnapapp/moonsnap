@@ -2,7 +2,6 @@ import { Pause, Play } from 'lucide-react';
 import { useEffect, type MouseEvent, type MutableRefObject } from 'react';
 import { useVideoEditorStore } from '../../../stores/videoEditorStore';
 import { selectCurrentTimeMs, selectIsPlaying } from '../../../stores/videoEditor/selectors';
-import { Button } from '../../../components/ui/button';
 import { Input } from '../../../components/ui/input';
 import { Slider } from '../../../components/ui/slider';
 import type { CaptionSegment } from '../../../types';
@@ -94,24 +93,23 @@ export function CaptionPlaybackTransport({
   return (
     <>
       <div className="flex items-center gap-2">
-        <Button
+        <button
           type="button"
-          size="sm"
-          variant="outline"
           onClick={onTogglePlayback}
+          className="editor-choice-pill editor-choice-pill--active flex items-center gap-1 px-2 py-1.5 text-xs"
         >
           {isPlaying ? (
             <>
-              <Pause className="w-3.5 h-3.5 mr-1" />
+              <Pause className="w-3.5 h-3.5" />
               Pause
             </>
           ) : (
             <>
-              <Play className="w-3.5 h-3.5 mr-1" />
+              <Play className="w-3.5 h-3.5" />
               Play
             </>
           )}
-        </Button>
+        </button>
         <span className="text-xs font-mono text-[var(--ink-subtle)]">
           {formatTime(currentTimeMs / 1000)} / {formatTime(projectDurationSeconds)}
         </span>

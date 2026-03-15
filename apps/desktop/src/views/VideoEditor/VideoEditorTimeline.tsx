@@ -41,7 +41,7 @@ export function VideoEditorTimeline({ onExport, onResetTrimSegments, onSetInPoin
   );
 
   return (
-    <div className="flex flex-col" style={{ height: `${timelineHeight}px` }}>
+    <div className="timeline-shell flex flex-col" style={{ height: `${timelineHeight}px` }}>
       <VideoTimeline
         onExport={onExport}
         onResetTrimSegments={onResetTrimSegments}

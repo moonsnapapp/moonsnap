@@ -165,9 +165,16 @@ const VideoEditorWindow: React.FC = () => {
   // Loading state
   if (isLoading) {
     return (
-      <div className="h-screen w-screen flex flex-col bg-card overflow-hidden">
-        <Titlebar title="Loading..." showLogo={true} showMaximize={true} />
-        <div className="flex-1 flex items-center justify-center">
+      <div className="editor-window h-screen w-screen flex flex-col overflow-hidden">
+        <Titlebar
+          title="MoonSnap"
+          variant="hud"
+          contextLabel="Video Editor"
+          detailLabel="Loading"
+          showLogo={true}
+          showMaximize={true}
+        />
+        <div className="editor-window__state flex-1 flex items-center justify-center">
           <div className="flex flex-col items-center gap-4">
             <Loader2 className="w-8 h-8 animate-spin text-(--coral-400)" />
             <p className="text-sm text-(--ink-muted)">Loading video project...</p>
@@ -180,9 +187,16 @@ const VideoEditorWindow: React.FC = () => {
   // Error state
   if (error) {
     return (
-      <div className="h-screen w-screen flex flex-col bg-card overflow-hidden">
-        <Titlebar title="Error" showLogo={true} showMaximize={true} />
-        <div className="flex-1 flex items-center justify-center">
+      <div className="editor-window h-screen w-screen flex flex-col overflow-hidden">
+        <Titlebar
+          title="MoonSnap"
+          variant="hud"
+          contextLabel="Video Editor"
+          detailLabel="Error"
+          showLogo={true}
+          showMaximize={true}
+        />
+        <div className="editor-window__state flex-1 flex items-center justify-center">
           <div className="flex flex-col items-center gap-4 max-w-md text-center">
             <div className="w-12 h-12 rounded-full bg-(--error-light) flex items-center justify-center">
               <span className="text-2xl">!</span>
@@ -198,9 +212,16 @@ const VideoEditorWindow: React.FC = () => {
   // No project loaded (projectName is null when no project is set)
   if (projectName === null) {
     return (
-      <div className="h-screen w-screen flex flex-col bg-card overflow-hidden">
-        <Titlebar title="Video Editor" showLogo={true} showMaximize={true} />
-        <div className="flex-1 flex items-center justify-center">
+      <div className="editor-window h-screen w-screen flex flex-col overflow-hidden">
+        <Titlebar
+          title="MoonSnap"
+          variant="hud"
+          contextLabel="Video Editor"
+          detailLabel="Waiting for project"
+          showLogo={true}
+          showMaximize={true}
+        />
+        <div className="editor-window__state flex-1 flex items-center justify-center">
           <p className="text-sm text-(--ink-muted)">Waiting for project...</p>
         </div>
       </div>
@@ -209,9 +230,12 @@ const VideoEditorWindow: React.FC = () => {
 
   // Main editor UI - reuse VideoEditorView with custom back handler
   return (
-    <div className="h-screen w-screen flex flex-col bg-card overflow-hidden">
+    <div className="editor-window h-screen w-screen flex flex-col overflow-hidden">
       <Titlebar
-        title={projectName || 'Video Editor'}
+        title="MoonSnap"
+        variant="hud"
+        contextLabel="Video Editor"
+        detailLabel={projectName || 'Video Editor'}
         showLogo={true}
         showMaximize={true}
         onClose={handleClose}

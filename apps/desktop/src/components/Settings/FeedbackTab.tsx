@@ -115,7 +115,7 @@ export const FeedbackTab: React.FC = () => {
       case 'error':
         return 'bg-red-500 text-white hover:bg-red-600';
       default:
-        return 'bg-[var(--coral-400)] text-white hover:bg-[var(--coral-500)]';
+        return 'editor-choice-pill editor-choice-pill--active';
     }
   };
 

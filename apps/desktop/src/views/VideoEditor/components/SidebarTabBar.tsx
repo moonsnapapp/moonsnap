@@ -28,14 +28,14 @@ export function SidebarTabBar({ activeTab, onTabChange, hasCursor, hasWebcam }: 
   ];
 
   const getTabClassName = (isActive: boolean) =>
-    `flex-shrink-0 px-2.5 py-2 text-[11px] font-medium transition-colors whitespace-nowrap ${
+    `video-sidebar-tab flex-shrink-0 px-2.5 py-2 text-[11px] font-medium transition-colors whitespace-nowrap ${
       isActive
-        ? 'text-[var(--ink-black)] border-b-2 border-[var(--coral-400)] bg-[var(--coral-50)]'
-        : 'text-[var(--ink-muted)] hover:text-[var(--ink-dark)] hover:bg-[var(--glass-highlight)]'
+        ? 'video-sidebar-tab--active text-[var(--ink-black)]'
+        : 'text-[var(--ink-muted)] hover:text-[var(--ink-dark)]'
     }`;
 
   return (
-    <div className="flex overflow-x-auto border-b border-[var(--glass-border)] scrollbar-none">
+    <div className="video-sidebar-tabs flex overflow-x-auto scrollbar-none">
       {tabs.map((tab) => {
         // Skip tabs that have a condition that is false
         if (tab.condition === false) return null;

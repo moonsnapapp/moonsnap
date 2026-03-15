@@ -263,39 +263,33 @@ export const GeneralTab: React.FC = () => {
             <label className="text-sm text-[var(--ink-black)] mb-3 block">
               Theme
             </label>
-            <div className="flex gap-2">
+            <div className="flex gap-1.5">
               <button
                 onClick={() => handleThemeChange('light')}
-                className={`flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg border transition-all ${
-                  general.theme === 'light'
-                    ? 'bg-[var(--coral-400)] text-white border-[var(--coral-400)]'
-                    : 'bg-[var(--card)] text-[var(--ink-dark)] border-[var(--polar-frost)] hover:border-[var(--polar-steel)]'
+                className={`editor-choice-pill flex-1 flex items-center justify-center gap-2 px-2 py-2 text-xs ${
+                  general.theme === 'light' ? 'editor-choice-pill--active' : ''
                 }`}
               >
                 <Sun className="w-4 h-4" />
-                <span className="text-sm font-medium">Light</span>
+                Light
               </button>
               <button
                 onClick={() => handleThemeChange('dark')}
-                className={`flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg border transition-all ${
-                  general.theme === 'dark'
-                    ? 'bg-[var(--coral-400)] text-white border-[var(--coral-400)]'
-                    : 'bg-[var(--card)] text-[var(--ink-dark)] border-[var(--polar-frost)] hover:border-[var(--polar-steel)]'
+                className={`editor-choice-pill flex-1 flex items-center justify-center gap-2 px-2 py-2 text-xs ${
+                  general.theme === 'dark' ? 'editor-choice-pill--active' : ''
                 }`}
               >
                 <Moon className="w-4 h-4" />
-                <span className="text-sm font-medium">Dark</span>
+                Dark
               </button>
               <button
                 onClick={() => handleThemeChange('system')}
-                className={`flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg border transition-all ${
-                  general.theme === 'system'
-                    ? 'bg-[var(--coral-400)] text-white border-[var(--coral-400)]'
-                    : 'bg-[var(--card)] text-[var(--ink-dark)] border-[var(--polar-frost)] hover:border-[var(--polar-steel)]'
+                className={`editor-choice-pill flex-1 flex items-center justify-center gap-2 px-2 py-2 text-xs ${
+                  general.theme === 'system' ? 'editor-choice-pill--active' : ''
                 }`}
               >
                 <Monitor className="w-4 h-4" />
-                <span className="text-sm font-medium">System</span>
+                System
               </button>
             </div>
             <p className="text-xs text-[var(--ink-muted)] mt-2">
@@ -587,18 +581,16 @@ export const GeneralTab: React.FC = () => {
             <label className="text-sm text-[var(--ink-black)] mb-3 block">
               Update channel
             </label>
-            <div className="flex gap-2">
+            <div className="flex gap-1.5">
               {(['stable', 'beta'] as const).map((ch: UpdateChannel) => (
                 <button
                   key={ch}
                   onClick={() => updateGeneralSettings({ updateChannel: ch })}
-                  className={`flex-1 flex items-center justify-center px-4 py-2.5 rounded-lg border transition-all ${
-                    general.updateChannel === ch
-                      ? 'bg-[var(--coral-400)] text-white border-[var(--coral-400)]'
-                      : 'bg-[var(--card)] text-[var(--ink-dark)] border-[var(--polar-frost)] hover:border-[var(--polar-steel)]'
+                  className={`editor-choice-pill flex-1 px-2 py-2 text-xs capitalize ${
+                    general.updateChannel === ch ? 'editor-choice-pill--active' : ''
                   }`}
                 >
-                  <span className="text-sm font-medium capitalize">{ch}</span>
+                  {ch}
                 </button>
               ))}
             </div>

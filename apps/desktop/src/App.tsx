@@ -136,7 +136,7 @@ function App() {
   }, [openCaptureToolbar]);
 
   return (
-    <div className="h-screen w-screen flex flex-col bg-[var(--polar-snow)] overflow-hidden">
+    <div className="library-window h-screen w-screen overflow-hidden">
       {/* Toast Notifications */}
       <Toaster
         position="top-center"
@@ -158,13 +158,15 @@ function App() {
 
       {/* Custom Titlebar */}
       <Titlebar
-        title="MoonSnap Library"
+        title="MoonSnap"
+        variant="hud"
+        contextLabel="Library"
         onCapture={handleShowCaptureToolbar}
         onOpenSettings={handleOpenSettings}
       />
 
       {/* Main Content */}
-      <div className="flex-1 flex flex-col min-h-0">
+      <div className="library-window__content flex-1 flex flex-col min-h-0">
         {/* Library */}
         <Activity mode={view === 'library' ? 'visible' : 'hidden'}>
           <LibraryErrorBoundary>
