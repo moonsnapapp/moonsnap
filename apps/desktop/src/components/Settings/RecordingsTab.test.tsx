@@ -53,9 +53,9 @@ describe('RecordingsTab', () => {
       throw new Error('Expected video and GIF sections to be present');
     }
 
-    fireEvent.click(within(videoSection).getByRole('radio', { name: '60 fps' }));
-    fireEvent.click(within(videoSection).getByRole('radio', { name: 'Off' }));
-    fireEvent.click(within(gifSection).getByRole('radio', { name: 'Unlimited' }));
+    fireEvent.click(within(videoSection).getByRole('button', { name: '60 fps' }));
+    fireEvent.click(within(videoSection).getByRole('button', { name: 'Off' }));
+    fireEvent.click(within(gifSection).getByRole('button', { name: 'Unlimited' }));
 
     expect(useCaptureSettingsStore.getState().settings.video.fps).toBe(60);
     expect(useCaptureSettingsStore.getState().settings.video.countdownSecs).toBe(0);
