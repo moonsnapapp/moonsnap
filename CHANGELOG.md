@@ -2,6 +2,21 @@
 
 All notable changes to MoonSnap are documented in this file.
 
+## [0.5.13] - 2026-03-15
+
+### Added
+- HUD-style titlebar with centered branding and context labels across all windows.
+- Minimize button on the floating capture toolbar.
+- Smart content-area detection for Chromium browsers during area capture.
+
+### Changed
+- Redesigned window shells, cards, toolbars, and sidebar panels with a unified dark-first glassmorphism style.
+- Unified toggle and choice buttons into a consistent pill style across settings, editors, and background panels.
+- Smoother video editor playback with reduced unnecessary re-renders.
+
+### Fixed
+- Deleting a project now reliably cleans up metadata for all capture types.
+
 ## [0.5.12] - 2026-03-14
 
 ### Added
