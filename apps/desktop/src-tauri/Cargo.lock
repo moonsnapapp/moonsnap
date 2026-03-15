@@ -3943,7 +3943,7 @@ dependencies = [
 
 [[package]]
 name = "moonsnap"
-version = "0.5.12"
+version = "0.5.13"
 dependencies = [
  "aes-gcm",
  "axum",
