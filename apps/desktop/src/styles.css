@@ -4857,11 +4857,17 @@ body.floating-toolbar-window #root {
   z-index: 1;
 }
 
-.glass-toolbar--capture-floating .glass-toolbar-close-corner {
+.glass-toolbar--capture-floating .glass-toolbar-window-controls {
   position: absolute;
   top: var(--capture-toolbar-shell-inset-top);
   right: var(--capture-toolbar-shell-inset-x);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   z-index: 2;
+}
+
+.glass-toolbar--capture-floating .glass-toolbar-window-control {
   width: 24px;
   height: 24px;
   border-radius: 8px;
@@ -5275,7 +5281,7 @@ body.floating-toolbar-window #root {
     0 -1px 0 rgba(148, 163, 184, 0.14);
 }
 
-.light .glass-toolbar--capture-floating .glass-toolbar-close-corner {
+.light .glass-toolbar--capture-floating .glass-toolbar-window-control {
   color: rgba(95, 105, 118, 0.76);
 }
 

@@ -1,4 +1,4 @@
-import { act, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { CaptureToolbar } from './CaptureToolbar';
@@ -303,7 +303,8 @@ describe('CaptureToolbar selection HUD', () => {
     });
   });
 
-  it('renders inline library and close actions for the floating capture HUD', async () => {
+  it('renders inline library and window controls for the floating capture HUD', async () => {
+    const onMinimizeToolbar = vi.fn();
     let container: HTMLElement;
 
     await act(async () => {
@@ -318,6 +319,7 @@ describe('CaptureToolbar selection HUD', () => {
           onRedo={() => {}}
           onCancel={() => {}}
           onOpenLibrary={() => {}}
+          onMinimizeToolbar={onMinimizeToolbar}
           minimalChrome="floating"
         />
       ));
@@ -326,6 +328,10 @@ describe('CaptureToolbar selection HUD', () => {
     expect(container.querySelector('.glass-toolbar-brand-wordmark')?.textContent).toBe('MoonSnap');
     expect(container.querySelector('.glass-toolbar-brand-badge')?.textContent).toBe('PRO');
     expect(screen.getByTitle('Open library')).toBeInTheDocument();
+    expect(screen.getByTitle('Minimize capture toolbar')).toBeInTheDocument();
     expect(screen.getByTitle('Close capture toolbar')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTitle('Minimize capture toolbar'));
+    expect(onMinimizeToolbar).toHaveBeenCalledTimes(1);
   });
 });

@@ -8,7 +8,7 @@
  */
 
 import React, { useCallback } from 'react';
-import { X, Square, Pause, Circle, Mic, Volume2, FolderOpen } from 'lucide-react';
+import { X, Minus, Square, Pause, Circle, Mic, Volume2, FolderOpen } from 'lucide-react';
 import type { CaptureType, RecordingFormat } from '../../types';
 import { ModeSelector } from './ModeSelector';
 import { SourceSelector, type CaptureSource } from './SourceSelector';
@@ -84,6 +84,8 @@ interface CaptureToolbarProps {
   onOpenSettings?: () => void;
   /** Open capture library */
   onOpenLibrary?: () => void;
+  /** Minimize the toolbar window */
+  onMinimizeToolbar?: () => void;
   /** Close the toolbar window */
   onCloseToolbar?: () => void;
   /** Alternate chrome for recording-only surfaces */
@@ -126,6 +128,7 @@ export const CaptureToolbar: React.FC<CaptureToolbarProps> = ({
   onDimensionChange,
   onOpenSettings,
   onOpenLibrary,
+  onMinimizeToolbar,
   onCloseToolbar,
   minimalChrome = 'window',
   showRecordingAudioIndicators = false,
@@ -342,14 +345,27 @@ export const CaptureToolbar: React.FC<CaptureToolbarProps> = ({
       } pointer-events-auto`}
     >
       {minimalChrome === 'floating' && (
-        <button
-          type="button"
-          onClick={onCloseToolbar ?? onCancel}
-          className="glass-btn glass-btn--md glass-toolbar-action-btn glass-toolbar-action-btn--close glass-toolbar-close-corner"
-          title="Close capture toolbar"
-        >
-          <X size={14} strokeWidth={2.5} />
-        </button>
+        <div className="glass-toolbar-window-controls">
+          {onMinimizeToolbar && (
+            <button
+              type="button"
+              onClick={onMinimizeToolbar}
+              className="glass-btn glass-btn--md glass-toolbar-action-btn glass-toolbar-window-control"
+              title="Minimize capture toolbar"
+            >
+              <Minus size={14} strokeWidth={2.5} />
+            </button>
+          )}
+
+          <button
+            type="button"
+            onClick={onCloseToolbar ?? onCancel}
+            className="glass-btn glass-btn--md glass-toolbar-action-btn glass-toolbar-action-btn--close glass-toolbar-window-control"
+            title="Close capture toolbar"
+          >
+            <X size={14} strokeWidth={2.5} />
+          </button>
+        </div>
       )}
 
       {minimalChrome === 'floating' && (
@@ -449,6 +465,17 @@ export const CaptureToolbar: React.FC<CaptureToolbarProps> = ({
                 title="Open library"
               >
                 <FolderOpen size={14} strokeWidth={2.2} />
+              </button>
+            )}
+
+            {minimalChrome !== 'floating' && onMinimizeToolbar && (
+              <button
+                type="button"
+                onClick={onMinimizeToolbar}
+                className="glass-btn glass-btn--md glass-toolbar-action-btn"
+                title="Minimize capture toolbar"
+              >
+                <Minus size={14} strokeWidth={2.5} />
               </button>
             )}
 

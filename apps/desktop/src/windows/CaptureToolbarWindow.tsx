@@ -816,6 +816,14 @@ const CaptureToolbarWindow: React.FC = () => {
     await getCurrentWebviewWindow().close();
   }, [closeWebcamPreview]);
 
+  const handleMinimizeToolbar = useCallback(async () => {
+    try {
+      await getCurrentWebviewWindow().minimize();
+    } catch (e) {
+      toolbarLogger.error('Failed to minimize capture toolbar:', e);
+    }
+  }, []);
+
   const handleToolbarMouseDown = useCallback(async (event: React.MouseEvent<HTMLDivElement>) => {
     const target = event.target as HTMLElement;
     if (
@@ -877,6 +885,7 @@ const CaptureToolbarWindow: React.FC = () => {
                 onDimensionChange={handleDimensionChange}
                 onOpenSettings={handleOpenSettings}
                 onOpenLibrary={handleOpenLibrary}
+                onMinimizeToolbar={handleMinimizeToolbar}
                 onCloseToolbar={handleCloseToolbar}
                 minimalChrome="floating"
               />
