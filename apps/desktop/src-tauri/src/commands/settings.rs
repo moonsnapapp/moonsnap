@@ -334,7 +334,7 @@ pub async fn move_save_dir(
     );
 
     // Remove old directory if empty
-    if old.read_dir().map_or(false, |mut d| d.next().is_none()) {
+    if old.read_dir().is_ok_and(|mut d| d.next().is_none()) {
         let _ = std::fs::remove_dir(&old);
     }
 

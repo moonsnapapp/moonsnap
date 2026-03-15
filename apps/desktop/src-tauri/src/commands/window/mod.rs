@@ -21,7 +21,7 @@ pub mod toolbar;
 pub mod video_editor;
 
 // Re-export commonly used functions for internal use (used by app/tray.rs)
-pub use capture::{open_editor_fast, trigger_capture, trigger_capture_with_options};
+pub use capture::{trigger_capture, trigger_capture_with_options};
 pub use toolbar::show_startup_toolbar;
 
 use std::sync::atomic::{AtomicBool, Ordering};

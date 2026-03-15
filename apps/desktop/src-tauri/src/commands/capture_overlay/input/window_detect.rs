@@ -266,10 +266,7 @@ unsafe extern "system" fn enum_chromium_content_window(hwnd: HWND, lparam: LPARA
     let score = chromium_content_candidate_score(search.window_bounds, bounds, &class_name);
     let candidate = ChromiumContentCandidate { bounds, score };
 
-    if search
-        .best
-        .map_or(true, |best| candidate.score > best.score)
-    {
+    if search.best.is_none_or(|best| candidate.score > best.score) {
         search.best = Some(candidate);
     }
 

@@ -26,7 +26,7 @@
 #![allow(clippy::manual_abs_diff)]
 #![allow(clippy::nonminimal_bool)]
 
-use tauri::{image::Image, Emitter, Manager};
+use tauri::{image::Image, Manager};
 
 #[cfg(desktop)]
 use tauri_plugin_autostart::MacosLauncher;
