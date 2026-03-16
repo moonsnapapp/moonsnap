@@ -10,6 +10,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { emit, listen } from '@tauri-apps/api/event';
 import { readFile } from '@tauri-apps/plugin-fs';
 import { cursorPosition, getCurrentWindow } from '@tauri-apps/api/window';
+import { copyCanvasToClipboard } from '@/utils/canvasExport';
 
 const AUTO_DISMISS_MS = 5000;
 const SLIDE_DURATION_MS = 300;
@@ -34,7 +35,7 @@ function ScreenshotPreviewWindow() {
   const filePath = params.get('path') || '';
   const imgWidth = parseInt(params.get('w') || '0', 10);
   const imgHeight = parseInt(params.get('h') || '0', 10);
-  const autoCopiedOnOpen = params.get('copied') === '1';
+  const shouldAutoCopyOnOpen = params.get('autoCopy') === '1';
   const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
   const closePreview = useCallback(() => {
@@ -185,14 +186,6 @@ function ScreenshotPreviewWindow() {
     };
   }, [isVisible, syncTimerFromCursor]);
 
-  useEffect(() => {
-    if (!isVisible || !autoCopiedOnOpen) {
-      return;
-    }
-
-    triggerCopyFeedback();
-  }, [autoCopiedOnOpen, isVisible, triggerCopyFeedback]);
-
   // Listen for save completion to track the project ID
   useEffect(() => {
     const unlisten = listen<{ originalPath: string; imagePath: string; projectId: string }>(
@@ -232,14 +225,30 @@ function ScreenshotPreviewWindow() {
     closePreview();
   }, [filePath, imgWidth, imgHeight, closePreview]);
 
-  const handleCopy = useCallback(async () => {
+  const copyPreviewToClipboard = useCallback(async () => {
     try {
-      await invoke('copy_rgba_to_clipboard', { filePath });
+      if (canvasRef.current) {
+        await copyCanvasToClipboard(canvasRef.current);
+      } else {
+        await invoke('copy_rgba_to_clipboard', { filePath });
+      }
       triggerCopyFeedback();
     } catch {
       // Ignore errors
     }
   }, [filePath, triggerCopyFeedback]);
+
+  useEffect(() => {
+    if (!isVisible || !shouldAutoCopyOnOpen) {
+      return;
+    }
+
+    void copyPreviewToClipboard();
+  }, [copyPreviewToClipboard, isVisible, shouldAutoCopyOnOpen]);
+
+  const handleCopy = useCallback(async () => {
+    await copyPreviewToClipboard();
+  }, [copyPreviewToClipboard]);
 
   const handleDelete = useCallback(async () => {
     try {

@@ -24,25 +24,41 @@ export async function handleScreenshotCompletion({
 }: ScreenshotCompletionOptions): Promise<void> {
   const invokeCommand = invokeFn ?? (await import('@tauri-apps/api/core')).invoke;
 
+  if (showPreviewAfterCapture) {
+    await invokeCommand('show_screenshot_preview', {
+      filePath: data.file_path,
+      width: data.width,
+      height: data.height,
+      autoCopy: copyToClipboardAfterCapture,
+    }).catch((error) => {
+      log.error('Failed to show preview, opening editor:', error);
+
+      const recoveryTasks = [
+        invokeCommand('show_image_editor_window', { capturePath: data.file_path }).catch(() => {}),
+      ];
+
+      if (copyToClipboardAfterCapture) {
+        recoveryTasks.push(
+          invokeCommand('copy_rgba_to_clipboard', { filePath: data.file_path }).catch((copyError) => {
+            log.error('Failed to copy screenshot to clipboard:', copyError);
+          })
+        );
+      }
+
+      return Promise.allSettled(recoveryTasks);
+    });
+    return;
+  }
+
   const copyTask = copyToClipboardAfterCapture
     ? invokeCommand('copy_rgba_to_clipboard', { filePath: data.file_path }).catch((error) => {
       log.error('Failed to copy screenshot to clipboard:', error);
     })
     : Promise.resolve();
 
-  const presentTask = showPreviewAfterCapture
-    ? invokeCommand('show_screenshot_preview', {
-      filePath: data.file_path,
-      width: data.width,
-      height: data.height,
-      copied: copyToClipboardAfterCapture,
-    }).catch((error) => {
-      log.error('Failed to show preview, opening editor:', error);
-      return invokeCommand('show_image_editor_window', { capturePath: data.file_path }).catch(() => {});
-    })
-    : invokeCommand('show_image_editor_window', { capturePath: data.file_path }).catch((error) => {
-      log.error('Failed to open image editor:', error);
-    });
+  const presentTask = invokeCommand('show_image_editor_window', { capturePath: data.file_path }).catch((error) => {
+    log.error('Failed to open image editor:', error);
+  });
 
   await Promise.allSettled([copyTask, presentTask]);
 }

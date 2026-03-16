@@ -18,13 +18,13 @@ describe('handleScreenshotCompletion', () => {
       invokeFn,
     });
 
-    expect(invokeFn).toHaveBeenCalledWith('copy_rgba_to_clipboard', { filePath: capture.file_path });
     expect(invokeFn).toHaveBeenCalledWith('show_screenshot_preview', {
       filePath: capture.file_path,
       width: capture.width,
       height: capture.height,
-      copied: true,
+      autoCopy: true,
     });
+    expect(invokeFn).not.toHaveBeenCalledWith('copy_rgba_to_clipboard', expect.anything());
     expect(invokeFn).not.toHaveBeenCalledWith('show_image_editor_window', expect.anything());
   });
 
@@ -65,8 +65,9 @@ describe('handleScreenshotCompletion', () => {
       filePath: capture.file_path,
       width: capture.width,
       height: capture.height,
-      copied: true,
+      autoCopy: true,
     });
+    expect(invokeFn).toHaveBeenCalledWith('copy_rgba_to_clipboard', { filePath: capture.file_path });
     expect(invokeFn).toHaveBeenCalledWith('show_image_editor_window', { capturePath: capture.file_path });
     expect(log.error).toHaveBeenCalledWith('Failed to show preview, opening editor:', expect.any(Error));
   });

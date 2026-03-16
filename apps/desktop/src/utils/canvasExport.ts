@@ -143,6 +143,31 @@ export interface ExportOptions {
   quality?: number; // 0-1 for jpeg/webp
 }
 
+async function canvasToBlob(
+  canvas: HTMLCanvasElement,
+  options: ExportOptions = { format: 'image/png' }
+): Promise<Blob> {
+  return new Promise<Blob>((resolve, reject) => {
+    canvas.toBlob(
+      (blob) => (blob ? resolve(blob) : reject(new Error('Failed to create blob'))),
+      options.format,
+      options.quality
+    );
+  });
+}
+
+export async function writeBlobToClipboard(blob: Blob): Promise<void> {
+  await navigator.clipboard.write([new ClipboardItem({ [blob.type]: blob })]);
+}
+
+export async function copyCanvasToClipboard(
+  canvas: HTMLCanvasElement,
+  options: ExportOptions = { format: 'image/png' }
+): Promise<void> {
+  const blob = await canvasToBlob(canvas, options);
+  await writeBlobToClipboard(blob);
+}
+
 /**
  * Export the current canvas state to a Blob.
  * Handles stage reset, layer finding, bounds calculation, and compositor effects.
@@ -177,13 +202,7 @@ export async function exportToBlob(
     canvasBounds: null, // Already handled in rawBounds
   });
 
-  return new Promise<Blob>((resolve, reject) => {
-    outputCanvas.toBlob(
-      (blob) => (blob ? resolve(blob) : reject(new Error('Failed to create blob'))),
-      options.format,
-      options.quality
-    );
-  });
+  return canvasToBlob(outputCanvas, options);
 }
 
 /**
@@ -196,7 +215,7 @@ export async function exportToClipboard(
   cropRegion?: { x: number; y: number; width: number; height: number } | null
 ): Promise<void> {
   const blob = await exportToBlob(stageRef, canvasBounds, compositorSettings, { format: 'image/png' }, cropRegion);
-  await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+  await writeBlobToClipboard(blob);
 }
 
 /**
