@@ -23,6 +23,7 @@ pub async fn show_screenshot_preview(
     file_path: String,
     width: u32,
     height: u32,
+    copied: Option<bool>,
 ) -> Result<(), String> {
     // Close existing preview if any
     if let Some(existing) = app.get_webview_window(PREVIEW_LABEL) {
@@ -32,10 +33,11 @@ pub async fn show_screenshot_preview(
     }
 
     let encoded_path = urlencoding::encode(&file_path);
+    let copied_param = if copied.unwrap_or(false) { 1 } else { 0 };
     let url = WebviewUrl::App(
         format!(
-            "windows/screenshot-preview.html?path={}&w={}&h={}",
-            encoded_path, width, height
+            "windows/screenshot-preview.html?path={}&w={}&h={}&copied={}",
+            encoded_path, width, height, copied_param
         )
         .into(),
     );

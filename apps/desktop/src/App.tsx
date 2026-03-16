@@ -16,6 +16,7 @@ import { useAppInitialization } from './hooks/useAppInitialization';
 import { useQuickRecordingFlow } from './hooks/useQuickRecordingFlow';
 import { logger } from './utils/logger';
 import { useCaptureActions } from './hooks/useCaptureActions';
+import { handleScreenshotCompletion } from './utils/screenshotCompletion';
 
 function App() {
   const {
@@ -85,25 +86,18 @@ function App() {
       },
       onThumbnailReady: useCaptureStore.getState().updateCaptureThumbnail,
       onCaptureCompleteFast: async (data: { file_path: string; width: number; height: number }) => {
-        const showPreview = useCaptureSettingsStore.getState().showPreviewAfterCapture;
+        const {
+          copyToClipboardAfterCapture,
+          showPreviewAfterCapture,
+        } = useCaptureSettingsStore.getState();
 
-        if (showPreview) {
-          // Show mini preview with quick actions
-          invoke('show_screenshot_preview', {
-            filePath: data.file_path,
-            width: data.width,
-            height: data.height,
-          }).catch((error) => {
-            // Fallback: open editor directly if preview fails
-            logger.error('Failed to show preview, opening editor:', error);
-            invoke('show_image_editor_window', { capturePath: data.file_path }).catch(() => {});
-          });
-        } else {
-          // Open editor directly (old behavior)
-          invoke('show_image_editor_window', { capturePath: data.file_path }).catch((error) => {
-            logger.error('Failed to open image editor:', error);
-          });
-        }
+        await handleScreenshotCompletion({
+          data,
+          copyToClipboardAfterCapture,
+          showPreviewAfterCapture,
+          invokeFn: invoke,
+          log: logger,
+        });
 
         // Save to library in background (don't block preview)
         saveNewCaptureFromFile(data.file_path, data.width, data.height, 'region', {}, { silent: true })

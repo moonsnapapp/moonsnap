@@ -14,14 +14,17 @@ import { cursorPosition, getCurrentWindow } from '@tauri-apps/api/window';
 const AUTO_DISMISS_MS = 5000;
 const SLIDE_DURATION_MS = 300;
 const CURSOR_SYNC_MS = 100;
+const COPY_FEEDBACK_MS = 1600;
 
 function ScreenshotPreviewWindow() {
   const [isVisible, setIsVisible] = useState(false);
   const [isExiting, setIsExiting] = useState(false);
   const [timerPaused, setTimerPaused] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [copyFeedbackKey, setCopyFeedbackKey] = useState(0);
   const [savedProjectId, setSavedProjectId] = useState<string | null>(null);
   const dismissTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const copyFeedbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isVisibleRef = useRef(false);
   const isCursorInsideRef = useRef(false);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -31,6 +34,8 @@ function ScreenshotPreviewWindow() {
   const filePath = params.get('path') || '';
   const imgWidth = parseInt(params.get('w') || '0', 10);
   const imgHeight = parseInt(params.get('h') || '0', 10);
+  const autoCopiedOnOpen = params.get('copied') === '1';
+  const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
   const closePreview = useCallback(() => {
     setIsExiting(true);
@@ -56,6 +61,20 @@ function ScreenshotPreviewWindow() {
     }, AUTO_DISMISS_MS);
     setTimerPaused(false);
   }, [closePreview]);
+
+  const triggerCopyFeedback = useCallback(() => {
+    if (copyFeedbackTimerRef.current) {
+      clearTimeout(copyFeedbackTimerRef.current);
+    }
+
+    setCopied(true);
+    setCopyFeedbackKey((current) => current + 1);
+
+    copyFeedbackTimerRef.current = setTimeout(() => {
+      setCopied(false);
+      copyFeedbackTimerRef.current = null;
+    }, COPY_FEEDBACK_MS);
+  }, []);
 
   const syncTimerFromCursor = useCallback(async () => {
     try {
@@ -144,8 +163,11 @@ function ScreenshotPreviewWindow() {
       if (dismissTimerRef.current) {
         clearTimeout(dismissTimerRef.current);
       }
+      if (copyFeedbackTimerRef.current) {
+        clearTimeout(copyFeedbackTimerRef.current);
+      }
     };
-  }, [isVisible]);
+  }, [isVisible, startTimer]);
 
   useEffect(() => {
     if (!isVisible) {
@@ -162,6 +184,14 @@ function ScreenshotPreviewWindow() {
       clearInterval(intervalId);
     };
   }, [isVisible, syncTimerFromCursor]);
+
+  useEffect(() => {
+    if (!isVisible || !autoCopiedOnOpen) {
+      return;
+    }
+
+    triggerCopyFeedback();
+  }, [autoCopiedOnOpen, isVisible, triggerCopyFeedback]);
 
   // Listen for save completion to track the project ID
   useEffect(() => {
@@ -205,12 +235,11 @@ function ScreenshotPreviewWindow() {
   const handleCopy = useCallback(async () => {
     try {
       await invoke('copy_rgba_to_clipboard', { filePath });
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
+      triggerCopyFeedback();
     } catch {
       // Ignore errors
     }
-  }, [filePath]);
+  }, [filePath, triggerCopyFeedback]);
 
   const handleDelete = useCallback(async () => {
     try {
@@ -354,19 +383,55 @@ function ScreenshotPreviewWindow() {
             padding: '8px 10px',
           }}
         >
-          <span
+          <div
             style={{
-              fontSize: 12,
-              color: 'var(--ink-black)',
-              opacity: 0.6,
               flex: 1,
+              minWidth: 0,
+              position: 'relative',
+              height: 18,
               overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
             }}
           >
-            Screenshot captured
-          </span>
+            <span
+              style={{
+                position: 'absolute',
+                inset: 0,
+                fontSize: 12,
+                color: 'var(--ink-black)',
+                opacity: copied ? 0 : 0.6,
+                transform: copied ? 'translateY(-8px)' : 'translateY(0)',
+                transition: prefersReducedMotion
+                  ? 'none'
+                  : 'transform 180ms cubic-bezier(0.215, 0.61, 0.355, 1), opacity 180ms cubic-bezier(0.215, 0.61, 0.355, 1)',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              Screenshot captured
+            </span>
+
+            {copied && (
+              <span
+                key={copyFeedbackKey}
+                className="screenshot-preview__copy-feedback"
+                style={{
+                  position: 'absolute',
+                  inset: 0,
+                  display: 'flex',
+                  alignItems: 'center',
+                  fontSize: 12,
+                  color: 'var(--success)',
+                  fontWeight: 600,
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                Copied to clipboard
+              </span>
+            )}
+          </div>
 
           <ActionButton
             onClick={handleCopy}
@@ -411,6 +476,27 @@ function ScreenshotPreviewWindow() {
         @keyframes shrink {
           from { width: 100%; }
           to { width: 0%; }
+        }
+
+        @keyframes screenshot-preview-copy-feedback {
+          from {
+            opacity: 0;
+            transform: translateY(8px);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
+
+        .screenshot-preview__copy-feedback {
+          animation: screenshot-preview-copy-feedback 220ms cubic-bezier(0.215, 0.61, 0.355, 1);
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+          .screenshot-preview__copy-feedback {
+            animation: none;
+          }
         }
       `}</style>
     </div>
