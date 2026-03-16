@@ -464,7 +464,7 @@ export const CaptureLibrary: React.FC = () => {
             </div>
             <button
               onClick={clearAllFilters}
-              className="px-4 py-2 text-xs font-medium rounded-lg bg-[var(--coral-500)] text-white hover:bg-[var(--coral-600)] transition-colors"
+              className="editor-choice-pill editor-choice-pill--active px-4 py-2 text-xs font-medium"
             >
               Clear All Filters
             </button>

@@ -43,13 +43,13 @@ export const DeleteDialog: React.FC<DeleteDialogProps> = ({
         <AlertDialogFooter>
           <AlertDialogCancel
             onClick={onCancel}
-            className="bg-[var(--card)] border-[var(--polar-frost)] text-[var(--ink-dark)] hover:bg-[var(--polar-ice)]"
+            className="editor-choice-pill mt-0 h-auto px-4 py-2 text-sm font-medium"
           >
             Cancel
           </AlertDialogCancel>
           <AlertDialogAction
             onClick={onConfirm}
-            className="bg-red-500 text-white hover:bg-red-600"
+            className="editor-choice-pill editor-choice-pill--danger h-auto px-4 py-2 text-sm font-medium"
           >
             Delete
           </AlertDialogAction>
