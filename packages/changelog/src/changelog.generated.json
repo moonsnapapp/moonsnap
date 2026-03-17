@@ -2,6 +2,24 @@
   "source": "CHANGELOG.md",
   "entries": [
     {
+      "version": "0.5.14",
+      "date": "2026-03-18",
+      "sections": [
+        {
+          "title": "Added",
+          "items": [
+            "Auto-copy to clipboard when taking a screenshot, with preview feedback."
+          ]
+        },
+        {
+          "title": "Fixed",
+          "items": [
+            "Text tool edit box now aligns precisely with the background box at all zoom levels."
+          ]
+        }
+      ]
+    },
+    {
       "version": "0.5.13",
       "date": "2026-03-15",
       "sections": [

@@ -2,6 +2,14 @@
 
 All notable changes to MoonSnap are documented in this file.
 
+## [0.5.14] - 2026-03-18
+
+### Added
+- Auto-copy to clipboard when taking a screenshot, with preview feedback.
+
+### Fixed
+- Text tool edit box now aligns precisely with the background box at all zoom levels.
+
 ## [0.5.13] - 2026-03-15
 
 ### Added
