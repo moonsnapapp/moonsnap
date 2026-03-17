@@ -3,6 +3,7 @@ import { Arrow, Circle, Group } from 'react-konva';
 import Konva from 'konva';
 import type { CanvasShape } from '../../../types';
 import { useShapeCursor } from '../../../hooks/useShapeCursor';
+import { ARROW_POINTER_SIZE, getArrowRenderPoints, getArrowRenderPointsFromAnchors } from '../../../utils/editorArrow';
 
 interface ArrowShapeProps {
   shape: CanvasShape;
@@ -18,27 +19,6 @@ interface ArrowShapeProps {
   takeSnapshot: () => void;
   /** Commit snapshot after completing an edit action */
   commitSnapshot: () => void;
-}
-
-// Compute arrow visual endpoints from anchor positions
-function computeArrowPoints(
-  startX: number, startY: number,
-  endX: number, endY: number,
-  tailOffset: number,
-  headOffset: number
-): [number, number, number, number] {
-  const dx = endX - startX;
-  const dy = endY - startY;
-  const len = Math.sqrt(dx * dx + dy * dy) || 1;
-  const nx = dx / len;
-  const ny = dy / len;
-
-  return [
-    startX + nx * tailOffset,  // Arrow start (small offset from tail anchor)
-    startY + ny * tailOffset,
-    endX - nx * headOffset,    // Arrow end (larger offset from head anchor)
-    endY - ny * headOffset,
-  ];
 }
 
 export const ArrowShape: React.FC<ArrowShapeProps> = React.memo(({
@@ -60,13 +40,11 @@ export const ArrowShape: React.FC<ArrowShapeProps> = React.memo(({
   const anchors = useMemo(() => shape.points || [0, 0, 0, 0], [shape.points]);
   const strokeWidth = shape.strokeWidth || 2;
   const handleSize = Math.min(6, Math.max(4, strokeWidth * 0.2)) / zoom;
-  const tailOffset = strokeWidth + 1;  // Offset for tail, accounts for stroke
-  const headOffset = strokeWidth + 6;        // Larger offset for arrowhead
 
   // Compute arrow visual endpoints (offset inward from anchors)
   const arrowPoints = useMemo(() =>
-    computeArrowPoints(anchors[0], anchors[1], anchors[2], anchors[3], tailOffset, headOffset),
-    [anchors, tailOffset, headOffset]
+    getArrowRenderPointsFromAnchors(anchors, strokeWidth),
+    [anchors, strokeWidth]
   );
 
   // Refs
@@ -112,25 +90,25 @@ export const ArrowShape: React.FC<ArrowShapeProps> = React.memo(({
   // Handle drag - moves 1:1, updates arrow in real-time
   const handleStartDragMove = useCallback((e: Konva.KonvaEventObject<DragEvent>) => {
     if (arrowRef.current) {
-      const newArrowPts = computeArrowPoints(
+      const newArrowPts = getArrowRenderPoints(
         e.target.x(), e.target.y(),
         anchors[2], anchors[3],
-        tailOffset, headOffset
+        strokeWidth
       );
       arrowRef.current.points(newArrowPts);
     }
-  }, [anchors, tailOffset, headOffset]);
+  }, [anchors, strokeWidth]);
 
   const handleEndDragMove = useCallback((e: Konva.KonvaEventObject<DragEvent>) => {
     if (arrowRef.current) {
-      const newArrowPts = computeArrowPoints(
+      const newArrowPts = getArrowRenderPoints(
         anchors[0], anchors[1],
         e.target.x(), e.target.y(),
-        tailOffset, headOffset
+        strokeWidth
       );
       arrowRef.current.points(newArrowPts);
     }
-  }, [anchors, tailOffset, headOffset]);
+  }, [anchors, strokeWidth]);
 
   const handleEndpointDragEnd = useCallback((endpointIndex: 0 | 1, e: Konva.KonvaEventObject<DragEvent>) => {
     const newAnchors = [...anchors];
@@ -143,7 +121,7 @@ export const ArrowShape: React.FC<ArrowShapeProps> = React.memo(({
     }
     onEndpointDragEnd(endpointIndex, newAnchors);
     commitSnapshot();
-  }, [anchors, onEndpointDragEnd]);
+  }, [anchors, commitSnapshot, onEndpointDragEnd]);
 
   const hitStrokeWidth = Math.max((shape.strokeWidth || 2) * 3, 12);
 
@@ -155,8 +133,8 @@ export const ArrowShape: React.FC<ArrowShapeProps> = React.memo(({
         stroke={shape.stroke}
         strokeWidth={shape.strokeWidth}
         fill={shape.fill}
-        pointerLength={10}
-        pointerWidth={10}
+        pointerLength={ARROW_POINTER_SIZE}
+        pointerWidth={ARROW_POINTER_SIZE}
         hitStrokeWidth={hitStrokeWidth}
         draggable={isDraggable}
         onClick={onClick}

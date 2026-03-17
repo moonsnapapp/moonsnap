@@ -7,6 +7,7 @@ import {
   EDITOR_TEXT,
   getEditorTextDragBoxHeight,
 } from '../utils/editorText';
+import { getArrowRenderPoints } from '../utils/editorArrow';
 import type { EditorHistoryActions } from './useEditorHistory';
 
 const MIN_SHAPE_SIZE = 5;
@@ -412,9 +413,15 @@ export const useShapeDrawing = ({
       switch (liveShape.type) {
         case 'arrow': {
           const arrow = drawNode as Konva.Arrow;
-          const newPoints = [drawStart.x, drawStart.y, pos.x, pos.y];
-          arrow.points(newPoints);
-          liveShapeRef.current = { ...liveShape, points: newPoints };
+          const newPoints = [drawStart.x, drawStart.y, pos.x, pos.y] as const;
+          arrow.points(getArrowRenderPoints(
+            newPoints[0],
+            newPoints[1],
+            newPoints[2],
+            newPoints[3],
+            liveShape.strokeWidth ?? strokeWidth
+          ));
+          liveShapeRef.current = { ...liveShape, points: [...newPoints] };
           break;
         }
         case 'line': {
@@ -496,7 +503,7 @@ export const useShapeDrawing = ({
       // Trigger Konva layer redraw (much faster than React re-render)
       node.getLayer()?.batchDraw();
     },
-    [fontSize, createShapeAtPosition, setSelectedIds, stageRef, onShapesChange, takeSnapshot, setIsDrawing]
+    [fontSize, createShapeAtPosition, setSelectedIds, stageRef, onShapesChange, strokeWidth, takeSnapshot, setIsDrawing]
   );
 
   // Handle mouse up - finalize drawing and sync React state

@@ -105,7 +105,8 @@ export const TextShape: React.FC<TextShapeProps> = React.memo(({
         perfectDrawEnabled={false}
       />
 
-      {/* Text background fill */}
+      {/* Text background fill — hidden while the HTML overlay is active to
+           avoid sub-pixel misalignment between canvas and CSS positioning */}
       {shape.textBackground && shape.textBackground !== 'transparent' && (
         <Rect
           name="text-background"
@@ -115,6 +116,7 @@ export const TextShape: React.FC<TextShapeProps> = React.memo(({
           height={height}
           fill={shape.textBackground}
           cornerRadius={4}
+          visible={!isEditing}
           listening={false}
           perfectDrawEnabled={false}
         />

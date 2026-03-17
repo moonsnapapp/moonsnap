@@ -354,6 +354,7 @@ export const EditorCanvas = React.memo(forwardRef<EditorCanvasRef, EditorCanvasP
     zoom: navigation.zoom,
     position: navigation.position,
     containerRef: navigation.containerRef,
+    stageRef,
   });
 
   // Shape transform hook

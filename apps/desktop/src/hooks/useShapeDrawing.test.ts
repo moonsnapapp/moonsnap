@@ -3,6 +3,7 @@ import { renderHook, act } from '@testing-library/react';
 import { useShapeDrawing } from './useShapeDrawing';
 import type { CanvasShape, Tool } from '../types';
 import { EDITOR_TEXT, getEditorTextDefaultBoxHeight, getEditorTextDragBoxHeight } from '../utils/editorText';
+import { getArrowRenderPoints } from '../utils/editorArrow';
 
 // Mock Konva
 vi.mock('konva', () => ({
@@ -612,6 +613,38 @@ describe('useShapeDrawing', () => {
 
       expect(arrow.type).toBe('arrow');
       expect(arrow.points).toEqual([100, 100, 200, 150]);
+    });
+
+    it('should keep live arrow preview geometry aligned with the final render', () => {
+      const props = createMockProps({ selectedTool: 'arrow' });
+      const previewPoints = vi.fn();
+      const batchDraw = vi.fn();
+
+      props.stageRef.current.findOne = vi.fn(() => ({
+        getClassName: () => 'Group',
+        getChildren: () => [{ points: previewPoints }],
+        getLayer: () => ({ batchDraw }),
+      }));
+
+      const { result } = renderHook(() => useShapeDrawing(props));
+
+      const event = createMockKonvaEvent(props.stageRef);
+      act(() => {
+        result.current.handleDrawingMouseDown(event);
+      });
+
+      act(() => {
+        result.current.handleDrawingMouseMove({ x: 110, y: 110 });
+      });
+
+      act(() => {
+        result.current.handleDrawingMouseMove({ x: 200, y: 150 });
+      });
+
+      expect(previewPoints).toHaveBeenCalledWith(
+        getArrowRenderPoints(100, 100, 200, 150, props.strokeWidth)
+      );
+      expect(batchDraw).toHaveBeenCalled();
     });
 
     it('should create highlight with semi-transparent fill', () => {

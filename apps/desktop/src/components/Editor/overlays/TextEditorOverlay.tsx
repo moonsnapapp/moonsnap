@@ -152,12 +152,13 @@ export const TextEditorOverlay: React.FC<TextEditorOverlayProps> = React.memo(({
       onClick={stopPropagation}
       onBlur={saveWithMeasurement}
       data-placeholder="Type here..."
-      className="fixed z-[9999] whitespace-pre-wrap break-words overflow-visible empty:before:content-[attr(data-placeholder)] empty:before:text-gray-400 empty:before:pointer-events-none"
+      className="absolute z-[9999] whitespace-pre-wrap break-words overflow-visible empty:before:content-[attr(data-placeholder)] empty:before:text-gray-400 empty:before:pointer-events-none"
       style={{
         left: position.left,
         top: position.top,
         width: position.width,
         minHeight: position.height,
+        boxSizing: 'border-box',
         fontSize: position.fontSize,
         fontFamily: position.fontFamily,
         fontWeight: isBold ? 'bold' : 'normal',
