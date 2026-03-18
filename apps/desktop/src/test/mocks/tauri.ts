@@ -15,6 +15,10 @@ export const mockAvailableMonitors: Mock = vi.fn(() =>
     },
   ])
 );
+export const mockDialogSave: Mock = vi.fn().mockResolvedValue(null);
+export const mockDialogOpen: Mock = vi.fn().mockResolvedValue(null);
+export const mockFsReadFile: Mock = vi.fn();
+export const mockFsWriteFile: Mock = vi.fn().mockResolvedValue(undefined);
 
 export const mockWebviewWindow = {
   label: 'capture-toolbar',
@@ -149,13 +153,18 @@ vi.mock('@tauri-apps/plugin-clipboard-manager', () => ({
 }));
 
 vi.mock('@tauri-apps/plugin-dialog', () => ({
-  save: vi.fn().mockResolvedValue(null),
-  open: vi.fn().mockResolvedValue(null),
+  save: mockDialogSave,
+  open: mockDialogOpen,
 }));
 
 vi.mock('@tauri-apps/plugin-opener', () => ({
   openPath: vi.fn().mockResolvedValue(undefined),
   revealItemInDir: vi.fn().mockResolvedValue(undefined),
+}));
+
+vi.mock('@tauri-apps/plugin-fs', () => ({
+  readFile: mockFsReadFile,
+  writeFile: mockFsWriteFile,
 }));
 
 vi.mock('@tauri-apps/plugin-global-shortcut', () => ({
