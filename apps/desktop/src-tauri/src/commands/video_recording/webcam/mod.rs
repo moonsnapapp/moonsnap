@@ -13,7 +13,6 @@
 
 mod capture;
 mod channel_encoder;
-mod composite;
 mod device;
 mod drift;
 mod encoder;

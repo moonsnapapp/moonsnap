@@ -197,6 +197,7 @@ export const CaptureRow: React.FC<CaptureCardProps> = memo(
                     <TooltipTrigger asChild>
                       <button
                         onClick={(e) => e.stopPropagation()}
+                        aria-label="Manage tags"
                         className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-[var(--polar-mist)] transition-colors"
                       >
                         <Tag
@@ -220,6 +221,7 @@ export const CaptureRow: React.FC<CaptureCardProps> = memo(
                       e.stopPropagation();
                       onToggleFavorite();
                     }}
+                    aria-label={capture.favorite ? 'Remove from favorites' : 'Add to favorites'}
                     className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-[var(--polar-mist)] transition-colors"
                   >
                     <Star
@@ -244,6 +246,7 @@ export const CaptureRow: React.FC<CaptureCardProps> = memo(
                       e.stopPropagation();
                       onDelete();
                     }}
+                    aria-label="Delete capture"
                     className="w-8 h-8 rounded-lg flex items-center justify-center text-red-500 hover:bg-red-50 transition-colors"
                   >
                     <Trash2 className="w-4 h-4" />

@@ -83,6 +83,7 @@ export const LibraryHeader: React.FC<LibraryHeaderProps> = ({
             {searchQuery && (
               <button
                 onClick={handleClearSearch}
+                aria-label="Clear search"
                 className="library-header__search-clear"
               >
                 <X className="w-3 h-3" />
@@ -97,6 +98,7 @@ export const LibraryHeader: React.FC<LibraryHeaderProps> = ({
             <TooltipTrigger asChild>
               <button
                 onClick={() => onFilterFavoritesChange(!filterFavorites)}
+                aria-label="Toggle favorites filter"
                 className={`library-header__btn ${filterFavorites ? 'library-header__btn--active' : ''}`}
               >
                 <Star className="w-4 h-4" fill={filterFavorites ? 'currentColor' : 'none'} />
@@ -119,6 +121,7 @@ export const LibraryHeader: React.FC<LibraryHeaderProps> = ({
             <TooltipTrigger asChild>
               <button
                 onClick={onOpenLibraryFolder}
+                aria-label="Open library folder"
                 className="library-header__btn"
               >
                 <FolderOpen className="w-4 h-4" />
@@ -144,6 +147,7 @@ export const LibraryHeader: React.FC<LibraryHeaderProps> = ({
                 <TooltipTrigger asChild>
                   <button
                     onClick={onDeleteSelected}
+                    aria-label="Delete selected captures"
                     className="library-header__btn library-header__btn--danger"
                   >
                     <Trash2 className="w-4 h-4" />
@@ -158,6 +162,7 @@ export const LibraryHeader: React.FC<LibraryHeaderProps> = ({
                 <TooltipTrigger asChild>
                   <button
                     onClick={onClearSelection}
+                    aria-label="Clear selection"
                     className="library-header__btn"
                   >
                     <X className="w-4 h-4" />
@@ -176,12 +181,14 @@ export const LibraryHeader: React.FC<LibraryHeaderProps> = ({
           <div className="library-header__view-toggle">
             <button
               onClick={() => onViewModeChange('grid')}
+              aria-label="Grid view"
               className={`library-header__view-btn ${viewMode === 'grid' ? 'library-header__view-btn--active' : ''}`}
             >
               <LayoutGrid className="w-4 h-4" />
             </button>
             <button
               onClick={() => onViewModeChange('list')}
+              aria-label="List view"
               className={`library-header__view-btn ${viewMode === 'list' ? 'library-header__view-btn--active' : ''}`}
             >
               <List className="w-4 h-4" />

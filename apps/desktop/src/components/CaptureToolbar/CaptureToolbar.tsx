@@ -301,6 +301,7 @@ export const CaptureToolbar: React.FC<CaptureToolbarProps> = ({
               type="button"
               onClick={handlePauseResume}
               className="glass-btn glass-btn--md"
+              aria-label={isPaused ? 'Resume recording' : 'Pause recording'}
               title={isPaused ? 'Resume' : 'Pause'}
             >
               {isPaused ? (
@@ -317,6 +318,7 @@ export const CaptureToolbar: React.FC<CaptureToolbarProps> = ({
               type="button"
               onClick={onStop}
               className="glass-btn glass-btn--md"
+              aria-label="Stop and save recording"
               title="Stop and save"
             >
               <Square size={14} className="glass-recording-stop-icon" fill="currentColor" />
@@ -328,6 +330,7 @@ export const CaptureToolbar: React.FC<CaptureToolbarProps> = ({
             type="button"
             onClick={onCancel}
             className="glass-btn glass-btn--md glass-btn--danger"
+            aria-label="Cancel recording"
             title="Cancel"
           >
             <X size={14} strokeWidth={2.5} />
@@ -359,6 +362,7 @@ export const CaptureToolbar: React.FC<CaptureToolbarProps> = ({
                 type="button"
                 onClick={onMinimizeToolbar}
                 className="glass-btn glass-btn--md glass-toolbar-action-btn glass-toolbar-window-control"
+                aria-label="Minimize capture toolbar"
                 title="Minimize capture toolbar"
               >
                 <Minus size={14} strokeWidth={2.5} />
@@ -369,6 +373,7 @@ export const CaptureToolbar: React.FC<CaptureToolbarProps> = ({
               type="button"
               onClick={onCloseToolbar ?? onCancel}
               className="glass-btn glass-btn--md glass-toolbar-action-btn glass-toolbar-action-btn--close glass-toolbar-window-control"
+              aria-label="Close capture toolbar"
               title="Close capture toolbar"
             >
               <X size={14} strokeWidth={2.5} />
@@ -464,6 +469,7 @@ export const CaptureToolbar: React.FC<CaptureToolbarProps> = ({
                 type="button"
                 onClick={onOpenLibrary}
                 className="glass-btn glass-btn--md glass-toolbar-action-btn"
+                aria-label="Open library"
                 title="Open library"
               >
                 <FolderOpen size={14} strokeWidth={2.2} />
@@ -475,6 +481,7 @@ export const CaptureToolbar: React.FC<CaptureToolbarProps> = ({
                 type="button"
                 onClick={onMinimizeToolbar}
                 className="glass-btn glass-btn--md glass-toolbar-action-btn"
+                aria-label="Minimize capture toolbar"
                 title="Minimize capture toolbar"
               >
                 <Minus size={14} strokeWidth={2.5} />
@@ -486,6 +493,7 @@ export const CaptureToolbar: React.FC<CaptureToolbarProps> = ({
                 type="button"
                 onClick={onCloseToolbar ?? onCancel}
                 className="glass-btn glass-btn--md glass-toolbar-action-btn glass-toolbar-action-btn--close"
+                aria-label="Close capture toolbar"
                 title="Close capture toolbar"
               >
                 <X size={14} strokeWidth={2.5} />
@@ -498,6 +506,7 @@ export const CaptureToolbar: React.FC<CaptureToolbarProps> = ({
           type="button"
           onClick={onCapture}
           className="glass-capture-btn-hardware"
+          aria-label={captureType === 'screenshot' ? 'Take screenshot' : 'Start recording'}
           title={captureType === 'screenshot' ? 'Take screenshot' : 'Start recording'}
           disabled={!selectionConfirmed}
         >

@@ -189,6 +189,7 @@ export const CaptureCard: React.FC<CaptureCardProps> = memo(
                 }}
                 onMouseDown={(e) => e.stopPropagation()}
                 onDoubleClick={(e) => e.stopPropagation()}
+                aria-label={capture.favorite ? 'Remove from favorites' : 'Add to favorites'}
                 className={`absolute top-3 right-3 z-10 w-7 h-7 rounded-lg flex items-center justify-center border shadow-sm transition-all duration-200 hover:scale-110 ${
                   capture.favorite
                     ? 'bg-[var(--card)] border-[var(--coral-200)] opacity-100'
@@ -258,6 +259,7 @@ export const CaptureCard: React.FC<CaptureCardProps> = memo(
                     trigger={
                       <button
                         onClick={(e) => e.stopPropagation()}
+                        aria-label="Manage tags"
                         className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-[var(--polar-mist)] transition-colors"
                       >
                         <Tag
@@ -274,6 +276,7 @@ export const CaptureCard: React.FC<CaptureCardProps> = memo(
                       e.stopPropagation();
                       onDelete();
                     }}
+                    aria-label="Delete capture"
                     className="w-8 h-8 rounded-lg flex items-center justify-center text-red-500 hover:bg-red-50 transition-colors"
                   >
                     <Trash2 className="w-4 h-4" />

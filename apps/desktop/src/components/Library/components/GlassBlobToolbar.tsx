@@ -99,6 +99,7 @@ export const GlassBlobToolbar: React.FC<GlassBlobToolbarProps> = ({
             <TooltipTrigger asChild>
               <button
                 onClick={handleSearchToggle}
+                aria-label={searchExpanded ? 'Close search' : 'Search'}
                 className={`cloud-btn cloud-btn--small ${searchQuery ? 'cloud-btn--active' : ''}`}
               >
                 {searchExpanded && searchQuery ? (
@@ -128,7 +129,7 @@ export const GlassBlobToolbar: React.FC<GlassBlobToolbarProps> = ({
 
         <Tooltip>
           <TooltipTrigger asChild>
-            <button onClick={onOpenLibraryFolder} className="cloud-btn cloud-btn--small">
+            <button onClick={onOpenLibraryFolder} aria-label="Open folder" className="cloud-btn cloud-btn--small">
               <FolderOpen className="w-[15px] h-[15px]" />
             </button>
           </TooltipTrigger>
@@ -141,6 +142,7 @@ export const GlassBlobToolbar: React.FC<GlassBlobToolbarProps> = ({
           <TooltipTrigger asChild>
             <button
               onClick={() => onFilterFavoritesChange(!filterFavorites)}
+              aria-label="Toggle favorites filter"
               className={`cloud-btn cloud-btn--small ${filterFavorites ? 'cloud-btn--active' : ''}`}
             >
               <Star className="w-[15px] h-[15px]" fill={filterFavorites ? 'currentColor' : 'none'} />
@@ -161,6 +163,7 @@ export const GlassBlobToolbar: React.FC<GlassBlobToolbarProps> = ({
           <TooltipTrigger asChild>
             <button
               onClick={() => toggleMediaType('image')}
+              aria-label="Filter images"
               className={`cloud-btn cloud-btn--small ${filterMediaTypes.includes('image') ? 'cloud-btn--active' : ''}`}
             >
               <Image className="w-[15px] h-[15px]" />
@@ -175,6 +178,7 @@ export const GlassBlobToolbar: React.FC<GlassBlobToolbarProps> = ({
           <TooltipTrigger asChild>
             <button
               onClick={() => toggleMediaType('video')}
+              aria-label="Filter videos"
               className={`cloud-btn cloud-btn--small ${filterMediaTypes.includes('video') ? 'cloud-btn--active' : ''}`}
             >
               <Video className="w-[15px] h-[15px]" />
@@ -189,6 +193,7 @@ export const GlassBlobToolbar: React.FC<GlassBlobToolbarProps> = ({
           <TooltipTrigger asChild>
             <button
               onClick={() => toggleMediaType('gif')}
+              aria-label="Filter GIFs"
               className={`cloud-btn cloud-btn--small ${filterMediaTypes.includes('gif') ? 'cloud-btn--active' : ''}`}
             >
               <Film className="w-[15px] h-[15px]" />
@@ -205,6 +210,7 @@ export const GlassBlobToolbar: React.FC<GlassBlobToolbarProps> = ({
             <TooltipTrigger asChild>
               <button
                 onClick={onClearAllFilters}
+                aria-label="Clear all filters"
                 className="cloud-btn cloud-btn--small cloud-btn--active relative"
               >
                 <X className="w-[15px] h-[15px]" />
@@ -230,7 +236,7 @@ export const GlassBlobToolbar: React.FC<GlassBlobToolbarProps> = ({
 
             <Tooltip>
               <TooltipTrigger asChild>
-                <button onClick={onDeleteSelected} className="cloud-btn cloud-btn--small cloud-btn--danger">
+                <button onClick={onDeleteSelected} aria-label="Delete selected" className="cloud-btn cloud-btn--small cloud-btn--danger">
                   <Trash2 className="w-[15px] h-[15px]" />
                 </button>
               </TooltipTrigger>
@@ -241,7 +247,7 @@ export const GlassBlobToolbar: React.FC<GlassBlobToolbarProps> = ({
 
             <Tooltip>
               <TooltipTrigger asChild>
-                <button onClick={onClearSelection} className="cloud-btn cloud-btn--small">
+                <button onClick={onClearSelection} aria-label="Clear selection" className="cloud-btn cloud-btn--small">
                   <X className="w-[15px] h-[15px]" />
                 </button>
               </TooltipTrigger>

@@ -900,6 +900,7 @@ export function VideoTimeline({ onExport, onResetTrimSegments, onSetInPoint, onS
                 <button
                   data-cut-mode-toggle
                   aria-pressed={splitMode}
+                  aria-label="Toggle cut mode"
                   onClick={handleToggleCutMode}
                   className={`glass-btn h-8 w-8 timeline-cut-toggle ${splitMode ? 'timeline-cut-toggle--active' : ''}`}
                 >
@@ -920,6 +921,7 @@ export function VideoTimeline({ onExport, onResetTrimSegments, onSetInPoint, onS
                 <TooltipTrigger asChild>
                   <button
                     onClick={onResetTrimSegments}
+                    aria-label="Reset trim segments"
                     className="glass-btn h-8 w-8"
                   >
                     <RotateCcw className="w-4 h-4" />
@@ -941,6 +943,7 @@ export function VideoTimeline({ onExport, onResetTrimSegments, onSetInPoint, onS
                     <TooltipTrigger asChild>
                       <button
                         onClick={onSetInPoint}
+                        aria-label="Set in point"
                         className="glass-btn h-8 w-8 flex items-center justify-center text-[11px] font-semibold leading-none"
                         style={exportInPointMs !== null
                           ? {
@@ -967,6 +970,7 @@ export function VideoTimeline({ onExport, onResetTrimSegments, onSetInPoint, onS
                     <TooltipTrigger asChild>
                       <button
                         onClick={onSetOutPoint}
+                        aria-label="Set out point"
                         className="glass-btn h-8 w-8 flex items-center justify-center text-[11px] font-semibold leading-none"
                         style={exportOutPointMs !== null
                           ? {
@@ -993,6 +997,7 @@ export function VideoTimeline({ onExport, onResetTrimSegments, onSetInPoint, onS
                     <TooltipTrigger asChild>
                       <button
                         onClick={onClearExportRange}
+                        aria-label="Clear export range"
                         className="glass-btn h-8 w-8"
                       >
                         <X className="w-3.5 h-3.5" />
@@ -1012,7 +1017,7 @@ export function VideoTimeline({ onExport, onResetTrimSegments, onSetInPoint, onS
             <div className="flex items-center gap-0.5">
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <button onClick={handleGoToStart} className="glass-btn h-8 w-8">
+                  <button onClick={handleGoToStart} aria-label="Go to start" className="glass-btn h-8 w-8">
                     <SkipBack className="w-3.5 h-3.5" />
                   </button>
                 </TooltipTrigger>
@@ -1026,7 +1031,7 @@ export function VideoTimeline({ onExport, onResetTrimSegments, onSetInPoint, onS
 
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <button onClick={handleSkipBack} className="glass-btn h-8 w-8">
+                  <button onClick={handleSkipBack} aria-label="Skip back 5 seconds" className="glass-btn h-8 w-8">
                     <SkipBack className="w-3 h-3" />
                   </button>
                 </TooltipTrigger>
@@ -1042,6 +1047,7 @@ export function VideoTimeline({ onExport, onResetTrimSegments, onSetInPoint, onS
                 <TooltipTrigger asChild>
                   <button
                     onClick={togglePlayback}
+                    aria-label={isPlaying ? 'Pause' : 'Play'}
                     className="tool-button h-9 w-9 active"
                   >
                     {isPlaying ? (
@@ -1061,7 +1067,7 @@ export function VideoTimeline({ onExport, onResetTrimSegments, onSetInPoint, onS
 
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <button onClick={handleSkipForward} className="glass-btn h-8 w-8">
+                  <button onClick={handleSkipForward} aria-label="Skip forward 5 seconds" className="glass-btn h-8 w-8">
                     <SkipForward className="w-3 h-3" />
                   </button>
                 </TooltipTrigger>
@@ -1075,7 +1081,7 @@ export function VideoTimeline({ onExport, onResetTrimSegments, onSetInPoint, onS
 
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <button onClick={handleGoToEnd} className="glass-btn h-8 w-8">
+                  <button onClick={handleGoToEnd} aria-label="Go to end" className="glass-btn h-8 w-8">
                     <SkipForward className="w-3.5 h-3.5" />
                   </button>
                 </TooltipTrigger>
@@ -1097,7 +1103,7 @@ export function VideoTimeline({ onExport, onResetTrimSegments, onSetInPoint, onS
             <div className="flex items-center gap-1">
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <button onClick={handleZoomOut} className="glass-btn h-7 w-7">
+                  <button onClick={handleZoomOut} aria-label="Zoom out timeline" className="glass-btn h-7 w-7">
                     <ZoomOut className="w-3.5 h-3.5" />
                   </button>
                 </TooltipTrigger>
@@ -1112,7 +1118,7 @@ export function VideoTimeline({ onExport, onResetTrimSegments, onSetInPoint, onS
 
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <button onClick={handleZoomIn} className="glass-btn h-7 w-7">
+                  <button onClick={handleZoomIn} aria-label="Zoom in timeline" className="glass-btn h-7 w-7">
                     <ZoomIn className="w-3.5 h-3.5" />
                   </button>
                 </TooltipTrigger>
@@ -1123,7 +1129,7 @@ export function VideoTimeline({ onExport, onResetTrimSegments, onSetInPoint, onS
 
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <button onClick={fitTimelineToWindow} className="glass-btn h-7 w-7">
+                  <button onClick={fitTimelineToWindow} aria-label="Fit timeline to window" className="glass-btn h-7 w-7">
                     <Maximize2 className="w-3.5 h-3.5" />
                   </button>
                 </TooltipTrigger>

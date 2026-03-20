@@ -794,61 +794,6 @@ pub async fn exclude_webcam_from_capture(app: tauri::AppHandle) -> Result<(), St
 }
 
 // ============================================================================
-// Native/MF Webcam Preview (REMOVED - browser handles preview now)
-// ============================================================================
-// These commands are kept as no-ops for backwards compatibility with frontend cleanup calls.
-
-/// Start native webcam preview.
-/// DEPRECATED: Browser handles preview. This is a no-op.
-#[command]
-#[cfg(target_os = "windows")]
-pub async fn start_native_webcam_preview(_app: tauri::AppHandle) -> Result<(), String> {
-    log::debug!("[WEBCAM] start_native_webcam_preview called (no-op, browser handles preview)");
-    Ok(())
-}
-
-/// Stop native webcam preview.
-/// DEPRECATED: Browser handles preview. This is a no-op for cleanup compatibility.
-#[command]
-#[cfg(target_os = "windows")]
-pub fn stop_native_webcam_preview() {
-    log::debug!("[WEBCAM] stop_native_webcam_preview called (no-op)");
-}
-
-/// Check if native webcam preview is running.
-/// DEPRECATED: Always returns false, browser handles preview.
-#[command]
-#[cfg(target_os = "windows")]
-pub fn is_native_webcam_preview_running() -> bool {
-    false
-}
-
-/// Start MF-based webcam preview.
-/// DEPRECATED: Browser handles preview. This is a no-op.
-#[command]
-#[cfg(target_os = "windows")]
-pub async fn start_mf_webcam_preview(_app: tauri::AppHandle) -> Result<(), String> {
-    log::debug!("[WEBCAM] start_mf_webcam_preview called (no-op, browser handles preview)");
-    Ok(())
-}
-
-/// Stop MF webcam preview.
-/// DEPRECATED: Browser handles preview. This is a no-op for cleanup compatibility.
-#[command]
-#[cfg(target_os = "windows")]
-pub fn stop_mf_webcam_preview() {
-    log::debug!("[WEBCAM] stop_mf_webcam_preview called (no-op)");
-}
-
-/// Check if MF webcam preview is running.
-/// DEPRECATED: Always returns false, browser handles preview.
-#[command]
-#[cfg(target_os = "windows")]
-pub fn is_mf_webcam_preview_running() -> bool {
-    false
-}
-
-// ============================================================================
 // Browser-based Webcam Recording (MediaRecorder chunks from frontend)
 // ============================================================================
 

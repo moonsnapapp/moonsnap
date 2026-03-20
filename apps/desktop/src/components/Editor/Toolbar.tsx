@@ -128,6 +128,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
               <button
                 onClick={onUndo}
                 disabled={!canUndo}
+                aria-label="Undo"
                 className={`glass-btn ${buttonSize} disabled:opacity-30 disabled:cursor-not-allowed`}
               >
                 <Undo2 className={iconSize} />
@@ -146,6 +147,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
               <button
                 onClick={onRedo}
                 disabled={!canRedo}
+                aria-label="Redo"
                 className={`glass-btn ${buttonSize} disabled:opacity-30 disabled:cursor-not-allowed`}
               >
                 <Redo2 className={iconSize} />
@@ -176,6 +178,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
                         }
                         onToolChange(tool.id);
                       }}
+                      aria-label={tool.label}
                       className={`tool-button ${buttonSize} ${selectedTool === tool.id ? 'active' : ''} ${needsPro ? 'opacity-50' : ''}`}
                     >
                       <tool.Icon className={`${iconSize} relative z-10`} />
@@ -201,6 +204,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
               <button
                 onClick={handleCopy}
                 disabled={isCopying}
+                aria-label="Copy to clipboard"
                 className={`glass-btn ${buttonSize} ${
                   copied ? 'glass-btn--success' : ''
                 } disabled:opacity-50 disabled:cursor-not-allowed`}
@@ -229,6 +233,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
                 <DropdownMenuTrigger asChild>
                   <button
                     disabled={isSaving}
+                    aria-label="Save"
                     className={`glass-btn ${buttonSize} disabled:opacity-50`}
                   >
                     {isSaving ? (
@@ -277,6 +282,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
             <TooltipTrigger asChild>
               <button
                 onClick={onDelete}
+                aria-label="Delete capture"
                 className={`glass-btn glass-btn--danger ${buttonSize}`}
               >
                 <Trash2 className={iconSize} />

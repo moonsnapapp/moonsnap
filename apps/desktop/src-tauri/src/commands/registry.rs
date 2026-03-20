@@ -162,20 +162,7 @@ macro_rules! tauri_command_handler {
             crate::commands::video_recording::get_webcam_preview_frame,
             crate::commands::video_recording::get_webcam_preview_dimensions,
             crate::commands::video_recording::exclude_webcam_from_capture,
-            // Native webcam preview (Windows-only, GDI-based with circle mask)
-            #[cfg(target_os = "windows")]
-            crate::commands::video_recording::start_native_webcam_preview,
-            #[cfg(target_os = "windows")]
-            crate::commands::video_recording::stop_native_webcam_preview,
-            #[cfg(target_os = "windows")]
-            crate::commands::video_recording::is_native_webcam_preview_running,
-            // MF webcam preview (Windows-only, low-latency async Media Foundation)
-            #[cfg(target_os = "windows")]
-            crate::commands::video_recording::start_mf_webcam_preview,
-            #[cfg(target_os = "windows")]
-            crate::commands::video_recording::stop_mf_webcam_preview,
-            #[cfg(target_os = "windows")]
-            crate::commands::video_recording::is_mf_webcam_preview_running,
+
             // GPU-accelerated webcam preview (Cap-style direct rendering)
             crate::commands::video_recording::start_gpu_webcam_preview,
             crate::commands::video_recording::stop_gpu_webcam_preview,

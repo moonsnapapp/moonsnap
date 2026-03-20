@@ -583,8 +583,7 @@ pub async fn show_countdown_window(
         .map_err(|e| format!("Failed to show window: {}", e))?;
 
     // Exclude from capture
-    // TEMPORARILY DISABLED FOR MARKETING SCREENSHOTS
-    // let _ = exclude_window_from_capture(&window);
+    let _ = exclude_window_from_capture(&window);
 
     Ok(())
 }
