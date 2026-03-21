@@ -221,7 +221,7 @@ fn preview_loop(subscription: Subscription, stop_signal: Arc<AtomicBool>) {
         };
         let elapsed = start.elapsed();
 
-        if frame_count <= 3 || frame_count % 60 == 0 {
+        if frame_count <= 3 || frame_count.is_multiple_of(60) {
             log::debug!(
                 "[PREVIEW_LOOP] Frame {} converted to JPEG ({} bytes) in {:?}",
                 frame_count,

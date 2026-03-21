@@ -241,19 +241,18 @@ fn monitor_microphone(
         if capture_client
             .read_from_device_to_deque(&mut sample_queue)
             .is_ok()
+            && sample_queue.len() >= 4
         {
-            if sample_queue.len() >= 4 {
-                let samples = bytes_to_f32_samples(&sample_queue);
-                let rms = calculate_rms(&samples);
+            let samples = bytes_to_f32_samples(&sample_queue);
+            let rms = calculate_rms(&samples);
 
-                {
-                    // Smooth the level with exponential moving average
-                    let mut lvl = level.lock();
-                    *lvl = *lvl * 0.7 + rms * 0.3;
-                }
-
-                sample_queue.clear();
+            {
+                // Smooth the level with exponential moving average
+                let mut lvl = level.lock();
+                *lvl = *lvl * 0.7 + rms * 0.3;
             }
+
+            sample_queue.clear();
         }
     }
 
@@ -384,19 +383,18 @@ fn monitor_system_audio(
         if capture_client
             .read_from_device_to_deque(&mut sample_queue)
             .is_ok()
+            && sample_queue.len() >= 4
         {
-            if sample_queue.len() >= 4 {
-                let samples = bytes_to_f32_samples(&sample_queue);
-                let rms = calculate_rms(&samples);
+            let samples = bytes_to_f32_samples(&sample_queue);
+            let rms = calculate_rms(&samples);
 
-                {
-                    // Smooth the level with exponential moving average
-                    let mut lvl = level.lock();
-                    *lvl = *lvl * 0.7 + rms * 0.3;
-                }
-
-                sample_queue.clear();
+            {
+                // Smooth the level with exponential moving average
+                let mut lvl = level.lock();
+                *lvl = *lvl * 0.7 + rms * 0.3;
             }
+
+            sample_queue.clear();
         }
     }
 
