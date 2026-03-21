@@ -115,11 +115,7 @@ pub fn get_video_frame_cached(
         if let Some(frames) = cache.get(&path_str) {
             // Find frame within tolerance
             for entry in frames {
-                let diff = if entry.timestamp_ms > timestamp_ms {
-                    entry.timestamp_ms - timestamp_ms
-                } else {
-                    timestamp_ms - entry.timestamp_ms
-                };
+                let diff = entry.timestamp_ms.abs_diff(timestamp_ms);
                 if diff <= tolerance_ms {
                     return Ok(entry.data.clone());
                 }
@@ -133,7 +129,7 @@ pub fn get_video_frame_cached(
     // Add to cache
     {
         let mut cache = FRAME_CACHE.lock();
-        let frames = cache.entry(path_str).or_insert_with(Vec::new);
+        let frames = cache.entry(path_str).or_default();
 
         // Remove oldest frame if at capacity
         if frames.len() >= MAX_FRAMES_PER_VIDEO {

@@ -238,7 +238,10 @@ fn monitor_microphone(
         }
 
         // Read audio data
-        if let Ok(_) = capture_client.read_from_device_to_deque(&mut sample_queue) {
+        if capture_client
+            .read_from_device_to_deque(&mut sample_queue)
+            .is_ok()
+        {
             if sample_queue.len() >= 4 {
                 let samples = bytes_to_f32_samples(&sample_queue);
                 let rms = calculate_rms(&samples);
@@ -378,7 +381,10 @@ fn monitor_system_audio(
         }
 
         // Read audio data
-        if let Ok(_) = capture_client.read_from_device_to_deque(&mut sample_queue) {
+        if capture_client
+            .read_from_device_to_deque(&mut sample_queue)
+            .is_ok()
+        {
             if sample_queue.len() >= 4 {
                 let samples = bytes_to_f32_samples(&sample_queue);
                 let rms = calculate_rms(&samples);

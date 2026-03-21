@@ -142,12 +142,11 @@ impl SegmentedRecordingHandle {
         use std::sync::atomic::Ordering;
         self.stop_signal.store(true, Ordering::SeqCst);
 
-        Ok(self
-            .thread
+        self.thread
             .take()
             .ok_or_else(|| MoonSnapError::Other("Recorder thread already finished".to_string()))?
             .join()
-            .map_err(|_| MoonSnapError::Other("Recorder thread panicked".to_string()))?)
+            .map_err(|_| MoonSnapError::Other("Recorder thread panicked".to_string()))
     }
 
     /// Cancel recording and clean up.

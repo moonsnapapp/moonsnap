@@ -552,10 +552,8 @@ impl OverlayState {
                 self.monitor
                     .local_rect_to_screen(self.drag.selection_rect()),
             )
-        } else if let Some(ref win) = self.cursor.hovered_window {
-            Some(win.bounds)
         } else {
-            None
+            self.cursor.hovered_window.as_ref().map(|win| win.bounds)
         }
     }
 
@@ -565,10 +563,11 @@ impl OverlayState {
             Some(self.adjustment.bounds)
         } else if self.drag.is_dragging {
             Some(self.drag.selection_rect())
-        } else if let Some(ref win) = self.cursor.hovered_window {
-            Some(self.monitor.screen_rect_to_local(win.bounds))
         } else {
-            None
+            self.cursor
+                .hovered_window
+                .as_ref()
+                .map(|win| self.monitor.screen_rect_to_local(win.bounds))
         }
     }
 

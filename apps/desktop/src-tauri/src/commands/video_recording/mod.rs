@@ -342,7 +342,7 @@ pub fn get_webcam_preview_frame(quality: Option<u8>) -> Option<String> {
         // Log occasionally to debug
         static CALL_COUNT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
         let count = CALL_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        if count % 30 == 0 {
+        if count.is_multiple_of(30) {
             log::debug!(
                 "[WEBCAM] get_webcam_preview_frame: no frame available (call #{})",
                 count
@@ -685,7 +685,7 @@ pub async fn move_webcam_to_anchor(
             "topLeft" => (sel_x + padding, sel_y + padding),
             "topRight" => (sel_x + sel_width - webcam_size - padding, sel_y + padding),
             "bottomLeft" => (sel_x + padding, sel_y + sel_height - webcam_size - padding),
-            "bottomRight" | _ => (
+            _ => (
                 sel_x + sel_width - webcam_size - padding,
                 sel_y + sel_height - webcam_size - padding,
             ),
@@ -1129,7 +1129,7 @@ pub async fn extract_frame(
 /// Call this when closing the video editor to free memory.
 #[command]
 pub fn clear_video_frame_cache(video_path: Option<String>) {
-    let path = video_path.as_ref().map(|p| std::path::Path::new(p));
+    let path = video_path.as_deref().map(std::path::Path::new);
     clear_frame_cache(path);
 }
 

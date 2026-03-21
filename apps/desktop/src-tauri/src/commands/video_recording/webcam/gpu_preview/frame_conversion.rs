@@ -74,7 +74,7 @@ pub(super) fn subsample_yuyv(
     let get_y = |x: usize, y: usize| -> f32 {
         let row = y * src_stride;
         let pair_offset = (x / 2) * 4;
-        let y_offset = if x % 2 == 0 { 0 } else { 2 };
+        let y_offset = if x.is_multiple_of(2) { 0 } else { 2 };
         src.get(row + pair_offset + y_offset)
             .copied()
             .unwrap_or(128) as f32

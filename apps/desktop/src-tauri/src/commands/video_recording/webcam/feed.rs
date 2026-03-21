@@ -299,7 +299,7 @@ impl CameraFeed {
                         continue;
                     };
 
-                    if frame_id <= 3 || frame_id % 300 == 0 {
+                    if frame_id <= 3 || frame_id.is_multiple_of(300) {
                         log::debug!(
                             "[CAMERA_FEED] Frame {}: {}x{} {} bytes mjpeg={}",
                             frame_id,

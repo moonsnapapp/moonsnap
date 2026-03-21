@@ -38,7 +38,7 @@ pub fn create_device() -> Result<ID3D11Device> {
         )?;
     }
 
-    device.ok_or_else(|| windows::core::Error::from_win32())
+    device.ok_or_else(windows::core::Error::from_win32)
 }
 
 /// Create a DXGI swap chain for DirectComposition.

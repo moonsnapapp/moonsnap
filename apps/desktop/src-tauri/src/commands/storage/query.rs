@@ -228,11 +228,11 @@ async fn load_video_project_folder(
             let created = metadata
                 .created()
                 .or_else(|_| metadata.modified())
-                .map(|t| DateTime::<Utc>::from(t))
+                .map(DateTime::<Utc>::from)
                 .unwrap_or_else(|_| Utc::now());
             let updated = metadata
                 .modified()
-                .map(|t| DateTime::<Utc>::from(t))
+                .map(DateTime::<Utc>::from)
                 .unwrap_or(created);
             (
                 created,
@@ -369,12 +369,12 @@ async fn load_media_item(
     let created_at = metadata
         .created()
         .or_else(|_| metadata.modified())
-        .map(|t| DateTime::<Utc>::from(t))
+        .map(DateTime::<Utc>::from)
         .unwrap_or_else(|_| Utc::now());
 
     let updated_at = metadata
         .modified()
-        .map(|t| DateTime::<Utc>::from(t))
+        .map(DateTime::<Utc>::from)
         .unwrap_or(created_at);
 
     let capture_type = if extension == "gif" { "gif" } else { "video" };

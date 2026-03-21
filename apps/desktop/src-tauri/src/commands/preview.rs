@@ -272,7 +272,7 @@ pub async fn init_native_caption_preview(
             .window_handle()
             .map_err(|e| format!("Failed to get window handle: {}", e))?;
         match handle.as_raw() {
-            raw_window_handle::RawWindowHandle::Win32(h) => h.hwnd.get() as isize,
+            raw_window_handle::RawWindowHandle::Win32(h) => h.hwnd.get(),
             _ => return Err("Expected Win32 window handle".into()),
         }
     };

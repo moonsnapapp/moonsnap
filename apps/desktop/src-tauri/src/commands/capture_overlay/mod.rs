@@ -340,11 +340,13 @@ fn run_overlay(
         // Display/window preselection should be locked (no resize/move allowed)
         let adjustment = if let Some(presel) = preselect_bounds {
             let local_bounds = monitor_info.screen_rect_to_local(presel);
-            let mut adj = state::AdjustmentState::default();
-            adj.is_active = true;
-            adj.is_locked = true; // Lock preselected display/window bounds
-            adj.bounds = local_bounds;
-            adj.original_bounds = local_bounds;
+            let adj = state::AdjustmentState {
+                is_active: true,
+                is_locked: true,
+                bounds: local_bounds,
+                original_bounds: local_bounds,
+                ..Default::default()
+            };
             log::debug!(
                 "[run_overlay] Locked adjustment mode with bounds: {:?}",
                 local_bounds

@@ -8,7 +8,7 @@ use moonsnap_core::error::MoonSnapResult;
 use parking_lot::Mutex;
 use std::fs::{self, File, OpenOptions};
 use std::io::Write;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use tauri::{command, AppHandle, Manager};
 
 /// Maximum log file size before rotation (5MB)
@@ -88,13 +88,13 @@ pub fn init_logging(app: &AppHandle) -> MoonSnapResult<()> {
 }
 
 /// Get the path for the current log file (one per day)
-fn get_current_log_path(log_dir: &PathBuf) -> PathBuf {
+fn get_current_log_path(log_dir: &Path) -> PathBuf {
     let date = Local::now().format("%Y-%m-%d");
     log_dir.join(format!("moonsnap_{}.log", date))
 }
 
 /// Clean up old log files, keeping only the most recent MAX_LOG_FILES
-fn cleanup_old_logs(log_dir: &PathBuf) {
+fn cleanup_old_logs(log_dir: &Path) {
     if let Ok(entries) = fs::read_dir(log_dir) {
         let mut log_files: Vec<_> = entries
             .filter_map(|e| e.ok())

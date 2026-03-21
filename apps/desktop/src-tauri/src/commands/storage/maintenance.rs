@@ -2,7 +2,7 @@
 
 use moonsnap_core::error::MoonSnapResult;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use tauri::command;
 
 use super::{
@@ -217,9 +217,9 @@ pub async fn startup_cleanup(app: tauri::AppHandle) -> MoonSnapResult<StartupCle
 /// Converts: recording_123456.mp4 + recording_123456_webcam.mp4 + recording_123456_cursor.json
 /// Into: recording_123456/screen.mp4 + webcam.mp4 + cursor.json + project.json
 fn migrate_legacy_video(
-    video_path: &PathBuf,
-    captures_dir: &PathBuf,
-    thumbnails_dir: &PathBuf,
+    video_path: &Path,
+    captures_dir: &Path,
+    thumbnails_dir: &Path,
 ) -> MoonSnapResult<()> {
     let stem = video_path
         .file_stem()
@@ -319,7 +319,7 @@ fn create_migration_project_json(
     height: u32,
     duration_ms: u64,
     fps: u32,
-    folder_path: &PathBuf,
+    folder_path: &Path,
     has_system_audio_file: bool,
 ) -> String {
     let now = chrono::Utc::now().to_rfc3339();

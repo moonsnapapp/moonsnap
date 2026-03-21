@@ -494,42 +494,39 @@ impl FeedWebcamEncoder {
                 continue;
             }
 
-            match subscription.recv_timeout(std::time::Duration::from_millis(50)) {
-                Some(frame) => {
-                    let frame_data = if is_mjpeg {
-                        // MJPEG: write raw JPEG bytes directly (zero-copy path)
-                        frame.bytes().to_vec()
-                    } else {
-                        // Other: convert to BGRA
-                        match frame.to_bgra() {
-                            Some(data) => data,
-                            None => {
-                                conversion_failures += 1;
-                                if conversion_failures <= 3 {
-                                    log::warn!(
+            if let Some(frame) = subscription.recv_timeout(std::time::Duration::from_millis(50)) {
+                let frame_data = if is_mjpeg {
+                    // MJPEG: write raw JPEG bytes directly (zero-copy path)
+                    frame.bytes().to_vec()
+                } else {
+                    // Other: convert to BGRA
+                    match frame.to_bgra() {
+                        Some(data) => data,
+                        None => {
+                            conversion_failures += 1;
+                            if conversion_failures <= 3 {
+                                log::warn!(
                                         "[FEED_ENCODER] BGRA conversion failed for frame {} (format={:?}, {} bytes)",
                                         frame.frame_id, frame.pixel_format, frame.bytes().len()
                                     );
-                                }
-                                continue;
-                            },
-                        }
-                    };
-
-                    // Write frame data to FFmpeg
-                    if let Err(e) = stdin.write_all(&frame_data) {
-                        log::error!("[FEED_ENCODER] Write error: {}", e);
-                        break;
+                            }
+                            continue;
+                        },
                     }
+                };
 
-                    frame_count += 1;
-                    frames_written.store(frame_count, Ordering::Relaxed);
+                // Write frame data to FFmpeg
+                if let Err(e) = stdin.write_all(&frame_data) {
+                    log::error!("[FEED_ENCODER] Write error: {}", e);
+                    break;
+                }
 
-                    if frame_count % 300 == 0 {
-                        log::debug!("[FEED_ENCODER] {} frames encoded", frame_count);
-                    }
-                },
-                None => {},
+                frame_count += 1;
+                frames_written.store(frame_count, Ordering::Relaxed);
+
+                if frame_count.is_multiple_of(300) {
+                    log::debug!("[FEED_ENCODER] {} frames encoded", frame_count);
+                }
             }
         }
 

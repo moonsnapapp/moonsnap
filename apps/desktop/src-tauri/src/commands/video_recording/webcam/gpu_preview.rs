@@ -369,7 +369,7 @@ async fn run_gpu_preview(
 
                     if consecutive_timeouts >= PREVIEW_STALL_WARN_TIMEOUTS
                         && (consecutive_timeouts == PREVIEW_STALL_WARN_TIMEOUTS
-                            || consecutive_timeouts % 50 == 0)
+                            || consecutive_timeouts.is_multiple_of(50))
                     {
                         log::warn!(
                             "[PREVIEW_TIMING_SLOW] stage=frame_source_stall consecutive_timeouts={} timeout_ms={}",

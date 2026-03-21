@@ -593,7 +593,7 @@ impl Compositor {
         let background = Self::background_from_style(&options.background);
 
         // Log background setup on first frame (time_ms near 0)
-        if time_ms < 100.0 && time_ms >= 0.0 {
+        if (0.0..100.0).contains(&time_ms) {
             match &background {
                 Background::None => log::info!("[COMPOSITOR] Background: None"),
                 Background::Color(c) => log::info!("[COMPOSITOR] Background: Color {:?}", c),
@@ -990,7 +990,7 @@ impl Compositor {
         // Prepare background if needed
         let background = Self::background_from_style(&options.background);
 
-        if time_ms < 100.0 && time_ms >= 0.0 {
+        if (0.0..100.0).contains(&time_ms) {
             match &background {
                 Background::None => log::info!("[COMPOSITOR] Background: None"),
                 Background::Color(c) => log::info!("[COMPOSITOR] Background: Color {:?}", c),

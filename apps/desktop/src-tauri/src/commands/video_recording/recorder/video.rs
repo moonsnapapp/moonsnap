@@ -45,7 +45,7 @@ use super::super::{
 pub fn run_video_capture(
     app: &AppHandle,
     settings: &RecordingSettings,
-    output_path: &PathBuf,
+    output_path: &std::path::Path,
     progress: Arc<RecordingProgress>,
     command_rx: Receiver<RecorderCommand>,
     started_at: &str,
@@ -64,7 +64,7 @@ pub fn run_video_capture(
         get_webcam_settings().map(|s| s.enabled).unwrap_or(false)
     };
     let output_paths = moonsnap_capture::recorder_output_paths::plan_video_output_paths(
-        output_path.as_path(),
+        output_path,
         settings.quick_capture,
         webcam_enabled_for_editor,
     );
@@ -146,7 +146,7 @@ pub fn run_video_capture(
                 moonsnap_capture::recorder_webcam_feed::prepare_webcam_feed(
                     idx,
                     |inner_idx| start_global_feed(inner_idx).map_err(|e| e.to_string()),
-                    || global_feed_dimensions(),
+                    global_feed_dimensions,
                     Duration::from_millis(200),
                     Duration::from_millis(10),
                     (1280, 720),
@@ -175,7 +175,7 @@ pub fn run_video_capture(
     // - Editor flow: output_path is a FOLDER, so put audio files inside
     let (system_audio_path, mic_audio_path) =
         moonsnap_capture::recorder_audio_paths::plan_audio_artifact_paths(
-            output_path.as_path(),
+            output_path,
             settings.quick_capture,
             settings.audio.capture_system_audio,
             settings.audio.microphone_device_index.is_some(),
@@ -239,7 +239,7 @@ pub fn run_video_capture(
     let cursor_region = moonsnap_capture::recorder_cursor_region::resolve_cursor_region(
         &settings.mode,
         capture_plan.monitor_offset,
-        |window_id| get_window_rect(window_id),
+        get_window_rect,
         |monitor_index| {
             // CRITICAL: Use scap's display enumeration (same as video capture) to ensure
             // monitor_index refers to the same physical display for both video and cursor.
@@ -383,11 +383,11 @@ pub fn run_video_capture(
                 .finish()
                 .map_err(|e| format!("Failed to finish encoding: {:?}", e))
         },
-        |video_path, system_path, mic_path| mux_audio_to_video(video_path, system_path, mic_path),
-        |video_path| make_video_faststart(video_path),
+        mux_audio_to_video,
+        make_video_faststart,
         |artifact_flags| {
             create_video_project_file(CreateVideoProjectRequest {
-                project_folder: output_path.as_path(),
+                project_folder: output_path,
                 width,
                 height,
                 duration_ms: recording_duration.as_millis() as u64,

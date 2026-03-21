@@ -174,7 +174,7 @@ fn preview_loop(subscription: Subscription, stop_signal: Arc<AtomicBool>) {
         let frame = match subscription.recv_timeout(std::time::Duration::from_millis(100)) {
             Some(f) => {
                 frame_count += 1;
-                if frame_count <= 3 || frame_count % 60 == 0 {
+                if frame_count <= 3 || frame_count.is_multiple_of(60) {
                     log::debug!(
                         "[PREVIEW_LOOP] Received frame #{} (id={}), format={:?}",
                         frame_count,
@@ -190,7 +190,7 @@ fn preview_loop(subscription: Subscription, stop_signal: Arc<AtomicBool>) {
                     static WAIT_COUNT: std::sync::atomic::AtomicU64 =
                         std::sync::atomic::AtomicU64::new(0);
                     let count = WAIT_COUNT.fetch_add(1, Ordering::Relaxed);
-                    if count % 50 == 0 {
+                    if count.is_multiple_of(50) {
                         log::debug!(
                             "[PREVIEW_LOOP] Still waiting for first frame (waited {}s)",
                             count / 10

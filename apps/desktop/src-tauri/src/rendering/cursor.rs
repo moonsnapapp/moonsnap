@@ -196,7 +196,7 @@ fn get_click_t(events: &[CursorEvent], time_ms: u64) -> f32 {
     if let Some(next) = clicks.get(prev_i + 1) {
         if let CursorEventType::LeftClick { pressed: true } = next.event_type {
             let time_until_press = next.timestamp_ms as f64 - time;
-            if time_until_press <= CURSOR_CLICK_DURATION_MS && time_until_press >= 0.0 {
+            if (0.0..=CURSOR_CLICK_DURATION_MS).contains(&time_until_press) {
                 return smoothstep(
                     0.0,
                     CURSOR_CLICK_DURATION_MS as f32,

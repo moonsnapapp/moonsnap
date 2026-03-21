@@ -446,7 +446,7 @@ fn is_moonsnap_file(name: &str) -> bool {
             && !name[18..name.len() - 4].is_empty()
             && name[18..name.len() - 4]
                 .bytes()
-                .all(|b| b.is_ascii_digit() || (b >= b'a' && b <= b'f'))
+                .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
         {
             return true;
         }

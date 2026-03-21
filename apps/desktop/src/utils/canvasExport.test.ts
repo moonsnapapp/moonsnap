@@ -116,7 +116,7 @@ describe('canvasExport', () => {
       position: vi.fn(),
     };
 
-    exportCanvas(stage as any, layer as any, {
+    exportCanvas(stage as never, layer as never, {
       x: 0,
       y: 0,
       width: 100,

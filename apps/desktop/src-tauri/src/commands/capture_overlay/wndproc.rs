@@ -110,7 +110,7 @@ fn handle_nchittest(state_ptr: *mut OverlayState, lparam: LPARAM) -> LRESULT {
 fn handle_set_cursor(state_ptr: *mut OverlayState, lparam: LPARAM) -> LRESULT {
     unsafe {
         // Only handle cursor in client area
-        if (lparam.0 as u32 & 0xFFFF) != HTCLIENT as u32 {
+        if (lparam.0 & 0xFFFF) != HTCLIENT as isize {
             return LRESULT(0);
         }
 
