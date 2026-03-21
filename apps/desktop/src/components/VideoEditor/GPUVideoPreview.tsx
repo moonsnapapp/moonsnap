@@ -976,7 +976,7 @@ export function GPUVideoPreview({ isActive = true }: GPUVideoPreviewProps) {
   }, [backgroundConfig?.bgType, backgroundConfig?.wallpaper]);
 
   return (
-    <div ref={previewAreaRef} className="flex items-center justify-center h-full bg-[var(--polar-snow)] overflow-hidden">
+    <div ref={previewAreaRef} className="flex items-center justify-center h-full overflow-hidden">
       <PlaybackSyncController
         videoRef={videoRef}
         systemAudioRef={systemAudioRef}

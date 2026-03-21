@@ -114,7 +114,7 @@ export function VideoEditorSidebar({ project, onOpenCropDialog }: VideoEditorSid
     selectedTextSegmentId;
 
   return (
-    <div className="w-92 compositor-sidebar flex flex-col">
+    <div className="w-fit max-w-md compositor-sidebar flex flex-col shrink-0">
       {/* Tab Bar */}
       <SidebarTabBar
         activeTab={activeTab}
