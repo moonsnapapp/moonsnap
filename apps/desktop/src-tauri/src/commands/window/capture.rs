@@ -1,5 +1,6 @@
 //! Capture flow and overlay commands.
 
+use moonsnap_core::error::MoonSnapResult;
 use moonsnap_domain::capture::ScreenRegionSelection;
 use std::sync::atomic::Ordering;
 use tauri::{command, AppHandle, Emitter, Manager};
@@ -25,7 +26,7 @@ use super::{
 /// 4. Frontend calls `start_recording` with settings → uses prepared output path
 ///
 /// This ensures webcam.mp4 and screen.mp4 are saved to the same folder.
-pub fn trigger_capture(app: &AppHandle, capture_type: Option<&str>) -> Result<(), String> {
+pub fn trigger_capture(app: &AppHandle, capture_type: Option<&str>) -> MoonSnapResult<()> {
     trigger_capture_with_options(app, capture_type, false)
 }
 
@@ -33,7 +34,7 @@ pub fn trigger_capture_with_options(
     app: &AppHandle,
     capture_type: Option<&str>,
     auto_start_recording: bool,
-) -> Result<(), String> {
+) -> MoonSnapResult<()> {
     if crate::commands::video_recording::block_capture_attempt_while_recording(app)? {
         return Ok(());
     }
@@ -201,7 +202,7 @@ pub fn trigger_capture_with_options(
 }
 
 #[command]
-pub async fn capture_fullscreen_to_editor(app: AppHandle) -> Result<(), String> {
+pub async fn capture_fullscreen_to_editor(app: AppHandle) -> MoonSnapResult<()> {
     if crate::commands::video_recording::block_capture_attempt_while_recording(&app)? {
         return Ok(());
     }
@@ -211,7 +212,7 @@ pub async fn capture_fullscreen_to_editor(app: AppHandle) -> Result<(), String> 
 }
 
 #[command]
-pub async fn capture_all_monitors_to_editor(app: AppHandle) -> Result<(), String> {
+pub async fn capture_all_monitors_to_editor(app: AppHandle) -> MoonSnapResult<()> {
     if crate::commands::video_recording::block_capture_attempt_while_recording(&app)? {
         return Ok(());
     }
@@ -228,12 +229,12 @@ pub async fn capture_all_monitors_to_editor(app: AppHandle) -> Result<(), String
 }
 
 #[command]
-pub async fn show_overlay(app: AppHandle, capture_type: Option<String>) -> Result<(), String> {
+pub async fn show_overlay(app: AppHandle, capture_type: Option<String>) -> MoonSnapResult<()> {
     trigger_capture(&app, capture_type.as_deref())
 }
 
 #[command]
-pub async fn hide_overlay(app: AppHandle, restore_main_window: Option<bool>) -> Result<(), String> {
+pub async fn hide_overlay(app: AppHandle, restore_main_window: Option<bool>) -> MoonSnapResult<()> {
     // Restore main window if it was visible before capture started
     // Default to true for backward compatibility (screenshots)
     // Pass false when starting video recording to keep main window hidden
@@ -249,7 +250,7 @@ pub async fn hide_overlay(app: AppHandle, restore_main_window: Option<bool>) -> 
 
 /// Restore the main window (call this when video recording completes)
 #[command]
-pub async fn restore_main_window(app: AppHandle) -> Result<(), String> {
+pub async fn restore_main_window(app: AppHandle) -> MoonSnapResult<()> {
     // Check if main was visible before capture started
     if MAIN_WAS_VISIBLE.swap(false, Ordering::SeqCst) {
         if let Some(main_window) = app.get_webview_window("library") {
@@ -261,7 +262,7 @@ pub async fn restore_main_window(app: AppHandle) -> Result<(), String> {
 
 /// Show the library window (always shows, regardless of previous state)
 #[command]
-pub async fn show_library_window(app: AppHandle) -> Result<(), String> {
+pub async fn show_library_window(app: AppHandle) -> MoonSnapResult<()> {
     if let Some(main_window) = app.get_webview_window("library") {
         reveal_library_window(&main_window, true)?;
     }
@@ -277,7 +278,7 @@ pub async fn open_editor_fast(
     file_path: String,
     width: u32,
     height: u32,
-) -> Result<(), String> {
+) -> MoonSnapResult<()> {
     // Close all overlays
     hide_overlay(app.clone(), None).await?;
 

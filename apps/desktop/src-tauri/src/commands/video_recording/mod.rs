@@ -37,8 +37,9 @@ pub mod video_project;
 pub mod webcam;
 
 use lazy_static::lazy_static;
+use moonsnap_core::error::MoonSnapResult;
+use parking_lot::Mutex;
 use std::path::PathBuf;
-use std::sync::Mutex;
 use std::time::{Duration, Instant};
 use tauri::{command, AppHandle, Emitter, Manager};
 
@@ -77,7 +78,7 @@ pub use webcam::{get_webcam_devices, WebcamDevice};
 
 /// Get available webcam devices.
 #[command]
-pub fn list_webcam_devices() -> Result<Vec<WebcamDevice>, String> {
+pub fn list_webcam_devices() -> MoonSnapResult<Vec<WebcamDevice>> {
     get_webcam_devices()
 }
 
@@ -85,7 +86,7 @@ pub fn list_webcam_devices() -> Result<Vec<WebcamDevice>, String> {
 // Capture Pre-warming
 // ============================================================================
 
-use std::sync::Mutex as StdMutex;
+use parking_lot::Mutex as StdMutex;
 use std::sync::OnceLock;
 
 /// Pre-spawned webcam encoder pipe, ready to receive frames.
@@ -111,9 +112,7 @@ fn get_prepared_output_path() -> &'static StdMutex<Option<std::path::PathBuf>> {
 
 fn should_emit_capture_blocked_notice() -> bool {
     let state = LAST_CAPTURE_BLOCKED_NOTICE.get_or_init(|| StdMutex::new(None));
-    let Ok(mut last_notice) = state.lock() else {
-        return true;
-    };
+    let mut last_notice = state.lock();
 
     let now = Instant::now();
     if let Some(last_notice_at) = *last_notice {
@@ -126,7 +125,7 @@ fn should_emit_capture_blocked_notice() -> bool {
     true
 }
 
-pub fn block_capture_attempt_while_recording(app: &AppHandle) -> Result<bool, String> {
+pub fn block_capture_attempt_while_recording(app: &AppHandle) -> MoonSnapResult<bool> {
     let controller = RECORDING_CONTROLLER.lock().map_err(|e| e.to_string())?;
     if !controller.is_active() {
         return Ok(false);
@@ -142,13 +141,13 @@ pub fn block_capture_attempt_while_recording(app: &AppHandle) -> Result<bool, St
 
 /// Take the pre-generated output path if available.
 pub fn take_prepared_output_path() -> Option<std::path::PathBuf> {
-    get_prepared_output_path().lock().ok()?.take()
+    get_prepared_output_path().lock().take()
 }
 
 /// Pre-warm capture resources when toolbar is shown.
 /// This initializes webcam and screen capture so recording starts instantly.
 #[command]
-pub fn prewarm_capture() -> Result<(), String> {
+pub fn prewarm_capture() -> MoonSnapResult<()> {
     log::debug!("[PREWARM] Pre-warming capture resources...");
 
     // Pre-warm webcam if enabled
@@ -190,19 +189,21 @@ pub fn prewarm_capture() -> Result<(), String> {
 /// NOTE: This function is idempotent - if called multiple times (e.g., due to React
 /// double-render or StrictMode), it cancels any previous preparation before starting new.
 #[command]
-pub fn prepare_recording(format: RecordingFormat) -> Result<(), String> {
+pub fn prepare_recording(format: RecordingFormat) -> MoonSnapResult<()> {
     log::debug!("[PREPARE] Preparing recording resources (background)...");
 
     // IMPORTANT: Cancel any existing prepared resources FIRST to avoid race conditions.
     // If prepare_recording is called twice quickly (React double-render), we need to
     // ensure the webcam pipe matches the output path that will actually be used.
-    if let Ok(mut prepared) = get_prepared_webcam_pipe().lock() {
+    {
+        let mut prepared = get_prepared_webcam_pipe().lock();
         if let Some(old_pipe) = prepared.take() {
             log::debug!("[PREPARE] Cancelling previous webcam pipe to avoid path mismatch");
             old_pipe.cancel();
         }
     }
-    if let Ok(mut prepared) = get_prepared_output_path().lock() {
+    {
+        let mut prepared = get_prepared_output_path().lock();
         if let Some(old_path) = prepared.take() {
             // Don't delete the folder - a background FFmpeg might still be starting up.
             // Just clear the reference; orphaned empty folders are harmless.
@@ -222,7 +223,8 @@ pub fn prepare_recording(format: RecordingFormat) -> Result<(), String> {
     log::debug!("[PREPARE] Output path: {:?}", output_path);
 
     // Store for later use
-    if let Ok(mut prepared) = get_prepared_output_path().lock() {
+    {
+        let mut prepared = get_prepared_output_path().lock();
         *prepared = Some(output_path.clone());
     }
 
@@ -242,21 +244,17 @@ pub fn prepare_recording(format: RecordingFormat) -> Result<(), String> {
                 Ok(pipe) => {
                     // IMPORTANT: Before storing, verify this pipe's output path is still the current one.
                     // If prepare_recording was called again while we were spawning, our path is stale.
-                    let should_store = if let Ok(current_path) = get_prepared_output_path().lock() {
-                        current_path.as_ref() == Some(&expected_output_path)
-                    } else {
-                        false
-                    };
+                    let current_path = get_prepared_output_path().lock();
+                    let should_store = current_path.as_ref() == Some(&expected_output_path);
 
                     if should_store {
-                        if let Ok(mut prepared) = get_prepared_webcam_pipe().lock() {
-                            // Double-check no other pipe was stored while we were checking
-                            if let Some(existing) = prepared.take() {
-                                log::debug!("[PREPARE] Cancelling superseded pipe");
-                                existing.cancel();
-                            }
-                            *prepared = Some(pipe);
+                        let mut prepared = get_prepared_webcam_pipe().lock();
+                        // Double-check no other pipe was stored while we were checking
+                        if let Some(existing) = prepared.take() {
+                            log::debug!("[PREPARE] Cancelling superseded pipe");
+                            existing.cancel();
                         }
+                        *prepared = Some(pipe);
                         log::debug!("[PREPARE] FFmpeg spawned and ready");
                     } else {
                         log::debug!(
@@ -283,7 +281,8 @@ pub fn stop_prewarm() {
     log::debug!("[PREWARM] Stopping pre-warmed resources");
 
     // Cancel any prepared webcam pipe
-    if let Ok(mut prepared) = get_prepared_webcam_pipe().lock() {
+    {
+        let mut prepared = get_prepared_webcam_pipe().lock();
         if let Some(pipe) = prepared.take() {
             pipe.cancel();
             log::debug!("[PREWARM] Cancelled prepared webcam pipe");
@@ -291,7 +290,8 @@ pub fn stop_prewarm() {
     }
 
     // Clear prepared output path
-    if let Ok(mut prepared) = get_prepared_output_path().lock() {
+    {
+        let mut prepared = get_prepared_output_path().lock();
         *prepared = None;
     }
 }
@@ -306,7 +306,7 @@ pub fn stop_prewarm() {
 pub fn start_webcam_preview(
     device_index: usize,
     license: tauri::State<'_, crate::commands::license::LicenseState>,
-) -> Result<(), String> {
+) -> MoonSnapResult<()> {
     // Pro feature gate: webcam overlay requires a license
     {
         let guard = license.cache.read();
@@ -379,7 +379,7 @@ pub async fn start_gpu_webcam_preview(
     shape: WebcamShape,
     mirror: bool,
     license: tauri::State<'_, crate::commands::license::LicenseState>,
-) -> Result<(), String> {
+) -> MoonSnapResult<()> {
     // Pro feature gate: webcam overlay requires a license
     {
         let guard = license.cache.read();
@@ -489,7 +489,7 @@ pub async fn show_camera_preview(
     app: tauri::AppHandle,
     device_index: usize,
     license: tauri::State<'_, crate::commands::license::LicenseState>,
-) -> Result<(), String> {
+) -> MoonSnapResult<()> {
     // Pro feature gate: webcam overlay requires a license
     {
         let guard = license.cache.read();
@@ -551,14 +551,14 @@ pub fn notify_preview_window_closed() {
 
 /// Get available audio output devices (speakers/headphones) for system audio capture.
 #[command]
-pub fn list_audio_output_devices() -> Result<Vec<AudioOutputDevice>, String> {
-    moonsnap_capture::audio_wasapi::list_output_devices()
+pub fn list_audio_output_devices() -> MoonSnapResult<Vec<AudioOutputDevice>> {
+    moonsnap_capture::audio_wasapi::list_output_devices().map_err(|e| e.into())
 }
 
 /// Get available audio input devices (microphones).
 /// Uses wasapi to get full friendly names (e.g., "Headset (WH-1000XM3 Hands-Free AG Audio)")
 #[command]
-pub fn list_audio_input_devices() -> Result<Vec<AudioInputDevice>, String> {
+pub fn list_audio_input_devices() -> MoonSnapResult<Vec<AudioInputDevice>> {
     use wasapi::{initialize_mta, DeviceEnumerator, Direction};
 
     // Initialize COM for this thread
@@ -610,7 +610,7 @@ pub fn list_audio_input_devices() -> Result<Vec<AudioInputDevice>, String> {
 
 /// Close the webcam preview window.
 #[command]
-pub async fn close_webcam_preview(app: tauri::AppHandle) -> Result<(), String> {
+pub async fn close_webcam_preview(app: tauri::AppHandle) -> MoonSnapResult<()> {
     // Route through preview manager to keep internal state synchronized.
     webcam::hide_camera_preview(&app);
     log::debug!("[WEBCAM] Preview window closed");
@@ -619,7 +619,7 @@ pub async fn close_webcam_preview(app: tauri::AppHandle) -> Result<(), String> {
 
 /// Bring the webcam preview window to the front (above other topmost windows).
 #[command]
-pub async fn bring_webcam_preview_to_front(app: tauri::AppHandle) -> Result<(), String> {
+pub async fn bring_webcam_preview_to_front(app: tauri::AppHandle) -> MoonSnapResult<()> {
     #[cfg(target_os = "windows")]
     {
         use windows::Win32::Foundation::HWND;
@@ -670,7 +670,7 @@ pub async fn move_webcam_to_anchor(
     sel_y: i32,
     sel_width: i32,
     sel_height: i32,
-) -> Result<(), String> {
+) -> MoonSnapResult<()> {
     if let Some(window) = app.get_webview_window("webcam-preview") {
         // Get webcam size from settings
         let webcam_size = match WEBCAM_CONFIG.read().size {
@@ -713,7 +713,7 @@ pub async fn clamp_webcam_to_selection(
     sel_y: i32,
     sel_width: i32,
     sel_height: i32,
-) -> Result<(), String> {
+) -> MoonSnapResult<()> {
     if let Some(window) = app.get_webview_window("webcam-preview") {
         // Get webcam size from settings
         let webcam_size = match WEBCAM_CONFIG.read().size {
@@ -771,7 +771,7 @@ pub async fn clamp_webcam_to_selection(
 /// Exclude the webcam preview window from screen capture.
 /// Uses Windows SetWindowDisplayAffinity API to make the window invisible to capture.
 #[command]
-pub async fn exclude_webcam_from_capture(app: tauri::AppHandle) -> Result<(), String> {
+pub async fn exclude_webcam_from_capture(app: tauri::AppHandle) -> MoonSnapResult<()> {
     #[cfg(target_os = "windows")]
     {
         use windows::Win32::Foundation::HWND;
@@ -808,10 +808,8 @@ lazy_static! {
 /// Start webcam recording - creates the output file.
 /// Called from frontend when screen recording starts.
 #[command]
-pub fn webcam_recording_start(output_path: String) -> Result<(), String> {
-    let mut guard = WEBCAM_RECORDING_FILE
-        .lock()
-        .map_err(|e| format!("Failed to lock webcam recording state: {}", e))?;
+pub fn webcam_recording_start(output_path: String) -> MoonSnapResult<()> {
+    let mut guard = WEBCAM_RECORDING_FILE.lock();
 
     // Close any existing file
     if guard.is_some() {
@@ -835,10 +833,8 @@ pub fn webcam_recording_start(output_path: String) -> Result<(), String> {
 /// Write a chunk of webcam video data.
 /// Called from frontend's MediaRecorder ondataavailable.
 #[command]
-pub fn webcam_recording_chunk(chunk: Vec<u8>) -> Result<(), String> {
-    let mut guard = WEBCAM_RECORDING_FILE
-        .lock()
-        .map_err(|e| format!("Failed to lock webcam recording state: {}", e))?;
+pub fn webcam_recording_chunk(chunk: Vec<u8>) -> MoonSnapResult<()> {
+    let mut guard = WEBCAM_RECORDING_FILE.lock();
 
     if let Some(ref mut file) = *guard {
         file.write_all(&chunk)
@@ -846,17 +842,15 @@ pub fn webcam_recording_chunk(chunk: Vec<u8>) -> Result<(), String> {
         log::trace!("[WEBCAM-REC] Wrote {} bytes", chunk.len());
         Ok(())
     } else {
-        Err("Webcam recording not started".to_string())
+        Err("Webcam recording not started".into())
     }
 }
 
 /// Stop webcam recording - closes the file.
 /// Called from frontend when screen recording stops.
 #[command]
-pub fn webcam_recording_stop() -> Result<(), String> {
-    let mut guard = WEBCAM_RECORDING_FILE
-        .lock()
-        .map_err(|e| format!("Failed to lock webcam recording state: {}", e))?;
+pub fn webcam_recording_stop() -> MoonSnapResult<()> {
+    let mut guard = WEBCAM_RECORDING_FILE.lock();
 
     if let Some(file) = guard.take() {
         // File is closed when dropped
@@ -878,7 +872,7 @@ pub fn webcam_recording_stop() -> Result<(), String> {
 pub async fn start_recording(
     app: AppHandle,
     settings: RecordingSettings,
-) -> Result<StartRecordingResult, String> {
+) -> MoonSnapResult<StartRecordingResult> {
     log::debug!(
         "[RECORDING] start_recording called with mode: {:?}",
         settings.mode
@@ -890,8 +884,7 @@ pub async fn start_recording(
     // Check if FFmpeg is available (required for video/audio muxing and GIF encoding)
     if moonsnap_media::ffmpeg::find_ffmpeg().is_none() {
         return Err(
-            "FFmpeg is not available. Please wait for it to download or restart the app."
-                .to_string(),
+            "FFmpeg is not available. Please wait for it to download or restart the app.".into(),
         );
     }
 
@@ -899,7 +892,7 @@ pub async fn start_recording(
     {
         let controller = RECORDING_CONTROLLER.lock().map_err(|e| e.to_string())?;
         if controller.is_active() {
-            return Err("A recording is already in progress".to_string());
+            return Err("A recording is already in progress".into());
         }
     }
 
@@ -947,31 +940,31 @@ pub async fn start_recording(
 /// Returns immediately after sending the stop command.
 /// The actual completion is signaled via 'recording-state-changed' event.
 #[command]
-pub async fn stop_recording(app: AppHandle) -> Result<(), String> {
+pub async fn stop_recording(app: AppHandle) -> MoonSnapResult<()> {
     recorder::stop_recording(app).await
 }
 
 /// Cancel the current recording without saving.
 #[command]
-pub async fn cancel_recording(app: AppHandle) -> Result<(), String> {
+pub async fn cancel_recording(app: AppHandle) -> MoonSnapResult<()> {
     recorder::cancel_recording(app).await
 }
 
 /// Pause the current recording.
 #[command]
-pub async fn pause_recording(app: AppHandle) -> Result<(), String> {
+pub async fn pause_recording(app: AppHandle) -> MoonSnapResult<()> {
     recorder::pause_recording(app).await
 }
 
 /// Resume a paused recording.
 #[command]
-pub async fn resume_recording(app: AppHandle) -> Result<(), String> {
+pub async fn resume_recording(app: AppHandle) -> MoonSnapResult<()> {
     recorder::resume_recording(app).await
 }
 
 /// Get the current recording status.
 #[command]
-pub async fn get_recording_status() -> Result<RecordingStatus, String> {
+pub async fn get_recording_status() -> MoonSnapResult<RecordingStatus> {
     let controller = RECORDING_CONTROLLER.lock().map_err(|e| e.to_string())?;
     Ok(RecordingStatus {
         state: controller.state.clone(),
@@ -996,7 +989,7 @@ pub async fn get_recording_status() -> Result<RecordingStatus, String> {
 /// # Returns
 /// A VideoProject ready for editing in the video editor UI.
 #[command]
-pub async fn load_video_project(video_path: String) -> Result<VideoProject, String> {
+pub async fn load_video_project(video_path: String) -> MoonSnapResult<VideoProject> {
     // Use spawn_blocking to avoid starving the tokio async worker threads.
     // load_video_project_from_file may call ffprobe (blocking subprocess) for
     // legacy videos, and the asset-protocol handler shares this runtime.
@@ -1004,7 +997,7 @@ pub async fn load_video_project(video_path: String) -> Result<VideoProject, Stri
         let path = std::path::Path::new(&video_path);
 
         if !path.exists() {
-            return Err(format!("Video file not found: {}", video_path));
+            return Err(format!("Video file not found: {}", video_path).into());
         }
 
         load_video_project_from_file(path)
@@ -1021,13 +1014,13 @@ pub async fn load_video_project(video_path: String) -> Result<VideoProject, Stri
 /// For legacy flat file projects:
 ///   Saves alongside the video with `.moonsnap` extension.
 #[command]
-pub async fn save_video_project(project: VideoProject) -> Result<(), String> {
+pub async fn save_video_project(project: VideoProject) -> MoonSnapResult<()> {
     tokio::task::spawn_blocking(move || save_video_project_blocking(project))
         .await
         .map_err(|e| format!("Save project task panicked: {}", e))?
 }
 
-fn save_video_project_blocking(mut project: VideoProject) -> Result<(), String> {
+fn save_video_project_blocking(mut project: VideoProject) -> MoonSnapResult<()> {
     let video_path = std::path::Path::new(&project.sources.screen_video);
 
     // Check if this is a folder-based project (video is inside a project folder)
@@ -1071,26 +1064,26 @@ fn save_video_project_blocking(mut project: VideoProject) -> Result<(), String> 
             // Update timestamp
             save_project.updated_at = chrono::Utc::now().to_rfc3339();
 
-            return save_project.save(&project_path);
+            return save_project.save(&project_path).map_err(|e| e.into());
         }
     }
 
     // Legacy: save alongside video with .moonsnap extension
     let project_path = video_path.with_extension("moonsnap");
     project.updated_at = chrono::Utc::now().to_rfc3339();
-    project.save(&project_path)
+    project.save(&project_path).map_err(|e| e.into())
 }
 
 /// Load cursor recording data from a JSON file.
 ///
 /// This is used for auto-zoom cursor following and cursor interpolation.
 #[command]
-pub async fn load_cursor_recording_cmd(path: String) -> Result<CursorRecording, String> {
+pub async fn load_cursor_recording_cmd(path: String) -> MoonSnapResult<CursorRecording> {
     tokio::task::spawn_blocking(move || {
         let cursor_path = std::path::Path::new(&path);
 
         if !cursor_path.exists() {
-            return Err(format!("Cursor data file not found: {}", path));
+            return Err(format!("Cursor data file not found: {}", path).into());
         }
 
         cursor::load_cursor_recording(cursor_path)
@@ -1114,12 +1107,12 @@ pub async fn extract_frame(
     timestamp_ms: u64,
     max_width: Option<u32>,
     tolerance_ms: Option<u64>,
-) -> Result<String, String> {
+) -> MoonSnapResult<String> {
     tokio::task::spawn_blocking(move || {
         let path = std::path::Path::new(&video_path);
 
         if !path.exists() {
-            return Err(format!("Video file not found: {}", video_path));
+            return Err(format!("Video file not found: {}", video_path).into());
         }
 
         let max_w = max_width.unwrap_or(1280);
@@ -1147,7 +1140,7 @@ pub fn clear_video_frame_cache(video_path: Option<String>) {
 pub async fn extract_audio_waveform(
     audio_path: String,
     samples_per_second: Option<u32>,
-) -> Result<AudioWaveform, String> {
+) -> MoonSnapResult<AudioWaveform> {
     // Move all blocking subprocess work to a dedicated blocking thread so we
     // don't starve the tokio async worker threads.  The asset-protocol handler
     // shares this runtime, so blocking here would prevent video seeking from
@@ -1164,11 +1157,11 @@ pub async fn extract_audio_waveform(
 fn extract_audio_waveform_blocking(
     audio_path: &str,
     samples_per_second: Option<u32>,
-) -> Result<AudioWaveform, String> {
+) -> MoonSnapResult<AudioWaveform> {
     let path = std::path::Path::new(audio_path);
 
     if !path.exists() {
-        return Err(format!("Audio file not found: {}", audio_path));
+        return Err(format!("Audio file not found: {}", audio_path).into());
     }
 
     let sps = samples_per_second.unwrap_or(100);
@@ -1242,7 +1235,7 @@ fn extract_audio_waveform_blocking(
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("FFmpeg failed: {}", stderr));
+        return Err(format!("FFmpeg failed: {}", stderr).into());
     }
 
     // Parse raw f32 samples
@@ -1278,7 +1271,7 @@ fn extract_audio_waveform_blocking(
 pub async fn generate_auto_zoom(
     project: VideoProject,
     config: Option<AutoZoomConfig>,
-) -> Result<VideoProject, String> {
+) -> MoonSnapResult<VideoProject> {
     let zoom_config = config.unwrap_or_default();
 
     log::info!(
@@ -1314,7 +1307,7 @@ pub async fn export_video(
     project: VideoProject,
     output_path: String,
     license: tauri::State<'_, crate::commands::license::LicenseState>,
-) -> Result<ExportResult, String> {
+) -> MoonSnapResult<ExportResult> {
     // Pro feature gate: GIF export requires a license
     if matches!(
         project.export.format,
@@ -1331,8 +1324,7 @@ pub async fn export_video(
     // Check if FFmpeg is available (required for video encoding)
     if moonsnap_media::ffmpeg::find_ffmpeg().is_none() {
         return Err(
-            "FFmpeg is not available. Please wait for it to download or restart the app."
-                .to_string(),
+            "FFmpeg is not available. Please wait for it to download or restart the app.".into(),
         );
     }
 
@@ -1379,7 +1371,7 @@ pub fn cancel_export() {
 /// # Returns
 /// true if NVENC is available, false otherwise
 #[command]
-pub async fn check_nvenc_available() -> Result<bool, String> {
+pub async fn check_nvenc_available() -> MoonSnapResult<bool> {
     let ffmpeg_path = moonsnap_media::ffmpeg::find_ffmpeg().ok_or("FFmpeg not found")?;
     Ok(moonsnap_export::encoder_selection::is_nvenc_available(
         &ffmpeg_path,
@@ -1405,7 +1397,7 @@ pub async fn check_nvenc_available() -> Result<bool, String> {
 ///   - webcam.mp4 (optional)
 ///   - cursor.json (optional)
 ///   - project.json (video project metadata)
-pub fn generate_output_path(settings: &RecordingSettings) -> Result<PathBuf, String> {
+pub fn generate_output_path(settings: &RecordingSettings) -> MoonSnapResult<PathBuf> {
     // Get the default save directory from settings
     let save_dir = crate::commands::settings::get_default_save_dir_sync().unwrap_or_else(|_| {
         dirs::video_dir()
@@ -1452,14 +1444,15 @@ pub fn emit_state_change(app: &AppHandle, state: &RecordingState) {
 
     #[cfg(desktop)]
     {
-        if let Ok(tray_state) = app.state::<Mutex<crate::TrayState>>().lock() {
-            let format = RECORDING_CONTROLLER.lock().ok().and_then(|controller| {
-                controller.settings.as_ref().map(|settings| settings.format)
-            });
+        let tray_state_ref = app.state::<Mutex<crate::TrayState>>();
+        let tray_state = tray_state_ref.lock();
+        let format = RECORDING_CONTROLLER
+            .lock()
+            .ok()
+            .and_then(|controller| controller.settings.as_ref().map(|settings| settings.format));
 
-            if let Err(error) = tray_state.update_recording_state(state, format) {
-                log::warn!("Failed to update tray recording state: {}", error);
-            }
+        if let Err(error) = tray_state.update_recording_state(state, format) {
+            log::warn!("Failed to update tray recording state: {}", error);
         }
     }
 
@@ -1482,13 +1475,13 @@ pub fn start_audio_monitoring(
     app: AppHandle,
     mic_device_index: Option<usize>,
     monitor_system_audio: bool,
-) -> Result<(), String> {
+) -> MoonSnapResult<()> {
     audio_monitor::start_monitoring(app, mic_device_index, monitor_system_audio)
 }
 
 /// Stop audio level monitoring.
 #[command]
-pub fn stop_audio_monitoring() -> Result<(), String> {
+pub fn stop_audio_monitoring() -> MoonSnapResult<()> {
     audio_monitor::stop_monitoring()
 }
 

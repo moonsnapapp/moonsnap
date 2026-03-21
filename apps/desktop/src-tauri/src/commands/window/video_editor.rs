@@ -3,8 +3,9 @@
 //! Each video opens in its own dedicated window for faster switching
 //! between projects. Windows are tracked by project path to prevent duplicates.
 
+use moonsnap_core::error::MoonSnapResult;
+use parking_lot::Mutex;
 use std::collections::HashMap;
-use std::sync::Mutex;
 use tauri::{command, AppHandle, Manager, WebviewUrl, WebviewWindowBuilder};
 
 use super::editor_windows::{
@@ -19,10 +20,8 @@ const VIDEO_EDITOR_LABEL_PREFIX: &str = "video-editor-";
 /// Maps: project_path -> window_label
 static OPEN_EDITORS: Mutex<Option<HashMap<String, String>>> = Mutex::new(None);
 
-fn get_editors() -> std::sync::MutexGuard<'static, Option<HashMap<String, String>>> {
-    let mut guard = OPEN_EDITORS
-        .lock()
-        .expect("video_editor: OPEN_EDITORS lock poisoned");
+fn get_editors() -> parking_lot::MutexGuard<'static, Option<HashMap<String, String>>> {
+    let mut guard = OPEN_EDITORS.lock();
     if guard.is_none() {
         *guard = Some(HashMap::new());
     }
@@ -35,7 +34,7 @@ fn get_editors() -> std::sync::MutexGuard<'static, Option<HashMap<String, String
 pub async fn show_video_editor_window(
     app: AppHandle,
     project_path: String,
-) -> Result<String, String> {
+) -> MoonSnapResult<String> {
     let mut editors = get_editors();
     // Safe: get_editors() initializes to Some if None
     let editors_map = editors
@@ -89,7 +88,7 @@ pub async fn show_video_editor_window(
 
 /// Close a video editor window by its label.
 #[command]
-pub async fn close_video_editor_window(app: AppHandle, label: String) -> Result<(), String> {
+pub async fn close_video_editor_window(app: AppHandle, label: String) -> MoonSnapResult<()> {
     // Remove from tracking
     let mut editors = get_editors();
     // Safe: get_editors() initializes to Some if None

@@ -7,6 +7,7 @@
 
 pub mod fallback;
 
+use moonsnap_core::error::MoonSnapResult;
 use moonsnap_domain::capture::{
     CaptureResult, FastCaptureResult, MonitorInfo, RegionSelection, ScreenRegionSelection,
     VirtualScreenBounds, WindowInfo,
@@ -23,18 +24,18 @@ static ACTIVE_WINDOW_DETECT_MONITOR: AtomicI32 = AtomicI32::new(-1);
 
 /// Get all available monitors.
 #[command]
-pub async fn get_monitors() -> Result<Vec<MonitorInfo>, String> {
-    fallback::get_monitors().map_err(|e| e.to_string())
+pub async fn get_monitors() -> MoonSnapResult<Vec<MonitorInfo>> {
+    fallback::get_monitors().map_err(|e| e.to_string().into())
 }
 
 /// Get the bounding box of all monitors combined (virtual screen bounds).
 /// This is useful for capturing all monitors at once.
 #[command]
-pub async fn get_virtual_screen_bounds() -> Result<VirtualScreenBounds, String> {
+pub async fn get_virtual_screen_bounds() -> MoonSnapResult<VirtualScreenBounds> {
     let monitors = fallback::get_monitors().map_err(|e| e.to_string())?;
 
     if monitors.is_empty() {
-        return Err("No monitors found".to_string());
+        return Err("No monitors found".into());
     }
 
     let mut min_x = i32::MAX;
@@ -59,8 +60,8 @@ pub async fn get_virtual_screen_bounds() -> Result<VirtualScreenBounds, String> 
 
 /// Get all capturable windows.
 #[command]
-pub async fn get_windows() -> Result<Vec<WindowInfo>, String> {
-    fallback::get_windows().map_err(|e| e.to_string())
+pub async fn get_windows() -> MoonSnapResult<Vec<WindowInfo>> {
+    fallback::get_windows().map_err(|e| e.to_string().into())
 }
 
 /// Get window at a specific screen coordinate.
@@ -75,7 +76,7 @@ pub async fn get_window_at_point(
     x: i32,
     y: i32,
     monitor_index: i32,
-) -> Result<Option<WindowInfo>, String> {
+) -> MoonSnapResult<Option<WindowInfo>> {
     use windows::Win32::{
         Foundation::POINT,
         System::Threading::GetCurrentProcessId,
@@ -301,10 +302,10 @@ fn try_get_window_info(
         }
 
         // Filter webview windows with generic titles (likely our settings modal)
-        if class_name.starts_with("Chrome_") || class_name.contains("WebView") {
-            if title_lower == "settings" || title.is_empty() {
-                return None;
-            }
+        if (class_name.starts_with("Chrome_") || class_name.contains("WebView"))
+            && (title_lower == "settings" || title.is_empty())
+        {
+            return None;
         }
 
         let ex_style = GetWindowLongW(hwnd, GWL_EXSTYLE) as u32;
@@ -316,10 +317,11 @@ fn try_get_window_info(
         if (ex_style & WS_EX_LAYERED.0) != 0 {
             let mut alpha = 255u8;
             let mut flags = LAYERED_WINDOW_ATTRIBUTES_FLAGS::default();
-            if GetLayeredWindowAttributes(hwnd, None, Some(&mut alpha), Some(&mut flags)).is_ok() {
-                if (flags & LWA_ALPHA).0 != 0 && alpha < 30 {
-                    return None;
-                }
+            if GetLayeredWindowAttributes(hwnd, None, Some(&mut alpha), Some(&mut flags)).is_ok()
+                && (flags & LWA_ALPHA).0 != 0
+                && alpha < 30
+            {
+                return None;
             }
         }
 
@@ -380,7 +382,7 @@ pub async fn get_window_at_point(
     _x: i32,
     _y: i32,
     _monitor_index: i32,
-) -> Result<Option<WindowInfo>, String> {
+) -> MoonSnapResult<Option<WindowInfo>> {
     // Window detection not supported on non-Windows platforms
     Ok(None)
 }
@@ -390,7 +392,7 @@ pub async fn get_window_at_point(
 // ============================================================================
 
 /// Write raw RGBA bytes to a temporary file and return the path.
-fn write_rgba_to_temp_file(rgba_data: &[u8], width: u32, height: u32) -> Result<String, String> {
+fn write_rgba_to_temp_file(rgba_data: &[u8], width: u32, height: u32) -> MoonSnapResult<String> {
     use std::time::{SystemTime, UNIX_EPOCH};
 
     let temp_dir = std::env::temp_dir();
@@ -413,7 +415,7 @@ fn write_rgba_to_temp_file(rgba_data: &[u8], width: u32, height: u32) -> Result<
     file.write_all(rgba_data)
         .map_err(|e| format!("Failed to write RGBA data: {}", e))?;
 
-    Ok(file_path.to_string_lossy().to_string())
+    Ok(file_path.to_string_lossy().into_owned())
 }
 
 // ============================================================================
@@ -442,7 +444,7 @@ fn capture_region_dxgi(selection: &ScreenRegionSelection) -> Result<(Vec<u8>, u3
 /// Fast capture of a window - returns file path instead of base64.
 /// Uses DXGI Desktop Duplication (full monitor capture + crop at window bounds).
 #[command]
-pub async fn capture_window_fast(hwnd: isize) -> Result<FastCaptureResult, String> {
+pub async fn capture_window_fast(hwnd: isize) -> MoonSnapResult<FastCaptureResult> {
     log::debug!("[CAPTURE] Window capture for hwnd={}", hwnd);
 
     let (rgba_data, width, height) = capture_window_dxgi(hwnd)?;
@@ -460,7 +462,7 @@ pub async fn capture_window_fast(hwnd: isize) -> Result<FastCaptureResult, Strin
 /// Fast capture of a region - returns file path instead of base64.
 /// Uses monitor-relative coordinates. Uses DXGI Desktop Duplication.
 #[command]
-pub async fn capture_region_fast(selection: RegionSelection) -> Result<FastCaptureResult, String> {
+pub async fn capture_region_fast(selection: RegionSelection) -> MoonSnapResult<FastCaptureResult> {
     // Convert to screen coordinates and use screen region capture
     let monitors = fallback::get_monitors().map_err(|e| e.to_string())?;
     let monitor = monitors
@@ -490,7 +492,7 @@ pub async fn capture_region_fast(selection: RegionSelection) -> Result<FastCaptu
 #[command]
 pub async fn capture_screen_region_fast(
     selection: ScreenRegionSelection,
-) -> Result<FastCaptureResult, String> {
+) -> MoonSnapResult<FastCaptureResult> {
     let (rgba_data, width, height) = capture_region_dxgi(&selection)?;
     let file_path = write_rgba_to_temp_file(&rgba_data, width, height)?;
     Ok(FastCaptureResult {
@@ -504,7 +506,7 @@ pub async fn capture_screen_region_fast(
 /// Fast capture of fullscreen - returns file path instead of base64.
 /// Uses DXGI Desktop Duplication.
 #[command]
-pub async fn capture_fullscreen_fast() -> Result<FastCaptureResult, String> {
+pub async fn capture_fullscreen_fast() -> MoonSnapResult<FastCaptureResult> {
     let (rgba_data, width, height) = capture_fullscreen_dxgi()?;
     let file_path = write_rgba_to_temp_file(&rgba_data, width, height)?;
     Ok(FastCaptureResult {
@@ -517,7 +519,7 @@ pub async fn capture_fullscreen_fast() -> Result<FastCaptureResult, String> {
 
 /// Read raw RGBA data from a temp file (for converting to PNG when saving).
 #[command]
-pub async fn read_rgba_file(file_path: String) -> Result<CaptureResult, String> {
+pub async fn read_rgba_file(file_path: String) -> MoonSnapResult<CaptureResult> {
     use base64::{engine::general_purpose::STANDARD, Engine};
     use image::{DynamicImage, RgbaImage};
     use std::io::{Cursor, Read};
@@ -567,6 +569,7 @@ pub async fn read_rgba_file(file_path: String) -> Result<CaptureResult, String> 
 
 /// Clean up a temp RGBA file.
 #[command]
-pub async fn cleanup_rgba_file(file_path: String) -> Result<(), String> {
-    std::fs::remove_file(&file_path).map_err(|e| format!("Failed to delete temp file: {}", e))
+pub async fn cleanup_rgba_file(file_path: String) -> MoonSnapResult<()> {
+    std::fs::remove_file(&file_path)
+        .map_err(|e| format!("Failed to delete temp file: {}", e).into())
 }

@@ -1,5 +1,6 @@
 //! Video metadata extraction and project loading.
 
+use moonsnap_core::error::MoonSnapResult;
 use std::path::PathBuf;
 
 use moonsnap_domain::video_project::{VideoProject, VisibilitySegment};
@@ -22,7 +23,7 @@ pub struct VideoMetadata {
 
 impl VideoMetadata {
     /// Extract metadata from a video file using ffprobe.
-    pub fn from_file(video_path: &std::path::Path) -> Result<Self, String> {
+    pub fn from_file(video_path: &std::path::Path) -> MoonSnapResult<Self> {
         let ffprobe_path = find_ffprobe()
             .ok_or_else(|| "ffprobe not found. Ensure FFmpeg is installed.".to_string())?;
 
@@ -51,7 +52,7 @@ impl VideoMetadata {
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(format!("ffprobe failed: {}", stderr));
+            return Err(format!("ffprobe failed: {}", stderr).into());
         }
 
         let json_str = String::from_utf8_lossy(&output.stdout);
@@ -199,7 +200,7 @@ fn parse_frame_rate(rate: &str) -> u32 {
 /// - Extracts video metadata using ffprobe
 /// - Detects associated files by naming convention
 /// - Creates a VideoProject with default configurations
-pub fn load_video_project_from_file(video_path: &std::path::Path) -> Result<VideoProject, String> {
+pub fn load_video_project_from_file(video_path: &std::path::Path) -> MoonSnapResult<VideoProject> {
     // Check if this is a video inside a project folder
     // (e.g., recording_123456/screen.mp4)
     if let Some(parent) = video_path.parent() {
@@ -216,7 +217,7 @@ pub fn load_video_project_from_file(video_path: &std::path::Path) -> Result<Vide
 
 /// Load a VideoProject from a project folder containing project.json.
 /// Resolves relative paths in the project to absolute paths.
-fn load_video_project_from_folder(folder_path: &std::path::Path) -> Result<VideoProject, String> {
+fn load_video_project_from_folder(folder_path: &std::path::Path) -> MoonSnapResult<VideoProject> {
     let project_json = folder_path.join("project.json");
 
     let content = std::fs::read_to_string(&project_json)
@@ -238,7 +239,7 @@ fn load_video_project_from_folder(folder_path: &std::path::Path) -> Result<Video
 
     let resolve_path = |relative: &str| -> String {
         let path = folder_path.join(relative);
-        path.to_string_lossy().to_string()
+        path.to_string_lossy().into_owned()
     };
 
     // Resolve screen video path
@@ -274,12 +275,12 @@ fn load_video_project_from_folder(folder_path: &std::path::Path) -> Result<Video
 
 /// Load a VideoProject from a legacy flat MP4 file.
 /// Detects associated files by naming convention (_webcam.mp4, _cursor.json, etc.)
-fn load_video_project_legacy(video_path: &std::path::Path) -> Result<VideoProject, String> {
+fn load_video_project_legacy(video_path: &std::path::Path) -> MoonSnapResult<VideoProject> {
     // Get video metadata
     let metadata = VideoMetadata::from_file(video_path)?;
 
     // Create base project
-    let video_path_str = video_path.to_string_lossy().to_string();
+    let video_path_str = video_path.to_string_lossy().into_owned();
     let mut project = VideoProject::new(
         &video_path_str,
         metadata.width,
@@ -296,7 +297,7 @@ fn load_video_project_legacy(video_path: &std::path::Path) -> Result<VideoProjec
     // Check for webcam video (e.g., recording_123456_webcam.mp4)
     let webcam_path = PathBuf::from(format!("{}_webcam.mp4", base_str));
     if webcam_path.exists() {
-        project.sources.webcam_video = Some(webcam_path.to_string_lossy().to_string());
+        project.sources.webcam_video = Some(webcam_path.to_string_lossy().into_owned());
         // Enable webcam by default if we have a webcam video
         project.webcam.enabled = true;
         // Default to full visibility
@@ -310,13 +311,13 @@ fn load_video_project_legacy(video_path: &std::path::Path) -> Result<VideoProjec
     // Check for cursor data (e.g., recording_123456_cursor.json)
     let cursor_path = PathBuf::from(format!("{}_cursor.json", base_str));
     if cursor_path.exists() {
-        project.sources.cursor_data = Some(cursor_path.to_string_lossy().to_string());
+        project.sources.cursor_data = Some(cursor_path.to_string_lossy().into_owned());
     }
 
     // Check for system audio (e.g., recording_123456_system.wav)
     let system_audio_path = PathBuf::from(format!("{}_system.wav", base_str));
     if system_audio_path.exists() {
-        project.sources.system_audio = Some(system_audio_path.to_string_lossy().to_string());
+        project.sources.system_audio = Some(system_audio_path.to_string_lossy().into_owned());
     }
     // Note: Quick capture videos have audio muxed INTO the MP4.
     // We leave systemAudio = None so the <video> element plays its own
@@ -326,7 +327,7 @@ fn load_video_project_legacy(video_path: &std::path::Path) -> Result<VideoProjec
     // Check for microphone audio (e.g., recording_123456_mic.wav)
     let mic_audio_path = PathBuf::from(format!("{}_mic.wav", base_str));
     if mic_audio_path.exists() {
-        project.sources.microphone_audio = Some(mic_audio_path.to_string_lossy().to_string());
+        project.sources.microphone_audio = Some(mic_audio_path.to_string_lossy().into_owned());
     }
 
     Ok(project)

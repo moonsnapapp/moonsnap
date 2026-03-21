@@ -1,4 +1,5 @@
 use super::super::NativeCameraFrame;
+use moonsnap_core::error::MoonSnapResult;
 
 /// Bilinear downscaling for planar data (Y plane).
 /// Samples 4 neighbors and blends based on fractional position.
@@ -142,7 +143,7 @@ pub(super) fn frame_to_rgba_downsampled(
     dst_width: u32,
     dst_height: u32,
     rgba: &mut Vec<u8>,
-) -> Result<(), String> {
+) -> MoonSnapResult<()> {
     use moonsnap_camera_windows::PixelFormat;
 
     let bytes = frame.bytes();
@@ -243,7 +244,8 @@ pub(super) fn frame_to_rgba_downsampled(
             return Err(format!(
                 "frame_to_rgba_downsampled: unsupported format {:?}",
                 frame.pixel_format
-            ))
+            )
+            .into())
         },
     }
 
@@ -256,7 +258,7 @@ pub(super) fn frame_to_rgba_downsampled(
 pub(super) fn frame_to_rgba_into(
     frame: &NativeCameraFrame,
     rgba: &mut Vec<u8>,
-) -> Result<(), String> {
+) -> MoonSnapResult<()> {
     use moonsnap_camera_windows::PixelFormat;
 
     let bytes = frame.bytes();
@@ -304,7 +306,8 @@ pub(super) fn frame_to_rgba_into(
             return Err(format!(
                 "frame_to_rgba_into: unsupported format {:?}",
                 frame.pixel_format
-            ))
+            )
+            .into())
         },
     }
 

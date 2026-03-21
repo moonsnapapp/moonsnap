@@ -5,11 +5,13 @@
 //! manager is owned by one thread and all register/unregister operations are
 //! routed to it over a channel.
 
+use moonsnap_core::error::{MoonSnapError, MoonSnapResult};
+use parking_lot::Mutex;
 use std::collections::HashMap;
 use std::fs;
 use std::str::FromStr;
 use std::sync::mpsc::{self, Receiver, Sender};
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, OnceLock};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
@@ -106,16 +108,14 @@ fn get_state() -> &'static Arc<Mutex<HotkeyState>> {
     })
 }
 
-fn parse_hotkey(shortcut: &str) -> Result<Hotkey, String> {
+fn parse_hotkey(shortcut: &str) -> MoonSnapResult<Hotkey> {
     Hotkey::from_str(shortcut)
-        .map_err(|error| format!("Invalid shortcut '{}': {}", shortcut, error))
+        .map_err(|error| format!("Invalid shortcut '{}': {}", shortcut, error).into())
 }
 
 fn should_skip_duplicate_dispatch(id: &str) -> bool {
     let state = LAST_SHORTCUT_DISPATCH.get_or_init(|| Mutex::new(None));
-    let Ok(mut last_dispatch) = state.lock() else {
-        return false;
-    };
+    let mut last_dispatch = state.lock();
 
     let now = Instant::now();
     if let Some((last_id, last_at)) = last_dispatch.as_ref() {
@@ -180,7 +180,7 @@ fn resolved_shortcuts(settings: &PersistedShortcutSettings) -> Vec<(String, Stri
         .collect()
 }
 
-fn dispatch_global_shortcut_inner(app: &AppHandle, id: &str) -> Result<(), String> {
+fn dispatch_global_shortcut_inner(app: &AppHandle, id: &str) -> MoonSnapResult<()> {
     if should_skip_duplicate_dispatch(id) {
         return Ok(());
     }
@@ -220,7 +220,7 @@ fn dispatch_global_shortcut_inner(app: &AppHandle, id: &str) -> Result<(), Strin
         },
         "record_video" => window::trigger_capture_with_options(app, Some("video"), true),
         "record_gif" => window::trigger_capture_with_options(app, Some("gif"), true),
-        _ => Err(format!("Unknown shortcut action: {}", id)),
+        _ => Err(format!("Unknown shortcut action: {}", id).into()),
     }
 }
 
@@ -230,7 +230,7 @@ fn do_register(
     bindings: &mut HashMap<String, OverrideBinding>,
     id: String,
     shortcut: String,
-) -> Result<(), String> {
+) -> MoonSnapResult<()> {
     let hotkey = parse_hotkey(&shortcut)?;
 
     if let Some(existing_id) = bindings.iter().find_map(|(existing_id, binding)| {
@@ -240,7 +240,7 @@ fn do_register(
             None
         }
     }) {
-        return Err(format!("Shortcut already registered by {}", existing_id));
+        return Err(format!("Shortcut already registered by {}", existing_id).into());
     }
 
     if let Some(existing) = bindings.get_mut(&id) {
@@ -273,7 +273,7 @@ fn do_unregister(
     hotkey_to_binding: &mut HashMap<HotkeyId, String>,
     bindings: &mut HashMap<String, OverrideBinding>,
     id: &str,
-) -> Result<(), String> {
+) -> MoonSnapResult<()> {
     if let Some(binding) = bindings.remove(id) {
         if let Some(hotkey_id) = binding.registration {
             manager
@@ -291,7 +291,7 @@ fn do_suspend(
     hotkey_to_binding: &mut HashMap<HotkeyId, String>,
     bindings: &mut HashMap<String, OverrideBinding>,
     id: &str,
-) -> Result<(), String> {
+) -> MoonSnapResult<()> {
     let Some(binding) = bindings.get_mut(id) else {
         return Ok(());
     };
@@ -312,7 +312,7 @@ fn do_resume(
     hotkey_to_binding: &mut HashMap<HotkeyId, String>,
     bindings: &mut HashMap<String, OverrideBinding>,
     id: &str,
-) -> Result<(), String> {
+) -> MoonSnapResult<()> {
     let Some(binding) = bindings.get_mut(id) else {
         return Ok(());
     };
@@ -342,7 +342,7 @@ fn do_check_available(
     bindings: &HashMap<String, OverrideBinding>,
     shortcut: &str,
     exclude_id: Option<&str>,
-) -> Result<bool, String> {
+) -> MoonSnapResult<bool> {
     let hotkey = parse_hotkey(shortcut)?;
     Ok(!bindings.iter().any(|(id, binding)| {
         exclude_id.is_none_or(|exclude_id| exclude_id != id)
@@ -386,37 +386,34 @@ fn manager_thread(command_receiver: Receiver<ManagerCommand>, app: AppHandle) {
                 shortcut,
                 response,
             }) => {
-                let _ = response.send(do_register(
-                    &manager,
-                    &mut hotkey_to_binding,
-                    &mut bindings,
-                    id,
-                    shortcut,
-                ));
+                let _ = response.send(
+                    do_register(
+                        &manager,
+                        &mut hotkey_to_binding,
+                        &mut bindings,
+                        id,
+                        shortcut,
+                    )
+                    .map_err(|e| e.to_string()),
+                );
             },
             Ok(ManagerCommand::Unregister { id, response }) => {
-                let _ = response.send(do_unregister(
-                    &manager,
-                    &mut hotkey_to_binding,
-                    &mut bindings,
-                    &id,
-                ));
+                let _ = response.send(
+                    do_unregister(&manager, &mut hotkey_to_binding, &mut bindings, &id)
+                        .map_err(|e| e.to_string()),
+                );
             },
             Ok(ManagerCommand::Suspend { id, response }) => {
-                let _ = response.send(do_suspend(
-                    &manager,
-                    &mut hotkey_to_binding,
-                    &mut bindings,
-                    &id,
-                ));
+                let _ = response.send(
+                    do_suspend(&manager, &mut hotkey_to_binding, &mut bindings, &id)
+                        .map_err(|e| e.to_string()),
+                );
             },
             Ok(ManagerCommand::Resume { id, response }) => {
-                let _ = response.send(do_resume(
-                    &manager,
-                    &mut hotkey_to_binding,
-                    &mut bindings,
-                    &id,
-                ));
+                let _ = response.send(
+                    do_resume(&manager, &mut hotkey_to_binding, &mut bindings, &id)
+                        .map_err(|e| e.to_string()),
+                );
             },
             Ok(ManagerCommand::IsRegistered { id, response }) => {
                 let _ = response.send(Ok(do_is_registered(&bindings, &id)));
@@ -426,11 +423,10 @@ fn manager_thread(command_receiver: Receiver<ManagerCommand>, app: AppHandle) {
                 exclude_id,
                 response,
             }) => {
-                let _ = response.send(do_check_available(
-                    &bindings,
-                    &shortcut,
-                    exclude_id.as_deref(),
-                ));
+                let _ = response.send(
+                    do_check_available(&bindings, &shortcut, exclude_id.as_deref())
+                        .map_err(|e| e.to_string()),
+                );
             },
             Ok(ManagerCommand::Snapshot { response }) => {
                 let _ = response.send(Ok(bindings
@@ -453,21 +449,19 @@ fn manager_thread(command_receiver: Receiver<ManagerCommand>, app: AppHandle) {
 
 fn shutdown_override_runtime(state: &mut HotkeyState) {
     if let Some(runtime) = state.override_runtime.take() {
-        if let Ok(sender) = runtime.command_sender.lock() {
-            let _ = sender.send(ManagerCommand::Shutdown);
-        }
+        let sender = runtime.command_sender.lock();
+        let _ = sender.send(ManagerCommand::Shutdown);
 
-        if let Ok(mut handle) = runtime.thread_handle.lock() {
-            if let Some(handle) = handle.take() {
-                let _ = handle.join();
-            }
+        let mut handle = runtime.thread_handle.lock();
+        if let Some(handle) = handle.take() {
+            let _ = handle.join();
         }
     }
 }
 
-fn ensure_override_runtime(app: &AppHandle) -> Result<(), String> {
+fn ensure_override_runtime(app: &AppHandle) -> MoonSnapResult<()> {
     {
-        let mut state = get_state().lock().map_err(|error| error.to_string())?;
+        let mut state = get_state().lock();
         state.app_handle = Some(app.clone());
         if state.override_runtime.is_some() {
             return Ok(());
@@ -480,7 +474,7 @@ fn ensure_override_runtime(app: &AppHandle) -> Result<(), String> {
         manager_thread(command_receiver, app_handle);
     });
 
-    let mut state = get_state().lock().map_err(|error| error.to_string())?;
+    let mut state = get_state().lock();
     if state.override_runtime.is_none() {
         state.override_runtime = Some(OverrideRuntime {
             command_sender: Mutex::new(command_sender),
@@ -493,21 +487,18 @@ fn ensure_override_runtime(app: &AppHandle) -> Result<(), String> {
 
 fn with_runtime_sender<T>(
     app: Option<&AppHandle>,
-    callback: impl FnOnce(&Sender<ManagerCommand>) -> Result<T, String>,
-) -> Result<T, String> {
+    callback: impl FnOnce(&Sender<ManagerCommand>) -> MoonSnapResult<T>,
+) -> MoonSnapResult<T> {
     if let Some(app) = app {
         ensure_override_runtime(app)?;
     }
 
-    let state = get_state().lock().map_err(|error| error.to_string())?;
+    let state = get_state().lock();
     let runtime = state
         .override_runtime
         .as_ref()
-        .ok_or_else(|| "Override runtime is not initialized".to_string())?;
-    let sender = runtime
-        .command_sender
-        .lock()
-        .map_err(|error| error.to_string())?;
+        .ok_or_else(|| MoonSnapError::Other("Override runtime is not initialized".to_string()))?;
+    let sender = runtime.command_sender.lock();
 
     callback(&sender)
 }
@@ -516,7 +507,7 @@ fn register_shortcut_with_hook_inner(
     app: AppHandle,
     id: String,
     shortcut: String,
-) -> Result<(), String> {
+) -> MoonSnapResult<()> {
     let (response_sender, response_receiver) = mpsc::channel();
 
     with_runtime_sender(Some(&app), |sender| {
@@ -526,15 +517,16 @@ fn register_shortcut_with_hook_inner(
                 shortcut,
                 response: response_sender,
             })
-            .map_err(|_| "Failed to send register command".to_string())
+            .map_err(|_| "Failed to send register command".into())
     })?;
 
     response_receiver
         .recv()
-        .map_err(|_| "Failed to receive register response".to_string())?
+        .map_err(|e| MoonSnapError::from(e.to_string()))??;
+    Ok(())
 }
 
-fn active_override_bindings() -> Result<Vec<(String, String, bool)>, String> {
+fn active_override_bindings() -> MoonSnapResult<Vec<(String, String, bool)>> {
     let (response_sender, response_receiver) = mpsc::channel();
 
     with_runtime_sender(None, |sender| {
@@ -542,15 +534,15 @@ fn active_override_bindings() -> Result<Vec<(String, String, bool)>, String> {
             .send(ManagerCommand::Snapshot {
                 response: response_sender,
             })
-            .map_err(|_| "Failed to request override snapshot".to_string())
+            .map_err(|_| "Failed to request override snapshot".into())
     })?;
 
-    response_receiver
+    Ok(response_receiver
         .recv()
-        .map_err(|_| "Failed to receive override snapshot".to_string())?
+        .map_err(|e| MoonSnapError::from(e.to_string()))??)
 }
 
-pub fn initialize_persisted_shortcuts(app: &AppHandle) -> Result<(), String> {
+pub fn initialize_persisted_shortcuts(app: &AppHandle) -> MoonSnapResult<()> {
     let settings = load_persisted_shortcut_settings(app);
     let shortcuts = resolved_shortcuts(&settings);
 
@@ -575,17 +567,17 @@ pub async fn register_shortcut_with_hook(
     app: AppHandle,
     id: String,
     shortcut: String,
-) -> Result<(), String> {
+) -> MoonSnapResult<()> {
     register_shortcut_with_hook_inner(app, id, shortcut)
 }
 
 #[tauri::command]
-pub async fn dispatch_global_shortcut(app: AppHandle, id: String) -> Result<(), String> {
+pub async fn dispatch_global_shortcut(app: AppHandle, id: String) -> MoonSnapResult<()> {
     dispatch_global_shortcut_inner(&app, &id)
 }
 
 #[tauri::command]
-pub async fn unregister_shortcut_hook(id: String) -> Result<(), String> {
+pub async fn unregister_shortcut_hook(id: String) -> MoonSnapResult<()> {
     let (response_sender, response_receiver) = mpsc::channel();
 
     with_runtime_sender(None, |sender| {
@@ -594,25 +586,26 @@ pub async fn unregister_shortcut_hook(id: String) -> Result<(), String> {
                 id,
                 response: response_sender,
             })
-            .map_err(|_| "Failed to send unregister command".to_string())
+            .map_err(|_| "Failed to send unregister command".into())
     })?;
 
     response_receiver
         .recv()
-        .map_err(|_| "Failed to receive unregister response".to_string())?
+        .map_err(|e| MoonSnapError::from(e.to_string()))??;
+    Ok(())
 }
 
 #[tauri::command]
-pub async fn unregister_all_hooks() -> Result<(), String> {
-    let mut state = get_state().lock().map_err(|error| error.to_string())?;
+pub async fn unregister_all_hooks() -> MoonSnapResult<()> {
+    let mut state = get_state().lock();
     shutdown_override_runtime(&mut state);
     Ok(())
 }
 
 #[tauri::command]
-pub async fn reinstall_hook() -> Result<(), String> {
+pub async fn reinstall_hook() -> MoonSnapResult<()> {
     let app_handle = {
-        let state = get_state().lock().map_err(|error| error.to_string())?;
+        let state = get_state().lock();
         state.app_handle.clone()
     };
 
@@ -623,7 +616,7 @@ pub async fn reinstall_hook() -> Result<(), String> {
     let bindings = active_override_bindings().unwrap_or_default();
 
     {
-        let mut state = get_state().lock().map_err(|error| error.to_string())?;
+        let mut state = get_state().lock();
         shutdown_override_runtime(&mut state);
     }
 
@@ -640,7 +633,7 @@ pub async fn reinstall_hook() -> Result<(), String> {
 }
 
 #[tauri::command]
-pub async fn suspend_shortcut(id: String) -> Result<(), String> {
+pub async fn suspend_shortcut(id: String) -> MoonSnapResult<()> {
     let (response_sender, response_receiver) = mpsc::channel();
 
     with_runtime_sender(None, |sender| {
@@ -649,18 +642,19 @@ pub async fn suspend_shortcut(id: String) -> Result<(), String> {
                 id,
                 response: response_sender,
             })
-            .map_err(|_| "Failed to send suspend command".to_string())
+            .map_err(|_| "Failed to send suspend command".into())
     })?;
 
     response_receiver
         .recv()
-        .map_err(|_| "Failed to receive suspend response".to_string())?
+        .map_err(|e| MoonSnapError::from(e.to_string()))??;
+    Ok(())
 }
 
 #[tauri::command]
-pub async fn resume_shortcut(id: String) -> Result<(), String> {
+pub async fn resume_shortcut(id: String) -> MoonSnapResult<()> {
     let app_handle = {
-        let state = get_state().lock().map_err(|error| error.to_string())?;
+        let state = get_state().lock();
         state.app_handle.clone()
     };
 
@@ -672,16 +666,17 @@ pub async fn resume_shortcut(id: String) -> Result<(), String> {
                 id,
                 response: response_sender,
             })
-            .map_err(|_| "Failed to send resume command".to_string())
+            .map_err(|_| "Failed to send resume command".into())
     })?;
 
     response_receiver
         .recv()
-        .map_err(|_| "Failed to receive resume response".to_string())?
+        .map_err(|e| MoonSnapError::from(e.to_string()))??;
+    Ok(())
 }
 
 #[tauri::command]
-pub async fn is_shortcut_registered_hook(id: String) -> Result<bool, String> {
+pub async fn is_shortcut_registered_hook(id: String) -> MoonSnapResult<bool> {
     let (response_sender, response_receiver) = mpsc::channel();
 
     with_runtime_sender(None, |sender| {
@@ -690,19 +685,19 @@ pub async fn is_shortcut_registered_hook(id: String) -> Result<bool, String> {
                 id,
                 response: response_sender,
             })
-            .map_err(|_| "Failed to send registration check command".to_string())
+            .map_err(|_| "Failed to send registration check command".into())
     })?;
 
-    response_receiver
+    Ok(response_receiver
         .recv()
-        .map_err(|_| "Failed to receive registration check response".to_string())?
+        .map_err(|e| MoonSnapError::from(e.to_string()))??)
 }
 
 #[tauri::command]
 pub async fn check_shortcut_available(
     shortcut: String,
     exclude_id: Option<String>,
-) -> Result<bool, String> {
+) -> MoonSnapResult<bool> {
     let (response_sender, response_receiver) = mpsc::channel();
 
     with_runtime_sender(None, |sender| {
@@ -712,10 +707,10 @@ pub async fn check_shortcut_available(
                 exclude_id,
                 response: response_sender,
             })
-            .map_err(|_| "Failed to send shortcut availability command".to_string())
+            .map_err(|_| "Failed to send shortcut availability command".into())
     })?;
 
-    response_receiver
+    Ok(response_receiver
         .recv()
-        .map_err(|_| "Failed to receive shortcut availability response".to_string())?
+        .map_err(|e| MoonSnapError::from(e.to_string()))??)
 }

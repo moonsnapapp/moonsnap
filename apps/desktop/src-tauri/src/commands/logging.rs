@@ -4,10 +4,11 @@
 //! with automatic log rotation and cleanup.
 
 use chrono::Local;
+use moonsnap_core::error::MoonSnapResult;
+use parking_lot::Mutex;
 use std::fs::{self, File, OpenOptions};
 use std::io::Write;
 use std::path::PathBuf;
-use std::sync::Mutex;
 use tauri::{command, AppHandle, Manager};
 
 /// Maximum log file size before rotation (5MB)
@@ -44,7 +45,7 @@ impl std::fmt::Display for LogLevel {
 }
 
 /// Initialize the logging system
-pub fn init_logging(app: &AppHandle) -> Result<(), String> {
+pub fn init_logging(app: &AppHandle) -> MoonSnapResult<()> {
     let log_dir = app
         .path()
         .app_log_dir()
@@ -55,9 +56,7 @@ pub fn init_logging(app: &AppHandle) -> Result<(), String> {
 
     // Store log directory for later use
     {
-        let mut dir = LOG_DIR
-            .lock()
-            .map_err(|e| format!("Failed to acquire log directory lock: {}", e))?;
+        let mut dir = LOG_DIR.lock();
         *dir = Some(log_dir.clone());
     }
 
@@ -70,9 +69,7 @@ pub fn init_logging(app: &AppHandle) -> Result<(), String> {
         .map_err(|e| format!("Failed to open log file: {}", e))?;
 
     {
-        let mut log_file = LOG_FILE
-            .lock()
-            .map_err(|e| format!("Failed to acquire log file lock: {}", e))?;
+        let mut log_file = LOG_FILE.lock();
         *log_file = Some(file);
     }
 
@@ -127,10 +124,7 @@ fn cleanup_old_logs(log_dir: &PathBuf) {
 fn check_rotation() {
     // Use safe locking - if lock is poisoned, skip rotation rather than panic
     let log_dir = {
-        let dir = match LOG_DIR.lock() {
-            Ok(guard) => guard,
-            Err(_) => return, // Mutex poisoned, skip rotation
-        };
+        let dir = LOG_DIR.lock();
         match dir.as_ref() {
             Some(d) => d.clone(),
             None => return,
@@ -154,9 +148,8 @@ fn check_rotation() {
                 .open(&current_path)
             {
                 // Safe locking - skip update if mutex is poisoned
-                if let Ok(mut log_file) = LOG_FILE.lock() {
-                    *log_file = Some(file);
-                }
+                let mut log_file = LOG_FILE.lock();
+                *log_file = Some(file);
             }
 
             cleanup_old_logs(&log_dir);
@@ -170,7 +163,8 @@ pub fn log_internal(level: LogLevel, source: &str, message: &str) {
     let log_line = format!("[{}] [{}] [{}] {}\n", timestamp, level, source, message);
 
     // Write to file
-    if let Ok(mut log_file) = LOG_FILE.lock() {
+    {
+        let mut log_file = LOG_FILE.lock();
         if let Some(ref mut file) = *log_file {
             let _ = file.write_all(log_line.as_bytes());
             let _ = file.flush();
@@ -231,18 +225,18 @@ pub fn write_logs(logs: Vec<(String, String, String)>) {
 
 /// Get the log directory path
 #[command]
-pub fn get_log_dir(app: AppHandle) -> Result<String, String> {
+pub fn get_log_dir(app: AppHandle) -> MoonSnapResult<String> {
     let log_dir = app
         .path()
         .app_log_dir()
         .map_err(|e| format!("Failed to get log directory: {}", e))?;
 
-    Ok(log_dir.to_string_lossy().to_string())
+    Ok(log_dir.to_string_lossy().into_owned())
 }
 
 /// Open the log directory in file explorer
 #[command]
-pub async fn open_log_dir(app: AppHandle) -> Result<(), String> {
+pub async fn open_log_dir(app: AppHandle) -> MoonSnapResult<()> {
     let log_dir = app
         .path()
         .app_log_dir()
@@ -277,7 +271,7 @@ pub async fn open_log_dir(app: AppHandle) -> Result<(), String> {
 
 /// Get recent logs (last N lines) for debugging
 #[command]
-pub fn get_recent_logs(app: AppHandle, lines: Option<usize>) -> Result<String, String> {
+pub fn get_recent_logs(app: AppHandle, lines: Option<usize>) -> MoonSnapResult<String> {
     let log_dir = app
         .path()
         .app_log_dir()

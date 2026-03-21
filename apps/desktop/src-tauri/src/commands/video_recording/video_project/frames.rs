@@ -2,8 +2,9 @@
 
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use lazy_static::lazy_static;
+use moonsnap_core::error::MoonSnapResult;
+use parking_lot::Mutex;
 use std::collections::HashMap;
-use std::sync::Mutex;
 
 // ============================================================================
 // Video Frame Extraction (FFmpeg)
@@ -24,7 +25,7 @@ pub fn extract_video_frame(
     video_path: &std::path::Path,
     timestamp_ms: u64,
     max_width: Option<u32>,
-) -> Result<String, String> {
+) -> MoonSnapResult<String> {
     let ffmpeg_path = moonsnap_media::ffmpeg::find_ffmpeg()
         .ok_or_else(|| "FFmpeg not found. Ensure FFmpeg is installed.".to_string())?;
 
@@ -40,7 +41,7 @@ pub fn extract_video_frame(
         "-ss".to_string(),
         timestamp, // Seek to timestamp (before input for speed)
         "-i".to_string(),
-        video_path.to_string_lossy().to_string(),
+        video_path.to_string_lossy().into_owned(),
         "-frames:v".to_string(),
         "1".to_string(), // Extract only 1 frame
         "-f".to_string(),
@@ -68,11 +69,11 @@ pub fn extract_video_frame(
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("FFmpeg frame extraction failed: {}", stderr));
+        return Err(format!("FFmpeg frame extraction failed: {}", stderr).into());
     }
 
     if output.stdout.is_empty() {
-        return Err("FFmpeg produced no output".to_string());
+        return Err("FFmpeg produced no output".into());
     }
 
     // Encode as base64
@@ -105,12 +106,12 @@ pub fn get_video_frame_cached(
     timestamp_ms: u64,
     max_width: Option<u32>,
     tolerance_ms: u64,
-) -> Result<String, String> {
-    let path_str = video_path.to_string_lossy().to_string();
+) -> MoonSnapResult<String> {
+    let path_str = video_path.to_string_lossy().into_owned();
 
     // Check cache first
     {
-        let cache = FRAME_CACHE.lock().map_err(|e| e.to_string())?;
+        let cache = FRAME_CACHE.lock();
         if let Some(frames) = cache.get(&path_str) {
             // Find frame within tolerance
             for entry in frames {
@@ -131,7 +132,7 @@ pub fn get_video_frame_cached(
 
     // Add to cache
     {
-        let mut cache = FRAME_CACHE.lock().map_err(|e| e.to_string())?;
+        let mut cache = FRAME_CACHE.lock();
         let frames = cache.entry(path_str).or_insert_with(Vec::new);
 
         // Remove oldest frame if at capacity
@@ -150,11 +151,10 @@ pub fn get_video_frame_cached(
 
 /// Clear frame cache for a specific video or all videos
 pub fn clear_frame_cache(video_path: Option<&std::path::Path>) {
-    if let Ok(mut cache) = FRAME_CACHE.lock() {
-        if let Some(path) = video_path {
-            cache.remove(&path.to_string_lossy().to_string());
-        } else {
-            cache.clear();
-        }
+    let mut cache = FRAME_CACHE.lock();
+    if let Some(path) = video_path {
+        cache.remove(&path.to_string_lossy().into_owned());
+    } else {
+        cache.clear();
     }
 }

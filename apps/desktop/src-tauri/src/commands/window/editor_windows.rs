@@ -1,3 +1,4 @@
+use moonsnap_core::error::MoonSnapResult;
 use std::collections::HashMap;
 use tauri::{AppHandle, Manager};
 
@@ -9,9 +10,9 @@ pub(super) fn generate_window_label(prefix: &str) -> String {
     format!("{}{}", prefix, timestamp)
 }
 
-pub(super) fn focus_existing_window(app: &AppHandle, label: &str) -> Result<(), String> {
+pub(super) fn focus_existing_window(app: &AppHandle, label: &str) -> MoonSnapResult<()> {
     let Some(window) = app.get_webview_window(label) else {
-        return Err("Window not found".to_string());
+        return Err("Window not found".into());
     };
 
     show_maximized_and_focus_window(&window)?;
@@ -19,7 +20,7 @@ pub(super) fn focus_existing_window(app: &AppHandle, label: &str) -> Result<(), 
     Ok(())
 }
 
-pub(super) fn show_maximized_and_focus_window(window: &tauri::WebviewWindow) -> Result<(), String> {
+pub(super) fn show_maximized_and_focus_window(window: &tauri::WebviewWindow) -> MoonSnapResult<()> {
     window
         .show()
         .map_err(|e| format!("Failed to show window: {}", e))?;
@@ -37,7 +38,7 @@ pub(super) fn focus_or_remove_stale_window(
     app: &AppHandle,
     editors_map: &mut HashMap<String, String>,
     key: &str,
-) -> Result<Option<String>, String> {
+) -> MoonSnapResult<Option<String>> {
     let existing_label = match editors_map.get(key) {
         Some(label) => label.clone(),
         None => return Ok(None),

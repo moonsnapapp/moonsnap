@@ -62,7 +62,7 @@ pub fn start_ffmpeg_encoder(
         width,
         height,
         fps,
-        output_path: output_path.to_string_lossy().to_string(),
+        output_path: output_path.to_string_lossy().into_owned(),
         format: project.export.format,
         quality: project.export.quality,
         mp4_encoder_config,

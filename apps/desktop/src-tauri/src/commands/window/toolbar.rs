@@ -1,6 +1,7 @@
 //! Capture toolbar and startup toolbar commands.
 
-use std::sync::Mutex;
+use moonsnap_core::error::MoonSnapResult;
+use parking_lot::Mutex;
 
 use serde::{Deserialize, Serialize};
 use tauri::{command, AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
@@ -128,16 +129,13 @@ pub async fn show_capture_toolbar(
     source_mode: Option<String>,
     auto_start_recording: Option<bool>,
     snap_toolbar_to_selection: Option<bool>,
-) -> Result<(), String> {
+) -> MoonSnapResult<()> {
     if crate::commands::video_recording::block_capture_attempt_while_recording(&app)? {
         return Ok(());
     }
 
     let toolbar_state = app.state::<CaptureToolbarWindowState>();
-    let _create_guard = toolbar_state
-        .create_lock
-        .lock()
-        .map_err(|_| "Failed to lock capture toolbar creation".to_string())?;
+    let _create_guard = toolbar_state.create_lock.lock();
 
     let selection = build_selection_payload(
         x,
@@ -164,10 +162,7 @@ pub async fn show_capture_toolbar(
             set_physical_bounds(&window, next_x, next_y, size.width, size.height)?;
         }
 
-        let mut pending_selection = toolbar_state
-            .pending_selection
-            .lock()
-            .map_err(|_| "Failed to lock pending capture toolbar selection".to_string())?;
+        let mut pending_selection = toolbar_state.pending_selection.lock();
         pending_selection.take();
 
         let _ = window.emit("confirm-selection", &selection);
@@ -185,10 +180,7 @@ pub async fn show_capture_toolbar(
     }
 
     {
-        let mut pending_selection = toolbar_state
-            .pending_selection
-            .lock()
-            .map_err(|_| "Failed to lock pending capture toolbar selection".to_string())?;
+        let mut pending_selection = toolbar_state.pending_selection.lock();
         *pending_selection = Some(selection.clone());
     }
 
@@ -213,12 +205,9 @@ pub async fn show_capture_toolbar(
     let window = match window {
         Ok(window) => window,
         Err(e) => {
-            let mut pending_selection = toolbar_state
-                .pending_selection
-                .lock()
-                .map_err(|_| "Failed to lock pending capture toolbar selection".to_string())?;
+            let mut pending_selection = toolbar_state.pending_selection.lock();
             pending_selection.take();
-            return Err(format!("Failed to create capture toolbar window: {}", e));
+            return Err(format!("Failed to create capture toolbar window: {}", e).into());
         },
     };
 
@@ -249,20 +238,14 @@ pub async fn show_capture_toolbar(
 
 /// Deliver any queued selection once the toolbar window finishes mounting its listeners.
 #[command]
-pub async fn capture_toolbar_ready(app: AppHandle) -> Result<(), String> {
+pub async fn capture_toolbar_ready(app: AppHandle) -> MoonSnapResult<()> {
     let toolbar_state = app.state::<CaptureToolbarWindowState>();
     let pending_selection = {
-        let mut pending_selection = toolbar_state
-            .pending_selection
-            .lock()
-            .map_err(|_| "Failed to lock pending capture toolbar selection".to_string())?;
+        let mut pending_selection = toolbar_state.pending_selection.lock();
         pending_selection.take()
     };
     let pending_startup_context = {
-        let mut pending_startup_context = toolbar_state
-            .pending_startup_context
-            .lock()
-            .map_err(|_| "Failed to lock pending startup toolbar context".to_string())?;
+        let mut pending_startup_context = toolbar_state.pending_startup_context.lock();
         pending_startup_context.take()
     };
 
@@ -294,7 +277,7 @@ pub async fn update_capture_toolbar(
     y: i32,
     width: u32,
     height: u32,
-) -> Result<(), String> {
+) -> MoonSnapResult<()> {
     let Some(window) = app.get_webview_window(CAPTURE_TOOLBAR_LABEL) else {
         return Ok(());
     };
@@ -337,7 +320,7 @@ pub async fn update_capture_toolbar(
 
 /// Hide the capture toolbar window (does NOT close it).
 #[command]
-pub async fn hide_capture_toolbar(app: AppHandle) -> Result<(), String> {
+pub async fn hide_capture_toolbar(app: AppHandle) -> MoonSnapResult<()> {
     if let Some(window) = app.get_webview_window(CAPTURE_TOOLBAR_LABEL) {
         window
             .hide()
@@ -350,7 +333,7 @@ pub async fn hide_capture_toolbar(app: AppHandle) -> Result<(), String> {
 /// When `show` is true, the toolbar will appear in recordings.
 /// When `show` is false, the toolbar is excluded from screen capture.
 #[command]
-pub async fn set_toolbar_recording_visibility(app: AppHandle, show: bool) -> Result<(), String> {
+pub async fn set_toolbar_recording_visibility(app: AppHandle, show: bool) -> MoonSnapResult<()> {
     let Some(window) = app.get_webview_window(CAPTURE_TOOLBAR_LABEL) else {
         return Ok(());
     };
@@ -372,7 +355,7 @@ pub async fn set_toolbar_recording_visibility(app: AppHandle, show: bool) -> Res
 
 /// Close the capture toolbar window (actually destroys it).
 #[command]
-pub async fn close_capture_toolbar(app: AppHandle) -> Result<(), String> {
+pub async fn close_capture_toolbar(app: AppHandle) -> MoonSnapResult<()> {
     if let Some(window) = app.get_webview_window(CAPTURE_TOOLBAR_LABEL) {
         window
             .close()
@@ -387,7 +370,7 @@ pub async fn bring_capture_toolbar_to_front(
     app: AppHandle,
     include_in_capture: Option<bool>,
     focus: Option<bool>,
-) -> Result<(), String> {
+) -> MoonSnapResult<()> {
     let Some(window) = app.get_webview_window(CAPTURE_TOOLBAR_LABEL) else {
         return Ok(());
     };
@@ -455,7 +438,7 @@ pub async fn bring_capture_toolbar_to_front(
 /// Called by frontend after measuring rendered content via getBoundingClientRect().
 /// Frontend sends CSS pixels (logical), so we use Logical size to match.
 #[command]
-pub async fn resize_capture_toolbar(app: AppHandle, width: u32, height: u32) -> Result<(), String> {
+pub async fn resize_capture_toolbar(app: AppHandle, width: u32, height: u32) -> MoonSnapResult<()> {
     const MAX_WIDTH: u32 = 1280;
 
     let Some(window) = app.get_webview_window(CAPTURE_TOOLBAR_LABEL) else {
@@ -479,7 +462,7 @@ pub async fn resize_capture_toolbar(app: AppHandle, width: u32, height: u32) -> 
 
 /// Set only the position of the capture toolbar (preserves current size)
 #[command]
-pub async fn set_capture_toolbar_position(app: AppHandle, x: i32, y: i32) -> Result<(), String> {
+pub async fn set_capture_toolbar_position(app: AppHandle, x: i32, y: i32) -> MoonSnapResult<()> {
     let Some(window) = app.get_webview_window(CAPTURE_TOOLBAR_LABEL) else {
         return Ok(());
     };
@@ -507,7 +490,7 @@ pub async fn set_capture_toolbar_bounds(
     y: i32,
     width: u32,
     height: u32,
-) -> Result<(), String> {
+) -> MoonSnapResult<()> {
     let Some(window) = app.get_webview_window(CAPTURE_TOOLBAR_LABEL) else {
         return Ok(());
     };
@@ -568,7 +551,7 @@ pub async fn set_capture_toolbar_bounds(
 pub async fn set_capture_toolbar_ignore_cursor(
     _app: AppHandle,
     _ignore: bool,
-) -> Result<(), String> {
+) -> MoonSnapResult<()> {
     // No-op: toolbar now has decorations, no click-through needed
     Ok(())
 }
@@ -586,7 +569,7 @@ pub async fn show_startup_toolbar(
     capture_type: Option<String>,
     source_mode: Option<String>,
     auto_start_area_selection: Option<bool>,
-) -> Result<(), String> {
+) -> MoonSnapResult<()> {
     if crate::commands::video_recording::block_capture_attempt_while_recording(&app)? {
         return Ok(());
     }
@@ -598,10 +581,7 @@ pub async fn show_startup_toolbar(
         auto_start_area_selection,
     );
     let toolbar_state = app.state::<CaptureToolbarWindowState>();
-    let _create_guard = toolbar_state
-        .create_lock
-        .lock()
-        .map_err(|_| "Failed to lock startup toolbar creation".to_string())?;
+    let _create_guard = toolbar_state.create_lock.lock();
 
     // Check if window already exists
     if let Some(window) = app.get_webview_window(CAPTURE_TOOLBAR_LABEL) {
@@ -700,10 +680,7 @@ pub async fn show_startup_toolbar(
     // Set position/size using physical coordinates
     set_physical_bounds(&window, x, y, initial_width, initial_height)?;
 
-    let mut pending_startup_context = toolbar_state
-        .pending_startup_context
-        .lock()
-        .map_err(|_| "Failed to lock pending startup toolbar context".to_string())?;
+    let mut pending_startup_context = toolbar_state.pending_startup_context.lock();
     *pending_startup_context = Some(startup_context);
 
     log::info!("[show_startup_toolbar] Toolbar ready");
@@ -713,7 +690,7 @@ pub async fn show_startup_toolbar(
 
 /// Hide the startup toolbar (used when starting a capture).
 #[command]
-pub async fn hide_startup_toolbar(app: AppHandle) -> Result<(), String> {
+pub async fn hide_startup_toolbar(app: AppHandle) -> MoonSnapResult<()> {
     if let Some(window) = app.get_webview_window(CAPTURE_TOOLBAR_LABEL) {
         window
             .hide()

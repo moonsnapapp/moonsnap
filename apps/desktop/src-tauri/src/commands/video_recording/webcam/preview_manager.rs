@@ -7,6 +7,7 @@
 //!
 //! Uses simple JPEG polling instead of wgpu for better performance and simplicity.
 
+use moonsnap_core::error::MoonSnapResult;
 use parking_lot::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -75,7 +76,7 @@ impl CameraPreviewManager {
     /// Show the camera preview window (async version for Tauri command).
     ///
     /// Creates window and starts JPEG preview service for browser-based rendering.
-    pub async fn show_async(&self, app: AppHandle, device_index: usize) -> Result<(), String> {
+    pub async fn show_async(&self, app: AppHandle, device_index: usize) -> MoonSnapResult<()> {
         // Check if already showing
         {
             let guard = self.preview.lock();
@@ -231,7 +232,7 @@ pub fn get_preview_manager() -> &'static CameraPreviewManager {
 }
 
 /// Show the camera preview window (async).
-pub async fn show_camera_preview_async(app: AppHandle, device_index: usize) -> Result<(), String> {
+pub async fn show_camera_preview_async(app: AppHandle, device_index: usize) -> MoonSnapResult<()> {
     get_preview_manager().show_async(app, device_index).await
 }
 

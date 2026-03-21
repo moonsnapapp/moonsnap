@@ -1,5 +1,6 @@
 //! Settings window commands.
 
+use moonsnap_core::error::MoonSnapResult;
 use tauri::{command, AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 
 /// Settings window label
@@ -8,7 +9,7 @@ pub(crate) const SETTINGS_WINDOW_LABEL: &str = "settings";
 /// Show the settings window, creating it if it doesn't exist.
 /// If the window already exists, focus it and optionally switch to a specific tab.
 #[command]
-pub async fn show_settings_window(app: AppHandle, tab: Option<String>) -> Result<(), String> {
+pub async fn show_settings_window(app: AppHandle, tab: Option<String>) -> MoonSnapResult<()> {
     // Check if window already exists
     if let Some(window) = app.get_webview_window(SETTINGS_WINDOW_LABEL) {
         // Emit tab change event if a specific tab was requested
@@ -60,7 +61,7 @@ pub async fn show_settings_window(app: AppHandle, tab: Option<String>) -> Result
 
 /// Close the settings window.
 #[command]
-pub async fn close_settings_window(app: AppHandle) -> Result<(), String> {
+pub async fn close_settings_window(app: AppHandle) -> MoonSnapResult<()> {
     if let Some(window) = app.get_webview_window(SETTINGS_WINDOW_LABEL) {
         window
             .close()

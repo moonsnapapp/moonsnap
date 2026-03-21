@@ -1,5 +1,6 @@
 //! Tauri commands for the licensing system.
 
+use moonsnap_core::error::MoonSnapResult;
 use parking_lot::RwLock;
 use std::path::PathBuf;
 use std::sync::{Arc, OnceLock};
@@ -250,7 +251,7 @@ async fn backfill_pro_profile_if_missing(state: &LicenseState) {
 #[tauri::command]
 pub async fn get_license_status(
     state: tauri::State<'_, LicenseState>,
-) -> Result<LicenseInfo, String> {
+) -> MoonSnapResult<LicenseInfo> {
     backfill_pro_profile_if_missing(&state).await;
 
     // If the license looks expired (grace period lapsed) but we still have a key,
@@ -285,7 +286,7 @@ pub async fn get_license_status(
 pub async fn activate_license(
     key: String,
     state: tauri::State<'_, LicenseState>,
-) -> Result<ActivationResult, String> {
+) -> MoonSnapResult<ActivationResult> {
     let device_id = state.device_id.clone();
     let hostname = std::env::var("COMPUTERNAME").unwrap_or_else(|_| "unknown".to_string());
 
@@ -336,7 +337,7 @@ pub async fn activate_license(
 }
 
 #[tauri::command]
-pub async fn deactivate_license(state: tauri::State<'_, LicenseState>) -> Result<(), String> {
+pub async fn deactivate_license(state: tauri::State<'_, LicenseState>) -> MoonSnapResult<()> {
     let (key, activation_id) = {
         let guard = state.cache.read();
         let cache = guard.as_ref().ok_or("License not initialized")?;
@@ -383,7 +384,7 @@ pub async fn deactivate_license(state: tauri::State<'_, LicenseState>) -> Result
 pub fn check_pro_feature(
     feature: String,
     state: tauri::State<'_, LicenseState>,
-) -> Result<bool, String> {
+) -> MoonSnapResult<bool> {
     if !feature_gate::is_pro_feature(&feature) {
         return Ok(true);
     }

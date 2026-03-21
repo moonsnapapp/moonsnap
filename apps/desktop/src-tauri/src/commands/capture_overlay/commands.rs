@@ -5,6 +5,7 @@
 //!
 //! Communication uses an atomic pending command that the overlay polls.
 
+use moonsnap_core::error::MoonSnapResult;
 use std::sync::atomic::{AtomicI32, AtomicIsize, AtomicU32, AtomicU8, Ordering};
 
 use super::types::OverlayCommand;
@@ -74,7 +75,7 @@ pub fn clear_pending_command() {
 /// # Arguments
 /// * `action` - Either "recording" or "screenshot"
 #[tauri::command]
-pub async fn capture_overlay_confirm(action: String) -> Result<(), String> {
+pub async fn capture_overlay_confirm(action: String) -> MoonSnapResult<()> {
     let cmd = match action.as_str() {
         "recording" => OverlayCommand::ConfirmRecording,
         "screenshot" => OverlayCommand::ConfirmScreenshot,
@@ -82,7 +83,8 @@ pub async fn capture_overlay_confirm(action: String) -> Result<(), String> {
             return Err(format!(
                 "Invalid action: '{}'. Expected 'recording' or 'screenshot'.",
                 action
-            ))
+            )
+            .into())
         },
     };
     set_pending_command(cmd);
@@ -93,7 +95,7 @@ pub async fn capture_overlay_confirm(action: String) -> Result<(), String> {
 ///
 /// Called from the toolbar when the user clicks cancel or presses Escape.
 #[tauri::command]
-pub async fn capture_overlay_cancel() -> Result<(), String> {
+pub async fn capture_overlay_cancel() -> MoonSnapResult<()> {
     set_pending_command(OverlayCommand::Cancel);
     Ok(())
 }
@@ -102,7 +104,7 @@ pub async fn capture_overlay_cancel() -> Result<(), String> {
 ///
 /// Called from the toolbar when the user clicks the redo/reselect button.
 #[tauri::command]
-pub async fn capture_overlay_reselect() -> Result<(), String> {
+pub async fn capture_overlay_reselect() -> MoonSnapResult<()> {
     set_pending_command(OverlayCommand::Reselect);
     Ok(())
 }
@@ -112,9 +114,9 @@ pub async fn capture_overlay_reselect() -> Result<(), String> {
 /// Called from the toolbar when the user edits the dimension inputs.
 /// The overlay will resize the selection to match while keeping the center point.
 #[tauri::command]
-pub async fn capture_overlay_set_dimensions(width: u32, height: u32) -> Result<(), String> {
+pub async fn capture_overlay_set_dimensions(width: u32, height: u32) -> MoonSnapResult<()> {
     if width < 20 || height < 20 {
-        return Err("Dimensions must be at least 20x20".to_string());
+        return Err("Dimensions must be at least 20x20".into());
     }
     PENDING_WIDTH.store(width, Ordering::SeqCst);
     PENDING_HEIGHT.store(height, Ordering::SeqCst);
@@ -127,7 +129,7 @@ pub async fn capture_overlay_set_dimensions(width: u32, height: u32) -> Result<(
 /// Used by floating HUDs that keep pointer capture locally and drive the D2D
 /// selection directly.
 #[tauri::command]
-pub async fn capture_overlay_move_selection_by(dx: i32, dy: i32) -> Result<(), String> {
+pub async fn capture_overlay_move_selection_by(dx: i32, dy: i32) -> MoonSnapResult<()> {
     if dx == 0 && dy == 0 {
         return Ok(());
     }
@@ -143,7 +145,7 @@ pub async fn capture_overlay_move_selection_by(dx: i32, dy: i32) -> Result<(), S
 /// Called from the display picker panel when the user hovers over a monitor item.
 /// Pass -1 to clear and use cursor position instead.
 #[tauri::command]
-pub async fn capture_overlay_highlight_monitor(monitor_index: i32) -> Result<(), String> {
+pub async fn capture_overlay_highlight_monitor(monitor_index: i32) -> MoonSnapResult<()> {
     HIGHLIGHTED_MONITOR.store(monitor_index, Ordering::SeqCst);
     Ok(())
 }
@@ -153,7 +155,7 @@ pub async fn capture_overlay_highlight_monitor(monitor_index: i32) -> Result<(),
 /// Called from the window picker panel when the user hovers over a window item.
 /// Pass 0 to clear and use cursor position instead.
 #[tauri::command]
-pub async fn capture_overlay_highlight_window(hwnd: isize) -> Result<(), String> {
+pub async fn capture_overlay_highlight_window(hwnd: isize) -> MoonSnapResult<()> {
     HIGHLIGHTED_WINDOW.store(hwnd, Ordering::SeqCst);
     Ok(())
 }

@@ -24,6 +24,7 @@ pub mod video_editor;
 pub use capture::{trigger_capture, trigger_capture_with_options};
 pub use toolbar::show_startup_toolbar;
 
+use moonsnap_core::error::MoonSnapResult;
 use std::sync::atomic::{AtomicBool, Ordering};
 use tauri::Manager;
 
@@ -67,10 +68,10 @@ pub(crate) fn set_physical_position(
     window: &tauri::WebviewWindow,
     x: i32,
     y: i32,
-) -> Result<(), String> {
+) -> MoonSnapResult<()> {
     window
         .set_position(tauri::Position::Physical(tauri::PhysicalPosition { x, y }))
-        .map_err(|e| format!("Failed to set position: {}", e))
+        .map_err(|e| format!("Failed to set position: {}", e).into())
 }
 
 /// Resize a window using physical (pixel) dimensions.
@@ -79,10 +80,10 @@ pub(crate) fn set_physical_size(
     window: &tauri::WebviewWindow,
     width: u32,
     height: u32,
-) -> Result<(), String> {
+) -> MoonSnapResult<()> {
     window
         .set_size(tauri::Size::Physical(tauri::PhysicalSize { width, height }))
-        .map_err(|e| format!("Failed to set size: {}", e))
+        .map_err(|e| format!("Failed to set size: {}", e).into())
 }
 
 /// Position and resize a window using physical (pixel) coordinates.
@@ -93,7 +94,7 @@ pub(crate) fn set_physical_bounds(
     y: i32,
     width: u32,
     height: u32,
-) -> Result<(), String> {
+) -> MoonSnapResult<()> {
     set_physical_position(window, x, y)?;
     set_physical_size(window, width, height)
 }
@@ -106,7 +107,7 @@ pub(crate) fn set_physical_bounds(
 /// This uses a tiny off-screen blur region trick (from PowerToys) to get
 /// DWM-composited transparency without WS_EX_LAYERED, avoiding hardware video blackout.
 #[cfg(target_os = "windows")]
-pub fn apply_dwm_transparency(window: &tauri::WebviewWindow) -> Result<(), String> {
+pub fn apply_dwm_transparency(window: &tauri::WebviewWindow) -> MoonSnapResult<()> {
     use windows::Win32::Foundation::HWND;
     use windows::Win32::Graphics::Dwm::{
         DwmEnableBlurBehindWindow, DWM_BB_BLURREGION, DWM_BB_ENABLE, DWM_BLURBEHIND,
@@ -126,7 +127,7 @@ pub fn apply_dwm_transparency(window: &tauri::WebviewWindow) -> Result<(), Strin
         let hrgn: HRGN = CreateRectRgn(pos, 0, pos + 1, 1);
 
         if hrgn.is_invalid() {
-            return Err("Failed to create region".to_string());
+            return Err("Failed to create region".into());
         }
 
         let blur_behind = DWM_BLURBEHIND {
@@ -148,7 +149,7 @@ pub fn apply_dwm_transparency(window: &tauri::WebviewWindow) -> Result<(), Strin
 }
 
 #[cfg(not(target_os = "windows"))]
-pub fn apply_dwm_transparency(_window: &tauri::WebviewWindow) -> Result<(), String> {
+pub fn apply_dwm_transparency(_window: &tauri::WebviewWindow) -> MoonSnapResult<()> {
     // DWM is Windows-only, use regular transparency on other platforms
     Ok(())
 }
@@ -157,7 +158,7 @@ pub fn apply_dwm_transparency(_window: &tauri::WebviewWindow) -> Result<(), Stri
 /// Exclude a window from screen capture using Windows API.
 /// This prevents the window from appearing in screenshots and screen recordings.
 #[cfg(target_os = "windows")]
-pub(crate) fn exclude_window_from_capture(window: &tauri::WebviewWindow) -> Result<(), String> {
+pub(crate) fn exclude_window_from_capture(window: &tauri::WebviewWindow) -> MoonSnapResult<()> {
     use windows::Win32::Foundation::HWND;
     use windows::Win32::UI::WindowsAndMessaging::{
         SetWindowDisplayAffinity, WDA_EXCLUDEFROMCAPTURE,
@@ -176,7 +177,7 @@ pub(crate) fn exclude_window_from_capture(window: &tauri::WebviewWindow) -> Resu
 }
 
 #[cfg(not(target_os = "windows"))]
-pub(crate) fn exclude_window_from_capture(_window: &tauri::WebviewWindow) -> Result<(), String> {
+pub(crate) fn exclude_window_from_capture(_window: &tauri::WebviewWindow) -> MoonSnapResult<()> {
     // Not supported on non-Windows platforms
     Ok(())
 }
@@ -184,7 +185,7 @@ pub(crate) fn exclude_window_from_capture(_window: &tauri::WebviewWindow) -> Res
 /// Include a window in screen capture by resetting display affinity.
 /// This reverses `exclude_window_from_capture`.
 #[cfg(target_os = "windows")]
-pub(crate) fn include_window_in_capture(window: &tauri::WebviewWindow) -> Result<(), String> {
+pub(crate) fn include_window_in_capture(window: &tauri::WebviewWindow) -> MoonSnapResult<()> {
     use windows::Win32::Foundation::HWND;
     use windows::Win32::UI::WindowsAndMessaging::{SetWindowDisplayAffinity, WDA_NONE};
 
@@ -201,7 +202,7 @@ pub(crate) fn include_window_in_capture(window: &tauri::WebviewWindow) -> Result
 }
 
 #[cfg(not(target_os = "windows"))]
-pub(crate) fn include_window_in_capture(_window: &tauri::WebviewWindow) -> Result<(), String> {
+pub(crate) fn include_window_in_capture(_window: &tauri::WebviewWindow) -> MoonSnapResult<()> {
     Ok(())
 }
 
@@ -245,7 +246,7 @@ pub(crate) fn close_all_capture_windows(app: &tauri::AppHandle) {
 pub(crate) fn reveal_library_window(
     window: &tauri::WebviewWindow,
     focus: bool,
-) -> Result<(), String> {
+) -> MoonSnapResult<()> {
     if !LIBRARY_WAS_REVEALED.swap(true, Ordering::SeqCst) {
         window
             .center()

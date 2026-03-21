@@ -2,6 +2,7 @@
 
 use crate::preview::{create_frame_ws, PreviewRenderer, ShutdownSignal, WSFrame};
 use crate::rendering::RendererState;
+use moonsnap_core::error::{MoonSnapError, MoonSnapResult};
 use moonsnap_domain::captions::{CaptionSegment, CaptionSettings};
 use moonsnap_domain::video_project::VideoProject;
 use parking_lot::Mutex as ParkingMutex;
@@ -47,7 +48,7 @@ impl Default for PreviewState {
 pub async fn init_preview(
     state: State<'_, PreviewState>,
     renderer_state: State<'_, RendererState>,
-) -> Result<String, String> {
+) -> MoonSnapResult<String> {
     // Check if already initialized - return existing URL
     {
         let existing_port = state.ws_port.read().await;
@@ -103,13 +104,13 @@ async fn shutdown_preview_internal(state: &PreviewState) {
 pub async fn set_preview_project(
     state: State<'_, PreviewState>,
     project: VideoProject,
-) -> Result<(), String> {
+) -> MoonSnapResult<()> {
     let renderer = state.renderer.read().await;
     let renderer = renderer
         .as_ref()
-        .ok_or_else(|| "Preview not initialized".to_string())?;
+        .ok_or_else(|| MoonSnapError::Other("Preview not initialized".to_string()))?;
 
-    renderer.set_project(project).await
+    renderer.set_project(project).await.map_err(|e| e.into())
 }
 
 /// Render a preview frame at the specified time.
@@ -117,18 +118,18 @@ pub async fn set_preview_project(
 pub async fn render_preview_frame(
     state: State<'_, PreviewState>,
     time_ms: u64,
-) -> Result<(), String> {
+) -> MoonSnapResult<()> {
     let renderer = state.renderer.read().await;
     let renderer = renderer
         .as_ref()
-        .ok_or_else(|| "Preview not initialized".to_string())?;
+        .ok_or_else(|| MoonSnapError::Other("Preview not initialized".to_string()))?;
 
-    renderer.render_frame(time_ms).await
+    renderer.render_frame(time_ms).await.map_err(|e| e.into())
 }
 
 /// Shutdown the preview renderer and WebSocket server.
 #[command]
-pub async fn shutdown_preview(state: State<'_, PreviewState>) -> Result<(), String> {
+pub async fn shutdown_preview(state: State<'_, PreviewState>) -> MoonSnapResult<()> {
     log::info!("[Preview] Shutting down");
     shutdown_preview_internal(&state).await;
     Ok(())
@@ -136,7 +137,7 @@ pub async fn shutdown_preview(state: State<'_, PreviewState>) -> Result<(), Stri
 
 /// Get the current WebSocket port (if initialized).
 #[command]
-pub async fn get_preview_ws_port(state: State<'_, PreviewState>) -> Result<Option<u16>, String> {
+pub async fn get_preview_ws_port(state: State<'_, PreviewState>) -> MoonSnapResult<Option<u16>> {
     Ok(*state.ws_port.read().await)
 }
 
@@ -150,16 +151,17 @@ pub async fn render_caption_overlay(
     height: u32,
     segments: Vec<CaptionSegment>,
     settings: CaptionSettings,
-) -> Result<(), String> {
+) -> MoonSnapResult<()> {
     let renderer = state.renderer.read().await;
     let renderer = renderer
         .as_ref()
-        .ok_or_else(|| "Preview not initialized".to_string())?;
+        .ok_or_else(|| MoonSnapError::Other("Preview not initialized".to_string()))?;
 
     renderer.set_caption_overlay_data(segments, settings).await;
     renderer
         .render_caption_overlay_frame(time_ms, width, height)
         .await
+        .map_err(|e| e.into())
 }
 
 /// Update cached caption overlay data.
@@ -169,11 +171,11 @@ pub async fn set_caption_overlay_data(
     state: State<'_, PreviewState>,
     segments: Vec<CaptionSegment>,
     settings: CaptionSettings,
-) -> Result<(), String> {
+) -> MoonSnapResult<()> {
     let renderer = state.renderer.read().await;
     let renderer = renderer
         .as_ref()
-        .ok_or_else(|| "Preview not initialized".to_string())?;
+        .ok_or_else(|| MoonSnapError::Other("Preview not initialized".to_string()))?;
 
     renderer.set_caption_overlay_data(segments, settings).await;
     Ok(())
@@ -186,15 +188,16 @@ pub async fn render_caption_overlay_frame(
     time_ms: u64,
     width: u32,
     height: u32,
-) -> Result<(), String> {
+) -> MoonSnapResult<()> {
     let renderer = state.renderer.read().await;
     let renderer = renderer
         .as_ref()
-        .ok_or_else(|| "Preview not initialized".to_string())?;
+        .ok_or_else(|| MoonSnapError::Other("Preview not initialized".to_string()))?;
 
     renderer
         .render_caption_overlay_frame(time_ms, width, height)
         .await
+        .map_err(|e| e.into())
 }
 
 // =============================================================================
@@ -250,7 +253,7 @@ pub async fn init_native_caption_preview(
     y: i32,
     width: u32,
     height: u32,
-) -> Result<(), String> {
+) -> MoonSnapResult<()> {
     use raw_window_handle::HasWindowHandle;
 
     let label = window.label().to_string();
@@ -270,7 +273,7 @@ pub async fn init_native_caption_preview(
             .map_err(|e| format!("Failed to get window handle: {}", e))?;
         match handle.as_raw() {
             raw_window_handle::RawWindowHandle::Win32(h) => h.hwnd.get() as isize,
-            _ => return Err("Expected Win32 window handle".to_string()),
+            _ => return Err("Expected Win32 window handle".into()),
         }
     };
 
@@ -303,7 +306,7 @@ pub async fn init_native_caption_preview(
     _y: i32,
     _width: u32,
     _height: u32,
-) -> Result<(), String> {
+) -> MoonSnapResult<()> {
     Err("Native caption preview is only supported on Windows".to_string())
 }
 
@@ -316,7 +319,7 @@ pub async fn resize_native_caption_preview(
     y: i32,
     width: u32,
     height: u32,
-) -> Result<(), String> {
+) -> MoonSnapResult<()> {
     let label = window.label();
 
     if let Some(preview) = native_state.get(label) {
@@ -334,7 +337,7 @@ pub async fn update_native_caption_preview(
     segments: Vec<CaptionSegment>,
     settings: CaptionSettings,
     time_ms: u64,
-) -> Result<(), String> {
+) -> MoonSnapResult<()> {
     let label = window.label();
 
     if let Some(preview) = native_state.get(label) {
@@ -350,7 +353,7 @@ pub async fn scrub_native_caption_preview(
     window: WebviewWindow,
     native_state: State<'_, NativeCaptionPreviewState>,
     time_ms: u64,
-) -> Result<(), String> {
+) -> MoonSnapResult<()> {
     let label = window.label();
 
     if let Some(preview) = native_state.get(label) {
@@ -365,7 +368,7 @@ pub async fn scrub_native_caption_preview(
 pub async fn destroy_native_caption_preview(
     window: WebviewWindow,
     native_state: State<'_, NativeCaptionPreviewState>,
-) -> Result<(), String> {
+) -> MoonSnapResult<()> {
     let label = window.label().to_string();
 
     if let Some(preview) = native_state.remove(&label) {

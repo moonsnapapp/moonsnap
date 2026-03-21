@@ -1,6 +1,7 @@
 //! Caption transcription and management commands.
 
 pub mod audio;
+use moonsnap_core::error::MoonSnapResult;
 use moonsnap_domain::captions::*;
 
 use futures_util::StreamExt;
@@ -17,7 +18,7 @@ lazy_static::lazy_static! {
 const WHISPER_SAMPLE_RATE: u32 = 16000;
 
 /// Get the models directory path.
-fn get_models_dir(app: &AppHandle) -> Result<PathBuf, String> {
+fn get_models_dir(app: &AppHandle) -> MoonSnapResult<PathBuf> {
     let app_dir = app
         .path()
         .app_data_dir()
@@ -56,7 +57,7 @@ fn get_model_size(model_name: &str) -> u64 {
 pub async fn check_whisper_model(
     app: AppHandle,
     model_name: String,
-) -> Result<WhisperModelInfo, String> {
+) -> MoonSnapResult<WhisperModelInfo> {
     let models_dir = get_models_dir(&app)?;
     let model_file = format!("ggml-{}.bin", model_name);
     let model_path = models_dir.join(&model_file);
@@ -68,7 +69,7 @@ pub async fn check_whisper_model(
         size_bytes: get_model_size(&model_name),
         downloaded,
         path: if downloaded {
-            Some(model_path.to_string_lossy().to_string())
+            Some(model_path.to_string_lossy().into_owned())
         } else {
             None
         },
@@ -77,7 +78,7 @@ pub async fn check_whisper_model(
 
 /// List all available Whisper models with their status.
 #[tauri::command]
-pub async fn list_whisper_models(app: AppHandle) -> Result<Vec<WhisperModelInfo>, String> {
+pub async fn list_whisper_models(app: AppHandle) -> MoonSnapResult<Vec<WhisperModelInfo>> {
     let models = vec!["tiny", "base", "small", "medium", "large-v3"];
     let mut result = Vec::new();
 
@@ -91,7 +92,7 @@ pub async fn list_whisper_models(app: AppHandle) -> Result<Vec<WhisperModelInfo>
 
 /// Download a Whisper model from Hugging Face.
 #[tauri::command]
-pub async fn download_whisper_model(app: AppHandle, model_name: String) -> Result<String, String> {
+pub async fn download_whisper_model(app: AppHandle, model_name: String) -> MoonSnapResult<String> {
     let models_dir = get_models_dir(&app)?;
     std::fs::create_dir_all(&models_dir)
         .map_err(|e| format!("Failed to create models directory: {}", e))?;
@@ -100,7 +101,7 @@ pub async fn download_whisper_model(app: AppHandle, model_name: String) -> Resul
     let model_path = models_dir.join(&model_file);
 
     if model_path.exists() {
-        return Ok(model_path.to_string_lossy().to_string());
+        return Ok(model_path.to_string_lossy().into_owned());
     }
 
     let url = get_model_url(&model_name);
@@ -114,7 +115,7 @@ pub async fn download_whisper_model(app: AppHandle, model_name: String) -> Resul
         .map_err(|e| format!("Failed to start download: {}", e))?;
 
     if !response.status().is_success() {
-        return Err(format!("Download failed: HTTP {}", response.status()));
+        return Err(format!("Download failed: HTTP {}", response.status()).into());
     }
 
     let total_size = response
@@ -152,12 +153,12 @@ pub async fn download_whisper_model(app: AppHandle, model_name: String) -> Resul
         .map_err(|e| format!("Flush error: {}", e))?;
 
     log::info!("Model downloaded to: {:?}", model_path);
-    Ok(model_path.to_string_lossy().to_string())
+    Ok(model_path.to_string_lossy().into_owned())
 }
 
 /// Delete a downloaded Whisper model.
 #[tauri::command]
-pub async fn delete_whisper_model(app: AppHandle, model_name: String) -> Result<(), String> {
+pub async fn delete_whisper_model(app: AppHandle, model_name: String) -> MoonSnapResult<()> {
     let models_dir = get_models_dir(&app)?;
     let model_file = format!("ggml-{}.bin", model_name);
     let model_path = models_dir.join(&model_file);
@@ -182,7 +183,7 @@ pub async fn delete_whisper_model(app: AppHandle, model_name: String) -> Result<
 use whisper_rs::{FullParams, SamplingStrategy, WhisperContext, WhisperContextParameters};
 
 /// Load or get cached Whisper context.
-async fn get_whisper_context(model_path: &str) -> Result<Arc<WhisperContext>, String> {
+async fn get_whisper_context(model_path: &str) -> MoonSnapResult<Arc<WhisperContext>> {
     let mut ctx_guard = WHISPER_CONTEXT.lock().await;
 
     if let Some(ref ctx) = *ctx_guard {
@@ -221,7 +222,7 @@ fn process_with_whisper(
     samples: &[f32],
     context: Arc<WhisperContext>,
     language: &str,
-) -> Result<Vec<CaptionSegment>, String> {
+) -> MoonSnapResult<Vec<CaptionSegment>> {
     log::info!(
         "Processing {} samples ({:.1}s)",
         samples.len(),
@@ -412,7 +413,7 @@ pub async fn transcribe_video(
     video_path: String,
     model_name: String,
     language: String,
-) -> Result<CaptionData, String> {
+) -> MoonSnapResult<CaptionData> {
     log::info!("Transcribing: {} with model: {}", video_path, model_name);
 
     // Check model exists
@@ -530,9 +531,9 @@ pub async fn transcribe_caption_segment(
     language: String,
     segment_start: f32,
     segment_end: f32,
-) -> Result<CaptionSegment, String> {
+) -> MoonSnapResult<CaptionSegment> {
     if !segment_start.is_finite() || !segment_end.is_finite() || segment_end <= segment_start {
-        return Err("Invalid segment range".to_string());
+        return Err("Invalid segment range".into());
     }
 
     const PRE_CONTEXT_SECS: f32 = 0.75;
@@ -626,7 +627,7 @@ pub async fn transcribe_caption_segment(
     words.retain(|word| word.end > word.start);
 
     if words.is_empty() {
-        return Err("No speech detected in this segment.".to_string());
+        return Err("No speech detected in this segment.".into());
     }
 
     let text = words
@@ -671,7 +672,7 @@ fn get_captions_path(video_path: &str) -> PathBuf {
 
 /// Save caption data to a JSON file.
 #[tauri::command]
-pub async fn save_caption_data(video_path: String, data: CaptionData) -> Result<(), String> {
+pub async fn save_caption_data(video_path: String, data: CaptionData) -> MoonSnapResult<()> {
     let captions_path = get_captions_path(&video_path);
 
     log::info!("Saving captions to: {:?}", captions_path);
@@ -688,7 +689,7 @@ pub async fn save_caption_data(video_path: String, data: CaptionData) -> Result<
 
 /// Load caption data from a JSON file.
 #[tauri::command]
-pub async fn load_caption_data(video_path: String) -> Result<Option<CaptionData>, String> {
+pub async fn load_caption_data(video_path: String) -> MoonSnapResult<Option<CaptionData>> {
     let captions_path = get_captions_path(&video_path);
 
     if !captions_path.exists() {

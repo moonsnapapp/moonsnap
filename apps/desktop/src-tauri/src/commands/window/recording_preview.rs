@@ -3,6 +3,7 @@
 //! Shows recording info in the bottom-right corner with action buttons.
 //! Auto-dismisses after a timeout unless the user interacts with it.
 
+use moonsnap_core::error::MoonSnapResult;
 use tauri::{command, AppHandle, Manager, WebviewUrl, WebviewWindowBuilder};
 
 /// Recording preview window label
@@ -23,7 +24,7 @@ pub async fn show_recording_preview(
     output_path: String,
     duration_secs: f64,
     file_size_bytes: u64,
-) -> Result<(), String> {
+) -> MoonSnapResult<()> {
     // Close existing preview if any
     if let Some(existing) = app.get_webview_window(PREVIEW_LABEL) {
         let _ = existing.close();
@@ -83,7 +84,7 @@ pub async fn show_recording_preview(
 
 /// Close the recording preview window.
 #[command]
-pub async fn close_recording_preview(app: AppHandle) -> Result<(), String> {
+pub async fn close_recording_preview(app: AppHandle) -> MoonSnapResult<()> {
     if let Some(window) = app.get_webview_window(PREVIEW_LABEL) {
         window
             .close()

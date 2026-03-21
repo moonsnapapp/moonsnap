@@ -9,6 +9,7 @@
 // Allow unused helpers - keeping for potential future use
 #![allow(dead_code)]
 
+use moonsnap_core::error::MoonSnapResult;
 use parking_lot::RwLock;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
@@ -204,7 +205,7 @@ impl WebcamCaptureService {
     }
 
     /// Run the capture loop (blocking - call from a thread).
-    pub fn run(self) -> Result<(), String> {
+    pub fn run(self) -> MoonSnapResult<()> {
         use moonsnap_camera_windows::{FormatPreference, PixelFormat};
 
         let device = get_device_by_index(self.device_index)?;
@@ -348,7 +349,7 @@ static CAPTURE_DEVICE_INDEX: std::sync::atomic::AtomicUsize =
 
 /// Start the global webcam capture service (preview only).
 /// If already running with the same device, this is a no-op.
-pub fn start_capture_service(device_index: usize) -> Result<(), String> {
+pub fn start_capture_service(device_index: usize) -> MoonSnapResult<()> {
     start_capture_service_internal(device_index, None)
 }
 
@@ -357,7 +358,7 @@ pub fn start_capture_service(device_index: usize) -> Result<(), String> {
 pub fn start_capture_with_receiver(
     device_index: usize,
     buffer_size: usize,
-) -> Result<FrameReceiver, String> {
+) -> MoonSnapResult<FrameReceiver> {
     let (sender, receiver) = flume::bounded(buffer_size);
 
     // Store receiver globally for encoder access
@@ -371,7 +372,7 @@ pub fn start_capture_with_receiver(
 fn start_capture_service_internal(
     device_index: usize,
     sender: Option<FrameSender>,
-) -> Result<(), String> {
+) -> MoonSnapResult<()> {
     // Check if already running with same device
     let current_device = CAPTURE_DEVICE_INDEX.load(Ordering::SeqCst);
     if current_device == device_index && is_capture_running() {
@@ -449,7 +450,7 @@ pub fn enumerate_devices() -> Result<Vec<(usize, String)>, String> {
     let result: Vec<(usize, String)> = devices
         .iter()
         .enumerate()
-        .map(|(idx, device)| (idx, device.name().to_string_lossy().to_string()))
+        .map(|(idx, device)| (idx, device.name().to_string_lossy().into_owned()))
         .collect();
 
     Ok(result)

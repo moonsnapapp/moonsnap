@@ -275,7 +275,7 @@ struct VideoMetadata {
 fn get_video_metadata(path: &Path) -> Result<VideoMetadata, String> {
     use crate::commands::video_recording::video_project::VideoMetadata as ProjectMetadata;
 
-    let meta = ProjectMetadata::from_file(path)?;
+    let meta = ProjectMetadata::from_file(path).map_err(|e| e.to_string())?;
 
     Ok(VideoMetadata {
         width: meta.width,

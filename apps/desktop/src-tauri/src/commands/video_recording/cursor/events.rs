@@ -12,6 +12,7 @@
 #![allow(unused_must_use)]
 
 use device_query::{DeviceQuery, DeviceState};
+use moonsnap_core::error::MoonSnapResult;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -414,7 +415,7 @@ impl CursorEventCapture {
     ///
     /// # Arguments
     /// * `region` - Optional capture region (x, y, width, height). If None, captures full screen.
-    pub fn start(&mut self, region: Option<(i32, i32, u32, u32)>) -> Result<(), String> {
+    pub fn start(&mut self, region: Option<(i32, i32, u32, u32)>) -> MoonSnapResult<()> {
         self.start_with_time(region, Instant::now())
     }
 
@@ -430,9 +431,9 @@ impl CursorEventCapture {
         &mut self,
         region: Option<(i32, i32, u32, u32)>,
         start_time: Instant,
-    ) -> Result<(), String> {
+    ) -> MoonSnapResult<()> {
         if self.position_thread.is_some() || self.hook_thread.is_some() {
-            return Err("Cursor event capture already running".to_string());
+            return Err("Cursor event capture already running".into());
         }
 
         // Reset state
@@ -1401,7 +1402,7 @@ fn run_mouse_hook_loop(
 pub fn save_cursor_recording(
     recording: &CursorRecording,
     path: &std::path::Path,
-) -> Result<(), String> {
+) -> MoonSnapResult<()> {
     let json = serde_json::to_string_pretty(recording)
         .map_err(|e| format!("Failed to serialize cursor recording: {}", e))?;
 
@@ -1418,7 +1419,7 @@ pub fn save_cursor_recording(
 }
 
 /// Load cursor recording from a JSON file.
-pub fn load_cursor_recording(path: &std::path::Path) -> Result<CursorRecording, String> {
+pub fn load_cursor_recording(path: &std::path::Path) -> MoonSnapResult<CursorRecording> {
     let json = std::fs::read_to_string(path)
         .map_err(|e| format!("Failed to read cursor recording file: {}", e))?;
 

@@ -5,6 +5,7 @@
 use chrono::Utc;
 
 use super::generate_id;
+use super::{delete::resolve_capture_project_image_path, find_project_bundle};
 use moonsnap_domain::storage::*;
 use moonsnap_media::ffmpeg::THUMBNAIL_SIZE;
 
@@ -264,4 +265,80 @@ fn test_region_boundary_values() {
     assert_eq!(restored.y, i32::MAX);
     assert_eq!(restored.width, 0);
     assert_eq!(restored.height, u32::MAX);
+}
+
+// ============================================================================
+// Tests migrated from operations.rs
+// ============================================================================
+
+fn make_capture_project(original_image: &str, capture_type: &str) -> CaptureProject {
+    CaptureProject {
+        id: "project-123".to_string(),
+        created_at: Utc::now(),
+        updated_at: Utc::now(),
+        capture_type: capture_type.to_string(),
+        source: CaptureSource {
+            monitor: None,
+            window_id: None,
+            window_title: None,
+            region: None,
+        },
+        original_image: original_image.to_string(),
+        dimensions: Dimensions {
+            width: 1920,
+            height: 1080,
+        },
+        annotations: Vec::new(),
+        tags: Vec::new(),
+        favorite: false,
+    }
+}
+
+#[test]
+fn find_project_bundle_matches_project_json_id_when_folder_name_differs() {
+    use tempfile::TempDir;
+
+    let temp_dir = TempDir::new().unwrap();
+    let bundle_path = temp_dir.path().join("recording_2026-03-15_123456");
+    std::fs::create_dir_all(&bundle_path).unwrap();
+    std::fs::write(
+        bundle_path.join("project.json"),
+        r#"{"id":"proj_12345678","name":"Recording"}"#,
+    )
+    .unwrap();
+
+    let resolved = find_project_bundle(temp_dir.path(), "proj_12345678").unwrap();
+
+    assert_eq!(resolved, bundle_path);
+}
+
+#[test]
+fn resolve_capture_project_image_path_skips_metadata_only_video_sidecars() {
+    use tempfile::TempDir;
+
+    let temp_dir = TempDir::new().unwrap();
+    let project_file = temp_dir.path().join("project.json");
+    let project = make_capture_project("", "video");
+    std::fs::write(&project_file, serde_json::to_string(&project).unwrap()).unwrap();
+
+    let resolved = resolve_capture_project_image_path(&project_file, temp_dir.path());
+
+    assert_eq!(resolved, None);
+}
+
+#[test]
+fn resolve_capture_project_image_path_returns_relative_screenshot_image_path() {
+    use tempfile::TempDir;
+
+    let temp_dir = TempDir::new().unwrap();
+    let captures_dir = temp_dir.path().join("captures");
+    std::fs::create_dir_all(&captures_dir).unwrap();
+
+    let project_file = temp_dir.path().join("project.json");
+    let project = make_capture_project("shot.png", "image");
+    std::fs::write(&project_file, serde_json::to_string(&project).unwrap()).unwrap();
+
+    let resolved = resolve_capture_project_image_path(&project_file, &captures_dir);
+
+    assert_eq!(resolved, Some(captures_dir.join("shot.png")));
 }

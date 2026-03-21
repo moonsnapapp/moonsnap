@@ -1,10 +1,11 @@
 use image::GenericImageView;
+use moonsnap_core::error::MoonSnapResult;
 use tauri::{command, image::Image as TauriImage, AppHandle};
 use tauri_plugin_clipboard_manager::ClipboardExt;
 
 /// Copy image from file path to clipboard
 #[command]
-pub async fn copy_image_to_clipboard(app: AppHandle, path: String) -> Result<(), String> {
+pub async fn copy_image_to_clipboard(app: AppHandle, path: String) -> MoonSnapResult<()> {
     // Read the image file
     let image = image::open(&path).map_err(|e| format!("Failed to open image: {}", e))?;
 
@@ -24,11 +25,11 @@ pub async fn copy_image_to_clipboard(app: AppHandle, path: String) -> Result<(),
 
 /// Copy a raw RGBA file (with 8-byte header: width u32 LE, height u32 LE) to clipboard
 #[command]
-pub async fn copy_rgba_to_clipboard(app: AppHandle, file_path: String) -> Result<(), String> {
+pub async fn copy_rgba_to_clipboard(app: AppHandle, file_path: String) -> MoonSnapResult<()> {
     let data = std::fs::read(&file_path).map_err(|e| format!("Failed to read RGBA file: {}", e))?;
 
     if data.len() < 8 {
-        return Err("RGBA file too small".to_string());
+        return Err("RGBA file too small".into());
     }
 
     let width = u32::from_le_bytes([data[0], data[1], data[2], data[3]]);

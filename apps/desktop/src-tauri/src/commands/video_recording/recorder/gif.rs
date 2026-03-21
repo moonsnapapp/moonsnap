@@ -1,6 +1,7 @@
 //! App-layer wrapper for GIF capture.
 //! Canonical capture engine implementation lives in `moonsnap-capture`.
 
+use moonsnap_core::error::MoonSnapResult;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -18,7 +19,7 @@ pub fn run_gif_capture(
     progress: Arc<RecordingProgress>,
     command_rx: Receiver<RecorderCommand>,
     started_at: &str,
-) -> Result<f64, String> {
+) -> MoonSnapResult<f64> {
     moonsnap_capture::recorder_gif::run_gif_capture(
         settings,
         output_path,
@@ -27,4 +28,5 @@ pub fn run_gif_capture(
         started_at,
         |state| emit_state_change(app, &state),
     )
+    .map_err(|e| e.into())
 }

@@ -128,7 +128,7 @@ impl VideoDecoder {
         let metadata = get_video_metadata(path)?;
 
         Ok(Self {
-            path: path.to_string_lossy().to_string(),
+            path: path.to_string_lossy().into_owned(),
             width: metadata.width,
             height: metadata.height,
             fps: metadata.fps,
@@ -432,7 +432,7 @@ struct VideoMetadata {
 fn get_video_metadata(path: &Path) -> Result<VideoMetadata, String> {
     use crate::commands::video_recording::video_project::VideoMetadata as ProjectMetadata;
 
-    let meta = ProjectMetadata::from_file(path)?;
+    let meta = ProjectMetadata::from_file(path).map_err(|e| e.to_string())?;
     let fps = meta.fps as f64;
     let frame_count = ((meta.duration_ms as f64 / 1000.0) * fps).ceil() as u32;
 

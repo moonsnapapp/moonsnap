@@ -9,6 +9,7 @@
 //! This allows preview and recording to receive the same frames
 //! with the same timestamps, ensuring perfect sync.
 
+use moonsnap_core::error::MoonSnapResult;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::thread::JoinHandle;
@@ -40,7 +41,7 @@ pub struct CameraFeed {
     /// Signal to stop capture.
     stop_signal: Arc<AtomicBool>,
     /// Capture thread handle.
-    thread: Option<JoinHandle<Result<(), String>>>,
+    thread: Option<JoinHandle<MoonSnapResult<()>>>,
     /// Whether feed is currently running (capture active and producing frames).
     is_running: Arc<AtomicBool>,
     /// Whether feed is starting (thread spawned, initializing camera).
@@ -111,7 +112,7 @@ impl CameraFeed {
     }
 
     /// Start capturing frames.
-    pub fn start(&mut self) -> Result<(), String> {
+    pub fn start(&mut self) -> MoonSnapResult<()> {
         if self.is_running.load(Ordering::SeqCst) || self.is_starting.load(Ordering::SeqCst) {
             return Ok(()); // Already running or starting
         }
@@ -209,7 +210,7 @@ impl CameraFeed {
         is_running: Arc<AtomicBool>,
         is_starting: Arc<AtomicBool>,
         dimensions: Arc<RwLock<(u32, u32)>>,
-    ) -> Result<(), String> {
+    ) -> MoonSnapResult<()> {
         use nokhwa::utils::{
             CameraFormat, CameraIndex, FrameFormat, RequestedFormat, RequestedFormatType,
             Resolution,
@@ -396,7 +397,7 @@ fn global_feed() -> &'static Mutex<Option<CameraFeed>> {
 }
 
 /// Start the global camera feed for a device.
-pub fn start_global_feed(device_index: usize) -> Result<(), String> {
+pub fn start_global_feed(device_index: usize) -> MoonSnapResult<()> {
     let mut guard = global_feed().lock();
 
     // Check if already running or starting
@@ -428,7 +429,7 @@ pub fn stop_global_feed() {
 }
 
 /// Subscribe to the global camera feed.
-pub fn subscribe_global(name: &str, buffer_size: usize) -> Result<Subscription, String> {
+pub fn subscribe_global(name: &str, buffer_size: usize) -> MoonSnapResult<Subscription> {
     let guard = global_feed().lock();
     let feed = guard.as_ref().ok_or("Camera feed not started")?;
     Ok(feed.subscribe(name, buffer_size))
@@ -443,7 +444,7 @@ pub fn is_global_feed_running() -> bool {
 /// Restart the global camera feed with a new device index.
 /// If feed is not running, this does nothing.
 /// Returns the device index that was restarted, or None if feed wasn't running.
-pub fn restart_global_feed(device_index: usize) -> Result<Option<usize>, String> {
+pub fn restart_global_feed(device_index: usize) -> MoonSnapResult<Option<usize>> {
     let mut guard = global_feed().lock();
 
     // Check if feed is running

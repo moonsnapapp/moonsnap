@@ -2,6 +2,7 @@
 //!
 //! Uses the bundled ffmpeg binary to extract and resample audio to 16kHz mono PCM.
 
+use moonsnap_core::error::MoonSnapResult;
 use std::path::Path;
 use std::process::Stdio;
 
@@ -16,7 +17,7 @@ use moonsnap_media::ffmpeg::{create_hidden_command, find_ffmpeg, find_ffprobe};
 /// * `Ok(true)` if the video has at least one audio stream
 /// * `Ok(false)` if no audio stream is found
 /// * `Err(String)` if probing failed
-pub fn video_has_audio(video_path: &Path) -> Result<bool, String> {
+pub fn video_has_audio(video_path: &Path) -> MoonSnapResult<bool> {
     // Try ffprobe first, fall back to ffmpeg if not available
     if let Some(ffprobe_path) = find_ffprobe() {
         let output = create_hidden_command(&ffprobe_path)
@@ -63,14 +64,14 @@ pub fn video_has_audio(video_path: &Path) -> Result<bool, String> {
 /// # Returns
 /// * `Ok(())` if successful
 /// * `Err(String)` with error message if failed
-pub fn extract_audio_for_whisper(video_path: &Path, output_path: &Path) -> Result<(), String> {
+pub fn extract_audio_for_whisper(video_path: &Path, output_path: &Path) -> MoonSnapResult<()> {
     log::info!("Extracting audio from: {:?}", video_path);
 
     // Check if video has audio stream first
     let has_audio = video_has_audio(video_path)?;
     if !has_audio {
         return Err(
-            "This video does not contain an audio track. Transcription requires audio.".to_string(),
+            "This video does not contain an audio track. Transcription requires audio.".into(),
         );
     }
 
@@ -104,7 +105,7 @@ pub fn extract_audio_for_whisper(video_path: &Path, output_path: &Path) -> Resul
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("Audio extraction failed: {}", stderr));
+        return Err(format!("Audio extraction failed: {}", stderr).into());
     }
 
     log::info!("Audio extracted to: {:?}", output_path);
@@ -123,7 +124,7 @@ pub fn extract_audio_for_whisper(video_path: &Path, output_path: &Path) -> Resul
 /// # Returns
 /// * `Ok(())` if successful
 /// * `Err(String)` with error message if failed
-pub fn convert_to_whisper_format(input_path: &Path, output_path: &Path) -> Result<(), String> {
+pub fn convert_to_whisper_format(input_path: &Path, output_path: &Path) -> MoonSnapResult<()> {
     log::info!("Converting audio to Whisper format: {:?}", input_path);
 
     let ffmpeg_path = find_ffmpeg().ok_or_else(|| "ffmpeg not found".to_string())?;
@@ -154,7 +155,7 @@ pub fn convert_to_whisper_format(input_path: &Path, output_path: &Path) -> Resul
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("Audio conversion failed: {}", stderr));
+        return Err(format!("Audio conversion failed: {}", stderr).into());
     }
 
     log::info!("Audio converted to: {:?}", output_path);
@@ -175,9 +176,9 @@ pub fn convert_range_to_whisper_format(
     output_path: &Path,
     start_secs: f32,
     end_secs: f32,
-) -> Result<(), String> {
+) -> MoonSnapResult<()> {
     if !start_secs.is_finite() || !end_secs.is_finite() || end_secs <= start_secs {
-        return Err("Invalid segment range".to_string());
+        return Err("Invalid segment range".into());
     }
 
     log::info!(
@@ -216,7 +217,7 @@ pub fn convert_range_to_whisper_format(
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("Segment audio conversion failed: {}", stderr));
+        return Err(format!("Segment audio conversion failed: {}", stderr).into());
     }
 
     log::info!("Segment audio converted to: {:?}", output_path);
@@ -233,7 +234,7 @@ pub fn convert_range_to_whisper_format(
 /// # Returns
 /// * `Ok(Vec<f32>)` - Normalized audio samples (-1.0 to 1.0)
 /// * `Err(String)` if loading failed
-pub fn load_wav_as_f32(wav_path: &Path) -> Result<Vec<f32>, String> {
+pub fn load_wav_as_f32(wav_path: &Path) -> MoonSnapResult<Vec<f32>> {
     let audio_data =
         std::fs::read(wav_path).map_err(|e| format!("Failed to read audio file: {}", e))?;
 

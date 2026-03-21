@@ -666,7 +666,7 @@ fn draw_window_name_indicator(
                     let path = String::from_utf16_lossy(&buffer[..size as usize]);
                     // Extract filename without extension
                     if let Some(filename) = std::path::Path::new(&path).file_stem() {
-                        filename.to_string_lossy().to_string()
+                        filename.to_string_lossy().into_owned()
                     } else {
                         format!("Window {}", hwnd.0 as isize)
                     }

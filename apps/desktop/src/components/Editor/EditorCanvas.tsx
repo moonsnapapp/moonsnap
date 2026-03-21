@@ -2,8 +2,6 @@ import React, { useRef, useMemo, useEffect, useState, forwardRef, useImperativeH
 import { Stage, Layer, Rect, Group, Transformer } from 'react-konva';
 import Konva from 'konva';
 import useImage from 'use-image';
-import { convertFileSrc } from '@tauri-apps/api/core';
-import { resolveResource } from '@tauri-apps/api/path';
 import { Loader2 } from 'lucide-react';
 import { useFastImage } from '../../hooks/useFastImage';
 import type { Tool, CanvasShape } from '../../types';
@@ -21,6 +19,9 @@ import { useMarqueeSelection } from '../../hooks/useMarqueeSelection';
 import { useCropTool } from '../../hooks/useCropTool';
 import { useTextEditing } from '../../hooks/useTextEditing';
 import { useMiddleMousePan } from '../../hooks/useMiddleMousePan';
+import { useCanvasEventHandlers } from '../../hooks/useCanvasEventHandlers';
+import { useCanvasTransformer } from '../../hooks/useCanvasTransformer';
+import { useCanvasCompositor } from '../../hooks/useCanvasCompositor';
 
 // Components
 import { ShapeRenderer } from './shapes';
@@ -34,8 +35,7 @@ import { CropOverlay } from './overlays/CropOverlay';
 import { ResetRotationButton } from './overlays/ResetRotationButton';
 
 // Utility functions
-import { getSelectionBounds, expandBoundsForShapes, expandCropRegionForShapes, ensureBackgroundShape, BACKGROUND_SHAPE_ID, createCheckerPattern } from '../../utils/canvasGeometry';
-import { EDITOR_TEXT, getEditorTextResizeDimensions } from '../../utils/editorText';
+import { expandBoundsForShapes, expandCropRegionForShapes, ensureBackgroundShape, BACKGROUND_SHAPE_ID } from '../../utils/canvasGeometry';
 
 interface EditorCanvasProps {
   imageData: string;
@@ -50,17 +50,7 @@ interface EditorCanvasProps {
 }
 
 const PIXEL_SNAP_EPSILON = 0.02;
-const TEXT_MANUAL_DRAG_EPSILON = 0.01;
 type ClipContext = Parameters<NonNullable<Konva.GroupConfig['clipFunc']>>[0];
-
-interface ManualTextDragState {
-  shapeId: string;
-  node: Konva.Node;
-  startPointer: { x: number; y: number };
-  startPosition: { x: number; y: number };
-  activated: boolean;
-  drewFirstFrame: boolean;
-}
 
 function snapInsideStart(value: number): number {
   const rounded = Math.round(value);
@@ -125,12 +115,10 @@ export const EditorCanvas = React.memo(forwardRef<EditorCanvasRef, EditorCanvasP
   const layerRef = useRef<Konva.Layer>(null);
   const transformerRef = useRef<Konva.Transformer>(null);
   const compositorBgRef = useRef<HTMLDivElement>(null);
+  const isShapeDraggingRef = useRef(false);
 
   // Track device pixel ratio for crisp HiDPI rendering
   const [pixelRatio, setPixelRatio] = useState(() => window.devicePixelRatio || 1);
-  const isShapeDraggingRef = useRef(false);
-  const preTextDragHideRef = useRef(false);
-  const manualTextDragRef = useRef<ManualTextDragState | null>(null);
 
   // Update pixelRatio when DPI changes (e.g., window moved between monitors)
   useEffect(() => {
@@ -184,47 +172,6 @@ export const EditorCanvas = React.memo(forwardRef<EditorCanvasRef, EditorCanvasP
   const image = (isRgbaFile ? fastImage : standardImage) as HTMLImageElement | undefined;
   const imageStatus = isRgbaFile ? fastImageStatus : standardImageStatus;
   const isImageLoading = imageStatus === 'loading';
-  const failedWallpaperResolveRef = useRef<string | null>(null);
-
-  // Auto-resolve wallpaper URL so default/loaded wallpaper backgrounds initialize
-  // without requiring a manual wallpaper click in the Style tab.
-  useEffect(() => {
-    if (compositorSettings.backgroundType !== 'wallpaper') return;
-    if (!compositorSettings.wallpaper) return;
-    if (compositorSettings.backgroundImage) {
-      failedWallpaperResolveRef.current = null;
-      return;
-    }
-    if (failedWallpaperResolveRef.current === compositorSettings.wallpaper) return;
-
-    let isCancelled = false;
-    const [theme, name] = compositorSettings.wallpaper.split('/');
-    if (!theme || !name) return;
-
-    void resolveResource(`assets/backgrounds/${theme}/${name}.jpg`)
-      .then((resolvedPath) => {
-        if (isCancelled) return;
-        failedWallpaperResolveRef.current = null;
-        setCompositorSettings({ backgroundImage: convertFileSrc(resolvedPath) });
-      })
-      .catch(() => {
-        if (!isCancelled) {
-          failedWallpaperResolveRef.current = compositorSettings.wallpaper;
-        }
-      });
-
-    return () => {
-      isCancelled = true;
-    };
-  }, [
-    compositorSettings.backgroundType,
-    compositorSettings.wallpaper,
-    compositorSettings.backgroundImage,
-    setCompositorSettings,
-  ]);
-
-  // Checkerboard pattern for transparency indication (created once, cached)
-  const [checkerPatternImage] = useState(() => createCheckerPattern());
 
   // Ensure background shape and artboard exist when image loads (for fresh captures).
   // Intentionally depends only on `image` — we only want this to run once when the
@@ -471,103 +418,63 @@ export const EditorCanvas = React.memo(forwardRef<EditorCanvasRef, EditorCanvasP
     return () => window.removeEventListener('crop-reset', handler);
   }, [handleCropReset]);
 
-  // Check if source image has transparent pixels (only recalculated when image changes).
-  const imageHasAlpha = useMemo(() => {
-    if (!image) return false;
-    const size = 20;
-    const c = document.createElement('canvas');
-    c.width = size;
-    c.height = size;
-    const ctx = c.getContext('2d');
-    if (!ctx) return false;
-    ctx.drawImage(image, 0, 0, size, size);
-    const data = ctx.getImageData(0, 0, size, size).data;
-    for (let i = 3; i < data.length; i += 4) {
-      if (data[i] < 255) return true;
-    }
-    return false;
-  }, [image]);
-
-  // Detect if the content has ANY transparency (edges or interior).
-  // When true, skip shadow/border-radius to avoid the floaty look.
-  // Checks both preview bounds (visibleBounds) and export bounds (canvasBounds).
-  const hasTransparency = useMemo(() => {
-    const bgX = backgroundShape?.x ?? 0;
-    const bgY = backgroundShape?.y ?? 0;
-    const bgW = backgroundShape?.width ?? (image?.width ?? 0);
-    const bgH = backgroundShape?.height ?? (image?.height ?? 0);
-
-
-    // Helper: do given bounds extend beyond the background shape?
-    const extendsBeyondBg = (bx: number, by: number, bw: number, bh: number) =>
-      bx < bgX - 0.5 || by < bgY - 0.5 ||
-      bx + bw > bgX + bgW + 0.5 || by + bh > bgY + bgH + 0.5;
-
-    // Check 1: preview clip extends beyond background (user sees transparent areas)
-    if (visibleBounds && extendsBeyondBg(visibleBounds.x, visibleBounds.y, visibleBounds.width, visibleBounds.height)) {
-      return true;
-    }
-
-    // Check 2: export bounds extend beyond background (export would have transparency).
-    // Must match getContentBounds() in canvasExport.ts for preview/export consistency.
-    if (cropRegion && extendsBeyondBg(cropRegion.x, cropRegion.y, cropRegion.width, cropRegion.height)) {
-      return true;
-    }
-    if (!cropRegion && canvasBounds) {
-      const ex = -canvasBounds.imageOffsetX;
-      const ey = -canvasBounds.imageOffsetY;
-      if (extendsBeyondBg(ex, ey, canvasBounds.width, canvasBounds.height)) {
-        return true;
-      }
-    }
-
-    // Check 3: source image itself has transparent pixels (cached by image identity)
-    if (imageHasAlpha) return true;
-
-    return false;
-  }, [visibleBounds, cropRegion, canvasBounds, backgroundShape, imageHasAlpha]);
-
-  // Selection bounds for group drag
-  const selectionBounds = useMemo(() => {
-    if (selectedIds.length <= 1) return null;
-    return getSelectionBounds(shapes, selectedIds);
-  }, [shapes, selectedIds]);
+  // Compositor hook
+  const compositor = useCanvasCompositor({
+    image,
+    compositorSettings,
+    setCompositorSettings,
+    visibleBounds,
+    cropRegion,
+    canvasBounds,
+    backgroundShape,
+    renderBounds,
+    navigation,
+  });
 
   // Fast lookup maps for selection/transformer paths.
   const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds]);
   const shapeById = useMemo(() => new Map(shapes.map((shape) => [shape.id, shape] as const)), [shapes]);
 
-  // Check if any selected shape requires proportional scaling.
-  const hasProportionalShape = useMemo(() => {
-    for (const id of selectedIds) {
-      if (shapeById.get(id)?.type === 'step') {
-        return true;
-      }
-    }
-    return false;
-  }, [selectedIds, shapeById]);
+  // Event handlers hook
+  const eventHandlers = useCanvasEventHandlers({
+    stageRef,
+    transformerRef,
+    layerRef,
+    selectedTool,
+    setSelectedIds,
+    selectedIds,
+    selectedSet,
+    shapeById,
+    navigation,
+    drawing,
+    marquee,
+    textEditing,
+    transform,
+    isShapeDraggingRef,
+  });
 
-  // Reset rotation of all selected shapes to 0
-  const handleResetRotation = React.useCallback(() => {
-    history.takeSnapshot();
-    const updatedShapes = shapes.map((s) => {
-      if (!selectedSet.has(s.id)) return s;
-      return { ...s, rotation: 0 };
-    });
-    onShapesChange(updatedShapes);
-
-    // Also reset rotation on the Konva nodes so the Transformer updates
-    const tr = transformerRef.current;
-    if (tr) {
-      tr.nodes().forEach((node) => {
-        if (selectedSet.has(node.id())) {
-          node.rotation(0);
-        }
-      });
-      tr.getLayer()?.batchDraw();
-    }
-    history.commitSnapshot();
-  }, [history, onShapesChange, selectedSet, shapes]);
+  // Transformer hook
+  const transformer = useCanvasTransformer({
+    shapes,
+    selectedIds,
+    selectedTool,
+    drawing,
+    textEditing,
+    transformerRef,
+    layerRef,
+    isShapeDraggingRef,
+    history,
+    onShapesChange,
+    canvasBounds,
+    originalImageSize,
+    cropRegion,
+    setCropRegion,
+    cropUserExpanded,
+    setCanvasBounds,
+    isShiftHeld,
+    selectedSet,
+    shapeById,
+  });
 
   // Disable image smoothing for crisp 1:1 pixel rendering at 100% zoom
   useEffect(() => {
@@ -585,367 +492,6 @@ export const EditorCanvas = React.memo(forwardRef<EditorCanvasRef, EditorCanvasP
       layer.off('beforeDraw', handleBeforeDraw);
     };
   }, [navigation.zoom]);
-
-  // Attach transformer to selected shapes
-  useEffect(() => {
-    if (!transformerRef.current || !layerRef.current) return;
-
-    // Hide transformer while drawing, editing text, or not in select mode
-    if (drawing.isDrawing || textEditing.editingTextId || selectedTool !== 'select' || isShapeDraggingRef.current) {
-      transformerRef.current.nodes([]);
-      transformerRef.current.getLayer()?.batchDraw();
-      return;
-    }
-
-    // For single selection, exclude arrows/lines so their custom endpoint handles stay usable
-    const isMultiSelect = selectedIds.length > 1;
-    const nodes = selectedIds
-      .filter((id) => {
-        if (isMultiSelect) return true;
-        const shape = shapeById.get(id);
-        return shape && shape.type !== 'arrow' && shape.type !== 'line';
-      })
-      .map((id) => layerRef.current!.findOne(`#${id}`))
-      .filter((node): node is Konva.Node => node !== null && node !== undefined);
-
-    transformerRef.current.nodes(nodes);
-    transformerRef.current.getLayer()?.batchDraw();
-  }, [drawing.isDrawing, selectedIds, selectedTool, shapeById, textEditing.editingTextId]);
-
-  // Handle mouse events
-  const handleMouseDown = React.useCallback(
-    (e: Konva.KonvaEventObject<MouseEvent>) => {
-      // Ignore if middle mouse button
-      if (e.evt.button === 1) return;
-
-      // Handle drawing tools
-      if (drawing.handleDrawingMouseDown(e)) {
-        return;
-      }
-
-      // Handle crop tool
-      if (selectedTool === 'crop') return;
-
-      // Handle select tool - start marquee or click on stage
-      if (selectedTool === 'select') {
-        // Only the stage itself counts as empty space (background is now a selectable shape)
-        const clickedOnStage = e.target === e.target.getStage();
-
-        if (clickedOnStage) {
-          setSelectedIds([]);
-
-          // While editing text, empty-click should only close editor/deselect.
-          // Skip marquee setup to avoid unnecessary shape intersection work.
-          if (textEditing.editingTextId) {
-            return;
-          }
-
-          const stage = stageRef.current;
-          if (stage) {
-            const screenPos = stage.getPointerPosition();
-            if (screenPos) {
-              const pos = navigation.getCanvasPosition(screenPos);
-              marquee.startMarquee(pos);
-            }
-          }
-        }
-      }
-    },
-    [drawing, selectedTool, setSelectedIds, marquee, stageRef, navigation, textEditing.editingTextId]
-  );
-
-  const updateManualTextDrag = React.useCallback((pointer: { x: number; y: number }): boolean => {
-    const manualTextDrag = manualTextDragRef.current;
-    if (!manualTextDrag) return false;
-
-    const dx = pointer.x - manualTextDrag.startPointer.x;
-    const dy = pointer.y - manualTextDrag.startPointer.y;
-    if (Math.abs(dx) <= TEXT_MANUAL_DRAG_EPSILON && Math.abs(dy) <= TEXT_MANUAL_DRAG_EPSILON) {
-      return true;
-    }
-
-    if (!manualTextDrag.activated) {
-      manualTextDrag.activated = true;
-      isShapeDraggingRef.current = true;
-
-      // Defer transformer hide to actual movement to keep mousedown path minimal.
-      const tr = transformerRef.current;
-      if (tr?.visible()) {
-        tr.visible(false);
-        preTextDragHideRef.current = true;
-      }
-    }
-
-    manualTextDrag.node.position({
-      x: manualTextDrag.startPosition.x + dx,
-      y: manualTextDrag.startPosition.y + dy,
-    });
-
-    const dragLayer = manualTextDrag.node.getLayer();
-    if (dragLayer) {
-      manualTextDrag.drewFirstFrame = true;
-      dragLayer.batchDraw();
-    }
-
-    return true;
-  }, []);
-
-  const handleMouseMove = React.useCallback(
-    (_e: Konva.KonvaEventObject<MouseEvent>) => {
-      const stage = stageRef.current;
-      if (!stage) return;
-
-      const screenPos = stage.getPointerPosition();
-      if (!screenPos) return;
-
-      const pos = navigation.getCanvasPosition(screenPos);
-
-      if (updateManualTextDrag(pos)) {
-        return;
-      }
-
-      // Drawing move (also handles pending → drawing transition on drag threshold)
-      if (drawing.isDrawing || (selectedTool !== 'select' && selectedTool !== 'crop' && selectedTool !== 'background')) {
-        drawing.handleDrawingMouseMove(pos);
-        return;
-      }
-
-      // Marquee move
-      if (marquee.isMarqueeSelecting) {
-        marquee.updateMarquee(pos);
-      }
-    },
-    [drawing, marquee, navigation, stageRef, selectedTool, updateManualTextDrag]
-  );
-
-  const handleShapeSelect = React.useCallback((id: string) => {
-    setSelectedIds([id]);
-  }, [setSelectedIds]);
-
-  const shapeDragStart = transform.handleShapeDragStart;
-  const shapeDragEnd = transform.handleShapeDragEnd;
-  const commitManualDragDelta = transform.commitManualDragDelta;
-
-  const reattachTransformerToSelection = React.useCallback(() => {
-    const tr = transformerRef.current;
-    const layer = layerRef.current;
-    if (!tr || !layer || drawing.isDrawing || textEditing.editingTextId || selectedTool !== 'select') return;
-
-    const selectedNow = selectedIds;
-    const isMultiSelect = selectedNow.length > 1;
-    const nodes = selectedNow
-      .filter((shapeId) => {
-        if (isMultiSelect) return true;
-        const shape = shapeById.get(shapeId);
-        return shape && shape.type !== 'arrow' && shape.type !== 'line';
-      })
-      .map((shapeId) => layer.findOne(`#${shapeId}`))
-      .filter((node): node is Konva.Node => node !== null && node !== undefined);
-
-    tr.nodes(nodes);
-    tr.getLayer()?.batchDraw();
-  }, [drawing.isDrawing, selectedIds, selectedTool, shapeById, textEditing.editingTextId]);
-
-  const handleTextMouseDown = React.useCallback((shapeId: string, e: Konva.KonvaEventObject<MouseEvent>) => {
-    if (e.evt?.button !== 0 || selectedTool !== 'select') return;
-    if (textEditing.editingTextId === shapeId) return;
-    if (selectedIds.length > 1) return;
-    // Preserve double-click editing path.
-    if (e.evt.detail >= 2) return;
-
-    // Keep stage handlers out of this path and run manual drag for selected text.
-    e.cancelBubble = true;
-
-    // Ensure first-gesture drag works even when the shape was not selected yet.
-    if (!selectedSet.has(shapeId) || selectedIds.length !== 1) {
-      setSelectedIds([shapeId]);
-    }
-
-    const dragNode = e.currentTarget as Konva.Node | null;
-    const stage = stageRef.current;
-    const screenPos = stage?.getPointerPosition();
-    if (!dragNode || !screenPos) return;
-
-    manualTextDragRef.current = {
-      shapeId,
-      node: dragNode,
-      startPointer: navigation.getCanvasPosition(screenPos),
-      startPosition: { x: dragNode.x(), y: dragNode.y() },
-      activated: false,
-      drewFirstFrame: false,
-    };
-  }, [navigation, selectedIds.length, selectedSet, selectedTool, setSelectedIds, stageRef, textEditing.editingTextId]);
-
-  const handleMouseUp = React.useCallback(() => {
-    const manualTextDrag = manualTextDragRef.current;
-    if (manualTextDrag) {
-      manualTextDragRef.current = null;
-      const wasDragging = manualTextDrag.activated;
-      isShapeDraggingRef.current = false;
-      preTextDragHideRef.current = false;
-
-      const dx = manualTextDrag.node.x() - manualTextDrag.startPosition.x;
-      const dy = manualTextDrag.node.y() - manualTextDrag.startPosition.y;
-      if (wasDragging && (Math.abs(dx) > TEXT_MANUAL_DRAG_EPSILON || Math.abs(dy) > TEXT_MANUAL_DRAG_EPSILON)) {
-        commitManualDragDelta(manualTextDrag.shapeId, dx, dy);
-      }
-
-      if (wasDragging) {
-        requestAnimationFrame(() => {
-          const tr = transformerRef.current;
-          if (tr) {
-            tr.visible(true);
-          }
-          reattachTransformerToSelection();
-        });
-      }
-      return;
-    }
-
-    // Finish drawing or click-to-place (always call - it no-ops when idle)
-    drawing.handleDrawingMouseUp();
-    // Finish marquee
-    if (marquee.isMarqueeSelecting) {
-      marquee.finishMarquee();
-    }
-    // Restore transformer if we hid it for a forced text drag that never started.
-    if (preTextDragHideRef.current && !isShapeDraggingRef.current) {
-      preTextDragHideRef.current = false;
-      const tr = transformerRef.current;
-      if (tr) {
-        tr.visible(true);
-      }
-    }
-  }, [commitManualDragDelta, drawing, marquee, reattachTransformerToSelection]);
-
-  useEffect(() => {
-    const handleWindowMouseMove = (evt: MouseEvent) => {
-      if (!manualTextDragRef.current) return;
-      const stage = stageRef.current;
-      if (!stage) return;
-
-      const rect = stage.container().getBoundingClientRect();
-      const pointer = navigation.getCanvasPosition({
-        x: evt.clientX - rect.left,
-        y: evt.clientY - rect.top,
-      });
-
-      updateManualTextDrag(pointer);
-    };
-
-    const handleWindowMouseUp = () => {
-      if (!manualTextDragRef.current) return;
-      handleMouseUp();
-    };
-
-    window.addEventListener('mousemove', handleWindowMouseMove, true);
-    window.addEventListener('mouseup', handleWindowMouseUp, true);
-
-    return () => {
-      window.removeEventListener('mousemove', handleWindowMouseMove, true);
-      window.removeEventListener('mouseup', handleWindowMouseUp, true);
-    };
-  }, [handleMouseUp, navigation, stageRef, updateManualTextDrag]);
-
-  const handleShapeDragStart = React.useCallback((id: string, e: Konva.KonvaEventObject<DragEvent>) => {
-    // Hide transformer during drag to reduce overlay work on text-heavy scenes.
-    if (e.evt?.button !== 1) {
-      isShapeDraggingRef.current = true;
-      preTextDragHideRef.current = false;
-      const tr = transformerRef.current;
-      if (tr) {
-        tr.visible(false);
-      }
-    }
-    shapeDragStart(id, e);
-  }, [shapeDragStart]);
-
-  const handleShapeDragEnd = React.useCallback((id: string, e: Konva.KonvaEventObject<DragEvent>) => {
-    shapeDragEnd(id, e);
-    isShapeDraggingRef.current = false;
-    requestAnimationFrame(() => {
-      const tr = transformerRef.current;
-      if (tr) {
-        tr.visible(true);
-      }
-      reattachTransformerToSelection();
-    });
-  }, [shapeDragEnd, reattachTransformerToSelection]);
-
-  // Composition box dimensions (for CSS preview background)
-  // Simple calculation: content size + padding on each side, scaled by zoom
-  const compositionBox = useMemo(() => {
-    if (!compositorSettings.enabled || !renderBounds) return null;
-
-    const padding = compositorSettings.padding * navigation.zoom;
-    const contentWidth = renderBounds.width * navigation.zoom;
-    const contentHeight = renderBounds.height * navigation.zoom;
-
-    // Position: content position in screen space, offset by padding
-    const left = navigation.position.x + renderBounds.x * navigation.zoom - padding;
-    const top = navigation.position.y + renderBounds.y * navigation.zoom - padding;
-    const width = contentWidth + padding * 2;
-    const height = contentHeight + padding * 2;
-
-    return { width, height, left, top };
-  }, [compositorSettings.enabled, compositorSettings.padding, renderBounds, navigation.zoom, navigation.position]);
-
-  // Base composition size for consistent background scaling
-  const baseCompositionSize = useMemo(() => {
-    if (!renderBounds) return { width: 0, height: 0 };
-
-    const padding = compositorSettings.padding;
-
-    return {
-      width: renderBounds.width + padding * 2,
-      height: renderBounds.height + padding * 2,
-    };
-  }, [renderBounds, compositorSettings.padding]);
-
-  // Background style for composition box
-  const compositionBackgroundStyle = useMemo((): React.CSSProperties => {
-    if (!compositorSettings.enabled) return {};
-
-    let backgroundColor: string | undefined;
-    let backgroundImage: string | undefined;
-    let backgroundSize: string = 'cover';
-
-    switch (compositorSettings.backgroundType) {
-      case 'solid':
-        backgroundColor = compositorSettings.backgroundColor;
-        break;
-      case 'gradient': {
-        backgroundImage = `linear-gradient(${compositorSettings.gradientAngle}deg, ${compositorSettings.gradientStart}, ${compositorSettings.gradientEnd})`;
-        break;
-      }
-      case 'wallpaper':
-      case 'image':
-        backgroundImage = compositorSettings.backgroundImage
-          ? `url(${compositorSettings.backgroundImage})`
-          : undefined;
-        backgroundColor = compositorSettings.backgroundImage ? undefined : '#1a1a2e';
-        // Use 'cover' to match Konva's calculateCoverSize behavior
-        backgroundSize = 'cover';
-        break;
-      default:
-        backgroundColor = '#1a1a2e';
-    }
-
-    return {
-      backgroundColor,
-      backgroundImage,
-      backgroundSize,
-      backgroundPosition: 'center',
-    };
-  }, [
-    compositorSettings.enabled,
-    compositorSettings.backgroundType,
-    compositorSettings.backgroundColor,
-    compositorSettings.backgroundImage,
-    compositorSettings.gradientStart,
-    compositorSettings.gradientEnd,
-    compositorSettings.gradientAngle,
-  ]);
 
   return (
     <div
@@ -983,14 +529,14 @@ export const EditorCanvas = React.memo(forwardRef<EditorCanvasRef, EditorCanvasP
         }}
       >
       {/* Composition Preview Background */}
-      {compositionBox && (
+      {compositor.compositionBox && (
         <CompositorCssPreview
           previewRef={compositorBgRef}
           settings={compositorSettings}
-          compositionBox={compositionBox}
+          compositionBox={compositor.compositionBox}
           zoom={navigation.zoom}
-          backgroundStyle={compositionBackgroundStyle}
-          hasTransparency={hasTransparency}
+          backgroundStyle={compositor.compositionBackgroundStyle}
+          hasTransparency={compositor.hasTransparency}
         />
       )}
 
@@ -1001,9 +547,9 @@ export const EditorCanvas = React.memo(forwardRef<EditorCanvasRef, EditorCanvasP
         width={navigation.containerSize.width}
         height={navigation.containerSize.height}
         pixelRatio={pixelRatio}
-        onMouseDown={handleMouseDown}
-        onMouseMove={handleMouseMove}
-        onMouseUp={handleMouseUp}
+        onMouseDown={eventHandlers.handleMouseDown}
+        onMouseMove={eventHandlers.handleMouseMove}
+        onMouseUp={eventHandlers.handleMouseUp}
         onWheel={navigation.handleWheel}
         scaleX={navigation.zoom}
         scaleY={navigation.zoom}
@@ -1013,11 +559,11 @@ export const EditorCanvas = React.memo(forwardRef<EditorCanvasRef, EditorCanvasP
       >
         <Layer ref={layerRef}>
           {/* Background layer: editor shadow when compositor disabled (skip shadow if transparent) */}
-          {!compositorSettings.enabled && !hasTransparency && (
+          {!compositorSettings.enabled && !compositor.hasTransparency && (
             <KonvaBackgroundLayer
               settings={compositorSettings}
               visibleBounds={renderBounds}
-              baseCompositionSize={baseCompositionSize}
+              baseCompositionSize={compositor.baseCompositionSize}
             />
           )}
 
@@ -1027,7 +573,7 @@ export const EditorCanvas = React.memo(forwardRef<EditorCanvasRef, EditorCanvasP
             const clipY = renderBounds.y;
             const clipW = renderBounds.width;
             const clipH = renderBounds.height;
-            const radius = (compositorSettings.enabled && !hasTransparency) ? compositorSettings.borderRadius : 0;
+            const radius = (compositorSettings.enabled && !compositor.hasTransparency) ? compositorSettings.borderRadius : 0;
             const clipProps = radius > 0
               ? {
                   clipFunc: (ctx: ClipContext) => {
@@ -1053,14 +599,14 @@ export const EditorCanvas = React.memo(forwardRef<EditorCanvasRef, EditorCanvasP
             return (
               <Group {...clipProps}>
                 {/* Checkerboard pattern — shows transparent areas, hidden during export by name */}
-                {checkerPatternImage && !compositorSettings.enabled && hasTransparency && (
+                {compositor.checkerPatternImage && !compositorSettings.enabled && compositor.hasTransparency && (
                   <Rect
                     name="checkerboard"
                     x={clipX}
                     y={clipY}
                     width={clipW}
                     height={clipH}
-                    fillPatternImage={checkerPatternImage}
+                    fillPatternImage={compositor.checkerPatternImage}
                     fillPatternRepeat="repeat"
                     listening={false}
                   />
@@ -1079,14 +625,14 @@ export const EditorCanvas = React.memo(forwardRef<EditorCanvasRef, EditorCanvasP
                   isPanning={pan.isPanning}
                   editingTextId={textEditing.editingTextId}
                   onShapeClick={transform.handleShapeClick}
-                  onShapeSelect={handleShapeSelect}
-                  onDragStart={handleShapeDragStart}
-                  onDragEnd={handleShapeDragEnd}
+                  onShapeSelect={eventHandlers.handleShapeSelect}
+                  onDragStart={eventHandlers.handleShapeDragStart}
+                  onDragEnd={eventHandlers.handleShapeDragEnd}
                   onArrowDragEnd={transform.handleArrowDragEnd}
                   onTransformStart={transform.handleTransformStart}
                   onTransformEnd={transform.handleTransformEnd}
                   onArrowEndpointDragEnd={transform.handleArrowEndpointDragEnd}
-                  onTextMouseDown={handleTextMouseDown}
+                  onTextMouseDown={eventHandlers.handleTextMouseDown}
                   onTextStartEdit={textEditing.startEditing}
                   takeSnapshot={history.takeSnapshot}
                   commitSnapshot={history.commitSnapshot}
@@ -1104,7 +650,7 @@ export const EditorCanvas = React.memo(forwardRef<EditorCanvasRef, EditorCanvasP
                 y={renderBounds.y - halfStroke}
                 width={renderBounds.width + compositorSettings.borderWidth}
                 height={renderBounds.height + compositorSettings.borderWidth}
-                cornerRadius={hasTransparency ? 0 : compositorSettings.borderRadius + halfStroke}
+                cornerRadius={compositor.hasTransparency ? 0 : compositorSettings.borderRadius + halfStroke}
                 stroke={compositorSettings.borderColor}
                 strokeWidth={compositorSettings.borderWidth}
                 opacity={compositorSettings.borderOpacity / 100}
@@ -1144,9 +690,9 @@ export const EditorCanvas = React.memo(forwardRef<EditorCanvasRef, EditorCanvasP
           )}
 
           {/* Selection bounds rect for group drag */}
-          {selectionBounds && selectedTool === 'select' && (
+          {transformer.selectionBounds && selectedTool === 'select' && (
             <SelectionBoundsRect
-              bounds={selectionBounds}
+              bounds={transformer.selectionBounds}
               isDraggable={true}
               selectedIds={selectedIds}
               layerRef={layerRef}
@@ -1189,244 +735,12 @@ export const EditorCanvas = React.memo(forwardRef<EditorCanvasRef, EditorCanvasP
           <Transformer
             ref={transformerRef}
             name="transformer"
-            keepRatio={isShiftHeld || hasProportionalShape}
-            enabledAnchors={hasProportionalShape
-              ? ['top-left', 'top-right', 'bottom-left', 'bottom-right']
-              : ['top-left', 'top-right', 'bottom-left', 'bottom-right', 'top-center', 'bottom-center', 'middle-left', 'middle-right']
-            }
-            boundBoxFunc={(oldBox, newBox) => {
-              if (newBox.width < 5 || newBox.height < 5) {
-                return oldBox;
-              }
-              return newBox;
-            }}
-            onTransformStart={() => history.takeSnapshot()}
-            onTransform={() => {
-              // Convert scale to dimensions in real-time to prevent stroke scaling during resize
-              const nodes = transformerRef.current?.nodes() || [];
-              nodes.forEach(node => {
-                const shape = shapeById.get(node.id());
-                if (!shape) return;
-
-                const scaleX = node.scaleX();
-                const scaleY = node.scaleY();
-
-                if (shape.type === 'text') {
-                  const group = node as Konva.Group;
-                  const { width: liveWidth, height: liveHeight } = getEditorTextResizeDimensions(
-                    shape.width,
-                    shape.height,
-                    scaleX,
-                    scaleY
-                  );
-                  const w = Math.max(EDITOR_TEXT.MIN_BOX_WIDTH, Math.abs(liveWidth));
-                  const h = Math.max(EDITOR_TEXT.MIN_BOX_HEIGHT, Math.abs(liveHeight));
-                  const invSx = scaleX === 0 ? 1 : 1 / scaleX;
-                  const invSy = scaleY === 0 ? 1 : 1 / scaleY;
-
-                  // Counter-scale all child rects so they resize without distortion
-                  for (const child of [
-                    group.findOne('.text-content'),
-                    group.findOne('.text-background'),
-                    group.findOne('.text-hit-area'),
-                  ]) {
-                    if (!child) continue;
-                    child.width(w);
-                    child.height(h);
-                    child.scaleX(invSx);
-                    child.scaleY(invSy);
-                    child.x(0);
-                    child.y(0);
-                  }
-                } else if (scaleX !== 1 || scaleY !== 1) {
-                  // All other shapes: reset scale to 1 and adjust geometry
-                  // This prevents stroke width from visually scaling during resize
-                  if (shape.type === 'circle') {
-                    const ellipse = node as unknown as Konva.Ellipse;
-                    ellipse.radiusX(ellipse.radiusX() * Math.abs(scaleX));
-                    ellipse.radiusY(ellipse.radiusY() * Math.abs(scaleY));
-                  } else if (shape.type === 'step') {
-                    const circle = (node as Konva.Group).findOne('Circle') as Konva.Circle | undefined;
-                    if (circle) {
-                      const avgScale = (Math.abs(scaleX) + Math.abs(scaleY)) / 2;
-                      circle.radius(circle.radius() * avgScale);
-                    }
-                  } else if ((shape.type === 'pen' || shape.type === 'arrow' || shape.type === 'line') && shape.points) {
-                    const line = node.className === 'Group'
-                      ? (node as Konva.Group).findOne('Line, Arrow') as Konva.Line | undefined
-                      : node as Konva.Line;
-                    if (line) {
-                      const pts = line.points();
-                      const scaled = pts.map((v, i) => v * (i % 2 === 0 ? scaleX : scaleY));
-                      line.points(scaled);
-                    }
-                  } else {
-                    // rect, highlight, image, blur: width/height based
-                    node.width(node.width() * scaleX);
-                    node.height(node.height() * scaleY);
-                  }
-                  node.scaleX(1);
-                  node.scaleY(1);
-                }
-              });
-            }}
-            onTransformEnd={() => {
-              // Handle ALL shapes at once to ensure batched history entry
-              const nodes = transformerRef.current?.nodes() || [];
-              if (nodes.length === 0) {
-                history.commitSnapshot();
-                return;
-              }
-
-              // Collect updates for all transformed shapes
-              const shapeUpdates = new Map<string, Partial<CanvasShape>>();
-
-              nodes.forEach(node => {
-                const shapeId = node.id();
-                const shape = shapeById.get(shapeId);
-                if (!shape) return;
-
-                const scaleX = node.scaleX();
-                const scaleY = node.scaleY();
-
-                let updates: Partial<CanvasShape>;
-
-                if ((shape.type === 'pen' || shape.type === 'arrow' || shape.type === 'line') && shape.points && shape.points.length >= 2) {
-                  // Points-based shapes: convert scale to points
-                  const nodeX = node.x();
-                  const nodeY = node.y();
-                  const newPoints = shape.points.map((val, i) =>
-                    i % 2 === 0 ? nodeX + val * scaleX : nodeY + val * scaleY
-                  );
-                  node.scaleX(1);
-                  node.scaleY(1);
-                  node.position({ x: 0, y: 0 });
-                  updates = { points: newPoints };
-                } else if (shape.type === 'blur') {
-                  // Blur: just use position and dimensions
-                  updates = {
-                    x: node.x(),
-                    y: node.y(),
-                    width: node.width(),
-                    height: node.height(),
-                  };
-                } else if (shape.type === 'text') {
-                  // Text: let Konva own the live scale during the gesture, then
-                  // normalize the box dimensions once at the end.
-                  const { width: rawWidth, height: rawHeight } = getEditorTextResizeDimensions(
-                    node.width(),
-                    node.height(),
-                    scaleX,
-                    scaleY
-                  );
-                  let finalX = node.x();
-                  let finalY = node.y();
-                  const finalWidth = Math.max(EDITOR_TEXT.MIN_BOX_WIDTH, Math.abs(rawWidth));
-                  const finalHeight = Math.max(EDITOR_TEXT.MIN_BOX_HEIGHT, Math.abs(rawHeight));
-                  if (rawWidth < 0) finalX += rawWidth;
-                  if (rawHeight < 0) finalY += rawHeight;
-
-                  node.scaleX(1);
-                  node.scaleY(1);
-
-                  // Reset all child positions/scales to final dimensions
-                  if (node instanceof Konva.Group) {
-                    for (const child of [
-                      node.findOne('.text-hit-area'),
-                      node.findOne('.text-box-border'),
-                      node.findOne('.text-background'),
-                      node.findOne('.text-content'),
-                    ]) {
-                      if (!child) continue;
-                      child.x(0);
-                      child.y(0);
-                      child.width(finalWidth);
-                      child.height(finalHeight);
-                      child.scaleX(1);
-                      child.scaleY(1);
-                    }
-                  }
-                  node.x(finalX);
-                  node.y(finalY);
-                  node.width(finalWidth);
-                  node.height(finalHeight);
-
-                  updates = {
-                    x: finalX,
-                    y: finalY,
-                    width: finalWidth,
-                    height: finalHeight,
-                    rotation: node.rotation(),
-                  };
-                } else if (shape.type === 'step') {
-                  // Step: convert scale to radius
-                  const avgScale = (Math.abs(scaleX) + Math.abs(scaleY)) / 2;
-                  const currentRadius = shape.radius ?? 15;
-                  const newRadius = Math.max(8, currentRadius * avgScale);
-                  node.scaleX(1);
-                  node.scaleY(1);
-                  updates = {
-                    x: node.x(),
-                    y: node.y(),
-                    radius: newRadius,
-                  };
-                } else {
-                  // Default: convert scale to dimensions
-                  node.scaleX(1);
-                  node.scaleY(1);
-                  updates = {
-                    x: node.x(),
-                    y: node.y(),
-                    rotation: node.rotation(),
-                  };
-                  if (shape.width !== undefined) {
-                    updates.width = Math.abs(shape.width * scaleX);
-                  }
-                  if (shape.height !== undefined) {
-                    updates.height = Math.abs(shape.height * scaleY);
-                  }
-                  if (shape.radiusX !== undefined) {
-                    updates.radiusX = Math.abs(shape.radiusX * scaleX);
-                  }
-                  if (shape.radiusY !== undefined) {
-                    updates.radiusY = Math.abs(shape.radiusY * scaleY);
-                  }
-                  if (shape.radius !== undefined && shape.radiusX === undefined) {
-                    updates.radiusX = Math.abs(shape.radius * scaleX);
-                    updates.radiusY = Math.abs(shape.radius * scaleY);
-                    updates.radius = undefined;
-                  }
-                }
-
-                shapeUpdates.set(shapeId, updates);
-              });
-
-              // Apply all updates at once
-              if (shapeUpdates.size > 0) {
-                const updatedShapes = shapes.map(s => {
-                  const updates = shapeUpdates.get(s.id);
-                  return updates ? { ...s, ...updates } : s;
-                });
-                onShapesChange(updatedShapes);
-
-                // Auto-extend canvas and crop region if shapes moved beyond bounds
-                if (canvasBounds && originalImageSize) {
-                  const expanded = expandBoundsForShapes(canvasBounds, updatedShapes, originalImageSize, cropUserExpanded);
-                  if (expanded) setCanvasBounds(expanded);
-                }
-                if (cropRegion) {
-                  const expandedCrop = expandCropRegionForShapes(cropRegion, updatedShapes, cropUserExpanded);
-                  if (expandedCrop) setCropRegion(expandedCrop);
-                }
-              }
-
-              history.commitSnapshot();
-            }}
+            {...transformer.transformerProps}
           />
           <ResetRotationButton
             transformerRef={transformerRef}
             zoom={navigation.zoom}
-            onReset={handleResetRotation}
+            onReset={transformer.handleResetRotation}
           />
         </Layer>
       </Stage>

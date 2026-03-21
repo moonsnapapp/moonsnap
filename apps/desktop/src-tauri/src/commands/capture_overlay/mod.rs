@@ -41,6 +41,7 @@ mod tests;
 // Re-exports for public API
 pub use types::{CaptureType, OverlayAction, OverlayMode, OverlayResult, SelectionEvent};
 
+use moonsnap_core::error::MoonSnapResult;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Instant;
 
@@ -106,7 +107,7 @@ pub async fn show_capture_overlay(
     preselect_monitor: Option<usize>,
     preselect_window: Option<isize>,
     auto_start_recording: Option<bool>,
-) -> Result<Option<OverlayResult>, String> {
+) -> MoonSnapResult<Option<OverlayResult>> {
     log::debug!("[show_capture_overlay] capture_type: {:?}, source_mode: {:?}, preselect_monitor: {:?}, preselect_window: {:?}",
         capture_type, source_mode, preselect_monitor, preselect_window);
 
@@ -249,7 +250,7 @@ fn run_overlay(
     preselect_window_title: Option<String>,
     preselect_monitor_index: Option<usize>,
     preselect_monitor_name: Option<String>,
-) -> Result<Option<OverlayResult>, String> {
+) -> MoonSnapResult<Option<OverlayResult>> {
     log::debug!("[run_overlay] Starting overlay for {:?} with mode {:?}, preselect: {:?}, window: {:?}/{:?}, monitor: {:?}/{:?}",
         capture_type, overlay_mode, preselect_bounds,
         preselect_window_id, preselect_window_title,
@@ -645,7 +646,7 @@ fn run_overlay(
 /// highlights based on HIGHLIGHTED_MONITOR/HIGHLIGHTED_WINDOW atomics.
 /// Used by picker panels to show visual feedback while hovering items.
 #[command]
-pub async fn start_highlight_preview() -> Result<(), String> {
+pub async fn start_highlight_preview() -> MoonSnapResult<()> {
     // Check if already active
     if PREVIEW_ACTIVE.load(Ordering::SeqCst) {
         return Ok(());
@@ -677,7 +678,7 @@ pub async fn start_highlight_preview() -> Result<(), String> {
 
 /// Stop the highlight preview overlay.
 #[command]
-pub async fn stop_highlight_preview() -> Result<(), String> {
+pub async fn stop_highlight_preview() -> MoonSnapResult<()> {
     log::debug!("[stop_highlight_preview] Stopping preview overlay");
     PREVIEW_SHOULD_STOP.store(true, Ordering::SeqCst);
     // Clear any highlights
@@ -692,7 +693,7 @@ pub async fn is_highlight_preview_active() -> bool {
 }
 
 /// Run the preview overlay - click-through, render-only.
-fn run_preview_overlay(bounds: Rect) -> Result<(), String> {
+fn run_preview_overlay(bounds: Rect) -> MoonSnapResult<()> {
     use windows::Win32::System::Com::{CoInitializeEx, CoUninitialize, COINIT_MULTITHREADED};
 
     // Set active flag
@@ -979,7 +980,7 @@ fn render_preview(
 }
 
 /// Register the overlay window class.
-fn register_overlay_class() -> Result<(), String> {
+fn register_overlay_class() -> MoonSnapResult<()> {
     if OVERLAY_CLASS_REGISTERED.load(Ordering::SeqCst) {
         return Ok(());
     }
@@ -1005,7 +1006,7 @@ fn register_overlay_class() -> Result<(), String> {
 
         let atom = RegisterClassW(&wc);
         if atom == 0 {
-            return Err("Failed to register window class".to_string());
+            return Err("Failed to register window class".into());
         }
 
         OVERLAY_CLASS_REGISTERED.store(true, Ordering::SeqCst);

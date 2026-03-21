@@ -9,6 +9,7 @@
 mod gif;
 mod video;
 
+use moonsnap_core::error::MoonSnapResult;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
@@ -31,7 +32,7 @@ pub async fn start_recording(
     app: AppHandle,
     settings: RecordingSettings,
     output_path: PathBuf,
-) -> Result<(), String> {
+) -> MoonSnapResult<()> {
     log::debug!(
         "[RECORDING] Starting: format={:?}, countdown={}",
         settings.format,
@@ -155,7 +156,7 @@ fn start_capture_thread(
             },
             capture: move || {
                 // Window mode is now handled natively by WGC in run_video_capture/run_gif_capture.
-                match settings.format {
+                let result = match settings.format {
                     RecordingFormat::Mp4 => video::run_video_capture(
                         &app_for_capture,
                         &settings,
@@ -172,7 +173,8 @@ fn start_capture_thread(
                         command_rx,
                         &started_at,
                     ),
-                }
+                };
+                result.map_err(|e| e.to_string())
             },
             was_cancelled: || {
                 RECORDING_CONTROLLER
@@ -242,7 +244,7 @@ fn start_capture_thread(
 /// The UI immediately transitions to "Processing" state (optimistic update).
 /// The actual completion is signaled via the 'recording-state-changed' event
 /// when the state becomes Completed or Error.
-pub async fn stop_recording(app: AppHandle) -> Result<(), String> {
+pub async fn stop_recording(app: AppHandle) -> MoonSnapResult<()> {
     {
         let controller = RECORDING_CONTROLLER.lock().map_err(|e| e.to_string())?;
         controller.request_stop()?;
@@ -256,14 +258,14 @@ pub async fn stop_recording(app: AppHandle) -> Result<(), String> {
 }
 
 /// Cancel the current recording.
-pub async fn cancel_recording(_app: AppHandle) -> Result<(), String> {
+pub async fn cancel_recording(_app: AppHandle) -> MoonSnapResult<()> {
     let controller = RECORDING_CONTROLLER.lock().map_err(|e| e.to_string())?;
     controller.request_cancel()?;
     Ok(())
 }
 
 /// Pause the current recording.
-pub async fn pause_recording(app: AppHandle) -> Result<(), String> {
+pub async fn pause_recording(app: AppHandle) -> MoonSnapResult<()> {
     let state = {
         let mut controller = RECORDING_CONTROLLER.lock().map_err(|e| e.to_string())?;
         controller.request_pause()?;
@@ -275,7 +277,7 @@ pub async fn pause_recording(app: AppHandle) -> Result<(), String> {
 }
 
 /// Resume a paused recording.
-pub async fn resume_recording(app: AppHandle) -> Result<(), String> {
+pub async fn resume_recording(app: AppHandle) -> MoonSnapResult<()> {
     let state = {
         let mut controller = RECORDING_CONTROLLER.lock().map_err(|e| e.to_string())?;
         controller.request_resume()?;

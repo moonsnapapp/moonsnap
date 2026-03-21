@@ -6,6 +6,7 @@
 //! This encoder runs in its own thread and receives NativeCameraFrame
 //! instances from the capture service.
 
+use moonsnap_core::error::MoonSnapResult;
 use std::io::Write;
 use std::path::PathBuf;
 use std::process::{Child, ChildStdin, Stdio};
@@ -56,7 +57,7 @@ impl ChannelWebcamEncoder {
         output_path: PathBuf,
         frame_receiver: FrameReceiver,
         recording_start: Instant,
-    ) -> Result<Self, String> {
+    ) -> MoonSnapResult<Self> {
         let stop_signal = Arc::new(AtomicBool::new(false));
         let stop_signal_clone = Arc::clone(&stop_signal);
         let output_path_clone = output_path.clone();
@@ -81,7 +82,7 @@ impl ChannelWebcamEncoder {
     }
 
     /// Signal the encoder to stop and wait for completion.
-    pub fn finish(mut self, actual_duration: f64) -> Result<EncoderResult, String> {
+    pub fn finish(mut self, actual_duration: f64) -> MoonSnapResult<EncoderResult> {
         // Signal stop
         self.stop_signal.store(true, Ordering::SeqCst);
 
@@ -331,7 +332,7 @@ fn spawn_ffmpeg(
 }
 
 /// Remux video with correct FPS to match target duration.
-fn remux_with_correct_fps(output_path: &PathBuf, target_fps: f64) -> Result<(), String> {
+fn remux_with_correct_fps(output_path: &PathBuf, target_fps: f64) -> MoonSnapResult<()> {
     let ffmpeg_path = moonsnap_media::ffmpeg::find_ffmpeg().ok_or("FFmpeg not found")?;
 
     // Rename original to temp
@@ -371,7 +372,7 @@ fn remux_with_correct_fps(output_path: &PathBuf, target_fps: f64) -> Result<(), 
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("FFmpeg remux failed: {}", stderr));
+        return Err(format!("FFmpeg remux failed: {}", stderr).into());
     }
 
     Ok(())

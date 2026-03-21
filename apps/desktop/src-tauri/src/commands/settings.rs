@@ -1,4 +1,5 @@
-use std::sync::Mutex;
+use moonsnap_core::error::MoonSnapResult;
+use parking_lot::Mutex;
 use tauri::Manager;
 
 #[cfg(desktop)]
@@ -12,13 +13,11 @@ pub fn update_tray_shortcut(
     app: tauri::AppHandle,
     shortcut_id: String,
     display_text: String,
-) -> Result<(), String> {
+) -> MoonSnapResult<()> {
     #[cfg(desktop)]
     {
         let tray_state = app.state::<Mutex<TrayState>>();
-        let tray = tray_state
-            .lock()
-            .map_err(|e| format!("Failed to lock tray state: {}", e))?;
+        let tray = tray_state.lock();
 
         match shortcut_id.as_str() {
             "open_capture_toolbar" => tray
@@ -48,7 +47,7 @@ pub fn update_tray_shortcut(
 
 /// Set autostart enabled/disabled
 #[tauri::command]
-pub async fn set_autostart(app: tauri::AppHandle, enabled: bool) -> Result<(), String> {
+pub async fn set_autostart(app: tauri::AppHandle, enabled: bool) -> MoonSnapResult<()> {
     #[cfg(desktop)]
     {
         use tauri_plugin_autostart::ManagerExt;
@@ -71,7 +70,7 @@ pub async fn set_autostart(app: tauri::AppHandle, enabled: bool) -> Result<(), S
 
 /// Check if autostart is enabled
 #[tauri::command]
-pub async fn is_autostart_enabled(app: tauri::AppHandle) -> Result<bool, String> {
+pub async fn is_autostart_enabled(app: tauri::AppHandle) -> MoonSnapResult<bool> {
     #[cfg(desktop)]
     {
         use tauri_plugin_autostart::ManagerExt;
@@ -79,7 +78,7 @@ pub async fn is_autostart_enabled(app: tauri::AppHandle) -> Result<bool, String>
         let autostart_manager = app.autolaunch();
         autostart_manager
             .is_enabled()
-            .map_err(|e| format!("Failed to check autostart status: {}", e))
+            .map_err(|e| format!("Failed to check autostart status: {}", e).into())
     }
 
     #[cfg(not(desktop))]
@@ -88,7 +87,7 @@ pub async fn is_autostart_enabled(app: tauri::AppHandle) -> Result<bool, String>
 
 /// Open file explorer at the given path
 #[tauri::command]
-pub async fn open_path_in_explorer(path: String) -> Result<(), String> {
+pub async fn open_path_in_explorer(path: String) -> MoonSnapResult<()> {
     #[cfg(target_os = "windows")]
     {
         std::process::Command::new("explorer")
@@ -118,7 +117,7 @@ pub async fn open_path_in_explorer(path: String) -> Result<(), String> {
 
 /// Reveal a file in the file explorer (opens containing folder and selects the file)
 #[tauri::command]
-pub async fn reveal_file_in_explorer(path: String) -> Result<(), String> {
+pub async fn reveal_file_in_explorer(path: String) -> MoonSnapResult<()> {
     #[cfg(target_os = "windows")]
     {
         std::process::Command::new("explorer")
@@ -141,8 +140,8 @@ pub async fn reveal_file_in_explorer(path: String) -> Result<(), String> {
         let path = std::path::Path::new(&path);
         let parent = path
             .parent()
-            .map(|p| p.to_string_lossy().to_string())
-            .unwrap_or_else(|| path.to_string_lossy().to_string());
+            .map(|p| p.to_string_lossy().into_owned())
+            .unwrap_or_else(|| path.to_string_lossy().into_owned());
         std::process::Command::new("xdg-open")
             .arg(&parent)
             .spawn()
@@ -154,7 +153,7 @@ pub async fn reveal_file_in_explorer(path: String) -> Result<(), String> {
 
 /// Get the default save directory path
 #[tauri::command]
-pub async fn get_default_save_dir(app: tauri::AppHandle) -> Result<String, String> {
+pub async fn get_default_save_dir(app: tauri::AppHandle) -> MoonSnapResult<String> {
     let path = app
         .path()
         .document_dir()
@@ -168,11 +167,11 @@ pub async fn get_default_save_dir(app: tauri::AppHandle) -> Result<String, Strin
             .map_err(|e| format!("Failed to create MoonSnap directory: {}", e))?;
     }
 
-    Ok(moonsnap_path.to_string_lossy().to_string())
+    Ok(moonsnap_path.to_string_lossy().into_owned())
 }
 
 /// Get the default save directory path (synchronous version for internal use).
-pub fn get_default_save_dir_sync() -> Result<std::path::PathBuf, String> {
+pub fn get_default_save_dir_sync() -> MoonSnapResult<std::path::PathBuf> {
     let path =
         dirs::document_dir().ok_or_else(|| "Failed to get documents directory".to_string())?;
 
@@ -190,7 +189,7 @@ pub fn get_default_save_dir_sync() -> Result<std::path::PathBuf, String> {
 /// Pre-check a directory before moving: count items and detect locked files.
 /// Returns { item_count: u32, locked_files: Vec<String> }.
 #[tauri::command]
-pub async fn check_dir_for_move(path: String) -> Result<serde_json::Value, String> {
+pub async fn check_dir_for_move(path: String) -> MoonSnapResult<serde_json::Value> {
     let dir = std::path::PathBuf::from(&path);
     if !dir.exists() {
         return Ok(serde_json::json!({ "item_count": 0, "locked_files": [] }));
@@ -212,7 +211,7 @@ pub async fn check_dir_for_move(path: String) -> Result<serde_json::Value, Strin
             match std::fs::OpenOptions::new().write(true).open(&file_path) {
                 Ok(_) => {}, // File is accessible
                 Err(_) => {
-                    locked_files.push(entry.file_name().to_string_lossy().to_string());
+                    locked_files.push(entry.file_name().to_string_lossy().into_owned());
                 },
             }
         } else if file_path.is_dir() {
@@ -236,18 +235,17 @@ fn collect_locked_files_in_dir(dir: &std::path::Path, parent_name: &str, locked:
     if let Ok(entries) = std::fs::read_dir(dir) {
         for entry in entries.filter_map(|e| e.ok()) {
             let file_path = entry.path();
-            if file_path.is_file() {
-                if std::fs::OpenOptions::new()
+            if file_path.is_file()
+                && std::fs::OpenOptions::new()
                     .write(true)
                     .open(&file_path)
                     .is_err()
-                {
-                    locked.push(format!(
-                        "{}/{}",
-                        parent_name,
-                        entry.file_name().to_string_lossy()
-                    ));
-                }
+            {
+                locked.push(format!(
+                    "{}/{}",
+                    parent_name,
+                    entry.file_name().to_string_lossy()
+                ));
             }
         }
     }
@@ -260,7 +258,7 @@ pub async fn move_save_dir(
     app: tauri::AppHandle,
     old_path: String,
     new_path: String,
-) -> Result<(), String> {
+) -> MoonSnapResult<()> {
     use tauri::Emitter;
 
     let old = std::path::PathBuf::from(&old_path);
@@ -290,7 +288,7 @@ pub async fn move_save_dir(
 
     for (i, entry) in entries.iter().enumerate() {
         let dest = new.join(entry.file_name());
-        let name = entry.file_name().to_string_lossy().to_string();
+        let name = entry.file_name().to_string_lossy().into_owned();
 
         // Emit progress
         let _ = app.emit(
@@ -342,7 +340,7 @@ pub async fn move_save_dir(
 }
 
 /// Recursively copy a directory.
-fn copy_dir_recursive(src: &std::path::Path, dst: &std::path::Path) -> Result<(), String> {
+fn copy_dir_recursive(src: &std::path::Path, dst: &std::path::Path) -> MoonSnapResult<()> {
     std::fs::create_dir_all(dst)
         .map_err(|e| format!("Failed to create directory {:?}: {}", dst, e))?;
 
@@ -364,7 +362,7 @@ fn copy_dir_recursive(src: &std::path::Path, dst: &std::path::Path) -> Result<()
 
 /// Open a file with the system's default application
 #[tauri::command]
-pub async fn open_file_with_default_app(path: String) -> Result<(), String> {
+pub async fn open_file_with_default_app(path: String) -> MoonSnapResult<()> {
     #[cfg(target_os = "windows")]
     {
         use std::os::windows::process::CommandExt;
@@ -400,13 +398,13 @@ pub async fn open_file_with_default_app(path: String) -> Result<(), String> {
 pub async fn save_copy_of_file(
     source_path: String,
     destination_path: String,
-) -> Result<(), String> {
+) -> MoonSnapResult<()> {
     tokio::task::spawn_blocking(move || {
         let source = std::path::PathBuf::from(&source_path);
         let destination = std::path::PathBuf::from(&destination_path);
 
         if !source.exists() {
-            return Err(format!("Source file not found: {}", source_path));
+            return Err(format!("Source file not found: {}", source_path).into());
         }
 
         if source == destination {

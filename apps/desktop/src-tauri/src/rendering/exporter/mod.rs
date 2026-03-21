@@ -1027,7 +1027,7 @@ pub async fn export_video_gpu(
     );
 
     Ok(ExportResult {
-        output_path: output_path.to_string_lossy().to_string(),
+        output_path: output_path.to_string_lossy().into_owned(),
         duration_secs,
         file_size_bytes,
         format: project.export.format,

@@ -1,5 +1,6 @@
 //! Webcam device enumeration using native Windows Media Foundation.
 
+use moonsnap_core::error::MoonSnapResult;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
@@ -53,7 +54,7 @@ pub struct WebcamDevice {
 }
 
 /// Get a list of available webcam devices using native Media Foundation.
-pub fn get_webcam_devices() -> Result<Vec<WebcamDevice>, String> {
+pub fn get_webcam_devices() -> MoonSnapResult<Vec<WebcamDevice>> {
     let devices = moonsnap_camera_windows::get_devices()
         .map_err(|e| format!("Failed to enumerate webcam devices: {}", e))?;
 
@@ -68,7 +69,7 @@ pub fn get_webcam_devices() -> Result<Vec<WebcamDevice>, String> {
 
             WebcamDevice {
                 index: idx,
-                name: device.name().to_string_lossy().to_string(),
+                name: device.name().to_string_lossy().into_owned(),
                 description: device.model_id().map(String::from),
                 is_virtual: category.is_virtual(),
                 is_capture_card: category.is_capture_card(),
@@ -141,14 +142,14 @@ fn query_supported_resolutions(
 }
 
 /// Get a specific device by index.
-pub fn get_device_by_index(index: usize) -> Result<moonsnap_camera_windows::VideoDevice, String> {
+pub fn get_device_by_index(index: usize) -> MoonSnapResult<moonsnap_camera_windows::VideoDevice> {
     let devices = moonsnap_camera_windows::get_devices()
         .map_err(|e| format!("Failed to enumerate webcam devices: {}", e))?;
 
     devices
         .into_iter()
         .nth(index)
-        .ok_or_else(|| format!("Device index {} not found", index))
+        .ok_or_else(|| format!("Device index {} not found", index).into())
 }
 
 #[cfg(test)]

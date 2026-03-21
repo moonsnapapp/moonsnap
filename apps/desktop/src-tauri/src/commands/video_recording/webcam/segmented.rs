@@ -3,6 +3,7 @@
 //! Records webcam to multiple short segments (~3 seconds each) with a manifest
 //! file that enables recovery of completed segments if recording is interrupted.
 
+use moonsnap_core::error::MoonSnapResult;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, Stdio};
@@ -192,7 +193,7 @@ impl SegmentedWebcamMuxer {
         let mut current_segment = match self.create_segment(0, width, height) {
             Ok(s) => s,
             Err(e) => {
-                result.error = Some(e);
+                result.error = Some(e.to_string());
                 return result;
             },
         };
@@ -297,7 +298,7 @@ impl SegmentedWebcamMuxer {
                         current_segment = match self.create_segment(next_index, width, height) {
                             Ok(s) => s,
                             Err(e) => {
-                                result.error = Some(e);
+                                result.error = Some(e.to_string());
                                 break;
                             },
                         };
@@ -395,7 +396,7 @@ impl SegmentedWebcamMuxer {
         index: u32,
         width: u32,
         height: u32,
-    ) -> Result<CurrentSegment, String> {
+    ) -> MoonSnapResult<CurrentSegment> {
         let path = self.output_dir.join(format!("fragment_{:03}.mp4", index));
         let ffmpeg_path = moonsnap_media::ffmpeg::find_ffmpeg().ok_or("FFmpeg not found")?;
 
@@ -448,9 +449,9 @@ impl SegmentedWebcamMuxer {
 /// Concatenate segments into a single output file.
 ///
 /// Uses FFmpeg's concat demuxer for fast concatenation without re-encoding.
-pub fn concatenate_segments(segments: &[SegmentInfo], output_path: &Path) -> Result<(), String> {
+pub fn concatenate_segments(segments: &[SegmentInfo], output_path: &Path) -> MoonSnapResult<()> {
     if segments.is_empty() {
-        return Err("No segments to concatenate".to_string());
+        return Err("No segments to concatenate".into());
     }
 
     let ffmpeg_path = moonsnap_media::ffmpeg::find_ffmpeg().ok_or("FFmpeg not found")?;
@@ -496,7 +497,7 @@ pub fn concatenate_segments(segments: &[SegmentInfo], output_path: &Path) -> Res
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("FFmpeg concat failed: {}", stderr));
+        return Err(format!("FFmpeg concat failed: {}", stderr).into());
     }
 
     Ok(())

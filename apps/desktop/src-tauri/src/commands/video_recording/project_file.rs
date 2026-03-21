@@ -1,5 +1,6 @@
 //! Video project file creation after recording.
 
+use moonsnap_core::error::MoonSnapResult;
 use std::path::Path;
 
 use moonsnap_domain::video_project::VideoProject;
@@ -22,7 +23,7 @@ pub struct CreateVideoProjectRequest<'a> {
 ///
 /// This creates the VideoProject metadata file that allows the video editor
 /// to load and edit the recording with all its associated files.
-pub fn create_video_project_file(request: CreateVideoProjectRequest<'_>) -> Result<(), String> {
+pub fn create_video_project_file(request: CreateVideoProjectRequest<'_>) -> MoonSnapResult<()> {
     let screen_video = "screen.mp4".to_string();
 
     let mut project = VideoProject::new(
@@ -35,7 +36,7 @@ pub fn create_video_project_file(request: CreateVideoProjectRequest<'_>) -> Resu
     project.quick_capture = request.quick_capture;
 
     if let Some(folder_name) = request.project_folder.file_name() {
-        let folder_name = folder_name.to_string_lossy().to_string();
+        let folder_name = folder_name.to_string_lossy().into_owned();
         project.name = folder_name.clone();
         project.original_file_name = if request.quick_capture {
             Some(format!("{}.mp4", folder_name))

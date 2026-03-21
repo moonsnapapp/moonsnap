@@ -2,6 +2,7 @@
 //!
 //! These commands manage EditorInstance lifecycle and playback control.
 
+use moonsnap_core::error::MoonSnapResult;
 use parking_lot::Mutex;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -37,7 +38,7 @@ pub async fn create_editor_instance(
     project: VideoProject,
     state: State<'_, EditorState>,
     renderer_state: State<'_, RendererState>,
-) -> Result<EditorInstanceInfo, String> {
+) -> MoonSnapResult<EditorInstanceInfo> {
     log::info!(
         "[GPU_EDITOR] Creating editor instance for project: {}",
         project.id
@@ -75,7 +76,7 @@ pub async fn create_editor_instance(
 pub async fn destroy_editor_instance(
     instance_id: String,
     state: State<'_, EditorState>,
-) -> Result<(), String> {
+) -> MoonSnapResult<()> {
     log::info!("[GPU_EDITOR] Destroying editor instance: {}", instance_id);
 
     let instance = {
@@ -93,10 +94,10 @@ pub async fn destroy_editor_instance(
 
 /// Start playback.
 #[tauri::command]
-pub async fn editor_play(instance_id: String, state: State<'_, EditorState>) -> Result<(), String> {
+pub async fn editor_play(instance_id: String, state: State<'_, EditorState>) -> MoonSnapResult<()> {
     let instance = get_instance(&instance_id, &state)?;
     let inst = instance.lock().await;
-    inst.play().await
+    inst.play().await.map_err(|e| e.into())
 }
 
 /// Pause playback.
@@ -104,10 +105,10 @@ pub async fn editor_play(instance_id: String, state: State<'_, EditorState>) -> 
 pub async fn editor_pause(
     instance_id: String,
     state: State<'_, EditorState>,
-) -> Result<(), String> {
+) -> MoonSnapResult<()> {
     let instance = get_instance(&instance_id, &state)?;
     let inst = instance.lock().await;
-    inst.pause().await
+    inst.pause().await.map_err(|e| e.into())
 }
 
 /// Seek to a specific timestamp.
@@ -116,10 +117,10 @@ pub async fn editor_seek(
     instance_id: String,
     timestamp_ms: u64,
     state: State<'_, EditorState>,
-) -> Result<(), String> {
+) -> MoonSnapResult<()> {
     let instance = get_instance(&instance_id, &state)?;
     let inst = instance.lock().await;
-    inst.seek(timestamp_ms).await
+    inst.seek(timestamp_ms).await.map_err(|e| e.into())
 }
 
 /// Set playback speed.
@@ -128,10 +129,10 @@ pub async fn editor_set_speed(
     instance_id: String,
     speed: f32,
     state: State<'_, EditorState>,
-) -> Result<(), String> {
+) -> MoonSnapResult<()> {
     let instance = get_instance(&instance_id, &state)?;
     let inst = instance.lock().await;
-    inst.set_speed(speed).await
+    inst.set_speed(speed).await.map_err(|e| e.into())
 }
 
 /// Get current playback state.
@@ -139,7 +140,7 @@ pub async fn editor_set_speed(
 pub async fn editor_get_state(
     instance_id: String,
     state: State<'_, EditorState>,
-) -> Result<PlaybackState, String> {
+) -> MoonSnapResult<PlaybackState> {
     let instance = get_instance(&instance_id, &state)?;
     let inst = instance.lock().await;
     Ok(inst.get_state())
@@ -152,10 +153,10 @@ pub async fn editor_render_frame(
     instance_id: String,
     timestamp_ms: u64,
     state: State<'_, EditorState>,
-) -> Result<RenderedFrame, String> {
+) -> MoonSnapResult<RenderedFrame> {
     let instance = get_instance(&instance_id, &state)?;
     let mut inst = instance.lock().await;
-    inst.render_frame(timestamp_ms).await
+    inst.render_frame(timestamp_ms).await.map_err(|e| e.into())
 }
 
 /// Get current timestamp.
@@ -163,7 +164,7 @@ pub async fn editor_render_frame(
 pub async fn editor_get_timestamp(
     instance_id: String,
     state: State<'_, EditorState>,
-) -> Result<u64, String> {
+) -> MoonSnapResult<u64> {
     let instance = get_instance(&instance_id, &state)?;
     let inst = instance.lock().await;
     Ok(inst.get_current_timestamp())
@@ -173,10 +174,10 @@ pub async fn editor_get_timestamp(
 fn get_instance(
     instance_id: &str,
     state: &State<'_, EditorState>,
-) -> Result<Arc<tokio::sync::Mutex<EditorInstance>>, String> {
+) -> MoonSnapResult<Arc<tokio::sync::Mutex<EditorInstance>>> {
     let instances = state.instances.lock();
     instances
         .get(instance_id)
         .cloned()
-        .ok_or_else(|| format!("Editor instance not found: {}", instance_id))
+        .ok_or_else(|| format!("Editor instance not found: {}", instance_id).into())
 }

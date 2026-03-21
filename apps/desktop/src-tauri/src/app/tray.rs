@@ -3,7 +3,7 @@
 //! This module contains all tray-related functionality extracted from lib.rs
 //! for better code organization.
 
-use std::sync::Mutex;
+use parking_lot::Mutex;
 
 use moonsnap_domain::recording::{RecordingFormat, RecordingState};
 use tauri::{

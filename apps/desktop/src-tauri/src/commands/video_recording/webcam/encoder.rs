@@ -6,6 +6,7 @@
 // Allow unused encoder variants - keeping for potential future use
 #![allow(dead_code)]
 
+use moonsnap_core::error::MoonSnapResult;
 use std::io::Write;
 use std::path::PathBuf;
 use std::process::{Child, ChildStdin, Stdio};
@@ -35,7 +36,7 @@ pub struct WebcamEncoderPipe {
 impl WebcamEncoderPipe {
     /// Create and spawn FFmpeg process, ready to receive frames.
     /// Call this BEFORE the recording loop starts.
-    pub fn new(output_path: PathBuf) -> Result<Self, String> {
+    pub fn new(output_path: PathBuf) -> MoonSnapResult<Self> {
         let (width, height) = WEBCAM_BUFFER.dimensions();
         let (width, height) = if width > 0 && height > 0 {
             (width, height)
@@ -139,7 +140,7 @@ impl WebcamEncoderPipe {
 
     /// Finish encoding and close FFmpeg.
     /// `actual_duration` is the actual recording duration in seconds (from screen recording).
-    pub fn finish_with_duration(mut self, actual_duration: f64) -> Result<(), String> {
+    pub fn finish_with_duration(mut self, actual_duration: f64) -> MoonSnapResult<()> {
         let total_elapsed = self.start_time.elapsed();
         let frames_written = self.frames_written;
         let output_path = self.output_path.clone();
@@ -170,7 +171,7 @@ impl WebcamEncoderPipe {
             .map_err(|e| format!("FFmpeg wait error: {}", e))?;
 
         if !status.success() {
-            return Err(format!("FFmpeg exited with: {}", status));
+            return Err(format!("FFmpeg exited with: {}", status).into());
         }
 
         // Now re-encode with correct FPS to match screen duration
@@ -186,7 +187,7 @@ impl WebcamEncoderPipe {
 
     /// Remux the video with correct timing using stream copy (no re-encoding).
     /// Uses -itsscale to scale timestamps to match target duration.
-    fn remux_with_correct_fps(output_path: &PathBuf, target_fps: f64) -> Result<(), String> {
+    fn remux_with_correct_fps(output_path: &PathBuf, target_fps: f64) -> MoonSnapResult<()> {
         let ffmpeg_path = moonsnap_media::ffmpeg::find_ffmpeg().ok_or("FFmpeg not found")?;
 
         // Rename original to temp
@@ -230,7 +231,7 @@ impl WebcamEncoderPipe {
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(format!("FFmpeg remux failed: {}", stderr));
+            return Err(format!("FFmpeg remux failed: {}", stderr).into());
         }
 
         log::debug!(
@@ -241,7 +242,7 @@ impl WebcamEncoderPipe {
     }
 
     /// Finish encoding without duration sync (legacy).
-    pub fn finish(self) -> Result<(), String> {
+    pub fn finish(self) -> MoonSnapResult<()> {
         // Fall back to 30fps if no duration provided
         let frames = self.frames_written;
         self.finish_with_duration(frames as f64 / 30.0)
@@ -263,16 +264,16 @@ impl BackgroundWebcamEncoder {
     pub fn new(
         _output_path: PathBuf,
         _go_signal: std::sync::Arc<std::sync::atomic::AtomicBool>,
-    ) -> Result<Self, String> {
+    ) -> MoonSnapResult<Self> {
         // Deprecated - use WebcamEncoderPipe directly
-        Err("BackgroundWebcamEncoder is deprecated, use WebcamEncoderPipe".to_string())
+        Err("BackgroundWebcamEncoder is deprecated, use WebcamEncoderPipe".into())
     }
 
     pub fn frame_count(&self) -> u64 {
         self.pipe.as_ref().map(|p| p.frames_written()).unwrap_or(0)
     }
 
-    pub fn finish(self) -> Result<(), String> {
+    pub fn finish(self) -> MoonSnapResult<()> {
         if let Some(pipe) = self.pipe {
             pipe.finish()
         } else {
@@ -291,7 +292,7 @@ pub struct FeedWebcamEncoder {
     stop_signal: Arc<AtomicBool>,
     pause_signal: Arc<AtomicBool>,
     frames_written: Arc<AtomicU64>,
-    thread: Option<JoinHandle<Result<(), String>>>,
+    thread: Option<JoinHandle<MoonSnapResult<()>>>,
     output_path: PathBuf,
     start_time: Instant,
 }
@@ -299,7 +300,7 @@ pub struct FeedWebcamEncoder {
 impl FeedWebcamEncoder {
     /// Create and start the encoder.
     /// Subscribes to the global camera feed and encodes frames as they arrive.
-    pub fn new(output_path: PathBuf, width: u32, height: u32) -> Result<Self, String> {
+    pub fn new(output_path: PathBuf, width: u32, height: u32) -> MoonSnapResult<Self> {
         Self::with_pause_signal(output_path, width, height, None)
     }
 
@@ -310,7 +311,7 @@ impl FeedWebcamEncoder {
         width: u32,
         height: u32,
         pause_signal: Option<Arc<AtomicBool>>,
-    ) -> Result<Self, String> {
+    ) -> MoonSnapResult<Self> {
         let stop_signal = Arc::new(AtomicBool::new(false));
         let pause_signal = pause_signal.unwrap_or_else(|| Arc::new(AtomicBool::new(false)));
         let frames_written = Arc::new(AtomicU64::new(0));
@@ -356,7 +357,7 @@ impl FeedWebcamEncoder {
         stop_signal: Arc<AtomicBool>,
         pause_signal: Arc<AtomicBool>,
         frames_written: Arc<AtomicU64>,
-    ) -> Result<(), String> {
+    ) -> MoonSnapResult<()> {
         let ffmpeg_path = moonsnap_media::ffmpeg::find_ffmpeg().ok_or("FFmpeg not found")?;
 
         // Wait for first frame to get actual dimensions and format
@@ -551,10 +552,7 @@ impl FeedWebcamEncoder {
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
             log::error!("[FEED_ENCODER] FFmpeg failed: {}", stderr);
-            return Err(format!(
-                "FFmpeg exited with: {} - {}",
-                output.status, stderr
-            ));
+            return Err(format!("FFmpeg exited with: {} - {}", output.status, stderr).into());
         }
 
         // Log FFmpeg stderr even on success (might have warnings)
@@ -573,7 +571,7 @@ impl FeedWebcamEncoder {
     }
 
     /// Stop encoding and finalize with correct duration.
-    pub fn finish_with_duration(mut self, actual_duration: f64) -> Result<(), String> {
+    pub fn finish_with_duration(mut self, actual_duration: f64) -> MoonSnapResult<()> {
         let frames = self.frames_written();
         log::info!(
             "[FEED_ENCODER] Finishing: {} frames, target duration {:.2}s",

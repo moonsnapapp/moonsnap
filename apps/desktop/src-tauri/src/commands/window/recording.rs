@@ -1,5 +1,6 @@
 //! Recording border and countdown window commands.
 
+use moonsnap_core::error::MoonSnapResult;
 use tauri::{command, AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 
 use super::{
@@ -27,7 +28,7 @@ pub async fn show_recording_border(
     y: i32,
     width: u32,
     height: u32,
-) -> Result<(), String> {
+) -> MoonSnapResult<()> {
     show_recording_border_impl(app, x, y, width, height)
 }
 
@@ -37,7 +38,7 @@ fn show_recording_border_impl(
     y: i32,
     width: u32,
     height: u32,
-) -> Result<(), String> {
+) -> MoonSnapResult<()> {
     // No padding - position window exactly at the recording region
     // The border will be drawn at the exact edge of the recording area
     let window_x = x;
@@ -106,7 +107,7 @@ fn show_recording_border_impl(
 
 /// Hide the recording border window.
 #[command]
-pub async fn hide_recording_border(app: AppHandle) -> Result<(), String> {
+pub async fn hide_recording_border(app: AppHandle) -> MoonSnapResult<()> {
     if let Some(window) = app.get_webview_window(RECORDING_BORDER_LABEL) {
         window
             .close()
@@ -235,7 +236,7 @@ fn chooser_window_bounds(
 fn bring_floating_window_to_front(
     window: &tauri::WebviewWindow,
     focus: bool,
-) -> Result<(), String> {
+) -> MoonSnapResult<()> {
     #[cfg(target_os = "windows")]
     {
         use windows::Win32::Foundation::HWND;
@@ -295,7 +296,7 @@ pub async fn show_recording_controls(
     microphone_device_index: Option<usize>,
     system_audio_enabled: Option<bool>,
     recording_format: Option<String>,
-) -> Result<(), String> {
+) -> MoonSnapResult<()> {
     let include_in_capture = include_in_capture.unwrap_or(false);
     let center_on_selection = center_on_selection.unwrap_or(false);
     let system_audio_enabled = system_audio_enabled.unwrap_or(true);
@@ -401,7 +402,7 @@ pub async fn show_recording_controls(
 }
 
 #[command]
-pub async fn close_recording_controls(app: AppHandle) -> Result<(), String> {
+pub async fn close_recording_controls(app: AppHandle) -> MoonSnapResult<()> {
     if let Some(window) = app.get_webview_window(RECORDING_CONTROLS_LABEL) {
         window
             .close()
@@ -423,7 +424,7 @@ pub async fn show_recording_mode_chooser(
     height: u32,
     owner: Option<String>,
     allow_drag: Option<bool>,
-) -> Result<(), String> {
+) -> MoonSnapResult<()> {
     let owner = owner.unwrap_or_else(|| "capture-toolbar".to_string());
     let allow_drag = allow_drag.unwrap_or(false);
     let (window_x, window_y, chooser_width, chooser_height) = chooser_window_bounds(
@@ -502,7 +503,7 @@ pub(crate) fn reposition_recording_mode_chooser(
     y: i32,
     width: u32,
     height: u32,
-) -> Result<(), String> {
+) -> MoonSnapResult<()> {
     let Some(window) = app.get_webview_window(RECORDING_MODE_CHOOSER_LABEL) else {
         return Ok(());
     };
@@ -519,7 +520,7 @@ pub(crate) fn reposition_recording_mode_chooser(
 }
 
 #[command]
-pub async fn close_recording_mode_chooser(app: AppHandle) -> Result<(), String> {
+pub async fn close_recording_mode_chooser(app: AppHandle) -> MoonSnapResult<()> {
     if let Some(window) = app.get_webview_window(RECORDING_MODE_CHOOSER_LABEL) {
         window
             .close()
@@ -543,7 +544,7 @@ pub async fn show_countdown_window(
     width: u32,
     height: u32,
     countdown_secs: u32,
-) -> Result<(), String> {
+) -> MoonSnapResult<()> {
     // Close existing window if any
     if let Some(window) = app.get_webview_window(COUNTDOWN_WINDOW_LABEL) {
         let _ = window.close();
@@ -590,7 +591,7 @@ pub async fn show_countdown_window(
 
 /// Hide the countdown window.
 #[command]
-pub async fn hide_countdown_window(app: AppHandle) -> Result<(), String> {
+pub async fn hide_countdown_window(app: AppHandle) -> MoonSnapResult<()> {
     if let Some(window) = app.get_webview_window(COUNTDOWN_WINDOW_LABEL) {
         window
             .close()

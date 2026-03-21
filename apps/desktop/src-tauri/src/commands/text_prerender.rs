@@ -1,5 +1,6 @@
 //! Tauri commands for registering pre-rendered text images from the frontend.
 
+use moonsnap_core::error::MoonSnapResult;
 use moonsnap_render::prerendered_text::{LineMetric, PreRenderedTextImage, PreRenderedTextStore};
 use parking_lot::Mutex;
 use serde::Deserialize;
@@ -54,7 +55,7 @@ pub async fn register_prerendered_text(
     size_y: f64,
     rgba_data: Vec<u8>,
     line_metrics: Option<Vec<LineMetricInput>>,
-) -> Result<(), String> {
+) -> MoonSnapResult<()> {
     let expected_size = (width * height * 4) as usize;
     if rgba_data.len() != expected_size {
         return Err(format!(
@@ -63,7 +64,8 @@ pub async fn register_prerendered_text(
             width,
             height,
             rgba_data.len()
-        ));
+        )
+        .into());
     }
 
     let metrics = line_metrics
@@ -107,7 +109,7 @@ pub async fn register_prerendered_text(
 ///
 /// Called at export start and end.
 #[command]
-pub async fn clear_prerendered_texts(state: State<'_, PreRenderedTextState>) -> Result<(), String> {
+pub async fn clear_prerendered_texts(state: State<'_, PreRenderedTextState>) -> MoonSnapResult<()> {
     state.store.lock().clear();
     log::debug!("[PreRenderedText] Cleared all pre-rendered texts");
     Ok(())

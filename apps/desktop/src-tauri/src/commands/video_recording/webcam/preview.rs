@@ -3,6 +3,7 @@
 //! Subscribes to the camera feed and maintains a JPEG buffer
 //! for the browser preview to poll.
 
+use moonsnap_core::error::MoonSnapResult;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::thread::JoinHandle;
@@ -83,7 +84,7 @@ static PREVIEW_SERVICE: parking_lot::Mutex<Option<PreviewService>> = parking_lot
 ///
 /// This starts the camera feed (if not already running) and spawns
 /// a thread that converts frames to JPEG for browser preview.
-pub fn start_preview(device_index: usize) -> Result<(), String> {
+pub fn start_preview(device_index: usize) -> MoonSnapResult<()> {
     let mut guard = PREVIEW_SERVICE.lock();
 
     // Check if already running

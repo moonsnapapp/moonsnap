@@ -19,6 +19,7 @@
 //! await invoke('stop_audio_monitoring');
 //! ```
 
+use moonsnap_core::error::MoonSnapResult;
 use std::collections::VecDeque;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -26,8 +27,8 @@ use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
 use lazy_static::lazy_static;
+use parking_lot::Mutex;
 use serde::Serialize;
-use std::sync::Mutex;
 use tauri::{AppHandle, Emitter};
 use ts_rs::TS;
 use wasapi::*;
@@ -242,8 +243,9 @@ fn monitor_microphone(
                 let samples = bytes_to_f32_samples(&sample_queue);
                 let rms = calculate_rms(&samples);
 
-                if let Ok(mut lvl) = level.lock() {
+                {
                     // Smooth the level with exponential moving average
+                    let mut lvl = level.lock();
                     *lvl = *lvl * 0.7 + rms * 0.3;
                 }
 
@@ -255,7 +257,8 @@ fn monitor_microphone(
     // Cleanup
     let _ = audio_client.stop_stream();
     is_active.store(false, Ordering::SeqCst);
-    if let Ok(mut lvl) = level.lock() {
+    {
+        let mut lvl = level.lock();
         *lvl = 0.0;
     }
     log::debug!("[AUDIO_MONITOR] Microphone monitoring stopped");
@@ -380,8 +383,9 @@ fn monitor_system_audio(
                 let samples = bytes_to_f32_samples(&sample_queue);
                 let rms = calculate_rms(&samples);
 
-                if let Ok(mut lvl) = level.lock() {
+                {
                     // Smooth the level with exponential moving average
+                    let mut lvl = level.lock();
                     *lvl = *lvl * 0.7 + rms * 0.3;
                 }
 
@@ -393,7 +397,8 @@ fn monitor_system_audio(
     // Cleanup
     let _ = audio_client.stop_stream();
     is_active.store(false, Ordering::SeqCst);
-    if let Ok(mut lvl) = level.lock() {
+    {
+        let mut lvl = level.lock();
         *lvl = 0.0;
     }
     log::debug!("[AUDIO_MONITOR] System audio monitoring stopped");
@@ -407,8 +412,8 @@ pub fn start_monitoring(
     app: AppHandle,
     mic_device_index: Option<usize>,
     enable_system_audio: bool,
-) -> Result<(), String> {
-    let mut state = AUDIO_MONITOR.lock().map_err(|e| e.to_string())?;
+) -> MoonSnapResult<()> {
+    let mut state = AUDIO_MONITOR.lock();
 
     // Stop any existing monitoring
     state.should_stop.store(true, Ordering::SeqCst);
@@ -466,8 +471,8 @@ pub fn start_monitoring(
     thread::spawn(move || {
         while !stop_emitter.load(Ordering::Relaxed) {
             let levels = AudioLevels {
-                mic_level: mic_lvl.lock().map(|l| *l).unwrap_or(0.0),
-                system_level: sys_lvl.lock().map(|l| *l).unwrap_or(0.0),
+                mic_level: *mic_lvl.lock(),
+                system_level: *sys_lvl.lock(),
                 mic_active: mic_act.load(Ordering::Relaxed),
                 system_active: sys_act.load(Ordering::Relaxed),
             };
@@ -491,8 +496,8 @@ pub fn start_monitoring(
 }
 
 /// Stop audio level monitoring.
-pub fn stop_monitoring() -> Result<(), String> {
-    let mut state = AUDIO_MONITOR.lock().map_err(|e| e.to_string())?;
+pub fn stop_monitoring() -> MoonSnapResult<()> {
+    let mut state = AUDIO_MONITOR.lock();
 
     state.should_stop.store(true, Ordering::SeqCst);
 
@@ -510,12 +515,8 @@ pub fn stop_monitoring() -> Result<(), String> {
 
 /// Check if audio monitoring is currently active.
 pub fn is_monitoring() -> bool {
-    AUDIO_MONITOR
-        .lock()
-        .map(|state| {
-            state.mic_active.load(Ordering::Relaxed) || state.system_active.load(Ordering::Relaxed)
-        })
-        .unwrap_or(false)
+    let state = AUDIO_MONITOR.lock();
+    state.mic_active.load(Ordering::Relaxed) || state.system_active.load(Ordering::Relaxed)
 }
 
 #[cfg(test)]

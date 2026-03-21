@@ -3,6 +3,7 @@
 //! Uses Scap for frame capture (with SystemTime-based timestamps)
 //! and VideoEncoder for hardware-accelerated MP4 encoding.
 
+use moonsnap_core::error::MoonSnapResult;
 use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
@@ -48,7 +49,7 @@ pub fn run_video_capture(
     progress: Arc<RecordingProgress>,
     command_rx: Receiver<RecorderCommand>,
     started_at: &str,
-) -> Result<f64, String> {
+) -> MoonSnapResult<f64> {
     log::debug!(
         "[CAPTURE] Starting video capture, mode={:?}, quick_capture={}",
         settings.mode,
@@ -144,7 +145,7 @@ pub fn run_video_capture(
             |idx| {
                 moonsnap_capture::recorder_webcam_feed::prepare_webcam_feed(
                     idx,
-                    |inner_idx| start_global_feed(inner_idx),
+                    |inner_idx| start_global_feed(inner_idx).map_err(|e| e.to_string()),
                     || global_feed_dimensions(),
                     Duration::from_millis(200),
                     Duration::from_millis(10),
@@ -158,6 +159,7 @@ pub fn run_video_capture(
                     height,
                     Some(Arc::clone(&is_paused)),
                 )
+                .map_err(|e| e.to_string())
             },
         );
 
@@ -342,7 +344,11 @@ pub fn run_video_capture(
         was_cancelled,
         recording_duration.as_secs_f64(),
         |encoder| encoder.cancel(),
-        |encoder, duration_secs| encoder.finish_with_duration(duration_secs),
+        |encoder, duration_secs| {
+            encoder
+                .finish_with_duration(duration_secs)
+                .map_err(|e| e.to_string())
+        },
         |path| {
             let _ = std::fs::remove_file(path);
         },
@@ -367,7 +373,7 @@ pub fn run_video_capture(
         },
         || {
             if let Some(ref path) = cursor_data_path {
-                save_cursor_recording(&cursor_recording, path)
+                save_cursor_recording(&cursor_recording, path).map_err(|e| e.to_string())
             } else {
                 Ok(())
             }
@@ -392,6 +398,7 @@ pub fn run_video_capture(
                 has_system_audio: artifact_flags.has_system_audio,
                 has_mic_audio: artifact_flags.has_microphone_audio,
             })
+            .map_err(|e| e.to_string())
         },
     )?;
 

@@ -1,6 +1,7 @@
 //! Auto-zoom generation from cursor recording data.
 
 use crate::commands::video_recording::cursor::{load_cursor_recording, CursorEventType};
+use moonsnap_core::error::MoonSnapResult;
 use moonsnap_domain::video_project::{
     AutoZoomConfig, VideoProject, ZoomRegion, ZoomRegionMode, ZoomTransition,
 };
@@ -31,7 +32,7 @@ use moonsnap_domain::video_project::{
 pub fn generate_auto_zoom_regions(
     cursor_data_path: &std::path::Path,
     config: &AutoZoomConfig,
-) -> Result<Vec<ZoomRegion>, String> {
+) -> MoonSnapResult<Vec<ZoomRegion>> {
     // Load cursor recording
     let recording = load_cursor_recording(cursor_data_path)?;
 
@@ -135,15 +136,15 @@ pub fn generate_auto_zoom_regions(
 pub fn apply_auto_zoom_to_project(
     mut project: VideoProject,
     config: &AutoZoomConfig,
-) -> Result<VideoProject, String> {
+) -> MoonSnapResult<VideoProject> {
     // Check if cursor data exists
     let cursor_path = match &project.sources.cursor_data {
         Some(path) => std::path::Path::new(path),
-        None => return Err("No cursor data available for this project".to_string()),
+        None => return Err("No cursor data available for this project".into()),
     };
 
     if !cursor_path.exists() {
-        return Err(format!("Cursor data file not found: {:?}", cursor_path));
+        return Err(format!("Cursor data file not found: {:?}", cursor_path).into());
     }
 
     // Generate new auto-zoom regions

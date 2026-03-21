@@ -9,6 +9,7 @@
 //! - WGSL shader handles shape masking and mirroring
 //! - Render loop runs in dedicated thread
 
+use moonsnap_core::error::MoonSnapResult;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread::JoinHandle;
@@ -132,7 +133,7 @@ impl GpuPreviewManager {
     }
 
     /// Start GPU preview for window
-    pub fn start(&self, window: WebviewWindow, device_index: usize) -> Result<(), String> {
+    pub fn start(&self, window: WebviewWindow, device_index: usize) -> MoonSnapResult<()> {
         let mut guard = self.preview.lock();
 
         if guard.is_some() {
@@ -221,7 +222,7 @@ pub fn get_manager() -> &'static GpuPreviewManager {
 }
 
 /// Start GPU-accelerated webcam preview
-pub fn start_gpu_preview(window: WebviewWindow, device_index: usize) -> Result<(), String> {
+pub fn start_gpu_preview(window: WebviewWindow, device_index: usize) -> MoonSnapResult<()> {
     get_manager().start(window, device_index)
 }
 
@@ -251,7 +252,7 @@ async fn run_gpu_preview(
     subscription: Subscription,
     mut reconfigure_rx: broadcast::Receiver<ReconfigureEvent>,
     stop_signal: Arc<AtomicBool>,
-) -> Result<(), String> {
+) -> MoonSnapResult<()> {
     // Initialize wgpu
     let mut renderer = init_wgpu(window.clone(), &initial_state).await?;
 
@@ -493,7 +494,7 @@ struct CameraUniforms {
     _padding: f32,
 }
 
-async fn init_wgpu(window: WebviewWindow, state: &GpuPreviewState) -> Result<Renderer, String> {
+async fn init_wgpu(window: WebviewWindow, state: &GpuPreviewState) -> MoonSnapResult<Renderer> {
     let logical_size = state.size.clamp(MIN_PREVIEW_SIZE, MAX_PREVIEW_SIZE) as u32;
 
     // Get the scale factor to convert to physical pixels
@@ -905,7 +906,7 @@ impl Renderer {
         self.update_window_uniforms(width, height);
     }
 
-    fn render_frame(&mut self, frame: &NativeCameraFrame) -> Result<(), String> {
+    fn render_frame(&mut self, frame: &NativeCameraFrame) -> MoonSnapResult<()> {
         use moonsnap_camera_windows::PixelFormat;
 
         // For preview, downsample to max 320px to reduce upload bandwidth.
@@ -934,12 +935,7 @@ impl Renderer {
             PixelFormat::MJPEG | PixelFormat::RGB24 | PixelFormat::RGB32 | PixelFormat::ARGB => {
                 YuvFormat::Rgba
             },
-            _ => {
-                return Err(format!(
-                    "Unsupported pixel format: {:?}",
-                    frame.pixel_format
-                ))
-            },
+            _ => return Err(format!("Unsupported pixel format: {:?}", frame.pixel_format).into()),
         };
 
         // Check if we need new textures (size or format changed)
@@ -1114,7 +1110,7 @@ impl Renderer {
                     .get_current_texture()
                     .map_err(|e| format!("Failed to get surface texture after reconfig: {:?}", e))?
             },
-            Err(e) => return Err(format!("Failed to get surface texture: {:?}", e)),
+            Err(e) => return Err(format!("Failed to get surface texture: {:?}", e).into()),
         };
 
         let surface_view = surface_texture

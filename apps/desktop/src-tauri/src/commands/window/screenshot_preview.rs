@@ -3,6 +3,7 @@
 //! Shows a thumbnail in the bottom-right corner with action buttons.
 //! Auto-dismisses after a timeout unless the user interacts with it.
 
+use moonsnap_core::error::MoonSnapResult;
 use tauri::{command, AppHandle, Manager, WebviewUrl, WebviewWindowBuilder};
 
 /// Screenshot preview window label
@@ -24,7 +25,7 @@ pub async fn show_screenshot_preview(
     width: u32,
     height: u32,
     auto_copy: Option<bool>,
-) -> Result<(), String> {
+) -> MoonSnapResult<()> {
     // Close existing preview if any
     if let Some(existing) = app.get_webview_window(PREVIEW_LABEL) {
         let _ = existing.close();
@@ -82,7 +83,7 @@ pub async fn show_screenshot_preview(
 
 /// Close the screenshot preview window.
 #[command]
-pub async fn close_screenshot_preview(app: AppHandle) -> Result<(), String> {
+pub async fn close_screenshot_preview(app: AppHandle) -> MoonSnapResult<()> {
     if let Some(window) = app.get_webview_window(PREVIEW_LABEL) {
         window
             .close()

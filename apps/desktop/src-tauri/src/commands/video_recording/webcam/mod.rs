@@ -47,8 +47,7 @@ pub use preview_manager::{
     show_camera_preview_async, update_preview_settings,
 };
 
-#[allow(unused_imports)]
-use moonsnap_domain::webcam::{compute_webcam_rect, WebcamPosition, WebcamSettings};
+use moonsnap_core::error::{MoonSnapError, MoonSnapResult};
 use std::time::Instant;
 
 /// Webcam frame data ready for compositing.
@@ -92,7 +91,7 @@ pub fn stop_preview_service() {
 }
 
 /// Start the webcam preview service.
-pub fn start_preview_service(device_index: usize) -> Result<(), String> {
+pub fn start_preview_service(device_index: usize) -> MoonSnapResult<()> {
     preview::start_preview(device_index)
 }
 
@@ -139,15 +138,16 @@ impl SegmentedRecordingHandle {
     }
 
     /// Signal stop and wait for completion.
-    pub fn finish(mut self) -> Result<SegmentedRecordingResult, String> {
+    pub fn finish(mut self) -> MoonSnapResult<SegmentedRecordingResult> {
         use std::sync::atomic::Ordering;
         self.stop_signal.store(true, Ordering::SeqCst);
 
-        self.thread
+        Ok(self
+            .thread
             .take()
-            .ok_or_else(|| "Recorder thread already finished".to_string())?
+            .ok_or_else(|| MoonSnapError::Other("Recorder thread already finished".to_string()))?
             .join()
-            .map_err(|_| "Recorder thread panicked".to_string())
+            .map_err(|_| MoonSnapError::Other("Recorder thread panicked".to_string()))?)
     }
 
     /// Cancel recording and clean up.
@@ -183,7 +183,7 @@ pub fn start_segmented_webcam_recording(
     device_index: usize,
     output_dir: PathBuf,
     buffer_size: Option<usize>,
-) -> Result<SegmentedRecordingHandle, String> {
+) -> MoonSnapResult<SegmentedRecordingHandle> {
     let buf_size = buffer_size.unwrap_or(30);
     let recording_start = Instant::now();
 

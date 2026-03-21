@@ -449,8 +449,8 @@ describe('VideoTimeline', () => {
         container = result.container;
       });
 
-      const inButton = screen.getByRole('button', { name: 'I' });
-      const outButton = screen.getByRole('button', { name: 'O' });
+      const inButton = screen.getByRole('button', { name: 'Set in point' });
+      const outButton = screen.getByRole('button', { name: 'Set out point' });
 
       expect(inButton.className).toContain('w-8');
       expect(outButton.className).toContain('w-8');
