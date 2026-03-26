@@ -8,7 +8,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Menu, MenuItem, PredefinedMenuItem } from '@tauri-apps/api/menu';
 import { LogicalPosition } from '@tauri-apps/api/dpi';
-import { BookmarkPlus, Check, ChevronDown, ChevronLeft } from 'lucide-react';
+import { BookmarkPlus, Check, ChevronDown, ChevronLeft, Link, Unlink } from 'lucide-react';
 import { captureLogger } from '@/utils/logger';
 
 // Common dimension presets
@@ -47,7 +47,16 @@ export const DimensionSelect: React.FC<DimensionSelectProps> = ({
   // Local state for inputs
   const [widthInput, setWidthInput] = useState(String(Math.round(width)));
   const [heightInput, setHeightInput] = useState(String(Math.round(height)));
+  const [linked, setLinked] = useState(true);
+  const aspectRatio = useRef(width / height);
   const buttonRef = useRef<HTMLButtonElement>(null);
+
+  // Update stored aspect ratio when props change
+  useEffect(() => {
+    if (width > 0 && height > 0) {
+      aspectRatio.current = width / height;
+    }
+  }, [width, height]);
 
   // Sync when props change
   useEffect(() => {
@@ -58,28 +67,50 @@ export const DimensionSelect: React.FC<DimensionSelectProps> = ({
     setHeightInput(String(Math.round(height)));
   }, [height]);
 
-  // Apply dimension change
-  const applyChange = useCallback(() => {
+  // Apply dimension change with optional constraint
+  const applyWidth = useCallback(() => {
     const newWidth = parseInt(widthInput, 10);
-    const newHeight = parseInt(heightInput, 10);
-    if (!isNaN(newWidth) && !isNaN(newHeight) && newWidth > 0 && newHeight > 0) {
-      onDimensionChange?.(newWidth, newHeight);
-    } else {
-      setWidthInput(String(Math.round(width)));
-      setHeightInput(String(Math.round(height)));
+    if (!isNaN(newWidth) && newWidth > 0) {
+      const newHeight = linked ? Math.round(newWidth / aspectRatio.current) : Math.round(height);
+      if (newHeight > 0) {
+        onDimensionChange?.(newWidth, newHeight);
+        return;
+      }
     }
-  }, [widthInput, heightInput, width, height, onDimensionChange]);
+    setWidthInput(String(Math.round(width)));
+  }, [widthInput, linked, width, height, onDimensionChange]);
 
-  const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
+  const applyHeight = useCallback(() => {
+    const newHeight = parseInt(heightInput, 10);
+    if (!isNaN(newHeight) && newHeight > 0) {
+      const newWidth = linked ? Math.round(newHeight * aspectRatio.current) : Math.round(width);
+      if (newWidth > 0) {
+        onDimensionChange?.(newWidth, newHeight);
+        return;
+      }
+    }
+    setHeightInput(String(Math.round(height)));
+  }, [heightInput, linked, width, height, onDimensionChange]);
+
+  const handleWidthKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter') {
-      applyChange();
+      applyWidth();
       (e.target as HTMLInputElement).blur();
     } else if (e.key === 'Escape') {
       setWidthInput(String(Math.round(width)));
+      (e.target as HTMLInputElement).blur();
+    }
+  }, [applyWidth, width]);
+
+  const handleHeightKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      applyHeight();
+      (e.target as HTMLInputElement).blur();
+    } else if (e.key === 'Escape') {
       setHeightInput(String(Math.round(height)));
       (e.target as HTMLInputElement).blur();
     }
-  }, [applyChange, width, height]);
+  }, [applyHeight, height]);
 
   // Handle preset selection via native menu
   const handlePresetSelect = useCallback((preset: typeof DIMENSION_PRESETS[number]) => {
@@ -143,19 +174,27 @@ export const DimensionSelect: React.FC<DimensionSelectProps> = ({
           type="text"
           value={widthInput}
           onChange={(e) => setWidthInput(e.target.value)}
-          onBlur={applyChange}
-          onKeyDown={handleKeyDown}
+          onBlur={applyWidth}
+          onKeyDown={handleWidthKeyDown}
           className="glass-dimension-compact-input"
           title="Width"
           disabled={disabled}
         />
-        <span className="glass-dimension-compact-sep">×</span>
+        <button
+          type="button"
+          onClick={() => setLinked((v) => !v)}
+          className={`glass-dimension-compact-link ${linked ? 'glass-dimension-compact-link--active' : ''}`}
+          title={linked ? 'Unlock aspect ratio' : 'Lock aspect ratio'}
+          disabled={disabled}
+        >
+          {linked ? <Link size={12} strokeWidth={1.8} /> : <Unlink size={12} strokeWidth={1.8} />}
+        </button>
         <input
           type="text"
           value={heightInput}
           onChange={(e) => setHeightInput(e.target.value)}
-          onBlur={applyChange}
-          onKeyDown={handleKeyDown}
+          onBlur={applyHeight}
+          onKeyDown={handleHeightKeyDown}
           className="glass-dimension-compact-input"
           title="Height"
           disabled={disabled}
