@@ -4388,6 +4388,12 @@ body.floating-toolbar-window #root {
   gap: 4px;
 }
 
+.glass-source-split {
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+}
+
 .glass-source-btn {
   display: flex;
   flex-direction: column;
@@ -4427,6 +4433,19 @@ body.floating-toolbar-window #root {
   flex-direction: row;
   padding: 8px;
   min-width: unset;
+}
+
+.glass-source-btn--split-main {
+  border-top-right-radius: 6px;
+  border-bottom-right-radius: 6px;
+}
+
+.glass-source-btn--split-menu {
+  justify-content: center;
+  min-width: 30px;
+  padding: 6px 8px;
+  border-top-left-radius: 6px;
+  border-bottom-left-radius: 6px;
 }
 
 /* Source info display (for window/display) */

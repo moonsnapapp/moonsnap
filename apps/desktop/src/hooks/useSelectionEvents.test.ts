@@ -97,4 +97,33 @@ describe('useSelectionEvents', () => {
     expect(result.current.selectionBounds.autoStartRecording).toBe(false);
     expect(result.current.autoStartRecording).toBe(false);
   });
+
+  it('persists the last area selection when an area is confirmed', async () => {
+    setInvokeResponse('prepare_recording', null);
+    const { result } = renderHook(() => useSelectionEvents());
+
+    await flush();
+
+    await act(async () => {
+      emitMockEvent('confirm-selection', {
+        x: 220,
+        y: 180,
+        width: 640,
+        height: 360,
+        captureType: 'video',
+        sourceType: 'area',
+        sourceMode: 'area',
+      });
+    });
+
+    await flush();
+
+    expect(result.current.selectionConfirmed).toBe(true);
+    expect(useCaptureSettingsStore.getState().lastAreaSelection).toEqual({
+      x: 220,
+      y: 180,
+      width: 640,
+      height: 360,
+    });
+  });
 });

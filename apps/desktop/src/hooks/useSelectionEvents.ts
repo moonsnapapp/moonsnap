@@ -169,6 +169,15 @@ export function useSelectionEvents(): UseSelectionEventsReturn {
           captureSettingsStore.setSourceMode(bounds.sourceMode);
         }
 
+        if (bounds.sourceType === 'area') {
+          captureSettingsStore.setLastAreaSelection({
+            x: bounds.x,
+            y: bounds.y,
+            width: bounds.width,
+            height: bounds.height,
+          });
+        }
+
         const effectiveMode = bounds.captureType ?? captureSettingsStore.activeMode;
         if (effectiveMode !== 'screenshot') {
           const format = effectiveMode === 'gif' ? 'gif' : 'mp4';

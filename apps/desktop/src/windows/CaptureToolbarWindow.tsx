@@ -13,23 +13,28 @@
  * - useWebcamCoordination: Webcam preview lifecycle
  */
 
-import React, { useEffect, useCallback, useRef, useState } from 'react';
+import React, { useEffect, useCallback, useMemo, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { emit, listen } from '@tauri-apps/api/event';
-import { availableMonitors } from '@tauri-apps/api/window';
+import { availableMonitors, type Monitor } from '@tauri-apps/api/window';
 import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
 import { CaptureToolbar } from '../components/CaptureToolbar/CaptureToolbar';
 import type { CaptureSource } from '../components/CaptureToolbar/SourceSelector';
 import {
+  MAX_SAVED_AREA_SELECTIONS,
   useCaptureSettingsStore,
+  type AreaSelectionBounds,
   type CaptureSourceMode,
   type AfterRecordingAction,
+  type SavedAreaSelection,
+  isSameAreaSelection,
+  normalizeAreaSelection,
 } from '../stores/captureSettingsStore';
 import { useSettingsStore } from '../stores/settingsStore';
 import { useFocusedShortcutDispatch } from '../hooks/useFocusedShortcutDispatch';
 import { useTheme } from '../hooks/useTheme';
 import { useRecordingEvents } from '../hooks/useRecordingEvents';
-import { repositionToolbar, useSelectionEvents } from '../hooks/useSelectionEvents';
+import { repositionToolbar, useSelectionEvents, type SelectionBounds } from '../hooks/useSelectionEvents';
 import { useWebcamCoordination } from '../hooks/useWebcamCoordination';
 import { useToolbarPositioning } from '../hooks/useToolbarPositioning';
 import type { CaptureType } from '../types';
@@ -65,6 +70,59 @@ interface RecordingModeChooserBackPayload {
   owner?: string;
 }
 
+const MIN_REUSABLE_AREA_SIZE = 20;
+
+function getCurrentAreaSelection(selection: SelectionBounds): AreaSelectionBounds | null {
+  if (selection.sourceType !== 'area') {
+    return null;
+  }
+
+  return normalizeAreaSelection({
+    x: selection.x,
+    y: selection.y,
+    width: selection.width,
+    height: selection.height,
+  });
+}
+
+function clampAreaSelectionToVisibleDesktop(
+  selection: AreaSelectionBounds,
+  monitors: Monitor[]
+): AreaSelectionBounds | null {
+  const normalizedSelection = normalizeAreaSelection(selection);
+  if (!normalizedSelection) {
+    return null;
+  }
+
+  if (monitors.length === 0) {
+    return normalizedSelection;
+  }
+
+  const minX = Math.min(...monitors.map((monitor) => monitor.position.x));
+  const minY = Math.min(...monitors.map((monitor) => monitor.position.y));
+  const maxX = Math.max(...monitors.map((monitor) => monitor.position.x + monitor.size.width));
+  const maxY = Math.max(...monitors.map((monitor) => monitor.position.y + monitor.size.height));
+  const desktopWidth = maxX - minX;
+  const desktopHeight = maxY - minY;
+
+  if (desktopWidth < MIN_REUSABLE_AREA_SIZE || desktopHeight < MIN_REUSABLE_AREA_SIZE) {
+    return null;
+  }
+
+  const width = Math.min(normalizedSelection.width, desktopWidth);
+  const height = Math.min(normalizedSelection.height, desktopHeight);
+  if (width < MIN_REUSABLE_AREA_SIZE || height < MIN_REUSABLE_AREA_SIZE) {
+    return null;
+  }
+
+  return {
+    x: Math.min(Math.max(normalizedSelection.x, minX), maxX - width),
+    y: Math.min(Math.max(normalizedSelection.y, minY), maxY - height),
+    width,
+    height,
+  };
+}
+
 const CaptureToolbarWindow: React.FC = () => {
   useTheme();
   useFocusedShortcutDispatch();
@@ -80,6 +138,11 @@ const CaptureToolbarWindow: React.FC = () => {
     setActiveMode: setCaptureType,
     setSourceMode: setCaptureSource,
     promptRecordingMode,
+    lastAreaSelection,
+    savedAreaSelections,
+    setLastAreaSelection,
+    saveAreaSelection,
+    deleteAreaSelection,
   } = useCaptureSettingsStore();
   useEffect(() => {
     if (!isInitialized) {
@@ -141,6 +204,21 @@ const CaptureToolbarWindow: React.FC = () => {
     autoStartRecording,
     clearSelectionAutoStartRecording,
   } = useSelectionEvents();
+
+  const currentAreaSelection = useMemo(
+    () => (selectionConfirmed ? getCurrentAreaSelection(selectionBounds) : null),
+    [selectionBounds, selectionConfirmed]
+  );
+  const isCurrentAreaSaved = useMemo(
+    () =>
+      currentAreaSelection !== null &&
+      savedAreaSelections.some((savedArea) => isSameAreaSelection(savedArea, currentAreaSelection)),
+    [currentAreaSelection, savedAreaSelections]
+  );
+  const isAreaSaveDisabled = useMemo(
+    () => !isCurrentAreaSaved && savedAreaSelections.length >= MAX_SAVED_AREA_SELECTIONS,
+    [isCurrentAreaSaved, savedAreaSelections.length]
+  );
 
   useEffect(() => {
     invoke('capture_toolbar_ready').catch((e) => {
@@ -543,6 +621,70 @@ const CaptureToolbarWindow: React.FC = () => {
     }
   }, [selectionConfirmed, captureType, setCaptureSource]);
 
+  const reuseAreaSelection = useCallback(async (selection: AreaSelectionBounds) => {
+    const currentWindow = getCurrentWebviewWindow();
+
+    try {
+      const monitors = await availableMonitors().catch(() => []);
+      const reusableSelection = clampAreaSelectionToVisibleDesktop(selection, monitors);
+      if (!reusableSelection) {
+        toolbarLogger.warn('Skipping reusable area because it no longer fits the current desktop');
+        return;
+      }
+
+      setLastAreaSelection(reusableSelection);
+      await currentWindow.hide();
+
+      if (captureType === 'screenshot') {
+        const result = await invoke<{ file_path: string; width: number; height: number }>(
+          'capture_screen_region_fast',
+          { selection: reusableSelection }
+        );
+        await invoke('open_editor_fast', {
+          filePath: result.file_path,
+          width: result.width,
+          height: result.height,
+        });
+        await currentWindow.close();
+        return;
+      }
+
+      const ctStr = captureType === 'gif' ? 'gif' : 'video';
+      await invoke('show_capture_overlay', {
+        captureType: ctStr,
+        sourceMode: 'area',
+        preselectArea: reusableSelection,
+      });
+    } catch (error) {
+      toolbarLogger.error('Failed to reuse saved area:', error);
+      await currentWindow.show().catch(() => {});
+    }
+  }, [captureType, setLastAreaSelection]);
+
+  const handleSelectLastArea = useCallback(() => {
+    if (!lastAreaSelection) {
+      return;
+    }
+
+    void reuseAreaSelection(lastAreaSelection);
+  }, [lastAreaSelection, reuseAreaSelection]);
+
+  const handleSelectSavedArea = useCallback((selection: SavedAreaSelection) => {
+    void reuseAreaSelection(selection);
+  }, [reuseAreaSelection]);
+
+  const handleDeleteSavedArea = useCallback((id: string) => {
+    deleteAreaSelection(id);
+  }, [deleteAreaSelection]);
+
+  const handleSaveCurrentArea = useCallback(() => {
+    if (!currentAreaSelection || isAreaSaveDisabled) {
+      return;
+    }
+
+    saveAreaSelection(currentAreaSelection);
+  }, [currentAreaSelection, isAreaSaveDisabled, saveAreaSelection]);
+
   const handleOpenSettings = useCallback(() => {
     useSettingsStore.getState().openSettingsModal();
   }, []);
@@ -871,6 +1013,9 @@ const CaptureToolbarWindow: React.FC = () => {
                 onCapture={handleCapture}
                 onCaptureTypeChange={handleModeChange}
                 onCaptureSourceChange={handleCaptureSourceChange}
+                onSelectLastArea={handleSelectLastArea}
+                onSelectSavedArea={handleSelectSavedArea}
+                onDeleteSavedArea={handleDeleteSavedArea}
                 onCaptureComplete={handleCaptureComplete}
                 onRedo={handleRedo}
                 onCancel={handleCancel}
@@ -883,6 +1028,11 @@ const CaptureToolbarWindow: React.FC = () => {
                 onStop={handleStop}
                 countdownSeconds={countdownSeconds}
                 onDimensionChange={handleDimensionChange}
+                onSaveAreaSelection={handleSaveCurrentArea}
+                lastAreaSelection={lastAreaSelection}
+                savedAreaSelections={savedAreaSelections}
+                isCurrentAreaSaved={isCurrentAreaSaved}
+                isAreaSaveDisabled={isAreaSaveDisabled}
                 onOpenSettings={handleOpenSettings}
                 onOpenLibrary={handleOpenLibrary}
                 onMinimizeToolbar={handleMinimizeToolbar}

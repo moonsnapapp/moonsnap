@@ -42,6 +42,7 @@ mod tests;
 pub use types::{CaptureType, OverlayAction, OverlayMode, OverlayResult, SelectionEvent};
 
 use moonsnap_core::error::MoonSnapResult;
+use moonsnap_domain::capture::ScreenRegionSelection;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Instant;
 
@@ -107,9 +108,10 @@ pub async fn show_capture_overlay(
     preselect_monitor: Option<usize>,
     preselect_window: Option<isize>,
     auto_start_recording: Option<bool>,
+    preselect_area: Option<ScreenRegionSelection>,
 ) -> MoonSnapResult<Option<OverlayResult>> {
-    log::debug!("[show_capture_overlay] capture_type: {:?}, source_mode: {:?}, preselect_monitor: {:?}, preselect_window: {:?}",
-        capture_type, source_mode, preselect_monitor, preselect_window);
+    log::debug!("[show_capture_overlay] capture_type: {:?}, source_mode: {:?}, preselect_monitor: {:?}, preselect_window: {:?}, preselect_area: {:?}",
+        capture_type, source_mode, preselect_monitor, preselect_window, preselect_area);
 
     let app_clone = app.clone();
     let ct = CaptureType::from_str(capture_type.as_deref().unwrap_or("video"));
@@ -144,6 +146,8 @@ pub async fn show_capture_overlay(
         // Get window title
         preselect_window_title = get_window_title(hwnd);
         render::get_window_bounds_by_hwnd(hwnd)
+    } else if let Some(area) = preselect_area {
+        clamp_selection_to_bounds(area, bounds)
     } else {
         None
     };
@@ -171,6 +175,22 @@ pub async fn show_capture_overlay(
     })
     .await
     .map_err(|e| format!("Task failed: {:?}", e))?
+}
+
+fn clamp_selection_to_bounds(selection: ScreenRegionSelection, bounds: Rect) -> Option<Rect> {
+    let width = selection.width.min(bounds.width());
+    let height = selection.height.min(bounds.height());
+
+    if width < MIN_SELECTION_SIZE as u32 || height < MIN_SELECTION_SIZE as u32 {
+        return None;
+    }
+
+    let max_left = bounds.right - width as i32;
+    let max_top = bounds.bottom - height as i32;
+    let left = selection.x.clamp(bounds.left, max_left);
+    let top = selection.y.clamp(bounds.top, max_top);
+
+    Some(Rect::from_xywh(left, top, width, height))
 }
 
 /// Get bounds for a specific monitor by index
@@ -339,10 +359,12 @@ fn run_overlay(
         // If we have preselected bounds, convert to local coordinates and set up adjustment mode
         // Display/window preselection should be locked (no resize/move allowed)
         let adjustment = if let Some(presel) = preselect_bounds {
+            let is_locked_preselection =
+                preselect_window_id.is_some() || preselect_monitor_index.is_some();
             let local_bounds = monitor_info.screen_rect_to_local(presel);
             let adj = state::AdjustmentState {
                 is_active: true,
-                is_locked: true,
+                is_locked: is_locked_preselection,
                 bounds: local_bounds,
                 original_bounds: local_bounds,
                 ..Default::default()
@@ -391,55 +413,76 @@ fn run_overlay(
         // Initial render
         render::render(&state).map_err(|e| format!("Failed to render: {:?}", e))?;
 
+        let mut deferred_preselect_area_event: Option<(&'static str, serde_json::Value)> = None;
+
         // If we have preselected bounds, confirm selection on existing startup toolbar
         // and make overlay click-through (locked selection doesn't need input)
         if preselect_bounds.is_some() {
             if let Some(screen_sel) = state.get_screen_selection() {
-                // Emit confirm-selection to update existing toolbar (avoids destroy/recreate crash)
-                // This sets selectionConfirmed=true and updates the selection bounds
-                // Include windowId if this is a window capture
-                // Determine source type based on what was preselected
-                let source_type = if state.preselected_window_id.is_some() {
-                    "window"
-                } else if state.preselected_monitor_index.is_some() {
-                    "display"
-                } else {
-                    "area"
-                };
+                let is_preselected_area = state.preselected_window_id.is_none()
+                    && state.preselected_monitor_index.is_none();
 
-                let _ = state.app_handle.emit(
-                    "confirm-selection",
-                    serde_json::json!({
-                        "x": screen_sel.left,
-                        "y": screen_sel.top,
-                        "width": screen_sel.width(),
-                        "height": screen_sel.height(),
-                        "captureType": state.capture_type.as_str(),
-                        "autoStartRecording": state.auto_start_recording,
-                        "sourceType": source_type,
-                        "sourceMode": source_type,
-                        "windowId": state.preselected_window_id,
-                        "sourceTitle": state.preselected_window_title,
-                        "monitorIndex": state.preselected_monitor_index,
-                        "monitorName": state.preselected_monitor_name
-                    }),
-                );
-                log::debug!(
-                    "[run_overlay] Confirmed selection: source_type={}, window={:?}, monitor={:?}",
-                    source_type,
-                    state.preselected_window_title,
-                    state.preselected_monitor_name
-                );
+                if is_preselected_area {
+                    let event_name = if state.auto_start_recording {
+                        "quick-recording-selection-ready"
+                    } else {
+                        "create-capture-toolbar"
+                    };
+                    deferred_preselect_area_event = Some((
+                        event_name,
+                        serde_json::json!({
+                            "x": screen_sel.left,
+                            "y": screen_sel.top,
+                            "width": screen_sel.width(),
+                            "height": screen_sel.height(),
+                            "captureType": state.capture_type.as_str(),
+                            "autoStartRecording": state.auto_start_recording,
+                            "sourceType": "area",
+                            "sourceMode": "area"
+                        }),
+                    ));
+                    log::debug!("[run_overlay] Reopened preselected area for adjustment");
+                } else {
+                    // Emit confirm-selection to update existing toolbar (avoids destroy/recreate crash)
+                    // This sets selectionConfirmed=true and updates the selection bounds.
+                    let source_type = if state.preselected_window_id.is_some() {
+                        "window"
+                    } else {
+                        "display"
+                    };
+
+                    let _ = state.app_handle.emit(
+                        "confirm-selection",
+                        serde_json::json!({
+                            "x": screen_sel.left,
+                            "y": screen_sel.top,
+                            "width": screen_sel.width(),
+                            "height": screen_sel.height(),
+                            "captureType": state.capture_type.as_str(),
+                            "autoStartRecording": state.auto_start_recording,
+                            "sourceType": source_type,
+                            "sourceMode": source_type,
+                            "windowId": state.preselected_window_id,
+                            "sourceTitle": state.preselected_window_title,
+                            "monitorIndex": state.preselected_monitor_index,
+                            "monitorName": state.preselected_monitor_name
+                        }),
+                    );
+                    use windows::Win32::UI::WindowsAndMessaging::{
+                        GetWindowLongW, SetWindowLongW, GWL_EXSTYLE, WS_EX_LAYERED,
+                        WS_EX_TRANSPARENT,
+                    };
+                    let ex_style = GetWindowLongW(hwnd, GWL_EXSTYLE);
+                    let new_style = ex_style | WS_EX_TRANSPARENT.0 as i32 | WS_EX_LAYERED.0 as i32;
+                    SetWindowLongW(hwnd, GWL_EXSTYLE, new_style);
+                    log::debug!(
+                        "[run_overlay] Confirmed selection: source_type={}, window={:?}, monitor={:?}",
+                        source_type,
+                        state.preselected_window_title,
+                        state.preselected_monitor_name
+                    );
+                }
             }
-            // Make overlay click-through for locked preselection
-            // This is bulletproof - no Z-order fighting with toolbar
-            use windows::Win32::UI::WindowsAndMessaging::{
-                GetWindowLongW, SetWindowLongW, GWL_EXSTYLE, WS_EX_LAYERED, WS_EX_TRANSPARENT,
-            };
-            let ex_style = GetWindowLongW(hwnd, GWL_EXSTYLE);
-            let new_style = ex_style | WS_EX_TRANSPARENT.0 as i32 | WS_EX_LAYERED.0 as i32;
-            SetWindowLongW(hwnd, GWL_EXSTYLE, new_style);
-            log::debug!("[run_overlay] Made overlay click-through for locked preselection");
         }
 
         // Show window
@@ -447,6 +490,10 @@ fn run_overlay(
 
         // Force window to foreground
         let _ = windows::Win32::UI::WindowsAndMessaging::SetForegroundWindow(hwnd);
+
+        if let Some((event_name, payload)) = deferred_preselect_area_event {
+            let _ = state.app_handle.emit(event_name, payload);
+        }
 
         // Message loop
         let mut msg = MSG::default();

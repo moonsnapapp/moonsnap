@@ -91,6 +91,7 @@ pub fn trigger_capture_with_options(
                 None,
                 None,
                 Some(auto_start_recording_for_thread),
+                None,
             )
             .await
             {

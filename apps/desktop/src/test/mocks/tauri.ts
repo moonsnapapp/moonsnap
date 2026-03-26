@@ -19,6 +19,7 @@ export const mockDialogSave: Mock = vi.fn().mockResolvedValue(null);
 export const mockDialogOpen: Mock = vi.fn().mockResolvedValue(null);
 export const mockFsReadFile: Mock = vi.fn();
 export const mockFsWriteFile: Mock = vi.fn().mockResolvedValue(undefined);
+export const mockMenuPopup: Mock = vi.fn().mockResolvedValue(undefined);
 
 export const mockWebviewWindow = {
   label: 'capture-toolbar',
@@ -139,12 +140,12 @@ vi.mock('@tauri-apps/api/webviewWindow', () => ({
 }));
 
 vi.mock('@tauri-apps/plugin-store', () => ({
-  LazyStore: vi.fn().mockImplementation(() => ({
-    get: vi.fn().mockResolvedValue(null),
-    set: vi.fn().mockResolvedValue(undefined),
-    save: vi.fn().mockResolvedValue(undefined),
-    delete: vi.fn().mockResolvedValue(undefined),
-  })),
+  LazyStore: class MockLazyStore {
+    get = vi.fn().mockResolvedValue(null);
+    set = vi.fn().mockResolvedValue(undefined);
+    save = vi.fn().mockResolvedValue(undefined);
+    delete = vi.fn().mockResolvedValue(undefined);
+  },
 }));
 
 vi.mock('@tauri-apps/plugin-clipboard-manager', () => ({
@@ -172,4 +173,34 @@ vi.mock('@tauri-apps/plugin-global-shortcut', () => ({
   unregister: vi.fn().mockResolvedValue(undefined),
   unregisterAll: vi.fn().mockResolvedValue(undefined),
   isRegistered: vi.fn().mockResolvedValue(false),
+}));
+
+vi.mock('@tauri-apps/api/menu', () => ({
+  Menu: {
+    new: vi.fn(async ({ items }: { items: unknown[] }) => ({
+      items,
+      popup: mockMenuPopup,
+    })),
+  },
+  MenuItem: {
+    new: vi.fn(async (options: Record<string, unknown>) => options),
+  },
+  PredefinedMenuItem: {
+    new: vi.fn(async (options: Record<string, unknown>) => options),
+  },
+  CheckMenuItem: {
+    new: vi.fn(async (options: Record<string, unknown>) => options),
+  },
+  Submenu: {
+    new: vi.fn(async (options: Record<string, unknown>) => options),
+  },
+}));
+
+vi.mock('@tauri-apps/api/dpi', () => ({
+  LogicalPosition: class MockLogicalPosition {
+    constructor(
+      public x: number,
+      public y: number
+    ) {}
+  },
 }));

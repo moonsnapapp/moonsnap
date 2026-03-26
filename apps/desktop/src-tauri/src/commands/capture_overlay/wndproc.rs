@@ -323,6 +323,7 @@ fn handle_region_selection_complete(state: &mut OverlayState) {
 
     if local_bounds.width() > 10 && local_bounds.height() > 10 {
         let screen_bounds = state.monitor.local_rect_to_screen(local_bounds);
+        emit_area_selection_confirmed(state, screen_bounds);
 
         if state.capture_type == CaptureType::Screenshot {
             // For screenshots, capture immediately without adjustment mode
@@ -359,6 +360,8 @@ fn handle_window_sized_area_selection(
         window_bounds.width(),
         window_bounds.height()
     );
+
+    emit_area_selection_confirmed(state, window_bounds);
 
     if state.capture_type == CaptureType::Screenshot {
         // Area screenshot: capture selected rectangle immediately (region capture semantics).
@@ -625,6 +628,20 @@ enum SourceType {
     Area,
     Window { id: isize, title: String },
     Display { index: usize, name: Option<String> },
+}
+
+fn emit_area_selection_confirmed(state: &OverlayState, screen_bounds: Rect) {
+    let _ = state.app_handle.emit(
+        "area-selection-confirmed",
+        serde_json::json!({
+            "x": screen_bounds.left,
+            "y": screen_bounds.top,
+            "width": screen_bounds.width(),
+            "height": screen_bounds.height(),
+            "captureType": state.capture_type.as_str(),
+            "sourceType": "area",
+        }),
+    );
 }
 
 fn show_toolbar(state: &OverlayState, screen_bounds: Rect, source: SourceType) {

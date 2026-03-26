@@ -8,7 +8,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Menu, MenuItem, PredefinedMenuItem } from '@tauri-apps/api/menu';
 import { LogicalPosition } from '@tauri-apps/api/dpi';
-import { ChevronDown, ChevronLeft } from 'lucide-react';
+import { BookmarkPlus, Check, ChevronDown, ChevronLeft } from 'lucide-react';
 import { captureLogger } from '@/utils/logger';
 
 // Common dimension presets
@@ -26,6 +26,10 @@ interface DimensionSelectProps {
   height: number;
   onDimensionChange?: (width: number, height: number) => void;
   onBack?: () => void;
+  onSaveArea?: () => void;
+  isAreaSaved?: boolean;
+  isAreaSaveDisabled?: boolean;
+  saveAreaTitle?: string;
   disabled?: boolean;
 }
 
@@ -34,6 +38,10 @@ export const DimensionSelect: React.FC<DimensionSelectProps> = ({
   height,
   onDimensionChange,
   onBack,
+  onSaveArea,
+  isAreaSaved = false,
+  isAreaSaveDisabled = false,
+  saveAreaTitle,
   disabled = false,
 }) => {
   // Local state for inputs
@@ -168,7 +176,21 @@ export const DimensionSelect: React.FC<DimensionSelectProps> = ({
         </span>
         <span className="glass-source-label">Preset</span>
       </button>
+
+      {onSaveArea && (
+        <button
+          type="button"
+          onClick={onSaveArea}
+          className={`glass-source-btn ${isAreaSaved ? 'glass-source-btn--active' : ''}`}
+          disabled={disabled || isAreaSaved || isAreaSaveDisabled}
+          title={saveAreaTitle ?? (isAreaSaved ? 'Area already saved' : 'Save this area')}
+        >
+          <span className="glass-source-icon">
+            {isAreaSaved ? <Check size={18} strokeWidth={1.8} /> : <BookmarkPlus size={18} strokeWidth={1.5} />}
+          </span>
+          <span className="glass-source-label">{isAreaSaved ? 'Saved' : 'Save'}</span>
+        </button>
+      )}
     </div>
   );
 };
-

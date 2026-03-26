@@ -200,6 +200,28 @@ export function useAppEventListeners(callbacks: AppEventCallbacks) {
       )
     );
 
+    unlisteners.push(
+      listen<{
+        x: number;
+        y: number;
+        width: number;
+        height: number;
+        captureType?: CaptureType;
+        sourceType?: 'area';
+      }>('area-selection-confirmed', (event) => {
+        if (event.payload.captureType !== 'screenshot') {
+          return;
+        }
+
+        useCaptureSettingsStore.getState().setLastAreaSelection({
+          x: event.payload.x,
+          y: event.payload.y,
+          width: event.payload.width,
+          height: event.payload.height,
+        });
+      })
+    );
+
     // Capture deleted from editor window - refresh library
     unlisteners.push(
       listen<{ projectId: string }>('capture-deleted', () => {

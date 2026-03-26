@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { emit } from '@tauri-apps/api/event';
 import { LazyStore } from '@tauri-apps/plugin-store';
 import type {
   CaptureSettings,
@@ -71,6 +72,105 @@ const DEFAULT_CAPTURE_SETTINGS: CaptureSettings = {
   gif: DEFAULT_GIF_SETTINGS,
 };
 
+export interface AreaSelectionBounds {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export interface SavedAreaSelection extends AreaSelectionBounds {
+  id: string;
+  name: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+const MIN_REUSABLE_AREA_SIZE = 20;
+export const MAX_SAVED_AREA_SELECTIONS = 3;
+
+export function normalizeAreaSelection(
+  selection: AreaSelectionBounds | null | undefined
+): AreaSelectionBounds | null {
+  if (!selection) {
+    return null;
+  }
+
+  const x = Math.round(selection.x);
+  const y = Math.round(selection.y);
+  const width = Math.round(selection.width);
+  const height = Math.round(selection.height);
+
+  if (width < MIN_REUSABLE_AREA_SIZE || height < MIN_REUSABLE_AREA_SIZE) {
+    return null;
+  }
+
+  return { x, y, width, height };
+}
+
+export function isSameAreaSelection(
+  left: AreaSelectionBounds | null | undefined,
+  right: AreaSelectionBounds | null | undefined
+): boolean {
+  return Boolean(
+    left &&
+      right &&
+      left.x === right.x &&
+      left.y === right.y &&
+      left.width === right.width &&
+      left.height === right.height
+  );
+}
+
+function createSavedAreaName(savedAreas: SavedAreaSelection[]): string {
+  const maxIndex = savedAreas.reduce((currentMax, savedArea) => {
+    const match = /^Area\s+(\d+)$/i.exec(savedArea.name.trim());
+    if (!match) {
+      return currentMax;
+    }
+
+    return Math.max(currentMax, Number.parseInt(match[1], 10));
+  }, 0);
+
+  return `Area ${maxIndex + 1}`;
+}
+
+function createSavedAreaId(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+
+  return `area-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function normalizeSavedAreaSelections(
+  savedAreas: SavedAreaSelection[] | null | undefined
+): SavedAreaSelection[] {
+  if (!savedAreas || savedAreas.length === 0) {
+    return [];
+  }
+
+  const normalizedSavedAreas: SavedAreaSelection[] = [];
+
+  for (const savedArea of savedAreas) {
+    const normalizedBounds = normalizeAreaSelection(savedArea);
+    if (!normalizedBounds) {
+      continue;
+    }
+
+    const createdAt = savedArea.createdAt || new Date().toISOString();
+    normalizedSavedAreas.push({
+      ...normalizedBounds,
+      id: savedArea.id || createSavedAreaId(),
+      name: savedArea.name?.trim() || createSavedAreaName(normalizedSavedAreas),
+      createdAt,
+      updatedAt: savedArea.updatedAt || createdAt,
+    });
+  }
+
+  return normalizedSavedAreas.slice(0, MAX_SAVED_AREA_SELECTIONS);
+}
+
 interface CaptureSettingsState {
   // Settings data
   settings: CaptureSettings;
@@ -101,6 +201,10 @@ interface CaptureSettingsState {
   // Whether to show the toolbar in screen recordings
   showToolbarInRecording: boolean;
 
+  // Reusable area selections for region capture
+  lastAreaSelection: AreaSelectionBounds | null;
+  savedAreaSelections: SavedAreaSelection[];
+
   // Actions - Settings management
   loadSettings: () => Promise<void>;
   saveSettings: () => Promise<void>;
@@ -119,6 +223,12 @@ interface CaptureSettingsState {
   setPromptRecordingMode: (value: boolean) => void;
   setSnapToolbarToSelection: (value: boolean) => void;
   setShowToolbarInRecording: (value: boolean) => void;
+  setLastAreaSelection: (selection: AreaSelectionBounds | null) => void;
+  saveAreaSelection: (
+    selection: AreaSelectionBounds,
+    name?: string
+  ) => SavedAreaSelection | null;
+  deleteAreaSelection: (id: string) => void;
 
   // Actions - Mode
   setActiveMode: (mode: CaptureType) => void;
@@ -151,6 +261,8 @@ export const useCaptureSettingsStore = create<CaptureSettingsState>((set, get) =
   promptRecordingMode: true,
   snapToolbarToSelection: true,
   showToolbarInRecording: false,
+  lastAreaSelection: null,
+  savedAreaSelections: [],
 
   loadSettings: async () => {
     set({ isLoading: true });
@@ -166,6 +278,8 @@ export const useCaptureSettingsStore = create<CaptureSettingsState>((set, get) =
       const savedPromptRecordingMode = await store.get<boolean>('promptRecordingMode');
       const savedSnapToolbar = await store.get<boolean>('snapToolbarToSelection');
       const savedShowToolbarInRecording = await store.get<boolean>('showToolbarInRecording');
+      const savedLastAreaSelection = await store.get<AreaSelectionBounds>('lastAreaSelection');
+      const savedAreaSelections = await store.get<SavedAreaSelection[]>('savedAreaSelections');
 
       // Merge with defaults (in case new settings were added)
       const settings: CaptureSettings = {
@@ -195,6 +309,8 @@ export const useCaptureSettingsStore = create<CaptureSettingsState>((set, get) =
         promptRecordingMode: savedPromptRecordingMode ?? true,
         snapToolbarToSelection: savedSnapToolbar ?? true,
         showToolbarInRecording: savedShowToolbarInRecording ?? false,
+        lastAreaSelection: normalizeAreaSelection(savedLastAreaSelection),
+        savedAreaSelections: normalizeSavedAreaSelections(savedAreaSelections),
         isLoading: false,
         isInitialized: true,
       });
@@ -210,6 +326,8 @@ export const useCaptureSettingsStore = create<CaptureSettingsState>((set, get) =
         promptRecordingMode: true,
         snapToolbarToSelection: true,
         showToolbarInRecording: false,
+        lastAreaSelection: null,
+        savedAreaSelections: [],
         isLoading: false,
         isInitialized: true,
       });
@@ -217,7 +335,19 @@ export const useCaptureSettingsStore = create<CaptureSettingsState>((set, get) =
   },
 
   saveSettings: async () => {
-    const { settings, activeMode, sourceMode, copyToClipboardAfterCapture, showPreviewAfterCapture, afterRecordingAction, promptRecordingMode, snapToolbarToSelection, showToolbarInRecording } = get();
+    const {
+      settings,
+      activeMode,
+      sourceMode,
+      copyToClipboardAfterCapture,
+      showPreviewAfterCapture,
+      afterRecordingAction,
+      promptRecordingMode,
+      snapToolbarToSelection,
+      showToolbarInRecording,
+      lastAreaSelection,
+      savedAreaSelections,
+    } = get();
     try {
       const store = await getStore();
       await store.set('captureSettings', settings);
@@ -229,9 +359,10 @@ export const useCaptureSettingsStore = create<CaptureSettingsState>((set, get) =
       await store.set('promptRecordingMode', promptRecordingMode);
       await store.set('snapToolbarToSelection', snapToolbarToSelection);
       await store.set('showToolbarInRecording', showToolbarInRecording);
+      await store.set('lastAreaSelection', lastAreaSelection);
+      await store.set('savedAreaSelections', savedAreaSelections);
       await store.save();
       // Notify other windows to reload capture settings
-      const { emit } = await import('@tauri-apps/api/event');
       await emit('capture-settings-changed');
     } catch (error) {
       settingsLogger.error('Failed to save capture settings:', error);
@@ -293,6 +424,79 @@ export const useCaptureSettingsStore = create<CaptureSettingsState>((set, get) =
 
   setShowToolbarInRecording: (value) => {
     set({ showToolbarInRecording: value });
+    get().saveSettings().catch(
+      createErrorHandler({ operation: 'save capture settings', silent: true })
+    );
+  },
+
+  setLastAreaSelection: (selection) => {
+    set({ lastAreaSelection: normalizeAreaSelection(selection) });
+    get().saveSettings().catch(
+      createErrorHandler({ operation: 'save capture settings', silent: true })
+    );
+  },
+
+  saveAreaSelection: (selection, name) => {
+    const normalizedSelection = normalizeAreaSelection(selection);
+    if (!normalizedSelection) {
+      return null;
+    }
+
+    let savedAreaSelection: SavedAreaSelection | null = null;
+
+    set((state) => {
+      const now = new Date().toISOString();
+      const existingSelection = state.savedAreaSelections.find((savedArea) =>
+        isSameAreaSelection(savedArea, normalizedSelection)
+      );
+
+      if (existingSelection) {
+        savedAreaSelection = {
+          ...existingSelection,
+          updatedAt: now,
+        };
+
+        return {
+          lastAreaSelection: normalizedSelection,
+          savedAreaSelections: [
+            savedAreaSelection,
+            ...state.savedAreaSelections.filter((savedArea) => savedArea.id !== existingSelection.id),
+          ],
+        };
+      }
+
+      if (state.savedAreaSelections.length >= MAX_SAVED_AREA_SELECTIONS) {
+        savedAreaSelection = null;
+        return {
+          lastAreaSelection: normalizedSelection,
+        };
+      }
+
+      savedAreaSelection = {
+        ...normalizedSelection,
+        id: createSavedAreaId(),
+        name: name?.trim() || createSavedAreaName(state.savedAreaSelections),
+        createdAt: now,
+        updatedAt: now,
+      };
+
+      return {
+        lastAreaSelection: normalizedSelection,
+        savedAreaSelections: [savedAreaSelection, ...state.savedAreaSelections],
+      };
+    });
+
+    get().saveSettings().catch(
+      createErrorHandler({ operation: 'save capture settings', silent: true })
+    );
+
+    return savedAreaSelection;
+  },
+
+  deleteAreaSelection: (id) => {
+    set((state) => ({
+      savedAreaSelections: state.savedAreaSelections.filter((savedArea) => savedArea.id !== id),
+    }));
     get().saveSettings().catch(
       createErrorHandler({ operation: 'save capture settings', silent: true })
     );

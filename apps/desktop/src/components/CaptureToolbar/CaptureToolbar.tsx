@@ -19,7 +19,12 @@ import { MicrophonePopover } from './MicrophonePopover';
 import { SystemAudioPopover } from './SystemAudioPopover';
 import { SettingsPopover } from './SettingsPopover';
 import { AudioLevelMeter } from './AudioLevelMeter';
-import { useCaptureSettingsStore } from '@/stores/captureSettingsStore';
+import {
+  MAX_SAVED_AREA_SELECTIONS,
+  useCaptureSettingsStore,
+  type AreaSelectionBounds,
+  type SavedAreaSelection,
+} from '@/stores/captureSettingsStore';
 import { useRustAudioLevels } from '@/hooks/useRustAudioLevels';
 
 export type ToolbarMode = 'selection' | 'starting' | 'recording' | 'paused' | 'processing' | 'error';
@@ -55,6 +60,12 @@ interface CaptureToolbarProps {
   onCaptureTypeChange: (type: CaptureType) => void;
   /** Change capture source (for Area selection) */
   onCaptureSourceChange?: (source: CaptureSource) => void;
+  /** Reuse the last area selection */
+  onSelectLastArea?: () => void;
+  /** Reuse a saved area selection */
+  onSelectSavedArea?: (selection: SavedAreaSelection) => void;
+  /** Delete a saved area selection */
+  onDeleteSavedArea?: (id: string) => void;
   /** Called when a capture is completed from Display/Window pickers */
   onCaptureComplete?: () => void;
   /** Redo/redraw the region */
@@ -80,6 +91,16 @@ interface CaptureToolbarProps {
   countdownSeconds?: number;
   /** Callback when user changes dimensions via input */
   onDimensionChange?: (width: number, height: number) => void;
+  /** Save the current area selection for reuse */
+  onSaveAreaSelection?: () => void;
+  /** Current last-used area selection */
+  lastAreaSelection?: AreaSelectionBounds | null;
+  /** Named reusable area selections */
+  savedAreaSelections?: SavedAreaSelection[];
+  /** Whether the current area already exists in saved presets */
+  isCurrentAreaSaved?: boolean;
+  /** Whether saving is blocked because the saved-area limit was reached */
+  isAreaSaveDisabled?: boolean;
   /** Open settings modal */
   onOpenSettings?: () => void;
   /** Open capture library */
@@ -115,6 +136,9 @@ export const CaptureToolbar: React.FC<CaptureToolbarProps> = ({
   onCapture,
   onCaptureTypeChange,
   onCaptureSourceChange,
+  onSelectLastArea,
+  onSelectSavedArea,
+  onDeleteSavedArea,
   onCaptureComplete,
   onRedo,
   onCancel,
@@ -126,6 +150,11 @@ export const CaptureToolbar: React.FC<CaptureToolbarProps> = ({
   onStop,
   countdownSeconds,
   onDimensionChange,
+  onSaveAreaSelection,
+  lastAreaSelection,
+  savedAreaSelections = [],
+  isCurrentAreaSaved = false,
+  isAreaSaveDisabled = false,
   onOpenSettings,
   onOpenLibrary,
   onMinimizeToolbar,
@@ -413,6 +442,16 @@ export const CaptureToolbar: React.FC<CaptureToolbarProps> = ({
               height={height}
               onDimensionChange={onDimensionChange}
               onBack={onRedo}
+              onSaveArea={onSaveAreaSelection}
+              isAreaSaved={isCurrentAreaSaved}
+              isAreaSaveDisabled={isAreaSaveDisabled}
+              saveAreaTitle={
+                isCurrentAreaSaved
+                  ? 'Area already saved'
+                  : isAreaSaveDisabled
+                    ? `Delete one of your ${MAX_SAVED_AREA_SELECTIONS} saved areas first`
+                    : 'Save this area'
+              }
               disabled={isBusy}
             />
           )
@@ -420,8 +459,13 @@ export const CaptureToolbar: React.FC<CaptureToolbarProps> = ({
           // No selection - show source selector
           <SourceSelector
             onSelectArea={() => handleSourceChange('area')}
+            onSelectLastArea={onSelectLastArea}
+            onSelectSavedArea={onSelectSavedArea}
+            onDeleteSavedArea={onDeleteSavedArea}
             captureType={captureType}
             onCaptureComplete={onCaptureComplete}
+            lastAreaSelection={lastAreaSelection}
+            savedAreaSelections={savedAreaSelections}
             disabled={isBusy}
           />
         )}

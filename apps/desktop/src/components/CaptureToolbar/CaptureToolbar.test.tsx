@@ -334,4 +334,75 @@ describe('CaptureToolbar selection HUD', () => {
     fireEvent.click(screen.getByTitle('Minimize capture toolbar'));
     expect(onMinimizeToolbar).toHaveBeenCalledTimes(1);
   });
+
+  it('allows saving the current area selection from the selection HUD', async () => {
+    const onSaveAreaSelection = vi.fn();
+
+    await act(async () => {
+      render(
+        <CaptureToolbar
+          mode="selection"
+          captureType="video"
+          width={1280}
+          height={720}
+          sourceType="area"
+          selectionConfirmed
+          onCapture={() => {}}
+          onCaptureTypeChange={() => {}}
+          onRedo={() => {}}
+          onCancel={() => {}}
+          onSaveAreaSelection={onSaveAreaSelection}
+        />
+      );
+    });
+
+    fireEvent.click(screen.getByTitle('Save this area'));
+    expect(onSaveAreaSelection).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows the saved state when the current area already exists as a preset', async () => {
+    await act(async () => {
+      render(
+        <CaptureToolbar
+          mode="selection"
+          captureType="video"
+          width={1280}
+          height={720}
+          sourceType="area"
+          selectionConfirmed
+          onCapture={() => {}}
+          onCaptureTypeChange={() => {}}
+          onRedo={() => {}}
+          onCancel={() => {}}
+          onSaveAreaSelection={() => {}}
+          isCurrentAreaSaved
+        />
+      );
+    });
+
+    expect(screen.getByTitle('Area already saved')).toBeDisabled();
+  });
+
+  it('disables saving a new area when three saved areas already exist', async () => {
+    await act(async () => {
+      render(
+        <CaptureToolbar
+          mode="selection"
+          captureType="video"
+          width={1280}
+          height={720}
+          sourceType="area"
+          selectionConfirmed
+          onCapture={() => {}}
+          onCaptureTypeChange={() => {}}
+          onRedo={() => {}}
+          onCancel={() => {}}
+          onSaveAreaSelection={() => {}}
+          isAreaSaveDisabled
+        />
+      );
+    });
+
+    expect(screen.getByTitle('Delete one of your 3 saved areas first')).toBeDisabled();
+  });
 });
