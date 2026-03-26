@@ -46,8 +46,8 @@ describe('RecordingsTab', () => {
     render(<RecordingsTab />);
 
     const headings = screen.getAllByRole('heading', { level: 3 });
-    const videoSection = headings[1].closest('section');
-    const gifSection = headings[2].closest('section');
+    const videoSection = headings[2].closest('section');
+    const gifSection = headings[3].closest('section');
 
     if (!videoSection || !gifSection) {
       throw new Error('Expected video and GIF sections to be present');
