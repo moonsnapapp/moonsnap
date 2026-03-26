@@ -2,6 +2,18 @@
 
 All notable changes to MoonSnap are documented in this file.
 
+## [0.5.15] - 2026-03-26
+
+### Added
+- Saved area selections: save up to 3 capture areas and recall them from the toolbar without redrawing.
+- Aspect ratio lock toggle on dimension inputs — linked by default so resizing one dimension keeps proportions.
+
+### Changed
+- Redesigned the Saved Areas section in recording settings to match the rest of the settings dialog.
+
+### Fixed
+- Editor layout no longer clips content when the sidebar is resized.
+
 ## [0.5.14] - 2026-03-18
 
 ### Added
