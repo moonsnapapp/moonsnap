@@ -5,19 +5,19 @@
 
 use crate::commands::window::recording::reposition_recording_mode_chooser;
 use tauri::{Emitter, Manager};
-use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
+use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, POINT, WPARAM};
 use windows::Win32::Graphics::Gdi::{BeginPaint, EndPaint, PAINTSTRUCT};
 use windows::Win32::UI::Input::KeyboardAndMouse::{ReleaseCapture, SetCapture, VK_SHIFT};
 use windows::Win32::UI::WindowsAndMessaging::{
-    DefWindowProcW, GetWindowLongPtrW, LoadCursorW, SetCursor, SetWindowPos, GWLP_USERDATA,
-    HTCLIENT, HTTRANSPARENT, HWND_TOPMOST, IDC_CROSS, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,
-    WM_CREATE, WM_DESTROY, WM_KEYDOWN, WM_KEYUP, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE,
-    WM_NCHITTEST, WM_PAINT, WM_RBUTTONDOWN, WM_SETCURSOR,
+    DefWindowProcW, GetCursorPos, GetWindowLongPtrW, LoadCursorW, SetCursor, SetWindowPos,
+    GWLP_USERDATA, HTCLIENT, HTTRANSPARENT, HWND_TOPMOST, IDC_CROSS, SWP_NOACTIVATE, SWP_NOMOVE,
+    SWP_NOSIZE, WM_CREATE, WM_DESTROY, WM_KEYDOWN, WM_KEYUP, WM_LBUTTONDOWN, WM_LBUTTONUP,
+    WM_MOUSEMOVE, WM_NCHITTEST, WM_PAINT, WM_RBUTTONDOWN, WM_SETCURSOR,
 };
 
 use super::input::{get_area_target_at_point, get_window_at_point, hit_test_handle};
 use super::render;
-use super::state::OverlayState;
+use super::state::{MonitorInfo, OverlayState};
 use super::types::*;
 
 /// Virtual key codes
@@ -90,12 +90,17 @@ fn handle_nchittest(state_ptr: *mut OverlayState, lparam: LPARAM) -> LRESULT {
             return LRESULT(HTCLIENT as isize);
         }
 
-        // Extract screen coordinates from lparam
-        let x = (lparam.0 & 0xFFFF) as i16 as i32;
-        let y = ((lparam.0 >> 16) & 0xFFFF) as i16 as i32;
+        // WM_NCHITTEST reports screen coordinates. Convert them into the overlay's
+        // local coordinate space before checking resize handles.
+        let (x, y) = current_screen_mouse_coords().unwrap_or_else(|| mouse_coords(lparam));
 
         // Check if the cursor is on a resize handle
-        let handle = hit_test_handle(x, y, state.adjustment.bounds);
+        let handle = hit_test_adjustment_handle_at_screen_coords(
+            &state.monitor,
+            state.adjustment.bounds,
+            x,
+            y,
+        );
         if handle.is_active() {
             // On a handle — overlay handles this click
             LRESULT(HTCLIENT as isize)
@@ -153,7 +158,7 @@ fn handle_mouse_down(state_ptr: *mut OverlayState, lparam: LPARAM) -> LRESULT {
         }
 
         let state = &mut *state_ptr;
-        let (x, y) = mouse_coords(lparam);
+        let Point { x, y } = current_local_mouse_point(state, lparam);
 
         if state.adjustment.is_active {
             // Check if clicking on a handle or inside selection
@@ -197,7 +202,7 @@ fn handle_mouse_move(state_ptr: *mut OverlayState, lparam: LPARAM) -> LRESULT {
         }
 
         let state = &mut *state_ptr;
-        let (x, y) = mouse_coords(lparam);
+        let Point { x, y } = current_local_mouse_point(state, lparam);
 
         state.cursor.set_position(x, y);
 
@@ -547,6 +552,33 @@ fn mouse_coords(lparam: LPARAM) -> (i32, i32) {
     (x, y)
 }
 
+fn current_screen_mouse_coords() -> Option<(i32, i32)> {
+    unsafe {
+        let mut cursor = POINT::default();
+        GetCursorPos(&mut cursor).ok()?;
+        Some((cursor.x, cursor.y))
+    }
+}
+
+fn current_local_mouse_point(state: &OverlayState, lparam: LPARAM) -> Point {
+    if let Some((screen_x, screen_y)) = current_screen_mouse_coords() {
+        return state.monitor.screen_to_local(screen_x, screen_y);
+    }
+
+    let (x, y) = mouse_coords(lparam);
+    Point::new(x, y)
+}
+
+fn hit_test_adjustment_handle_at_screen_coords(
+    monitor: &MonitorInfo,
+    bounds: Rect,
+    screen_x: i32,
+    screen_y: i32,
+) -> HandlePosition {
+    let local = monitor.screen_to_local(screen_x, screen_y);
+    hit_test_handle(local.x, local.y, bounds)
+}
+
 fn capture_mouse(hwnd: HWND) {
     unsafe {
         let _ = SetCapture(hwnd);
@@ -755,5 +787,30 @@ fn bring_auxiliary_window_to_front(state: &OverlayState, label: &str) {
                 SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE,
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn adjustment_hit_test_converts_screen_coords_to_local_space() {
+        let monitor = MonitorInfo::new(-1920, 0, 3840, 2160);
+        let bounds = Rect::new(100, 100, 300, 300);
+
+        let handle = hit_test_adjustment_handle_at_screen_coords(&monitor, bounds, -1770, 200);
+
+        assert_eq!(handle, HandlePosition::Interior);
+    }
+
+    #[test]
+    fn adjustment_hit_test_detects_handles_on_offset_monitor_layouts() {
+        let monitor = MonitorInfo::new(-1920, -1080, 3840, 2160);
+        let bounds = Rect::new(100, 100, 300, 300);
+
+        let handle = hit_test_adjustment_handle_at_screen_coords(&monitor, bounds, -1820, -980);
+
+        assert_eq!(handle, HandlePosition::TopLeft);
     }
 }

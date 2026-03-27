@@ -104,6 +104,20 @@ fn build_startup_toolbar_context(
     }
 }
 
+fn calculate_startup_toolbar_position(
+    monitor_x: i32,
+    monitor_y: i32,
+    monitor_width: u32,
+    monitor_height: u32,
+    toolbar_width: u32,
+    toolbar_height: u32,
+) -> (i32, i32) {
+    let x = monitor_x + (monitor_width as i32 - toolbar_width as i32) / 2;
+    let y = monitor_y + (monitor_height as i32 - toolbar_height as i32) / 2;
+
+    (x, y)
+}
+
 // ============================================================================
 // Capture Toolbar
 // ============================================================================
@@ -560,7 +574,7 @@ pub async fn set_capture_toolbar_ignore_cursor(
 // Startup Toolbar
 // ============================================================================
 
-/// Show the startup toolbar window (floating, centered on primary monitor).
+/// Show the startup toolbar window centered on the primary monitor.
 /// This is the main toolbar shown on app startup for initiating captures.
 /// Different from capture toolbar which appears during region selection.
 #[command]
@@ -630,15 +644,10 @@ pub async fn show_startup_toolbar(
 
     log::debug!("[show_startup_toolbar] Creating new window");
 
-    // Get primary monitor info for centering
-    let monitors = app
-        .available_monitors()
-        .map_err(|e| format!("Failed to get monitors: {}", e))?;
-
-    let primary_monitor = monitors
-        .into_iter()
-        .next()
-        .ok_or_else(|| "No monitors found".to_string())?;
+    let primary_monitor = app
+        .primary_monitor()
+        .map_err(|e| format!("Failed to get primary monitor: {}", e))?
+        .ok_or_else(|| "No primary monitor found".to_string())?;
 
     let monitor_pos = primary_monitor.position();
     let monitor_size = primary_monitor.size();
@@ -649,9 +658,14 @@ pub async fn show_startup_toolbar(
     let initial_width = STARTUP_TOOLBAR_WIDTH;
     let initial_height = STARTUP_TOOLBAR_HEIGHT;
 
-    // Position at bottom-center of primary monitor
-    let x = monitor_pos.x + (monitor_size.width as i32 - initial_width as i32) / 2;
-    let y = monitor_pos.y + monitor_size.height as i32 - initial_height as i32 - 100; // 100px from bottom
+    let (x, y) = calculate_startup_toolbar_position(
+        monitor_pos.x,
+        monitor_pos.y,
+        monitor_size.width,
+        monitor_size.height,
+        initial_width,
+        initial_height,
+    );
 
     log::debug!(
         "[show_startup_toolbar] Position ({}, {}), size {}x{}",
@@ -697,4 +711,17 @@ pub async fn hide_startup_toolbar(app: AppHandle) -> MoonSnapResult<()> {
             .map_err(|e| format!("Failed to hide toolbar: {}", e))?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::calculate_startup_toolbar_position;
+
+    #[test]
+    fn startup_toolbar_position_centers_on_primary_monitor() {
+        let (x, y) = calculate_startup_toolbar_position(0, 0, 1920, 1080, 738, 147);
+
+        assert_eq!(x, 591);
+        assert_eq!(y, 466);
+    }
 }
