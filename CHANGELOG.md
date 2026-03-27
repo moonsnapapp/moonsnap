@@ -2,6 +2,12 @@
 
 All notable changes to MoonSnap are documented in this file.
 
+## [0.5.16] - 2026-03-27
+
+### Fixed
+- Area selection drag handles now respond correctly when repositioning saved areas.
+- Startup toolbar is properly centered on launch.
+
 ## [0.5.15] - 2026-03-26
 
 ### Added
