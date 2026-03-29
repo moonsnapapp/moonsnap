@@ -4,6 +4,7 @@ pub mod background;
 pub mod caption_layer;
 pub mod coord;
 pub mod cursor_composite;
+pub mod cursor_overlay_layer;
 pub mod cursor_plan;
 pub mod nv12_converter;
 pub mod parity;

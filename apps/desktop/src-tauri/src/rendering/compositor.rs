@@ -12,6 +12,7 @@ use wgpu::{Device, Queue};
 
 use super::renderer::Renderer;
 use moonsnap_render::background::{Background, BackgroundLayer};
+use moonsnap_render::cursor_overlay_layer::{CursorOverlayLayer, CursorOverlayPrimitive};
 use moonsnap_render::parity::calculate_composition_bounds;
 use moonsnap_render::prerendered_text::PreRenderedTextStore;
 use moonsnap_render::text::PreparedText;
@@ -381,6 +382,8 @@ pub struct Compositor {
     text_layer: TextLayer,
     // Pre-rendered text overlay layer for export
     text_overlay_layer: TextOverlayLayer,
+    // GPU cursor overlay layer for export
+    cursor_overlay_layer: CursorOverlayLayer,
 }
 
 impl Compositor {
@@ -549,6 +552,7 @@ impl Compositor {
         // Initialize text layer
         let text_layer = TextLayer::new(&device, &queue);
         let text_overlay_layer = TextOverlayLayer::new(&device, &queue);
+        let cursor_overlay_layer = CursorOverlayLayer::new(&device, &queue);
 
         Self {
             device,
@@ -562,6 +566,7 @@ impl Compositor {
             background_layer,
             text_layer,
             text_overlay_layer,
+            cursor_overlay_layer,
         }
     }
 
@@ -1363,6 +1368,29 @@ impl Compositor {
 
         self.text_overlay_layer
             .render_overlays(&mut encoder, &output_view, quads);
+
+        self.queue.submit(Some(encoder.finish()));
+    }
+
+    /// Render the cursor overlay on top of the current output texture.
+    pub fn render_cursor_overlay(
+        &self,
+        output_texture: &wgpu::Texture,
+        overlay: &CursorOverlayPrimitive,
+    ) {
+        if overlay.opacity <= 0.0 {
+            return;
+        }
+
+        let output_view = output_texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("Cursor Overlay Encoder"),
+            });
+
+        self.cursor_overlay_layer
+            .render_overlay(&mut encoder, &output_view, overlay);
 
         self.queue.submit(Some(encoder.finish()));
     }

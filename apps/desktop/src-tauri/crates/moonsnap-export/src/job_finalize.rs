@@ -277,14 +277,15 @@ mod tests {
             let mut state = ExportLoopState::new(3, 30);
             state.pending_cpu = Some(PendingCpuWork {
                 rgba_data: vec![42],
+                skip_cursor_composite: true,
                 camera_only_opacity: 0.0,
                 source_time_ms: 0,
                 zoom_state: ZoomState::identity(),
                 output_frame_idx: 7,
             });
-            state.enqueue_submitted_readback(0.1, 100, ZoomState::identity());
+            state.enqueue_submitted_readback(false, 0.1, 100, ZoomState::identity());
             state.output_frame_count = 1;
-            state.enqueue_submitted_readback(0.2, 200, ZoomState::identity());
+            state.enqueue_submitted_readback(true, 0.2, 200, ZoomState::identity());
 
             let seen = Arc::new(Mutex::new(Vec::<u8>::new()));
             let seen_clone = Arc::clone(&seen);
@@ -314,6 +315,7 @@ mod tests {
             let mut state = ExportLoopState::new(3, 30);
             state.pending_cpu = Some(PendingCpuWork {
                 rgba_data: vec![9],
+                skip_cursor_composite: false,
                 camera_only_opacity: 0.0,
                 source_time_ms: 0,
                 zoom_state: ZoomState::identity(),

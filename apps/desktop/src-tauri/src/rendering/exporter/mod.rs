@@ -18,8 +18,8 @@ use std::path::{Path, PathBuf};
 use moonsnap_domain::video_export::{ExportResult, ExportStage};
 use moonsnap_export::caption_timeline::remap_captions_to_timeline;
 use moonsnap_export::cursor_overlay::{
-    composite_cursor_overlay_frame, CursorFrameSample, CursorOverlayContext,
-    CursorOverlayFrameRequest,
+    composite_cursor_overlay_frame, plan_cursor_overlay_pipeline, CursorFrameSample,
+    CursorOverlayContext, CursorOverlayFrameRequest,
 };
 use moonsnap_export::export_job::{
     run_export_loop_with_context, ExportLoopDirective, ExportLoopExit,
@@ -833,6 +833,60 @@ pub async fn export_video_gpu(
             )
         };
 
+        let cursor_overlay_plan = if let Some(cursor_interp) = cpu_ctx.cursor_interpolator {
+            let cursor_overlay_ctx = CursorOverlayContext {
+                composition_w: cpu_ctx.composition_w,
+                composition_h: cpu_ctx.composition_h,
+                crop_enabled: cpu_ctx.crop_enabled,
+                crop_x: cpu_ctx.crop_x,
+                crop_y: cpu_ctx.crop_y,
+                crop_width: cpu_ctx.crop_width,
+                crop_height: cpu_ctx.crop_height,
+                original_width: cpu_ctx.original_width,
+                original_height: cpu_ctx.original_height,
+                video_bounds: cpu_ctx.video_content_bounds,
+                cursor_type: cpu_ctx.cursor_type,
+                cursor_scale: cpu_ctx.cursor_scale,
+                cursor_motion_blur: cpu_ctx.cursor_motion_blur,
+            };
+            let cursor = cursor_interp.get_cursor_at(source_time_ms, zoom_scale_for_cursor);
+            plan_cursor_overlay_pipeline(
+                &cursor_overlay_ctx,
+                CursorOverlayFrameRequest {
+                    camera_only_opacity,
+                    zoom_state,
+                    sample: CursorFrameSample {
+                        x: cursor.x,
+                        y: cursor.y,
+                        velocity_x: cursor.velocity_x,
+                        velocity_y: cursor.velocity_y,
+                        opacity: cursor.opacity,
+                        scale: cursor.scale,
+                        cursor_id: cursor.cursor_id.as_deref(),
+                        cursor_shape: cursor.cursor_shape,
+                    },
+                    fallback_shape: WindowsCursorShape::Arrow,
+                },
+                |shape, target_height| {
+                    get_svg_cursor(shape, target_height).map(|svg_cursor| {
+                        super::cursor::DecodedCursorImage {
+                            width: svg_cursor.width,
+                            height: svg_cursor.height,
+                            hotspot_x: svg_cursor.hotspot_x,
+                            hotspot_y: svg_cursor.hotspot_y,
+                            data: svg_cursor.data,
+                        }
+                    })
+                },
+                |cursor_id| cursor_interp.get_cursor_image(cursor_id),
+            )
+        } else {
+            moonsnap_export::cursor_overlay::CursorOverlayPipelinePlan {
+                gpu_overlay: None,
+                skip_cpu_composite: true,
+            }
+        };
+
         // === GPU submit phase (non-blocking) ===
         let t_gpu_start = std::time::Instant::now();
 
@@ -854,6 +908,10 @@ pub async fn export_video_gpu(
         // Render pre-rendered text overlays on GPU (after video/captions, before readback)
         compositor.render_text_overlays(output_texture, &text_overlay_quads);
 
+        if let Some(ref cursor_overlay) = cursor_overlay_plan.gpu_overlay {
+            compositor.render_cursor_overlay(output_texture, cursor_overlay);
+        }
+
         // Submit readback copy command (non-blocking — GPU will execute asynchronously)
         renderer.submit_readback(
             output_texture,
@@ -869,7 +927,9 @@ pub async fn export_video_gpu(
         // === CPU phase: process frame N-2 (pending_cpu) while GPU works on frame N ===
         if let Some(mut prev) = loop_state.pending_cpu.take() {
             let t_cpu_start = std::time::Instant::now();
-            apply_cpu_compositing(&mut prev, cpu_ctx);
+            if !prev.skip_cursor_composite {
+                apply_cpu_compositing(&mut prev, cpu_ctx);
+            }
             loop_state
                 .timing
                 .add_cpu_us(t_cpu_start.elapsed().as_micros() as u64);
@@ -896,7 +956,12 @@ pub async fn export_video_gpu(
         }
 
         // Shift readback queue: new → old, current frame → new
-        loop_state.enqueue_submitted_readback(camera_only_opacity, source_time_ms, zoom_state);
+        loop_state.enqueue_submitted_readback(
+            cursor_overlay_plan.skip_cpu_composite,
+            camera_only_opacity,
+            source_time_ms,
+            zoom_state,
+        );
 
         loop_state.output_frame_count += 1;
         if let Some(summary) = loop_state.timing.finish_frame() {
@@ -937,7 +1002,9 @@ pub async fn export_video_gpu(
             )
         },
         |mut cpu_work| async {
-            apply_cpu_compositing(&mut cpu_work, &cpu_ctx);
+            if !cpu_work.skip_cursor_composite {
+                apply_cpu_compositing(&mut cpu_work, &cpu_ctx);
+            }
             let _ = encode_tx.send(cpu_work.rgba_data).await;
         },
     )

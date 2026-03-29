@@ -1,7 +1,8 @@
-﻿/**
+/**
  * ExportConfigPanel - Format, FPS, resolution, crop, and audio settings.
  */
-import { useEffect, useMemo } from 'react';
+import { invoke } from '@tauri-apps/api/core';
+import { useEffect, useMemo, useState } from 'react';
 import { Crop, X, Lock } from 'lucide-react';
 import { Button } from '../../../components/ui/button';
 import {
@@ -11,6 +12,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '../../../components/ui/select';
+import { Switch } from '../../../components/ui/switch';
 import { AudioControlsPanel } from './AudioControlsPanel';
 import type { VideoProject, ExportConfig, ExportFormat, AudioTrackSettings } from '../../../types';
 import { calculateCompositionOutputSize } from '@/utils/compositionBounds';
@@ -27,8 +29,11 @@ export interface ExportConfigPanelProps {
 
 export function ExportConfigPanel({ project, onUpdateExportConfig, onUpdateAudioConfig, onOpenCropDialog }: ExportConfigPanelProps) {
   const isPro = useLicenseStore((s) => s.isPro());
+  const [nvencAvailable, setNvencAvailable] = useState<boolean | null>(null);
+  const [isCheckingNvenc, setIsCheckingNvenc] = useState(false);
   const sourceFps = project.sources.fps;
   const sourceAspectRatio = project.sources.originalWidth / project.sources.originalHeight;
+  const preferHardwareEncoding = project.export.preferHardwareEncoding ?? false;
 
   const outputResolution = useMemo(() => {
     const crop = project.export.crop;
@@ -64,6 +69,54 @@ export function ExportConfigPanel({ project, onUpdateExportConfig, onUpdateAudio
     }
   }, [onUpdateExportConfig, project.export.fps, sourceFps]);
 
+  useEffect(() => {
+    let isCancelled = false;
+
+    if (project.export.format !== 'mp4') {
+      setIsCheckingNvenc(false);
+      return () => {
+        isCancelled = true;
+      };
+    }
+
+    setNvencAvailable(null);
+    setIsCheckingNvenc(true);
+
+    invoke<boolean>('check_nvenc_available')
+      .then((available) => {
+        if (!isCancelled) {
+          setNvencAvailable(available);
+        }
+      })
+      .catch(() => {
+        if (!isCancelled) {
+          setNvencAvailable(false);
+        }
+      })
+      .finally(() => {
+        if (!isCancelled) {
+          setIsCheckingNvenc(false);
+        }
+      });
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [project.export.format]);
+
+  let hardwareEncodingCopy = 'Use x264 for smaller files. Turn this on to prefer NVIDIA NVENC for faster MP4 exports.';
+  if (isCheckingNvenc) {
+    hardwareEncodingCopy = 'Checking for NVIDIA NVENC support on this system...';
+  } else if (nvencAvailable) {
+    hardwareEncodingCopy = preferHardwareEncoding
+      ? 'NVIDIA NVENC is available. MP4 exports will favor speed over file-size efficiency.'
+      : 'NVIDIA NVENC is available if you want faster MP4 exports with decent quality.';
+  } else if (preferHardwareEncoding) {
+    hardwareEncodingCopy = 'NVENC was not detected, so MP4 exports will fall back to x264 automatically.';
+  } else if (nvencAvailable === false) {
+    hardwareEncodingCopy = 'No NVIDIA NVENC encoder was detected. MP4 exports will use x264.';
+  }
+
   return (
     <div className="space-y-4">
       {/* Format */}
@@ -93,6 +146,24 @@ export function ExportConfigPanel({ project, onUpdateExportConfig, onUpdateAudio
           </div>
         )}
       </div>
+
+      {project.export.format === 'mp4' && (
+        <div>
+          <div className="flex items-center justify-between gap-3 rounded-md border border-[var(--glass-border)] bg-[var(--polar-mist)] px-3 py-2.5">
+            <div>
+              <span className="text-xs text-[var(--ink-muted)] block">Prefer Hardware Encoding</span>
+              <p className="mt-1 text-[11px] text-[var(--ink-muted)]">
+                {hardwareEncodingCopy}
+              </p>
+            </div>
+            <Switch
+              aria-label="Prefer hardware encoding"
+              checked={preferHardwareEncoding}
+              onCheckedChange={(checked) => onUpdateExportConfig({ preferHardwareEncoding: checked })}
+            />
+          </div>
+        </div>
+      )}
 
       {/* FPS */}
       <div>

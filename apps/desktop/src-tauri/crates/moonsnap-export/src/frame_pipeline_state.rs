@@ -11,6 +11,7 @@ use crate::timing::FrameTimingAccumulator;
 #[derive(Debug)]
 pub struct PendingCpuWork {
     pub rgba_data: Vec<u8>,
+    pub skip_cursor_composite: bool,
     pub camera_only_opacity: f64,
     pub source_time_ms: u64,
     pub zoom_state: ZoomState,
@@ -21,6 +22,7 @@ pub struct PendingCpuWork {
 #[derive(Debug, Clone, Copy)]
 pub struct PendingReadback {
     pub staging_buf_idx: usize,
+    pub skip_cursor_composite: bool,
     pub camera_only_opacity: f64,
     pub source_time_ms: u64,
     pub zoom_state: ZoomState,
@@ -59,6 +61,7 @@ impl ExportLoopState {
     /// Queue readback metadata for a frame that was just submitted.
     pub fn enqueue_submitted_readback(
         &mut self,
+        skip_cursor_composite: bool,
         camera_only_opacity: f64,
         source_time_ms: u64,
         zoom_state: ZoomState,
@@ -66,6 +69,7 @@ impl ExportLoopState {
         self.pending_readback_old = self.pending_readback_new.take();
         self.pending_readback_new = Some(PendingReadback {
             staging_buf_idx: self.buf_idx,
+            skip_cursor_composite,
             camera_only_opacity,
             source_time_ms,
             zoom_state,
@@ -100,6 +104,7 @@ impl ExportLoopState {
         let rgba_data = complete_readback(oldest_rb.staging_buf_idx).await;
         self.pending_cpu = Some(PendingCpuWork {
             rgba_data,
+            skip_cursor_composite: oldest_rb.skip_cursor_composite,
             camera_only_opacity: oldest_rb.camera_only_opacity,
             source_time_ms: oldest_rb.source_time_ms,
             zoom_state: oldest_rb.zoom_state,
@@ -133,6 +138,7 @@ impl ExportLoopState {
             let rgba_data = complete_readback(rb.staging_buf_idx).await;
             out.push(PendingCpuWork {
                 rgba_data,
+                skip_cursor_composite: rb.skip_cursor_composite,
                 camera_only_opacity: rb.camera_only_opacity,
                 source_time_ms: rb.source_time_ms,
                 zoom_state: rb.zoom_state,
@@ -153,13 +159,13 @@ mod tests {
     fn enqueue_rotates_readback_slots() {
         let mut state = ExportLoopState::new(3, 30);
 
-        state.enqueue_submitted_readback(0.1, 100, ZoomState::identity());
+        state.enqueue_submitted_readback(false, 0.1, 100, ZoomState::identity());
         assert!(state.pending_readback_old.is_none());
         assert!(state.pending_readback_new.is_some());
         assert_eq!(state.buf_idx, 1);
 
         state.output_frame_count = 1;
-        state.enqueue_submitted_readback(0.2, 200, ZoomState::identity());
+        state.enqueue_submitted_readback(true, 0.2, 200, ZoomState::identity());
         assert!(state.pending_readback_old.is_some());
         assert!(state.pending_readback_new.is_some());
         assert_eq!(state.buf_idx, 2);
@@ -168,9 +174,9 @@ mod tests {
     #[test]
     fn drain_take_clears_slots() {
         let mut state = ExportLoopState::new(2, 30);
-        state.enqueue_submitted_readback(0.1, 100, ZoomState::identity());
+        state.enqueue_submitted_readback(false, 0.1, 100, ZoomState::identity());
         state.output_frame_count = 1;
-        state.enqueue_submitted_readback(0.2, 200, ZoomState::identity());
+        state.enqueue_submitted_readback(true, 0.2, 200, ZoomState::identity());
 
         let slots = state.take_pending_readbacks_for_drain();
         assert!(slots[0].is_some());
@@ -184,9 +190,9 @@ mod tests {
         let runtime = Runtime::new().expect("tokio runtime");
         runtime.block_on(async {
             let mut state = ExportLoopState::new(3, 30);
-            state.enqueue_submitted_readback(0.1, 100, ZoomState::identity());
+            state.enqueue_submitted_readback(false, 0.1, 100, ZoomState::identity());
             state.output_frame_count = 1;
-            state.enqueue_submitted_readback(0.2, 200, ZoomState::identity());
+            state.enqueue_submitted_readback(true, 0.2, 200, ZoomState::identity());
 
             let promoted = state
                 .promote_oldest_readback_to_pending_cpu(
@@ -197,6 +203,7 @@ mod tests {
             assert!(promoted);
             let cpu = state.pending_cpu.take().expect("pending cpu work");
             assert_eq!(cpu.rgba_data[0], 0);
+            assert!(!cpu.skip_cursor_composite);
             assert!((cpu.camera_only_opacity - 0.1).abs() < f64::EPSILON);
             assert_eq!(cpu.source_time_ms, 100);
             assert_eq!(cpu.output_frame_idx, 0);
@@ -212,14 +219,15 @@ mod tests {
             let mut state = ExportLoopState::new(3, 30);
             state.pending_cpu = Some(PendingCpuWork {
                 rgba_data: vec![42],
+                skip_cursor_composite: true,
                 camera_only_opacity: 0.0,
                 source_time_ms: 0,
                 zoom_state: ZoomState::identity(),
                 output_frame_idx: 7,
             });
-            state.enqueue_submitted_readback(0.1, 100, ZoomState::identity());
+            state.enqueue_submitted_readback(false, 0.1, 100, ZoomState::identity());
             state.output_frame_count = 1;
-            state.enqueue_submitted_readback(0.2, 200, ZoomState::identity());
+            state.enqueue_submitted_readback(true, 0.2, 200, ZoomState::identity());
 
             let drained = state
                 .collect_drain_cpu_work(|idx| async move { vec![idx as u8] })
@@ -227,8 +235,11 @@ mod tests {
 
             assert_eq!(drained.len(), 3);
             assert_eq!(drained[0].rgba_data, vec![42]);
+            assert!(drained[0].skip_cursor_composite);
             assert_eq!(drained[1].rgba_data, vec![0]);
+            assert!(!drained[1].skip_cursor_composite);
             assert_eq!(drained[2].rgba_data, vec![1]);
+            assert!(drained[2].skip_cursor_composite);
             assert!(state.pending_cpu.is_none());
             assert!(state.pending_readback_old.is_none());
             assert!(state.pending_readback_new.is_none());
