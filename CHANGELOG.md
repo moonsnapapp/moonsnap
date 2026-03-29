@@ -2,6 +2,11 @@
 
 All notable changes to MoonSnap are documented in this file.
 
+## [0.5.17] - 2026-03-29
+
+### Changed
+- Faster video and GIF exports with GPU-accelerated cursor overlays.
+
 ## [0.5.16] - 2026-03-27
 
 ### Fixed
