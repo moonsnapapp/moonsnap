@@ -1,6 +1,6 @@
 [package]
 name = "moonsnap"
-version = "0.5.16"
+version = "0.5.17"
 description = "A Snagit-like screen capture and annotation tool"
 authors = ["MoonSnap"]
 edition = "2021"
