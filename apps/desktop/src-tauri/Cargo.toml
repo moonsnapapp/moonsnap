@@ -212,7 +212,7 @@ windows-core = "0.58"
 incremental = true # Compile your binary in smaller steps.
 
 [dev-dependencies]
-proptest = "1.10"      # Property-based testing for math
+proptest = "1.11"      # Property-based testing for math
 rstest = "0.18"       # Test fixtures and parameterized tests
 tempfile = "3"        # Temporary directories for cache tests
 
