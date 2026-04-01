@@ -220,6 +220,14 @@ const CaptureToolbarWindow: React.FC = () => {
     [isCurrentAreaSaved, savedAreaSelections.length]
   );
 
+  // Keep lastAreaSelection in sync when dimensions change after confirmation
+  // (e.g., preset selection, manual dimension input)
+  useEffect(() => {
+    if (currentAreaSelection) {
+      setLastAreaSelection(currentAreaSelection);
+    }
+  }, [currentAreaSelection, setLastAreaSelection]);
+
   useEffect(() => {
     invoke('capture_toolbar_ready').catch((e) => {
       toolbarLogger.warn('Failed to notify capture toolbar readiness:', e);
