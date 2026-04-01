@@ -2,6 +2,11 @@
 
 All notable changes to MoonSnap are documented in this file.
 
+## [0.5.18] - 2026-04-01
+
+### Fixed
+- "Last used area" now reflects dimension changes made via presets or manual input after selecting a capture region.
+
 ## [0.5.17] - 2026-03-29
 
 ### Changed

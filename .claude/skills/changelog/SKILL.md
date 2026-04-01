@@ -22,7 +22,7 @@ echo "Latest tag: $LATEST_TAG"
 echo "Current package.json version: $CURRENT_VERSION"
 ```
 
-### 2. Gather commits since the last tag
+### 2. Gather commits and uncommitted changes since the last tag
 
 ```bash
 cd E:/moonsnap
@@ -38,6 +38,20 @@ If the argument is `--current` or a version like `0.5.4`, also include commits a
 # For re-generating the current release entry
 git log "$(git tag --sort=-version:refname | sed -n '2p')"..HEAD --oneline --no-merges
 ```
+
+Also check for uncommitted work (staged + unstaged) that hasn't been committed yet:
+
+```bash
+cd E:/moonsnap
+
+# Show file-level summary of uncommitted changes
+git diff --stat HEAD
+
+# Show the actual diff to understand what changed
+git diff HEAD
+```
+
+If there are uncommitted changes, include them in the changelog entry alongside committed changes. Mark any entries derived from uncommitted work with `(uncommitted)` in the draft output so the user knows which items may still change.
 
 ### 3. Read the existing CHANGELOG.md
 

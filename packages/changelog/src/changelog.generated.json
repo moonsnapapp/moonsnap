@@ -2,6 +2,18 @@
   "source": "CHANGELOG.md",
   "entries": [
     {
+      "version": "0.5.18",
+      "date": "2026-04-01",
+      "sections": [
+        {
+          "title": "Fixed",
+          "items": [
+            "\"Last used area\" now reflects dimension changes made via presets or manual input after selecting a capture region."
+          ]
+        }
+      ]
+    },
+    {
       "version": "0.5.17",
       "date": "2026-03-29",
       "sections": [
