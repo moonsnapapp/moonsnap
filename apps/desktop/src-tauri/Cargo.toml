@@ -29,7 +29,7 @@ crate-type = ["rlib"]
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
-ffmpeg-sidecar = "2.4"
+ffmpeg-sidecar = "2.5"
 dirs = "5"
 
 [dependencies]
@@ -128,7 +128,7 @@ axum = { version = "0.7", features = ["ws"] }
 sha2 = "0.10"
 
 # FFmpeg for video thumbnail generation (bundled binary)
-ffmpeg-sidecar = "2.4"
+ffmpeg-sidecar = "2.5"
 
 # Native FFmpeg bindings for hardware-accelerated video decoding
 ffmpeg-next = "7"
@@ -212,7 +212,7 @@ windows-core = "0.58"
 incremental = true # Compile your binary in smaller steps.
 
 [dev-dependencies]
-proptest = "1.10"      # Property-based testing for math
+proptest = "1.11"      # Property-based testing for math
 rstest = "0.18"       # Test fixtures and parameterized tests
 tempfile = "3"        # Temporary directories for cache tests
 
