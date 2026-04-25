@@ -68,6 +68,7 @@ macro_rules! tauri_command_handler {
             // Image commands
             crate::commands::image::copy_image_to_clipboard,
             crate::commands::image::copy_rgba_to_clipboard,
+            crate::commands::image::save_image_as_format,
             // Storage commands
             crate::commands::storage::save::save_capture,
             crate::commands::storage::save::save_capture_from_file,

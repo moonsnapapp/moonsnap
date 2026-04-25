@@ -68,14 +68,14 @@ export const CaptureContextMenu: React.FC<CaptureContextMenuProps> = ({
           {quickCapture ? 'Open as Project' : 'Edit Video'}
         </ContextMenuItem>
       )}
-      {isMedia && quickCapture && onSaveCopy && (
+      {onSaveCopy && (
         <ContextMenuItem
           onClick={onSaveCopy}
           disabled={isMissing}
           className={isMissing ? 'opacity-50 cursor-not-allowed' : ''}
         >
           <Download className="w-4 h-4 mr-2" />
-          Save Copy
+          Save As
         </ContextMenuItem>
       )}
       {damaged && onRepair && (

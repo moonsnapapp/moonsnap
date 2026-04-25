@@ -102,7 +102,7 @@ export const ImageEditorContent: React.FC<{
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
 
-  const { isCopying, isSaving, handleCopy, handleSave, handleSaveAs } = useEditorActions({ stageRef, imageData });
+  const { isCopying, isSaving, handleCopy, handleSave } = useEditorActions({ stageRef, imageData });
 
   // Fit to center handler - dispatch custom event that EditorCanvas listens for
   const handleFitToCenter = useCallback(() => {
@@ -272,7 +272,6 @@ export const ImageEditorContent: React.FC<{
             onToolChange={handleToolChange}
             onCopy={handleCopy}
             onSave={handleSave}
-            onSaveAs={handleSaveAs}
             onUndo={handleUndo}
             onRedo={handleRedo}
             onDelete={handleRequestDelete}

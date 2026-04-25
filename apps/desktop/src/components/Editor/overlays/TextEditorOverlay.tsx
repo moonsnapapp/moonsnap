@@ -27,7 +27,6 @@ interface TextEditorOverlayProps {
   value: string;
   onChange: (value: string) => void;
   onSave: (measuredHeight?: number) => void;
-  onCancel: () => void;
 }
 
 /**
@@ -38,7 +37,6 @@ export const TextEditorOverlay: React.FC<TextEditorOverlayProps> = React.memo(({
   value,
   onChange,
   onSave,
-  onCancel,
 }) => {
   const editorRef = useRef<HTMLDivElement>(null);
   const wasOpenRef = useRef(false);
@@ -123,9 +121,9 @@ export const TextEditorOverlay: React.FC<TextEditorOverlayProps> = React.memo(({
       saveWithMeasurement();
     } else if (e.key === 'Escape') {
       e.preventDefault();
-      onCancel();
+      saveWithMeasurement();
     }
-  }, [saveWithMeasurement, onCancel]);
+  }, [saveWithMeasurement]);
 
   const handleInput = useCallback((e: React.FormEvent<HTMLDivElement>) => {
     const target = e.target as HTMLDivElement;

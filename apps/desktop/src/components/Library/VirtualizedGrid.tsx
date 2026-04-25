@@ -345,7 +345,7 @@ export function VirtualizedGrid({
                 onCopyToClipboard={() => onCopyToClipboard(capture)}
                 onPlayMedia={() => onPlayMedia(capture)}
                 onEditVideo={capture.capture_type === 'video' && onEditVideo ? () => onEditVideo(capture) : undefined}
-                onSaveCopy={capture.quick_capture && onSaveCopy ? () => onSaveCopy(capture) : undefined}
+                onSaveCopy={onSaveCopy ? () => onSaveCopy(capture) : undefined}
                 onRepair={onRepair ? () => onRepair(capture.id) : undefined}
                 formatDate={formatDate}
               />

@@ -781,7 +781,6 @@ export const EditorCanvas = React.memo(forwardRef<EditorCanvasRef, EditorCanvasP
           value={textEditing.editingTextValue}
           onChange={textEditing.handleTextChange}
           onSave={textEditing.handleSaveTextEdit}
-          onCancel={textEditing.handleCancelTextEdit}
         />
       )}
 

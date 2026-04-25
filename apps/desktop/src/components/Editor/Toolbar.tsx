@@ -9,7 +9,6 @@ import {
   Droplet,
   Hash,
   Copy,
-  Download,
   Check,
   Undo2,
   Redo2,
@@ -17,7 +16,6 @@ import {
   Crop,
   Loader2,
   Pencil,
-  FileImage,
   Save,
   Trash2,
   Lock,
@@ -34,20 +32,11 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuTrigger,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-} from '@/components/ui/dropdown-menu';
-
 interface ToolbarProps {
   selectedTool: Tool;
   onToolChange: (tool: Tool) => void;
   onCopy: () => void;
   onSave: () => void;
-  onSaveAs?: (format: 'png' | 'jpg' | 'webp') => void;
   onUndo: () => void;
   onRedo: () => void;
   onDelete: () => void;
@@ -77,7 +66,6 @@ export const Toolbar: React.FC<ToolbarProps> = ({
   onToolChange,
   onCopy,
   onSave,
-  onSaveAs,
   onUndo,
   onRedo,
   onDelete,
@@ -226,56 +214,29 @@ export const Toolbar: React.FC<ToolbarProps> = ({
             </TooltipContent>
           </Tooltip>
 
-          {/* Export Dropdown */}
-          <DropdownMenu>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <DropdownMenuTrigger asChild>
-                  <button
-                    disabled={isSaving}
-                    aria-label="Save"
-                    className={`glass-btn ${buttonSize} disabled:opacity-50`}
-                  >
-                    {isSaving ? (
-                      <Loader2 className={`${iconSize} animate-spin`} />
-                    ) : (
-                      <Save className={iconSize} />
-                    )}
-                  </button>
-                </DropdownMenuTrigger>
-              </TooltipTrigger>
-              <TooltipContent side="top">
-                <div className="flex items-center gap-2">
-                  <span className="text-xs">{isSaving ? 'Saving...' : 'Save'}</span>
-                  <kbd className="kbd text-[10px] px-1.5 py-0.5">Ctrl+E</kbd>
-                </div>
-              </TooltipContent>
-            </Tooltip>
-            <DropdownMenuContent
-              side="top"
-              align="end"
-              className="w-48"
-            >
-              <DropdownMenuItem onClick={onSave} className="gap-2">
-                <Download className="w-4 h-4" />
-                <span>Save to File</span>
-                <span className="ml-auto text-[10px] text-[var(--ink-muted)]">Ctrl+E</span>
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={() => onSaveAs?.('png')} className="gap-2">
-                <FileImage className="w-4 h-4" />
-                <span>Save as PNG</span>
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => onSaveAs?.('jpg')} className="gap-2">
-                <FileImage className="w-4 h-4" />
-                <span>Save as JPG</span>
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => onSaveAs?.('webp')} className="gap-2">
-                <FileImage className="w-4 h-4" />
-                <span>Save as WebP</span>
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+          {/* Save Button */}
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                onClick={onSave}
+                disabled={isSaving}
+                aria-label="Save to File"
+                className={`glass-btn ${buttonSize} disabled:opacity-50`}
+              >
+                {isSaving ? (
+                  <Loader2 className={`${iconSize} animate-spin`} />
+                ) : (
+                  <Save className={iconSize} />
+                )}
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="top">
+              <div className="flex items-center gap-2">
+                <span className="text-xs">{isSaving ? 'Saving...' : 'Save to File'}</span>
+                <kbd className="kbd text-[10px] px-1.5 py-0.5">Ctrl+E</kbd>
+              </div>
+            </TooltipContent>
+          </Tooltip>
 
           {/* Delete Button */}
           <Tooltip>

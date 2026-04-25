@@ -7,6 +7,7 @@ import {
   getEditorTextDragBoxHeight,
   getEditorTextResizeDimensions,
   getEditorTextVerticalAlignJustifyContent,
+  measureEditorTextBoxHeight,
   normalizeEditorTextFontStyle,
   toggleEditorTextFontStyle,
 } from './editorText';
@@ -75,5 +76,20 @@ describe('editorText', () => {
       width: EDITOR_TEXT.MIN_BOX_WIDTH,
       height: EDITOR_TEXT.MIN_BOX_HEIGHT,
     });
+  });
+
+  it('measures text box height for larger font sizes', () => {
+    const shape = createEditorClickTextShape({
+      id: 'shape_3',
+      position: { x: 0, y: 0 },
+      fontSize: 16,
+      color: '#000000',
+    });
+
+    shape.text = 'First line\nSecond line';
+
+    expect(measureEditorTextBoxHeight(shape, 32)).toBeGreaterThan(
+      measureEditorTextBoxHeight(shape, 16)
+    );
   });
 });

@@ -21,6 +21,33 @@ interface UseEditorActionsProps {
   imageData?: string | null;
 }
 
+type SaveImageFormat = 'png' | 'jpg' | 'webp';
+
+const IMAGE_FORMATS: Record<SaveImageFormat, {
+  ext: SaveImageFormat;
+  mime: 'image/png' | 'image/jpeg' | 'image/webp';
+  name: string;
+  quality?: number;
+}> = {
+  png: { ext: 'png', mime: 'image/png', name: 'PNG' },
+  jpg: { ext: 'jpg', mime: 'image/jpeg', name: 'JPEG', quality: 0.92 },
+  webp: { ext: 'webp', mime: 'image/webp', name: 'WebP', quality: 0.9 },
+};
+
+function getSaveImageFormat(filePath: string): typeof IMAGE_FORMATS[SaveImageFormat] {
+  const extension = filePath.replace(/\\/g, '/').split('/').pop()?.split('.').pop()?.toLowerCase();
+
+  if (extension === 'jpg' || extension === 'jpeg') {
+    return IMAGE_FORMATS.jpg;
+  }
+
+  if (extension === 'webp') {
+    return IMAGE_FORMATS.webp;
+  }
+
+  return IMAGE_FORMATS.png;
+}
+
 export function useEditorActions({ stageRef, imageData }: UseEditorActionsProps) {
   const [isCopying, setIsCopying] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -111,11 +138,19 @@ export function useEditorActions({ stageRef, imageData }: UseEditorActionsProps)
 
       const filePath = await save({
         defaultPath: `capture_${Date.now()}.png`,
-        filters: [{ name: 'Images', extensions: ['png'] }],
+        filters: [
+          { name: 'PNG', extensions: ['png'] },
+          { name: 'JPEG', extensions: ['jpg', 'jpeg'] },
+          { name: 'WebP', extensions: ['webp'] },
+        ],
       });
 
       if (filePath) {
-        await exportToFile(stageRef, canvasBounds, compositorSettings, filePath, { format: 'image/png' }, cropRegion);
+        const formatInfo = getSaveImageFormat(filePath);
+        await exportToFile(stageRef, canvasBounds, compositorSettings, filePath, {
+          format: formatInfo.mime,
+          quality: formatInfo.quality,
+        }, cropRegion);
         toast.success('Image saved successfully');
       }
     } catch (error) {
@@ -134,11 +169,7 @@ export function useEditorActions({ stageRef, imageData }: UseEditorActionsProps)
 
       setIsSaving(true);
       try {
-        const formatInfo = {
-          png: { ext: 'png', mime: 'image/png' as const, name: 'PNG', quality: undefined },
-          jpg: { ext: 'jpg', mime: 'image/jpeg' as const, name: 'JPEG', quality: 0.92 },
-          webp: { ext: 'webp', mime: 'image/webp' as const, name: 'WebP', quality: 0.9 },
-        }[format];
+        const formatInfo = IMAGE_FORMATS[format];
 
         const filePath = await save({
           defaultPath: `capture_${Date.now()}.${formatInfo.ext}`,

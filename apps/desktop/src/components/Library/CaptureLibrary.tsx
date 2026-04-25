@@ -41,6 +41,84 @@ function isEditableMediaCapture(capture: CaptureListItem): boolean {
   return capture.capture_type !== 'gif' && !capture.is_missing && !capture.damaged;
 }
 
+type SaveCaptureFormat = 'png' | 'jpg' | 'webp' | 'gif' | 'mp4';
+
+const SAVE_CAPTURE_FORMATS: Record<SaveCaptureFormat, {
+  ext: SaveCaptureFormat;
+  name: string;
+  extensions: string[];
+}> = {
+  png: { ext: 'png', name: 'PNG', extensions: ['png'] },
+  jpg: { ext: 'jpg', name: 'JPEG', extensions: ['jpg', 'jpeg'] },
+  webp: { ext: 'webp', name: 'WebP', extensions: ['webp'] },
+  gif: { ext: 'gif', name: 'GIF', extensions: ['gif'] },
+  mp4: { ext: 'mp4', name: 'Video', extensions: ['mp4'] },
+};
+
+function getCaptureSaveFormat(capture: CaptureListItem): typeof SAVE_CAPTURE_FORMATS[SaveCaptureFormat] {
+  if (capture.capture_type === 'gif') {
+    return SAVE_CAPTURE_FORMATS.gif;
+  }
+
+  if (capture.capture_type === 'video') {
+    return SAVE_CAPTURE_FORMATS.mp4;
+  }
+
+  return SAVE_CAPTURE_FORMATS.png;
+}
+
+function getSaveAsDialogFilters(capture: CaptureListItem) {
+  if (capture.capture_type === 'gif') {
+    return [SAVE_CAPTURE_FORMATS.gif];
+  }
+
+  if (capture.capture_type === 'video') {
+    return [SAVE_CAPTURE_FORMATS.mp4];
+  }
+
+  return [
+    SAVE_CAPTURE_FORMATS.png,
+    SAVE_CAPTURE_FORMATS.jpg,
+    SAVE_CAPTURE_FORMATS.webp,
+  ];
+}
+
+function replaceFileExtension(fileName: string, extension: string): string {
+  const normalizedExtension = extension.startsWith('.') ? extension.slice(1) : extension;
+  const baseName = fileName.replace(/\.[^.\\/]+$/, '');
+  return `${baseName}.${normalizedExtension}`;
+}
+
+function getSaveAsFormatFromPath(filePath: string, fallback: SaveCaptureFormat): SaveCaptureFormat {
+  const extension = filePath.replace(/\\/g, '/').split('/').pop()?.split('.').pop()?.toLowerCase();
+
+  if (extension === 'jpg' || extension === 'jpeg') {
+    return 'jpg';
+  }
+
+  if (extension === 'webp') {
+    return 'webp';
+  }
+
+  if (extension === 'gif') {
+    return 'gif';
+  }
+
+  if (extension === 'mp4') {
+    return 'mp4';
+  }
+
+  if (extension === 'png') {
+    return 'png';
+  }
+
+  return fallback;
+}
+
+function isImageCapture(capture: CaptureListItem): boolean {
+  return capture.capture_type !== 'video' && capture.capture_type !== 'gif';
+}
+
 interface CaptureLibraryProps {
   variant?: 'full' | 'sidebar';
   enableKeyboardShortcuts?: boolean;
@@ -512,25 +590,36 @@ export const CaptureLibrary: React.FC<CaptureLibraryProps> = ({
 
   const handleSaveCopy = useCallback(async (capture: CaptureListItem) => {
     try {
-      const ext = capture.capture_type === 'gif' ? 'gif' : 'mp4';
-      const filterName = capture.capture_type === 'gif' ? 'GIF' : 'Video';
+      const saveFormat = getCaptureSaveFormat(capture);
+      const originalName = capture.image_path.replace(/\\/g, '/').split('/').pop() || `capture.${saveFormat.ext}`;
+      const defaultPath = replaceFileExtension(originalName, saveFormat.ext);
       // Use original filename as default save name
-      const originalName = capture.image_path.replace(/\\/g, '/').split('/').pop() || `recording.${ext}`;
       const destination = await saveFileDialog({
-        title: 'Save Copy',
-        defaultPath: originalName,
-        filters: [{ name: filterName, extensions: [ext] }],
+        title: 'Save As',
+        defaultPath,
+        filters: getSaveAsDialogFilters(capture).map((format) => ({
+          name: format.name,
+          extensions: format.extensions,
+        })),
       });
       if (destination) {
-        await invoke('save_copy_of_file', {
-          sourcePath: capture.image_path,
-          destinationPath: destination,
-        });
-        toast.success('Copy saved');
+        if (isImageCapture(capture)) {
+          await invoke('save_image_as_format', {
+            sourcePath: capture.image_path,
+            destinationPath: destination,
+            format: getSaveAsFormatFromPath(destination, 'png'),
+          });
+        } else {
+          await invoke('save_copy_of_file', {
+            sourcePath: capture.image_path,
+            destinationPath: destination,
+          });
+        }
+        toast.success('Capture saved');
       }
     } catch (error) {
-      reportError(error, { operation: 'save copy' });
-      toast.error('Failed to save copy');
+      reportError(error, { operation: 'save as' });
+      toast.error('Failed to save capture');
     }
   }, []);
 
@@ -665,7 +754,7 @@ export const CaptureLibrary: React.FC<CaptureLibraryProps> = ({
                 onCopyToClipboard={() => handleCopyToClipboard(capture)}
                 onPlayMedia={() => handlePlayMedia(capture)}
                 onEditVideo={capture.capture_type === 'video' ? () => handleEditVideo(capture) : undefined}
-                onSaveCopy={capture.quick_capture ? () => handleSaveCopy(capture) : undefined}
+                onSaveCopy={() => handleSaveCopy(capture)}
                 onRepair={() => handleRepair(capture.id)}
                 formatDate={formatDate}
               />

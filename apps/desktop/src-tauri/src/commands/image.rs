@@ -44,3 +44,35 @@ pub async fn copy_rgba_to_clipboard(app: AppHandle, file_path: String) -> MoonSn
 
     Ok(())
 }
+
+/// Save an image file to a user-selected image format.
+#[command]
+pub async fn save_image_as_format(
+    source_path: String,
+    destination_path: String,
+    format: String,
+) -> MoonSnapResult<()> {
+    tokio::task::spawn_blocking(move || {
+        let image =
+            image::open(&source_path).map_err(|e| format!("Failed to open image: {}", e))?;
+
+        let image_format = match format.to_lowercase().as_str() {
+            "jpg" | "jpeg" => image::ImageFormat::Jpeg,
+            "webp" => image::ImageFormat::WebP,
+            _ => image::ImageFormat::Png,
+        };
+
+        if let Some(parent) = std::path::Path::new(&destination_path).parent() {
+            std::fs::create_dir_all(parent)
+                .map_err(|e| format!("Failed to create destination folder: {}", e))?;
+        }
+
+        image
+            .save_with_format(&destination_path, image_format)
+            .map_err(|e| format!("Failed to save image: {}", e))?;
+
+        Ok(())
+    })
+    .await
+    .map_err(|e| format!("Image save task panicked: {}", e))?
+}

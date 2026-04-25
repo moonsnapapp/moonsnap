@@ -18,6 +18,7 @@ import {
   getEditorTextFontStyle,
   isEditorTextStyleBold,
   isEditorTextStyleItalic,
+  measureEditorTextBoxHeight,
   normalizeEditorTextAlign,
   normalizeEditorTextVerticalAlign,
   toggleEditorTextFontStyle,
@@ -209,7 +210,11 @@ export const TextToolSettings: React.FC<TextToolSettingsProps> = ({
           value={[currentFontSize]}
           onValueChange={([value]) => {
             if (textShape) {
-              updateShape(textShape.id, { fontSize: value });
+              const measuredHeight = measureEditorTextBoxHeight(textShape, value);
+              updateShape(textShape.id, {
+                fontSize: value,
+                height: Math.max(textShape.height || 0, measuredHeight),
+              });
             } else {
               setFontSize(value);
             }
@@ -218,7 +223,7 @@ export const TextToolSettings: React.FC<TextToolSettingsProps> = ({
             // Commit handled by recordAction on individual changes
           }}
           min={8}
-          max={72}
+          max={100}
           step={1}
           className="w-full"
         />

@@ -24,6 +24,8 @@ export type EditorTextFontStyle = 'normal' | 'bold' | 'italic' | 'bold italic';
 export type EditorTextAlign = 'left' | 'center' | 'right';
 export type EditorTextVerticalAlign = 'top' | 'middle' | 'bottom';
 
+const EDITOR_TEXT_PADDING = 4;
+
 interface Point {
   x: number;
   y: number;
@@ -93,7 +95,7 @@ export function isEditorTextStyleItalic(fontStyle: string | undefined): boolean 
 }
 
 export function normalizeEditorTextAlign(align: string | undefined): EditorTextAlign {
-  if (align === 'center' || align === 'right') {
+  if (align === 'left' || align === 'center' || align === 'right') {
     return align;
   }
   return EDITOR_TEXT.DEFAULT_ALIGN;
@@ -102,7 +104,7 @@ export function normalizeEditorTextAlign(align: string | undefined): EditorTextA
 export function normalizeEditorTextVerticalAlign(
   verticalAlign: string | undefined
 ): EditorTextVerticalAlign {
-  if (verticalAlign === 'middle' || verticalAlign === 'bottom') {
+  if (verticalAlign === 'top' || verticalAlign === 'middle' || verticalAlign === 'bottom') {
     return verticalAlign;
   }
   return EDITOR_TEXT.DEFAULT_VERTICAL_ALIGN;
@@ -141,6 +143,89 @@ export function getEditorTextResizeDimensions(
     width: baseWidth * scaleX,
     height: baseHeight * scaleY,
   };
+}
+
+function createEditorTextMeasurementContext(): CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D | null {
+  if (typeof OffscreenCanvas !== 'undefined') {
+    return new OffscreenCanvas(1, 1).getContext('2d');
+  }
+
+  if (typeof document !== 'undefined') {
+    return document.createElement('canvas').getContext('2d');
+  }
+
+  return null;
+}
+
+function getEditorTextMeasureFont(shape: CanvasShape, fontSize: number): string {
+  const fontStyle = getEditorTextFontStyle(shape.fontStyle);
+  const style = fontStyle.includes('italic') ? 'italic ' : '';
+  const weight = fontStyle.includes('bold') ? 'bold ' : '';
+  return `${style}${weight}${fontSize}px ${getEditorTextFontFamily(shape.fontFamily)}`;
+}
+
+function wrapEditorTextLine(
+  ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D,
+  line: string,
+  maxWidth: number
+): string[] {
+  if (line.length === 0) {
+    return [''];
+  }
+
+  const words = line.split(/\s+/);
+  const wrappedLines: string[] = [];
+  let currentLine = '';
+
+  for (const word of words) {
+    const testLine = currentLine ? `${currentLine} ${word}` : word;
+    if (ctx.measureText(testLine).width <= maxWidth || currentLine.length === 0) {
+      currentLine = testLine;
+      continue;
+    }
+
+    wrappedLines.push(currentLine);
+    currentLine = word;
+  }
+
+  if (currentLine) {
+    wrappedLines.push(currentLine);
+  }
+
+  return wrappedLines;
+}
+
+export function measureEditorTextBoxHeight(shape: CanvasShape, fontSize: number): number {
+  const text = shape.text || '';
+  const lineHeight = shape.lineHeight || EDITOR_TEXT.DEFAULT_LINE_HEIGHT;
+  const width = Math.max(
+    (shape.width || EDITOR_TEXT.DEFAULT_BOX_WIDTH) - EDITOR_TEXT_PADDING * 2,
+    1
+  );
+
+  if (!text) {
+    return getEditorTextDefaultBoxHeight(fontSize);
+  }
+
+  const ctx = createEditorTextMeasurementContext();
+  let lineCount = 0;
+
+  if (ctx) {
+    ctx.font = getEditorTextMeasureFont(shape, fontSize);
+    for (const line of text.split('\n')) {
+      lineCount += wrapEditorTextLine(ctx, line, width).length;
+    }
+  } else {
+    const estimatedCharsPerLine = Math.max(1, Math.floor(width / Math.max(fontSize * 0.6, 1)));
+    for (const line of text.split('\n')) {
+      lineCount += Math.max(1, Math.ceil(line.length / estimatedCharsPerLine));
+    }
+  }
+
+  return Math.max(
+    Math.ceil(lineCount * fontSize * lineHeight + EDITOR_TEXT_PADDING * 2),
+    EDITOR_TEXT.MIN_BOX_HEIGHT
+  );
 }
 
 export function createEditorTextShape({
