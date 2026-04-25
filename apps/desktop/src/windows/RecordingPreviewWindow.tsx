@@ -122,7 +122,7 @@ function RecordingPreviewWindow() {
         clearTimeout(dismissTimerRef.current);
       }
     };
-  }, [isVisible]);
+  }, [isVisible, startTimer]);
 
   useEffect(() => {
     if (!isVisible) {
@@ -142,7 +142,7 @@ function RecordingPreviewWindow() {
 
   const handleOpenEditor = useCallback(async () => {
     try {
-      await invoke('show_video_editor_window', { projectPath: videoFilePath });
+      await emit('preview-open-library-video-editor', { videoPath: videoFilePath });
     } catch {
       // Ignore
     }

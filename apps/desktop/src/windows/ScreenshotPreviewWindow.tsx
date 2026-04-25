@@ -35,8 +35,6 @@ function ScreenshotPreviewWindow() {
   // Parse query params
   const params = new URLSearchParams(window.location.search);
   const filePath = params.get('path') || '';
-  const imgWidth = parseInt(params.get('w') || '0', 10);
-  const imgHeight = parseInt(params.get('h') || '0', 10);
   const shouldAutoCopyOnOpen = params.get('autoCopy') === '1';
   const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
@@ -218,14 +216,15 @@ function ScreenshotPreviewWindow() {
 
   const handleOpenEditor = useCallback(async () => {
     try {
-      await invoke('show_image_editor_window', { capturePath: filePath });
-      // Emit event so library window knows to save
-      await emit('preview-open-editor', { file_path: filePath, width: imgWidth, height: imgHeight });
+      await emit('preview-open-library-image-editor', {
+        originalPath: filePath,
+        projectId: savedProjectId,
+      });
     } catch {
       // Ignore errors
     }
     closePreview();
-  }, [filePath, imgWidth, imgHeight, closePreview]);
+  }, [filePath, savedProjectId, closePreview]);
 
   const copyPreviewToClipboard = useCallback(async () => {
     try {

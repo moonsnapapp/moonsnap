@@ -1,12 +1,14 @@
 import { useState, useCallback, useMemo, useRef, useEffect, Activity } from 'react';
 import { Toaster } from 'sonner';
 import { invoke } from '@tauri-apps/api/core';
+import { listen } from '@tauri-apps/api/event';
 import type { ImperativePanelHandle } from 'react-resizable-panels';
 import { Titlebar } from './components/Titlebar/Titlebar';
 import { CaptureLibrary } from './components/Library/CaptureLibrary';
 import { SidebarToggleHandle } from './components/Library/SidebarToggleHandle';
 import { EmbeddedImageEditor } from './components/Editor/EmbeddedImageEditor';
 import { EmbeddedVideoEditor } from './components/Editor/EmbeddedVideoEditor';
+import { ExperimentalCaptureToolbarDialog } from './components/CaptureToolbar/ExperimentalCaptureToolbarDialog';
 import { ResizablePanel, ResizablePanelGroup } from './components/ui/resizable';
 import { LibraryErrorBoundary } from './components/ErrorBoundary';
 import { KeyboardShortcutsModal } from './components/KeyboardShortcuts/KeyboardShortcutsModal';
@@ -22,6 +24,7 @@ import { useQuickRecordingFlow } from './hooks/useQuickRecordingFlow';
 import { logger } from './utils/logger';
 import { useCaptureActions } from './hooks/useCaptureActions';
 import { handleScreenshotCompletion } from './utils/screenshotCompletion';
+import { isTextInputTarget } from './utils/keyboard';
 import { LAYOUT, STORAGE } from './constants';
 import type { CaptureListItem } from './types';
 
@@ -68,6 +71,7 @@ function App() {
 
   // Keyboard shortcuts help modal
   const [showShortcuts, setShowShortcuts] = useState(false);
+  const [showExperimentalCaptureToolbar, setShowExperimentalCaptureToolbar] = useState(false);
   const [sidebarSize, setSidebarSize] = useState(getInitialSidebarSize);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const sidebarPanelRef = useRef<ImperativePanelHandle>(null);
@@ -76,6 +80,8 @@ function App() {
   const sidebarWidthPxRef = useRef<number | null>(getStoredSidebarWidthPx());
   const workspaceWidthPxRef = useRef(0);
   const applyingSidebarResizeRef = useRef(false);
+  const savedCaptureProjectIdsRef = useRef(new Map<string, string>());
+  const pendingPreviewOpenPathRef = useRef<string | null>(null);
 
   const handleToggleSidebar = useCallback(() => {
     const panel = sidebarPanelRef.current;
@@ -154,9 +160,17 @@ function App() {
         // Save to library in background (don't block preview)
         saveNewCaptureFromFile(data.file_path, data.width, data.height, 'region', {}, { silent: true })
           .then(async ({ imagePath, id: projectId }) => {
+            savedCaptureProjectIdsRef.current.set(data.file_path, projectId);
+
             // Notify editor/preview windows of the saved project ID and permanent path
             const { emit } = await import('@tauri-apps/api/event');
             await emit('capture-saved', { originalPath: data.file_path, imagePath, projectId });
+
+            if (pendingPreviewOpenPathRef.current === data.file_path) {
+              pendingPreviewOpenPathRef.current = null;
+              await invoke('show_library_window');
+              await loadProject(projectId);
+            }
           })
           .catch((error) => {
             logger.error('Failed to save capture:', error);
@@ -164,12 +178,62 @@ function App() {
       },
       onCaptureDeleted: loadCaptures,
     }),
-    [isGifRecordingPath, loadCaptures, saveNewCaptureFromFile]
+    [isGifRecordingPath, loadCaptures, loadProject, saveNewCaptureFromFile]
   );
 
   // Consolidated Tauri event listeners
   useAppEventListeners(eventCallbacks);
   useQuickRecordingFlow();
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.repeat || isTextInputTarget(event.target)) {
+        return;
+      }
+
+      if (event.ctrlKey && !event.shiftKey && !event.altKey && event.code === 'Space') {
+        event.preventDefault();
+        setShowExperimentalCaptureToolbar(true);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
+  useEffect(() => {
+    const unlistenScreenshot = listen<{
+      originalPath: string;
+      projectId?: string | null;
+    }>('preview-open-library-image-editor', async (event) => {
+      const { originalPath, projectId } = event.payload;
+      const savedProjectId =
+        projectId ?? savedCaptureProjectIdsRef.current.get(originalPath) ?? null;
+
+      if (!savedProjectId) {
+        pendingPreviewOpenPathRef.current = originalPath;
+        await invoke('show_library_window');
+        return;
+      }
+
+      pendingPreviewOpenPathRef.current = null;
+      await invoke('show_library_window');
+      await loadProject(savedProjectId);
+    });
+
+    const unlistenRecording = listen<{ videoPath: string }>(
+      'preview-open-library-video-editor',
+      async (event) => {
+        await invoke('show_library_window');
+        await loadVideoProjectInWorkspace(event.payload.videoPath);
+      }
+    );
+
+    return () => {
+      unlistenScreenshot.then((fn) => fn()).catch(() => {});
+      unlistenRecording.then((fn) => fn()).catch(() => {});
+    };
+  }, [loadProject, loadVideoProjectInWorkspace]);
 
   // Settings handler
   const handleOpenSettings = useCallback(() => {
@@ -298,6 +362,11 @@ function App() {
       <KeyboardShortcutsModal
         open={showShortcuts}
         onClose={() => setShowShortcuts(false)}
+      />
+
+      <ExperimentalCaptureToolbarDialog
+        open={showExperimentalCaptureToolbar}
+        onOpenChange={setShowExperimentalCaptureToolbar}
       />
 
       {/* Settings Dialog */}
