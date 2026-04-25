@@ -18,6 +18,9 @@ type VirtualRow =
   | { type: 'cardRow'; captures: CaptureListItem[] };
 
 interface VirtualizedGridProps {
+  variant?: 'full' | 'sidebar';
+  itemScale?: number;
+  sidebarItemSize?: number;
   dateGroups: DateGroup[];
   selectedIds: Set<string>;
   loadingProjectId: string | null;
@@ -44,10 +47,11 @@ interface VirtualizedGridProps {
 }
 
 // Layout constants
-const CARD_GAP = 20;
-const CONTAINER_PADDING = 64; // px-8 on container + px-8 on rows
-const FOOTER_HEIGHT = 80;
+const SIDEBAR_CARD_GAP = 12;
 const MAX_CARD_WIDTH = 320; // Cards won't grow beyond this
+const SIDEBAR_CONTAINER_PADDING = 24;
+const FULL_CONTENT_OFFSET = 32;
+const FULL_SCROLL_BUFFER = 128;
 
 // Column breakpoints: min 3, max 5 columns
 // Cards resize to fill available width, capped at MAX_CARD_WIDTH
@@ -57,36 +61,123 @@ const COLUMN_BREAKPOINTS = [
   { minWidth: 0, cols: 3 },
 ];
 
-export function getColumnsForWidth(width: number): number {
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
+}
+
+export function getGridGap(variant: 'full' | 'sidebar' = 'full'): number {
+  return variant === 'sidebar' ? SIDEBAR_CARD_GAP : LAYOUT.GRID_GAP;
+}
+
+export function getScaledCardTargetWidth(
+  itemScale: number = LAYOUT.LIBRARY_ITEM_SCALE_DEFAULT
+): number {
+  return clamp(
+    Math.round(LAYOUT.LIBRARY_ITEM_WIDTH_BASE * itemScale),
+    LAYOUT.LIBRARY_ITEM_WIDTH_MIN,
+    LAYOUT.LIBRARY_ITEM_WIDTH_MAX
+  );
+}
+
+function getDefaultColumnsForWidth(width: number, variant: 'full' | 'sidebar'): number {
+  if (variant === 'sidebar') return 1;
+
   for (const bp of COLUMN_BREAKPOINTS) {
     if (width >= bp.minWidth) return bp.cols;
   }
   return 3;
 }
 
-// Calculate card width to fit exactly N columns, capped at MAX_CARD_WIDTH
-export function getCardWidth(containerWidth: number, columns: number): number {
-  const availableWidth = containerWidth - CONTAINER_PADDING;
-  const totalGaps = CARD_GAP * (columns - 1);
-  const calculatedWidth = Math.floor((availableWidth - totalGaps) / columns);
-  return Math.min(calculatedWidth, MAX_CARD_WIDTH);
+export function getColumnsForWidth(
+  width: number,
+  variant: 'full' | 'sidebar' = 'full',
+  itemScale: number = LAYOUT.LIBRARY_ITEM_SCALE_DEFAULT,
+  sidebarItemSize: number = LAYOUT.LIBRARY_SIDEBAR_ITEM_SIZE_DEFAULT
+): number {
+  if (variant === 'sidebar') {
+    const availableWidth = width - SIDEBAR_CONTAINER_PADDING;
+    const clampedItemSize = clamp(
+      sidebarItemSize,
+      LAYOUT.LIBRARY_SIDEBAR_ITEM_SIZE_MIN,
+      LAYOUT.LIBRARY_SIDEBAR_ITEM_SIZE_MAX
+    ) as keyof typeof LAYOUT.LIBRARY_SIDEBAR_ITEM_MIN_WIDTH_BY_SIZE;
+    const minCardWidth =
+      LAYOUT.LIBRARY_SIDEBAR_ITEM_MIN_WIDTH_BY_SIZE[clampedItemSize] ??
+      LAYOUT.LIBRARY_SIDEBAR_ITEM_MIN_WIDTH_BY_SIZE[LAYOUT.LIBRARY_SIDEBAR_ITEM_SIZE_DEFAULT];
+    const maxFittingColumns = Math.max(
+      1,
+      Math.floor((availableWidth + SIDEBAR_CARD_GAP) / (minCardWidth + SIDEBAR_CARD_GAP))
+    );
+    return Math.min(LAYOUT.LIBRARY_GRID_MAX_COLUMNS, maxFittingColumns);
+  }
+
+  if (itemScale === LAYOUT.LIBRARY_ITEM_SCALE_DEFAULT) {
+    return getDefaultColumnsForWidth(width, variant);
+  }
+
+  const cardGap = getGridGap(variant);
+  const availableWidth = width - LAYOUT.CONTAINER_PADDING;
+  const targetWidth = getScaledCardTargetWidth(itemScale);
+  const rawColumns = Math.floor((availableWidth + cardGap) / (targetWidth + cardGap));
+  return clamp(rawColumns, 2, LAYOUT.LIBRARY_GRID_MAX_COLUMNS);
 }
 
-// Calculate row height based on card width (16:9 thumbnail + footer)
+// Calculate card width to fit exactly N columns, capped at MAX_CARD_WIDTH
+export function getCardWidth(
+  containerWidth: number,
+  columns: number,
+  variant: 'full' | 'sidebar' = 'full',
+  itemScale: number = LAYOUT.LIBRARY_ITEM_SCALE_DEFAULT,
+  _sidebarItemSize: number = LAYOUT.LIBRARY_SIDEBAR_ITEM_SIZE_DEFAULT
+): number {
+  if (variant === 'sidebar') {
+    const availableWidth = Math.max(0, containerWidth - SIDEBAR_CONTAINER_PADDING);
+    const cardGap = getGridGap(variant);
+    const calculatedWidth = Math.floor((availableWidth - cardGap * (columns - 1)) / columns);
+    return Math.max(0, calculatedWidth);
+  }
+
+  const availableWidth = containerWidth - LAYOUT.CONTAINER_PADDING;
+  const totalGaps = LAYOUT.GRID_GAP * (columns - 1);
+  const calculatedWidth = Math.floor((availableWidth - totalGaps) / columns);
+  const maxWidth =
+    itemScale === LAYOUT.LIBRARY_ITEM_SCALE_DEFAULT
+      ? MAX_CARD_WIDTH
+      : LAYOUT.LIBRARY_ITEM_WIDTH_MAX;
+  return Math.min(calculatedWidth, maxWidth);
+}
+
+// Calculate row height based on a true square card.
 // Gap is included in row height for predictable sizing during resize
-export function calculateRowHeight(containerWidth: number, columns: number): number {
-  const cardWidth = getCardWidth(containerWidth, columns);
-  const thumbnailHeight = Math.round((cardWidth * 9) / 16);
-  return thumbnailHeight + FOOTER_HEIGHT + CARD_GAP;
+export function calculateRowHeight(
+  containerWidth: number,
+  columns: number,
+  variant: 'full' | 'sidebar' = 'full',
+  itemScale: number = LAYOUT.LIBRARY_ITEM_SCALE_DEFAULT,
+  sidebarItemSize: number = LAYOUT.LIBRARY_SIDEBAR_ITEM_SIZE_DEFAULT
+): number {
+  const cardWidth = getCardWidth(containerWidth, columns, variant, itemScale, sidebarItemSize);
+  const cardGap = getGridGap(variant);
+  return cardWidth + cardGap;
 }
 
 // Calculate total grid width (for centering headers and cards together)
-export function getGridWidth(containerWidth: number, columns: number): number {
-  const cardWidth = getCardWidth(containerWidth, columns);
-  return columns * cardWidth + (columns - 1) * CARD_GAP;
+export function getGridWidth(
+  containerWidth: number,
+  columns: number,
+  variant: 'full' | 'sidebar' = 'full',
+  itemScale: number = LAYOUT.LIBRARY_ITEM_SCALE_DEFAULT,
+  sidebarItemSize: number = LAYOUT.LIBRARY_SIDEBAR_ITEM_SIZE_DEFAULT
+): number {
+  const cardWidth = getCardWidth(containerWidth, columns, variant, itemScale, sidebarItemSize);
+  const cardGap = getGridGap(variant);
+  return columns * cardWidth + (columns - 1) * cardGap;
 }
 
 export function VirtualizedGrid({
+  variant = 'full',
+  itemScale = LAYOUT.LIBRARY_ITEM_SCALE_DEFAULT,
+  sidebarItemSize = LAYOUT.LIBRARY_SIDEBAR_ITEM_SIZE_DEFAULT,
   dateGroups,
   selectedIds,
   loadingProjectId,
@@ -111,8 +202,9 @@ export function VirtualizedGrid({
   selectionRect,
 }: VirtualizedGridProps) {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
-  const [cardsPerRow, setCardsPerRow] = useState(4);
+  const [cardsPerRow, setCardsPerRow] = useState(() => getColumnsForWidth(1200, variant, itemScale, sidebarItemSize));
   const [containerWidth, setContainerWidth] = useState(1200);
+  const isSidebar = variant === 'sidebar';
 
   // Sync external ref
   useEffect(() => {
@@ -131,7 +223,7 @@ export function VirtualizedGrid({
 
     const updateLayout = () => {
       const width = container.clientWidth;
-      const cols = getColumnsForWidth(width);
+      const cols = getColumnsForWidth(width, variant, itemScale, sidebarItemSize);
       setCardsPerRow(prev => prev !== cols ? cols : prev);
       setContainerWidth(width);
     };
@@ -151,7 +243,7 @@ export function VirtualizedGrid({
       if (debounceTimer) clearTimeout(debounceTimer);
       observer.disconnect();
     };
-  }, []);
+  }, [itemScale, sidebarItemSize, variant]);
 
   // Build rows: headers + card/list rows
   const rows = useMemo<VirtualRow[]>(() => {
@@ -179,8 +271,8 @@ export function VirtualizedGrid({
 
   // Calculate dynamic row height based on actual card dimensions
   const gridRowHeight = useMemo(
-    () => calculateRowHeight(containerWidth, cardsPerRow),
-    [containerWidth, cardsPerRow]
+    () => calculateRowHeight(containerWidth, cardsPerRow, variant, itemScale, sidebarItemSize),
+    [containerWidth, cardsPerRow, itemScale, sidebarItemSize, variant]
   );
 
   // Virtualizer with dynamic row heights based on card size
@@ -213,8 +305,8 @@ export function VirtualizedGrid({
 
   // Calculate grid width for centering (same width for headers and cards)
   const gridWidth = useMemo(
-    () => getGridWidth(containerWidth, cardsPerRow),
-    [containerWidth, cardsPerRow]
+    () => getGridWidth(containerWidth, cardsPerRow, variant, itemScale, sidebarItemSize),
+    [containerWidth, cardsPerRow, itemScale, sidebarItemSize, variant]
   );
 
   // Render row content
@@ -222,7 +314,7 @@ export function VirtualizedGrid({
     (row: VirtualRow) => {
       if (row.type === 'header') {
         return (
-          <div className="mx-auto" style={{ width: gridWidth }}>
+          <div className={isSidebar ? '' : 'mx-auto'} style={{ width: gridWidth }}>
             <DateHeader
               label={row.label}
               count={row.count}
@@ -232,10 +324,11 @@ export function VirtualizedGrid({
         );
       }
 
-      const cardWidth = getCardWidth(containerWidth, cardsPerRow);
+      const cardWidth = getCardWidth(containerWidth, cardsPerRow, variant, itemScale, sidebarItemSize);
+      const cardGap = getGridGap(variant);
 
       return (
-        <div className="flex gap-5 mx-auto" style={{ width: gridWidth }}>
+        <div className={`flex ${isSidebar ? '' : 'mx-auto'}`} style={{ width: gridWidth, gap: cardGap }}>
           {row.captures.map((capture) => (
             <div key={capture.id} style={{ width: cardWidth, flexShrink: 0 }}>
               <CaptureCard
@@ -265,6 +358,9 @@ export function VirtualizedGrid({
       cardsPerRow,
       containerWidth,
       gridWidth,
+      isSidebar,
+      itemScale,
+      sidebarItemSize,
       selectedIds,
       loadingProjectId,
       allTags,
@@ -280,8 +376,11 @@ export function VirtualizedGrid({
       onSaveCopy,
       onRepair,
       formatDate,
+      variant,
     ]
   );
+  const contentOffset = isSidebar ? 0 : FULL_CONTENT_OFFSET;
+  const scrollBuffer = isSidebar ? 0 : FULL_SCROLL_BUFFER;
 
   return (
     <div
@@ -305,8 +404,8 @@ export function VirtualizedGrid({
       )}
 
       <div
-        className="relative w-full px-8"
-        style={{ height: virtualizer.getTotalSize() + 128, paddingTop: 32 }}
+        className={`relative w-full ${isSidebar ? '' : 'px-8'}`}
+        style={{ height: virtualizer.getTotalSize() + scrollBuffer, paddingTop: contentOffset }}
       >
         {virtualItems.map((virtualRow) => {
           const row = rows[virtualRow.index];
@@ -315,9 +414,9 @@ export function VirtualizedGrid({
           return (
             <div
               key={virtualRow.key}
-              className="absolute left-0 right-0 px-8"
+              className={`absolute left-0 right-0 ${isSidebar ? '' : 'px-8'}`}
               style={{
-                top: virtualRow.start + 32,
+                top: virtualRow.start + contentOffset,
                 height: virtualRow.size,
               }}
             >

@@ -1,11 +1,13 @@
-import { useState, useCallback, useMemo, Activity } from 'react';
+import { useState, useCallback, useMemo, useRef, useEffect, Activity } from 'react';
 import { Toaster } from 'sonner';
 import { invoke } from '@tauri-apps/api/core';
+import type { ImperativePanelHandle } from 'react-resizable-panels';
 import { Titlebar } from './components/Titlebar/Titlebar';
 import { CaptureLibrary } from './components/Library/CaptureLibrary';
+import { SidebarToggleHandle } from './components/Library/SidebarToggleHandle';
 import { EmbeddedImageEditor } from './components/Editor/EmbeddedImageEditor';
 import { EmbeddedVideoEditor } from './components/Editor/EmbeddedVideoEditor';
-import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from './components/ui/resizable';
+import { ResizablePanel, ResizablePanelGroup } from './components/ui/resizable';
 import { LibraryErrorBoundary } from './components/ErrorBoundary';
 import { KeyboardShortcutsModal } from './components/KeyboardShortcuts/KeyboardShortcutsModal';
 import { SettingsDialog } from './components/Settings/SettingsDialog';
@@ -28,6 +30,11 @@ const clampSidebarSize = (size: number) =>
     LAYOUT.IMAGE_EDITOR_SIDEBAR_MAX_SIZE,
     Math.max(LAYOUT.IMAGE_EDITOR_SIDEBAR_MIN_SIZE, size)
   );
+
+const getStoredSidebarWidthPx = () => {
+  const stored = Number(localStorage.getItem(STORAGE.IMAGE_EDITOR_SIDEBAR_WIDTH_PX_KEY));
+  return Number.isFinite(stored) && stored > 0 ? stored : null;
+};
 
 const getInitialSidebarSize = () => {
   const stored = Number(localStorage.getItem(STORAGE.IMAGE_EDITOR_SIDEBAR_SIZE_KEY));
@@ -62,6 +69,24 @@ function App() {
   // Keyboard shortcuts help modal
   const [showShortcuts, setShowShortcuts] = useState(false);
   const [sidebarSize, setSidebarSize] = useState(getInitialSidebarSize);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const sidebarPanelRef = useRef<ImperativePanelHandle>(null);
+  const workspaceLayoutRef = useRef<HTMLDivElement>(null);
+  const allowSidebarCollapseRef = useRef(false);
+  const sidebarWidthPxRef = useRef<number | null>(getStoredSidebarWidthPx());
+  const workspaceWidthPxRef = useRef(0);
+  const applyingSidebarResizeRef = useRef(false);
+
+  const handleToggleSidebar = useCallback(() => {
+    const panel = sidebarPanelRef.current;
+    if (!panel) return;
+    if (panel.isCollapsed()) {
+      panel.expand();
+    } else {
+      allowSidebarCollapseRef.current = true;
+      panel.collapse();
+    }
+  }, []);
 
   // Capture actions for shortcuts
   const {
@@ -182,9 +207,76 @@ function App() {
       return;
     }
 
+    // Don't persist while collapsed so we can restore the last user-chosen
+    // expanded width when the sidebar is expanded again.
+    if (nextSidebarSize < LAYOUT.IMAGE_EDITOR_SIDEBAR_MIN_SIZE) {
+      return;
+    }
+
     const clampedSize = clampSidebarSize(nextSidebarSize);
+    const workspaceWidth = workspaceWidthPxRef.current;
+    if (workspaceWidth > 0 && !applyingSidebarResizeRef.current) {
+      const nextSidebarWidthPx = Math.round((workspaceWidth * clampedSize) / 100);
+      sidebarWidthPxRef.current = nextSidebarWidthPx;
+      localStorage.setItem(STORAGE.IMAGE_EDITOR_SIDEBAR_WIDTH_PX_KEY, String(nextSidebarWidthPx));
+    }
     setSidebarSize(clampedSize);
     localStorage.setItem(STORAGE.IMAGE_EDITOR_SIDEBAR_SIZE_KEY, String(clampedSize));
+  }, []);
+
+  useEffect(() => {
+    const layoutElement = workspaceLayoutRef.current;
+    if (!layoutElement) {
+      return;
+    }
+
+    const resizeObserver = new ResizeObserver(([entry]) => {
+      const nextWorkspaceWidth = entry?.contentRect.width ?? layoutElement.clientWidth;
+      if (!Number.isFinite(nextWorkspaceWidth) || nextWorkspaceWidth <= 0) {
+        return;
+      }
+
+      workspaceWidthPxRef.current = nextWorkspaceWidth;
+
+      const sidebarWidthPx = sidebarWidthPxRef.current;
+      const panel = sidebarPanelRef.current;
+      if (!panel || panel.isCollapsed() || sidebarWidthPx === null) {
+        return;
+      }
+
+      const nextSidebarSize = clampSidebarSize((sidebarWidthPx / nextWorkspaceWidth) * 100);
+      if (Math.abs(nextSidebarSize - panel.getSize()) < 0.1) {
+        return;
+      }
+
+      applyingSidebarResizeRef.current = true;
+      panel.resize(nextSidebarSize);
+      requestAnimationFrame(() => {
+        applyingSidebarResizeRef.current = false;
+      });
+    });
+
+    resizeObserver.observe(layoutElement);
+    return () => resizeObserver.disconnect();
+  }, []);
+
+  const handleSidebarCollapse = useCallback(() => {
+    if (allowSidebarCollapseRef.current) {
+      allowSidebarCollapseRef.current = false;
+      setIsSidebarCollapsed(true);
+      return;
+    }
+
+    const restoreSize = sidebarSize;
+    requestAnimationFrame(() => {
+      sidebarPanelRef.current?.resize(restoreSize);
+      setIsSidebarCollapsed(false);
+    });
+  }, [sidebarSize]);
+
+  const handleSidebarExpand = useCallback(() => {
+    allowSidebarCollapseRef.current = false;
+    setIsSidebarCollapsed(false);
   }, []);
 
   return (
@@ -230,6 +322,7 @@ function App() {
       <div className="library-window__content flex-1 flex flex-col min-h-0">
         {/* Library sidebar + selected capture's editor in a unified workspace */}
         <Activity mode={isWorkspaceActive ? 'visible' : 'hidden'}>
+          <div ref={workspaceLayoutRef} className="flex-1 min-h-0">
           <ResizablePanelGroup
             direction="horizontal"
             className="image-editor-layout flex-1 min-h-0"
@@ -238,21 +331,36 @@ function App() {
             <ResizablePanel
               id="image-library-sidebar"
               order={1}
-              className="image-editor-layout__library"
+              ref={sidebarPanelRef}
+              collapsible
+              collapsedSize={LAYOUT.IMAGE_EDITOR_SIDEBAR_COLLAPSED_SIZE}
+              onCollapse={handleSidebarCollapse}
+              onExpand={handleSidebarExpand}
+              className={`image-editor-layout__library ${
+                isSidebarCollapsed ? 'image-editor-layout__library--collapsed' : ''
+              }`}
               defaultSize={sidebarSize}
               minSize={LAYOUT.IMAGE_EDITOR_SIDEBAR_MIN_SIZE}
               maxSize={LAYOUT.IMAGE_EDITOR_SIDEBAR_MAX_SIZE}
             >
-              <LibraryErrorBoundary>
-                <CaptureLibrary
-                  variant="sidebar"
-                  enableKeyboardShortcuts={isLibraryWorkspaceActive}
-                  onEditImage={handleEditImageInWorkspace}
-                  onEditVideo={handleEditVideoInWorkspace}
-                />
-              </LibraryErrorBoundary>
+              {isSidebarCollapsed ? (
+                <div className="image-editor-layout__library-rail" aria-hidden="true" />
+              ) : (
+                <LibraryErrorBoundary>
+                  <CaptureLibrary
+                    variant="sidebar"
+                    enableKeyboardShortcuts={isLibraryWorkspaceActive}
+                    onEditImage={handleEditImageInWorkspace}
+                    onEditVideo={handleEditVideoInWorkspace}
+                  />
+                </LibraryErrorBoundary>
+              )}
             </ResizablePanel>
-            <ResizableHandle className="image-editor-layout__resize-handle" />
+            <SidebarToggleHandle
+              className="image-editor-layout__resize-handle"
+              collapsed={isSidebarCollapsed}
+              onToggle={handleToggleSidebar}
+            />
             <ResizablePanel
               id="image-editor-main"
               order={2}
@@ -273,6 +381,7 @@ function App() {
               )}
             </ResizablePanel>
           </ResizablePanelGroup>
+          </div>
         </Activity>
       </div>
     </div>

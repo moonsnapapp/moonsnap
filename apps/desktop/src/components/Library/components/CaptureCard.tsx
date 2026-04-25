@@ -1,6 +1,7 @@
 import React, { memo, useState, useMemo, useEffect, useRef } from 'react';
-import { Star, Trash2, Check, Loader2, AlertTriangle, Video, Film, Tag } from 'lucide-react';
+import { Star, Trash2, Check, Loader2, AlertTriangle, Video, Film, Tag, Info } from 'lucide-react';
 import { ContextMenu, ContextMenuTrigger } from '@/components/ui/context-menu';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { CaptureContextMenu } from './CaptureContextMenu';
 import { TagChip } from './TagChip';
 import { TagPopover } from './TagPopover';
@@ -43,6 +44,12 @@ export const CaptureCard: React.FC<CaptureCardProps> = memo(
     const isQuickVideo = capture.capture_type === 'video' && Boolean(capture.quick_capture);
     const hasThumbnail = capture.thumbnail_path && capture.thumbnail_path.length > 0;
     const thumbnailFit = getCaptureCardThumbnailFit(capture);
+    const captureTypeLabel = capture.capture_type.toUpperCase();
+    const dimensionsLabel = isPlaceholder
+      ? '-- x --'
+      : isMedia && capture.dimensions.width === 0
+        ? captureTypeLabel
+        : `${capture.dimensions.width} x ${capture.dimensions.height}`;
 
     // Use cached URL to avoid repeated convertFileSrc calls
     const thumbnailSrc = useMemo(() => {
@@ -220,34 +227,57 @@ export const CaptureCard: React.FC<CaptureCardProps> = memo(
               )}
             </div>
 
-            {/* Card Footer */}
+            {/* Card Actions */}
             <div className="card-footer flex items-center justify-between">
-              <div className="flex flex-col gap-1">
-                <span className="text-[11px] text-[var(--ink-subtle)]">
-                  {isPlaceholder ? 'Saving...' : formatDate(capture.created_at)}
-                </span>
-                <div className="flex items-center gap-1.5 flex-wrap">
-                  <span className="pill font-mono text-[10px]">
-                    {isPlaceholder
-                      ? '-- × --'
-                      : isMedia && capture.dimensions.width === 0
-                        ? capture.capture_type.toUpperCase()
-                        : `${capture.dimensions.width} × ${capture.dimensions.height}`}
-                  </span>
-                  {isQuickVideo && (
-                    <span className="pill-coral text-[10px]">Ready to share</span>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <button
+                    onClick={(e) => e.stopPropagation()}
+                    onMouseDown={(e) => e.stopPropagation()}
+                    onDoubleClick={(e) => e.stopPropagation()}
+                    aria-label="Capture info"
+                    className="capture-card__icon-button"
+                  >
+                    <Info className="w-3.5 h-3.5" />
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent
+                  side="top"
+                  align="end"
+                  className="capture-info-popover"
+                  onClick={(e) => e.stopPropagation()}
+                  onMouseDown={(e) => e.stopPropagation()}
+                >
+                  <div className="capture-info-popover__title">Capture details</div>
+                  <div className="capture-info-popover__rows">
+                    <div>
+                      <span>Created</span>
+                      <strong>{isPlaceholder ? 'Saving...' : formatDate(capture.created_at)}</strong>
+                    </div>
+                    <div>
+                      <span>Dimensions</span>
+                      <strong>{dimensionsLabel}</strong>
+                    </div>
+                    <div>
+                      <span>Type</span>
+                      <strong>{captureTypeLabel}</strong>
+                    </div>
+                    {isQuickVideo && (
+                      <div>
+                        <span>Status</span>
+                        <strong>Ready to share</strong>
+                      </div>
+                    )}
+                  </div>
+                  {!isPlaceholder && capture.tags.length > 0 && (
+                    <div className="capture-info-popover__tags">
+                      {capture.tags.map(tag => (
+                        <TagChip key={tag} tag={tag} size="sm" />
+                      ))}
+                    </div>
                   )}
-                  {/* Display up to 2 tags */}
-                  {!isPlaceholder && capture.tags.slice(0, 2).map(tag => (
-                    <TagChip key={tag} tag={tag} size="sm" />
-                  ))}
-                  {!isPlaceholder && capture.tags.length > 2 && (
-                    <span className="text-[10px] text-[var(--ink-muted)]">
-                      +{capture.tags.length - 2}
-                    </span>
-                  )}
-                </div>
-              </div>
+                </PopoverContent>
+              </Popover>
               {!isPlaceholder && (
                 <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
                   <TagPopover
@@ -260,10 +290,10 @@ export const CaptureCard: React.FC<CaptureCardProps> = memo(
                       <button
                         onClick={(e) => e.stopPropagation()}
                         aria-label="Manage tags"
-                        className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-[var(--polar-mist)] transition-colors"
+                        className="capture-card__icon-button"
                       >
                         <Tag
-                          className="w-4 h-4 transition-colors"
+                          className="w-3.5 h-3.5 transition-colors"
                           style={{
                             color: capture.tags.length > 0 ? 'var(--coral-400)' : 'var(--ink-subtle)',
                           }}
@@ -277,9 +307,9 @@ export const CaptureCard: React.FC<CaptureCardProps> = memo(
                       onDelete();
                     }}
                     aria-label="Delete capture"
-                    className="w-8 h-8 rounded-lg flex items-center justify-center text-red-500 hover:bg-red-50 transition-colors"
+                    className="capture-card__icon-button capture-card__icon-button--danger"
                   >
-                    <Trash2 className="w-4 h-4" />
+                    <Trash2 className="w-3.5 h-3.5" />
                   </button>
                 </div>
               )}

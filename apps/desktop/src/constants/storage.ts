@@ -20,6 +20,10 @@ export const STORAGE = {
 
   // Layout preferences
   IMAGE_EDITOR_SIDEBAR_SIZE_KEY: 'moonsnap_image_editor_sidebar_size',
+  IMAGE_EDITOR_SIDEBAR_WIDTH_PX_KEY: 'moonsnap_image_editor_sidebar_width_px',
+  LIBRARY_ITEM_SCALE_KEY: 'moonsnap_library_item_scale',
+  LIBRARY_SIDEBAR_ITEM_SIZE_KEY: 'moonsnap_library_sidebar_item_size',
+  LIBRARY_SIDEBAR_CARD_MAX_KEY: 'moonsnap_library_sidebar_card_max',
 } as const;
 
 export type StorageConstants = typeof STORAGE;

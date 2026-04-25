@@ -11,7 +11,7 @@ import type {
   SaveCaptureResponse,
 } from '../types';
 import { libraryLogger } from '../utils/logger';
-import { STORAGE } from '../constants';
+import { LAYOUT, STORAGE } from '../constants';
 
 interface LibraryCache {
   captures: CaptureListItem[];
@@ -112,6 +112,68 @@ function isGifPath(path: string): boolean {
   return path.toLowerCase().endsWith('.gif');
 }
 
+function clampLibraryItemScale(scale: number): number {
+  if (!Number.isFinite(scale)) {
+    return LAYOUT.LIBRARY_ITEM_SCALE_DEFAULT;
+  }
+  return Math.min(
+    LAYOUT.LIBRARY_ITEM_SCALE_MAX,
+    Math.max(LAYOUT.LIBRARY_ITEM_SCALE_MIN, scale)
+  );
+}
+
+function loadLibraryItemScale(): number {
+  try {
+    const rawValue = localStorage.getItem(STORAGE.LIBRARY_ITEM_SCALE_KEY);
+    if (rawValue === null) {
+      return LAYOUT.LIBRARY_ITEM_SCALE_DEFAULT;
+    }
+    const stored = Number(rawValue);
+    return clampLibraryItemScale(stored);
+  } catch {
+    return LAYOUT.LIBRARY_ITEM_SCALE_DEFAULT;
+  }
+}
+
+function getNearestLibrarySidebarItemSize(width: number): number {
+  const sizeEntries = Object.entries(LAYOUT.LIBRARY_SIDEBAR_ITEM_MIN_WIDTH_BY_SIZE).map(
+    ([size, minWidth]) => [Number(size), minWidth] as const
+  );
+  return sizeEntries.reduce<number>((nearestSize, [size, minWidth]) => {
+    const nearestWidth = LAYOUT.LIBRARY_SIDEBAR_ITEM_MIN_WIDTH_BY_SIZE[
+      nearestSize as keyof typeof LAYOUT.LIBRARY_SIDEBAR_ITEM_MIN_WIDTH_BY_SIZE
+    ];
+    return Math.abs(width - minWidth) < Math.abs(width - nearestWidth) ? size : nearestSize;
+  }, LAYOUT.LIBRARY_SIDEBAR_ITEM_SIZE_DEFAULT);
+}
+
+function clampLibrarySidebarItemSize(size: number): number {
+  if (!Number.isFinite(size)) {
+    return LAYOUT.LIBRARY_SIDEBAR_ITEM_SIZE_DEFAULT;
+  }
+  return Math.min(
+    LAYOUT.LIBRARY_SIDEBAR_ITEM_SIZE_MAX,
+    Math.max(LAYOUT.LIBRARY_SIDEBAR_ITEM_SIZE_MIN, Math.round(size))
+  );
+}
+
+function loadLibrarySidebarItemSize(): number {
+  try {
+    const rawValue = localStorage.getItem(STORAGE.LIBRARY_SIDEBAR_ITEM_SIZE_KEY);
+    if (rawValue !== null) {
+      return clampLibrarySidebarItemSize(Number(rawValue));
+    }
+
+    const legacyWidth = localStorage.getItem(STORAGE.LIBRARY_SIDEBAR_CARD_MAX_KEY);
+    if (legacyWidth !== null) {
+      return clampLibrarySidebarItemSize(getNearestLibrarySidebarItemSize(Number(legacyWidth)));
+    }
+  } catch {
+    return LAYOUT.LIBRARY_SIDEBAR_ITEM_SIZE_DEFAULT;
+  }
+  return LAYOUT.LIBRARY_SIDEBAR_ITEM_SIZE_DEFAULT;
+}
+
 interface CaptureState {
   // Library state
   captures: CaptureListItem[];
@@ -138,6 +200,8 @@ interface CaptureState {
   filterFavorites: boolean;
   filterTags: string[];
   filterMediaTypes: string[];
+  libraryItemScale: number;
+  librarySidebarItemSize: number;
 
   // View state
   view: 'library' | 'editor' | 'videoEditor';
@@ -176,6 +240,8 @@ interface CaptureState {
   setFilterFavorites: (value: boolean) => void;
   setFilterTags: (tags: string[]) => void;
   setFilterMediaTypes: (types: string[]) => void;
+  setLibraryItemScale: (scale: number) => void;
+  setLibrarySidebarItemSize: (size: number) => void;
   setSkipStagger: (value: boolean) => void;
   clearCurrentProject: () => void;
   setHasUnsavedChanges: (value: boolean) => void;
@@ -271,6 +337,8 @@ export const useCaptureStore = create<CaptureState>()(
       return stored ? JSON.parse(stored) : [];
     } catch { return []; }
   })(),
+  libraryItemScale: loadLibraryItemScale(),
+  librarySidebarItemSize: loadLibrarySidebarItemSize(),
   view: 'library',
 
   loadCaptures: async () => {
@@ -659,6 +727,16 @@ export const useCaptureStore = create<CaptureState>()(
   setFilterFavorites: (value: boolean) => set({ filterFavorites: value }),
   setFilterTags: (tags: string[]) => set({ filterTags: tags }),
   setFilterMediaTypes: (types: string[]) => { localStorage.setItem('library:filterMediaTypes', JSON.stringify(types)); set({ filterMediaTypes: types }); },
+  setLibraryItemScale: (scale: number) => {
+    const clampedScale = clampLibraryItemScale(scale);
+    localStorage.setItem(STORAGE.LIBRARY_ITEM_SCALE_KEY, String(clampedScale));
+    set({ libraryItemScale: clampedScale }, false, 'setLibraryItemScale');
+  },
+  setLibrarySidebarItemSize: (size: number) => {
+    const clampedSize = clampLibrarySidebarItemSize(size);
+    localStorage.setItem(STORAGE.LIBRARY_SIDEBAR_ITEM_SIZE_KEY, String(clampedSize));
+    set({ librarySidebarItemSize: clampedSize }, false, 'setLibrarySidebarItemSize');
+  },
   setSkipStagger: (value: boolean) => set({ skipStagger: value }),
   clearCurrentProject: () => {
     clearEditorSession();

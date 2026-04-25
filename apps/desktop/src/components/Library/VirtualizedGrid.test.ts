@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { getColumnsForWidth, getCardWidth, calculateRowHeight, getGridWidth } from './VirtualizedGrid';
+import {
+  calculateRowHeight,
+  getCardWidth,
+  getColumnsForWidth,
+  getGridWidth,
+  getScaledCardTargetWidth,
+} from './VirtualizedGrid';
 
 describe('VirtualizedGrid', () => {
   describe('getColumnsForWidth', () => {
@@ -20,6 +26,28 @@ describe('VirtualizedGrid', () => {
       expect(getColumnsForWidth(1000)).toBe(3);
       expect(getColumnsForWidth(1199)).toBe(3);
     });
+
+    it('fills sidebar columns based on the minimum square tile width', () => {
+      expect(getColumnsForWidth(320, 'sidebar', 1, 1)).toBe(2);
+      expect(getColumnsForWidth(500, 'sidebar', 1, 1)).toBe(3);
+      expect(getColumnsForWidth(1600, 'sidebar', 1, 1)).toBe(8);
+    });
+
+    it('allows Ctrl-scroll scale to increase or decrease full-grid columns', () => {
+      expect(getColumnsForWidth(1200, 'full', 0.8)).toBe(5);
+      expect(getColumnsForWidth(1200, 'full', 1.35)).toBe(3);
+    });
+
+    it('uses item-size levels to tune sidebar density', () => {
+      expect(getColumnsForWidth(640, 'sidebar', 1, 5)).toBe(1);
+      expect(getColumnsForWidth(660, 'sidebar', 1, 1)).toBe(4);
+    });
+
+    it('never adds sidebar columns that would violate the minimum card width', () => {
+      expect(getColumnsForWidth(384, 'sidebar', 1, 1)).toBe(2);
+      expect(getColumnsForWidth(500, 'sidebar', 1, 1)).toBe(3);
+      expect(getColumnsForWidth(660, 'sidebar', 1, 1)).toBe(4);
+    });
   });
 
   describe('getCardWidth', () => {
@@ -38,19 +66,38 @@ describe('VirtualizedGrid', () => {
       // At 800px with 3 cols: (800 - 64 - 40) / 3 = 232px
       expect(getCardWidth(800, 3)).toBe(232);
     });
+
+    it('caps sidebar card width', () => {
+      expect(getCardWidth(240, 1, 'sidebar')).toBe(216);
+      expect(getCardWidth(500, 1, 'sidebar')).toBe(476);
+    });
+
+    it('uses the selected sidebar item size to choose columns before filling', () => {
+      expect(getCardWidth(500, 3, 'sidebar', 1, 1)).toBe(150);
+      expect(getCardWidth(500, 1, 'sidebar', 1, 5)).toBe(476);
+    });
+
+    it('splits sidebar width across scaled columns', () => {
+      expect(getCardWidth(500, 3, 'sidebar', 0.8, 1)).toBe(150);
+    });
   });
 
   describe('calculateRowHeight', () => {
-    it('calculates row height based on card width (16:9 + footer + gap)', () => {
-      // Card width 269px -> thumbnail 151px + footer 80px + gap 20px = 251px
+    it('calculates row height based on a square card plus gap', () => {
+      // Card width 269px + gap 20px = 289px
       const height = calculateRowHeight(1200, 4);
-      expect(height).toBe(251);
+      expect(height).toBe(289);
     });
 
     it('has consistent height when cards are at max width', () => {
-      // Card width 320px -> thumbnail 180px + footer 80px + gap 20px = 280px
-      expect(calculateRowHeight(2560, 5)).toBe(280);
-      expect(calculateRowHeight(3000, 5)).toBe(280);
+      // Card width 320px + gap 20px = 340px
+      expect(calculateRowHeight(2560, 5)).toBe(340);
+      expect(calculateRowHeight(3000, 5)).toBe(340);
+    });
+
+    it('calculates compact sidebar row height', () => {
+      // Sidebar card width 216px + gap 12px = 228px
+      expect(calculateRowHeight(240, 1, 'sidebar')).toBe(228);
     });
   });
 
@@ -74,6 +121,18 @@ describe('VirtualizedGrid', () => {
       const gridWidth = getGridWidth(containerWidth, cols);
       const availableWidth = containerWidth - 64; // CONTAINER_PADDING
       expect(gridWidth).toBeLessThan(availableWidth);
+    });
+
+    it('matches compact sidebar card width for one-column mode', () => {
+      expect(getGridWidth(240, 1, 'sidebar')).toBe(216);
+    });
+  });
+
+  describe('getScaledCardTargetWidth', () => {
+    it('clamps scaled target widths to the supported range', () => {
+      expect(getScaledCardTargetWidth(0.25)).toBe(200);
+      expect(getScaledCardTargetWidth(1)).toBe(240);
+      expect(getScaledCardTargetWidth(2)).toBe(360);
     });
   });
 });

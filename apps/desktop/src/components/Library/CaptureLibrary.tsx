@@ -22,11 +22,14 @@ import { DropZoneOverlay } from './components/DropZoneOverlay';
 import { CaptureCard } from './components/CaptureCard';
 import { GlassBlobToolbar } from './components/GlassBlobToolbar';
 import { DeleteDialog } from './components/DeleteDialog';
-import { VirtualizedGrid, getColumnsForWidth, calculateRowHeight, getCardWidth, getGridWidth } from './VirtualizedGrid';
+import { VirtualizedGrid, getColumnsForWidth, calculateRowHeight, getCardWidth, getGridGap, getGridWidth } from './VirtualizedGrid';
 
 // VirtualizedGrid positioning offsets (from `top: virtualRow.start + 32` and `px-8`)
 const CONTENT_OFFSET_Y = 32; // vertical offset from inline positioning style
 const CONTENT_OFFSET_X = 32; // horizontal padding (px-8) on virtual items
+const SIDEBAR_CONTENT_OFFSET = 0;
+const FULL_VIRTUALIZATION_THRESHOLD = 100;
+const SIDEBAR_VIRTUALIZATION_THRESHOLD = 40;
 
 interface CaptureLibraryProps {
   variant?: 'full' | 'sidebar';
@@ -107,6 +110,10 @@ export const CaptureLibrary: React.FC<CaptureLibraryProps> = ({
     setFilterTags,
     filterMediaTypes,
     setFilterMediaTypes,
+    libraryItemScale,
+    setLibraryItemScale,
+    librarySidebarItemSize,
+    setLibrarySidebarItemSize,
   } = useCaptureStore();
 
   const { settings } = useSettingsStore();
@@ -125,14 +132,17 @@ export const CaptureLibrary: React.FC<CaptureLibraryProps> = ({
   const containerRef = useRef<HTMLDivElement>(null);
   const [containerWidth, setContainerWidth] = useState(0);
 
-  // Use virtualization for large full-window libraries. Sidebar mode needs a
-  // single-column compact layout instead of the full grid's 3+ column math.
-  const useVirtualization = variant === 'full' && captures.length > 100;
+  // Use virtualization for large libraries. Sidebar mode uses the same
+  // renderer in a compact one-column layout so expand/collapse doesn't remount
+  // a long list of capture cards.
+  const virtualizationThreshold =
+    variant === 'sidebar' ? SIDEBAR_VIRTUALIZATION_THRESHOLD : FULL_VIRTUALIZATION_THRESHOLD;
+  const useVirtualization = captures.length > virtualizationThreshold;
 
-  // Track container width for virtual layout calculations (debounced for performance)
+  // Track container width for grid and virtual layout calculations (debounced for performance)
   useEffect(() => {
     const container = containerRef.current;
-    if (!container || !useVirtualization) return;
+    if (!container || captures.length === 0) return;
 
     let debounceTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -149,40 +159,60 @@ export const CaptureLibrary: React.FC<CaptureLibraryProps> = ({
       resizeObserver.disconnect();
       if (debounceTimer) clearTimeout(debounceTimer);
     };
-  }, [useVirtualization]);
+  }, [captures.length, useVirtualization]);
 
   // Compute date groups
   const dateGroups = useMemo(() => groupCapturesByDate(captures), [captures]);
 
   // Compute virtual layout info for marquee selection
+  const activeSidebarItemSize = variant === 'sidebar' ? librarySidebarItemSize : undefined;
+
   const virtualLayout = useMemo<VirtualLayoutInfo | undefined>(() => {
     if (!useVirtualization || containerWidth === 0) return undefined;
 
     // Use the same breakpoint-based column calculation as VirtualizedGrid
-    const cardsPerRow = getColumnsForWidth(containerWidth);
+    const cardsPerRow = getColumnsForWidth(containerWidth, variant, libraryItemScale, activeSidebarItemSize);
 
     // Use the same card width calculation as VirtualizedGrid (capped at MAX_CARD_WIDTH)
-    const cardWidth = getCardWidth(containerWidth, cardsPerRow);
+    const cardWidth = getCardWidth(
+      containerWidth,
+      cardsPerRow,
+      variant,
+      libraryItemScale,
+      activeSidebarItemSize
+    );
 
     // Use dynamic row height calculation matching VirtualizedGrid
-    const gridRowHeight = calculateRowHeight(containerWidth, cardsPerRow);
+    const gridRowHeight = calculateRowHeight(
+      containerWidth,
+      cardsPerRow,
+      variant,
+      libraryItemScale,
+      activeSidebarItemSize
+    );
 
     // Calculate grid width for centering calculations
-    const gridWidth = getGridWidth(containerWidth, cardsPerRow);
+    const gridWidth = getGridWidth(
+      containerWidth,
+      cardsPerRow,
+      variant,
+      libraryItemScale,
+      activeSidebarItemSize
+    );
 
     return {
       cardsPerRow,
       gridRowHeight,
       cardWidth,
       headerHeight: LAYOUT.HEADER_HEIGHT,
-      gridGap: LAYOUT.GRID_GAP,
-      contentOffsetY: CONTENT_OFFSET_Y,
-      contentOffsetX: CONTENT_OFFSET_X,
+      gridGap: getGridGap(variant),
+      contentOffsetY: variant === 'sidebar' ? SIDEBAR_CONTENT_OFFSET : CONTENT_OFFSET_Y,
+      contentOffsetX: variant === 'sidebar' ? SIDEBAR_CONTENT_OFFSET : CONTENT_OFFSET_X,
       gridWidth,
-      containerWidth,
+      containerWidth: variant === 'sidebar' ? gridWidth : containerWidth,
       dateGroups,
     };
-  }, [useVirtualization, containerWidth, dateGroups]);
+  }, [useVirtualization, containerWidth, dateGroups, libraryItemScale, activeSidebarItemSize, variant]);
 
   // Delete confirmation state - consolidated into single object
   type DeleteDialogState = { type: 'single'; id: string } | { type: 'bulk' } | null;
@@ -439,12 +469,108 @@ export const CaptureLibrary: React.FC<CaptureLibraryProps> = ({
     }
   };
 
+  const handleLibraryWheel = useCallback(
+    (event: WheelEvent) => {
+      if (!event.ctrlKey) {
+        return;
+      }
+
+      event.preventDefault();
+      event.stopPropagation();
+
+      const direction = Math.sign(event.deltaY);
+      if (direction === 0) {
+        return;
+      }
+
+      if (variant === 'sidebar') {
+        setLibrarySidebarItemSize(
+          librarySidebarItemSize - direction * LAYOUT.LIBRARY_SIDEBAR_ITEM_SIZE_STEP
+        );
+        return;
+      }
+
+      const nextScale = Number((libraryItemScale - direction * LAYOUT.LIBRARY_ITEM_SCALE_STEP).toFixed(2));
+      setLibraryItemScale(nextScale);
+    },
+    [libraryItemScale, librarySidebarItemSize, setLibraryItemScale, setLibrarySidebarItemSize, variant]
+  );
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) {
+      return;
+    }
+
+    container.addEventListener('wheel', handleLibraryWheel, {
+      capture: true,
+      passive: false,
+    });
+
+    return () => {
+      container.removeEventListener('wheel', handleLibraryWheel, { capture: true });
+    };
+  }, [handleLibraryWheel, useVirtualization]);
+
+  const gridLayout = useMemo(() => {
+    const width = containerWidth || 1200;
+    const columns = getColumnsForWidth(width, variant, libraryItemScale, activeSidebarItemSize);
+    const gap = getGridGap(variant);
+    const cardWidth = getCardWidth(width, columns, variant, libraryItemScale, activeSidebarItemSize);
+
+    return {
+      gap,
+      maxWidth: getGridWidth(width, columns, variant, libraryItemScale, activeSidebarItemSize),
+      gridTemplateColumns: `repeat(${columns}, minmax(0, ${cardWidth}px))`,
+      justifyContent: variant === 'sidebar' ? 'start' : 'center',
+    };
+  }, [activeSidebarItemSize, containerWidth, libraryItemScale, variant]);
+
+  const showColumnControl = variant === 'sidebar' && captures.length > 0;
+
+  const renderColumnControl = () => (
+    <div className="library-density-control" aria-label="Library card size">
+      <input
+        className="library-density-control__slider"
+        type="range"
+        min={LAYOUT.LIBRARY_SIDEBAR_ITEM_SIZE_MIN}
+        max={LAYOUT.LIBRARY_SIDEBAR_ITEM_SIZE_MAX}
+        step={LAYOUT.LIBRARY_SIDEBAR_ITEM_SIZE_STEP}
+        value={librarySidebarItemSize}
+        onChange={(event) => setLibrarySidebarItemSize(Number(event.target.value))}
+        aria-label="Media item size"
+      />
+      <div className="library-density-control__steps" aria-hidden="true">
+        {[
+          LAYOUT.LIBRARY_SIDEBAR_ITEM_SIZE_MIN,
+          LAYOUT.LIBRARY_SIDEBAR_ITEM_SIZE_DEFAULT,
+          LAYOUT.LIBRARY_SIDEBAR_ITEM_SIZE_MAX,
+        ].map((itemSize) => (
+          <span
+            key={itemSize}
+            className={itemSize === librarySidebarItemSize ? 'library-density-control__step--active' : ''}
+          />
+        ))}
+      </div>
+    </div>
+  );
+
   const renderCaptureGrid = () => (
     <div className="space-y-0">
       {dateGroups.map((group, groupIndex) => (
         <div key={group.label}>
           <DateHeader label={group.label} count={group.captures.length} isFirst={groupIndex === 0} />
-          <div className="capture-grid">
+          <div
+            className="capture-grid"
+            style={{
+              gap: gridLayout.gap,
+              gridTemplateColumns: gridLayout.gridTemplateColumns,
+              maxWidth: gridLayout.maxWidth,
+              justifyContent: gridLayout.justifyContent,
+              marginLeft: variant === 'sidebar' ? 0 : 'auto',
+              marginRight: variant === 'sidebar' ? 0 : 'auto',
+            }}
+          >
             {group.captures.map((capture) => (
               <CaptureCard
                 key={capture.id}
@@ -477,6 +603,7 @@ export const CaptureLibrary: React.FC<CaptureLibraryProps> = ({
       <div className={`library-panel library-panel--${variant} flex flex-col h-full relative`}>
         {/* Drop Zone Overlay */}
         {isDragOver && <DropZoneOverlay />}
+        {showColumnControl && renderColumnControl()}
 
         {/* Content - use virtualization for large libraries, regular rendering for small ones */}
         {loading || !initialized ? (
@@ -503,6 +630,9 @@ export const CaptureLibrary: React.FC<CaptureLibraryProps> = ({
         ) : useVirtualization ? (
           /* Virtualized rendering for large libraries (100+ captures) */
           <VirtualizedGrid
+            variant={variant}
+            itemScale={libraryItemScale}
+            sidebarItemSize={activeSidebarItemSize}
             dateGroups={dateGroups}
             selectedIds={selectedIds}
             loadingProjectId={loadingProjectId}

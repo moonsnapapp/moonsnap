@@ -99,7 +99,7 @@ export function useMarqueeSelection({
 
       // Calculate horizontal offset from centering (grid is centered within container)
       // Container has px-8 (32px) padding on each side, so available width is containerWidth - 64
-      const availableWidth = containerWidth - 64; // CONTAINER_PADDING from VirtualizedGrid
+      const availableWidth = containerWidth - contentOffsetX * 2;
       const centeringOffset = Math.max(0, (availableWidth - gridWidth) / 2);
       const gridStartX = contentOffsetX + centeringOffset;
 
@@ -115,8 +115,7 @@ export function useMarqueeSelection({
         if (captureIndex !== -1) {
           const row = Math.floor(captureIndex / cardsPerRow);
           const col = captureIndex % cardsPerRow;
-          const GRID_ROW_SPACING = 24; // ROW_SPACING constant from VirtualizedGrid
-          const cardHeight = gridRowHeight - GRID_ROW_SPACING;
+          const cardHeight = gridRowHeight - gridGap;
 
           return {
             left: gridStartX + col * (cardWidth + gridGap),
