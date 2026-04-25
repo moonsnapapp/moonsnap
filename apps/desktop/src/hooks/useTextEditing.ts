@@ -33,6 +33,8 @@ interface TextareaPosition {
   verticalAlign: string;
   color: string;
   textBackground: string;
+  textBoxStroke: string;
+  textBoxStrokeWidth: number;
 }
 
 interface UseTextEditingReturn {
@@ -237,6 +239,8 @@ export const useTextEditing = ({
       verticalAlign: normalizeEditorTextVerticalAlign(shape.verticalAlign),
       color: shape.fill || EDITOR_TEXT.DEFAULT_COLOR,
       textBackground: shape.textBackground || 'transparent',
+      textBoxStroke: shape.textBoxStroke || 'transparent',
+      textBoxStrokeWidth: shape.textBoxStrokeWidth || 0,
     };
   }, [editingTextId, liveStageTransform, shapes, position, zoom, containerRef, stageRef]);
 

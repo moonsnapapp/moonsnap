@@ -204,6 +204,8 @@ export interface CanvasShape {
   blurAmount?: number;
   imageSrc?: string; // base64 data URL for pasted images
   textBackground?: string; // Background color for text shapes
+  textBoxStroke?: string; // Border color for the text box background
+  textBoxStrokeWidth?: number; // Border width for the text box background
   isBackground?: boolean; // true for the original screenshot background shape
   rotation?: number;
   scaleX?: number;

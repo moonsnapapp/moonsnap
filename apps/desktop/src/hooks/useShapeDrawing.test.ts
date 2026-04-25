@@ -397,7 +397,7 @@ describe('useShapeDrawing', () => {
       expect(result.current.isDrawing).toBe(false);
     });
 
-    it('should switch to select tool after completing a shape (non-retaining tools)', () => {
+    it('should keep the active tool after completing a shape', () => {
       const props = createMockProps({ selectedTool: 'rect' });
       const { result } = renderHook(() => useShapeDrawing(props));
 
@@ -417,30 +417,6 @@ describe('useShapeDrawing', () => {
         result.current.handleDrawingMouseUp();
       });
 
-      expect(props.onToolChange).toHaveBeenCalledWith('select');
-    });
-
-    it('should NOT switch tool for pen (retaining tool)', () => {
-      const props = createMockProps({ selectedTool: 'pen' });
-      const { result } = renderHook(() => useShapeDrawing(props));
-
-      // Start drawing
-      const event = createMockKonvaEvent(props.stageRef);
-      act(() => {
-        result.current.handleDrawingMouseDown(event);
-      });
-
-      // Move to create shape
-      act(() => {
-        result.current.handleDrawingMouseMove({ x: 150, y: 150 });
-      });
-
-      // End drawing
-      act(() => {
-        result.current.handleDrawingMouseUp();
-      });
-
-      // Pen retains mode
       expect(props.onToolChange).not.toHaveBeenCalled();
     });
 
@@ -725,7 +701,7 @@ describe('useShapeDrawing', () => {
       expect(textShape.wrap).toBe(EDITOR_TEXT.DEFAULT_WRAP);
       expect(textShape.lineHeight).toBe(EDITOR_TEXT.DEFAULT_LINE_HEIGHT);
       expect(textShape.fill).toBe('#112233');
-      expect(props.onToolChange).toHaveBeenCalledWith('select');
+      expect(props.onToolChange).not.toHaveBeenCalled();
     });
 
     it('should enforce minimum text width and drag height while drawing', () => {

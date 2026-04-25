@@ -19,6 +19,8 @@ describe('TextEditorOverlay', () => {
           verticalAlign: 'top',
           color: '#111111',
           textBackground: '#ffffff',
+          textBoxStroke: 'transparent',
+          textBoxStrokeWidth: 0,
         }}
         value=""
         onChange={vi.fn()}

@@ -13,12 +13,8 @@ import type { EditorHistoryActions } from './useEditorHistory';
 const MIN_SHAPE_SIZE = 5;
 const TEXT_DRAG_EPSILON = 0.01;
 
-// Tools that stay in draw mode after completing a shape
-const TOOLS_RETAIN_MODE: Set<Tool> = new Set(['pen', 'steps']);
-
 interface UseShapeDrawingProps {
   selectedTool: Tool;
-  onToolChange: (tool: Tool) => void;
   strokeColor: string;
   fillColor: string;
   strokeWidth: number;
@@ -51,7 +47,6 @@ interface UseShapeDrawingReturn {
  */
 export const useShapeDrawing = ({
   selectedTool,
-  onToolChange,
   strokeColor,
   fillColor,
   strokeWidth,
@@ -524,7 +519,6 @@ export const useShapeDrawing = ({
         });
         recordAction(() => onShapesChange([...shapesBeforeDrawRef.current, newShape]));
         setSelectedIds([id]);
-        onToolChange('select');
         if (onTextShapeCreated) {
           onTextShapeCreated(id);
         }
@@ -549,10 +543,6 @@ export const useShapeDrawing = ({
       }
       onShapesChange([...shapesBeforeDrawRef.current, finalShape]);
       commitSnapshot();
-      // Switch to select mode unless tool retains mode
-      if (!TOOLS_RETAIN_MODE.has(selectedTool)) {
-        onToolChange('select');
-      }
       // If text shape was created, trigger editor to open immediately
       if (finalShape.type === 'text' && onTextShapeCreated) {
         setSelectedIds([finalShape.id]);
@@ -567,7 +557,7 @@ export const useShapeDrawing = ({
     textDragMovedRef.current = false;
     setIsDrawing(false);
     shapeSpawnedRef.current = false;
-  }, [selectedTool, onToolChange, onShapesChange, onTextShapeCreated, fontSize, strokeColor, setSelectedIds, recordAction, commitSnapshot, setIsDrawing]);
+  }, [selectedTool, onShapesChange, onTextShapeCreated, fontSize, strokeColor, setSelectedIds, recordAction, commitSnapshot, setIsDrawing]);
 
   // Force-finalize any in-progress drawing and return the current shapes
   // This ensures no shapes are lost when exiting edit mode

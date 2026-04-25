@@ -76,6 +76,11 @@ export function useCanvasEventHandlers({
 }: UseCanvasEventHandlersProps): UseCanvasEventHandlersReturn {
   const preTextDragHideRef = useRef(false);
   const manualTextDragRef = useRef<ManualTextDragState | null>(null);
+  const {
+    commitManualDragDelta,
+    handleShapeDragStart: transformHandleShapeDragStart,
+    handleShapeDragEnd: transformHandleShapeDragEnd,
+  } = transform;
 
   const updateManualTextDrag = useCallback((pointer: { x: number; y: number }): boolean => {
     const manualTextDrag = manualTextDragRef.current;
@@ -111,12 +116,18 @@ export function useCanvasEventHandlers({
     }
 
     return true;
-  }, [transformerRef]);
+  }, [isShapeDraggingRef, transformerRef]);
 
   const handleMouseDown = useCallback(
     (e: Konva.KonvaEventObject<MouseEvent>) => {
       // Ignore if middle mouse button
       if (e.evt.button === 1) return;
+
+      // While inline text editing is active, the next canvas click should only
+      // finish editing. Persistent tools can place a new shape on the next click.
+      if (textEditing.editingTextId) {
+        return;
+      }
 
       // Handle drawing tools
       if (drawing.handleDrawingMouseDown(e)) {
@@ -133,12 +144,6 @@ export function useCanvasEventHandlers({
 
         if (clickedOnStage) {
           setSelectedIds([]);
-
-          // While editing text, empty-click should only close editor/deselect.
-          // Skip marquee setup to avoid unnecessary shape intersection work.
-          if (textEditing.editingTextId) {
-            return;
-          }
 
           const stage = stageRef.current;
           if (stage) {
@@ -247,7 +252,7 @@ export function useCanvasEventHandlers({
       const dx = manualTextDrag.node.x() - manualTextDrag.startPosition.x;
       const dy = manualTextDrag.node.y() - manualTextDrag.startPosition.y;
       if (wasDragging && (Math.abs(dx) > TEXT_MANUAL_DRAG_EPSILON || Math.abs(dy) > TEXT_MANUAL_DRAG_EPSILON)) {
-        transform.commitManualDragDelta(manualTextDrag.shapeId, dx, dy);
+        commitManualDragDelta(manualTextDrag.shapeId, dx, dy);
       }
 
       if (wasDragging) {
@@ -276,7 +281,7 @@ export function useCanvasEventHandlers({
         tr.visible(true);
       }
     }
-  }, [transform.commitManualDragDelta, drawing, marquee, reattachTransformerToSelection, transformerRef]);
+  }, [commitManualDragDelta, drawing, marquee, reattachTransformerToSelection, transformerRef, isShapeDraggingRef]);
 
   useEffect(() => {
     const handleWindowMouseMove = (evt: MouseEvent) => {
@@ -317,11 +322,11 @@ export function useCanvasEventHandlers({
         tr.visible(false);
       }
     }
-    transform.handleShapeDragStart(id, e);
-  }, [transform.handleShapeDragStart, transformerRef]);
+    transformHandleShapeDragStart(id, e);
+  }, [transformHandleShapeDragStart, transformerRef, isShapeDraggingRef]);
 
   const handleShapeDragEnd = useCallback((id: string, e: Konva.KonvaEventObject<DragEvent>) => {
-    transform.handleShapeDragEnd(id, e);
+    transformHandleShapeDragEnd(id, e);
     isShapeDraggingRef.current = false;
     requestAnimationFrame(() => {
       const tr = transformerRef.current;
@@ -330,7 +335,7 @@ export function useCanvasEventHandlers({
       }
       reattachTransformerToSelection();
     });
-  }, [transform.handleShapeDragEnd, reattachTransformerToSelection, transformerRef]);
+  }, [transformHandleShapeDragEnd, reattachTransformerToSelection, transformerRef, isShapeDraggingRef]);
 
   return {
     handleMouseDown,

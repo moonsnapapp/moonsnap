@@ -1482,9 +1482,7 @@ body.resizing * {
 }
 
 .capture-card:hover .card-footer,
-.capture-card[data-state="open"] .card-footer,
-.capture-card.selected .card-footer,
-.capture-card .card-footer:focus-within {
+.capture-card[data-state="open"] .card-footer {
   opacity: 1;
 }
 

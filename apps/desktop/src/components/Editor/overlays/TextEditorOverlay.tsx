@@ -21,6 +21,8 @@ interface TextEditorOverlayProps {
     verticalAlign: string;
     color: string;
     textBackground: string;
+    textBoxStroke: string;
+    textBoxStrokeWidth: number;
   } | null;
   value: string;
   onChange: (value: string) => void;
@@ -137,6 +139,7 @@ export const TextEditorOverlay: React.FC<TextEditorOverlayProps> = React.memo(({
 
   const isBold = isEditorTextStyleBold(position.fontStyle);
   const isItalic = isEditorTextStyleItalic(position.fontStyle);
+  const hasTextBoxOutline = position.textBoxStroke !== 'transparent' && position.textBoxStrokeWidth > 0;
 
   return (
     <div
@@ -171,11 +174,13 @@ export const TextEditorOverlay: React.FC<TextEditorOverlayProps> = React.memo(({
         display: 'flex',
         flexDirection: 'column',
         justifyContent: getEditorTextVerticalAlignJustifyContent(position.verticalAlign),
-        border: '1px dashed #3B82F6',
+        border: hasTextBoxOutline
+          ? `${position.textBoxStrokeWidth}px solid ${position.textBoxStroke}`
+          : '1px dashed #3B82F6',
         outline: 'none',
         boxShadow: 'none',
         background: position.textBackground && position.textBackground !== 'transparent' ? position.textBackground : 'transparent',
-        borderRadius: position.textBackground && position.textBackground !== 'transparent' ? '4px' : undefined,
+        borderRadius: (position.textBackground && position.textBackground !== 'transparent') || hasTextBoxOutline ? '4px' : undefined,
         caretColor: position.color,
       }}
     />

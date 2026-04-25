@@ -325,7 +325,6 @@ export const EditorCanvas = React.memo(forwardRef<EditorCanvasRef, EditorCanvasP
   // Shape drawing hook
   const drawing = useShapeDrawing({
     selectedTool,
-    onToolChange,
     strokeColor,
     fillColor,
     strokeWidth,

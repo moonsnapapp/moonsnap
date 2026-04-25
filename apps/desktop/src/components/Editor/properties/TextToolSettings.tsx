@@ -106,6 +106,8 @@ export const TextToolSettings: React.FC<TextToolSettingsProps> = ({
   const currentTextStrokeWidth = textShape?.strokeWidth || 0;
   const currentVerticalAlign = normalizeEditorTextVerticalAlign(textShape?.verticalAlign);
   const currentTextBackground = textShape?.textBackground || 'transparent';
+  const currentTextBoxStroke = textShape?.textBoxStroke || 'transparent';
+  const currentTextBoxStrokeWidth = textShape?.textBoxStrokeWidth || 0;
 
   const isBold = isEditorTextStyleBold(currentFontStyle);
   const isItalic = isEditorTextStyleItalic(currentFontStyle);
@@ -337,6 +339,39 @@ export const TextToolSettings: React.FC<TextToolSettingsProps> = ({
           }}
           presets={COLOR_PRESETS}
           showTransparent
+        />
+      </div>
+
+      {/* Text Box Outline */}
+      <div className="space-y-3">
+        <Label className="text-xs text-[var(--ink-muted)] uppercase tracking-wide font-medium">Box Outline</Label>
+        <ColorPicker
+          value={currentTextBoxStroke === 'transparent' ? '#000000' : currentTextBoxStroke}
+          onChange={(color) => {
+            if (textShape) {
+              recordAction(() => updateShape(textShape.id, { textBoxStroke: color }));
+            }
+          }}
+          presets={COLOR_PRESETS}
+          showTransparent
+        />
+      </div>
+      <div className="space-y-3">
+        <div className="flex items-center justify-between">
+          <Label className="text-xs text-[var(--ink-muted)] uppercase tracking-wide font-medium">Outline Width</Label>
+          <span className="text-xs text-[var(--ink-dark)] font-mono">{currentTextBoxStrokeWidth}px</span>
+        </div>
+        <Slider
+          value={[currentTextBoxStrokeWidth]}
+          onValueChange={([value]) => {
+            if (textShape) {
+              updateShape(textShape.id, { textBoxStrokeWidth: value });
+            }
+          }}
+          min={0}
+          max={8}
+          step={1}
+          className={`w-full ${!textShape ? 'opacity-50 pointer-events-none' : ''}`}
         />
       </div>
 

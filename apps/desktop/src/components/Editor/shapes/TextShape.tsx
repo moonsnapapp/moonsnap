@@ -59,6 +59,10 @@ export const TextShape: React.FC<TextShapeProps> = React.memo(({
   const showPlaceholder = !hasText && !isEditing && !isActivelyDrawing;
   const displayText = hasText ? (shape.text as string) : (showPlaceholder ? 'Double-click to edit' : '');
   const textOpacity = hasText ? 1 : 0.4;
+  const textBoxStroke = shape.textBoxStroke || 'transparent';
+  const textBoxStrokeWidth = shape.textBoxStrokeWidth || 0;
+  const hasTextBackground = Boolean(shape.textBackground && shape.textBackground !== 'transparent');
+  const hasTextBoxOutline = textBoxStroke !== 'transparent' && textBoxStrokeWidth > 0;
 
   // Memoize zoom-dependent values to avoid new references every render
   const borderStrokeWidth = 1 / zoom;
@@ -107,14 +111,16 @@ export const TextShape: React.FC<TextShapeProps> = React.memo(({
 
       {/* Text background fill — hidden while the HTML overlay is active to
            avoid sub-pixel misalignment between canvas and CSS positioning */}
-      {shape.textBackground && shape.textBackground !== 'transparent' && (
+      {(hasTextBackground || hasTextBoxOutline) && (
         <Rect
           name="text-background"
           x={0}
           y={0}
           width={width}
           height={height}
-          fill={shape.textBackground}
+          fill={hasTextBackground ? shape.textBackground : 'transparent'}
+          stroke={textBoxStroke}
+          strokeWidth={textBoxStrokeWidth}
           cornerRadius={4}
           visible={!isEditing}
           listening={false}
