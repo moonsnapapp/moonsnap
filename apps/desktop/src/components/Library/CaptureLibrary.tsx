@@ -9,6 +9,8 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 import { useCaptureStore, useFilteredCaptures, useAllTags } from '../../stores/captureStore';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { useCaptureSettingsStore } from '../../stores/captureSettingsStore';
+import { useVideoEditorStore } from '../../stores/videoEditorStore';
+import { selectProject as selectVideoProject } from '../../stores/videoEditor/selectors';
 import { CaptureService } from '../../services/captureService';
 import type { CaptureListItem } from '../../types';
 import { LAYOUT, TIMING } from '../../constants';
@@ -30,6 +32,14 @@ const CONTENT_OFFSET_X = 32; // horizontal padding (px-8) on virtual items
 const SIDEBAR_CONTENT_OFFSET = 0;
 const FULL_VIRTUALIZATION_THRESHOLD = 100;
 const SIDEBAR_VIRTUALIZATION_THRESHOLD = 40;
+
+function normalizeMediaPath(path: string | null | undefined): string {
+  return (path ?? '').replace(/\\/g, '/').toLowerCase();
+}
+
+function isEditableMediaCapture(capture: CaptureListItem): boolean {
+  return capture.capture_type !== 'gif' && !capture.is_missing && !capture.damaged;
+}
 
 interface CaptureLibraryProps {
   variant?: 'full' | 'sidebar';
@@ -100,6 +110,11 @@ export const CaptureLibrary: React.FC<CaptureLibraryProps> = ({
     loadCaptures,
     deleteCapture,
     deleteCaptures,
+    currentProject,
+    view,
+    setCurrentProject,
+    setCurrentImageData,
+    setView,
     toggleFavorite,
     updateTags,
     searchQuery,
@@ -117,11 +132,27 @@ export const CaptureLibrary: React.FC<CaptureLibraryProps> = ({
   } = useCaptureStore();
 
   const { settings } = useSettingsStore();
+  const videoProject = useVideoEditorStore(selectVideoProject);
 
   const totalCaptureCount = useCaptureStore((state) => state.captures.length);
   const captures = useFilteredCaptures();
   const allTags = useAllTags();
   const hasActiveFilters = filterFavorites || filterTags.length > 0 || filterMediaTypes.length > 0 || searchQuery.length > 0;
+  const activeCaptureId = useMemo(() => {
+    if (view === 'editor') {
+      return currentProject?.id ?? null;
+    }
+
+    if (view !== 'videoEditor' || !videoProject) {
+      return null;
+    }
+
+    const screenVideoPath = normalizeMediaPath(videoProject.sources.screenVideo);
+    return captures.find((capture) =>
+      capture.id === videoProject.id ||
+      normalizeMediaPath(capture.image_path) === screenVideoPath
+    )?.id ?? null;
+  }, [captures, currentProject?.id, videoProject, view]);
 
   const clearAllFilters = useCallback(() => {
     setSearchQuery('');
@@ -266,6 +297,33 @@ export const CaptureLibrary: React.FC<CaptureLibraryProps> = ({
     }
   }, [captures, handleEditImage, handleEditVideo]);
 
+  const getPostDeleteTarget = useCallback((deletedIds: Set<string>) => {
+    if (!activeCaptureId || !deletedIds.has(activeCaptureId)) {
+      return null;
+    }
+
+    const navigableCaptures = captures
+      .filter(isEditableMediaCapture)
+      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+    const activeIndex = navigableCaptures.findIndex((capture) => capture.id === activeCaptureId);
+    if (activeIndex === -1) {
+      return null;
+    }
+
+    return (
+      navigableCaptures.slice(activeIndex + 1).find((capture) => !deletedIds.has(capture.id)) ??
+      navigableCaptures.slice(0, activeIndex).reverse().find((capture) => !deletedIds.has(capture.id)) ??
+      null
+    );
+  }, [activeCaptureId, captures]);
+
+  const clearActiveEditor = useCallback(() => {
+    useVideoEditorStore.getState().clearEditor();
+    setCurrentProject(null);
+    setCurrentImageData(null);
+    setView('library');
+  }, [setCurrentImageData, setCurrentProject, setView]);
+
   // Selection hook
   const {
     selectedIds,
@@ -363,11 +421,31 @@ export const CaptureLibrary: React.FC<CaptureLibraryProps> = ({
   const handleConfirmDelete = async () => {
     try {
       if (deleteDialog?.type === 'bulk') {
-        await deleteCaptures(Array.from(selectedIds));
+        const deletedIds = new Set(selectedIds);
+        const postDeleteTarget = getPostDeleteTarget(deletedIds);
+        const shouldClearActiveEditor = activeCaptureId !== null && deletedIds.has(activeCaptureId);
+
+        await deleteCaptures(Array.from(deletedIds));
         setSelectedIds(new Set());
+        if (shouldClearActiveEditor) {
+          clearActiveEditor();
+          if (postDeleteTarget) {
+            await handleOpenProject(postDeleteTarget.id);
+          }
+        }
         toast.success(`Deleted ${selectedIds.size} capture${selectedIds.size > 1 ? 's' : ''}`);
       } else if (deleteDialog?.type === 'single') {
+        const deletedIds = new Set([deleteDialog.id]);
+        const postDeleteTarget = getPostDeleteTarget(deletedIds);
+        const shouldClearActiveEditor = activeCaptureId === deleteDialog.id;
+
         await deleteCapture(deleteDialog.id);
+        if (shouldClearActiveEditor) {
+          clearActiveEditor();
+          if (postDeleteTarget) {
+            await handleOpenProject(postDeleteTarget.id);
+          }
+        }
         toast.success('Capture deleted');
       }
     } catch (error) {

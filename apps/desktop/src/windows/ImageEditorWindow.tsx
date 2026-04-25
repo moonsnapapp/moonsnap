@@ -39,6 +39,7 @@ import { useEditorActions } from '@/hooks/useEditorActions';
 import { useEditorKeyboardShortcuts } from '@/hooks/useEditorKeyboardShortcuts';
 import { DeleteDialog } from '@/components/Library/components/DeleteDialog';
 import { KeyboardShortcutsDialog } from '@/components/Editor/KeyboardShortcutsDialog';
+import { CanvasCaptureNavigation, type CaptureNavigationControls } from '@/components/Editor/CanvasCaptureNavigation';
 
 // Default stroke colors per tool - used when switching tools on new captures
 const TOOL_DEFAULT_COLORS: Partial<Record<Tool, string>> = {
@@ -46,6 +47,8 @@ const TOOL_DEFAULT_COLORS: Partial<Record<Tool, string>> = {
   // All other tools use the default red (#ef4444)
 };
 const DEFAULT_STROKE_COLOR = '#ef4444';
+const PRO_TOOLS: ReadonlySet<Tool> = new Set(['background']);
+const PURCHASE_URL = 'https://buy.polar.sh/polar_cl_WDZB2ld3wEqqWTOustdiNZHASOHMOz4lxlsZ03VjJfx';
 
 interface SavedCaptureLookup {
   projectId: string;
@@ -67,6 +70,7 @@ export const ImageEditorContent: React.FC<{
   store: EditorStore;
   onClose: () => void;
   resolveProjectForCapturePath: () => Promise<ResolvedImageProject | null>;
+  captureNavigation?: CaptureNavigationControls;
 }> = ({
   imageData,
   projectId,
@@ -74,6 +78,7 @@ export const ImageEditorContent: React.FC<{
   store,
   onClose,
   resolveProjectForCapturePath,
+  captureNavigation,
 }) => {
   const stageRef = useRef<Konva.Stage>(null);
   const editorCanvasRef = useRef<EditorCanvasRef>(null);
@@ -122,9 +127,6 @@ export const ImageEditorContent: React.FC<{
   const isPro = useLicenseStore((s) => s.isPro());
 
   // Pro-gated tools in the image editor
-  const PRO_TOOLS: ReadonlySet<Tool> = new Set(['background']);
-  const PURCHASE_URL = 'https://buy.polar.sh/polar_cl_WDZB2ld3wEqqWTOustdiNZHASOHMOz4lxlsZ03VjJfx';
-
   // Handle tool change
   const handleToolChange = useCallback((newTool: Tool) => {
     if (PRO_TOOLS.has(newTool) && !isPro) {
@@ -251,6 +253,9 @@ export const ImageEditorContent: React.FC<{
                 onShapesChange={handleShapesChange}
                 stageRef={stageRef}
               />
+              {captureNavigation && (
+                <CanvasCaptureNavigation {...captureNavigation} />
+              )}
             </div>
             <PropertiesPanel
               selectedTool={selectedTool}

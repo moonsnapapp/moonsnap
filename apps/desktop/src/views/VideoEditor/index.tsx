@@ -93,6 +93,7 @@ import {
   getVideoPrimaryActionLabel,
 } from '../../utils/videoExportMode';
 import { getDeleteSelectionAction } from './deleteSelection';
+import type { CaptureNavigationControls } from '../../components/Editor/CanvasCaptureNavigation';
 
 // Lazy load CropDialog - only needed when crop tool is opened (861 lines)
 const CropDialog = lazy(() => import('../../components/VideoEditor/CropDialog').then(m => ({ default: m.CropDialog })));
@@ -114,6 +115,8 @@ export interface VideoEditorViewProps {
   hideTopBar?: boolean;
   /** Whether this editor view is currently active/interactive. */
   isActive?: boolean;
+  /** Optional previous/next capture navigation shown over the preview canvas pane. */
+  captureNavigation?: CaptureNavigationControls;
 }
 
 const SKIP_AMOUNT_MS = 5000;
@@ -124,7 +127,7 @@ const SAVE_WAIT_POLL_MS = 50;
  * VideoEditorView - Main video editor component with preview, timeline, and controls.
  */
 export const VideoEditorView = forwardRef<VideoEditorViewRef, VideoEditorViewProps>(function VideoEditorView(
-  { onBack, hideTopBar, isActive = true },
+  { onBack, hideTopBar, isActive = true, captureNavigation },
   ref
 ) {
   // Long-task detector: logs when the main thread is blocked for >50ms
@@ -668,7 +671,10 @@ export const VideoEditorView = forwardRef<VideoEditorViewRef, VideoEditorViewPro
           )}
 
           {/* Video Preview */}
-          <VideoEditorPreview isActive={isActive} />
+          <VideoEditorPreview
+            isActive={isActive}
+            captureNavigation={captureNavigation}
+          />
         </div>
 
         {/* Right sidebar with tabbed properties panel */}

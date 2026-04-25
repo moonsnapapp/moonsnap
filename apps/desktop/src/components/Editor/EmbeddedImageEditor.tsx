@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState, useCallback } from 'react';
+import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { Loader2 } from 'lucide-react';
 import { ImageEditorContent } from '@/windows/ImageEditorWindow';
 import { EditorStoreProvider, createEditorStore, type EditorStore } from '@/stores/editorStore';
@@ -19,10 +19,13 @@ interface EmbeddedImageEditorBodyProps {
 }
 
 const EmbeddedImageEditorBody: React.FC<EmbeddedImageEditorBodyProps> = ({ store, onClose }) => {
+  const captures = useCaptureStore((state) => state.captures);
   const currentProject = useCaptureStore((state) => state.currentProject);
   const currentImageData = useCaptureStore((state) => state.currentImageData);
   const loadingProjectId = useCaptureStore((state) => state.loadingProjectId);
   const loadCaptures = useCaptureStore((state) => state.loadCaptures);
+  const loadProject = useCaptureStore((state) => state.loadProject);
+  const loadVideoProjectInWorkspace = useCaptureStore((state) => state.loadVideoProjectInWorkspace);
   const stageRef = useRef<Konva.Stage>(null);
   const isInitialLoadRef = useRef(true);
   const isSavingRef = useRef(false);
@@ -78,6 +81,52 @@ const EmbeddedImageEditorBody: React.FC<EmbeddedImageEditorBodyProps> = ({ store
       isSavingRef.current = false;
     }
   }, [currentProject, loadCaptures, saveProjectAnnotations]);
+
+  const navigableCaptures = useMemo(
+    () => captures
+      .filter((capture) =>
+        capture.capture_type !== 'gif' &&
+        !capture.is_missing &&
+        !capture.damaged
+      )
+      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()),
+    [captures]
+  );
+  const currentCaptureIndex = useMemo(
+    () => navigableCaptures.findIndex((capture) => capture.id === currentProject?.id),
+    [currentProject?.id, navigableCaptures]
+  );
+  const previousCapture = currentCaptureIndex > 0 ? navigableCaptures[currentCaptureIndex - 1] : null;
+  const nextCapture =
+    currentCaptureIndex >= 0 && currentCaptureIndex < navigableCaptures.length - 1
+      ? navigableCaptures[currentCaptureIndex + 1]
+      : null;
+
+  const handleNavigateCapture = useCallback(async (captureId: string) => {
+    if (loadingProjectId || captureId === currentProject?.id) {
+      return;
+    }
+
+    const targetCapture = navigableCaptures.find((capture) => capture.id === captureId);
+    if (!targetCapture) {
+      return;
+    }
+
+    await saveAnnotations();
+    if (targetCapture.capture_type === 'video') {
+      await loadVideoProjectInWorkspace(targetCapture.image_path);
+      return;
+    }
+
+    await loadProject(captureId);
+  }, [
+    currentProject?.id,
+    loadProject,
+    loadVideoProjectInWorkspace,
+    loadingProjectId,
+    navigableCaptures,
+    saveAnnotations,
+  ]);
 
   useEffect(() => {
     if (!currentProject || !currentImageData) {
@@ -175,6 +224,12 @@ const EmbeddedImageEditorBody: React.FC<EmbeddedImageEditorBodyProps> = ({ store
           projectId: currentProject.id,
           capturePath: currentProject.original_image,
         })}
+        captureNavigation={{
+          canGoPrevious: previousCapture !== null && !loadingProjectId,
+          canGoNext: nextCapture !== null && !loadingProjectId,
+          onGoPrevious: previousCapture ? () => void handleNavigateCapture(previousCapture.id) : undefined,
+          onGoNext: nextCapture ? () => void handleNavigateCapture(nextCapture.id) : undefined,
+        }}
       />
     </div>
   );
