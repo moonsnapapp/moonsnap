@@ -79,6 +79,8 @@ export function useProjectAnnotations() {
           imageOffsetX: cropBoundsAnn.imageOffsetX,
           imageOffsetY: cropBoundsAnn.imageOffsetY,
         });
+      } else {
+        setCanvasBounds(null);
       }
 
       // Load compositor settings if present (type is narrowed by type guard)
@@ -101,6 +103,8 @@ export function useProjectAnnotations() {
           borderOpacity: compositorAnn.borderOpacity ?? DEFAULT_COMPOSITOR_SETTINGS.borderOpacity,
           aspectRatio: compositorAnn.aspectRatio ?? DEFAULT_COMPOSITOR_SETTINGS.aspectRatio,
         });
+      } else {
+        setCompositorSettings({ ...DEFAULT_COMPOSITOR_SETTINGS });
       }
 
       // Set original image size for reset functionality

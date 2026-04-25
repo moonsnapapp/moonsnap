@@ -17,6 +17,9 @@ export const STORAGE = {
   SESSION_VIEW_KEY: 'moonsnap_session_view',
   SESSION_PROJECT_ID_KEY: 'moonsnap_session_project_id',
   SESSION_VIDEO_PROJECT_PATH_KEY: 'moonsnap_session_video_project_path',
+
+  // Layout preferences
+  IMAGE_EDITOR_SIDEBAR_SIZE_KEY: 'moonsnap_image_editor_sidebar_size',
 } as const;
 
 export type StorageConstants = typeof STORAGE;

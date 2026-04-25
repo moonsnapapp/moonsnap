@@ -24,6 +24,11 @@ export const LAYOUT = {
   LIST_ROW_HEIGHT: 88, // 56px thumbnail + 24px padding (12px*2) + 8px gap
   MIN_CARD_WIDTH: 240,
   CARD_THUMBNAIL_ASPECT_RATIO: 16 / 9,
+
+  // Embedded image editor library sidebar
+  IMAGE_EDITOR_SIDEBAR_DEFAULT_SIZE: 16,
+  IMAGE_EDITOR_SIDEBAR_MIN_SIZE: 12,
+  IMAGE_EDITOR_SIDEBAR_MAX_SIZE: 32,
 } as const;
 
 export type LayoutConstants = typeof LAYOUT;

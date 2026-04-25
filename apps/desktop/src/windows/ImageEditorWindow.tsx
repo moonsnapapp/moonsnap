@@ -60,7 +60,7 @@ interface ResolvedImageProject {
 /**
  * Inner component that uses the editor store context
  */
-const ImageEditorContent: React.FC<{
+export const ImageEditorContent: React.FC<{
   imageData: string;
   projectId: string | null;
   capturePath: string | null;

@@ -28,6 +28,13 @@ import { VirtualizedGrid, getColumnsForWidth, calculateRowHeight, getCardWidth, 
 const CONTENT_OFFSET_Y = 32; // vertical offset from inline positioning style
 const CONTENT_OFFSET_X = 32; // horizontal padding (px-8) on virtual items
 
+interface CaptureLibraryProps {
+  variant?: 'full' | 'sidebar';
+  enableKeyboardShortcuts?: boolean;
+  onEditImage?: (capture: CaptureListItem) => void | Promise<void>;
+  onEditVideo?: (capture: CaptureListItem) => void | Promise<void>;
+}
+
 interface DateGroup {
   label: string;
   captures: CaptureListItem[];
@@ -77,7 +84,12 @@ function groupCapturesByDate(captures: CaptureListItem[]): DateGroup[] {
   }));
 }
 
-export const CaptureLibrary: React.FC = () => {
+export const CaptureLibrary: React.FC<CaptureLibraryProps> = ({
+  variant = 'full',
+  enableKeyboardShortcuts = true,
+  onEditImage,
+  onEditVideo,
+}) => {
   const {
     loading,
     initialized,
@@ -113,8 +125,9 @@ export const CaptureLibrary: React.FC = () => {
   const containerRef = useRef<HTMLDivElement>(null);
   const [containerWidth, setContainerWidth] = useState(0);
 
-  // Use virtualization for large libraries (100+ captures)
-  const useVirtualization = captures.length > 100;
+  // Use virtualization for large full-window libraries. Sidebar mode needs a
+  // single-column compact layout instead of the full grid's 3+ column math.
+  const useVirtualization = variant === 'full' && captures.length > 100;
 
   // Track container width for virtual layout calculations (debounced for performance)
   useEffect(() => {
@@ -177,6 +190,11 @@ export const CaptureLibrary: React.FC = () => {
 
   // Open image in dedicated editor window
   const handleEditImage = useCallback(async (capture: CaptureListItem) => {
+    if (onEditImage) {
+      await onEditImage(capture);
+      return;
+    }
+
     try {
       // Open image in a dedicated floating window
       // If the image is already open, the existing window will be focused
@@ -185,9 +203,14 @@ export const CaptureLibrary: React.FC = () => {
       reportError(error, { operation: 'image editor open' });
       toast.error('Failed to open image editor');
     }
-  }, []);
+  }, [onEditImage]);
 
   const handleEditVideo = useCallback(async (capture: CaptureListItem) => {
+    if (onEditVideo) {
+      await onEditVideo(capture);
+      return;
+    }
+
     try {
       // Open video in a dedicated floating window
       // If the video is already open, the existing window will be focused
@@ -196,7 +219,7 @@ export const CaptureLibrary: React.FC = () => {
       reportError(error, { operation: 'video editor open' });
       toast.error('Failed to open video editor');
     }
-  }, []);
+  }, [onEditVideo]);
 
   // Open project in editor window
   const handleOpenProject = useCallback(async (id: string) => {
@@ -280,6 +303,10 @@ export const CaptureLibrary: React.FC = () => {
 
   // Keyboard shortcut for deleting selected captures
   useEffect(() => {
+    if (!enableKeyboardShortcuts) {
+      return;
+    }
+
     const handleKeyDown = (e: KeyboardEvent) => {
       // Don't trigger if typing in an input field
       if (isTextInputTarget(e.target)) {
@@ -301,7 +328,7 @@ export const CaptureLibrary: React.FC = () => {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedIds.size, handleRequestDeleteSelected, clearSelection]);
+  }, [enableKeyboardShortcuts, selectedIds.size, handleRequestDeleteSelected, clearSelection]);
 
   const handleConfirmDelete = async () => {
     try {
@@ -447,7 +474,7 @@ export const CaptureLibrary: React.FC = () => {
 
   return (
     <TooltipProvider delayDuration={300} skipDelayDuration={300}>
-      <div className="library-panel flex flex-col h-full relative">
+      <div className={`library-panel library-panel--${variant} flex flex-col h-full relative`}>
         {/* Drop Zone Overlay */}
         {isDragOver && <DropZoneOverlay />}
 

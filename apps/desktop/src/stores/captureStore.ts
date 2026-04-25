@@ -145,6 +145,7 @@ interface CaptureState {
   // Actions
   loadCaptures: () => Promise<void>;
   loadProject: (id: string) => Promise<void>;
+  loadVideoProjectInWorkspace: (videoPath: string) => Promise<void>;
   saveNewCapture: (
     imageData: string,
     captureType: string,
@@ -372,6 +373,26 @@ export const useCaptureStore = create<CaptureState>()(
       // On error, go back to library
       clearEditorSession();
       set({ error: String(error), loadingProjectId: null, view: 'library' });
+    }
+  },
+
+  loadVideoProjectInWorkspace: async (videoPath: string) => {
+    if (isGifPath(videoPath)) {
+      throw new Error('GIF editing is not available in the video editor yet.');
+    }
+
+    set({ error: null, view: 'videoEditor' });
+    try {
+      const { useVideoEditorStore } = await import('./videoEditorStore');
+      const project = await invoke('load_video_project', { videoPath });
+      useVideoEditorStore
+        .getState()
+        .setProject(project as import('../types').VideoProject);
+      saveEditorSession({ view: 'videoEditor', videoProjectPath: videoPath });
+    } catch (error) {
+      clearEditorSession();
+      set({ error: String(error), view: 'library' });
+      throw error;
     }
   },
 
@@ -641,6 +662,11 @@ export const useCaptureStore = create<CaptureState>()(
   setSkipStagger: (value: boolean) => set({ skipStagger: value }),
   clearCurrentProject: () => {
     clearEditorSession();
+    // Clear the video editor store as well so re-entering the video editor
+    // workspace does not flash the previously-loaded project.
+    void import('./videoEditorStore').then(({ useVideoEditorStore }) => {
+      useVideoEditorStore.getState().clearEditor();
+    });
     set({
       currentProject: null,
       currentImageData: null,

@@ -3,9 +3,11 @@ import { Toaster } from 'sonner';
 import { invoke } from '@tauri-apps/api/core';
 import { Titlebar } from './components/Titlebar/Titlebar';
 import { CaptureLibrary } from './components/Library/CaptureLibrary';
+import { EmbeddedImageEditor } from './components/Editor/EmbeddedImageEditor';
+import { EmbeddedVideoEditor } from './components/Editor/EmbeddedVideoEditor';
+import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from './components/ui/resizable';
 import { LibraryErrorBoundary } from './components/ErrorBoundary';
 import { KeyboardShortcutsModal } from './components/KeyboardShortcuts/KeyboardShortcutsModal';
-import { VideoEditorView } from './views/VideoEditorView';
 import { useCaptureStore } from './stores/captureStore';
 import { useSettingsStore } from './stores/settingsStore';
 import { useCaptureSettingsStore } from './stores/captureSettingsStore';
@@ -17,14 +19,37 @@ import { useQuickRecordingFlow } from './hooks/useQuickRecordingFlow';
 import { logger } from './utils/logger';
 import { useCaptureActions } from './hooks/useCaptureActions';
 import { handleScreenshotCompletion } from './utils/screenshotCompletion';
+import { LAYOUT, STORAGE } from './constants';
+import type { CaptureListItem } from './types';
+
+const clampSidebarSize = (size: number) =>
+  Math.min(
+    LAYOUT.IMAGE_EDITOR_SIDEBAR_MAX_SIZE,
+    Math.max(LAYOUT.IMAGE_EDITOR_SIDEBAR_MIN_SIZE, size)
+  );
+
+const getInitialSidebarSize = () => {
+  const stored = Number(localStorage.getItem(STORAGE.IMAGE_EDITOR_SIDEBAR_SIZE_KEY));
+  if (Number.isFinite(stored) && stored > 0) {
+    return clampSidebarSize(stored);
+  }
+  return LAYOUT.IMAGE_EDITOR_SIDEBAR_DEFAULT_SIZE;
+};
 
 function App() {
   const {
     view,
+    loadProject,
+    loadVideoProjectInWorkspace,
+    clearCurrentProject,
     saveNewCaptureFromFile,
     loadCaptures,
   } = useCaptureStore();
+  const isLibraryWorkspaceActive = view === 'library';
+  const isImageEditorActive = view === 'editor';
   const isVideoEditorActive = view === 'videoEditor';
+  const isWorkspaceActive =
+    isLibraryWorkspaceActive || isImageEditorActive || isVideoEditorActive;
 
   // Initialize theme (applies theme class to document root)
   useTheme();
@@ -35,6 +60,7 @@ function App() {
 
   // Keyboard shortcuts help modal
   const [showShortcuts, setShowShortcuts] = useState(false);
+  const [sidebarSize, setSidebarSize] = useState(getInitialSidebarSize);
 
   // Capture actions for shortcuts
   const {
@@ -129,6 +155,37 @@ function App() {
     await openCaptureToolbar();
   }, [openCaptureToolbar]);
 
+  const handleEditImageInWorkspace = useCallback(async (capture: CaptureListItem) => {
+    await loadProject(capture.id);
+  }, [loadProject]);
+
+  const handleEditVideoInWorkspace = useCallback(async (capture: CaptureListItem) => {
+    try {
+      await loadVideoProjectInWorkspace(capture.image_path);
+    } catch (error) {
+      logger.warn('Failed to open video in workspace', error);
+    }
+  }, [loadVideoProjectInWorkspace]);
+
+  const handleCloseImageEditor = useCallback(() => {
+    clearCurrentProject();
+  }, [clearCurrentProject]);
+
+  const handleCloseVideoEditor = useCallback(() => {
+    clearCurrentProject();
+  }, [clearCurrentProject]);
+
+  const handleImageWorkspaceLayout = useCallback((sizes: number[]) => {
+    const nextSidebarSize = sizes[0];
+    if (typeof nextSidebarSize !== 'number') {
+      return;
+    }
+
+    const clampedSize = clampSidebarSize(nextSidebarSize);
+    setSidebarSize(clampedSize);
+    localStorage.setItem(STORAGE.IMAGE_EDITOR_SIDEBAR_SIZE_KEY, String(clampedSize));
+  }, []);
+
   return (
     <div className="library-window h-screen w-screen overflow-hidden">
       {/* Toast Notifications */}
@@ -154,23 +211,64 @@ function App() {
       <Titlebar
         title="MoonSnap"
         variant="hud"
-        contextLabel="Library"
+        contextLabel={
+          isImageEditorActive
+            ? 'Image Editor'
+            : isVideoEditorActive
+              ? 'Video Editor'
+              : 'Library'
+        }
         onCapture={handleShowCaptureToolbar}
         onOpenSettings={handleOpenSettings}
       />
 
       {/* Main Content */}
       <div className="library-window__content flex-1 flex flex-col min-h-0">
-        {/* Library */}
-        <Activity mode={view === 'library' ? 'visible' : 'hidden'}>
-          <LibraryErrorBoundary>
-            <CaptureLibrary />
-          </LibraryErrorBoundary>
-        </Activity>
-
-        {/* Video Editor (legacy embedded view - kept for video playback) */}
-        <Activity mode={isVideoEditorActive ? 'visible' : 'hidden'}>
-          <VideoEditorView isActive={isVideoEditorActive} />
+        {/* Library sidebar + selected capture's editor in a unified workspace */}
+        <Activity mode={isWorkspaceActive ? 'visible' : 'hidden'}>
+          <ResizablePanelGroup
+            direction="horizontal"
+            className="image-editor-layout flex-1 min-h-0"
+            onLayout={handleImageWorkspaceLayout}
+          >
+            <ResizablePanel
+              id="image-library-sidebar"
+              order={1}
+              className="image-editor-layout__library"
+              defaultSize={sidebarSize}
+              minSize={LAYOUT.IMAGE_EDITOR_SIDEBAR_MIN_SIZE}
+              maxSize={LAYOUT.IMAGE_EDITOR_SIDEBAR_MAX_SIZE}
+            >
+              <LibraryErrorBoundary>
+                <CaptureLibrary
+                  variant="sidebar"
+                  enableKeyboardShortcuts={isLibraryWorkspaceActive}
+                  onEditImage={handleEditImageInWorkspace}
+                  onEditVideo={handleEditVideoInWorkspace}
+                />
+              </LibraryErrorBoundary>
+            </ResizablePanel>
+            <ResizableHandle className="image-editor-layout__resize-handle" />
+            <ResizablePanel
+              id="image-editor-main"
+              order={2}
+              className="image-editor-layout__editor"
+              minSize={50}
+            >
+              {isImageEditorActive ? (
+                <EmbeddedImageEditor onClose={handleCloseImageEditor} />
+              ) : isVideoEditorActive ? (
+                <EmbeddedVideoEditor onClose={handleCloseVideoEditor} />
+              ) : (
+                <div className="image-editor-empty editor-window__state flex-1 flex items-center justify-center">
+                  <div className="image-editor-empty__panel">
+                    <p className="image-editor-empty__label">No capture selected</p>
+                    <p className="image-editor-empty__detail">Choose a capture from the library.</p>
+                  </div>
+                </div>
+              )}
+            </ResizablePanel>
+          </ResizablePanelGroup>
         </Activity>
       </div>
     </div>
