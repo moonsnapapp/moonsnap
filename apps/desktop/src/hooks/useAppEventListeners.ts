@@ -10,7 +10,7 @@
 import { useEffect } from 'react';
 import { listen } from '@tauri-apps/api/event';
 import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
-import { useSettingsStore } from '../stores/settingsStore';
+import { useSettingsStore, type SettingsSection } from '../stores/settingsStore';
 import { useCaptureSettingsStore } from '../stores/captureSettingsStore';
 import type { CaptureType } from '../types';
 import { libraryLogger } from '../utils/logger';
@@ -84,10 +84,23 @@ export function useAppEventListeners(callbacks: AppEventCallbacks) {
       })
     );
 
-    // Open settings from tray menu
+    // Open settings from tray menu, capture toolbar, or other windows.
+    const validTabs: ReadonlySet<SettingsSection> = new Set([
+      'general',
+      'shortcuts',
+      'recordings',
+      'screenshots',
+      'feedback',
+      'changelog',
+      'license',
+    ]);
     unlisteners.push(
-      listen('open-settings', () => {
-        useSettingsStore.getState().openSettingsModal();
+      listen<{ tab?: string }>('open-settings', (event) => {
+        const requested = event.payload?.tab;
+        const tab = requested && validTabs.has(requested as SettingsSection)
+          ? (requested as SettingsSection)
+          : undefined;
+        useSettingsStore.getState().openSettingsModal(tab);
       })
     );
 

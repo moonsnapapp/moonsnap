@@ -745,11 +745,15 @@ textarea,
   pointer-events: none;
 }
 
-.editor-window {
+.editor-window,
+.editor-workspace {
   --editor-panel-radius: 18px;
   --editor-bar-radius: 16px;
   --editor-control-radius: 10px;
   --editor-pill-radius: 10px;
+}
+
+.editor-window {
   position: relative;
   display: flex;
   flex-direction: column;
@@ -1457,7 +1461,7 @@ body.resizing * {
   justify-content: center;
   width: 36px;
   height: 36px;
-  border-radius: var(--editor-control-radius);
+  border-radius: var(--editor-control-radius, 10px);
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.03) 0%, rgba(255, 255, 255, 0.012) 100%);
   color: rgba(225, 231, 238, 0.66);
   border: 1px solid rgba(255, 255, 255, 0.02);
@@ -2021,7 +2025,7 @@ body.floating-toolbar-window #root {
 }
 
 .editor-meta-pill {
-  border-radius: var(--editor-pill-radius);
+  border-radius: var(--editor-pill-radius, 10px);
 }
 
 .editor-choice-pill:hover,

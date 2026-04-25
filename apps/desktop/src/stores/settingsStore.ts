@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { devtools } from 'zustand/middleware';
 import { LazyStore } from '@tauri-apps/plugin-store';
 import { invoke } from '@tauri-apps/api/core';
+import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
 import type {
   AppSettings,
   ShortcutConfig,
@@ -25,6 +26,18 @@ const settingsLogger = createLogger('Settings');
 
 const SETTINGS_STORE_PATH = 'settings.json';
 
+// Main library window label — only this window hosts the settings dialog.
+const LIBRARY_WINDOW_LABEL = 'library';
+
+export type SettingsSection =
+  | 'general'
+  | 'shortcuts'
+  | 'recordings'
+  | 'screenshots'
+  | 'feedback'
+  | 'changelog'
+  | 'license';
+
 // Create a lazy store instance (initialized on first access)
 let storeInstance: LazyStore | null = null;
 let loadSettingsPromise: Promise<void> | null = null;
@@ -44,7 +57,7 @@ interface SettingsState {
 
   // UI state
   settingsModalOpen: boolean;
-  activeTab: 'shortcuts' | 'general' | 'license';
+  activeTab: SettingsSection;
 
   // Actions - Settings management
   loadSettings: () => Promise<void>;
@@ -63,9 +76,9 @@ interface SettingsState {
   resetGeneralSettings: () => void;
 
   // Actions - UI
-  openSettingsModal: (tab?: 'shortcuts' | 'general' | 'license') => void;
+  openSettingsModal: (tab?: SettingsSection) => void | Promise<void>;
   closeSettingsModal: () => void;
-  setActiveTab: (tab: 'shortcuts' | 'general' | 'license') => void;
+  setActiveTab: (tab: SettingsSection) => void;
 }
 
 /**
@@ -279,20 +292,32 @@ export const useSettingsStore = create<SettingsState>()(
   },
 
   openSettingsModal: async (tab = 'general') => {
-    set({ activeTab: tab });
+    // Always update local state — harmless in non-library windows where the
+    // dialog isn't rendered, and keeps the call's effect observable from any
+    // window's store (and tests).
+    set({ activeTab: tab, settingsModalOpen: true });
+
+    // The dialog only renders in the library window. When called from other
+    // webviews (e.g. capture toolbar), forward to the library so the dialog
+    // actually appears.
+    let windowLabel: string | null = null;
     try {
-      await invoke('show_settings_window', { tab });
-    } catch (e) {
-      settingsLogger.error('Failed to open settings window:', e);
+      windowLabel = getCurrentWebviewWindow().label;
+    } catch {
+      // Outside a Tauri webview (e.g. tests). Skip the forward.
+    }
+
+    if (windowLabel && windowLabel !== LIBRARY_WINDOW_LABEL) {
+      try {
+        await invoke('show_settings_window', { tab });
+      } catch (e) {
+        settingsLogger.error('Failed to request settings dialog:', e);
+      }
     }
   },
 
-  closeSettingsModal: async () => {
-    try {
-      await invoke('close_settings_window');
-    } catch {
-      // Window may already be closed
-    }
+  closeSettingsModal: () => {
+    set({ settingsModalOpen: false });
   },
 
   setActiveTab: (tab) => {

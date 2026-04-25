@@ -2,7 +2,6 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import { check, type Update } from '@tauri-apps/plugin-updater';
 import { relaunch } from '@tauri-apps/plugin-process';
 import { getVersion } from '@tauri-apps/api/app';
-import { toast } from 'sonner';
 import { logger } from '@/utils/logger';
 import type { UpdateChannel } from '@/types';
 
@@ -13,42 +12,12 @@ interface UpdateState {
   progress: number;
   contentLength: number;
   error: string | null;
-}
-
-function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
-
-interface UpdateProgressToastProps {
-  progress: number;
-  contentLength: number;
-}
-
-function UpdateProgressToast({ progress, contentLength }: UpdateProgressToastProps) {
-  const percent = contentLength > 0 ? Math.min((progress / contentLength) * 100, 100) : 0;
-
-  return (
-    <div className="w-[280px] rounded-lg p-4 bg-[var(--card)] border border-[var(--polar-frost)] shadow-lg">
-      <div className="text-sm font-medium text-[var(--ink-dark)] mb-3">
-        Downloading update...
-      </div>
-      <div className="h-2 bg-[var(--polar-mist)] rounded-full overflow-hidden mb-2">
-        <div
-          className="h-full bg-[var(--coral-400)] transition-all duration-300"
-          style={{ width: `${percent}%` }}
-        />
-      </div>
-      <div className="flex items-center justify-between text-xs text-[var(--ink-muted)]">
-        <span>{formatBytes(progress)} / {formatBytes(contentLength)}</span>
-        <span>{Math.round(percent)}%</span>
-      </div>
-    </div>
-  );
+  /** Inline status text — shown in the Settings dialog footer, not as a toast. */
+  statusMessage: string | null;
 }
 
 const BETA_MANIFEST_URL = 'https://github.com/moonsnapapp/moonsnap/releases/latest/download/latest-beta.json';
+const STATUS_MESSAGE_TIMEOUT_MS = 4000;
 
 export function useUpdater(checkOnMount = true, channel: UpdateChannel = 'stable') {
   const [state, setState] = useState<UpdateState>({
@@ -58,14 +27,30 @@ export function useUpdater(checkOnMount = true, channel: UpdateChannel = 'stable
     progress: 0,
     contentLength: 0,
     error: null,
+    statusMessage: null,
   });
   const [update, setUpdate] = useState<Update | null>(null);
 
   const downloadAndInstallRef = useRef<((updateToInstall?: Update) => Promise<void>) | null>(null);
+  const statusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const checkForUpdates = useCallback(async (showNoUpdateToast = false) => {
+  const setTransientStatus = useCallback((message: string | null) => {
+    if (statusTimerRef.current) {
+      clearTimeout(statusTimerRef.current);
+      statusTimerRef.current = null;
+    }
+    setState(prev => ({ ...prev, statusMessage: message }));
+    if (message) {
+      statusTimerRef.current = setTimeout(() => {
+        setState(prev => ({ ...prev, statusMessage: null }));
+        statusTimerRef.current = null;
+      }, STATUS_MESSAGE_TIMEOUT_MS);
+    }
+  }, []);
+
+  const checkForUpdates = useCallback(async (showNoUpdateMessage = false) => {
     try {
-      setState(prev => ({ ...prev, error: null }));
+      setState(prev => ({ ...prev, error: null, statusMessage: null }));
 
       // Stable channel: use built-in Tauri updater (endpoints from tauri.conf.json)
       // Beta channel: also check beta manifest for newer beta versions
@@ -77,15 +62,8 @@ export function useUpdater(checkOnMount = true, channel: UpdateChannel = 'stable
           ...prev,
           available: true,
           version: detected.version,
+          statusMessage: `Update available: v${detected.version}`,
         }));
-
-        toast.info(`Update available: v${detected.version}`, {
-          action: {
-            label: 'Install',
-            onClick: () => downloadAndInstallRef.current?.(detected),
-          },
-          duration: 10000,
-        });
       } else if (channel === 'beta') {
         // Check beta manifest for pre-release updates
         try {
@@ -98,48 +76,41 @@ export function useUpdater(checkOnMount = true, channel: UpdateChannel = 'stable
                 ...prev,
                 available: true,
                 version: manifest.version,
+                statusMessage: `Beta update available: v${manifest.version}`,
               }));
-              toast.info(`Beta update available: v${manifest.version}`, {
-                action: {
-                  label: 'Download',
-                  onClick: () => {
-                    window.open(`https://github.com/moonsnapapp/moonsnap/releases/tag/v${manifest.version}`, '_blank');
-                  },
-                },
-                duration: 10000,
-              });
-            } else if (showNoUpdateToast) {
-              toast.success('You are on the latest beta version');
+            } else if (showNoUpdateMessage) {
+              setTransientStatus('You are on the latest beta version');
             }
           }
         } catch {
           // Beta manifest not available yet, silently ignore
         }
-      } else if (showNoUpdateToast) {
-        toast.success('You are on the latest version');
+      } else if (showNoUpdateMessage) {
+        setTransientStatus('You are on the latest version');
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to check for updates';
-      setState(prev => ({ ...prev, error: message }));
+      setState(prev => ({ ...prev, error: message, statusMessage: `Update check failed: ${message}` }));
       logger.error('Update check failed:', error);
     }
-  }, [channel]);
+  }, [channel, setTransientStatus]);
 
   const downloadAndInstall = useCallback(async (updateToInstall?: Update) => {
     const target = updateToInstall || update;
     if (!target) return;
 
-    const toastId = 'update-progress';
     let currentProgress = 0;
     let currentContentLength = 0;
 
-    // Show initial progress toast
-    toast.custom(
-      () => <UpdateProgressToast progress={0} contentLength={0} />,
-      { id: toastId, duration: Infinity }
-    );
-
-    setState(prev => ({ ...prev, downloading: true, progress: 0, contentLength: 0 }));
+    // All progress/status is surfaced in the Settings dialog footer; toasts
+    // would just sit blurred behind the dialog overlay.
+    setState(prev => ({
+      ...prev,
+      downloading: true,
+      progress: 0,
+      contentLength: 0,
+      statusMessage: 'Downloading update…',
+    }));
 
     try {
       await target.downloadAndInstall((event) => {
@@ -147,31 +118,27 @@ export function useUpdater(checkOnMount = true, channel: UpdateChannel = 'stable
           currentContentLength = event.data.contentLength;
           currentProgress = 0;
           setState(prev => ({ ...prev, progress: 0, contentLength: currentContentLength }));
-          toast.custom(
-            () => <UpdateProgressToast progress={0} contentLength={currentContentLength} />,
-            { id: toastId, duration: Infinity }
-          );
         } else if (event.event === 'Progress') {
           currentProgress += event.data.chunkLength;
           setState(prev => ({ ...prev, progress: currentProgress }));
-          toast.custom(
-            () => <UpdateProgressToast progress={currentProgress} contentLength={currentContentLength} />,
-            { id: toastId, duration: Infinity }
-          );
         } else if (event.event === 'Finished') {
           setState(prev => ({ ...prev, progress: currentContentLength }));
         }
       });
 
-      toast.success('Update installed! Restarting...', { id: toastId });
+      setState(prev => ({ ...prev, statusMessage: 'Update installed — restarting…' }));
 
-      // Brief delay to show the success message
+      // Brief delay so the user sees the success message before relaunch.
       await new Promise(resolve => setTimeout(resolve, 1500));
       await relaunch();
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to install update';
-      setState(prev => ({ ...prev, error: message, downloading: false }));
-      toast.error(`Update failed: ${message}`, { id: toastId });
+      setState(prev => ({
+        ...prev,
+        error: message,
+        downloading: false,
+        statusMessage: `Update failed: ${message}`,
+      }));
     }
   }, [update]);
 
@@ -188,6 +155,15 @@ export function useUpdater(checkOnMount = true, channel: UpdateChannel = 'stable
       return () => clearTimeout(timer);
     }
   }, [checkOnMount, checkForUpdates]);
+
+  // Clear any pending transient-status timer on unmount.
+  useEffect(() => {
+    return () => {
+      if (statusTimerRef.current) {
+        clearTimeout(statusTimerRef.current);
+      }
+    };
+  }, []);
 
   return {
     ...state,

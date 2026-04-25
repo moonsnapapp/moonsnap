@@ -1,71 +1,38 @@
-//! Settings window commands.
+//! Settings dialog commands.
+//!
+//! The settings UI is rendered as an in-window dialog inside the main library
+//! window. This command exists so that other webviews (e.g. the capture
+//! toolbar) can request the dialog without having direct access to the
+//! library window's Zustand store.
 
 use moonsnap_core::error::MoonSnapResult;
-use tauri::{command, AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
+use tauri::{command, AppHandle, Emitter, Manager};
 
-/// Settings window label
-pub(crate) const SETTINGS_WINDOW_LABEL: &str = "settings";
+/// Main library window label — the only window that hosts the settings dialog.
+const LIBRARY_WINDOW_LABEL: &str = "library";
 
-/// Show the settings window, creating it if it doesn't exist.
-/// If the window already exists, focus it and optionally switch to a specific tab.
+/// Focus the library window and ask it to open the settings dialog.
+/// `tab` selects which section to show.
 #[command]
 pub async fn show_settings_window(app: AppHandle, tab: Option<String>) -> MoonSnapResult<()> {
-    // Check if window already exists
-    if let Some(window) = app.get_webview_window(SETTINGS_WINDOW_LABEL) {
-        // Emit tab change event if a specific tab was requested
-        if let Some(tab) = tab {
-            let _ = window.emit("settings-tab-change", serde_json::json!({ "tab": tab }));
-        }
+    let Some(window) = app.get_webview_window(LIBRARY_WINDOW_LABEL) else {
+        return Err("Library window is not available".into());
+    };
 
-        window
-            .show()
-            .map_err(|e| format!("Failed to show settings window: {}", e))?;
-        window
-            .set_focus()
-            .map_err(|e| format!("Failed to focus settings window: {}", e))?;
-        return Ok(());
-    }
+    window
+        .show()
+        .map_err(|e| format!("Failed to show library window: {}", e))?;
+    window
+        .unminimize()
+        .map_err(|e| format!("Failed to unminimize library window: {}", e))?;
+    window
+        .set_focus()
+        .map_err(|e| format!("Failed to focus library window: {}", e))?;
 
-    let url = WebviewUrl::App("windows/settings.html".into());
+    let payload = serde_json::json!({ "tab": tab });
+    window
+        .emit("open-settings", payload)
+        .map_err(|e| format!("Failed to emit open-settings event: {}", e))?;
 
-    // Create settings window - centered, resizable, with custom titlebar
-    let window = WebviewWindowBuilder::new(&app, SETTINGS_WINDOW_LABEL, url)
-        .title("MoonSnap Settings")
-        .inner_size(720.0, 720.0)
-        .min_inner_size(560.0, 500.0)
-        .resizable(true)
-        .maximizable(true)
-        .transparent(true)
-        .decorations(false)
-        .always_on_top(false)
-        .skip_taskbar(false)
-        .shadow(true)
-        .center()
-        .visible(true)
-        .focused(true)
-        .build()
-        .map_err(|e| format!("Failed to create settings window: {}", e))?;
-
-    // Emit tab change event after window is created if a specific tab was requested
-    if let Some(tab) = tab {
-        let window_clone = window.clone();
-        tauri::async_runtime::spawn(async move {
-            // Small delay to ensure frontend is ready
-            tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
-            let _ = window_clone.emit("settings-tab-change", serde_json::json!({ "tab": tab }));
-        });
-    }
-
-    Ok(())
-}
-
-/// Close the settings window.
-#[command]
-pub async fn close_settings_window(app: AppHandle) -> MoonSnapResult<()> {
-    if let Some(window) = app.get_webview_window(SETTINGS_WINDOW_LABEL) {
-        window
-            .close()
-            .map_err(|e| format!("Failed to close settings window: {}", e))?;
-    }
     Ok(())
 }

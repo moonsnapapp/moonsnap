@@ -51,7 +51,6 @@ macro_rules! tauri_command_handler {
             crate::commands::window::toolbar::hide_startup_toolbar,
             // Window commands - settings
             crate::commands::window::settings::show_settings_window,
-            crate::commands::window::settings::close_settings_window,
             // Window commands - video editor
             crate::commands::window::video_editor::show_video_editor_window,
             crate::commands::window::video_editor::close_video_editor_window,

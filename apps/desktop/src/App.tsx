@@ -8,6 +8,7 @@ import { EmbeddedVideoEditor } from './components/Editor/EmbeddedVideoEditor';
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from './components/ui/resizable';
 import { LibraryErrorBoundary } from './components/ErrorBoundary';
 import { KeyboardShortcutsModal } from './components/KeyboardShortcuts/KeyboardShortcutsModal';
+import { SettingsDialog } from './components/Settings/SettingsDialog';
 import { useCaptureStore } from './stores/captureStore';
 import { useSettingsStore } from './stores/settingsStore';
 import { useCaptureSettingsStore } from './stores/captureSettingsStore';
@@ -206,6 +207,9 @@ function App() {
         open={showShortcuts}
         onClose={() => setShowShortcuts(false)}
       />
+
+      {/* Settings Dialog */}
+      <SettingsDialog />
 
       {/* Custom Titlebar */}
       <Titlebar
