@@ -33,7 +33,7 @@ function parseShortcut(shortcut: string): string[] {
 
 export const EmptyState: React.FC<EmptyStateProps> = ({ onNewCapture }) => {
   const shortcutConfig = useShortcut('new_capture');
-  const keys = parseShortcut(shortcutConfig?.currentShortcut || 'PrintScreen');
+  const keys = parseShortcut(shortcutConfig?.currentShortcut || 'Ctrl+PrintScreen');
 
   return (
   <div className="flex flex-col items-center justify-center py-16 animate-fade-in">

@@ -17,7 +17,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
     WM_SYSKEYDOWN, WM_XBUTTONDOWN, WM_XBUTTONUP,
 };
 
-use crate::error::Result;
+use crate::error::{Error, Result};
 use crate::platform::state::BlockingHotkeys;
 use crate::types::{Hotkey, Key, KeyEvent, Modifiers};
 
@@ -90,6 +90,7 @@ pub(crate) struct WindowsListenerState {
 /// Spawn a Windows low-level keyboard hook listener
 pub(crate) fn spawn(blocking_hotkeys: Option<BlockingHotkeys>) -> Result<WindowsListenerState> {
     let (tx, rx) = mpsc::channel();
+    let (init_tx, init_rx) = mpsc::channel::<Result<()>>();
     let running = Arc::new(AtomicBool::new(true));
     let thread_running = Arc::clone(&running);
     let thread_blocking = blocking_hotkeys.clone();
@@ -112,7 +113,9 @@ pub(crate) fn spawn(blocking_hotkeys: Option<BlockingHotkeys>) -> Result<Windows
         let kb_hook = match kb_hook {
             Ok(h) => h,
             Err(e) => {
-                eprintln!("Failed to install keyboard hook: {:?}", e);
+                let _ = init_tx.send(Err(Error::Platform(format!(
+                    "Failed to install low-level keyboard hook: {e}"
+                ))));
                 return;
             },
         };
@@ -123,14 +126,18 @@ pub(crate) fn spawn(blocking_hotkeys: Option<BlockingHotkeys>) -> Result<Windows
         let mouse_hook = match mouse_hook {
             Ok(h) => h,
             Err(e) => {
-                eprintln!("Failed to install mouse hook: {:?}", e);
-                // Clean up keyboard hook before returning
                 unsafe {
                     let _ = UnhookWindowsHookEx(kb_hook);
                 }
+                let _ = init_tx.send(Err(Error::Platform(format!(
+                    "Failed to install low-level mouse hook: {e}"
+                ))));
                 return;
             },
         };
+
+        // Both hooks installed — let the caller proceed.
+        let _ = init_tx.send(Ok(()));
 
         // Message loop - required for low-level hooks to function.
         // Keep the short timeout so shutdown polling behavior remains unchanged.
@@ -179,12 +186,29 @@ pub(crate) fn spawn(blocking_hotkeys: Option<BlockingHotkeys>) -> Result<Windows
         });
     });
 
-    Ok(WindowsListenerState {
-        event_receiver: rx,
-        thread_handle: Some(handle),
-        running,
-        blocking_hotkeys,
-    })
+    // Wait for the listener thread to confirm hook installation. If install
+    // fails, surface it synchronously so callers don't end up with a runtime
+    // that silently swallows every shortcut.
+    match init_rx.recv() {
+        Ok(Ok(())) => Ok(WindowsListenerState {
+            event_receiver: rx,
+            thread_handle: Some(handle),
+            running,
+            blocking_hotkeys,
+        }),
+        Ok(Err(error)) => {
+            running.store(false, Ordering::SeqCst);
+            let _ = handle.join();
+            Err(error)
+        },
+        Err(_) => {
+            running.store(false, Ordering::SeqCst);
+            let _ = handle.join();
+            Err(Error::Platform(
+                "Listener thread exited before reporting hook install status".into(),
+            ))
+        },
+    }
 }
 
 /// Low-level keyboard hook callback
@@ -240,12 +264,33 @@ unsafe extern "system" fn keyboard_hook_proc(code: i32, wparam: WPARAM, lparam: 
                 should_block =
                     should_block_hotkey(&ctx.blocking_hotkeys, ctx.current_modifiers, Some(key));
 
-                let _ = ctx.event_sender.send(KeyEvent {
-                    modifiers: ctx.current_modifiers,
-                    key: Some(key),
-                    is_key_down,
-                    changed_modifier: None,
-                });
+                // Windows can swallow WM_KEYDOWN for PrintScreen even at the
+                // LL hook level (only WM_KEYUP makes it through). To make
+                // modified PrintScreen shortcuts (e.g. Ctrl+PrintScreen) fire
+                // reliably, emit a synthetic press+release on every event we
+                // see and skip the real one. The manager's pressed_hotkeys
+                // dedup absorbs the duplicate when both events do come through.
+                if key == Key::PrintScreen {
+                    let press = KeyEvent {
+                        modifiers: ctx.current_modifiers,
+                        key: Some(key),
+                        is_key_down: true,
+                        changed_modifier: None,
+                    };
+                    let release = KeyEvent {
+                        is_key_down: false,
+                        ..press
+                    };
+                    let _ = ctx.event_sender.send(press);
+                    let _ = ctx.event_sender.send(release);
+                } else {
+                    let _ = ctx.event_sender.send(KeyEvent {
+                        modifiers: ctx.current_modifiers,
+                        key: Some(key),
+                        is_key_down,
+                        changed_modifier: None,
+                    });
+                }
             }
         }
     });

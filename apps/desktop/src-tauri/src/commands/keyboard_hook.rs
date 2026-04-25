@@ -23,9 +23,9 @@ use crate::commands::{storage, window};
 
 const DEFAULT_SHORTCUTS: [(&str, &str); 6] = [
     ("open_capture_toolbar", "Ctrl+Shift+Space"),
-    ("new_capture", "PrintScreen"),
+    ("new_capture", "Ctrl+PrintScreen"),
     ("fullscreen_capture", "Shift+PrintScreen"),
-    ("all_monitors_capture", "Ctrl+PrintScreen"),
+    ("all_monitors_capture", "Ctrl+Shift+PrintScreen"),
     ("record_video", "Ctrl+Alt+R"),
     ("record_gif", "Ctrl+Alt+G"),
 ];
@@ -77,6 +77,7 @@ enum ManagerCommand {
 struct OverrideRuntime {
     command_sender: Mutex<Sender<ManagerCommand>>,
     thread_handle: Mutex<Option<JoinHandle<()>>>,
+    init_error: Arc<Mutex<Option<String>>>,
 }
 
 struct HotkeyState {
@@ -351,11 +352,22 @@ fn do_check_available(
     }))
 }
 
-fn manager_thread(command_receiver: Receiver<ManagerCommand>, app: AppHandle) {
+fn manager_thread(
+    command_receiver: Receiver<ManagerCommand>,
+    app: AppHandle,
+    init_error: Arc<Mutex<Option<String>>>,
+) {
     let manager = match HotkeyManager::new_with_blocking() {
         Ok(manager) => manager,
         Err(error) => {
-            log::error!("Failed to create override hotkey manager: {}", error);
+            let message = format!("Failed to start global keyboard hook: {error}");
+            log::error!("{message}");
+            *init_error.lock() = Some(message.clone());
+            // Drain the command channel so callers get a clear error instead of
+            // hanging on response_receiver.recv() forever.
+            while let Ok(command) = command_receiver.recv() {
+                respond_with_init_error(command, &message);
+            }
             return;
         },
     };
@@ -447,6 +459,33 @@ fn manager_thread(command_receiver: Receiver<ManagerCommand>, app: AppHandle) {
     }
 }
 
+fn respond_with_init_error(command: ManagerCommand, message: &str) {
+    match command {
+        ManagerCommand::Register { response, .. } => {
+            let _ = response.send(Err(message.to_string()));
+        },
+        ManagerCommand::Unregister { response, .. } => {
+            let _ = response.send(Err(message.to_string()));
+        },
+        ManagerCommand::Suspend { response, .. } => {
+            let _ = response.send(Err(message.to_string()));
+        },
+        ManagerCommand::Resume { response, .. } => {
+            let _ = response.send(Err(message.to_string()));
+        },
+        ManagerCommand::IsRegistered { response, .. } => {
+            let _ = response.send(Err(message.to_string()));
+        },
+        ManagerCommand::CheckAvailable { response, .. } => {
+            let _ = response.send(Err(message.to_string()));
+        },
+        ManagerCommand::Snapshot { response } => {
+            let _ = response.send(Err(message.to_string()));
+        },
+        ManagerCommand::Shutdown => {},
+    }
+}
+
 fn shutdown_override_runtime(state: &mut HotkeyState) {
     if let Some(runtime) = state.override_runtime.take() {
         let sender = runtime.command_sender.lock();
@@ -469,9 +508,11 @@ fn ensure_override_runtime(app: &AppHandle) -> MoonSnapResult<()> {
     }
 
     let (command_sender, command_receiver) = mpsc::channel::<ManagerCommand>();
+    let init_error = Arc::new(Mutex::new(None));
+    let thread_init_error = Arc::clone(&init_error);
     let app_handle = app.clone();
     let thread_handle = thread::spawn(move || {
-        manager_thread(command_receiver, app_handle);
+        manager_thread(command_receiver, app_handle, thread_init_error);
     });
 
     let mut state = get_state().lock();
@@ -479,6 +520,7 @@ fn ensure_override_runtime(app: &AppHandle) -> MoonSnapResult<()> {
         state.override_runtime = Some(OverrideRuntime {
             command_sender: Mutex::new(command_sender),
             thread_handle: Mutex::new(Some(thread_handle)),
+            init_error,
         });
     }
 
@@ -498,8 +540,12 @@ fn with_runtime_sender<T>(
         .override_runtime
         .as_ref()
         .ok_or_else(|| MoonSnapError::Other("Override runtime is not initialized".to_string()))?;
-    let sender = runtime.command_sender.lock();
 
+    if let Some(init_error) = runtime.init_error.lock().as_ref() {
+        return Err(MoonSnapError::Other(init_error.clone()));
+    }
+
+    let sender = runtime.command_sender.lock();
     callback(&sender)
 }
 

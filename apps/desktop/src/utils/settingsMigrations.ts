@@ -15,7 +15,7 @@ import type { AppSettings, GeneralSettings, ShortcutConfig } from '../types';
 import { settingsLogger } from './logger';
 
 // Current settings schema version - increment when making breaking changes
-export const SETTINGS_VERSION = 1;
+export const SETTINGS_VERSION = 2;
 
 // Type for raw settings from storage (may be any version)
 interface RawSettings {
@@ -36,15 +36,23 @@ const migrations: Record<number, Migration> = {
     _version: 1,
   }),
 
-  // Example future migrations:
-  // 2: (settings) => ({
-  //   ...settings,
-  //   general: {
-  //     ...settings.general,
-  //     // Rename a field: newField: settings.general?.oldField ?? defaultValue,
-  //   },
-  //   _version: 2,
-  // }),
+  // Version 1 -> 2: PrintScreen defaults shifted to add Ctrl prefix so Windows
+  // is less likely to intercept the bare key (Snipping Tool). Only rewrite
+  // shortcuts that still hold the previous default — leave user customizations.
+  2: (settings) => {
+    const shortcuts = { ...(settings.shortcuts ?? {}) };
+    const remap: Record<string, { from: string; to: string }> = {
+      new_capture: { from: 'PrintScreen', to: 'Ctrl+PrintScreen' },
+      all_monitors_capture: { from: 'Ctrl+PrintScreen', to: 'Ctrl+Shift+PrintScreen' },
+    };
+    for (const [id, { from, to }] of Object.entries(remap)) {
+      const current = shortcuts[id]?.currentShortcut;
+      if (current === undefined || current === from) {
+        shortcuts[id] = { ...shortcuts[id], currentShortcut: to };
+      }
+    }
+    return { ...settings, shortcuts, _version: 2 };
+  },
 };
 
 /**

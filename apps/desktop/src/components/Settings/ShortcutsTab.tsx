@@ -45,9 +45,19 @@ const ShortcutItem: React.FC<ShortcutItemProps> = ({ config }) => {
           <div className="mb-1 flex items-center gap-2">
             <h4 className="text-sm font-medium text-[var(--ink-black)]">{config.name}</h4>
             {showGreen && <Check className="w-4 h-4 text-emerald-500" />}
-            {showWarning && <AlertTriangle className="w-4 h-4 text-amber-500" />}
+            {showWarning && (
+              <span
+                title={config.statusMessage ?? 'Shortcut could not be registered'}
+                aria-label={config.statusMessage ?? 'Shortcut could not be registered'}
+              >
+                <AlertTriangle className="w-4 h-4 text-amber-500" />
+              </span>
+            )}
           </div>
           <p className="mb-2 text-xs text-[var(--ink-muted)]">{config.description}</p>
+          {showWarning && config.statusMessage && (
+            <p className="mb-2 text-xs text-amber-700">{config.statusMessage}</p>
+          )}
 
           <ShortcutInput
             value={config.currentShortcut}

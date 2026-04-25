@@ -29,6 +29,8 @@ function ScreenshotPreviewWindow() {
   const isVisibleRef = useRef(false);
   const isCursorInsideRef = useRef(false);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const dragStartRef = useRef<{ x: number; y: number } | null>(null);
+  const dragStartedRef = useRef(false);
 
   // Parse query params
   const params = new URLSearchParams(window.location.search);
@@ -276,19 +278,45 @@ function ScreenshotPreviewWindow() {
     return () => document.removeEventListener('contextmenu', handler);
   }, []);
 
-  const handlePreviewMouseDown = useCallback(async (e: React.MouseEvent<HTMLDivElement>) => {
+  const handlePreviewMouseDown = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
     const target = e.target as HTMLElement;
     if (target.tagName === 'BUTTON' || target.closest('button')) return;
+    if (e.button !== 0) return;
 
     // Prevent native HTML drag/select behavior from competing with Tauri window dragging.
     e.preventDefault();
 
+    dragStartRef.current = { x: e.clientX, y: e.clientY };
+    dragStartedRef.current = false;
+  }, []);
+
+  const handlePreviewMouseMove = useCallback(async (e: React.MouseEvent<HTMLDivElement>) => {
+    const start = dragStartRef.current;
+    if (!start || dragStartedRef.current) return;
+
+    const dx = e.clientX - start.x;
+    const dy = e.clientY - start.y;
+    const DRAG_THRESHOLD_PX = 4;
+    if (dx * dx + dy * dy < DRAG_THRESHOLD_PX * DRAG_THRESHOLD_PX) return;
+
+    dragStartedRef.current = true;
     try {
       await getCurrentWindow().startDragging();
     } catch {
       // Ignore drag failures.
     }
   }, []);
+
+  const handlePreviewMouseUp = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    const start = dragStartRef.current;
+    dragStartRef.current = null;
+    if (!start || dragStartedRef.current) return;
+
+    const target = e.target as HTMLElement;
+    if (target.tagName === 'BUTTON' || target.closest('button')) return;
+
+    void handleOpenEditor();
+  }, [handleOpenEditor]);
 
   return (
     <div
@@ -299,9 +327,11 @@ function ScreenshotPreviewWindow() {
       }}
     >
       <div
-        onMouseDown={(e) => {
-          void handlePreviewMouseDown(e);
+        onMouseDown={handlePreviewMouseDown}
+        onMouseMove={(e) => {
+          void handlePreviewMouseMove(e);
         }}
+        onMouseUp={handlePreviewMouseUp}
         onDragStart={(e) => {
           e.preventDefault();
         }}

@@ -203,4 +203,38 @@ describe('settingsMigrations', () => {
       });
     });
   });
+
+  describe('v2 PrintScreen default shift', () => {
+    it('should rewrite previous default PrintScreen shortcuts', () => {
+      const v1Settings = {
+        _version: 1,
+        shortcuts: {
+          new_capture: { currentShortcut: 'PrintScreen', useHook: true },
+          all_monitors_capture: { currentShortcut: 'Ctrl+PrintScreen', useHook: true },
+        },
+      };
+
+      const migrated = migrateSettings(v1Settings);
+
+      expect(migrated.shortcuts?.new_capture?.currentShortcut).toBe('Ctrl+PrintScreen');
+      expect(migrated.shortcuts?.all_monitors_capture?.currentShortcut).toBe(
+        'Ctrl+Shift+PrintScreen'
+      );
+    });
+
+    it('should preserve user-customized PrintScreen shortcuts', () => {
+      const v1Settings = {
+        _version: 1,
+        shortcuts: {
+          new_capture: { currentShortcut: 'F9', useHook: true },
+          all_monitors_capture: { currentShortcut: 'Alt+PrintScreen', useHook: true },
+        },
+      };
+
+      const migrated = migrateSettings(v1Settings);
+
+      expect(migrated.shortcuts?.new_capture?.currentShortcut).toBe('F9');
+      expect(migrated.shortcuts?.all_monitors_capture?.currentShortcut).toBe('Alt+PrintScreen');
+    });
+  });
 });

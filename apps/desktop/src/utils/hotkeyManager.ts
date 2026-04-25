@@ -372,8 +372,13 @@ export async function registerShortcut(
     await invoke('register_shortcut_with_hook', { id, shortcut: currentShortcut });
     updateStatus(id, 'registered');
     return 'registered';
-  } catch {
-    updateStatus(id, 'conflict');
+  } catch (error) {
+    const message = typeof error === 'string'
+      ? error
+      : error instanceof Error
+        ? error.message
+        : String(error);
+    updateStatus(id, 'conflict', message);
     return 'conflict';
   }
 }

@@ -302,6 +302,9 @@ export interface ShortcutConfig {
   currentShortcut: string;
   status: ShortcutStatus;
   useHook: boolean; // Whether to use low-level hook for override
+  // Last registration error message (only set when status is 'conflict' or 'error').
+  // Surfaced in the settings UI so users can diagnose why a shortcut isn't firing.
+  statusMessage?: string;
 }
 
 // Image format options
@@ -347,8 +350,8 @@ export const DEFAULT_SHORTCUTS: Record<string, ShortcutConfig> = {
     id: 'new_capture',
     name: 'New Screenshot',
     description: 'Start an area screenshot flow',
-    defaultShortcut: 'PrintScreen',
-    currentShortcut: 'PrintScreen',
+    defaultShortcut: 'Ctrl+PrintScreen',
+    currentShortcut: 'Ctrl+PrintScreen',
     status: 'pending',
     useHook: true,
   },
@@ -365,8 +368,8 @@ export const DEFAULT_SHORTCUTS: Record<string, ShortcutConfig> = {
     id: 'all_monitors_capture',
     name: 'All Displays',
     description: 'Capture all displays combined',
-    defaultShortcut: 'Ctrl+PrintScreen',
-    currentShortcut: 'Ctrl+PrintScreen',
+    defaultShortcut: 'Ctrl+Shift+PrintScreen',
+    currentShortcut: 'Ctrl+Shift+PrintScreen',
     status: 'pending',
     useHook: true,
   },

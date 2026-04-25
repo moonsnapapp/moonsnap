@@ -52,7 +52,7 @@ interface SettingsState {
 
   // Actions - Shortcuts
   updateShortcut: (id: string, shortcut: string) => void;
-  updateShortcutStatus: (id: string, status: ShortcutStatus) => void;
+  updateShortcutStatus: (id: string, status: ShortcutStatus, message?: string) => void;
   setShortcutUseHook: (id: string, useHook: boolean) => void;
   resetShortcut: (id: string) => void;
   resetAllShortcuts: () => void;
@@ -185,7 +185,7 @@ export const useSettingsStore = create<SettingsState>()(
     }));
   },
 
-  updateShortcutStatus: (id, status) => {
+  updateShortcutStatus: (id, status, message) => {
     set((state) => ({
       settings: {
         ...state.settings,
@@ -194,6 +194,8 @@ export const useSettingsStore = create<SettingsState>()(
           [id]: {
             ...state.settings.shortcuts[id],
             status,
+            // Only retain the message for non-success states.
+            statusMessage: status === 'registered' ? undefined : message,
           },
         },
       },
