@@ -2,6 +2,42 @@
   "source": "CHANGELOG.md",
   "entries": [
     {
+      "version": "0.5.19",
+      "date": "2026-04-26",
+      "sections": [
+        {
+          "title": "Added",
+          "items": [
+            "Save As for any capture from the library, with PNG/JPG/WebP format conversion for images.",
+            "Previous/next capture navigation buttons over the image and video editor canvas.",
+            "Outline color and width for the text annotation box.",
+            "Collapsible library sidebar — click the resize handle to fold the sidebar to a thin rail and click again to restore."
+          ]
+        },
+        {
+          "title": "Changed",
+          "items": [
+            "Image and video editors now open inline inside the library window instead of separate windows.",
+            "Settings is now an in-window dialog with a header, tab breadcrumb, and a footer that shows the app version, check-for-updates button, and inline download progress.",
+            "Opening a capture from the floating screenshot or recording preview now brings up the library editor instead of spawning a separate window.",
+            "Drawing tools stay active after placing a shape, so you can drop several without re-selecting the tool.",
+            "Text editor: Escape now commits the edit, font size goes up to 100px and auto-grows the box, and new text defaults to center / middle alignment.",
+            "Dialogs animate from the center with a fade and zoom instead of sliding in from a corner."
+          ]
+        },
+        {
+          "title": "Fixed",
+          "items": [
+            "PrintScreen-based shortcuts fire reliably on Windows, and registration failures now surface in the settings UI instead of silently swallowing every shortcut.",
+            "Default PrintScreen bindings shifted to `Ctrl+PrintScreen` and `Ctrl+Shift+PrintScreen` so the Snipping Tool doesn't steal them.",
+            "Clicking the floating screenshot preview opens the editor again — dragging still works for repositioning.",
+            "Embedded video editor playback buttons regained their rounded corners.",
+            "Capture overlay focus and always-on-top handling."
+          ]
+        }
+      ]
+    },
+    {
       "version": "0.5.18",
       "date": "2026-04-01",
       "sections": [

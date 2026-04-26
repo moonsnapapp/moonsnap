@@ -92,7 +92,11 @@ describe('useEditorActions', () => {
 
     expect(mockDialogSave).toHaveBeenCalledWith({
       defaultPath: expect.stringMatching(/^capture_\d+\.png$/),
-      filters: [{ name: 'Images', extensions: ['png'] }],
+      filters: [
+        { name: 'PNG', extensions: ['png'] },
+        { name: 'JPEG', extensions: ['jpg', 'jpeg'] },
+        { name: 'WebP', extensions: ['webp'] },
+      ],
     });
     expect(mockExportToFile).toHaveBeenCalledWith(
       stageRef,
