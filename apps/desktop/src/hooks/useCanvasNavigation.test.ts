@@ -238,8 +238,8 @@ describe('useCanvasNavigation', () => {
       expect(result.current.zoom).toBeLessThanOrEqual(2);
     });
 
-    it('should not go below MIN_ZOOM (0.3)', () => {
-      const image = createMockImage(800, 600);
+    it('should not go below the absolute minimum zoom', () => {
+      const image = createMockImage(20000, 20000);
       const props = createMockProps({ image });
       const { result } = renderHook(() => useCanvasNavigation(props));
 
@@ -250,7 +250,31 @@ describe('useCanvasNavigation', () => {
         }
       });
 
-      expect(result.current.zoom).toBeGreaterThanOrEqual(0.3);
+      expect(result.current.zoom).toBeGreaterThanOrEqual(0.05);
+    });
+
+    it('should allow small images to zoom out below the dynamic fit minimum', () => {
+      const image = createMockImage(200, 100);
+      const props = createMockProps({ image });
+      const { result } = renderHook(() => useCanvasNavigation(props));
+
+      act(() => {
+        result.current.setZoom(1.69);
+      });
+
+      act(() => {
+        result.current.handleZoomOut();
+      });
+
+      expect(result.current.zoom).toBeLessThan(1.69);
+
+      act(() => {
+        for (let i = 0; i < 50; i++) {
+          result.current.handleZoomOut();
+        }
+      });
+
+      expect(result.current.zoom).toBeGreaterThanOrEqual(1);
     });
 
     it('should set zoom to 1 on handleActualSize', () => {

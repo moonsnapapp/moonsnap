@@ -17,12 +17,14 @@ interface DisplayPickerPanelProps {
   disabled?: boolean;
   captureType?: CaptureType;
   onCaptureComplete?: () => void;
+  toolbarOwner?: string;
 }
 
 export const DisplayPickerPanel: React.FC<DisplayPickerPanelProps> = ({
   disabled = false,
   captureType = 'screenshot',
   onCaptureComplete,
+  toolbarOwner,
 }) => {
   const [monitors, setMonitors] = useState<MonitorInfo[]>([]);
   const [isCapturing, setIsCapturing] = useState(false);
@@ -72,6 +74,7 @@ export const DisplayPickerPanel: React.FC<DisplayPickerPanelProps> = ({
           captureType: ctStr,
           sourceMode: 'display',
           preselectMonitor: monitorIndex,
+          toolbarOwner,
         });
       }
     } catch (error) {
@@ -79,7 +82,7 @@ export const DisplayPickerPanel: React.FC<DisplayPickerPanelProps> = ({
     } finally {
       setIsCapturing(false);
     }
-  }, [captureType, isCapturing, onCaptureComplete]);
+  }, [captureType, isCapturing, onCaptureComplete, toolbarOwner]);
 
   // Format display name
   const getDisplayName = (monitor: MonitorInfo, index: number) => {

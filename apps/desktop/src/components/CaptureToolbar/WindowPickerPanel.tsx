@@ -17,12 +17,14 @@ interface WindowPickerPanelProps {
   disabled?: boolean;
   captureType?: CaptureType;
   onCaptureComplete?: () => void;
+  toolbarOwner?: string;
 }
 
 export const WindowPickerPanel: React.FC<WindowPickerPanelProps> = ({
   disabled = false,
   captureType = 'screenshot',
   onCaptureComplete,
+  toolbarOwner,
 }) => {
   const [isCapturing, setIsCapturing] = useState(false);
   const buttonRef = useRef<HTMLButtonElement>(null);
@@ -64,6 +66,7 @@ export const WindowPickerPanel: React.FC<WindowPickerPanelProps> = ({
           captureType: ctStr,
           sourceMode: 'window',
           preselectWindow: window.id,
+          toolbarOwner,
         });
       }
     } catch (error) {
@@ -71,7 +74,7 @@ export const WindowPickerPanel: React.FC<WindowPickerPanelProps> = ({
     } finally {
       setIsCapturing(false);
     }
-  }, [captureType, isCapturing, onCaptureComplete]);
+  }, [captureType, isCapturing, onCaptureComplete, toolbarOwner]);
 
   // Get display name for window
   const getDisplayName = (window: WindowInfo) => {
@@ -101,6 +104,7 @@ export const WindowPickerPanel: React.FC<WindowPickerPanelProps> = ({
       await invoke('show_capture_overlay', {
         captureType: ctStr,
         sourceMode: 'window',
+        toolbarOwner,
         // No preselectWindow - user will click to select
       });
 
@@ -112,7 +116,7 @@ export const WindowPickerPanel: React.FC<WindowPickerPanelProps> = ({
     } finally {
       setIsCapturing(false);
     }
-  }, [captureType, isCapturing, onCaptureComplete]);
+  }, [captureType, isCapturing, onCaptureComplete, toolbarOwner]);
 
   // Open native menu
   const openMenu = useCallback(async () => {

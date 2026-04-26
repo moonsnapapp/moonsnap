@@ -191,10 +191,7 @@ function App() {
         return;
       }
 
-      if (event.ctrlKey && !event.shiftKey && !event.altKey && event.code === 'Space') {
-        event.preventDefault();
-        setShowExperimentalCaptureToolbar(true);
-      }
+      // Experimental capture toolbar shortcut temporarily disabled.
     };
 
     window.addEventListener('keydown', handleKeyDown);
@@ -364,10 +361,12 @@ function App() {
         onClose={() => setShowShortcuts(false)}
       />
 
-      <ExperimentalCaptureToolbarDialog
-        open={showExperimentalCaptureToolbar}
-        onOpenChange={setShowExperimentalCaptureToolbar}
-      />
+      {showExperimentalCaptureToolbar && (
+        <ExperimentalCaptureToolbarDialog
+          open={showExperimentalCaptureToolbar}
+          onOpenChange={setShowExperimentalCaptureToolbar}
+        />
+      )}
 
       {/* Settings Dialog */}
       <SettingsDialog />

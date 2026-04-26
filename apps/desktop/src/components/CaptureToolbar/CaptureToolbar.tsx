@@ -105,6 +105,8 @@ interface CaptureToolbarProps {
   onOpenSettings?: () => void;
   /** Open capture library */
   onOpenLibrary?: () => void;
+  /** Optional owner label for overlay events from picker panels */
+  toolbarOwner?: string;
   /** Minimize the toolbar window */
   onMinimizeToolbar?: () => void;
   /** Close the toolbar window */
@@ -157,6 +159,7 @@ export const CaptureToolbar: React.FC<CaptureToolbarProps> = ({
   isAreaSaveDisabled = false,
   onOpenSettings,
   onOpenLibrary,
+  toolbarOwner,
   onMinimizeToolbar,
   onCloseToolbar,
   minimalChrome = 'window',
@@ -466,6 +469,7 @@ export const CaptureToolbar: React.FC<CaptureToolbarProps> = ({
             onCaptureComplete={onCaptureComplete}
             lastAreaSelection={lastAreaSelection}
             savedAreaSelections={savedAreaSelections}
+            toolbarOwner={toolbarOwner}
             disabled={isBusy}
           />
         )}

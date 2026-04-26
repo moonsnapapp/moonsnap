@@ -496,6 +496,8 @@ pub struct OverlayState {
     pub auto_start_recording: bool,
     /// Overlay selection mode (display/window/region)
     pub overlay_mode: OverlayMode,
+    /// Optional toolbar window that owns this overlay session.
+    pub toolbar_owner: Option<String>,
 
     // Win32 window
     /// Handle to the overlay window

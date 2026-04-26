@@ -109,6 +109,7 @@ pub async fn show_capture_overlay(
     preselect_window: Option<isize>,
     auto_start_recording: Option<bool>,
     preselect_area: Option<ScreenRegionSelection>,
+    toolbar_owner: Option<String>,
 ) -> MoonSnapResult<Option<OverlayResult>> {
     log::debug!("[show_capture_overlay] capture_type: {:?}, source_mode: {:?}, preselect_monitor: {:?}, preselect_window: {:?}, preselect_area: {:?}",
         capture_type, source_mode, preselect_monitor, preselect_window, preselect_area);
@@ -171,6 +172,7 @@ pub async fn show_capture_overlay(
             preselect_window_title,
             preselect_monitor,
             preselect_monitor_name,
+            toolbar_owner,
         )
     })
     .await
@@ -270,6 +272,7 @@ fn run_overlay(
     preselect_window_title: Option<String>,
     preselect_monitor_index: Option<usize>,
     preselect_monitor_name: Option<String>,
+    toolbar_owner: Option<String>,
 ) -> MoonSnapResult<Option<OverlayResult>> {
     log::debug!("[run_overlay] Starting overlay for {:?} with mode {:?}, preselect: {:?}, window: {:?}/{:?}, monitor: {:?}/{:?}",
         capture_type, overlay_mode, preselect_bounds,
@@ -383,6 +386,7 @@ fn run_overlay(
             capture_type,
             auto_start_recording,
             overlay_mode,
+            toolbar_owner,
             hwnd,
             monitor: monitor_info,
             drag: Default::default(),
@@ -413,7 +417,11 @@ fn run_overlay(
         // Initial render
         render::render(&state).map_err(|e| format!("Failed to render: {:?}", e))?;
 
-        let mut deferred_preselect_area_event: Option<(&'static str, serde_json::Value)> = None;
+        let mut deferred_preselect_area_event: Option<(
+            Option<String>,
+            &'static str,
+            serde_json::Value,
+        )> = None;
 
         // If we have preselected bounds, confirm selection on existing startup toolbar
         // and make overlay click-through (locked selection doesn't need input)
@@ -425,10 +433,13 @@ fn run_overlay(
                 if is_preselected_area {
                     let event_name = if state.auto_start_recording {
                         "quick-recording-selection-ready"
+                    } else if state.toolbar_owner.is_some() {
+                        "confirm-selection"
                     } else {
                         "create-capture-toolbar"
                     };
                     deferred_preselect_area_event = Some((
+                        state.toolbar_owner.clone(),
                         event_name,
                         serde_json::json!({
                             "x": screen_sel.left,
@@ -451,9 +462,7 @@ fn run_overlay(
                         "display"
                     };
 
-                    let _ = state.app_handle.emit(
-                        "confirm-selection",
-                        serde_json::json!({
+                    let payload = serde_json::json!({
                             "x": screen_sel.left,
                             "y": screen_sel.top,
                             "width": screen_sel.width(),
@@ -466,8 +475,14 @@ fn run_overlay(
                             "sourceTitle": state.preselected_window_title,
                             "monitorIndex": state.preselected_monitor_index,
                             "monitorName": state.preselected_monitor_name
-                        }),
-                    );
+                    });
+                    if let Some(owner) = &state.toolbar_owner {
+                        let _ = state
+                            .app_handle
+                            .emit_to(owner, "confirm-selection", payload);
+                    } else {
+                        let _ = state.app_handle.emit("confirm-selection", payload);
+                    }
                     use windows::Win32::UI::WindowsAndMessaging::{
                         GetWindowLongW, SetWindowLongW, GWL_EXSTYLE, WS_EX_LAYERED,
                         WS_EX_TRANSPARENT,
@@ -491,8 +506,12 @@ fn run_overlay(
         // Force window to foreground
         let _ = windows::Win32::UI::WindowsAndMessaging::SetForegroundWindow(hwnd);
 
-        if let Some((event_name, payload)) = deferred_preselect_area_event {
-            let _ = state.app_handle.emit(event_name, payload);
+        if let Some((owner, event_name, payload)) = deferred_preselect_area_event {
+            if let Some(owner) = owner {
+                let _ = state.app_handle.emit_to(owner, event_name, payload);
+            } else {
+                let _ = state.app_handle.emit(event_name, payload);
+            }
         }
 
         // Message loop
@@ -533,6 +552,26 @@ fn run_overlay(
                         }
                     },
                     OverlayCommand::Reselect => {
+                        use windows::Win32::UI::WindowsAndMessaging::{
+                            GetWindowLongW, SetWindowLongW, SetWindowPos, GWL_EXSTYLE,
+                            HWND_TOPMOST, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,
+                            WS_EX_TRANSPARENT,
+                        };
+                        let ex_style = GetWindowLongW(state.hwnd, GWL_EXSTYLE);
+                        SetWindowLongW(
+                            state.hwnd,
+                            GWL_EXSTYLE,
+                            ex_style & !(WS_EX_TRANSPARENT.0 as i32),
+                        );
+                        let _ = SetWindowPos(
+                            state.hwnd,
+                            HWND_TOPMOST,
+                            0,
+                            0,
+                            0,
+                            0,
+                            SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE,
+                        );
                         state.reselect();
                         // Emit reselecting event (NOT closed) - webcam should stay open
                         let _ = state.app_handle.emit("capture-overlay-reselecting", ());
@@ -629,22 +668,33 @@ fn run_overlay(
         // Bring toolbar back to front after overlay closes (with delay for z-order to settle)
         if !state.auto_start_recording {
             let app_for_toolbar = state.app_handle.clone();
+            let toolbar_label = state
+                .toolbar_owner
+                .clone()
+                .unwrap_or_else(|| crate::commands::window::CAPTURE_TOOLBAR_LABEL.to_string());
             std::thread::spawn(move || {
                 std::thread::sleep(std::time::Duration::from_millis(50));
-                if let Some(win) = app_for_toolbar.get_webview_window("capture-toolbar") {
+                if let Some(win) = app_for_toolbar.get_webview_window(&toolbar_label) {
                     if let Ok(toolbar_hwnd) = win.hwnd() {
                         use windows::Win32::UI::WindowsAndMessaging::{
-                            SetForegroundWindow, SetWindowPos, ShowWindow, HWND_TOPMOST,
-                            SWP_NOMOVE, SWP_NOSIZE, SWP_SHOWWINDOW, SW_RESTORE, SW_SHOW,
+                            SetForegroundWindow, SetWindowPos, ShowWindow, HWND_NOTOPMOST,
+                            HWND_TOPMOST, SWP_NOMOVE, SWP_NOSIZE, SWP_SHOWWINDOW, SW_RESTORE,
+                            SW_SHOW,
                         };
+                        let insert_after =
+                            if toolbar_label == crate::commands::window::CAPTURE_TOOLBAR_LABEL {
+                                HWND_TOPMOST
+                            } else {
+                                HWND_NOTOPMOST
+                            };
                         // Restore if minimized
                         let _ = ShowWindow(HWND(toolbar_hwnd.0), SW_RESTORE);
                         // Show the window
                         let _ = ShowWindow(HWND(toolbar_hwnd.0), SW_SHOW);
-                        // Set as topmost
+                        // Keep the floating toolbar topmost, but never leave the library sticky.
                         let _ = SetWindowPos(
                             HWND(toolbar_hwnd.0),
-                            HWND_TOPMOST,
+                            insert_after,
                             0,
                             0,
                             0,
@@ -664,9 +714,13 @@ fn run_overlay(
         if result.is_none() {
             log::debug!("[Overlay] Cancelled, resetting toolbar to startup state");
             // Emit reset event so frontend resets selectionConfirmed=false
-            let _ = state.app_handle.emit("reset-to-startup", ());
+            if let Some(owner) = &state.toolbar_owner {
+                let _ = state.app_handle.emit_to(owner, "reset-to-startup", ());
+            } else {
+                let _ = state.app_handle.emit("reset-to-startup", ());
+            }
 
-            if !state.auto_start_recording {
+            if !state.auto_start_recording && state.toolbar_owner.is_none() {
                 let app_handle = state.app_handle.clone();
                 tauri::async_runtime::spawn(async move {
                     if let Err(e) =

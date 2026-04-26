@@ -30,6 +30,7 @@ interface SourceSelectorProps {
   captureType?: CaptureType;
   /** Called when a capture is completed from the picker panels */
   onCaptureComplete?: () => void;
+  toolbarOwner?: string;
   lastAreaSelection?: AreaSelectionBounds | null;
   savedAreaSelections?: SavedAreaSelection[];
   disabled?: boolean;
@@ -46,6 +47,7 @@ export const SourceSelector: React.FC<SourceSelectorProps> = ({
   onDeleteSavedArea,
   captureType = 'screenshot',
   onCaptureComplete,
+  toolbarOwner,
   lastAreaSelection,
   savedAreaSelections = [],
   disabled = false,
@@ -136,6 +138,7 @@ export const SourceSelector: React.FC<SourceSelectorProps> = ({
         disabled={disabled}
         captureType={captureType}
         onCaptureComplete={onCaptureComplete}
+        toolbarOwner={toolbarOwner}
       />
 
       {/* Window Picker - handles its own capture */}
@@ -143,6 +146,7 @@ export const SourceSelector: React.FC<SourceSelectorProps> = ({
         disabled={disabled}
         captureType={captureType}
         onCaptureComplete={onCaptureComplete}
+        toolbarOwner={toolbarOwner}
       />
 
       {/* Area/Region Selection */}

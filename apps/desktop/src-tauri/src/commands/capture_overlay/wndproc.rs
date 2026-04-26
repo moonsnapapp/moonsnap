@@ -74,7 +74,6 @@ fn handle_nchittest(state_ptr: *mut OverlayState, lparam: LPARAM) -> LRESULT {
         }
 
         let state = &*state_ptr;
-
         // During initial selection (not yet in adjustment mode), keep overlay interactive
         if !state.adjustment.is_active {
             return LRESULT(HTCLIENT as isize);
@@ -92,14 +91,15 @@ fn handle_nchittest(state_ptr: *mut OverlayState, lparam: LPARAM) -> LRESULT {
 
         // WM_NCHITTEST reports screen coordinates. Convert them into the overlay's
         // local coordinate space before checking resize handles.
-        let (x, y) = current_screen_mouse_coords().unwrap_or_else(|| mouse_coords(lparam));
+        let (screen_x, screen_y) =
+            current_screen_mouse_coords().unwrap_or_else(|| mouse_coords(lparam));
 
         // Check if the cursor is on a resize handle
         let handle = hit_test_adjustment_handle_at_screen_coords(
             &state.monitor,
             state.adjustment.bounds,
-            x,
-            y,
+            screen_x,
+            screen_y,
         );
         if handle.is_active() {
             // On a handle — overlay handles this click
@@ -621,16 +621,7 @@ fn emit_adjustment_ready(state: &OverlayState, bounds: Rect) {
 fn emit_dimensions_update(state: &OverlayState) {
     let screen_bounds = state.monitor.local_rect_to_screen(state.adjustment.bounds);
 
-    // Emit globally so both capture-toolbar and webcam-preview receive it
-    let _ = state.app_handle.emit(
-        "selection-updated",
-        serde_json::json!({
-            "x": screen_bounds.left,
-            "y": screen_bounds.top,
-            "width": screen_bounds.width(),
-            "height": screen_bounds.height()
-        }),
-    );
+    emit_selection_update(state, screen_bounds);
 
     keep_auxiliary_windows_above_overlay(state);
 }
@@ -639,18 +630,30 @@ fn emit_dimensions_update(state: &OverlayState) {
 fn emit_final_selection(state: &OverlayState) {
     let screen_bounds = state.monitor.local_rect_to_screen(state.adjustment.bounds);
 
-    // Emit globally so both capture-toolbar and webcam-preview receive it
-    let _ = state.app_handle.emit(
-        "selection-updated",
-        serde_json::json!({
-            "x": screen_bounds.left,
-            "y": screen_bounds.top,
-            "width": screen_bounds.width(),
-            "height": screen_bounds.height()
-        }),
-    );
+    emit_selection_update(state, screen_bounds);
 
     keep_auxiliary_windows_above_overlay(state);
+}
+
+fn emit_selection_update(state: &OverlayState, screen_bounds: Rect) {
+    let payload = serde_json::json!({
+        "x": screen_bounds.left,
+        "y": screen_bounds.top,
+        "width": screen_bounds.width(),
+        "height": screen_bounds.height()
+    });
+
+    if let Some(owner) = &state.toolbar_owner {
+        let _ = state
+            .app_handle
+            .emit_to(owner, "selection-updated", payload.clone());
+    } else {
+        let _ = state.app_handle.emit("selection-updated", payload.clone());
+    }
+
+    let _ = state
+        .app_handle
+        .emit_to("webcam-preview", "selection-updated", payload);
 }
 
 /// Emit event to create capture toolbar window from frontend
@@ -677,10 +680,13 @@ fn emit_area_selection_confirmed(state: &OverlayState, screen_bounds: Rect) {
 }
 
 fn show_toolbar(state: &OverlayState, screen_bounds: Rect, source: SourceType) {
-    // For locked selections (display/window), make overlay fully click-through.
-    // For unlocked selections (region), the overlay stays interactive for adjustment
-    // handles but uses WM_NCHITTEST to pass through clicks outside handles.
-    if state.adjustment.is_locked {
+    let keep_area_overlay_interactive =
+        matches!(source, SourceType::Area) && !state.adjustment.is_locked;
+    if keep_area_overlay_interactive {
+        make_overlay_interactive(state);
+    } else {
+        // Locked display/window selections do not expose adjustment handles, so
+        // the overlay can become a visual-only layer while the control plane owns input.
         make_overlay_click_through(state);
     }
 
@@ -715,11 +721,22 @@ fn show_toolbar(state: &OverlayState, screen_bounds: Rect, source: SourceType) {
 
     let event_name = if state.auto_start_recording {
         "quick-recording-selection-ready"
+    } else if state.toolbar_owner.is_some() {
+        "confirm-selection"
     } else {
         "create-capture-toolbar"
     };
 
-    let _ = state.app_handle.emit(event_name, payload);
+    if let Some(owner) = &state.toolbar_owner {
+        let _ = state.app_handle.emit_to(owner, event_name, payload);
+    } else {
+        let _ = state.app_handle.emit(event_name, payload);
+    }
+
+    if !state.auto_start_recording && !keep_area_overlay_interactive {
+        make_overlay_not_topmost(state);
+        schedule_toolbar_to_front(state);
+    }
 }
 
 /// Make the overlay click-through so the toolbar receives all mouse events.
@@ -735,6 +752,49 @@ fn make_overlay_click_through(state: &OverlayState) {
         // WS_EX_LAYERED is already set for our D2D rendering
         let new_style = ex_style | WS_EX_TRANSPARENT.0 as i32 | WS_EX_LAYERED.0 as i32;
         SetWindowLongW(state.hwnd, GWL_EXSTYLE, new_style);
+    }
+}
+
+fn make_overlay_interactive(state: &OverlayState) {
+    unsafe {
+        use windows::Win32::UI::WindowsAndMessaging::{
+            GetWindowLongW, SetWindowLongW, SetWindowPos, GWL_EXSTYLE, HWND_TOPMOST,
+            SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, WS_EX_TRANSPARENT,
+        };
+
+        let ex_style = GetWindowLongW(state.hwnd, GWL_EXSTYLE);
+        SetWindowLongW(
+            state.hwnd,
+            GWL_EXSTYLE,
+            ex_style & !(WS_EX_TRANSPARENT.0 as i32),
+        );
+        let _ = SetWindowPos(
+            state.hwnd,
+            HWND_TOPMOST,
+            0,
+            0,
+            0,
+            0,
+            SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE,
+        );
+    }
+}
+
+fn make_overlay_not_topmost(state: &OverlayState) {
+    unsafe {
+        use windows::Win32::UI::WindowsAndMessaging::{
+            SetWindowPos, HWND_NOTOPMOST, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,
+        };
+
+        let _ = SetWindowPos(
+            state.hwnd,
+            HWND_NOTOPMOST,
+            0,
+            0,
+            0,
+            0,
+            SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE,
+        );
     }
 }
 
@@ -764,6 +824,31 @@ fn keep_auxiliary_windows_above_overlay(state: &OverlayState) {
     for label in ["recording-mode-chooser", "capture-toolbar"] {
         bring_auxiliary_window_to_front(state, label);
     }
+    if let Some(owner) = &state.toolbar_owner {
+        bring_auxiliary_window_to_front(state, owner);
+    }
+}
+
+fn schedule_toolbar_to_front(state: &OverlayState) {
+    let app = state.app_handle.clone();
+    let label = state
+        .toolbar_owner
+        .clone()
+        .unwrap_or_else(|| crate::commands::window::CAPTURE_TOOLBAR_LABEL.to_string());
+    std::thread::spawn(move || {
+        for _ in 0..12 {
+            std::thread::sleep(std::time::Duration::from_millis(40));
+            if let Some(win) = app.get_webview_window(&label) {
+                if matches!(win.is_visible(), Ok(true)) {
+                    bring_window_to_foreground(
+                        &win,
+                        true,
+                        label == crate::commands::window::CAPTURE_TOOLBAR_LABEL,
+                    );
+                }
+            }
+        }
+    });
 }
 
 fn bring_auxiliary_window_to_front(state: &OverlayState, label: &str) {
@@ -775,17 +860,42 @@ fn bring_auxiliary_window_to_front(state: &OverlayState, label: &str) {
         return;
     }
 
+    bring_window_to_foreground(
+        &win,
+        label == crate::commands::window::CAPTURE_TOOLBAR_LABEL || label == "library",
+        label == crate::commands::window::CAPTURE_TOOLBAR_LABEL,
+    );
+}
+
+fn bring_window_to_foreground(win: &tauri::WebviewWindow, focus: bool, topmost: bool) {
     if let Ok(hwnd) = win.hwnd() {
         unsafe {
+            use windows::Win32::UI::WindowsAndMessaging::{
+                BringWindowToTop, SetForegroundWindow, ShowWindow, HWND_NOTOPMOST, SWP_SHOWWINDOW,
+                SW_RESTORE, SW_SHOW,
+            };
+
+            let hwnd = HWND(hwnd.0);
+            let insert_after = if topmost {
+                HWND_TOPMOST
+            } else {
+                HWND_NOTOPMOST
+            };
+            let _ = ShowWindow(hwnd, SW_RESTORE);
+            let _ = ShowWindow(hwnd, SW_SHOW);
             let _ = SetWindowPos(
-                HWND(hwnd.0),
-                HWND_TOPMOST,
+                hwnd,
+                insert_after,
                 0,
                 0,
                 0,
                 0,
-                SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE,
+                SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW,
             );
+            let _ = BringWindowToTop(hwnd);
+            if focus {
+                let _ = SetForegroundWindow(hwnd);
+            }
         }
     }
 }

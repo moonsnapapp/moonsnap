@@ -230,7 +230,8 @@ export const useCanvasNavigation = ({
     return getContentDimensions();
   }, [image, fitVisibleBounds, getContentDimensions]);
 
-  // Dynamic min zoom: ensures you can always zoom out to see the full content
+  // Dynamic min zoom keeps very large content navigable, but should never force
+  // small images above actual size. Otherwise zoom-out can clamp above 100%.
   const minZoom = (() => {
     const { width, height } = getContentDimensions();
     if (width === 0 || height === 0 || containerSize.width === 0 || containerSize.height === 0) {
@@ -239,7 +240,7 @@ export const useCanvasNavigation = ({
     const availableWidth = containerSize.width - VIEW_PADDING * 2;
     const availableHeight = containerSize.height - VIEW_PADDING * 2;
     const fitZoom = Math.min(availableWidth / width, availableHeight / height) * 0.5;
-    return Math.max(MIN_ZOOM_FLOOR, fitZoom);
+    return Math.max(MIN_ZOOM_FLOOR, Math.min(fitZoom, 1));
   })();
 
   // Transform screen position to canvas position
