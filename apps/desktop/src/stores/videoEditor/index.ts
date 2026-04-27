@@ -156,6 +156,9 @@ export {
   findSegmentIndexAtTimelineTime,
   clipSegmentsToTimelineRange,
   MIN_TRIM_SEGMENT_DURATION_MS,
+  MIN_TRIM_SEGMENT_SPEED,
+  MAX_TRIM_SEGMENT_SPEED,
+  DEFAULT_FULL_SEGMENT_ID,
 } from './trimSlice';
 
 /**

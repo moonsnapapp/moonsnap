@@ -8,6 +8,8 @@ export const selectScreenVideoPath = (state: VideoEditorState) => state.project?
 export const selectOriginalVideoWidth = (state: VideoEditorState) => state.project?.sources.originalWidth ?? 1920;
 export const selectOriginalVideoHeight = (state: VideoEditorState) => state.project?.sources.originalHeight ?? 1080;
 export const selectIsPlaying = (state: VideoEditorState) => state.isPlaying;
+export const selectIsIOLoopEnabled = (state: VideoEditorState) => state.isIOLoopEnabled;
+export const selectSetIOLoopEnabled = (state: VideoEditorState) => state.setIOLoopEnabled;
 export const selectPreviewTimeMs = (state: VideoEditorState) => state.previewTimeMs;
 export const selectCurrentTimeMs = (state: VideoEditorState) => state.currentTimeMs;
 export const selectRequestSeek = (state: VideoEditorState) => state.requestSeek;

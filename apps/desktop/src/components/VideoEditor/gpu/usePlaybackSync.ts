@@ -9,7 +9,12 @@
 
 import { useEffect, useCallback, useRef } from 'react';
 import { useVideoEditorStore, findSegmentAtSourceTime, getEffectiveDuration, timelineToSource } from '../../../stores/videoEditorStore';
-import { selectLastSeekToken } from '../../../stores/videoEditor/selectors';
+import {
+  selectExportInPointMs,
+  selectExportOutPointMs,
+  selectIsIOLoopEnabled,
+  selectLastSeekToken,
+} from '../../../stores/videoEditor/selectors';
 import { usePlaybackControls, initPlaybackEngine } from '../../../hooks/usePlaybackEngine';
 import { useTimelineToSourceTime } from '../../../hooks/useTimelineSourceTime';
 import { videoEditorLogger } from '../../../utils/logger';
@@ -53,6 +58,7 @@ interface PlaybackSyncResult {
 // Keep playback smooth without audible "rewind" artifacts from backward seeks.
 const PLAYBACK_AUDIO_RESYNC_THRESHOLD_SEC = 0.5;
 const PLAYBACK_SEEK_START_FALLBACK_MS = 250;
+const IO_LOOP_WRAP_LOOKAHEAD_MS = 35;
 
 function getPlaybackSpeedForTimelineTime(timelineTimeMs: number): number {
   const state = useVideoEditorStore.getState();
@@ -99,6 +105,9 @@ export function usePlaybackSync(options: PlaybackSyncOptions): PlaybackSyncResul
   const controls = usePlaybackControls();
   const hasSeparateAudio = Boolean(systemAudioSrc || micAudioSrc);
   const lastSeekToken = useVideoEditorStore(selectLastSeekToken);
+  const isIOLoopEnabled = useVideoEditorStore(selectIsIOLoopEnabled);
+  const exportInPointMs = useVideoEditorStore(selectExportInPointMs);
+  const exportOutPointMs = useVideoEditorStore(selectExportOutPointMs);
   const lastSeekTokenRef = useRef(lastSeekToken);
 
   const getSourceTime = useTimelineToSourceTime();
@@ -396,6 +405,13 @@ export function usePlaybackSync(options: PlaybackSyncOptions): PlaybackSyncResul
       if (hoveredTrack !== null) return;
     }
 
+    if (seekTokenChanged) {
+      const video = videoRef.current;
+      if (video) {
+        video.currentTime = sourceTime / 1000;
+      }
+    }
+
     const syncAudio = (audio: HTMLAudioElement | null) => {
       if (!audio) return;
       if (!isPlaying || seekTokenChanged) {
@@ -405,7 +421,7 @@ export function usePlaybackSync(options: PlaybackSyncOptions): PlaybackSyncResul
 
     syncAudio(systemAudioRef.current);
     syncAudio(micAudioRef.current);
-  }, [previewTimeMs, currentTimeMs, isPlaying, getSourceTime, lastSeekToken, micAudioRef, systemAudioRef]);
+  }, [previewTimeMs, currentTimeMs, isPlaying, getSourceTime, lastSeekToken, micAudioRef, systemAudioRef, videoRef]);
 
   // While playing, keep video clock aligned to audio (audio is master).
   useEffect(() => {
@@ -441,6 +457,64 @@ export function usePlaybackSync(options: PlaybackSyncOptions): PlaybackSyncResul
     masterAudio.addEventListener('timeupdate', handleTimeUpdate);
     return () => masterAudio.removeEventListener('timeupdate', handleTimeUpdate);
   }, [isPlaying, systemAudioRef, micAudioRef, videoRef]);
+
+  // Loop IO ranges directly on media elements to avoid an audio stutter from
+  // routing every boundary wrap through the heavier request-seek path.
+  useEffect(() => {
+    if (!isPlaying || !isIOLoopEnabled) return;
+
+    const state = useVideoEditorStore.getState();
+    const project = state.project;
+    if (!project) return;
+
+    const sourceDurationMs = project.timeline.durationMs;
+    const effectiveDurationMs = getEffectiveDuration(project.timeline.segments ?? [], sourceDurationMs);
+    const loopStartMs = exportInPointMs ?? 0;
+    const loopEndMs = exportOutPointMs ?? effectiveDurationMs;
+    if (loopEndMs <= loopStartMs) return;
+
+    let rafId: number | null = null;
+
+    const setMediaSourceTime = (sourceTimeSec: number) => {
+      const mediaElements = [
+        videoRef.current,
+        systemAudioRef.current,
+        micAudioRef.current,
+      ];
+
+      for (const media of mediaElements) {
+        if (!media) continue;
+        media.currentTime = sourceTimeSec;
+      }
+    };
+
+    const tick = () => {
+      const { currentTimeMs, setCurrentTime } = useVideoEditorStore.getState();
+      if (currentTimeMs >= loopEndMs - IO_LOOP_WRAP_LOOKAHEAD_MS) {
+        const loopStartSourceSec = getSourceTime(loopStartMs) / 1000;
+        setMediaSourceTime(loopStartSourceSec);
+        setCurrentTime(loopStartMs);
+      }
+
+      rafId = requestAnimationFrame(tick);
+    };
+
+    rafId = requestAnimationFrame(tick);
+    return () => {
+      if (rafId !== null) {
+        cancelAnimationFrame(rafId);
+      }
+    };
+  }, [
+    exportInPointMs,
+    exportOutPointMs,
+    getSourceTime,
+    isIOLoopEnabled,
+    isPlaying,
+    micAudioRef,
+    systemAudioRef,
+    videoRef,
+  ]);
 
   // Seek video when preview time or current time changes.
   // Skip seeking when hovering over tracks — only seek for ruler scrubbing or playhead changes.

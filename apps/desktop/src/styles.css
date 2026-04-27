@@ -3955,6 +3955,37 @@ body.floating-toolbar-window #root {
   color: #ffffff;
 }
 
+.timeline-io-loop-toggle:hover,
+.timeline-io-loop-toggle:active {
+  transform: none;
+}
+
+.glass-btn.timeline-io-loop-toggle--active,
+.glass-btn[data-io-loop-active="true"],
+.light .glass-btn[data-io-loop-active="true"] {
+  background: linear-gradient(135deg, var(--coral-500) 0%, var(--coral-600) 100%) !important;
+  border-color: var(--glass-border-light) !important;
+  color: var(--primary-foreground) !important;
+  box-shadow:
+    var(--glass-inset-top),
+    var(--glass-inset-bottom),
+    0 0 0 1px var(--coral-200),
+    var(--shadow-glow-coral);
+}
+
+.glass-btn.timeline-io-loop-toggle--active:hover,
+.glass-btn[data-io-loop-active="true"]:hover,
+.light .glass-btn[data-io-loop-active="true"]:hover {
+  background: linear-gradient(135deg, var(--coral-500) 0%, var(--coral-600) 100%) !important;
+  border-color: var(--glass-border-light) !important;
+  color: var(--primary-foreground) !important;
+}
+
+.glass-btn[data-io-loop-active="true"] svg {
+  color: var(--primary-foreground);
+  stroke: currentColor;
+}
+
 .timeline-cut-cursor,
 .timeline-cut-cursor [data-trim-track],
 .timeline-cut-cursor [data-trim-segment],

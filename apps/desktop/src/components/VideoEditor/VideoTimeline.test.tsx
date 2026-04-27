@@ -101,9 +101,11 @@ beforeEach(() => {
     project: null,
     currentTimeMs: 0,
     isPlaying: false,
+    isIOLoopEnabled: false,
     isDraggingPlayhead: false,
     splitMode: false,
     previewTimeMs: null,
+    selectedTrimSegmentId: null,
     exportInPointMs: null,
     exportOutPointMs: null,
     timelineZoom: 0.05,
@@ -491,6 +493,7 @@ describe('VideoTimeline', () => {
         exportOutPointMs: 15000,
         timelineZoom: 0.1,
         previewTimeMs: 4000,
+        isIOLoopEnabled: true,
       });
 
       let container: HTMLElement;
@@ -521,6 +524,7 @@ describe('VideoTimeline', () => {
           fireEvent.mouseDown(inMarker, { clientX: 500 });
         });
 
+        expect(useVideoEditorStore.getState().isIOLoopEnabled).toBe(true);
         expect(useVideoEditorStore.getState().previewTimeMs).toBeNull();
         expect(container!.querySelector('[data-preview-scrubber]')).not.toBeInTheDocument();
 
@@ -972,6 +976,180 @@ describe('VideoTimeline', () => {
   });
 
   describe('playhead dragging', () => {
+    it('should disable replay IO until an IO range exists', async () => {
+      useVideoEditorStore.setState({
+        project: createMockProject(),
+      });
+
+      await act(async () => {
+        render(<VideoTimeline {...defaultProps} />);
+      });
+
+      expect(screen.getByRole('button', { name: /enable io loop/i })).toHaveAttribute('aria-disabled', 'true');
+    });
+
+    it('should toggle IO looping on and start playback from the in point', async () => {
+      useVideoEditorStore.setState({
+        project: createMockProject(),
+        exportInPointMs: 5000,
+        exportOutPointMs: 12000,
+        currentTimeMs: 0,
+        isPlaying: false,
+      });
+
+      await act(async () => {
+        render(<VideoTimeline {...defaultProps} />);
+      });
+
+      const loopButton = screen.getByRole('button', { name: /enable io loop/i });
+      fireEvent.click(loopButton);
+
+      const state = useVideoEditorStore.getState();
+      expect(state.currentTimeMs).toBe(5000);
+      expect(state.isPlaying).toBe(true);
+      const activeLoopButton = screen.getByRole('button', { name: /disable io loop/i });
+      expect(activeLoopButton).toHaveAttribute('aria-pressed', 'true');
+      expect(activeLoopButton).toHaveAttribute('data-io-loop-active', 'true');
+      expect(activeLoopButton).toHaveClass('timeline-io-loop-toggle--active');
+    });
+
+    it('should toggle IO looping off from the loop button', async () => {
+      useVideoEditorStore.setState({
+        project: createMockProject(),
+        exportInPointMs: 5000,
+        exportOutPointMs: 12000,
+        currentTimeMs: 0,
+        isPlaying: false,
+      });
+
+      await act(async () => {
+        render(<VideoTimeline {...defaultProps} />);
+      });
+
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: /enable io loop/i }));
+      });
+      expect(useVideoEditorStore.getState().isIOLoopEnabled).toBe(true);
+
+      fireEvent.click(screen.getByRole('button', { name: /disable io loop/i }));
+
+      expect(useVideoEditorStore.getState().isIOLoopEnabled).toBe(false);
+    });
+
+    it('should enable IO looping during playback without seeking when already inside the range', async () => {
+      useVideoEditorStore.setState({
+        project: createMockProject(),
+        exportInPointMs: 5000,
+        exportOutPointMs: 12000,
+        currentTimeMs: 8000,
+        isPlaying: true,
+        isIOLoopEnabled: false,
+      });
+
+      await act(async () => {
+        render(<VideoTimeline {...defaultProps} />);
+      });
+
+      fireEvent.click(screen.getByRole('button', { name: /enable io loop/i }));
+
+      const state = useVideoEditorStore.getState();
+      expect(state.isIOLoopEnabled).toBe(true);
+      expect(state.isPlaying).toBe(true);
+      expect(state.currentTimeMs).toBe(8000);
+    });
+
+    it('should activate IO loop using the latest marker state after an IO drag update', async () => {
+      useVideoEditorStore.setState({
+        project: createMockProject(),
+        exportInPointMs: null,
+        exportOutPointMs: null,
+        currentTimeMs: 0,
+        isPlaying: false,
+      });
+
+      await act(async () => {
+        render(<VideoTimeline {...defaultProps} />);
+      });
+
+      await act(async () => {
+        useVideoEditorStore.setState({
+          exportInPointMs: 7000,
+          exportOutPointMs: 14000,
+        });
+      });
+
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: /enable io loop/i }));
+      });
+
+      const state = useVideoEditorStore.getState();
+      expect(state.isIOLoopEnabled).toBe(true);
+      expect(state.currentTimeMs).toBe(7000);
+    });
+
+    it('should go to IO markers from start and end buttons while IO loop is enabled', async () => {
+      useVideoEditorStore.setState({
+        project: createMockProject(),
+        exportInPointMs: 5000,
+        exportOutPointMs: 12000,
+        currentTimeMs: 8000,
+        isIOLoopEnabled: true,
+      });
+
+      await act(async () => {
+        render(<VideoTimeline {...defaultProps} />);
+      });
+
+      fireEvent.click(screen.getByRole('button', { name: /go to start/i }));
+      expect(useVideoEditorStore.getState().currentTimeMs).toBe(5000);
+
+      fireEvent.click(screen.getByRole('button', { name: /go to end/i }));
+      expect(useVideoEditorStore.getState().currentTimeMs).toBe(12000);
+    });
+
+    it('should clamp skip controls to IO markers while IO loop is enabled', async () => {
+      useVideoEditorStore.setState({
+        project: createMockProject(),
+        exportInPointMs: 5000,
+        exportOutPointMs: 12000,
+        currentTimeMs: 7000,
+        isIOLoopEnabled: true,
+      });
+
+      await act(async () => {
+        render(<VideoTimeline {...defaultProps} />);
+      });
+
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: /skip back 1 second/i }));
+      });
+      expect(useVideoEditorStore.getState().currentTimeMs).toBe(6000);
+
+      await act(async () => {
+        useVideoEditorStore.setState({ currentTimeMs: 5500 });
+      });
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: /skip back 1 second/i }));
+      });
+      expect(useVideoEditorStore.getState().currentTimeMs).toBe(5000);
+
+      await act(async () => {
+        useVideoEditorStore.setState({ currentTimeMs: 10000 });
+      });
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: /skip forward 1 second/i }));
+      });
+      expect(useVideoEditorStore.getState().currentTimeMs).toBe(11000);
+
+      await act(async () => {
+        useVideoEditorStore.setState({ currentTimeMs: 11500 });
+      });
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: /skip forward 1 second/i }));
+      });
+      expect(useVideoEditorStore.getState().currentTimeMs).toBe(12000);
+    });
+
     it('should set isDraggingPlayhead when playhead is mousedown', async () => {
       useVideoEditorStore.setState({
         project: createMockProject(),
@@ -1129,7 +1307,7 @@ describe('VideoTimeline', () => {
       }
     });
 
-    it('should open a speed popover from the segment context menu and update segment speed', async () => {
+    it('should open a toolbar speed popover for the selected segment and update segment speed', async () => {
       useVideoEditorStore.setState({
         project: createMockProject({
           timeline: {
@@ -1155,21 +1333,23 @@ describe('VideoTimeline', () => {
       expect(segment).toBeInTheDocument();
 
       if (segment) {
-        fireEvent.contextMenu(segment, { clientX: 100, clientY: 20 });
+        fireEvent.click(segment);
       }
 
-      const setSpeedButton = screen.getByRole('menuitem', { name: /set speed/i });
-      fireEvent.click(setSpeedButton);
+      const speedButton = screen.getByRole('button', { name: /set selected segment speed/i });
+      expect(speedButton).toHaveAttribute('aria-disabled', 'false');
+      fireEvent.click(speedButton);
 
       const slider = screen.getByLabelText('Segment speed') as HTMLInputElement;
+      expect(slider.min).toBe('1');
+      expect(slider.step).toBe('1');
       fireEvent.change(slider, { target: { value: '4' } });
 
       const [updatedSegment] = useVideoEditorStore.getState().project?.timeline.segments ?? [];
       expect(updatedSegment.speed).toBe(4);
-      expect(screen.getByText('Pitch preserved')).toBeInTheDocument();
     });
 
-    it('should allow setting speed on the default full recording segment', async () => {
+    it('should allow setting speed on the selected default full recording segment', async () => {
       useVideoEditorStore.setState({
         project: createMockProject(),
         timelineZoom: 0.05,
@@ -1186,10 +1366,10 @@ describe('VideoTimeline', () => {
       expect(screen.getByText('Recording')).toBeInTheDocument();
 
       if (segment) {
-        fireEvent.contextMenu(segment, { clientX: 100, clientY: 20 });
+        fireEvent.click(segment);
       }
 
-      fireEvent.click(screen.getByRole('menuitem', { name: /set speed/i }));
+      fireEvent.click(screen.getByRole('button', { name: /set selected segment speed/i }));
       fireEvent.change(screen.getByLabelText('Segment speed'), { target: { value: '3' } });
 
       const [materializedSegment] = useVideoEditorStore.getState().project?.timeline.segments ?? [];
@@ -1198,6 +1378,22 @@ describe('VideoTimeline', () => {
         sourceEndMs: 30000,
         speed: 3,
       });
+    });
+
+    it('should keep the toolbar speed button unavailable until a segment is selected', async () => {
+      useVideoEditorStore.setState({
+        project: createMockProject(),
+        timelineZoom: 0.05,
+      });
+
+      await act(async () => {
+        render(<VideoTimeline {...defaultProps} />);
+      });
+
+      const speedButton = screen.getByRole('button', { name: /set selected segment speed/i });
+      expect(speedButton).toHaveAttribute('aria-disabled', 'true');
+      fireEvent.click(speedButton);
+      expect(screen.queryByLabelText('Segment speed')).not.toBeInTheDocument();
     });
   });
 

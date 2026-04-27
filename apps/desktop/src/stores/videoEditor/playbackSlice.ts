@@ -10,6 +10,7 @@ export interface PlaybackSlice {
   currentTimeMs: number;
   currentFrame: number;
   isPlaying: boolean;
+  isIOLoopEnabled: boolean;
   renderedFrame: RenderedFrame | null;
   lastSeekToken: number;
 
@@ -18,6 +19,7 @@ export interface PlaybackSlice {
   requestSeek: (timeMs: number) => void;
   togglePlayback: () => void;
   setIsPlaying: (playing: boolean) => void;
+  setIOLoopEnabled: (enabled: boolean) => void;
 }
 
 function shouldRestartFromStart(currentTimeMs: number, effectiveDurationMs: number): boolean {
@@ -32,6 +34,7 @@ export const createPlaybackSlice: SliceCreator<PlaybackSlice> = (set, get) => ({
   currentTimeMs: 0,
   currentFrame: 0,
   isPlaying: false,
+  isIOLoopEnabled: false,
   renderedFrame: null,
   lastSeekToken: 0,
 
@@ -96,4 +99,5 @@ export const createPlaybackSlice: SliceCreator<PlaybackSlice> = (set, get) => ({
 
     return { isPlaying: true, previewTimeMs: null };
   }),
+  setIOLoopEnabled: (enabled) => set({ isIOLoopEnabled: enabled }),
 });

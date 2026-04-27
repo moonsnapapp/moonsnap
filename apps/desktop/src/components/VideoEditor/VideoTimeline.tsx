@@ -14,8 +14,10 @@ import {
   Highlighter,
   Video,
   EyeOff,
+  Gauge,
   Scissors,
   RotateCcw,
+  Repeat2,
   X,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -25,12 +27,22 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
-import { useVideoEditorStore, formatTimeSimple, getEffectiveDuration, TRACK_LABEL_WIDTH, getFitZoom } from '../../stores/videoEditorStore';
+import {
+  useVideoEditorStore,
+  formatTimeSimple,
+  getEffectiveDuration,
+  TRACK_LABEL_WIDTH,
+  getFitZoom,
+  DEFAULT_FULL_SEGMENT_ID,
+  MIN_TRIM_SEGMENT_SPEED,
+  MAX_TRIM_SEGMENT_SPEED,
+} from '../../stores/videoEditorStore';
 import {
   selectExportInPointMs,
   selectExportOutPointMs,
   selectFitTimelineToWindow,
   selectIsDraggingPlayhead,
+  selectIsIOLoopEnabled,
   selectIsPlaying,
   selectPreviewTimeMs,
   selectProject,
@@ -38,6 +50,7 @@ import {
   selectSplitAtTimelineTime,
   selectSplitMode,
   selectSetDraggingPlayhead,
+  selectSetIOLoopEnabled,
   selectSetExportInPoint,
   selectSetExportOutPoint,
   selectSetPreviewTime,
@@ -45,9 +58,11 @@ import {
   selectSetTimelineContainerWidth,
   selectSetTimelineScrollLeft,
   selectSetTimelineZoom,
+  selectSelectedTrimSegmentId,
   selectTimelineZoom,
   selectTogglePlayback,
   selectTrackVisibility,
+  selectUpdateTrimSegmentSpeed,
 } from '../../stores/videoEditor/selectors';
 import { usePlaybackTime, usePlaybackControls, getPlaybackState } from '../../hooks/usePlaybackEngine';
 import { usePlaybackTimeThrottled } from '../../hooks/usePlaybackTimeThrottled';
@@ -407,6 +422,7 @@ export function VideoTimeline({ onExport, onResetTrimSegments, onSetInPoint, onS
   const isDraggingPlayhead = useVideoEditorStore(selectIsDraggingPlayhead);
   const isPlaying = useVideoEditorStore(selectIsPlaying);
   const splitMode = useVideoEditorStore(selectSplitMode);
+  const selectedTrimSegmentId = useVideoEditorStore(selectSelectedTrimSegmentId);
   const previewTimeMs = useVideoEditorStore(selectPreviewTimeMs);
   const trackVisibility = useVideoEditorStore(selectTrackVisibility);
   const exportInPointMs = useVideoEditorStore(selectExportInPointMs);
@@ -416,6 +432,7 @@ export function VideoTimeline({ onExport, onResetTrimSegments, onSetInPoint, onS
   const setTimelineContainerWidth = useVideoEditorStore(selectSetTimelineContainerWidth);
   const setDraggingPlayhead = useVideoEditorStore(selectSetDraggingPlayhead);
   const setTimelineZoom = useVideoEditorStore(selectSetTimelineZoom);
+  const updateTrimSegmentSpeed = useVideoEditorStore(selectUpdateTrimSegmentSpeed);
   const setPreviewTime = useVideoEditorStore(selectSetPreviewTime);
   const setSplitMode = useVideoEditorStore(selectSetSplitMode);
   const setIsPlaying = useVideoEditorStore(selectSetIsPlaying);
@@ -426,10 +443,13 @@ export function VideoTimeline({ onExport, onResetTrimSegments, onSetInPoint, onS
   const exportActionLabel = getVideoPrimaryActionLabel(project);
 
   const [draggingIOMarker, setDraggingIOMarker] = useState<'in' | 'out' | null>(null);
+  const [isSpeedPopoverOpen, setIsSpeedPopoverOpen] = useState(false);
+  const isIOLoopEnabled = useVideoEditorStore(selectIsIOLoopEnabled);
 
   const controls = usePlaybackControls();
   const containerRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const speedControlRef = useRef<HTMLDivElement>(null);
   const suppressNextClickRef = useRef(false);
   const previewRafRef = useRef<number | null>(null);
   const pendingPreviewTimeRef = useRef<number | null>(null);
@@ -438,6 +458,7 @@ export function VideoTimeline({ onExport, onResetTrimSegments, onSetInPoint, onS
   const hoverPreviewResumeAtRef = useRef<number>(performance.now() + HOVER_PREVIEW_RESUME_AFTER_RESIZE_MS);
   const hasMeasuredTimelineRef = useRef(false);
   const [containerWidth, setContainerWidth] = useState(0);
+  const setIOLoopEnabled = useVideoEditorStore(selectSetIOLoopEnabled);
 
   // Measure container width and sync to store (debounced to avoid resize lag)
   useEffect(() => {
@@ -504,6 +525,30 @@ export function VideoTimeline({ onExport, onResetTrimSegments, onSetInPoint, onS
   }, [isPlaying, setPreviewTime]);
 
   useEffect(() => {
+    if (!isSpeedPopoverOpen) return;
+
+    const handlePointerDown = (event: PointerEvent) => {
+      if (speedControlRef.current?.contains(event.target as Node)) {
+        return;
+      }
+      setIsSpeedPopoverOpen(false);
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setIsSpeedPopoverOpen(false);
+      }
+    };
+
+    document.addEventListener('pointerdown', handlePointerDown);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('pointerdown', handlePointerDown);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isSpeedPopoverOpen]);
+
+  useEffect(() => {
     return () => {
       if (previewRafRef.current !== null) {
         cancelAnimationFrame(previewRafRef.current);
@@ -516,6 +561,10 @@ export function VideoTimeline({ onExport, onResetTrimSegments, onSetInPoint, onS
   // effectiveDurationMs is the timeline duration after cuts (used for UI constraints)
   const sourceDurationMs = project?.timeline.durationMs ?? 60000;
   const segments = project?.timeline.segments;
+  const selectedTrimSegment = segments?.find((segment) => segment.id === selectedTrimSegmentId) ?? null;
+  const isDefaultFullSegmentSelected = selectedTrimSegmentId === DEFAULT_FULL_SEGMENT_ID && (!segments || segments.length === 0);
+  const selectedTrimSegmentSpeed = selectedTrimSegment?.speed ?? (isDefaultFullSegmentSelected ? 1 : null);
+  const canSetSelectedTrimSegmentSpeed = selectedTrimSegmentSpeed !== null && !splitMode;
   const effectiveDurationMs = getEffectiveDuration(segments ?? [], sourceDurationMs);
   const durationWidth = effectiveDurationMs * timelineZoom;
   const timelineWidth = Math.max(durationWidth, containerWidth - TRACK_LABEL_WIDTH);
@@ -535,6 +584,12 @@ export function VideoTimeline({ onExport, onResetTrimSegments, onSetInPoint, onS
       hasSceneTrack ? 'scene' : null,
       hasMaskTrack ? 'mask' : null,
     ].filter(Boolean).at(-1) ?? null) as 'video' | 'text' | 'annotation' | 'zoom' | 'scene' | 'mask' | null;
+
+  useEffect(() => {
+    if (!canSetSelectedTrimSegmentSpeed) {
+      setIsSpeedPopoverOpen(false);
+    }
+  }, [canSetSelectedTrimSegmentSpeed]);
 
   // Zoom % relative to fit-to-window (100% = timeline fills viewport)
   const fitZoom = getFitZoom(project, containerWidth);
@@ -881,24 +936,79 @@ export function VideoTimeline({ onExport, onResetTrimSegments, onSetInPoint, onS
     setTimelineScrollLeft(e.currentTarget.scrollLeft);
   }, [setTimelineScrollLeft]);
 
+  const hasIORange = exportInPointMs !== null || exportOutPointMs !== null;
+  const replayIOStartMs = exportInPointMs ?? 0;
+  const replayIOEndMs = exportOutPointMs ?? effectiveDurationMs;
+  const canReplayIO = hasIORange && replayIOEndMs > replayIOStartMs;
+  const getCurrentIOLoopBounds = useCallback(() => {
+    const state = useVideoEditorStore.getState();
+    const projectDurationMs = state.project?.timeline.durationMs ?? sourceDurationMs;
+    const projectSegments = state.project?.timeline.segments ?? [];
+    const currentEffectiveDurationMs = getEffectiveDuration(projectSegments, projectDurationMs);
+    const startMs = state.exportInPointMs ?? 0;
+    const endMs = state.exportOutPointMs ?? currentEffectiveDurationMs;
+
+    if (state.exportInPointMs === null && state.exportOutPointMs === null) {
+      return null;
+    }
+
+    if (endMs <= startMs) {
+      return null;
+    }
+
+    return { startMs, endMs };
+  }, [sourceDurationMs]);
+
   // Playback controls
   const handleGoToStart = useCallback(() => {
-    controls.seek(0);
-  }, [controls]);
+    controls.seek(isIOLoopEnabled && canReplayIO ? replayIOStartMs : 0);
+  }, [canReplayIO, controls, isIOLoopEnabled, replayIOStartMs]);
 
   const handleGoToEnd = useCallback(() => {
-    controls.seek(effectiveDurationMs);
-  }, [controls, effectiveDurationMs]);
+    controls.seek(isIOLoopEnabled && canReplayIO ? replayIOEndMs : effectiveDurationMs);
+  }, [canReplayIO, controls, effectiveDurationMs, isIOLoopEnabled, replayIOEndMs]);
 
   const handleSkipBack = useCallback(() => {
     const { currentTimeMs } = getPlaybackState();
-    controls.seek(Math.max(0, currentTimeMs - 5000));
-  }, [controls]);
+    const minTimeMs = isIOLoopEnabled && canReplayIO ? replayIOStartMs : 0;
+    controls.seek(Math.max(minTimeMs, currentTimeMs - 1000));
+  }, [canReplayIO, controls, isIOLoopEnabled, replayIOStartMs]);
 
   const handleSkipForward = useCallback(() => {
     const { currentTimeMs } = getPlaybackState();
-    controls.seek(Math.min(effectiveDurationMs, currentTimeMs + 5000));
-  }, [controls, effectiveDurationMs]);
+    const maxTimeMs = isIOLoopEnabled && canReplayIO ? replayIOEndMs : effectiveDurationMs;
+    controls.seek(Math.min(maxTimeMs, currentTimeMs + 1000));
+  }, [canReplayIO, controls, effectiveDurationMs, isIOLoopEnabled, replayIOEndMs]);
+
+  const handleTogglePlayback = useCallback(() => {
+    togglePlayback();
+  }, [togglePlayback]);
+
+  const handleReplayIO = useCallback(() => {
+    const loopBounds = getCurrentIOLoopBounds();
+    if (!loopBounds) return;
+
+    const nextEnabled = !isIOLoopEnabled;
+    setIOLoopEnabled(nextEnabled);
+    if (!nextEnabled) return;
+
+    const { currentTimeMs, isPlaying: isCurrentlyPlaying } = useVideoEditorStore.getState();
+    const isInsideLoopRange = currentTimeMs >= loopBounds.startMs && currentTimeMs < loopBounds.endMs;
+    if (isCurrentlyPlaying && isInsideLoopRange) {
+      return;
+    }
+
+    controls.seek(loopBounds.startMs);
+    if (!isCurrentlyPlaying) {
+      setIsPlaying(true);
+    }
+  }, [controls, getCurrentIOLoopBounds, isIOLoopEnabled, setIOLoopEnabled, setIsPlaying]);
+
+  useEffect(() => {
+    if (!getCurrentIOLoopBounds() && isIOLoopEnabled) {
+      setIOLoopEnabled(false);
+    }
+  }, [getCurrentIOLoopBounds, isIOLoopEnabled, setIOLoopEnabled]);
 
   // Timeline zoom controls
   const handleZoomIn = useCallback(() => {
@@ -945,6 +1055,16 @@ export function VideoTimeline({ onExport, onResetTrimSegments, onSetInPoint, onS
     setSplitMode(!splitMode);
   }, [setSplitMode, splitMode]);
 
+  const handleToggleSpeedPopover = useCallback(() => {
+    if (!canSetSelectedTrimSegmentSpeed) return;
+    setIsSpeedPopoverOpen((isOpen) => !isOpen);
+  }, [canSetSelectedTrimSegmentSpeed]);
+
+  const handleSpeedInput = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
+    if (!selectedTrimSegmentId) return;
+    updateTrimSegmentSpeed(selectedTrimSegmentId, Number(event.target.value));
+  }, [selectedTrimSegmentId, updateTrimSegmentSpeed]);
+
   return (
     <div
       ref={containerRef}
@@ -979,6 +1099,49 @@ export function VideoTimeline({ onExport, onResetTrimSegments, onSetInPoint, onS
                 </div>
               </TooltipContent>
             </Tooltip>
+
+            <div ref={speedControlRef} className="relative">
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    aria-label="Set selected segment speed"
+                    aria-expanded={isSpeedPopoverOpen}
+                    aria-disabled={!canSetSelectedTrimSegmentSpeed}
+                    onClick={handleToggleSpeedPopover}
+                    className={`glass-btn h-8 w-8 ${!canSetSelectedTrimSegmentSpeed ? 'opacity-40 cursor-not-allowed' : ''} ${isSpeedPopoverOpen ? 'active' : ''}`}
+                  >
+                    <Gauge className="w-4 h-4" />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom">
+                  <span className="text-xs">Segment Speed</span>
+                </TooltipContent>
+              </Tooltip>
+
+              {isSpeedPopoverOpen && selectedTrimSegmentSpeed !== null && (
+                <div
+                  className="timeline-speed-popover absolute left-0 top-10 z-[90] w-56 rounded-md border border-[var(--glass-border)] bg-[var(--glass-bg-solid)] p-3 text-[11px] text-[var(--ink-dark)]"
+                  onClick={(event) => event.stopPropagation()}
+                >
+                  <div className="mb-2 flex items-center justify-between">
+                    <span className="font-medium">Speed</span>
+                    <span className="font-mono text-[var(--coral-400)]">
+                      {selectedTrimSegmentSpeed.toFixed(0)}x
+                    </span>
+                  </div>
+                  <input
+                    aria-label="Segment speed"
+                    className="timeline-speed-slider w-full"
+                    type="range"
+                    min={MIN_TRIM_SEGMENT_SPEED}
+                    max={MAX_TRIM_SEGMENT_SPEED}
+                    step="1"
+                    value={selectedTrimSegmentSpeed}
+                    onChange={handleSpeedInput}
+                  />
+                </div>
+              )}
+            </div>
 
             {/* Reset button - restore full video */}
             {onResetTrimSegments && (
@@ -1096,13 +1259,13 @@ export function VideoTimeline({ onExport, onResetTrimSegments, onSetInPoint, onS
 
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <button onClick={handleSkipBack} aria-label="Skip back 5 seconds" className="glass-btn h-8 w-8">
+                  <button onClick={handleSkipBack} aria-label="Skip back 1 second" className="glass-btn h-8 w-8">
                     <SkipBack className="w-3 h-3" />
                   </button>
                 </TooltipTrigger>
                 <TooltipContent side="bottom">
                   <div className="flex items-center gap-2">
-                    <span className="text-xs">Skip Back 5s</span>
+                    <span className="text-xs">Skip Back 1s</span>
                     <kbd className="kbd text-[10px] px-1.5 py-0.5">←</kbd>
                   </div>
                 </TooltipContent>
@@ -1111,7 +1274,7 @@ export function VideoTimeline({ onExport, onResetTrimSegments, onSetInPoint, onS
               <Tooltip>
                 <TooltipTrigger asChild>
                   <button
-                    onClick={togglePlayback}
+                    onClick={handleTogglePlayback}
                     aria-label={isPlaying ? 'Pause' : 'Play'}
                     className="tool-button h-9 w-9 active"
                   >
@@ -1132,13 +1295,31 @@ export function VideoTimeline({ onExport, onResetTrimSegments, onSetInPoint, onS
 
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <button onClick={handleSkipForward} aria-label="Skip forward 5 seconds" className="glass-btn h-8 w-8">
+                  <button
+                    onClick={handleReplayIO}
+                    aria-label={isIOLoopEnabled ? 'Disable IO loop' : 'Enable IO loop'}
+                    aria-pressed={isIOLoopEnabled}
+                    aria-disabled={!canReplayIO}
+                    data-io-loop-active={isIOLoopEnabled ? 'true' : undefined}
+                    className={`glass-btn h-8 w-8 timeline-io-loop-toggle ${!canReplayIO ? 'opacity-40 cursor-not-allowed' : ''} ${isIOLoopEnabled ? 'timeline-io-loop-toggle--active' : ''}`}
+                  >
+                    <Repeat2 className="w-3.5 h-3.5" />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom">
+                  <span className="text-xs">{isIOLoopEnabled ? 'Disable IO Loop' : 'Loop IO Range'}</span>
+                </TooltipContent>
+              </Tooltip>
+
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button onClick={handleSkipForward} aria-label="Skip forward 1 second" className="glass-btn h-8 w-8">
                     <SkipForward className="w-3 h-3" />
                   </button>
                 </TooltipTrigger>
                 <TooltipContent side="bottom">
                   <div className="flex items-center gap-2">
-                    <span className="text-xs">Skip Forward 5s</span>
+                    <span className="text-xs">Skip Forward 1s</span>
                     <kbd className="kbd text-[10px] px-1.5 py-0.5">→</kbd>
                   </div>
                 </TooltipContent>

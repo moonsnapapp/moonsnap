@@ -15,6 +15,7 @@ import { normalizeAnnotationConfig } from '../../utils/videoAnnotations';
 export const MIN_TRIM_SEGMENT_DURATION_MS = 100;
 export const MIN_TRIM_SEGMENT_SPEED = 1;
 export const MAX_TRIM_SEGMENT_SPEED = 10;
+export const DEFAULT_FULL_SEGMENT_ID = 'trim_full_recording';
 
 /**
  * Maximum undo history size.

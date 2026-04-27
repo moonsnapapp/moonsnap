@@ -1,5 +1,5 @@
 import { memo, useCallback, useMemo, useRef, useEffect, useState } from 'react';
-import { Check, Film, Gauge, GripVertical } from 'lucide-react';
+import { Film, GripVertical } from 'lucide-react';
 import { invoke } from '@tauri-apps/api/core';
 import { WAVEFORM } from '../../../constants';
 import type { TrimSegment, AudioWaveform } from '../../../types';
@@ -9,6 +9,8 @@ import {
   MIN_TRIM_SEGMENT_DURATION_MS,
   getSegmentTimelinePosition,
   getEffectiveDuration,
+  DEFAULT_FULL_SEGMENT_ID,
+  MAX_TRIM_SEGMENT_SPEED,
 } from '../../../stores/videoEditorStore';
 import type { SegmentTooltipPlacement } from './BaseTrack';
 import {
@@ -17,7 +19,6 @@ import {
   selectSelectedTrimSegmentId,
   selectSetDraggingZoomRegion,
   selectUpdateTrimSegment,
-  selectUpdateTrimSegmentSpeed,
 } from '../../../stores/videoEditor/selectors';
 import { audioLogger } from '../../../utils/logger';
 
@@ -109,13 +110,9 @@ const TRIM_COLORS = {
 const SEGMENT_WAVEFORM_BOTTOM_PADDING_PX = 2;
 const SEGMENT_WAVEFORM_TOP_PADDING_PX = 3;
 const SEGMENT_WAVEFORM_HEIGHT_PX = 40;
-const SPEED_POPOVER_MIN = 2;
-const SPEED_POPOVER_MAX = 10;
-const DEFAULT_FULL_SEGMENT_ID = 'trim_full_recording';
-
 function getSegmentSpeed(segment: TrimSegment): number {
   return typeof segment.speed === 'number' && Number.isFinite(segment.speed)
-    ? Math.max(1, Math.min(SPEED_POPOVER_MAX, segment.speed))
+    ? Math.max(1, Math.min(MAX_TRIM_SEGMENT_SPEED, segment.speed))
     : 1;
 }
 
@@ -210,7 +207,6 @@ const TrimSegmentItem = memo(function TrimSegmentItem({
   sourceDurationMs,
   onSelect,
   onUpdate,
-  onSpeedChange,
   onDelete,
   onDragStart,
   waveform,
@@ -227,7 +223,6 @@ const TrimSegmentItem = memo(function TrimSegmentItem({
   sourceDurationMs: number;
   onSelect: (id: string) => void;
   onUpdate: (id: string, updates: Partial<Pick<TrimSegment, 'sourceStartMs' | 'sourceEndMs'>>) => void;
-  onSpeedChange: (id: string, speed: number) => void;
   onDelete: (id: string) => void;
   onDragStart: (dragging: boolean, edge?: 'start' | 'end' | 'move') => void;
   waveform: AudioWaveform | null;
@@ -239,9 +234,6 @@ const TrimSegmentItem = memo(function TrimSegmentItem({
   const elementRef = useRef<HTMLDivElement>(null);
   const tooltipRef = useRef<HTMLDivElement>(null);
   const dragStateRef = useRef<{ sourceStartMs: number; sourceEndMs: number } | null>(null);
-  const [isSpeedMenuOpen, setIsSpeedMenuOpen] = useState(false);
-  const [isSpeedPopoverOpen, setIsSpeedPopoverOpen] = useState(false);
-  const [speedMenuPosition, setSpeedMenuPosition] = useState({ x: 12, y: 12 });
   const segmentSpeed = getSegmentSpeed(segment);
 
   // Calculate timeline position (where this segment starts after rippling)
@@ -344,69 +336,6 @@ const TrimSegmentItem = memo(function TrimSegmentItem({
     [onSelect, segment.id]
   );
 
-  useEffect(() => {
-    if (!isSpeedMenuOpen && !isSpeedPopoverOpen) {
-      return;
-    }
-
-    const handlePointerDown = (event: PointerEvent) => {
-      if (elementRef.current?.contains(event.target as Node)) {
-        return;
-      }
-      setIsSpeedMenuOpen(false);
-      setIsSpeedPopoverOpen(false);
-    };
-
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        setIsSpeedMenuOpen(false);
-        setIsSpeedPopoverOpen(false);
-      }
-    };
-
-    document.addEventListener('pointerdown', handlePointerDown);
-    document.addEventListener('keydown', handleKeyDown);
-    return () => {
-      document.removeEventListener('pointerdown', handlePointerDown);
-      document.removeEventListener('keydown', handleKeyDown);
-    };
-  }, [isSpeedMenuOpen, isSpeedPopoverOpen]);
-
-  const handleContextMenu = useCallback(
-    (e: React.MouseEvent) => {
-      if (isCutMode) {
-        return;
-      }
-
-      e.preventDefault();
-      e.stopPropagation();
-      onSelect(segment.id);
-
-      const segmentBounds = elementRef.current?.getBoundingClientRect();
-      setSpeedMenuPosition({
-        x: segmentBounds ? e.clientX - segmentBounds.left : 12,
-        y: segmentBounds ? e.clientY - segmentBounds.top : 12,
-      });
-      setIsSpeedPopoverOpen(false);
-      setIsSpeedMenuOpen(true);
-    },
-    [isCutMode, onSelect, segment.id]
-  );
-
-  const handleOpenSpeedPopover = useCallback((e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setIsSpeedMenuOpen(false);
-    setIsSpeedPopoverOpen(true);
-  }, []);
-
-  const handleSpeedInput = useCallback(
-    (e: React.ChangeEvent<HTMLInputElement>) => {
-      onSpeedChange(segment.id, Number(e.target.value));
-    },
-    [onSpeedChange, segment.id]
-  );
-
   const handleDelete = useCallback(
     (e: React.MouseEvent) => {
       e.stopPropagation();
@@ -435,7 +364,6 @@ const TrimSegmentItem = memo(function TrimSegmentItem({
         borderColor: isSelected ? TRIM_COLORS.borderSelected : TRIM_COLORS.border,
       }}
       onClick={handleClick}
-      onContextMenu={handleContextMenu}
     >
       {/* Waveform background */}
       {waveform && (
@@ -479,52 +407,6 @@ const TrimSegmentItem = memo(function TrimSegmentItem({
           </div>
         )}
       </div>
-
-      {isSpeedMenuOpen && (
-        <div
-          className="timeline-speed-menu absolute z-[80] min-w-32 rounded-md border border-[var(--glass-border)] bg-[var(--glass-bg-solid)] p-1 text-[11px] text-[var(--ink-dark)]"
-          style={{ left: speedMenuPosition.x, top: speedMenuPosition.y }}
-          role="menu"
-        >
-          <button
-            className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left hover:bg-[var(--coral-100)]"
-            role="menuitem"
-            onClick={handleOpenSpeedPopover}
-          >
-            <Gauge className="h-3.5 w-3.5" />
-            <span>Set Speed</span>
-          </button>
-        </div>
-      )}
-
-      {isSpeedPopoverOpen && (
-        <div
-          className="timeline-speed-popover absolute z-[80] w-56 rounded-md border border-[var(--glass-border)] bg-[var(--glass-bg-solid)] p-3 text-[11px] text-[var(--ink-dark)]"
-          style={{ left: speedMenuPosition.x, top: speedMenuPosition.y }}
-          onClick={(e) => e.stopPropagation()}
-        >
-          <div className="mb-2 flex items-center justify-between">
-            <span className="font-medium">Speed</span>
-            <span className="font-mono text-[var(--coral-400)]">
-              {segmentSpeed.toFixed(segmentSpeed % 1 === 0 ? 0 : 2)}x
-            </span>
-          </div>
-          <input
-            aria-label="Segment speed"
-            className="timeline-speed-slider w-full"
-            type="range"
-            min={SPEED_POPOVER_MIN}
-            max={SPEED_POPOVER_MAX}
-            step="0.25"
-            value={Math.max(SPEED_POPOVER_MIN, segmentSpeed)}
-            onChange={handleSpeedInput}
-          />
-          <div className="mt-2 flex items-center gap-1.5 text-[10px] text-[var(--ink-subtle)]">
-            <Check className="h-3 w-3 text-[var(--coral-400)]" />
-            <span>Pitch preserved</span>
-          </div>
-        </div>
-      )}
 
       {/* Right resize handle */}
       <div
@@ -622,7 +504,6 @@ export const TrimTrackContent = memo(function TrimTrackContent({
   const { waveform, visualGain } = useWaveform(audioPath);
   const selectTrimSegment = useVideoEditorStore(selectSelectTrimSegment);
   const updateTrimSegment = useVideoEditorStore(selectUpdateTrimSegment);
-  const updateTrimSegmentSpeed = useVideoEditorStore(selectUpdateTrimSegmentSpeed);
   const deleteTrimSegment = useVideoEditorStore(selectDeleteTrimSegment);
   const setDraggingZoomRegion = useVideoEditorStore(selectSetDraggingZoomRegion);
 
@@ -665,7 +546,6 @@ export const TrimTrackContent = memo(function TrimTrackContent({
           sourceDurationMs={durationMs}
           onSelect={selectTrimSegment}
           onUpdate={updateTrimSegment}
-          onSpeedChange={updateTrimSegmentSpeed}
           onDelete={deleteTrimSegment}
           onDragStart={handleDragStart}
           waveform={waveform}
@@ -697,7 +577,6 @@ export const TrimTrackContent = memo(function TrimTrackContent({
           sourceDurationMs={durationMs}
           onSelect={selectTrimSegment}
           onUpdate={updateTrimSegment}
-          onSpeedChange={updateTrimSegmentSpeed}
           onDelete={deleteTrimSegment}
           onDragStart={handleDragStart}
           waveform={waveform}
