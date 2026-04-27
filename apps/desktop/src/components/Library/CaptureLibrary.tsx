@@ -124,6 +124,7 @@ interface CaptureLibraryProps {
   enableKeyboardShortcuts?: boolean;
   focusedCaptureId?: string | null;
   focusRequestKey?: number;
+  onFocusCaptureHandled?: () => void;
   onEditImage?: (capture: CaptureListItem) => void | Promise<void>;
   onEditVideo?: (capture: CaptureListItem) => void | Promise<void>;
 }
@@ -182,6 +183,7 @@ export const CaptureLibrary: React.FC<CaptureLibraryProps> = ({
   enableKeyboardShortcuts = true,
   focusedCaptureId = null,
   focusRequestKey = 0,
+  onFocusCaptureHandled,
   onEditImage,
   onEditVideo,
 }) => {
@@ -479,7 +481,8 @@ export const CaptureLibrary: React.FC<CaptureLibraryProps> = ({
         behavior: 'smooth',
       });
     });
-  }, [focusedCaptureId, focusRequestKey, getCaptureScrollTop, setSelectedIds, virtualLayout?.gridRowHeight]);
+    onFocusCaptureHandled?.();
+  }, [focusedCaptureId, focusRequestKey, getCaptureScrollTop, onFocusCaptureHandled, setSelectedIds, virtualLayout?.gridRowHeight]);
 
   // Momentum scroll for smooth acceleration (disabled during marquee selection)
   useMomentumScroll(containerRef, { disabled: isSelecting });

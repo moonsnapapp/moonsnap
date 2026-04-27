@@ -326,6 +326,10 @@ function App() {
     await handleEditImageInWorkspace(lastOpenedCapture);
   }, [handleEditImageInWorkspace, handleEditVideoInWorkspace, lastOpenedCapture]);
 
+  const handleFocusedLibraryCaptureHandled = useCallback(() => {
+    setFocusedLibraryCapture(null);
+  }, []);
+
   const handleCloseImageEditor = useCallback(() => {
     clearCurrentProject();
   }, [clearCurrentProject]);
@@ -492,6 +496,7 @@ function App() {
                     enableKeyboardShortcuts={isLibraryWorkspaceActive}
                     focusedCaptureId={focusedLibraryCapture?.id ?? null}
                     focusRequestKey={focusedLibraryCapture?.requestKey ?? 0}
+                    onFocusCaptureHandled={handleFocusedLibraryCaptureHandled}
                     onEditImage={handleEditImageInWorkspace}
                     onEditVideo={handleEditVideoInWorkspace}
                   />
