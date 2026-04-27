@@ -32,6 +32,12 @@ const CONTENT_OFFSET_X = 32; // horizontal padding (px-8) on virtual items
 const SIDEBAR_CONTENT_OFFSET = 0;
 const FULL_VIRTUALIZATION_THRESHOLD = 100;
 const SIDEBAR_VIRTUALIZATION_THRESHOLD = 40;
+const SIDEBAR_DENSITY_SIZES = Array.from(
+  {
+    length: LAYOUT.LIBRARY_SIDEBAR_ITEM_SIZE_MAX - LAYOUT.LIBRARY_SIDEBAR_ITEM_SIZE_MIN + 1,
+  },
+  (_, index) => LAYOUT.LIBRARY_SIDEBAR_ITEM_SIZE_MIN + index
+);
 
 function normalizeMediaPath(path: string | null | undefined): string {
   return (path ?? '').replace(/\\/g, '/').toLowerCase();
@@ -281,6 +287,44 @@ export const CaptureLibrary: React.FC<CaptureLibraryProps> = ({
 
   // Compute virtual layout info for marquee selection
   const activeSidebarItemSize = variant === 'sidebar' ? librarySidebarItemSize : undefined;
+  const sidebarDensityLayouts = useMemo(() => {
+    if (variant !== 'sidebar' || containerWidth <= 0) {
+      return [];
+    }
+
+    return SIDEBAR_DENSITY_SIZES.map((itemSize) => {
+      const columns = getColumnsForWidth(containerWidth, variant, libraryItemScale, itemSize);
+      return {
+        itemSize,
+        columns,
+        cardWidth: getCardWidth(containerWidth, columns, variant, libraryItemScale, itemSize),
+      };
+    });
+  }, [containerWidth, libraryItemScale, variant]);
+  const sidebarDensityStops = useMemo(() => {
+    const stops: typeof sidebarDensityLayouts = [];
+    const seenLayouts = new Set<string>();
+    for (const layout of sidebarDensityLayouts) {
+      const layoutKey = `${layout.columns}:${layout.cardWidth}`;
+      if (seenLayouts.has(layoutKey)) {
+        continue;
+      }
+      seenLayouts.add(layoutKey);
+      stops.push(layout);
+    }
+    return stops;
+  }, [sidebarDensityLayouts]);
+  const isSidebarDensityLimited = sidebarDensityStops.length <= 1;
+  const sidebarDensityStopIndex = Math.max(
+    0,
+    sidebarDensityStops.findIndex((layout) => layout.itemSize === librarySidebarItemSize)
+  );
+  const setSidebarDensityStop = useCallback((stopIndex: number) => {
+    const stop = sidebarDensityStops[stopIndex];
+    if (stop) {
+      setLibrarySidebarItemSize(stop.itemSize);
+    }
+  }, [setLibrarySidebarItemSize, sidebarDensityStops]);
 
   const virtualLayout = useMemo<VirtualLayoutInfo | undefined>(() => {
     if (!useVirtualization || containerWidth === 0) return undefined;
@@ -709,6 +753,9 @@ export const CaptureLibrary: React.FC<CaptureLibraryProps> = ({
       }
 
       if (variant === 'sidebar') {
+        if (isSidebarDensityLimited) {
+          return;
+        }
         setLibrarySidebarItemSize(
           librarySidebarItemSize - direction * LAYOUT.LIBRARY_SIDEBAR_ITEM_SIZE_STEP
         );
@@ -718,7 +765,7 @@ export const CaptureLibrary: React.FC<CaptureLibraryProps> = ({
       const nextScale = Number((libraryItemScale - direction * LAYOUT.LIBRARY_ITEM_SCALE_STEP).toFixed(2));
       setLibraryItemScale(nextScale);
     },
-    [libraryItemScale, librarySidebarItemSize, setLibraryItemScale, setLibrarySidebarItemSize, variant]
+    [isSidebarDensityLimited, libraryItemScale, librarySidebarItemSize, setLibraryItemScale, setLibrarySidebarItemSize, variant]
   );
 
   useEffect(() => {
@@ -751,32 +798,24 @@ export const CaptureLibrary: React.FC<CaptureLibraryProps> = ({
     };
   }, [activeSidebarItemSize, containerWidth, libraryItemScale, variant]);
 
-  const showColumnControl = variant === 'sidebar' && captures.length > 0;
+  const showColumnControl = variant === 'sidebar' && captures.length > 0 && !isSidebarDensityLimited;
 
   const renderColumnControl = () => (
-    <div className="library-density-control" aria-label="Library card size">
+    <div
+      className="library-density-control"
+      aria-label="Media item size"
+      title="Media item size"
+    >
       <input
         className="library-density-control__slider"
         type="range"
-        min={LAYOUT.LIBRARY_SIDEBAR_ITEM_SIZE_MIN}
-        max={LAYOUT.LIBRARY_SIDEBAR_ITEM_SIZE_MAX}
-        step={LAYOUT.LIBRARY_SIDEBAR_ITEM_SIZE_STEP}
-        value={librarySidebarItemSize}
-        onChange={(event) => setLibrarySidebarItemSize(Number(event.target.value))}
+        min={0}
+        max={Math.max(0, sidebarDensityStops.length - 1)}
+        step={1}
+        value={sidebarDensityStopIndex}
+        onChange={(event) => setSidebarDensityStop(Number(event.target.value))}
         aria-label="Media item size"
       />
-      <div className="library-density-control__steps" aria-hidden="true">
-        {[
-          LAYOUT.LIBRARY_SIDEBAR_ITEM_SIZE_MIN,
-          LAYOUT.LIBRARY_SIDEBAR_ITEM_SIZE_DEFAULT,
-          LAYOUT.LIBRARY_SIDEBAR_ITEM_SIZE_MAX,
-        ].map((itemSize) => (
-          <span
-            key={itemSize}
-            className={itemSize === librarySidebarItemSize ? 'library-density-control__step--active' : ''}
-          />
-        ))}
-      </div>
     </div>
   );
 
