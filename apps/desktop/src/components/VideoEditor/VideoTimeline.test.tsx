@@ -811,6 +811,31 @@ describe('VideoTimeline', () => {
       expect(useVideoEditorStore.getState().splitMode).toBe(true);
     });
 
+    it('should stop playback when cut mode is toggled', async () => {
+      useVideoEditorStore.setState({
+        project: createMockProject(),
+        isPlaying: true,
+        splitMode: false,
+      });
+
+      let container: HTMLElement;
+      await act(async () => {
+        const result = render(<VideoTimeline {...defaultProps} />);
+        container = result.container;
+      });
+
+      const cutToggle = container!.querySelector('[data-cut-mode-toggle]');
+      expect(cutToggle).toBeInTheDocument();
+
+      if (cutToggle) {
+        fireEvent.click(cutToggle);
+      }
+
+      const state = useVideoEditorStore.getState();
+      expect(state.isPlaying).toBe(false);
+      expect(state.splitMode).toBe(true);
+    });
+
     it('should mark preview scrubber as cut mode when splitMode is active', async () => {
       useVideoEditorStore.setState({
         project: createMockProject(),

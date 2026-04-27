@@ -3,6 +3,7 @@ import type { CaptureListItem } from '../../../types';
 export interface CaptureCardProps {
   capture: CaptureListItem;
   selected: boolean;
+  isActive?: boolean; // True when this capture is currently open in the editor/preview
   isLoading?: boolean; // True when this capture is being loaded into editor
   allTags: string[]; // All tags across library for autocomplete
   onSelect: (id: string, e: React.MouseEvent) => void;
@@ -38,6 +39,7 @@ export const capturePropsAreEqual = (
     prev.capture.damaged === next.capture.damaged &&
     tagsEqual(prev.capture.tags, next.capture.tags) &&
     prev.selected === next.selected &&
+    prev.isActive === next.isActive &&
     prev.isLoading === next.isLoading
   );
 };

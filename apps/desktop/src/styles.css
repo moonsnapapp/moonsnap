@@ -1487,6 +1487,10 @@ body.resizing * {
     0 18px 38px rgba(0, 0, 0, 0.36);
 }
 
+.capture-card.is-active-media {
+  border-color: var(--coral-400);
+}
+
 .capture-card .thumbnail {
   position: absolute;
   inset: 0;
@@ -1577,6 +1581,43 @@ body.resizing * {
   color: #ff6b6b;
   background: rgba(127, 29, 29, 0.34);
   border-color: rgba(248, 113, 113, 0.26);
+}
+
+.capture-card__active-eye {
+  position: absolute;
+  top: 12px;
+  right: 46px;
+  z-index: 10;
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--coral-200);
+  border-radius: 9px;
+  color: var(--primary-foreground);
+  background: linear-gradient(135deg, var(--coral-500) 0%, var(--coral-600) 100%);
+  animation: capture-active-eye-pulse 950ms var(--ease-smooth) infinite;
+  will-change: transform, opacity;
+}
+
+@keyframes capture-active-eye-pulse {
+  0%, 100% {
+    opacity: 0.82;
+    transform: scale(0.96);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .capture-card__active-eye {
+    animation: none;
+    opacity: 1;
+    transform: none;
+  }
 }
 
 .capture-info-popover {

@@ -1,5 +1,5 @@
 import React, { memo, useState, useMemo, useEffect, useRef } from 'react';
-import { Star, Trash2, Check, Loader2, AlertTriangle, Video, Film, Tag, Info } from 'lucide-react';
+import { Star, Trash2, Check, Loader2, AlertTriangle, Video, Film, Tag, Info, Eye } from 'lucide-react';
 import { ContextMenu, ContextMenuTrigger } from '@/components/ui/context-menu';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { CaptureContextMenu } from './CaptureContextMenu';
@@ -17,6 +17,7 @@ export const CaptureCard: React.FC<CaptureCardProps> = memo(
   ({
     capture,
     selected,
+    isActive,
     isLoading,
     allTags,
     onSelect,
@@ -90,8 +91,9 @@ export const CaptureCard: React.FC<CaptureCardProps> = memo(
         <ContextMenuTrigger asChild>
           <div
             ref={ref}
-            className={`capture-card group ${selected ? 'selected' : ''} ${isVisible ? 'in-view' : ''}`}
+            className={`capture-card group ${selected ? 'selected' : ''} ${isActive ? 'is-active-media' : ''} ${isVisible ? 'in-view' : ''}`}
             data-capture-id={capture.id}
+            data-active-media={isActive ? 'true' : undefined}
             onClick={(e) => onSelect(capture.id, e)}
             onDoubleClick={() => {
               if (capture.damaged) {
@@ -208,6 +210,13 @@ export const CaptureCard: React.FC<CaptureCardProps> = memo(
                   fill={capture.favorite ? 'currentColor' : 'none'}
                 />
               </button>
+
+              {/* Active media indicator */}
+              {isActive && (
+                <div className="capture-card__active-eye" aria-label="Currently open media" title="Currently open media">
+                  <Eye className="w-3.5 h-3.5" />
+                </div>
+              )}
 
               {/* Hover Overlay */}
               <div className="absolute inset-0 bg-gradient-to-t from-black/30 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />

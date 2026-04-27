@@ -122,6 +122,8 @@ function isImageCapture(capture: CaptureListItem): boolean {
 interface CaptureLibraryProps {
   variant?: 'full' | 'sidebar';
   enableKeyboardShortcuts?: boolean;
+  focusedCaptureId?: string | null;
+  focusRequestKey?: number;
   onEditImage?: (capture: CaptureListItem) => void | Promise<void>;
   onEditVideo?: (capture: CaptureListItem) => void | Promise<void>;
 }
@@ -178,6 +180,8 @@ function groupCapturesByDate(captures: CaptureListItem[]): DateGroup[] {
 export const CaptureLibrary: React.FC<CaptureLibraryProps> = ({
   variant = 'full',
   enableKeyboardShortcuts = true,
+  focusedCaptureId = null,
+  focusRequestKey = 0,
   onEditImage,
   onEditVideo,
 }) => {
@@ -425,6 +429,57 @@ export const CaptureLibrary: React.FC<CaptureLibraryProps> = ({
   const { isDragOver } = useDragDropImport({
     onImportComplete: loadCaptures,
   });
+
+  const getCaptureScrollTop = useCallback((captureId: string) => {
+    if (!virtualLayout) {
+      return null;
+    }
+
+    let rowTop = 0;
+    for (const group of dateGroups) {
+      rowTop += virtualLayout.headerHeight;
+      for (let startIndex = 0; startIndex < group.captures.length; startIndex += virtualLayout.cardsPerRow) {
+        const rowCaptures = group.captures.slice(startIndex, startIndex + virtualLayout.cardsPerRow);
+        if (rowCaptures.some((capture) => capture.id === captureId)) {
+          return rowTop;
+        }
+        rowTop += virtualLayout.gridRowHeight;
+      }
+    }
+
+    return null;
+  }, [dateGroups, virtualLayout]);
+
+  useEffect(() => {
+    if (!focusedCaptureId) {
+      return;
+    }
+
+    setSelectedIds(new Set([focusedCaptureId]));
+
+    requestAnimationFrame(() => {
+      const container = containerRef.current;
+      if (!container) {
+        return;
+      }
+
+      const card = container.querySelector<HTMLElement>(`[data-capture-id="${CSS.escape(focusedCaptureId)}"]`);
+      if (card) {
+        card.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'smooth' });
+        return;
+      }
+
+      const rowTop = getCaptureScrollTop(focusedCaptureId);
+      if (rowTop === null) {
+        return;
+      }
+
+      container.scrollTo({
+        top: Math.max(0, rowTop - (container.clientHeight / 2) + (virtualLayout?.gridRowHeight ?? 0) / 2),
+        behavior: 'smooth',
+      });
+    });
+  }, [focusedCaptureId, focusRequestKey, getCaptureScrollTop, setSelectedIds, virtualLayout?.gridRowHeight]);
 
   // Momentum scroll for smooth acceleration (disabled during marquee selection)
   useMomentumScroll(containerRef, { disabled: isSelecting });
@@ -743,6 +798,7 @@ export const CaptureLibrary: React.FC<CaptureLibraryProps> = ({
                 key={capture.id}
                 capture={capture}
                 selected={selectedIds.has(capture.id)}
+                isActive={activeCaptureId === capture.id}
                 isLoading={loadingProjectId === capture.id}
                 allTags={allTags}
                 onSelect={handleSelect}
@@ -802,6 +858,7 @@ export const CaptureLibrary: React.FC<CaptureLibraryProps> = ({
             sidebarItemSize={activeSidebarItemSize}
             dateGroups={dateGroups}
             selectedIds={selectedIds}
+            activeCaptureId={activeCaptureId}
             loadingProjectId={loadingProjectId}
             allTags={allTags}
             onSelect={handleSelect}

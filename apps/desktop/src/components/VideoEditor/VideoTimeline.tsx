@@ -1052,8 +1052,11 @@ export function VideoTimeline({ onExport, onResetTrimSegments, onSetInPoint, onS
   }, [setTimelineZoom]);
 
   const handleToggleCutMode = useCallback(() => {
+    if (isPlaying) {
+      setIsPlaying(false);
+    }
     setSplitMode(!splitMode);
-  }, [setSplitMode, splitMode]);
+  }, [isPlaying, setIsPlaying, setSplitMode, splitMode]);
 
   const handleToggleSpeedPopover = useCallback(() => {
     if (!canSetSelectedTrimSegmentSpeed) return;

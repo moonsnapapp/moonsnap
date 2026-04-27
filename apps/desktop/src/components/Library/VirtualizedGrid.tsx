@@ -23,6 +23,7 @@ interface VirtualizedGridProps {
   sidebarItemSize?: number;
   dateGroups: DateGroup[];
   selectedIds: Set<string>;
+  activeCaptureId?: string | null;
   loadingProjectId: string | null;
   allTags: string[];
   onSelect: (id: string, e: React.MouseEvent) => void;
@@ -180,6 +181,7 @@ export function VirtualizedGrid({
   sidebarItemSize = LAYOUT.LIBRARY_SIDEBAR_ITEM_SIZE_DEFAULT,
   dateGroups,
   selectedIds,
+  activeCaptureId,
   loadingProjectId,
   allTags,
   onSelect,
@@ -334,6 +336,7 @@ export function VirtualizedGrid({
               <CaptureCard
                 capture={capture}
                 selected={selectedIds.has(capture.id)}
+                isActive={activeCaptureId === capture.id}
                 isLoading={loadingProjectId === capture.id}
                 allTags={allTags}
                 onSelect={onSelect}
@@ -362,6 +365,7 @@ export function VirtualizedGrid({
       itemScale,
       sidebarItemSize,
       selectedIds,
+      activeCaptureId,
       loadingProjectId,
       allTags,
       onSelect,

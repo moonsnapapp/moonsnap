@@ -2,6 +2,8 @@ import { useState, useCallback, useMemo, useRef, useEffect, Activity } from 'rea
 import { Toaster } from 'sonner';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
+import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
+import { FolderOpen } from 'lucide-react';
 import type { ImperativePanelHandle } from 'react-resizable-panels';
 import { Titlebar } from './components/Titlebar/Titlebar';
 import { CaptureLibrary } from './components/Library/CaptureLibrary';
@@ -14,6 +16,7 @@ import { LibraryErrorBoundary } from './components/ErrorBoundary';
 import { KeyboardShortcutsModal } from './components/KeyboardShortcuts/KeyboardShortcutsModal';
 import { SettingsDialog } from './components/Settings/SettingsDialog';
 import { useCaptureStore } from './stores/captureStore';
+import { useVideoEditorStore } from './stores/videoEditorStore';
 import { useSettingsStore } from './stores/settingsStore';
 import { useCaptureSettingsStore } from './stores/captureSettingsStore';
 import { useUpdater } from './hooks/useUpdater';
@@ -47,9 +50,21 @@ const getInitialSidebarSize = () => {
   return LAYOUT.IMAGE_EDITOR_SIDEBAR_DEFAULT_SIZE;
 };
 
+function isWorkspaceOpenableCapture(capture: CaptureListItem): boolean {
+  return !capture.is_missing && !capture.damaged && capture.capture_type !== 'gif';
+}
+
+function stopLibraryWindowMediaPlayback() {
+  useVideoEditorStore.getState().setIsPlaying(false);
+  for (const media of document.querySelectorAll<HTMLMediaElement>('video, audio')) {
+    media.pause();
+  }
+}
+
 function App() {
   const {
     view,
+    captures,
     loadProject,
     loadVideoProjectInWorkspace,
     clearCurrentProject,
@@ -72,6 +87,13 @@ function App() {
   // Keyboard shortcuts help modal
   const [showShortcuts, setShowShortcuts] = useState(false);
   const [showExperimentalCaptureToolbar, setShowExperimentalCaptureToolbar] = useState(false);
+  const [focusedLibraryCapture, setFocusedLibraryCapture] = useState<{
+    id: string;
+    requestKey: number;
+  } | null>(null);
+  const [lastOpenedCaptureId, setLastOpenedCaptureId] = useState<string | null>(() =>
+    localStorage.getItem(STORAGE.LAST_OPENED_CAPTURE_ID_KEY)
+  );
   const [sidebarSize, setSidebarSize] = useState(getInitialSidebarSize);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const sidebarPanelRef = useRef<ImperativePanelHandle>(null);
@@ -82,6 +104,34 @@ function App() {
   const applyingSidebarResizeRef = useRef(false);
   const savedCaptureProjectIdsRef = useRef(new Map<string, string>());
   const pendingPreviewOpenPathRef = useRef<string | null>(null);
+  const lastOpenedCapture = useMemo(() => {
+    if (!lastOpenedCaptureId) {
+      return null;
+    }
+
+    const capture = captures.find((item) => item.id === lastOpenedCaptureId);
+    return capture && isWorkspaceOpenableCapture(capture) ? capture : null;
+  }, [captures, lastOpenedCaptureId]);
+
+  useEffect(() => {
+    const currentWindow = getCurrentWebviewWindow();
+    if (currentWindow.label !== 'library') {
+      return undefined;
+    }
+
+    let unlisten: (() => void) | null = null;
+    void currentWindow.onCloseRequested((event) => {
+      event.preventDefault();
+      stopLibraryWindowMediaPlayback();
+      void currentWindow.hide();
+    }).then((cleanup) => {
+      unlisten = cleanup;
+    });
+
+    return () => {
+      unlisten?.();
+    };
+  }, []);
 
   const handleToggleSidebar = useCallback(() => {
     const panel = sidebarPanelRef.current;
@@ -243,16 +293,38 @@ function App() {
   }, [openCaptureToolbar]);
 
   const handleEditImageInWorkspace = useCallback(async (capture: CaptureListItem) => {
+    setLastOpenedCaptureId(capture.id);
+    localStorage.setItem(STORAGE.LAST_OPENED_CAPTURE_ID_KEY, capture.id);
     await loadProject(capture.id);
   }, [loadProject]);
 
   const handleEditVideoInWorkspace = useCallback(async (capture: CaptureListItem) => {
+    setLastOpenedCaptureId(capture.id);
+    localStorage.setItem(STORAGE.LAST_OPENED_CAPTURE_ID_KEY, capture.id);
     try {
       await loadVideoProjectInWorkspace(capture.image_path);
     } catch (error) {
       logger.warn('Failed to open video in workspace', error);
     }
   }, [loadVideoProjectInWorkspace]);
+
+  const handleOpenLastMedia = useCallback(async () => {
+    if (!lastOpenedCapture) {
+      return;
+    }
+
+    setFocusedLibraryCapture((previous) => ({
+      id: lastOpenedCapture.id,
+      requestKey: (previous?.requestKey ?? 0) + 1,
+    }));
+
+    if (lastOpenedCapture.capture_type === 'video') {
+      await handleEditVideoInWorkspace(lastOpenedCapture);
+      return;
+    }
+
+    await handleEditImageInWorkspace(lastOpenedCapture);
+  }, [handleEditImageInWorkspace, handleEditVideoInWorkspace, lastOpenedCapture]);
 
   const handleCloseImageEditor = useCallback(() => {
     clearCurrentProject();
@@ -418,6 +490,8 @@ function App() {
                   <CaptureLibrary
                     variant="sidebar"
                     enableKeyboardShortcuts={isLibraryWorkspaceActive}
+                    focusedCaptureId={focusedLibraryCapture?.id ?? null}
+                    focusRequestKey={focusedLibraryCapture?.requestKey ?? 0}
                     onEditImage={handleEditImageInWorkspace}
                     onEditVideo={handleEditVideoInWorkspace}
                   />
@@ -444,6 +518,16 @@ function App() {
                   <div className="image-editor-empty__panel">
                     <p className="image-editor-empty__label">No capture selected</p>
                     <p className="image-editor-empty__detail">Choose a capture from the library.</p>
+                    {lastOpenedCapture && (
+                      <button
+                        type="button"
+                        onClick={handleOpenLastMedia}
+                        className="editor-choice-pill editor-choice-pill--active image-editor-empty__action mt-2 px-3 py-2 text-xs font-medium inline-flex items-center gap-2"
+                      >
+                        <FolderOpen className="w-3.5 h-3.5" />
+                        Open Last Media
+                      </button>
+                    )}
                   </div>
                 </div>
               )}
