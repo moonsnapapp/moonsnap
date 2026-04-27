@@ -3955,6 +3955,109 @@ body.floating-toolbar-window #root {
   color: #ffffff;
 }
 
+.timeline-cut-cursor,
+.timeline-cut-cursor [data-trim-track],
+.timeline-cut-cursor [data-trim-segment],
+.timeline-cut-cursor .timeline-clip-cut-target {
+  cursor: url('/cursors/scissors.svg') 16 16, crosshair;
+}
+
+.timeline-clip-cut-target {
+  overflow: hidden;
+  animation: timeline-cut-segment-glow 950ms ease-in-out infinite;
+  filter: drop-shadow(0 0 3px rgba(249, 112, 102, 0.22));
+}
+
+.timeline-clip-cut-target::after {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  z-index: 15;
+  pointer-events: none;
+  border-radius: inherit;
+  opacity: 0.62;
+  background:
+    linear-gradient(90deg, rgba(255, 255, 255, 0.42) 50%, transparent 0) top / 14px 1px repeat-x,
+    linear-gradient(90deg, rgba(255, 255, 255, 0.42) 50%, transparent 0) bottom / 14px 1px repeat-x,
+    linear-gradient(0deg, rgba(255, 255, 255, 0.42) 50%, transparent 0) left / 1px 14px repeat-y,
+    linear-gradient(0deg, rgba(255, 255, 255, 0.42) 50%, transparent 0) right / 1px 14px repeat-y,
+    linear-gradient(90deg, rgba(249, 112, 102, 0.5) 50%, transparent 0) top / 14px 1px repeat-x,
+    linear-gradient(90deg, rgba(249, 112, 102, 0.5) 50%, transparent 0) bottom / 14px 1px repeat-x,
+    linear-gradient(0deg, rgba(249, 112, 102, 0.5) 50%, transparent 0) left / 1px 14px repeat-y,
+    linear-gradient(0deg, rgba(249, 112, 102, 0.5) 50%, transparent 0) right / 1px 14px repeat-y;
+  background-position:
+    0 0,
+    7px 100%,
+    0 7px,
+    100% 0,
+    7px 1px,
+    0 calc(100% - 1px),
+    1px 0,
+    calc(100% - 1px) 7px;
+  animation: timeline-marching-ants 1200ms linear infinite;
+}
+
+@keyframes timeline-marching-ants {
+  to {
+    background-position:
+      14px 0,
+      -7px 100%,
+      0 -7px,
+      100% 14px,
+      21px 1px,
+      -14px calc(100% - 1px),
+      1px -14px,
+      calc(100% - 1px) 21px;
+  }
+}
+
+@keyframes timeline-cut-segment-glow {
+  50% {
+    filter:
+      drop-shadow(0 0 5px rgba(249, 112, 102, 0.42))
+      drop-shadow(0 0 10px rgba(249, 112, 102, 0.24));
+  }
+}
+
+.timeline-speed-menu,
+.timeline-speed-popover {
+  transform-origin: 16px 8px;
+  filter: drop-shadow(0 10px 18px rgba(15, 23, 42, 0.22));
+  animation: timeline-speed-popover-in 150ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.timeline-speed-slider {
+  accent-color: var(--coral-400);
+}
+
+@keyframes timeline-speed-popover-in {
+  from {
+    opacity: 0;
+    transform: translateY(-3px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .timeline-speed-menu,
+  .timeline-speed-popover {
+    animation: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .timeline-clip-cut-target {
+    animation: none;
+  }
+
+  .timeline-clip-cut-target::after {
+    animation: none;
+  }
+}
+
 /* Active/toggled state */
 .glass-btn--active {
   background: rgba(255, 255, 255, 0.16);

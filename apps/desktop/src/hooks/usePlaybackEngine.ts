@@ -15,6 +15,20 @@
 import { useCallback, useMemo, useRef, useEffect } from 'react';
 import { useVideoEditorStore, getEffectiveDuration, sourceToTimeline, timelineToSource, findSegmentAtSourceTime } from '../stores/videoEditorStore';
 import { selectCurrentTimeMs, selectPreviewTimeMs } from '../stores/videoEditor/selectors';
+import type { TrimSegment } from '../types';
+
+function getSegmentSpeedAtSourceTime(sourceTimeMs: number, segments: TrimSegment[]): number {
+  const segment = findSegmentAtSourceTime(sourceTimeMs, segments);
+  if (!segment || typeof segment.speed !== 'number' || !Number.isFinite(segment.speed)) {
+    return 1;
+  }
+  return Math.max(1, Math.min(10, segment.speed));
+}
+
+function setPreviewPlaybackRate(videoElement: HTMLVideoElement, speed: number) {
+  videoElement.playbackRate = speed;
+  videoElement.preservesPitch = true;
+}
 
 /**
  * PlaybackEngine class - manages playback state for a single video editor instance.
@@ -48,6 +62,8 @@ class PlaybackEngine {
       const sourceDurationMs = state.project?.timeline.durationMs ?? 0;
 
       if (segments && segments.length > 0) {
+        setPreviewPlaybackRate(this.videoElement, getSegmentSpeedAtSourceTime(sourceTimeMs, segments));
+
         // Check if we're in a deleted region
         const currentSegment = findSegmentAtSourceTime(sourceTimeMs, segments);
 
@@ -95,6 +111,8 @@ class PlaybackEngine {
           return;
         }
       } else {
+        setPreviewPlaybackRate(this.videoElement, Math.max(1, state.project?.timeline.speed ?? 1));
+
         // No segments - use source time directly, with duration check
         if (sourceDurationMs > 0 && sourceTimeMs >= sourceDurationMs) {
           useVideoEditorStore.getState().setCurrentTime(sourceDurationMs);
@@ -227,7 +245,13 @@ export function usePlaybackControls() {
     // Sync final time to store before pausing
     const videoElement = engine.getVideoElement();
     if (videoElement) {
-      useVideoEditorStore.getState().setCurrentTime(videoElement.currentTime * 1000);
+      const state = useVideoEditorStore.getState();
+      const sourceTimeMs = videoElement.currentTime * 1000;
+      const segments = state.project?.timeline.segments;
+      const timelineTimeMs = segments && segments.length > 0
+        ? sourceToTimeline(sourceTimeMs, segments) ?? state.currentTimeMs
+        : sourceTimeMs;
+      state.setCurrentTime(timelineTimeMs);
     }
     // Only update store - the effect in GPUVideoPreview handles video.pause()
     useVideoEditorStore.getState().setIsPlaying(false);
@@ -255,6 +279,10 @@ export function usePlaybackControls() {
     const videoElement = engine.getVideoElement();
     if (videoElement) {
       videoElement.currentTime = sourceTimeMs / 1000;
+      const speed = segments && segments.length > 0
+        ? getSegmentSpeedAtSourceTime(sourceTimeMs, segments)
+        : Math.max(1, state.project?.timeline.speed ?? 1);
+      setPreviewPlaybackRate(videoElement, speed);
     }
 
     // Update store with timeline time (not source time)

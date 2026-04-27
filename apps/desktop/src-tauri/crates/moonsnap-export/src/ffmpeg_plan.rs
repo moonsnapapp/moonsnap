@@ -42,6 +42,33 @@ pub enum AudioInputSource {
 pub struct AudioSegment {
     pub start_sec: f64,
     pub end_sec: f64,
+    pub speed: f64,
+}
+
+impl AudioSegment {
+    fn timeline_duration_sec(&self) -> f64 {
+        (self.end_sec - self.start_sec).max(0.0) / self.speed.max(1.0)
+    }
+}
+
+fn atempo_chain(speed: f64) -> Vec<f64> {
+    let mut remaining = if speed.is_finite() {
+        speed.clamp(1.0, 10.0)
+    } else {
+        1.0
+    };
+    let mut filters = Vec::new();
+
+    while remaining > 2.0 {
+        filters.push(2.0);
+        remaining /= 2.0;
+    }
+
+    if remaining > 1.001 {
+        filters.push(remaining);
+    }
+
+    filters
 }
 
 /// Inputs used to build ffmpeg audio `-i` args and filter-graph sources.
@@ -227,7 +254,11 @@ pub fn collect_typewriter_sound_segments(project: &VideoProject) -> Vec<AudioSeg
             if end_sec <= start_sec {
                 return None;
             }
-            Some(AudioSegment { start_sec, end_sec })
+            Some(AudioSegment {
+                start_sec,
+                end_sec,
+                speed: 1.0,
+            })
         })
         .collect();
 
@@ -246,6 +277,7 @@ pub fn collect_source_audio_segments(project: &VideoProject) -> Vec<AudioSegment
         vec![AudioSegment {
             start_sec: project.timeline.in_point as f64 / 1000.0,
             end_sec: project.timeline.out_point as f64 / 1000.0,
+            speed: project.timeline.speed.max(1.0) as f64,
         }]
     } else {
         project
@@ -255,6 +287,7 @@ pub fn collect_source_audio_segments(project: &VideoProject) -> Vec<AudioSegment
             .map(|s| AudioSegment {
                 start_sec: s.source_start_ms as f64 / 1000.0,
                 end_sec: s.source_end_ms as f64 / 1000.0,
+                speed: s.speed.max(1.0) as f64,
             })
             .collect()
     }
@@ -286,10 +319,15 @@ pub fn build_audio_filter(
                 let mut segment_labels: Vec<String> = Vec::new();
                 for (seg_idx, segment) in source_segments.iter().enumerate() {
                     let label = format!("a{}s{}", input_idx, seg_idx);
-                    filter_parts.push(format!(
-                        "[{}:a]atrim=start={:.3}:end={:.3},asetpts=PTS-STARTPTS[{}]",
-                        input.input_index, segment.start_sec, segment.end_sec, label
-                    ));
+                    let mut segment_filter = format!(
+                        "[{}:a]atrim=start={:.3}:end={:.3},asetpts=PTS-STARTPTS",
+                        input.input_index, segment.start_sec, segment.end_sec
+                    );
+                    for tempo in atempo_chain(segment.speed) {
+                        segment_filter.push_str(&format!(",atempo={:.3}", tempo));
+                    }
+                    segment_filter.push_str(&format!("[{}]", label));
+                    filter_parts.push(segment_filter);
                     segment_labels.push(format!("[{}]", label));
                 }
 
@@ -320,7 +358,7 @@ pub fn build_audio_filter(
                 if valid_windows.len() == 1 {
                     // Single window: use adelay (simple, no sync issues).
                     let (window_idx, window) = valid_windows[0];
-                    let duration_sec = window.end_sec - window.start_sec;
+                    let duration_sec = window.timeline_duration_sec();
                     let delay_ms = (window.start_sec.max(0.0) * 1000.0).round() as u64;
                     let label = format!("a{}w{}", input_idx, window_idx);
                     filter_parts.push(format!(
@@ -339,7 +377,7 @@ pub fn build_audio_filter(
                     let mut prev_end = 0.0_f64;
 
                     for (window_idx, window) in &valid_windows {
-                        let duration_sec = window.end_sec - window.start_sec;
+                        let duration_sec = window.timeline_duration_sec();
 
                         // Silence gap before this window (same source, muted).
                         let gap = window.start_sec - prev_end;
@@ -404,7 +442,7 @@ pub fn build_audio_filter(
     // Must specify whole_dur so apad doesn't produce infinite audio.
     let total_dur: f64 = source_segments
         .iter()
-        .map(|s| s.end_sec - s.start_sec)
+        .map(AudioSegment::timeline_duration_sec)
         .sum();
     filter_parts.push(format!("[aout_raw]apad=whole_dur={:.3}[aout]", total_dur));
 
@@ -708,12 +746,31 @@ mod tests {
         let segments = vec![AudioSegment {
             start_sec: 1.0,
             end_sec: 3.0,
+            speed: 1.0,
         }];
 
         let filter = build_audio_filter(&inputs, &segments).expect("filter should be built");
         assert!(filter.contains("[1:a]atrim=start=1.000:end=3.000"));
         assert!(filter.contains("volume=0.80"));
         assert!(filter.contains("apad=whole_dur=2.000[aout]"));
+    }
+
+    #[test]
+    fn builds_pitch_preserving_speed_filter_for_source_audio() {
+        let inputs = vec![AudioInput {
+            input_index: 1,
+            volume: 1.0,
+            source: AudioInputSource::SourceTrack,
+        }];
+        let segments = vec![AudioSegment {
+            start_sec: 0.0,
+            end_sec: 10.0,
+            speed: 8.0,
+        }];
+
+        let filter = build_audio_filter(&inputs, &segments).expect("filter should be built");
+        assert!(filter.contains("atempo=2.000,atempo=2.000,atempo=2.000"));
+        assert!(filter.contains("apad=whole_dur=1.250[aout]"));
     }
 
     #[test]
@@ -725,16 +782,19 @@ mod tests {
                 AudioSegment {
                     start_sec: 0.5,
                     end_sec: 1.5,
+                    speed: 1.0,
                 },
                 AudioSegment {
                     start_sec: 2.0,
                     end_sec: 2.4,
+                    speed: 1.0,
                 },
             ]),
         }];
         let segments = vec![AudioSegment {
             start_sec: 0.0,
             end_sec: 3.0,
+            speed: 1.0,
         }];
 
         let filter = build_audio_filter(&inputs, &segments).expect("filter should be built");
@@ -780,6 +840,7 @@ mod tests {
             typewriter_windows: vec![AudioSegment {
                 start_sec: 0.5,
                 end_sec: 1.5,
+                speed: 1.0,
             }],
             system_muted: false,
             microphone_muted: false,
@@ -839,6 +900,7 @@ mod tests {
             source_audio_segments: vec![AudioSegment {
                 start_sec: 0.0,
                 end_sec: 1.0,
+                speed: 1.0,
             }],
         };
 

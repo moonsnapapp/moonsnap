@@ -110,6 +110,7 @@ export const selectSetDraggingSceneSegment = (state: VideoEditorState) => state.
 export const selectSelectedTrimSegmentId = (state: VideoEditorState) => state.selectedTrimSegmentId;
 export const selectSelectTrimSegment = (state: VideoEditorState) => state.selectTrimSegment;
 export const selectUpdateTrimSegment = (state: VideoEditorState) => state.updateTrimSegment;
+export const selectUpdateTrimSegmentSpeed = (state: VideoEditorState) => state.updateTrimSegmentSpeed;
 export const selectDeleteTrimSegment = (state: VideoEditorState) => state.deleteTrimSegment;
 
 export const selectSelectedWebcamSegmentIndex = (state: VideoEditorState) => state.selectedWebcamSegmentIndex;

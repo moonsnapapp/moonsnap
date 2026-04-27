@@ -13,11 +13,28 @@ import { normalizeAnnotationConfig } from '../../utils/videoAnnotations';
  * Prevents micro-segments that are difficult to interact with.
  */
 export const MIN_TRIM_SEGMENT_DURATION_MS = 100;
+export const MIN_TRIM_SEGMENT_SPEED = 1;
+export const MAX_TRIM_SEGMENT_SPEED = 10;
 
 /**
  * Maximum undo history size.
  */
 const MAX_UNDO_HISTORY = 50;
+
+function normalizeTrimSegmentSpeed(speed: number | undefined): number {
+  if (typeof speed !== 'number' || !Number.isFinite(speed)) {
+    return 1;
+  }
+  return Math.max(MIN_TRIM_SEGMENT_SPEED, Math.min(MAX_TRIM_SEGMENT_SPEED, speed));
+}
+
+function getSegmentSourceDuration(segment: TrimSegment): number {
+  return Math.max(0, segment.sourceEndMs - segment.sourceStartMs);
+}
+
+function getSegmentTimelineDuration(segment: TrimSegment): number {
+  return getSegmentSourceDuration(segment) / normalizeTrimSegmentSpeed(segment.speed);
+}
 
 /**
  * Generate a unique trim segment ID.
@@ -43,11 +60,11 @@ export function timelineToSource(timelineMs: number, segments: TrimSegment[]): n
   let accumulatedTimeline = 0;
 
   for (const segment of segments) {
-    const segmentDuration = segment.sourceEndMs - segment.sourceStartMs;
+    const segmentDuration = getSegmentTimelineDuration(segment);
 
     if (timelineMs < accumulatedTimeline + segmentDuration) {
       const offsetInSegment = timelineMs - accumulatedTimeline;
-      return segment.sourceStartMs + offsetInSegment;
+      return segment.sourceStartMs + offsetInSegment * normalizeTrimSegmentSpeed(segment.speed);
     }
 
     accumulatedTimeline += segmentDuration;
@@ -74,14 +91,14 @@ export function sourceToTimeline(sourceMs: number, segments: TrimSegment[]): num
   for (const segment of segments) {
     if (sourceMs >= segment.sourceStartMs && sourceMs < segment.sourceEndMs) {
       const offsetInSegment = sourceMs - segment.sourceStartMs;
-      return accumulatedTimeline + offsetInSegment;
+      return accumulatedTimeline + offsetInSegment / normalizeTrimSegmentSpeed(segment.speed);
     }
 
     if (sourceMs < segment.sourceStartMs) {
       return accumulatedTimeline;
     }
 
-    accumulatedTimeline += segment.sourceEndMs - segment.sourceStartMs;
+    accumulatedTimeline += getSegmentTimelineDuration(segment);
   }
 
   return accumulatedTimeline;
@@ -100,7 +117,7 @@ export function getEffectiveDuration(segments: TrimSegment[], originalDurationMs
   }
 
   return segments.reduce((total, segment) => {
-    return total + (segment.sourceEndMs - segment.sourceStartMs);
+    return total + getSegmentTimelineDuration(segment);
   }, 0);
 }
 
@@ -118,7 +135,7 @@ export function getSegmentTimelinePosition(segmentIndex: number, segments: TrimS
 
   let position = 0;
   for (let i = 0; i < segmentIndex; i++) {
-    position += segments[i].sourceEndMs - segments[i].sourceStartMs;
+    position += getSegmentTimelineDuration(segments[i]);
   }
   return position;
 }
@@ -148,7 +165,7 @@ export function findSegmentIndexAtTimelineTime(timelineMs: number, segments: Tri
 
   for (let i = 0; i < segments.length; i++) {
     const segment = segments[i];
-    const segmentDuration = segment.sourceEndMs - segment.sourceStartMs;
+    const segmentDuration = getSegmentTimelineDuration(segment);
 
     if (timelineMs < accumulatedTimeline + segmentDuration) {
       return i;
@@ -187,6 +204,7 @@ export function clipSegmentsToTimelineRange(
       id: generateTrimSegmentId(),
       sourceStartMs: Math.round(effectiveIn),
       sourceEndMs: Math.round(clampedOut),
+      speed: 1,
     }];
   }
 
@@ -194,7 +212,8 @@ export function clipSegmentsToTimelineRange(
   let accumulatedTimeline = 0;
 
   for (const segment of segments) {
-    const segmentDuration = segment.sourceEndMs - segment.sourceStartMs;
+    const segmentSpeed = normalizeTrimSegmentSpeed(segment.speed);
+    const segmentDuration = getSegmentTimelineDuration(segment);
     const segmentTimelineStart = accumulatedTimeline;
     const segmentTimelineEnd = accumulatedTimeline + segmentDuration;
 
@@ -204,13 +223,14 @@ export function clipSegmentsToTimelineRange(
 
     if (overlapStart < overlapEnd) {
       // Map back to source time
-      const sourceOffset = overlapStart - segmentTimelineStart;
-      const sourceLength = overlapEnd - overlapStart;
+      const sourceOffset = (overlapStart - segmentTimelineStart) * segmentSpeed;
+      const sourceLength = (overlapEnd - overlapStart) * segmentSpeed;
 
       result.push({
         id: segment.id,
         sourceStartMs: Math.round(segment.sourceStartMs + sourceOffset),
         sourceEndMs: Math.round(segment.sourceStartMs + sourceOffset + sourceLength),
+        speed: segmentSpeed,
       });
     }
 
@@ -237,6 +257,7 @@ function createFullSegment(durationMs: number): TrimSegment {
     id: generateTrimSegmentId(),
     sourceStartMs: 0,
     sourceEndMs: Math.round(durationMs),
+    speed: 1,
   };
 }
 
@@ -260,6 +281,7 @@ export interface TrimSlice {
   splitAtPlayhead: () => void;
   deleteTrimSegment: (id: string) => void;
   updateTrimSegment: (id: string, updates: Partial<Pick<TrimSegment, 'sourceStartMs' | 'sourceEndMs'>>) => void;
+  updateTrimSegmentSpeed: (id: string, speed: number) => void;
 
   // Initialize segments
   initializeTrimSegments: () => void;
@@ -417,12 +439,14 @@ export const createTrimSlice: SliceCreator<TrimSlice> = (set, get) => ({
       id: generateTrimSegmentId(),
       sourceStartMs: Math.round(segment.sourceStartMs),
       sourceEndMs: sourceTimeMs,
+      speed: normalizeTrimSegmentSpeed(segment.speed),
     };
 
     const rightSegment: TrimSegment = {
       id: generateTrimSegmentId(),
       sourceStartMs: sourceTimeMs,
       sourceEndMs: Math.round(segment.sourceEndMs),
+      speed: normalizeTrimSegmentSpeed(segment.speed),
     };
 
     const newSegments = [
@@ -476,7 +500,7 @@ export const createTrimSlice: SliceCreator<TrimSlice> = (set, get) => ({
 
     const deletedSegment = segments[deletedIndex];
     const delStartMs = getSegmentTimelinePosition(deletedIndex, segments);
-    const delEndMs = delStartMs + (deletedSegment.sourceEndMs - deletedSegment.sourceStartMs);
+    const delEndMs = delStartMs + getSegmentTimelineDuration(deletedSegment);
 
     const newSegments = segments.filter((s) => s.id !== id);
 
@@ -537,8 +561,12 @@ export const createTrimSlice: SliceCreator<TrimSlice> = (set, get) => ({
     const { project, trimHistory, trimHistoryIndex } = get();
     if (!project) return;
 
-    const segments = project.timeline.segments;
-    if (!segments) return;
+    const segments = project.timeline.segments && project.timeline.segments.length > 0
+      ? project.timeline.segments
+      : [{
+          ...createFullSegment(project.timeline.durationMs),
+          id,
+        }];
 
     const segmentIndex = segments.findIndex((s) => s.id === id);
     if (segmentIndex === -1) return;
@@ -581,6 +609,51 @@ export const createTrimSlice: SliceCreator<TrimSlice> = (set, get) => ({
           segments: newSegments,
         },
       },
+      activeUndoDomain: 'trim',
+      trimHistory: history,
+      trimHistoryIndex: index,
+    });
+  },
+
+  updateTrimSegmentSpeed: (id, speed) => {
+    const { project, trimHistory, trimHistoryIndex } = get();
+    if (!project) return;
+
+    const segments = project.timeline.segments && project.timeline.segments.length > 0
+      ? project.timeline.segments
+      : [{
+          ...createFullSegment(project.timeline.durationMs),
+          id,
+        }];
+
+    const segmentIndex = segments.findIndex((s) => s.id === id);
+    if (segmentIndex === -1) return;
+
+    const normalizedSpeed = normalizeTrimSegmentSpeed(speed);
+    const currentSpeed = normalizeTrimSegmentSpeed(segments[segmentIndex].speed);
+    if (Math.abs(normalizedSpeed - currentSpeed) < 0.001) {
+      return;
+    }
+
+    const newSegments = segments.map((segment, index) => (
+      index === segmentIndex ? { ...segment, speed: normalizedSpeed } : segment
+    ));
+
+    const { history, index } = pushTrimHistory(trimHistory, trimHistoryIndex, {
+      segments: newSegments,
+      selectedId: id,
+      overlays: snapshotOverlayState(project),
+    });
+
+    set({
+      project: {
+        ...project,
+        timeline: {
+          ...project.timeline,
+          segments: newSegments,
+        },
+      },
+      selectedTrimSegmentId: id,
       activeUndoDomain: 'trim',
       trimHistory: history,
       trimHistoryIndex: index,

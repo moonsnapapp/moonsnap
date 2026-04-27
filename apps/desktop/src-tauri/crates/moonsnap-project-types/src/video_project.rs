@@ -117,6 +117,28 @@ pub struct TrimSegment {
     /// End position in the ORIGINAL video (milliseconds).
     #[ts(type = "number")]
     pub source_end_ms: u64,
+    /// Segment speed multiplier (1.0 = normal).
+    #[serde(default = "default_trim_segment_speed")]
+    pub speed: f32,
+}
+
+fn default_trim_segment_speed() -> f32 {
+    1.0
+}
+
+fn normalized_trim_segment_speed(speed: f32) -> f64 {
+    if speed.is_finite() {
+        (speed as f64).clamp(1.0, 10.0)
+    } else {
+        1.0
+    }
+}
+
+fn trim_segment_timeline_duration_ms(segment: &TrimSegment) -> u64 {
+    let source_duration = segment
+        .source_end_ms
+        .saturating_sub(segment.source_start_ms) as f64;
+    (source_duration / normalized_trim_segment_speed(segment.speed)).round() as u64
 }
 
 /// Timeline editing state.
@@ -164,7 +186,7 @@ impl TimelineState {
         } else {
             self.segments
                 .iter()
-                .map(|s| s.source_end_ms - s.source_start_ms)
+                .map(trim_segment_timeline_duration_ms)
                 .sum()
         }
     }
@@ -179,11 +201,14 @@ impl TimelineState {
         } else {
             let mut accumulated = 0u64;
             for segment in &self.segments {
-                let segment_duration = segment.source_end_ms - segment.source_start_ms;
+                let segment_duration = trim_segment_timeline_duration_ms(segment);
                 if timeline_time_ms < accumulated + segment_duration {
                     // Found the segment - calculate offset within it
                     let offset = timeline_time_ms - accumulated;
-                    return Some(segment.source_start_ms + offset);
+                    let source_offset = (offset as f64
+                        * normalized_trim_segment_speed(segment.speed))
+                    .round() as u64;
+                    return Some(segment.source_start_ms + source_offset);
                 }
                 accumulated += segment_duration;
             }
@@ -237,9 +262,12 @@ impl TimelineState {
                 {
                     // Found the segment - calculate offset within it
                     let offset = source_time_ms - segment.source_start_ms;
-                    return Some(timeline_pos + offset);
+                    let timeline_offset = (offset as f64
+                        / normalized_trim_segment_speed(segment.speed))
+                    .round() as u64;
+                    return Some(timeline_pos + timeline_offset);
                 }
-                timeline_pos += segment.source_end_ms - segment.source_start_ms;
+                timeline_pos += trim_segment_timeline_duration_ms(segment);
             }
             // Not in any segment
             None

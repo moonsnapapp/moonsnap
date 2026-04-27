@@ -8,7 +8,7 @@
  */
 
 import { useEffect, useCallback, useRef } from 'react';
-import { useVideoEditorStore, findSegmentAtSourceTime, getEffectiveDuration } from '../../../stores/videoEditorStore';
+import { useVideoEditorStore, findSegmentAtSourceTime, getEffectiveDuration, timelineToSource } from '../../../stores/videoEditorStore';
 import { selectLastSeekToken } from '../../../stores/videoEditor/selectors';
 import { usePlaybackControls, initPlaybackEngine } from '../../../hooks/usePlaybackEngine';
 import { useTimelineToSourceTime } from '../../../hooks/useTimelineSourceTime';
@@ -53,6 +53,29 @@ interface PlaybackSyncResult {
 // Keep playback smooth without audible "rewind" artifacts from backward seeks.
 const PLAYBACK_AUDIO_RESYNC_THRESHOLD_SEC = 0.5;
 const PLAYBACK_SEEK_START_FALLBACK_MS = 250;
+
+function getPlaybackSpeedForTimelineTime(timelineTimeMs: number): number {
+  const state = useVideoEditorStore.getState();
+  const project = state.project;
+  if (!project) {
+    return 1;
+  }
+
+  const sourceTimeMs = project.timeline.segments.length > 0
+    ? timelineToSource(timelineTimeMs, project.timeline.segments)
+    : timelineTimeMs;
+  const segment = findSegmentAtSourceTime(sourceTimeMs ?? timelineTimeMs, project.timeline.segments);
+  const speed = segment?.speed ?? project.timeline.speed ?? 1;
+  return Number.isFinite(speed) ? Math.max(1, Math.min(10, speed)) : 1;
+}
+
+function applyPitchPreservingPlaybackRate(media: HTMLMediaElement | null, speed: number) {
+  if (!media) {
+    return;
+  }
+  media.playbackRate = speed;
+  media.preservesPitch = true;
+}
 
 /**
  * Hook for managing playback synchronization between video and audio elements.
@@ -314,6 +337,15 @@ export function usePlaybackSync(options: PlaybackSyncOptions): PlaybackSyncResul
       videoEditorLogger.debug(`[Audio] Mic audio volume set to ${newVolume}`);
     }
   }, [audioConfig, micAudioRef]);
+
+  // Keep video and separate audio rates aligned for sped-up trim segments.
+  useEffect(() => {
+    const timelineTime = !isPlaying && previewTimeMs !== null ? previewTimeMs : currentTimeMs;
+    const speed = getPlaybackSpeedForTimelineTime(timelineTime);
+    applyPitchPreservingPlaybackRate(videoRef.current, speed);
+    applyPitchPreservingPlaybackRate(systemAudioRef.current, speed);
+    applyPitchPreservingPlaybackRate(micAudioRef.current, speed);
+  }, [currentTimeMs, isPlaying, micAudioRef, previewTimeMs, systemAudioRef, videoRef]);
 
   // Sync audio playback with video playback
   useEffect(() => {

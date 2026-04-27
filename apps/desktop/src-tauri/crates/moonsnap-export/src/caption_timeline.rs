@@ -233,11 +233,13 @@ mod tests {
                     id: "s1".to_string(),
                     source_start_ms: 1_000,
                     source_end_ms: 2_000,
+                    speed: 1.0,
                 },
                 TrimSegment {
                     id: "s2".to_string(),
                     source_start_ms: 3_000,
                     source_end_ms: 4_000,
+                    speed: 1.0,
                 },
             ],
         };
@@ -266,11 +268,13 @@ mod tests {
                     id: "s1".to_string(),
                     source_start_ms: 1_000,
                     source_end_ms: 2_000,
+                    speed: 1.0,
                 },
                 TrimSegment {
                     id: "s2".to_string(),
                     source_start_ms: 3_000,
                     source_end_ms: 4_000,
+                    speed: 1.0,
                 },
             ],
         };

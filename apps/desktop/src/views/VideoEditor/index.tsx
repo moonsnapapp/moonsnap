@@ -352,13 +352,13 @@ export const VideoEditorView = forwardRef<VideoEditorViewRef, VideoEditorViewPro
 
   // IO marker handlers
   const handleSetInPoint = useCallback(() => {
-    const { currentTimeMs } = useVideoEditorStore.getState();
-    setExportInPoint(currentTimeMs);
+    const { currentTimeMs, previewTimeMs } = useVideoEditorStore.getState();
+    setExportInPoint(previewTimeMs ?? currentTimeMs);
   }, [setExportInPoint]);
 
   const handleSetOutPoint = useCallback(() => {
-    const { currentTimeMs } = useVideoEditorStore.getState();
-    setExportOutPoint(currentTimeMs);
+    const { currentTimeMs, previewTimeMs } = useVideoEditorStore.getState();
+    setExportOutPoint(previewTimeMs ?? currentTimeMs);
   }, [setExportOutPoint]);
 
   const handleClearExportRange = useCallback(() => {

@@ -17,4 +17,8 @@ sourceStartMs: number,
 /**
  * End position in the ORIGINAL video (milliseconds).
  */
-sourceEndMs: number, };
+sourceEndMs: number, 
+/**
+ * Segment speed multiplier (1.0 = normal).
+ */
+speed: number, };

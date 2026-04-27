@@ -104,6 +104,8 @@ beforeEach(() => {
     isDraggingPlayhead: false,
     splitMode: false,
     previewTimeMs: null,
+    exportInPointMs: null,
+    exportOutPointMs: null,
     timelineZoom: 0.05,
     timelineScrollLeft: 0,
     timelineContainerWidth: 800,
@@ -459,6 +461,109 @@ describe('VideoTimeline', () => {
       expect(container).toBeInTheDocument();
     });
 
+    it('should render IO range as a slim ruler bar', async () => {
+      useVideoEditorStore.setState({
+        project: createMockProject(),
+        exportInPointMs: 5000,
+        exportOutPointMs: 15000,
+        timelineZoom: 0.1,
+      });
+
+      let container: HTMLElement;
+      await act(async () => {
+        const result = render(<VideoTimeline {...defaultProps} />);
+        container = result.container;
+      });
+
+      const rangeBar = container!.querySelector('[data-io-range-bar]') as HTMLDivElement | null;
+
+      expect(rangeBar).toBeInTheDocument();
+      expect(rangeBar?.style.top).toBe('27px');
+      expect(rangeBar?.style.left).toBe('500px');
+      expect(rangeBar?.style.width).toBe('1000px');
+      expect(rangeBar?.style.height).toBe('3px');
+    });
+
+    it('should use the dragged IO marker as the video skimmer without showing the hover scrubber', async () => {
+      useVideoEditorStore.setState({
+        project: createMockProject(),
+        exportInPointMs: 5000,
+        exportOutPointMs: 15000,
+        timelineZoom: 0.1,
+        previewTimeMs: 4000,
+      });
+
+      let container: HTMLElement;
+      await act(async () => {
+        const result = render(<VideoTimeline {...defaultProps} />);
+        container = result.container;
+      });
+
+      const scrollContainer = container!.querySelector('.overflow-x-auto') as HTMLElement | null;
+      const inMarker = container!.querySelector('[data-io-marker="in"]') as HTMLElement | null;
+      expect(scrollContainer).toBeInTheDocument();
+      expect(inMarker).toBeInTheDocument();
+
+      if (scrollContainer && inMarker) {
+        scrollContainer.getBoundingClientRect = () => ({
+          left: 0,
+          top: 0,
+          right: 1000,
+          bottom: 200,
+          width: 1000,
+          height: 200,
+          x: 0,
+          y: 0,
+          toJSON: () => ({}),
+        });
+
+        await act(async () => {
+          fireEvent.mouseDown(inMarker, { clientX: 500 });
+        });
+
+        expect(useVideoEditorStore.getState().previewTimeMs).toBeNull();
+        expect(container!.querySelector('[data-preview-scrubber]')).not.toBeInTheDocument();
+
+        await act(async () => {
+          fireEvent.mouseMove(document, { clientX: 800 });
+          await new Promise(requestAnimationFrame);
+        });
+
+        expect(useVideoEditorStore.getState().exportInPointMs).toBe(8000);
+        expect(useVideoEditorStore.getState().currentTimeMs).toBe(8000);
+        expect(useVideoEditorStore.getState().previewTimeMs).toBeNull();
+        expect(container!.querySelector('[data-preview-scrubber]')).not.toBeInTheDocument();
+
+        await act(async () => {
+          fireEvent.mouseUp(document);
+        });
+      }
+
+      expect(useVideoEditorStore.getState().previewTimeMs).toBeNull();
+    });
+
+    it('should stack IO marker handles above the playhead for re-dragging', async () => {
+      useVideoEditorStore.setState({
+        project: createMockProject(),
+        exportInPointMs: 8000,
+        currentTimeMs: 8000,
+        timelineZoom: 0.1,
+      });
+
+      let container: HTMLElement;
+      await act(async () => {
+        const result = render(<VideoTimeline {...defaultProps} />);
+        container = result.container;
+      });
+
+      const inMarker = container!.querySelector('[data-io-marker="in"]') as HTMLElement | null;
+      const markerLine = inMarker?.parentElement as HTMLElement | null;
+      const playhead = container!.querySelector('[data-playhead]') as HTMLElement | null;
+
+      expect(markerLine?.className).toContain('z-50');
+      expect(playhead?.className).toContain('z-30');
+    });
+
   });
 
   describe('playback interactions', () => {
@@ -741,6 +846,28 @@ describe('VideoTimeline', () => {
       expect(playhead?.style.opacity).toBe('0');
     });
 
+    it('should show scissors cursor and animated cut target state in cut mode', async () => {
+      useVideoEditorStore.setState({
+        project: createMockProject(),
+        splitMode: true,
+      });
+
+      let container: HTMLElement;
+      await act(async () => {
+        const result = render(<VideoTimeline {...defaultProps} />);
+        container = result.container;
+      });
+
+      const scrollContainer = container!.querySelector('.overflow-x-auto');
+      const trimTrack = container!.querySelector('[data-trim-track]') as HTMLElement | null;
+      const cutTarget = container!.querySelector('.timeline-clip-cut-target') as HTMLElement | null;
+
+      expect(scrollContainer).toHaveClass('timeline-cut-cursor');
+      expect(trimTrack?.getAttribute('data-cut-mode')).toBe('true');
+      expect(cutTarget).toBeInTheDocument();
+      expect(cutTarget?.getAttribute('data-cut-mode')).toBe('true');
+    });
+
     it('should split hovered trim segment when clicking timeline in cut mode', async () => {
       useVideoEditorStore.setState({
         project: createMockProject({
@@ -912,6 +1039,28 @@ describe('VideoTimeline', () => {
       expect(playheadHandle).toBeInTheDocument();
       expect(playheadLine?.style.left).toBe('998px');
     });
+
+    it('should render playhead time labels above timeline controls', async () => {
+      useVideoEditorStore.setState({
+        project: createMockProject(),
+        currentTimeMs: 5000,
+        isDraggingPlayhead: true,
+        previewTimeMs: 7000,
+      });
+
+      let container: HTMLElement;
+      await act(async () => {
+        const result = render(<VideoTimeline {...defaultProps} />);
+        container = result.container;
+      });
+
+      const timeLabels = Array.from(container!.querySelectorAll('[data-timeline-time-label]'));
+
+      expect(timeLabels.length).toBeGreaterThanOrEqual(2);
+      expect(timeLabels.some((label) => label.textContent === '0:05')).toBe(true);
+      expect(timeLabels.some((label) => label.textContent === '0:07')).toBe(true);
+      expect(timeLabels.every((label) => label.className.includes('z-[80]'))).toBe(true);
+    });
   });
 
   describe('video track content', () => {
@@ -932,6 +1081,123 @@ describe('VideoTimeline', () => {
       });
 
       expect(screen.getByText('Recording')).toBeInTheDocument();
+    });
+
+    it('should redraw and cull waveform while trimming segment edges', async () => {
+      useVideoEditorStore.setState({
+        project: createMockProject({
+          timeline: {
+            durationMs: 30000,
+            trimStart: 0,
+            trimEnd: 30000,
+            inPoint: 0,
+            outPoint: 30000,
+            cuts: [],
+            segments: [{ id: 'trim-1', sourceStartMs: 0, sourceEndMs: 30000, speed: 1 }],
+          },
+        }),
+        timelineZoom: 0.1,
+      });
+
+      let container: HTMLElement;
+      await act(async () => {
+        const result = render(<VideoTimeline {...defaultProps} />);
+        container = result.container;
+      });
+
+      await vi.waitFor(() => {
+        expect(container!.querySelector('[data-segment-waveform]')).toBeInTheDocument();
+      });
+
+      const segment = container!.querySelector('[data-trim-segment]') as HTMLElement | null;
+      const rightHandle = segment?.querySelector('.right-0') as HTMLElement | null;
+      const waveformCanvas = segment?.querySelector('[data-segment-waveform]') as HTMLCanvasElement | null;
+      expect(segment).toBeInTheDocument();
+      expect(rightHandle).toBeInTheDocument();
+      expect(waveformCanvas).toBeInTheDocument();
+
+      if (rightHandle && waveformCanvas) {
+        rightHandle.setPointerCapture = vi.fn();
+        rightHandle.releasePointerCapture = vi.fn();
+
+        fireEvent.pointerDown(rightHandle, { pointerId: 1, clientX: 3000 });
+        fireEvent.pointerMove(document, { pointerId: 1, clientX: 2500 });
+
+        expect(waveformCanvas.style.width).toBe('2500px');
+
+        fireEvent.pointerUp(document, { pointerId: 1 });
+      }
+    });
+
+    it('should open a speed popover from the segment context menu and update segment speed', async () => {
+      useVideoEditorStore.setState({
+        project: createMockProject({
+          timeline: {
+            durationMs: 30000,
+            trimStart: 0,
+            trimEnd: 30000,
+            inPoint: 0,
+            outPoint: 30000,
+            cuts: [],
+            segments: [{ id: 'trim-1', sourceStartMs: 0, sourceEndMs: 30000, speed: 1 }],
+          },
+        }),
+        timelineZoom: 0.05,
+      });
+
+      let container: HTMLElement;
+      await act(async () => {
+        const result = render(<VideoTimeline {...defaultProps} />);
+        container = result.container;
+      });
+
+      const segment = container!.querySelector('[data-trim-segment]') as HTMLElement | null;
+      expect(segment).toBeInTheDocument();
+
+      if (segment) {
+        fireEvent.contextMenu(segment, { clientX: 100, clientY: 20 });
+      }
+
+      const setSpeedButton = screen.getByRole('menuitem', { name: /set speed/i });
+      fireEvent.click(setSpeedButton);
+
+      const slider = screen.getByLabelText('Segment speed') as HTMLInputElement;
+      fireEvent.change(slider, { target: { value: '4' } });
+
+      const [updatedSegment] = useVideoEditorStore.getState().project?.timeline.segments ?? [];
+      expect(updatedSegment.speed).toBe(4);
+      expect(screen.getByText('Pitch preserved')).toBeInTheDocument();
+    });
+
+    it('should allow setting speed on the default full recording segment', async () => {
+      useVideoEditorStore.setState({
+        project: createMockProject(),
+        timelineZoom: 0.05,
+      });
+
+      let container: HTMLElement;
+      await act(async () => {
+        const result = render(<VideoTimeline {...defaultProps} />);
+        container = result.container;
+      });
+
+      const segment = container!.querySelector('[data-trim-segment]') as HTMLElement | null;
+      expect(segment).toBeInTheDocument();
+      expect(screen.getByText('Recording')).toBeInTheDocument();
+
+      if (segment) {
+        fireEvent.contextMenu(segment, { clientX: 100, clientY: 20 });
+      }
+
+      fireEvent.click(screen.getByRole('menuitem', { name: /set speed/i }));
+      fireEvent.change(screen.getByLabelText('Segment speed'), { target: { value: '3' } });
+
+      const [materializedSegment] = useVideoEditorStore.getState().project?.timeline.segments ?? [];
+      expect(materializedSegment).toMatchObject({
+        sourceStartMs: 0,
+        sourceEndMs: 30000,
+        speed: 3,
+      });
     });
   });
 

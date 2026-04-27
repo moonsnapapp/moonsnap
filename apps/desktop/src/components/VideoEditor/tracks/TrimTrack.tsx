@@ -1,5 +1,5 @@
 import { memo, useCallback, useMemo, useRef, useEffect, useState } from 'react';
-import { GripVertical, Film } from 'lucide-react';
+import { Check, Film, Gauge, GripVertical } from 'lucide-react';
 import { invoke } from '@tauri-apps/api/core';
 import { WAVEFORM } from '../../../constants';
 import type { TrimSegment, AudioWaveform } from '../../../types';
@@ -17,6 +17,7 @@ import {
   selectSelectedTrimSegmentId,
   selectSetDraggingZoomRegion,
   selectUpdateTrimSegment,
+  selectUpdateTrimSegmentSpeed,
 } from '../../../stores/videoEditor/selectors';
 import { audioLogger } from '../../../utils/logger';
 
@@ -25,6 +26,7 @@ interface TrimTrackProps {
   durationMs: number;
   timelineZoom: number;
   width: number;
+  isCutMode?: boolean;
   audioPath?: string;
   tooltipPlacement?: SegmentTooltipPlacement;
 }
@@ -106,6 +108,94 @@ const TRIM_COLORS = {
 };
 const SEGMENT_WAVEFORM_BOTTOM_PADDING_PX = 2;
 const SEGMENT_WAVEFORM_TOP_PADDING_PX = 3;
+const SEGMENT_WAVEFORM_HEIGHT_PX = 40;
+const SPEED_POPOVER_MIN = 2;
+const SPEED_POPOVER_MAX = 10;
+const DEFAULT_FULL_SEGMENT_ID = 'trim_full_recording';
+
+function getSegmentSpeed(segment: TrimSegment): number {
+  return typeof segment.speed === 'number' && Number.isFinite(segment.speed)
+    ? Math.max(1, Math.min(SPEED_POPOVER_MAX, segment.speed))
+    : 1;
+}
+
+function getSegmentTimelineDuration(segment: TrimSegment): number {
+  return Math.max(0, segment.sourceEndMs - segment.sourceStartMs) / getSegmentSpeed(segment);
+}
+
+function drawSegmentWaveform({
+  canvas,
+  waveform,
+  visualGain,
+  sourceStartMs,
+  sourceEndMs,
+  sourceDurationMs,
+  width,
+  height,
+}: {
+  canvas: HTMLCanvasElement;
+  waveform: AudioWaveform;
+  visualGain: number;
+  sourceStartMs: number;
+  sourceEndMs: number;
+  sourceDurationMs: number;
+  width: number;
+  height: number;
+}) {
+  if (waveform.samples.length === 0 || width <= 0 || height <= 0) return;
+
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return;
+
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width = width * dpr;
+  canvas.height = height * dpr;
+  canvas.style.width = `${width}px`;
+  canvas.style.height = `${height}px`;
+  ctx.scale(dpr, dpr);
+
+  ctx.clearRect(0, 0, width, height);
+
+  const { samples } = waveform;
+  const startRatio = sourceStartMs / sourceDurationMs;
+  const endRatio = sourceEndMs / sourceDurationMs;
+  const startSample = Math.floor(startRatio * samples.length);
+  const endSample = Math.ceil(endRatio * samples.length);
+  const segmentSamples = samples.slice(startSample, endSample);
+
+  if (segmentSamples.length === 0) return;
+
+  const baselineY = height - SEGMENT_WAVEFORM_BOTTOM_PADDING_PX;
+  const maxAmplitude = Math.max(1, height - SEGMENT_WAVEFORM_TOP_PADDING_PX - SEGMENT_WAVEFORM_BOTTOM_PADDING_PX);
+  const samplesPerPixel = segmentSamples.length / width;
+  const gradient = ctx.createLinearGradient(0, 0, 0, height);
+  gradient.addColorStop(0, 'rgba(251, 146, 60, 0.55)');
+  gradient.addColorStop(0.65, 'rgba(249, 112, 102, 0.4)');
+  gradient.addColorStop(1, 'rgba(240, 68, 56, 0.18)');
+
+  ctx.fillStyle = gradient;
+  ctx.beginPath();
+  ctx.moveTo(0, baselineY);
+
+  for (let x = 0; x < width; x++) {
+    const sampleIndex = Math.floor(x * samplesPerPixel);
+    const sample = segmentSamples[Math.min(sampleIndex, segmentSamples.length - 1)];
+    const normalizedLevel = Math.min(Math.abs(sample) * visualGain, 1);
+    const amplitude = shapeWaveformLevel(normalizedLevel) * maxAmplitude;
+    ctx.lineTo(x, baselineY - amplitude);
+  }
+
+  ctx.lineTo(width, baselineY);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.strokeStyle = 'rgba(249, 112, 102, 0.2)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(0, baselineY + 0.5);
+  ctx.lineTo(width, baselineY + 0.5);
+  ctx.stroke();
+}
 
 /**
  * Individual trim segment component with drag handles.
@@ -120,11 +210,14 @@ const TrimSegmentItem = memo(function TrimSegmentItem({
   sourceDurationMs,
   onSelect,
   onUpdate,
+  onSpeedChange,
   onDelete,
   onDragStart,
   waveform,
   visualGain,
+  isCutMode = false,
   tooltipPlacement = 'below',
+  label,
 }: {
   segment: TrimSegment;
   segmentIndex: number;
@@ -134,21 +227,28 @@ const TrimSegmentItem = memo(function TrimSegmentItem({
   sourceDurationMs: number;
   onSelect: (id: string) => void;
   onUpdate: (id: string, updates: Partial<Pick<TrimSegment, 'sourceStartMs' | 'sourceEndMs'>>) => void;
+  onSpeedChange: (id: string, speed: number) => void;
   onDelete: (id: string) => void;
   onDragStart: (dragging: boolean, edge?: 'start' | 'end' | 'move') => void;
   waveform: AudioWaveform | null;
   visualGain: number;
+  isCutMode?: boolean;
   tooltipPlacement?: SegmentTooltipPlacement;
+  label?: string;
 }) {
   const elementRef = useRef<HTMLDivElement>(null);
   const tooltipRef = useRef<HTMLDivElement>(null);
   const dragStateRef = useRef<{ sourceStartMs: number; sourceEndMs: number } | null>(null);
+  const [isSpeedMenuOpen, setIsSpeedMenuOpen] = useState(false);
+  const [isSpeedPopoverOpen, setIsSpeedPopoverOpen] = useState(false);
+  const [speedMenuPosition, setSpeedMenuPosition] = useState({ x: 12, y: 12 });
+  const segmentSpeed = getSegmentSpeed(segment);
 
   // Calculate timeline position (where this segment starts after rippling)
   const timelinePosition = getSegmentTimelinePosition(segmentIndex, allSegments);
 
   // Segment duration and width
-  const segmentDuration = segment.sourceEndMs - segment.sourceStartMs;
+  const segmentDuration = getSegmentTimelineDuration(segment);
   const segmentWidth = segmentDuration * timelineZoom;
   const left = timelinePosition * timelineZoom;
 
@@ -159,7 +259,8 @@ const TrimSegmentItem = memo(function TrimSegmentItem({
       e.preventDefault();
       e.stopPropagation();
 
-      (e.target as HTMLElement).setPointerCapture(e.pointerId);
+      const captureTarget = e.currentTarget as HTMLElement;
+      captureTarget.setPointerCapture(e.pointerId);
 
       onSelect(segment.id);
       onDragStart(true, edge);
@@ -189,18 +290,33 @@ const TrimSegmentItem = memo(function TrimSegmentItem({
 
         // Update DOM directly for smooth dragging
         if (elementRef.current) {
-          const newWidth = (newSourceEnd - newSourceStart) * timelineZoom;
-          elementRef.current.style.width = `${Math.max(newWidth, 20)}px`;
+          const newWidth = ((newSourceEnd - newSourceStart) / segmentSpeed) * timelineZoom;
+          const renderedWidth = Math.max(newWidth, 20);
+          elementRef.current.style.width = `${renderedWidth}px`;
+
+          const waveformCanvas = elementRef.current.querySelector('[data-segment-waveform]') as HTMLCanvasElement | null;
+          if (waveformCanvas && waveform) {
+            drawSegmentWaveform({
+              canvas: waveformCanvas,
+              waveform,
+              visualGain,
+              sourceStartMs: newSourceStart,
+              sourceEndMs: newSourceEnd,
+              sourceDurationMs,
+              width: renderedWidth,
+              height: SEGMENT_WAVEFORM_HEIGHT_PX,
+            });
+          }
         }
 
         if (tooltipRef.current) {
-          const duration = newSourceEnd - newSourceStart;
+          const duration = (newSourceEnd - newSourceStart) / segmentSpeed;
           tooltipRef.current.textContent = formatTimeSimple(duration);
         }
       };
 
       const handlePointerUp = (upEvent: PointerEvent) => {
-        (upEvent.target as HTMLElement).releasePointerCapture(upEvent.pointerId);
+        captureTarget.releasePointerCapture(upEvent.pointerId);
 
         if (dragStateRef.current) {
           const { sourceStartMs, sourceEndMs } = dragStateRef.current;
@@ -217,7 +333,7 @@ const TrimSegmentItem = memo(function TrimSegmentItem({
       document.addEventListener('pointermove', handlePointerMove);
       document.addEventListener('pointerup', handlePointerUp);
     },
-    [segment, sourceDurationMs, timelineZoom, onSelect, onUpdate, onDragStart]
+    [segment, sourceDurationMs, timelineZoom, onSelect, onUpdate, onDragStart, waveform, visualGain, segmentSpeed]
   );
 
   const handleClick = useCallback(
@@ -226,6 +342,69 @@ const TrimSegmentItem = memo(function TrimSegmentItem({
       onSelect(segment.id);
     },
     [onSelect, segment.id]
+  );
+
+  useEffect(() => {
+    if (!isSpeedMenuOpen && !isSpeedPopoverOpen) {
+      return;
+    }
+
+    const handlePointerDown = (event: PointerEvent) => {
+      if (elementRef.current?.contains(event.target as Node)) {
+        return;
+      }
+      setIsSpeedMenuOpen(false);
+      setIsSpeedPopoverOpen(false);
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setIsSpeedMenuOpen(false);
+        setIsSpeedPopoverOpen(false);
+      }
+    };
+
+    document.addEventListener('pointerdown', handlePointerDown);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('pointerdown', handlePointerDown);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isSpeedMenuOpen, isSpeedPopoverOpen]);
+
+  const handleContextMenu = useCallback(
+    (e: React.MouseEvent) => {
+      if (isCutMode) {
+        return;
+      }
+
+      e.preventDefault();
+      e.stopPropagation();
+      onSelect(segment.id);
+
+      const segmentBounds = elementRef.current?.getBoundingClientRect();
+      setSpeedMenuPosition({
+        x: segmentBounds ? e.clientX - segmentBounds.left : 12,
+        y: segmentBounds ? e.clientY - segmentBounds.top : 12,
+      });
+      setIsSpeedPopoverOpen(false);
+      setIsSpeedMenuOpen(true);
+    },
+    [isCutMode, onSelect, segment.id]
+  );
+
+  const handleOpenSpeedPopover = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsSpeedMenuOpen(false);
+    setIsSpeedPopoverOpen(true);
+  }, []);
+
+  const handleSpeedInput = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      onSpeedChange(segment.id, Number(e.target.value));
+    },
+    [onSpeedChange, segment.id]
   );
 
   const handleDelete = useCallback(
@@ -243,8 +422,10 @@ const TrimSegmentItem = memo(function TrimSegmentItem({
     <div
       ref={elementRef}
       data-trim-segment
+      data-cut-mode={isCutMode ? 'true' : undefined}
       className={`
-        absolute top-1 bottom-1 rounded-md cursor-pointer
+        group absolute top-1 bottom-1 rounded-md cursor-pointer
+        ${isCutMode ? 'timeline-clip-cut-target' : ''}
         ${isSelected ? 'border-2 shadow-lg' : 'border'}
       `}
       style={{
@@ -254,52 +435,108 @@ const TrimSegmentItem = memo(function TrimSegmentItem({
         borderColor: isSelected ? TRIM_COLORS.borderSelected : TRIM_COLORS.border,
       }}
       onClick={handleClick}
+      onContextMenu={handleContextMenu}
     >
       {/* Waveform background */}
       {waveform && (
-        <SegmentWaveform
-          waveform={waveform}
-          visualGain={visualGain}
-          sourceStartMs={segment.sourceStartMs}
-          sourceEndMs={segment.sourceEndMs}
-          sourceDurationMs={sourceDurationMs}
-          width={segmentWidth}
-          height={40}
-        />
+        <div className="absolute inset-0 overflow-hidden rounded-md pointer-events-none">
+          <SegmentWaveform
+            waveform={waveform}
+            visualGain={visualGain}
+            sourceStartMs={segment.sourceStartMs}
+            sourceEndMs={segment.sourceEndMs}
+            sourceDurationMs={sourceDurationMs}
+            width={segmentWidth}
+            height={SEGMENT_WAVEFORM_HEIGHT_PX}
+          />
+        </div>
       )}
 
       {/* Left resize handle */}
       <div
-        className="absolute left-0 top-0 bottom-0 w-2 cursor-ew-resize rounded-l-md touch-none z-10"
+        className="absolute left-0 top-0 bottom-0 w-2 cursor-ew-resize rounded-l-md touch-none z-10 bg-[var(--coral-300)]/35 hover:bg-[var(--coral-300)]/75 transition-colors"
         onPointerDown={(e) => handlePointerDown(e, 'start')}
-        onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = TRIM_COLORS.hover)}
-        onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
       />
 
       {/* Center content area */}
       <div className="absolute inset-x-2 top-0 bottom-0 flex items-center justify-center pointer-events-none">
         {segmentWidth > 60 && (
           <div className="flex items-center gap-1" style={{ color: TRIM_COLORS.text }}>
-            <GripVertical className="w-3 h-3" />
+            {label ? <Film className="w-3 h-3" /> : <GripVertical className="w-3 h-3" />}
+            {label && (
+              <span className="text-[10px] font-medium truncate">
+                {label}
+              </span>
+            )}
             <span className="text-[10px] font-mono">
               {formatTimeSimple(segmentDuration)}
             </span>
+            {segmentSpeed > 1.001 && (
+              <span className="ml-1 rounded-sm bg-[var(--coral-300)]/25 px-1 text-[9px] font-semibold tabular-nums">
+                {segmentSpeed.toFixed(segmentSpeed % 1 === 0 ? 0 : 2)}x
+              </span>
+            )}
           </div>
         )}
       </div>
 
+      {isSpeedMenuOpen && (
+        <div
+          className="timeline-speed-menu absolute z-[80] min-w-32 rounded-md border border-[var(--glass-border)] bg-[var(--glass-bg-solid)] p-1 text-[11px] text-[var(--ink-dark)]"
+          style={{ left: speedMenuPosition.x, top: speedMenuPosition.y }}
+          role="menu"
+        >
+          <button
+            className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left hover:bg-[var(--coral-100)]"
+            role="menuitem"
+            onClick={handleOpenSpeedPopover}
+          >
+            <Gauge className="h-3.5 w-3.5" />
+            <span>Set Speed</span>
+          </button>
+        </div>
+      )}
+
+      {isSpeedPopoverOpen && (
+        <div
+          className="timeline-speed-popover absolute z-[80] w-56 rounded-md border border-[var(--glass-border)] bg-[var(--glass-bg-solid)] p-3 text-[11px] text-[var(--ink-dark)]"
+          style={{ left: speedMenuPosition.x, top: speedMenuPosition.y }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="mb-2 flex items-center justify-between">
+            <span className="font-medium">Speed</span>
+            <span className="font-mono text-[var(--coral-400)]">
+              {segmentSpeed.toFixed(segmentSpeed % 1 === 0 ? 0 : 2)}x
+            </span>
+          </div>
+          <input
+            aria-label="Segment speed"
+            className="timeline-speed-slider w-full"
+            type="range"
+            min={SPEED_POPOVER_MIN}
+            max={SPEED_POPOVER_MAX}
+            step="0.25"
+            value={Math.max(SPEED_POPOVER_MIN, segmentSpeed)}
+            onChange={handleSpeedInput}
+          />
+          <div className="mt-2 flex items-center gap-1.5 text-[10px] text-[var(--ink-subtle)]">
+            <Check className="h-3 w-3 text-[var(--coral-400)]" />
+            <span>Pitch preserved</span>
+          </div>
+        </div>
+      )}
+
       {/* Right resize handle */}
       <div
-        className="absolute right-0 top-0 bottom-0 w-2 cursor-ew-resize rounded-r-md touch-none z-10"
+        className="absolute right-0 top-0 bottom-0 w-2 cursor-ew-resize rounded-r-md touch-none z-10 bg-[var(--coral-300)]/35 hover:bg-[var(--coral-300)]/75 transition-colors"
         onPointerDown={(e) => handlePointerDown(e, 'end')}
-        onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = TRIM_COLORS.hover)}
-        onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
       />
 
-      {/* Delete button (shown when selected and can delete) */}
-      {isSelected && canDelete && (
+      {/* Delete button (shown when selected or hovering a deletable segment outside cut mode) */}
+      {canDelete && !isCutMode && (
         <button
-          className="absolute -top-2 -right-2 w-5 h-5 bg-red-500 hover:bg-red-400 rounded-full flex items-center justify-center text-white text-xs shadow-md z-20"
+          className={`absolute -top-2 -right-2 w-5 h-5 bg-red-500 hover:bg-red-400 rounded-full flex items-center justify-center text-white text-xs shadow-md z-[70] transition-opacity ${isSelected ? 'opacity-100' : 'opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto'}`}
+          aria-label="Delete trim segment"
           onClick={handleDelete}
         >
           x
@@ -346,68 +583,22 @@ const SegmentWaveform = memo(function SegmentWaveform({
     const canvas = canvasRef.current;
     if (!canvas || !waveform || waveform.samples.length === 0) return;
 
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
-    // Use device pixel ratio for sharper rendering
-    const dpr = window.devicePixelRatio || 1;
-    canvas.width = width * dpr;
-    canvas.height = height * dpr;
-    ctx.scale(dpr, dpr);
-
-    ctx.clearRect(0, 0, width, height);
-
-    const { samples } = waveform;
-
-    // Calculate which portion of the waveform to render
-    const startRatio = sourceStartMs / sourceDurationMs;
-    const endRatio = sourceEndMs / sourceDurationMs;
-    const startSample = Math.floor(startRatio * samples.length);
-    const endSample = Math.ceil(endRatio * samples.length);
-    const segmentSamples = samples.slice(startSample, endSample);
-
-    if (segmentSamples.length === 0) return;
-
-    const baselineY = height - SEGMENT_WAVEFORM_BOTTOM_PADDING_PX;
-    const maxAmplitude = Math.max(1, height - SEGMENT_WAVEFORM_TOP_PADDING_PX - SEGMENT_WAVEFORM_BOTTOM_PADDING_PX);
-
-    // Calculate samples per pixel
-    const samplesPerPixel = segmentSamples.length / width;
-
-    // Create gradient
-    const gradient = ctx.createLinearGradient(0, 0, 0, height);
-    gradient.addColorStop(0, 'rgba(251, 146, 60, 0.55)'); // orange-400
-    gradient.addColorStop(0.65, 'rgba(249, 112, 102, 0.4)'); // coral-400
-    gradient.addColorStop(1, 'rgba(240, 68, 56, 0.18)'); // coral-500
-
-    ctx.fillStyle = gradient;
-    ctx.beginPath();
-    ctx.moveTo(0, baselineY);
-
-    // Draw a bottom-anchored half waveform for a cleaner timeline shape.
-    for (let x = 0; x < width; x++) {
-      const sampleIndex = Math.floor(x * samplesPerPixel);
-      const sample = segmentSamples[Math.min(sampleIndex, segmentSamples.length - 1)];
-      const normalizedLevel = Math.min(Math.abs(sample) * visualGain, 1);
-      const amplitude = shapeWaveformLevel(normalizedLevel) * maxAmplitude;
-      ctx.lineTo(x, baselineY - amplitude);
-    }
-
-    ctx.lineTo(width, baselineY);
-    ctx.closePath();
-    ctx.fill();
-
-    ctx.strokeStyle = 'rgba(249, 112, 102, 0.2)';
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo(0, baselineY + 0.5);
-    ctx.lineTo(width, baselineY + 0.5);
-    ctx.stroke();
+    drawSegmentWaveform({
+      canvas,
+      waveform,
+      visualGain,
+      sourceStartMs,
+      sourceEndMs,
+      sourceDurationMs,
+      width,
+      height,
+    });
   }, [waveform, visualGain, sourceStartMs, sourceEndMs, sourceDurationMs, width, height]);
 
   return (
     <canvas
       ref={canvasRef}
+      data-segment-waveform
       className="absolute inset-0 pointer-events-none"
       style={{ width, height }}
     />
@@ -423,6 +614,7 @@ export const TrimTrackContent = memo(function TrimTrackContent({
   durationMs,
   timelineZoom,
   width,
+  isCutMode = false,
   audioPath,
   tooltipPlacement = 'below',
 }: TrimTrackProps) {
@@ -430,6 +622,7 @@ export const TrimTrackContent = memo(function TrimTrackContent({
   const { waveform, visualGain } = useWaveform(audioPath);
   const selectTrimSegment = useVideoEditorStore(selectSelectTrimSegment);
   const updateTrimSegment = useVideoEditorStore(selectUpdateTrimSegment);
+  const updateTrimSegmentSpeed = useVideoEditorStore(selectUpdateTrimSegmentSpeed);
   const deleteTrimSegment = useVideoEditorStore(selectDeleteTrimSegment);
   const setDraggingZoomRegion = useVideoEditorStore(selectSetDraggingZoomRegion);
 
@@ -446,37 +639,41 @@ export const TrimTrackContent = memo(function TrimTrackContent({
     [setDraggingZoomRegion]
   );
 
-  // If no segments, show full video as a single block
+  // If no segments, render the full recording through the same selectable
+  // segment path so context-menu actions still work on a fresh timeline.
   if (!segments || segments.length === 0) {
+    const fullSegment: TrimSegment = {
+      id: DEFAULT_FULL_SEGMENT_ID,
+      sourceStartMs: 0,
+      sourceEndMs: durationMs,
+      speed: 1,
+    };
+
     return (
       <div
         data-trim-track
+        data-cut-mode={isCutMode ? 'true' : undefined}
         className="relative h-12 bg-[var(--polar-mist)]/60 border-b border-[var(--glass-border)]"
         style={{ width: `${width}px` }}
       >
-        {/* Full video clip */}
-        <div
-          className="absolute top-1 bottom-1 rounded-md bg-[var(--coral-100)] border border-[var(--coral-200)] overflow-hidden"
-          style={{ left: 0, width: `${durationMs * timelineZoom}px` }}
-        >
-          {waveform && (
-            <SegmentWaveform
-              waveform={waveform}
-              visualGain={visualGain}
-              sourceStartMs={0}
-              sourceEndMs={durationMs}
-              sourceDurationMs={durationMs}
-              width={durationMs * timelineZoom}
-              height={40}
-            />
-          )}
-          <div className="absolute top-0 left-0 right-0 flex items-center px-2 h-full pointer-events-none">
-            <span className="text-[10px] text-[var(--coral-300)]/80 font-medium truncate drop-shadow-sm">
-              <Film className="w-3 h-3 inline mr-1" />
-              Recording
-            </span>
-          </div>
-        </div>
+        <TrimSegmentItem
+          segment={fullSegment}
+          segmentIndex={0}
+          allSegments={[fullSegment]}
+          isSelected={fullSegment.id === selectedTrimSegmentId}
+          timelineZoom={timelineZoom}
+          sourceDurationMs={durationMs}
+          onSelect={selectTrimSegment}
+          onUpdate={updateTrimSegment}
+          onSpeedChange={updateTrimSegmentSpeed}
+          onDelete={deleteTrimSegment}
+          onDragStart={handleDragStart}
+          waveform={waveform}
+          visualGain={visualGain}
+          isCutMode={isCutMode}
+          tooltipPlacement={tooltipPlacement}
+          label="Recording"
+        />
       </div>
     );
   }
@@ -484,6 +681,7 @@ export const TrimTrackContent = memo(function TrimTrackContent({
   return (
     <div
       data-trim-track
+      data-cut-mode={isCutMode ? 'true' : undefined}
       className="relative h-12 bg-[var(--polar-mist)]/60 border-b border-[var(--glass-border)]"
       style={{ width: `${width}px` }}
     >
@@ -499,10 +697,12 @@ export const TrimTrackContent = memo(function TrimTrackContent({
           sourceDurationMs={durationMs}
           onSelect={selectTrimSegment}
           onUpdate={updateTrimSegment}
+          onSpeedChange={updateTrimSegmentSpeed}
           onDelete={deleteTrimSegment}
           onDragStart={handleDragStart}
           waveform={waveform}
           visualGain={visualGain}
+          isCutMode={isCutMode}
           tooltipPlacement={tooltipPlacement}
         />
       ))}

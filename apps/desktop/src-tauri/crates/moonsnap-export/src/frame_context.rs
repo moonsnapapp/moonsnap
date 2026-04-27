@@ -35,7 +35,13 @@ pub fn build_frame_timeline_context(
     has_segments: bool,
 ) -> FrameTimelineContext {
     let relative_time_ms = timeline_time_ms_for_output_frame(output_frame_count, fps);
-    let should_skip = should_skip_source_frame(timeline, has_segments, source_time_ms);
+    let desired_source_time_ms = timeline
+        .timeline_to_source(relative_time_ms)
+        .unwrap_or(source_time_ms);
+    let frame_tolerance_ms = 500u64 / fps.max(1) as u64;
+    let should_skip = should_skip_source_frame(timeline, has_segments, source_time_ms)
+        || (has_segments
+            && source_time_ms.saturating_add(frame_tolerance_ms) < desired_source_time_ms);
 
     FrameTimelineContext {
         source_time_ms,
@@ -107,6 +113,7 @@ mod tests {
                 id: "keep".to_string(),
                 source_start_ms: 2_000,
                 source_end_ms: 3_000,
+                speed: 1.0,
             }],
         };
 
@@ -115,13 +122,36 @@ mod tests {
         assert_eq!(outside.relative_time_ms, 1_000);
         assert!(outside.should_skip);
 
-        let inside = build_frame_timeline_context(2_500, 25, 10, &timeline, true);
+        let inside = build_frame_timeline_context(2_500, 5, 10, &timeline, true);
         assert_eq!(inside.source_time_ms, 2_500);
-        assert_eq!(inside.relative_time_ms, 2_500);
+        assert_eq!(inside.relative_time_ms, 500);
         assert!(!inside.should_skip);
 
         let ignore_segments = build_frame_timeline_context(1_000, 10, 10, &timeline, false);
         assert!(!ignore_segments.should_skip);
+    }
+
+    #[test]
+    fn frame_timeline_context_skips_until_speed_sample_reaches_desired_source_time() {
+        let timeline = TimelineState {
+            duration_ms: 10_000,
+            in_point: 0,
+            out_point: 10_000,
+            speed: 1.0,
+            segments: vec![TrimSegment {
+                id: "fast".to_string(),
+                source_start_ms: 0,
+                source_end_ms: 2_000,
+                speed: 2.0,
+            }],
+        };
+
+        let too_early = build_frame_timeline_context(400, 5, 10, &timeline, true);
+        assert!(too_early.should_skip);
+
+        let sampled = build_frame_timeline_context(1_000, 5, 10, &timeline, true);
+        assert!(!sampled.should_skip);
+        assert_eq!(sampled.relative_time_ms, 500);
     }
 
     #[test]
