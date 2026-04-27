@@ -2,6 +2,33 @@
   "source": "CHANGELOG.md",
   "entries": [
     {
+      "version": "0.5.20",
+      "date": "2026-04-27",
+      "sections": [
+        {
+          "title": "Added",
+          "items": [
+            "Per-segment speed controls in the video editor — set playback speed independently for each trim segment."
+          ]
+        },
+        {
+          "title": "Changed",
+          "items": [
+            "Library search input now stays visible in the toolbar instead of expanding on click.",
+            "Sidebar density slider snaps to refined stops for finer thumbnail sizing."
+          ]
+        },
+        {
+          "title": "Fixed",
+          "items": [
+            "Timeline navigation (prev/next, jump to start/end) now respects the in/out loop range.",
+            "Empty editor view offers a button to reopen the last viewed capture.",
+            "Library focus is restored to the last opened capture when returning from the editor."
+          ]
+        }
+      ]
+    },
+    {
       "version": "0.5.19",
       "date": "2026-04-26",
       "sections": [

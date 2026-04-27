@@ -2,6 +2,20 @@
 
 All notable changes to MoonSnap are documented in this file.
 
+## [0.5.20] - 2026-04-27
+
+### Added
+- Per-segment speed controls in the video editor — set playback speed independently for each trim segment.
+
+### Changed
+- Library search input now stays visible in the toolbar instead of expanding on click.
+- Sidebar density slider snaps to refined stops for finer thumbnail sizing.
+
+### Fixed
+- Timeline navigation (prev/next, jump to start/end) now respects the in/out loop range.
+- Empty editor view offers a button to reopen the last viewed capture.
+- Library focus is restored to the last opened capture when returning from the editor.
+
 ## [0.5.19] - 2026-04-26
 
 ### Added
