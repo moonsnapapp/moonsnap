@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useRef } from 'react';
 import {
   Star,
   FolderOpen,
@@ -51,26 +51,15 @@ export const GlassBlobToolbar: React.FC<GlassBlobToolbarProps> = ({
   activeFilterCount = 0,
   onClearAllFilters,
 }) => {
-  const [searchExpanded, setSearchExpanded] = useState(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => {
-    if (searchExpanded && searchInputRef.current) {
-      searchInputRef.current.focus();
-    }
-  }, [searchExpanded]);
-
   const handleSearchToggle = () => {
-    if (searchExpanded && searchQuery) {
+    if (searchQuery) {
       onSearchChange('');
+      searchInputRef.current?.focus();
+      return;
     }
-    setSearchExpanded(!searchExpanded);
-  };
-
-  const handleSearchBlur = () => {
-    if (!searchQuery) {
-      setSearchExpanded(false);
-    }
+    searchInputRef.current?.focus();
   };
 
   const toggleMediaType = (type: string) => {
@@ -85,7 +74,6 @@ export const GlassBlobToolbar: React.FC<GlassBlobToolbarProps> = ({
     if (e.key === 'Escape') {
       e.preventDefault();
       onSearchChange('');
-      setSearchExpanded(false);
       searchInputRef.current?.blur();
     }
   };
@@ -93,170 +81,171 @@ export const GlassBlobToolbar: React.FC<GlassBlobToolbarProps> = ({
     <div className="cloud-toolbar" role="toolbar" aria-label="Library filters and actions">
       <div className="cloud-toolbar__glass" />
       <div className="cloud-toolbar__inner">
-        {/* LEFT: Search, Folder, Favorites */}
-        <div className={`cloud-search ${searchExpanded ? 'cloud-search--expanded' : ''}`}>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button
-                onClick={handleSearchToggle}
-                aria-label={searchExpanded ? 'Close search' : 'Search'}
-                className={`cloud-btn cloud-btn--small ${searchQuery ? 'cloud-btn--active' : ''}`}
-              >
-                {searchExpanded && searchQuery ? (
-                  <X className="w-[15px] h-[15px]" />
-                ) : (
-                  <Search className="w-[15px] h-[15px]" />
-                )}
-              </button>
-            </TooltipTrigger>
-            <TooltipContent side="top">
-              <p className="text-xs">{searchExpanded ? 'Clear Search' : 'Search'}</p>
-            </TooltipContent>
-          </Tooltip>
-          {searchExpanded && (
+        <div className="cloud-toolbar__row cloud-toolbar__row--secondary">
+          <div className="cloud-toolbar__action-strip">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  onClick={() => onFilterFavoritesChange(!filterFavorites)}
+                  aria-label="Toggle favorites filter"
+                  className={`cloud-btn cloud-btn--small ${filterFavorites ? 'cloud-btn--active' : ''}`}
+                >
+                  <Star className="w-[15px] h-[15px]" fill={filterFavorites ? 'currentColor' : 'none'} />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="top">
+                <p className="text-xs">Favorites</p>
+              </TooltipContent>
+            </Tooltip>
+
+            <TagFilterDropdown
+              allTags={allTags}
+              selectedTags={filterTags}
+              onSelectionChange={onFilterTagsChange}
+            />
+
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  onClick={() => toggleMediaType('image')}
+                  aria-label="Filter images"
+                  className={`cloud-btn cloud-btn--small ${filterMediaTypes.includes('image') ? 'cloud-btn--active' : ''}`}
+                >
+                  <Image className="w-[15px] h-[15px]" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="top">
+                <p className="text-xs">Images</p>
+              </TooltipContent>
+            </Tooltip>
+
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  onClick={() => toggleMediaType('video')}
+                  aria-label="Filter videos"
+                  className={`cloud-btn cloud-btn--small ${filterMediaTypes.includes('video') ? 'cloud-btn--active' : ''}`}
+                >
+                  <Video className="w-[15px] h-[15px]" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="top">
+                <p className="text-xs">Videos</p>
+              </TooltipContent>
+            </Tooltip>
+
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  onClick={() => toggleMediaType('gif')}
+                  aria-label="Filter GIFs"
+                  className={`cloud-btn cloud-btn--small ${filterMediaTypes.includes('gif') ? 'cloud-btn--active' : ''}`}
+                >
+                  <Film className="w-[15px] h-[15px]" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="top">
+                <p className="text-xs">GIFs</p>
+              </TooltipContent>
+            </Tooltip>
+
+            {activeFilterCount > 0 && onClearAllFilters && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    onClick={onClearAllFilters}
+                    aria-label="Clear all filters"
+                    className="cloud-btn cloud-btn--small cloud-btn--active relative"
+                  >
+                    <X className="w-[15px] h-[15px]" />
+                    <span className="absolute -top-1 -right-1 min-w-[14px] h-[14px] rounded-full bg-[var(--coral-500)] text-white text-[9px] font-bold flex items-center justify-center leading-none px-0.5">
+                      {activeFilterCount}
+                    </span>
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent side="top">
+                  <p className="text-xs">Clear All Filters</p>
+                </TooltipContent>
+              </Tooltip>
+            )}
+
+            {selectedCount > 0 && (
+              <>
+                <div className="cloud-divider" />
+
+                <div className="cloud-selection">
+                  <span className="cloud-selection__count">{selectedCount}</span>
+                </div>
+
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button onClick={onDeleteSelected} aria-label="Delete selected" className="cloud-btn cloud-btn--small cloud-btn--danger">
+                      <Trash2 className="w-[15px] h-[15px]" />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent side="top">
+                    <p className="text-xs">Delete Selected</p>
+                  </TooltipContent>
+                </Tooltip>
+
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button onClick={onClearSelection} aria-label="Clear selection" className="cloud-btn cloud-btn--small">
+                      <X className="w-[15px] h-[15px]" />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent side="top">
+                    <p className="text-xs">Clear Selection</p>
+                  </TooltipContent>
+                </Tooltip>
+              </>
+            )}
+          </div>
+        </div>
+
+        <div className="cloud-toolbar__row cloud-toolbar__row--primary">
+          <div className="cloud-search cloud-search--expanded">
+            {searchQuery ? (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    onClick={handleSearchToggle}
+                    aria-label="Clear search"
+                    className="cloud-search__icon-btn"
+                  >
+                    <X className="w-[15px] h-[15px]" />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent side="top">
+                  <p className="text-xs">Clear Search</p>
+                </TooltipContent>
+              </Tooltip>
+            ) : (
+              <Search className="cloud-search__icon" aria-hidden="true" />
+            )}
             <input
               ref={searchInputRef}
               type="text"
               value={searchQuery}
               onChange={(e) => onSearchChange(e.target.value)}
-              onBlur={handleSearchBlur}
               onKeyDown={handleSearchKeyDown}
               placeholder="Search..."
               className="cloud-search__input"
             />
-          )}
-        </div>
+          </div>
 
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <button onClick={onOpenLibraryFolder} aria-label="Open folder" className="cloud-btn cloud-btn--small">
-              <FolderOpen className="w-[15px] h-[15px]" />
-            </button>
-          </TooltipTrigger>
-          <TooltipContent side="top">
-            <p className="text-xs">Open Folder</p>
-          </TooltipContent>
-        </Tooltip>
-
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <button
-              onClick={() => onFilterFavoritesChange(!filterFavorites)}
-              aria-label="Toggle favorites filter"
-              className={`cloud-btn cloud-btn--small ${filterFavorites ? 'cloud-btn--active' : ''}`}
-            >
-              <Star className="w-[15px] h-[15px]" fill={filterFavorites ? 'currentColor' : 'none'} />
-            </button>
-          </TooltipTrigger>
-          <TooltipContent side="top">
-            <p className="text-xs">Favorites</p>
-          </TooltipContent>
-        </Tooltip>
-
-        <TagFilterDropdown
-          allTags={allTags}
-          selectedTags={filterTags}
-          onSelectionChange={onFilterTagsChange}
-        />
-
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <button
-              onClick={() => toggleMediaType('image')}
-              aria-label="Filter images"
-              className={`cloud-btn cloud-btn--small ${filterMediaTypes.includes('image') ? 'cloud-btn--active' : ''}`}
-            >
-              <Image className="w-[15px] h-[15px]" />
-            </button>
-          </TooltipTrigger>
-          <TooltipContent side="top">
-            <p className="text-xs">Images</p>
-          </TooltipContent>
-        </Tooltip>
-
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <button
-              onClick={() => toggleMediaType('video')}
-              aria-label="Filter videos"
-              className={`cloud-btn cloud-btn--small ${filterMediaTypes.includes('video') ? 'cloud-btn--active' : ''}`}
-            >
-              <Video className="w-[15px] h-[15px]" />
-            </button>
-          </TooltipTrigger>
-          <TooltipContent side="top">
-            <p className="text-xs">Videos</p>
-          </TooltipContent>
-        </Tooltip>
-
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <button
-              onClick={() => toggleMediaType('gif')}
-              aria-label="Filter GIFs"
-              className={`cloud-btn cloud-btn--small ${filterMediaTypes.includes('gif') ? 'cloud-btn--active' : ''}`}
-            >
-              <Film className="w-[15px] h-[15px]" />
-            </button>
-          </TooltipTrigger>
-          <TooltipContent side="top">
-            <p className="text-xs">GIFs</p>
-          </TooltipContent>
-        </Tooltip>
-
-        {/* Clear all filters indicator */}
-        {activeFilterCount > 0 && onClearAllFilters && (
           <Tooltip>
             <TooltipTrigger asChild>
-              <button
-                onClick={onClearAllFilters}
-                aria-label="Clear all filters"
-                className="cloud-btn cloud-btn--small cloud-btn--active relative"
-              >
-                <X className="w-[15px] h-[15px]" />
-                <span className="absolute -top-1 -right-1 min-w-[14px] h-[14px] rounded-full bg-[var(--coral-500)] text-white text-[9px] font-bold flex items-center justify-center leading-none px-0.5">
-                  {activeFilterCount}
-                </span>
+              <button onClick={onOpenLibraryFolder} aria-label="Open folder" className="cloud-btn cloud-btn--small">
+                <FolderOpen className="w-[15px] h-[15px]" />
               </button>
             </TooltipTrigger>
             <TooltipContent side="top">
-              <p className="text-xs">Clear All Filters</p>
+              <p className="text-xs">Open Folder</p>
             </TooltipContent>
           </Tooltip>
-        )}
+        </div>
 
-        {/* Selection actions - appended on right */}
-        {selectedCount > 0 && (
-          <>
-            <div className="cloud-divider" />
-
-            <div className="cloud-selection">
-              <span className="cloud-selection__count">{selectedCount}</span>
-            </div>
-
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <button onClick={onDeleteSelected} aria-label="Delete selected" className="cloud-btn cloud-btn--small cloud-btn--danger">
-                  <Trash2 className="w-[15px] h-[15px]" />
-                </button>
-              </TooltipTrigger>
-              <TooltipContent side="top">
-                <p className="text-xs">Delete Selected</p>
-              </TooltipContent>
-            </Tooltip>
-
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <button onClick={onClearSelection} aria-label="Clear selection" className="cloud-btn cloud-btn--small">
-                  <X className="w-[15px] h-[15px]" />
-                </button>
-              </TooltipTrigger>
-              <TooltipContent side="top">
-                <p className="text-xs">Clear Selection</p>
-              </TooltipContent>
-            </Tooltip>
-          </>
-        )}
       </div>
     </div>
   );
