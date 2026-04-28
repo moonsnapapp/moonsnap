@@ -24,7 +24,7 @@ import { useState, useEffect } from 'react';
 import type { Tool } from '../../types';
 import { useEditorStore } from '../../stores/editorStore';
 import { useLicenseStore } from '../../stores/licenseStore';
-import { TIMING } from '../../constants';
+import { LICENSE, TIMING } from '../../constants';
 
 import {
   Tooltip,
@@ -161,7 +161,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
                     <button
                       onClick={() => {
                         if (needsPro) {
-                          window.open('https://buy.polar.sh/polar_cl_WDZB2ld3wEqqWTOustdiNZHASOHMOz4lxlsZ03VjJfx', '_blank');
+                          window.open(LICENSE.PURCHASE_URL, '_blank');
                           return;
                         }
                         onToolChange(tool.id);

@@ -1,11 +1,14 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { listen } from '@tauri-apps/api/event';
 import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
 import { Minus, Square, X, Maximize2, Aperture, Sun, Moon, FolderOpen, Camera, Settings } from 'lucide-react';
+import { toast } from 'sonner';
 import { useFocusedShortcutDispatch } from '@/hooks/useFocusedShortcutDispatch';
 import { useTheme } from '@/hooks/useTheme';
 import { useLicenseStore } from '@/stores/licenseStore';
+import { LICENSE } from '@/constants';
 import { logger } from '@/utils/logger';
+import type { LicenseStatus } from '@/types/generated';
 
 interface TitlebarProps {
   title?: string;
@@ -45,6 +48,7 @@ export const Titlebar: React.FC<TitlebarProps> = ({
   const licenseStatus = useLicenseStore((s) => s.status);
   const trialDaysLeft = useLicenseStore((s) => s.trialDaysLeft);
   const fetchLicenseStatus = useLicenseStore((s) => s.fetchStatus);
+  const previousLicenseStatusRef = useRef<LicenseStatus | null>(null);
   useFocusedShortcutDispatch();
 
   const badgeLabel = licenseStatus === 'pro'
@@ -125,6 +129,21 @@ export const Titlebar: React.FC<TitlebarProps> = ({
       unlistenFn?.();
     };
   }, [fetchLicenseStatus]);
+
+  useEffect(() => {
+    const previousStatus = previousLicenseStatusRef.current;
+    previousLicenseStatusRef.current = licenseStatus;
+
+    if (previousStatus === 'trial' && (licenseStatus === 'free' || licenseStatus === 'expired')) {
+      toast('Your MoonSnap Pro trial has ended', {
+        description: 'Free mode disables Pro editing features like video export.',
+        action: {
+          label: 'Upgrade',
+          onClick: () => window.open(LICENSE.PURCHASE_URL, '_blank'),
+        },
+      });
+    }
+  }, [licenseStatus]);
 
   // Handle drag state
   const handleMouseDown = () => setIsDragging(true);

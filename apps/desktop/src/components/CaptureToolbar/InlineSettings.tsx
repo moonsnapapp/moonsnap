@@ -18,7 +18,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { RECORDING, formatCountdownOption, formatGifDurationOption } from '@/constants';
+import { LICENSE, RECORDING, formatCountdownOption, formatGifDurationOption } from '@/constants';
 import { useCaptureSettingsStore } from '@/stores/captureSettingsStore';
 import { useWebcamSettingsStore } from '@/stores/webcamSettingsStore';
 import { useAudioInputStore } from '@/stores/audioInputStore';
@@ -431,7 +431,7 @@ export const SettingsCol3: React.FC<SettingsColProps> = ({ mode }) => {
           checked={webcamSettings.enabled}
           onCheckedChange={(checked) => {
             if (!isPro) {
-              window.open('https://buy.polar.sh/polar_cl_WDZB2ld3wEqqWTOustdiNZHASOHMOz4lxlsZ03VjJfx', '_blank');
+              window.open(LICENSE.PURCHASE_URL, '_blank');
               return;
             }
             setEnabled(checked);

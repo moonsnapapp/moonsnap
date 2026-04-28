@@ -14,7 +14,7 @@ import { Titlebar } from '@/components/Titlebar/Titlebar';
 import { EditorStoreProvider, createEditorStore, useEditorStore, type EditorStore } from '@/stores/editorStore';
 import { useTheme } from '@/hooks/useTheme';
 import { editorLogger } from '@/utils/logger';
-import { TIMING } from '@/constants';
+import { LICENSE, TIMING } from '@/constants';
 
 // Lazy load editor components
 const EditorCanvas = React.lazy(() =>
@@ -48,7 +48,6 @@ const TOOL_DEFAULT_COLORS: Partial<Record<Tool, string>> = {
 };
 const DEFAULT_STROKE_COLOR = '#ef4444';
 const PRO_TOOLS: ReadonlySet<Tool> = new Set(['background']);
-const PURCHASE_URL = 'https://buy.polar.sh/polar_cl_WDZB2ld3wEqqWTOustdiNZHASOHMOz4lxlsZ03VjJfx';
 
 interface SavedCaptureLookup {
   projectId: string;
@@ -133,7 +132,7 @@ export const ImageEditorContent: React.FC<{
       toast('This feature requires MoonSnap Pro', {
         action: {
           label: 'Upgrade',
-          onClick: () => window.open(PURCHASE_URL, '_blank'),
+          onClick: () => window.open(LICENSE.PURCHASE_URL, '_blank'),
         },
       });
       return;

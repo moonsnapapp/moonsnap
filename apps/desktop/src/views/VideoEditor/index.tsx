@@ -82,6 +82,7 @@ import { VideoEditorSidebar } from './VideoEditorSidebar';
 import { VideoEditorPreview } from './VideoEditorPreview';
 import { VideoEditorTimeline } from './VideoEditorTimeline';
 import { ExportProgressOverlay } from './components/ExportProgressOverlay';
+import { ProFeatureDialog } from '../../components/ProFeatureDialog';
 import type { ExportProgress, CropConfig } from '../../types';
 import { TIMING } from '../../constants';
 import { videoEditorLogger } from '../../utils/logger';
@@ -211,6 +212,7 @@ export const VideoEditorView = forwardRef<VideoEditorViewRef, VideoEditorViewPro
 
   // Crop dialog state
   const [isCropDialogOpen, setIsCropDialogOpen] = useState(false);
+  const [lockedProFeature, setLockedProFeature] = useState<string | null>(null);
   const lastUserActivityAtRef = useRef(Date.now());
   const handleExportRef = useRef<() => void>(() => {});
 
@@ -521,12 +523,7 @@ export const VideoEditorView = forwardRef<VideoEditorViewRef, VideoEditorViewPro
       return { isPro: store.isPro() };
     });
     if (!isPro) {
-      toast('Export requires MoonSnap Pro', {
-        action: {
-          label: 'Upgrade',
-          onClick: () => window.open('https://buy.polar.sh/polar_cl_WDZB2ld3wEqqWTOustdiNZHASOHMOz4lxlsZ03VjJfx', '_blank'),
-        },
-      });
+      setLockedProFeature('Video export');
       return;
     }
 
@@ -713,6 +710,16 @@ export const VideoEditorView = forwardRef<VideoEditorViewRef, VideoEditorViewPro
         isExporting={isExporting}
         exportProgress={exportProgress}
         onCancel={cancelExport}
+      />
+
+      <ProFeatureDialog
+        open={lockedProFeature !== null}
+        featureName={lockedProFeature ?? 'This feature'}
+        onOpenChange={(open) => {
+          if (!open) {
+            setLockedProFeature(null);
+          }
+        }}
       />
     </div>
   );

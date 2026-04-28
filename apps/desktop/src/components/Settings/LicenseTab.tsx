@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Key, CheckCircle, AlertCircle, Clock, ExternalLink, Mail, Monitor } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { LICENSE } from '@/constants';
 import { useLicenseStore } from '@/stores/licenseStore';
 import type { LicenseStatus } from '@/types/generated';
 
@@ -227,7 +228,7 @@ export const LicenseTab: React.FC = () => {
 
             <div className="pt-2 border-t border-[var(--polar-frost)]">
               <a
-                href="https://buy.polar.sh/polar_cl_WDZB2ld3wEqqWTOustdiNZHASOHMOz4lxlsZ03VjJfx"
+                href={LICENSE.PURCHASE_URL}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="inline-flex items-center gap-1.5 text-sm text-[var(--coral-400)] hover:text-[var(--coral-500)] transition-colors"

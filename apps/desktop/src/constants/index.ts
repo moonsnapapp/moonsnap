@@ -16,6 +16,7 @@ export { WAVEFORM, type WaveformConstants } from './waveform';
 export { CURSOR, type CursorConstants } from './cursor';
 export { WEBCAM, type WebcamConstants } from './webcam';
 export { APP, type AppConstants } from './app';
+export { LICENSE, type LicenseConstants } from './license';
 export { RECORDING, formatCountdownOption, formatGifDurationOption } from './recording';
 export {
   WINDOWS_CURSORS,

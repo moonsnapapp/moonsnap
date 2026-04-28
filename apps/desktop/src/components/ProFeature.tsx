@@ -1,6 +1,7 @@
 import React from 'react';
 import { Lock } from 'lucide-react';
 import { useLicenseStore } from '../stores/licenseStore';
+import { LICENSE } from '../constants';
 
 interface ProFeatureProps {
   children: React.ReactNode;
@@ -23,7 +24,7 @@ export function ProFeature({ children, featureName }: ProFeatureProps) {
         <button
           className="mt-2 px-3 py-1 text-xs font-medium text-white bg-[var(--coral-500)] hover:bg-[var(--coral-600)] rounded-md transition-colors"
           onClick={() => {
-            window.open('https://buy.polar.sh/polar_cl_WDZB2ld3wEqqWTOustdiNZHASOHMOz4lxlsZ03VjJfx', '_blank');
+            window.open(LICENSE.PURCHASE_URL, '_blank');
           }}
         >
           Upgrade to Pro
