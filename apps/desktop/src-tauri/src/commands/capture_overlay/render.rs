@@ -7,12 +7,17 @@
 //! - Size indicator text
 //! - Resize handles
 
-use windows::core::Result;
-use windows::Win32::Graphics::Direct2D::Common::{D2D1_COLOR_F, D2D_POINT_2F, D2D_RECT_F};
-use windows::Win32::Graphics::Direct2D::{
-    ID2D1DeviceContext, D2D1_DRAW_TEXT_OPTIONS_NONE, D2D1_ROUNDED_RECT,
+use windows::core::{Interface, Result};
+use windows::Foundation::Numerics::Matrix3x2;
+use windows::Win32::Graphics::Direct2D::Common::{
+    D2D1_COLOR_F, D2D1_GRADIENT_STOP, D2D_POINT_2F, D2D_RECT_F,
 };
-use windows::Win32::Graphics::DirectWrite::DWRITE_MEASURING_MODE_NATURAL;
+use windows::Win32::Graphics::Direct2D::{
+    ID2D1DeviceContext, ID2D1LinearGradientBrush, ID2D1RenderTarget, ID2D1SolidColorBrush,
+    D2D1_BRUSH_PROPERTIES, D2D1_DRAW_TEXT_OPTIONS_NONE, D2D1_EXTEND_MODE_CLAMP, D2D1_GAMMA_2_2,
+    D2D1_LINEAR_GRADIENT_BRUSH_PROPERTIES, D2D1_ROUNDED_RECT,
+};
+use windows::Win32::Graphics::DirectWrite::{IDWriteTextFormat, DWRITE_MEASURING_MODE_NATURAL};
 use windows::Win32::Graphics::Dxgi::{IDXGISurface, DXGI_PRESENT};
 
 use super::commands::{get_highlighted_monitor, get_highlighted_window};
@@ -83,7 +88,7 @@ pub fn render(state: &OverlayState) -> Result<()> {
         }
 
         if state.recording_mode_chooser.is_some() {
-            draw_recording_mode_chooser(&d2d.context, d2d, state);
+            draw_recording_mode_chooser(&d2d.context, d2d, state)?;
         }
 
         d2d.context.EndDraw(None, None)?;
@@ -131,32 +136,32 @@ pub fn hit_test_recording_mode_chooser(
     }
 
     let back = Rect::new(
-        shell.left + 16,
-        shell.top + 14,
-        shell.left + 16 + RECORDING_MODE_CHOOSER_BACK_SIZE,
-        shell.top + 14 + RECORDING_MODE_CHOOSER_BACK_SIZE,
+        shell.left + 18,
+        shell.top + 18,
+        shell.left + 18 + RECORDING_MODE_CHOOSER_BACK_SIZE,
+        shell.top + 18 + RECORDING_MODE_CHOOSER_BACK_SIZE,
     );
     if back.contains(x, y) {
         return RecordingModeChooserHitTarget::Back;
     }
 
-    let card_top = shell.top + 58;
-    let card_bottom = shell.top + 122;
-    let quick = Rect::new(shell.left + 28, card_top, shell.left + 205, card_bottom);
+    let card_top = shell.top + 76;
+    let card_bottom = shell.top + 182;
+    let quick = Rect::new(shell.left + 30, card_top, shell.left + 237, card_bottom);
     if quick.contains(x, y) {
         return RecordingModeChooserHitTarget::Quick;
     }
 
-    let studio = Rect::new(shell.left + 225, card_top, shell.left + 402, card_bottom);
+    let studio = Rect::new(shell.left + 267, card_top, shell.left + 474, card_bottom);
     if studio.contains(x, y) {
         return RecordingModeChooserHitTarget::Studio;
     }
 
     let remember = Rect::new(
-        shell.left + 28,
-        shell.top + 134,
-        shell.right - 28,
-        shell.top + 166,
+        shell.left + 30,
+        shell.top + 200,
+        shell.right - 30,
+        shell.top + 236,
     );
     if remember.contains(x, y) {
         return RecordingModeChooserHitTarget::Remember;
@@ -706,92 +711,120 @@ fn draw_recording_mode_chooser(
     context: &ID2D1DeviceContext,
     d2d: &D2DResources,
     state: &OverlayState,
-) {
+) -> Result<()> {
     let Some(chooser) = &state.recording_mode_chooser else {
-        return;
+        return Ok(());
     };
     let Some(shell) = recording_mode_chooser_rect(state) else {
-        return;
+        return Ok(());
     };
-
-    let shell_rect = shell.to_d2d_rect();
-    let header = "Choose recording mode";
-    let header_wide: Vec<u16> = header.encode_utf16().collect();
 
     unsafe {
         let rounded_shell = D2D1_ROUNDED_RECT {
-            rect: shell_rect,
-            radiusX: 14.0,
-            radiusY: 14.0,
+            rect: shell.to_d2d_rect(),
+            radiusX: 20.0,
+            radiusY: 20.0,
         };
-        context.FillRoundedRectangle(&rounded_shell, &d2d.brushes.text_bg);
-        context.DrawRoundedRectangle(&rounded_shell, &d2d.brushes.handle_border, 1.0, None);
+        let shell_brush = create_vertical_gradient(
+            context,
+            shell.to_d2d_rect(),
+            [
+                gradient_stop(0.0, 0.125, 0.122, 0.165, 0.985),
+                gradient_stop(0.58, 0.052, 0.058, 0.076, 0.97),
+                gradient_stop(1.0, 0.025, 0.028, 0.035, 0.98),
+            ],
+        )?;
+        context.FillRoundedRectangle(&rounded_shell, &shell_brush);
+
+        let inner_glow = D2D1_ROUNDED_RECT {
+            rect: D2D_RECT_F {
+                left: shell.left as f32 + 1.0,
+                top: shell.top as f32 + 1.0,
+                right: shell.right as f32 - 1.0,
+                bottom: shell.top as f32 + 72.0,
+            },
+            radiusX: 19.0,
+            radiusY: 19.0,
+        };
+        context.FillRoundedRectangle(&inner_glow, &d2d.brushes.chooser_surface);
+        context.DrawRoundedRectangle(&rounded_shell, &d2d.brushes.chooser_border, 1.0, None);
 
         let back_rect = Rect::new(
-            shell.left + 16,
-            shell.top + 14,
-            shell.left + 16 + RECORDING_MODE_CHOOSER_BACK_SIZE,
-            shell.top + 14 + RECORDING_MODE_CHOOSER_BACK_SIZE,
+            shell.left + 18,
+            shell.top + 18,
+            shell.left + 18 + RECORDING_MODE_CHOOSER_BACK_SIZE,
+            shell.top + 18 + RECORDING_MODE_CHOOSER_BACK_SIZE,
         )
         .to_d2d_rect();
         let rounded_back = D2D1_ROUNDED_RECT {
             rect: back_rect,
-            radiusX: 8.0,
-            radiusY: 8.0,
+            radiusX: 10.0,
+            radiusY: 10.0,
         };
         if chooser.hovered == RecordingModeChooserHitTarget::Back {
-            context.FillRoundedRectangle(&rounded_back, &d2d.brushes.overlay);
+            context.FillRoundedRectangle(&rounded_back, &d2d.brushes.chooser_surface_hover);
+        } else {
+            context.FillRoundedRectangle(&rounded_back, &d2d.brushes.chooser_surface);
         }
-        context.DrawRoundedRectangle(&rounded_back, &d2d.brushes.handle_border, 1.0, None);
-        draw_text(context, d2d, "<", back_rect, false);
+        context.DrawRoundedRectangle(&rounded_back, &d2d.brushes.chooser_border, 1.0, None);
+        draw_text_with_style(
+            context,
+            "<",
+            back_rect,
+            &d2d.text_format_small,
+            &d2d.brushes.text,
+        );
 
         let header_rect = D2D_RECT_F {
-            left: shell.left as f32 + 64.0,
-            top: shell.top as f32 + 16.0,
-            right: shell.right as f32 - 64.0,
-            bottom: shell.top as f32 + 44.0,
+            left: shell.left as f32 + 68.0,
+            top: shell.top as f32 + 19.0,
+            right: shell.right as f32 - 68.0,
+            bottom: shell.top as f32 + 56.0,
         };
-        context.DrawText(
-            &header_wide,
-            &d2d.text_format,
-            &header_rect,
-            &d2d.brushes.text,
-            D2D1_DRAW_TEXT_OPTIONS_NONE,
-            DWRITE_MEASURING_MODE_NATURAL,
+        draw_text_with_style(
+            context,
+            "Choose recording mode",
+            header_rect,
+            &d2d.text_format_small,
+            &d2d.brushes.chooser_muted_text,
         );
 
         draw_chooser_card(
             context,
             d2d,
             Rect::new(
-                shell.left + 28,
-                shell.top + 58,
-                shell.left + 205,
-                shell.top + 122,
+                shell.left + 30,
+                shell.top + 76,
+                shell.left + 237,
+                shell.top + 182,
             ),
             "Quick",
             "Ready to share",
+            "Q",
+            &d2d.brushes.chooser_quick_icon,
             chooser.hovered == RecordingModeChooserHitTarget::Quick,
-        );
+        )?;
         draw_chooser_card(
             context,
             d2d,
             Rect::new(
-                shell.left + 225,
-                shell.top + 58,
-                shell.left + 402,
-                shell.top + 122,
+                shell.left + 267,
+                shell.top + 76,
+                shell.left + 474,
+                shell.top + 182,
             ),
             "Studio",
             "Edit with effects",
+            "S",
+            &d2d.brushes.chooser_studio_icon,
             chooser.hovered == RecordingModeChooserHitTarget::Studio,
-        );
+        )?;
 
         let remember_rect = Rect::new(
-            shell.left + 28,
-            shell.top + 134,
-            shell.right - 28,
-            shell.top + 166,
+            shell.left + 30,
+            shell.top + 200,
+            shell.right - 30,
+            shell.top + 236,
         );
         let rounded_remember = D2D1_ROUNDED_RECT {
             rect: remember_rect.to_d2d_rect(),
@@ -799,9 +832,11 @@ fn draw_recording_mode_chooser(
             radiusY: 9.0,
         };
         if chooser.hovered == RecordingModeChooserHitTarget::Remember {
-            context.FillRoundedRectangle(&rounded_remember, &d2d.brushes.overlay);
+            context.FillRoundedRectangle(&rounded_remember, &d2d.brushes.chooser_surface_hover);
+        } else {
+            context.FillRoundedRectangle(&rounded_remember, &d2d.brushes.chooser_surface);
         }
-        context.DrawRoundedRectangle(&rounded_remember, &d2d.brushes.handle_border, 1.0, None);
+        context.DrawRoundedRectangle(&rounded_remember, &d2d.brushes.chooser_border, 1.0, None);
 
         let checkbox = Rect::new(
             remember_rect.left + 12,
@@ -815,26 +850,47 @@ fn draw_recording_mode_chooser(
             radiusY: 3.0,
         };
         if chooser.remember {
-            context.FillRoundedRectangle(&checkbox_rounded, &d2d.brushes.handle_border);
-            draw_text(context, d2d, "✓", checkbox.to_d2d_rect(), false);
+            context.FillRoundedRectangle(&checkbox_rounded, &d2d.brushes.chooser_quick_icon);
+            draw_text_with_style(
+                context,
+                "x",
+                checkbox.to_d2d_rect(),
+                &d2d.text_format_tiny,
+                &d2d.brushes.text,
+            );
         } else {
-            context.DrawRoundedRectangle(&checkbox_rounded, &d2d.brushes.handle_border, 1.0, None);
+            context.FillRoundedRectangle(&checkbox_rounded, &d2d.brushes.chooser_surface);
+            context.DrawRoundedRectangle(&checkbox_rounded, &d2d.brushes.chooser_border, 1.0, None);
         }
 
         let remember_text_rect = D2D_RECT_F {
             left: remember_rect.left as f32 + 36.0,
-            top: remember_rect.top as f32 + 2.0,
+            top: remember_rect.top as f32 + 1.0,
             right: remember_rect.right as f32 - 10.0,
-            bottom: remember_rect.bottom as f32 - 2.0,
+            bottom: remember_rect.top as f32 + 17.0,
         };
-        draw_text(
+        draw_text_with_style(
             context,
-            d2d,
             "Remember my choice",
             remember_text_rect,
-            false,
+            &d2d.text_format_tiny_left,
+            &d2d.brushes.chooser_muted_text,
+        );
+        draw_text_with_style(
+            context,
+            "You can change this later in settings.",
+            D2D_RECT_F {
+                left: remember_rect.left as f32 + 36.0,
+                top: remember_rect.top as f32 + 15.0,
+                right: remember_rect.right as f32 - 10.0,
+                bottom: remember_rect.bottom as f32 - 2.0,
+            },
+            &d2d.text_format_tiny_left,
+            &d2d.brushes.chooser_faint_text,
         );
     }
+
+    Ok(())
 }
 
 fn draw_chooser_card(
@@ -843,64 +899,148 @@ fn draw_chooser_card(
     rect: Rect,
     title: &str,
     subtitle: &str,
+    icon: &str,
+    icon_brush: &ID2D1SolidColorBrush,
     is_hovered: bool,
-) {
+) -> Result<()> {
     unsafe {
         let rounded = D2D1_ROUNDED_RECT {
             rect: rect.to_d2d_rect(),
-            radiusX: 11.0,
-            radiusY: 11.0,
+            radiusX: 14.0,
+            radiusY: 14.0,
         };
-        if is_hovered {
-            context.FillRoundedRectangle(&rounded, &d2d.brushes.overlay);
-        }
-        context.DrawRoundedRectangle(&rounded, &d2d.brushes.handle_border, 1.0, None);
+        let card_brush = if is_hovered {
+            create_vertical_gradient(
+                context,
+                rect.to_d2d_rect(),
+                [
+                    gradient_stop(0.0, 0.21, 0.24, 0.29, 0.34),
+                    gradient_stop(1.0, 0.11, 0.12, 0.15, 0.23),
+                ],
+            )?
+        } else {
+            create_vertical_gradient(
+                context,
+                rect.to_d2d_rect(),
+                [
+                    gradient_stop(0.0, 1.0, 1.0, 1.0, 0.09),
+                    gradient_stop(1.0, 1.0, 1.0, 1.0, 0.04),
+                ],
+            )?
+        };
+        context.FillRoundedRectangle(&rounded, &card_brush);
+        context.DrawRoundedRectangle(&rounded, &d2d.brushes.chooser_border, 1.0, None);
 
-        draw_text(
+        let icon_rect = Rect::new(
+            rect.left + (rect.width() as i32 - 42) / 2,
+            rect.top + 14,
+            rect.left + (rect.width() as i32 - 42) / 2 + 42,
+            rect.top + 56,
+        );
+        let rounded_icon = D2D1_ROUNDED_RECT {
+            rect: icon_rect.to_d2d_rect(),
+            radiusX: 13.0,
+            radiusY: 13.0,
+        };
+        context.FillRoundedRectangle(&rounded_icon, icon_brush);
+        context.DrawRoundedRectangle(&rounded_icon, &d2d.brushes.chooser_border, 1.0, None);
+        draw_text_with_style(
             context,
-            d2d,
+            icon,
+            icon_rect.to_d2d_rect(),
+            &d2d.text_format_small,
+            &d2d.brushes.text,
+        );
+
+        draw_text_with_style(
+            context,
             title,
             D2D_RECT_F {
-                left: rect.left as f32 + 8.0,
-                top: rect.top as f32 + 10.0,
-                right: rect.right as f32 - 8.0,
-                bottom: rect.top as f32 + 34.0,
+                left: rect.left as f32 + 14.0,
+                top: rect.top as f32 + 64.0,
+                right: rect.right as f32 - 14.0,
+                bottom: rect.top as f32 + 84.0,
             },
-            true,
+            &d2d.text_format_small,
+            &d2d.brushes.text,
         );
-        draw_text(
+        draw_text_with_style(
             context,
-            d2d,
             subtitle,
             D2D_RECT_F {
-                left: rect.left as f32 + 8.0,
-                top: rect.top as f32 + 34.0,
-                right: rect.right as f32 - 8.0,
-                bottom: rect.bottom as f32 - 8.0,
+                left: rect.left as f32 + 14.0,
+                top: rect.top as f32 + 88.0,
+                right: rect.right as f32 - 14.0,
+                bottom: rect.bottom as f32 - 10.0,
             },
-            false,
+            &d2d.text_format_tiny,
+            &d2d.brushes.chooser_muted_text,
         );
+    }
+
+    Ok(())
+}
+
+fn gradient_stop(position: f32, r: f32, g: f32, b: f32, a: f32) -> D2D1_GRADIENT_STOP {
+    D2D1_GRADIENT_STOP {
+        position,
+        color: D2D1_COLOR_F { r, g, b, a },
     }
 }
 
-fn draw_text(
+fn create_vertical_gradient<const N: usize>(
     context: &ID2D1DeviceContext,
-    d2d: &D2DResources,
+    rect: D2D_RECT_F,
+    stops: [D2D1_GRADIENT_STOP; N],
+) -> Result<ID2D1LinearGradientBrush> {
+    create_vertical_gradient_from_stops(context, rect, &stops)
+}
+
+fn create_vertical_gradient_from_stops(
+    context: &ID2D1DeviceContext,
+    rect: D2D_RECT_F,
+    stops: &[D2D1_GRADIENT_STOP],
+) -> Result<ID2D1LinearGradientBrush> {
+    unsafe {
+        let render_target: ID2D1RenderTarget = context.cast()?;
+        let stop_collection = render_target.CreateGradientStopCollection(
+            stops,
+            D2D1_GAMMA_2_2,
+            D2D1_EXTEND_MODE_CLAMP,
+        )?;
+        let props = D2D1_LINEAR_GRADIENT_BRUSH_PROPERTIES {
+            startPoint: D2D_POINT_2F {
+                x: rect.left,
+                y: rect.top,
+            },
+            endPoint: D2D_POINT_2F {
+                x: rect.left,
+                y: rect.bottom,
+            },
+        };
+        let brush_props = D2D1_BRUSH_PROPERTIES {
+            opacity: 1.0,
+            transform: Matrix3x2::identity(),
+        };
+
+        render_target.CreateLinearGradientBrush(&props, Some(&brush_props), &stop_collection)
+    }
+}
+
+fn draw_text_with_style(
+    context: &ID2D1DeviceContext,
     text: &str,
     rect: D2D_RECT_F,
-    large: bool,
+    format: &IDWriteTextFormat,
+    brush: &ID2D1SolidColorBrush,
 ) {
     let text_wide: Vec<u16> = text.encode_utf16().collect();
     unsafe {
         context.DrawText(
             &text_wide,
-            if large {
-                &d2d.text_format_large
-            } else {
-                &d2d.text_format
-            },
+            format,
             &rect,
-            &d2d.brushes.text,
+            brush,
             D2D1_DRAW_TEXT_OPTIONS_NONE,
             DWRITE_MEASURING_MODE_NATURAL,
         );

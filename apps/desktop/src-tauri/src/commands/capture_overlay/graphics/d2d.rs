@@ -25,8 +25,9 @@ use windows::Win32::Graphics::Direct2D::{
 use windows::Win32::Graphics::Direct3D11::ID3D11Device;
 use windows::Win32::Graphics::DirectWrite::{
     DWriteCreateFactory, IDWriteFactory, IDWriteTextFormat, DWRITE_FACTORY_TYPE_SHARED,
-    DWRITE_FONT_STRETCH_NORMAL, DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_WEIGHT_BOLD,
-    DWRITE_PARAGRAPH_ALIGNMENT_CENTER, DWRITE_TEXT_ALIGNMENT_CENTER,
+    DWRITE_FONT_STRETCH_NORMAL, DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_WEIGHT,
+    DWRITE_FONT_WEIGHT_BOLD, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_FONT_WEIGHT_SEMI_BOLD,
+    DWRITE_PARAGRAPH_ALIGNMENT_CENTER, DWRITE_TEXT_ALIGNMENT_CENTER, DWRITE_TEXT_ALIGNMENT_LEADING,
 };
 use windows::Win32::Graphics::Dxgi::Common::DXGI_FORMAT_B8G8R8A8_UNORM;
 use windows::Win32::Graphics::Dxgi::{IDXGIDevice, IDXGISurface};
@@ -90,6 +91,62 @@ pub mod colors {
         b: 1.0,
         a: 1.0,
     };
+
+    pub const CHOOSER_SHELL: D2D1_COLOR_F = D2D1_COLOR_F {
+        r: 0.055,
+        g: 0.055,
+        b: 0.065,
+        a: 0.96,
+    };
+
+    pub const CHOOSER_SURFACE: D2D1_COLOR_F = D2D1_COLOR_F {
+        r: 1.0,
+        g: 1.0,
+        b: 1.0,
+        a: 0.055,
+    };
+
+    pub const CHOOSER_SURFACE_HOVER: D2D1_COLOR_F = D2D1_COLOR_F {
+        r: 1.0,
+        g: 1.0,
+        b: 1.0,
+        a: 0.105,
+    };
+
+    pub const CHOOSER_BORDER: D2D1_COLOR_F = D2D1_COLOR_F {
+        r: 1.0,
+        g: 1.0,
+        b: 1.0,
+        a: 0.14,
+    };
+
+    pub const CHOOSER_MUTED_TEXT: D2D1_COLOR_F = D2D1_COLOR_F {
+        r: 1.0,
+        g: 1.0,
+        b: 1.0,
+        a: 0.56,
+    };
+
+    pub const CHOOSER_FAINT_TEXT: D2D1_COLOR_F = D2D1_COLOR_F {
+        r: 1.0,
+        g: 1.0,
+        b: 1.0,
+        a: 0.36,
+    };
+
+    pub const CHOOSER_QUICK_ICON: D2D1_COLOR_F = D2D1_COLOR_F {
+        r: 0.98,
+        g: 0.75,
+        b: 0.18,
+        a: 0.20,
+    };
+
+    pub const CHOOSER_STUDIO_ICON: D2D1_COLOR_F = D2D1_COLOR_F {
+        r: 0.22,
+        g: 0.74,
+        b: 0.97,
+        a: 0.20,
+    };
 }
 
 /// Collection of brushes used for rendering
@@ -108,6 +165,14 @@ pub struct Brushes {
     pub handle_fill: ID2D1SolidColorBrush,
     /// Blue for resize handle border
     pub handle_border: ID2D1SolidColorBrush,
+    pub chooser_shell: ID2D1SolidColorBrush,
+    pub chooser_surface: ID2D1SolidColorBrush,
+    pub chooser_surface_hover: ID2D1SolidColorBrush,
+    pub chooser_border: ID2D1SolidColorBrush,
+    pub chooser_muted_text: ID2D1SolidColorBrush,
+    pub chooser_faint_text: ID2D1SolidColorBrush,
+    pub chooser_quick_icon: ID2D1SolidColorBrush,
+    pub chooser_studio_icon: ID2D1SolidColorBrush,
 }
 
 /// All Direct2D rendering resources
@@ -122,6 +187,9 @@ pub struct D2DResources {
     pub text_format: IDWriteTextFormat,
     /// Larger text format for window name indicator
     pub text_format_large: IDWriteTextFormat,
+    pub text_format_small: IDWriteTextFormat,
+    pub text_format_tiny: IDWriteTextFormat,
+    pub text_format_tiny_left: IDWriteTextFormat,
     /// Stroke style for dashed crosshair
     pub crosshair_stroke: ID2D1StrokeStyle1,
 }
@@ -156,6 +224,22 @@ pub fn create_brushes(context: &ID2D1DeviceContext) -> Result<Brushes> {
             handle_fill: render_target.CreateSolidColorBrush(&colors::HANDLE_FILL, Some(&props))?,
             handle_border: render_target
                 .CreateSolidColorBrush(&colors::HANDLE_BORDER, Some(&props))?,
+            chooser_shell: render_target
+                .CreateSolidColorBrush(&colors::CHOOSER_SHELL, Some(&props))?,
+            chooser_surface: render_target
+                .CreateSolidColorBrush(&colors::CHOOSER_SURFACE, Some(&props))?,
+            chooser_surface_hover: render_target
+                .CreateSolidColorBrush(&colors::CHOOSER_SURFACE_HOVER, Some(&props))?,
+            chooser_border: render_target
+                .CreateSolidColorBrush(&colors::CHOOSER_BORDER, Some(&props))?,
+            chooser_muted_text: render_target
+                .CreateSolidColorBrush(&colors::CHOOSER_MUTED_TEXT, Some(&props))?,
+            chooser_faint_text: render_target
+                .CreateSolidColorBrush(&colors::CHOOSER_FAINT_TEXT, Some(&props))?,
+            chooser_quick_icon: render_target
+                .CreateSolidColorBrush(&colors::CHOOSER_QUICK_ICON, Some(&props))?,
+            chooser_studio_icon: render_target
+                .CreateSolidColorBrush(&colors::CHOOSER_STUDIO_ICON, Some(&props))?,
         })
     }
 }
@@ -230,6 +314,34 @@ pub fn create_text_format_large() -> Result<IDWriteTextFormat> {
     }
 }
 
+pub fn create_text_format_with_size(
+    size: f32,
+    weight: DWRITE_FONT_WEIGHT,
+    text_alignment: windows::Win32::Graphics::DirectWrite::DWRITE_TEXT_ALIGNMENT,
+) -> Result<IDWriteTextFormat> {
+    unsafe {
+        let factory: IDWriteFactory = DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED)?;
+
+        let font: Vec<u16> = "Segoe UI\0".encode_utf16().collect();
+        let locale: Vec<u16> = "en-US\0".encode_utf16().collect();
+
+        let format = factory.CreateTextFormat(
+            PCWSTR(font.as_ptr()),
+            None,
+            weight,
+            DWRITE_FONT_STYLE_NORMAL,
+            DWRITE_FONT_STRETCH_NORMAL,
+            size,
+            PCWSTR(locale.as_ptr()),
+        )?;
+
+        format.SetTextAlignment(text_alignment)?;
+        format.SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER)?;
+
+        Ok(format)
+    }
+}
+
 /// Create all D2D resources needed for rendering.
 pub fn create_resources(d3d_device: &ID3D11Device) -> Result<D2DResources> {
     let (factory, context) = create_context(d3d_device)?;
@@ -237,6 +349,21 @@ pub fn create_resources(d3d_device: &ID3D11Device) -> Result<D2DResources> {
     let crosshair_stroke = create_crosshair_stroke(&factory)?;
     let text_format = create_text_format()?;
     let text_format_large = create_text_format_large()?;
+    let text_format_small = create_text_format_with_size(
+        16.0,
+        DWRITE_FONT_WEIGHT_SEMI_BOLD,
+        DWRITE_TEXT_ALIGNMENT_CENTER,
+    )?;
+    let text_format_tiny = create_text_format_with_size(
+        13.0,
+        DWRITE_FONT_WEIGHT_NORMAL,
+        DWRITE_TEXT_ALIGNMENT_CENTER,
+    )?;
+    let text_format_tiny_left = create_text_format_with_size(
+        13.0,
+        DWRITE_FONT_WEIGHT_NORMAL,
+        DWRITE_TEXT_ALIGNMENT_LEADING,
+    )?;
 
     Ok(D2DResources {
         factory,
@@ -244,6 +371,9 @@ pub fn create_resources(d3d_device: &ID3D11Device) -> Result<D2DResources> {
         brushes,
         text_format,
         text_format_large,
+        text_format_small,
+        text_format_tiny,
+        text_format_tiny_left,
         crosshair_stroke,
     })
 }
