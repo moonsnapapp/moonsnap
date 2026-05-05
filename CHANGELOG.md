@@ -2,6 +2,15 @@
 
 All notable changes to MoonSnap are documented in this file.
 
+## [0.5.21] - 2026-05-05
+
+### Changed
+- Recording mode chooser now uses a polished HUD-style panel with larger buttons, clearer spacing, and native overlay rendering.
+- Free-mode Pro feature prompts now explain locked features more clearly.
+
+### Fixed
+- Recording mode chooser buttons stay clickable while adjusting a selected capture area.
+
 ## [0.5.20] - 2026-04-27
 
 ### Added

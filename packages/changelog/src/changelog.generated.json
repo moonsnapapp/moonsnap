@@ -2,6 +2,25 @@
   "source": "CHANGELOG.md",
   "entries": [
     {
+      "version": "0.5.21",
+      "date": "2026-05-05",
+      "sections": [
+        {
+          "title": "Changed",
+          "items": [
+            "Recording mode chooser now uses a polished HUD-style panel with larger buttons, clearer spacing, and native overlay rendering.",
+            "Free-mode Pro feature prompts now explain locked features more clearly."
+          ]
+        },
+        {
+          "title": "Fixed",
+          "items": [
+            "Recording mode chooser buttons stay clickable while adjusting a selected capture area."
+          ]
+        }
+      ]
+    },
+    {
       "version": "0.5.20",
       "date": "2026-04-27",
       "sections": [
