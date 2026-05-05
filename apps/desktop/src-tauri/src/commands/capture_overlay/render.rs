@@ -82,6 +82,10 @@ pub fn render(state: &OverlayState) -> Result<()> {
             draw_resize_handles(&d2d.context, &d2d.brushes, render_info.clear_rect);
         }
 
+        if state.recording_mode_chooser.is_some() {
+            draw_recording_mode_chooser(&d2d.context, d2d, state);
+        }
+
         d2d.context.EndDraw(None, None)?;
 
         // Present the frame
@@ -90,6 +94,75 @@ pub fn render(state: &OverlayState) -> Result<()> {
     }
 
     Ok(())
+}
+
+pub fn recording_mode_chooser_rect(state: &OverlayState) -> Option<Rect> {
+    state.recording_mode_chooser.as_ref()?;
+
+    let selection = state.get_local_selection()?;
+    let (selection_center_x, selection_center_y) = selection.center();
+    let width = RECORDING_MODE_CHOOSER_WIDTH;
+    let height = RECORDING_MODE_CHOOSER_HEIGHT;
+
+    let max_left = state.monitor.width as i32 - width - RECORDING_MODE_CHOOSER_MARGIN;
+    let max_top = state.monitor.height as i32 - height - RECORDING_MODE_CHOOSER_MARGIN;
+    let left = (selection_center_x - width / 2).clamp(
+        RECORDING_MODE_CHOOSER_MARGIN,
+        max_left.max(RECORDING_MODE_CHOOSER_MARGIN),
+    );
+    let top = (selection_center_y - height / 2).clamp(
+        RECORDING_MODE_CHOOSER_MARGIN,
+        max_top.max(RECORDING_MODE_CHOOSER_MARGIN),
+    );
+
+    Some(Rect::new(left, top, left + width, top + height))
+}
+
+pub fn hit_test_recording_mode_chooser(
+    state: &OverlayState,
+    x: i32,
+    y: i32,
+) -> RecordingModeChooserHitTarget {
+    let Some(shell) = recording_mode_chooser_rect(state) else {
+        return RecordingModeChooserHitTarget::None;
+    };
+    if !shell.contains(x, y) {
+        return RecordingModeChooserHitTarget::None;
+    }
+
+    let back = Rect::new(
+        shell.left + 16,
+        shell.top + 14,
+        shell.left + 16 + RECORDING_MODE_CHOOSER_BACK_SIZE,
+        shell.top + 14 + RECORDING_MODE_CHOOSER_BACK_SIZE,
+    );
+    if back.contains(x, y) {
+        return RecordingModeChooserHitTarget::Back;
+    }
+
+    let card_top = shell.top + 58;
+    let card_bottom = shell.top + 122;
+    let quick = Rect::new(shell.left + 28, card_top, shell.left + 205, card_bottom);
+    if quick.contains(x, y) {
+        return RecordingModeChooserHitTarget::Quick;
+    }
+
+    let studio = Rect::new(shell.left + 225, card_top, shell.left + 402, card_bottom);
+    if studio.contains(x, y) {
+        return RecordingModeChooserHitTarget::Studio;
+    }
+
+    let remember = Rect::new(
+        shell.left + 28,
+        shell.top + 134,
+        shell.right - 28,
+        shell.top + 166,
+    );
+    if remember.contains(x, y) {
+        return RecordingModeChooserHitTarget::Remember;
+    }
+
+    RecordingModeChooserHitTarget::Shell
 }
 
 /// Information about what to render.
@@ -627,6 +700,211 @@ fn draw_resize_handles(context: &ID2D1DeviceContext, brushes: &Brushes, rect: D2
     draw_handle(cx, bottom); // Bottom
     draw_handle(left, cy); // Left
     draw_handle(right, cy); // Right
+}
+
+fn draw_recording_mode_chooser(
+    context: &ID2D1DeviceContext,
+    d2d: &D2DResources,
+    state: &OverlayState,
+) {
+    let Some(chooser) = &state.recording_mode_chooser else {
+        return;
+    };
+    let Some(shell) = recording_mode_chooser_rect(state) else {
+        return;
+    };
+
+    let shell_rect = shell.to_d2d_rect();
+    let header = "Choose recording mode";
+    let header_wide: Vec<u16> = header.encode_utf16().collect();
+
+    unsafe {
+        let rounded_shell = D2D1_ROUNDED_RECT {
+            rect: shell_rect,
+            radiusX: 14.0,
+            radiusY: 14.0,
+        };
+        context.FillRoundedRectangle(&rounded_shell, &d2d.brushes.text_bg);
+        context.DrawRoundedRectangle(&rounded_shell, &d2d.brushes.handle_border, 1.0, None);
+
+        let back_rect = Rect::new(
+            shell.left + 16,
+            shell.top + 14,
+            shell.left + 16 + RECORDING_MODE_CHOOSER_BACK_SIZE,
+            shell.top + 14 + RECORDING_MODE_CHOOSER_BACK_SIZE,
+        )
+        .to_d2d_rect();
+        let rounded_back = D2D1_ROUNDED_RECT {
+            rect: back_rect,
+            radiusX: 8.0,
+            radiusY: 8.0,
+        };
+        if chooser.hovered == RecordingModeChooserHitTarget::Back {
+            context.FillRoundedRectangle(&rounded_back, &d2d.brushes.overlay);
+        }
+        context.DrawRoundedRectangle(&rounded_back, &d2d.brushes.handle_border, 1.0, None);
+        draw_text(context, d2d, "<", back_rect, false);
+
+        let header_rect = D2D_RECT_F {
+            left: shell.left as f32 + 64.0,
+            top: shell.top as f32 + 16.0,
+            right: shell.right as f32 - 64.0,
+            bottom: shell.top as f32 + 44.0,
+        };
+        context.DrawText(
+            &header_wide,
+            &d2d.text_format,
+            &header_rect,
+            &d2d.brushes.text,
+            D2D1_DRAW_TEXT_OPTIONS_NONE,
+            DWRITE_MEASURING_MODE_NATURAL,
+        );
+
+        draw_chooser_card(
+            context,
+            d2d,
+            Rect::new(
+                shell.left + 28,
+                shell.top + 58,
+                shell.left + 205,
+                shell.top + 122,
+            ),
+            "Quick",
+            "Ready to share",
+            chooser.hovered == RecordingModeChooserHitTarget::Quick,
+        );
+        draw_chooser_card(
+            context,
+            d2d,
+            Rect::new(
+                shell.left + 225,
+                shell.top + 58,
+                shell.left + 402,
+                shell.top + 122,
+            ),
+            "Studio",
+            "Edit with effects",
+            chooser.hovered == RecordingModeChooserHitTarget::Studio,
+        );
+
+        let remember_rect = Rect::new(
+            shell.left + 28,
+            shell.top + 134,
+            shell.right - 28,
+            shell.top + 166,
+        );
+        let rounded_remember = D2D1_ROUNDED_RECT {
+            rect: remember_rect.to_d2d_rect(),
+            radiusX: 9.0,
+            radiusY: 9.0,
+        };
+        if chooser.hovered == RecordingModeChooserHitTarget::Remember {
+            context.FillRoundedRectangle(&rounded_remember, &d2d.brushes.overlay);
+        }
+        context.DrawRoundedRectangle(&rounded_remember, &d2d.brushes.handle_border, 1.0, None);
+
+        let checkbox = Rect::new(
+            remember_rect.left + 12,
+            remember_rect.top + 9,
+            remember_rect.left + 26,
+            remember_rect.top + 23,
+        );
+        let checkbox_rounded = D2D1_ROUNDED_RECT {
+            rect: checkbox.to_d2d_rect(),
+            radiusX: 3.0,
+            radiusY: 3.0,
+        };
+        if chooser.remember {
+            context.FillRoundedRectangle(&checkbox_rounded, &d2d.brushes.handle_border);
+            draw_text(context, d2d, "✓", checkbox.to_d2d_rect(), false);
+        } else {
+            context.DrawRoundedRectangle(&checkbox_rounded, &d2d.brushes.handle_border, 1.0, None);
+        }
+
+        let remember_text_rect = D2D_RECT_F {
+            left: remember_rect.left as f32 + 36.0,
+            top: remember_rect.top as f32 + 2.0,
+            right: remember_rect.right as f32 - 10.0,
+            bottom: remember_rect.bottom as f32 - 2.0,
+        };
+        draw_text(
+            context,
+            d2d,
+            "Remember my choice",
+            remember_text_rect,
+            false,
+        );
+    }
+}
+
+fn draw_chooser_card(
+    context: &ID2D1DeviceContext,
+    d2d: &D2DResources,
+    rect: Rect,
+    title: &str,
+    subtitle: &str,
+    is_hovered: bool,
+) {
+    unsafe {
+        let rounded = D2D1_ROUNDED_RECT {
+            rect: rect.to_d2d_rect(),
+            radiusX: 11.0,
+            radiusY: 11.0,
+        };
+        if is_hovered {
+            context.FillRoundedRectangle(&rounded, &d2d.brushes.overlay);
+        }
+        context.DrawRoundedRectangle(&rounded, &d2d.brushes.handle_border, 1.0, None);
+
+        draw_text(
+            context,
+            d2d,
+            title,
+            D2D_RECT_F {
+                left: rect.left as f32 + 8.0,
+                top: rect.top as f32 + 10.0,
+                right: rect.right as f32 - 8.0,
+                bottom: rect.top as f32 + 34.0,
+            },
+            true,
+        );
+        draw_text(
+            context,
+            d2d,
+            subtitle,
+            D2D_RECT_F {
+                left: rect.left as f32 + 8.0,
+                top: rect.top as f32 + 34.0,
+                right: rect.right as f32 - 8.0,
+                bottom: rect.bottom as f32 - 8.0,
+            },
+            false,
+        );
+    }
+}
+
+fn draw_text(
+    context: &ID2D1DeviceContext,
+    d2d: &D2DResources,
+    text: &str,
+    rect: D2D_RECT_F,
+    large: bool,
+) {
+    let text_wide: Vec<u16> = text.encode_utf16().collect();
+    unsafe {
+        context.DrawText(
+            &text_wide,
+            if large {
+                &d2d.text_format_large
+            } else {
+                &d2d.text_format
+            },
+            &rect,
+            &d2d.brushes.text,
+            D2D1_DRAW_TEXT_OPTIONS_NONE,
+            DWRITE_MEASURING_MODE_NATURAL,
+        );
+    }
 }
 
 /// Draw the window name indicator in the center of the selection region.

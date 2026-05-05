@@ -391,6 +391,25 @@ impl AdjustmentState {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct RecordingModeChooserState {
+    pub owner: String,
+    pub allow_drag: bool,
+    pub hovered: RecordingModeChooserHitTarget,
+    pub remember: bool,
+}
+
+impl RecordingModeChooserState {
+    pub fn new(owner: String, allow_drag: bool) -> Self {
+        Self {
+            owner,
+            allow_drag,
+            hovered: RecordingModeChooserHitTarget::None,
+            remember: false,
+        }
+    }
+}
+
 // ============================================================================
 // Cursor State
 // ============================================================================
@@ -512,6 +531,8 @@ pub struct OverlayState {
     pub drag: DragState,
     /// Post-selection adjustment state
     pub adjustment: AdjustmentState,
+    /// Native D2D recording mode chooser shown above the active area.
+    pub recording_mode_chooser: Option<RecordingModeChooserState>,
     /// Cursor position and hovered window
     pub cursor: CursorState,
     /// Preselected window HWND (for window capture mode)
@@ -605,6 +626,7 @@ impl OverlayState {
     /// Go back to selection mode (reselect).
     pub fn reselect(&mut self) {
         self.adjustment.reset();
+        self.recording_mode_chooser = None;
         self.drag.reset();
         self.cursor.clear_hovered();
     }

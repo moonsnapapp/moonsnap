@@ -10,9 +10,9 @@ use windows::Win32::Graphics::Gdi::{BeginPaint, EndPaint, PAINTSTRUCT};
 use windows::Win32::UI::Input::KeyboardAndMouse::{ReleaseCapture, SetCapture, VK_SHIFT};
 use windows::Win32::UI::WindowsAndMessaging::{
     DefWindowProcW, GetCursorPos, GetWindowLongPtrW, LoadCursorW, SetCursor, SetWindowPos,
-    GWLP_USERDATA, HTCLIENT, HTTRANSPARENT, HWND_TOPMOST, IDC_CROSS, SWP_NOACTIVATE, SWP_NOMOVE,
-    SWP_NOSIZE, WM_CREATE, WM_DESTROY, WM_KEYDOWN, WM_KEYUP, WM_LBUTTONDOWN, WM_LBUTTONUP,
-    WM_MOUSEMOVE, WM_NCHITTEST, WM_PAINT, WM_RBUTTONDOWN, WM_SETCURSOR,
+    GWLP_USERDATA, HTCLIENT, HTTRANSPARENT, HWND_TOPMOST, IDC_ARROW, IDC_CROSS, SWP_NOACTIVATE,
+    SWP_NOMOVE, SWP_NOSIZE, WM_CREATE, WM_DESTROY, WM_KEYDOWN, WM_KEYUP, WM_LBUTTONDOWN,
+    WM_LBUTTONUP, WM_MOUSEMOVE, WM_NCHITTEST, WM_PAINT, WM_RBUTTONDOWN, WM_SETCURSOR,
 };
 
 use super::input::{get_area_target_at_point, get_window_at_point, hit_test_handle};
@@ -95,6 +95,13 @@ fn handle_nchittest(state_ptr: *mut OverlayState, lparam: LPARAM) -> LRESULT {
             current_screen_mouse_coords().unwrap_or_else(|| mouse_coords(lparam));
 
         // Check if the cursor is on a resize handle
+        let local = state.monitor.screen_to_local(screen_x, screen_y);
+        if render::hit_test_recording_mode_chooser(state, local.x, local.y)
+            != RecordingModeChooserHitTarget::None
+        {
+            return LRESULT(HTCLIENT as isize);
+        }
+
         let handle = hit_test_adjustment_handle_at_screen_coords(
             &state.monitor,
             state.adjustment.bounds,
@@ -126,17 +133,26 @@ fn handle_set_cursor(state_ptr: *mut OverlayState, lparam: LPARAM) -> LRESULT {
         let state = &*state_ptr;
 
         let cursor_id = if state.adjustment.is_active {
-            // In adjustment mode - show resize cursor based on handle
-            let handle = if state.adjustment.is_dragging {
-                state.adjustment.handle
+            if render::hit_test_recording_mode_chooser(
+                state,
+                state.cursor.position.x,
+                state.cursor.position.y,
+            ) != RecordingModeChooserHitTarget::None
+            {
+                IDC_ARROW
             } else {
-                hit_test_handle(
-                    state.cursor.position.x,
-                    state.cursor.position.y,
-                    state.adjustment.bounds,
-                )
-            };
-            handle.cursor_id()
+                // In adjustment mode - show resize cursor based on handle
+                let handle = if state.adjustment.is_dragging {
+                    state.adjustment.handle
+                } else {
+                    hit_test_handle(
+                        state.cursor.position.x,
+                        state.cursor.position.y,
+                        state.adjustment.bounds,
+                    )
+                };
+                handle.cursor_id()
+            }
         } else {
             // Normal mode - show crosshair
             IDC_CROSS
@@ -161,6 +177,13 @@ fn handle_mouse_down(state_ptr: *mut OverlayState, lparam: LPARAM) -> LRESULT {
         let Point { x, y } = current_local_mouse_point(state, lparam);
 
         if state.adjustment.is_active {
+            let chooser_target = render::hit_test_recording_mode_chooser(state, x, y);
+            if chooser_target != RecordingModeChooserHitTarget::None {
+                handle_recording_mode_chooser_click(state, chooser_target);
+                let _ = render::render(state);
+                return LRESULT(0);
+            }
+
             // Check if clicking on a handle or inside selection
             let handle = hit_test_handle(x, y, state.adjustment.bounds);
             if handle.is_active() {
@@ -207,6 +230,18 @@ fn handle_mouse_move(state_ptr: *mut OverlayState, lparam: LPARAM) -> LRESULT {
         state.cursor.set_position(x, y);
 
         if state.adjustment.is_active {
+            let chooser_target = render::hit_test_recording_mode_chooser(state, x, y);
+            if let Some(chooser) = state.recording_mode_chooser.as_mut() {
+                if chooser.hovered != chooser_target {
+                    chooser.hovered = chooser_target;
+                    let _ = render::render(state);
+                }
+            }
+
+            if chooser_target != RecordingModeChooserHitTarget::None {
+                return LRESULT(0);
+            }
+
             if state.adjustment.is_dragging {
                 // Calculate delta from drag start
                 update_adjustment_drag(state, state.drag.shift_held);
@@ -320,6 +355,77 @@ fn handle_mouse_up(state_ptr: *mut OverlayState) -> LRESULT {
         bring_webcam_preview_to_front(state);
     }
     LRESULT(0)
+}
+
+fn handle_recording_mode_chooser_click(
+    state: &mut OverlayState,
+    target: RecordingModeChooserHitTarget,
+) {
+    match target {
+        RecordingModeChooserHitTarget::Back => {
+            emit_recording_mode_chooser_back(state);
+            state.recording_mode_chooser = None;
+        },
+        RecordingModeChooserHitTarget::Quick => {
+            emit_recording_mode_selected(state, "save");
+            state.recording_mode_chooser = None;
+        },
+        RecordingModeChooserHitTarget::Studio => {
+            emit_recording_mode_selected(state, "preview");
+            state.recording_mode_chooser = None;
+        },
+        RecordingModeChooserHitTarget::Remember => {
+            if let Some(chooser) = state.recording_mode_chooser.as_mut() {
+                chooser.remember = !chooser.remember;
+            }
+        },
+        RecordingModeChooserHitTarget::Shell => {},
+        RecordingModeChooserHitTarget::None => {},
+    }
+}
+
+fn emit_recording_mode_selected(state: &OverlayState, action: &str) {
+    let Some(chooser) = &state.recording_mode_chooser else {
+        return;
+    };
+    let Some(rect) = render::recording_mode_chooser_rect(state) else {
+        return;
+    };
+    let screen_position = state
+        .monitor
+        .local_to_screen(Point::new(rect.left, rect.top));
+
+    let _ = state.app_handle.emit(
+        "recording-mode-selected",
+        serde_json::json!({
+            "x": screen_position.x,
+            "y": screen_position.y,
+            "action": action,
+            "remember": chooser.remember,
+            "owner": chooser.owner,
+        }),
+    );
+}
+
+fn emit_recording_mode_chooser_back(state: &OverlayState) {
+    let Some(chooser) = &state.recording_mode_chooser else {
+        return;
+    };
+    let Some(rect) = render::recording_mode_chooser_rect(state) else {
+        return;
+    };
+    let screen_position = state
+        .monitor
+        .local_to_screen(Point::new(rect.left, rect.top));
+
+    let _ = state.app_handle.emit(
+        "recording-mode-chooser-back",
+        serde_json::json!({
+            "x": screen_position.x,
+            "y": screen_position.y,
+            "owner": chooser.owner,
+        }),
+    );
 }
 
 /// Handle region selection completion.
@@ -820,7 +926,7 @@ fn bring_webcam_preview_to_front(state: &OverlayState) {
     }
 }
 
-fn keep_auxiliary_windows_above_overlay(state: &OverlayState) {
+pub(crate) fn keep_auxiliary_windows_above_overlay(state: &OverlayState) {
     for label in ["recording-mode-chooser", "capture-toolbar"] {
         bring_auxiliary_window_to_front(state, label);
     }
@@ -860,10 +966,13 @@ fn bring_auxiliary_window_to_front(state: &OverlayState, label: &str) {
         return;
     }
 
+    let is_capture_toolbar = label == crate::commands::window::CAPTURE_TOOLBAR_LABEL;
+    let is_mode_chooser = label == crate::commands::window::RECORDING_MODE_CHOOSER_LABEL;
+
     bring_window_to_foreground(
         &win,
-        label == crate::commands::window::CAPTURE_TOOLBAR_LABEL || label == "library",
-        label == crate::commands::window::CAPTURE_TOOLBAR_LABEL,
+        is_capture_toolbar || label == "library",
+        is_capture_toolbar || is_mode_chooser,
     );
 }
 

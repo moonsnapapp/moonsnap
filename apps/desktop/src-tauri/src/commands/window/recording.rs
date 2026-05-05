@@ -427,6 +427,17 @@ pub async fn show_recording_mode_chooser(
 ) -> MoonSnapResult<()> {
     let owner = owner.unwrap_or_else(|| "capture-toolbar".to_string());
     let allow_drag = allow_drag.unwrap_or(false);
+
+    if crate::commands::capture_overlay::is_capture_overlay_active() {
+        if let Some(window) = app.get_webview_window(RECORDING_MODE_CHOOSER_LABEL) {
+            let _ = window.close();
+        }
+        crate::commands::capture_overlay::commands::request_d2d_recording_mode_chooser(
+            owner, allow_drag,
+        );
+        return Ok(());
+    }
+
     let (window_x, window_y, chooser_width, chooser_height) = chooser_window_bounds(
         &app,
         x,
@@ -521,6 +532,8 @@ pub(crate) fn reposition_recording_mode_chooser(
 
 #[command]
 pub async fn close_recording_mode_chooser(app: AppHandle) -> MoonSnapResult<()> {
+    crate::commands::capture_overlay::commands::close_d2d_recording_mode_chooser();
+
     if let Some(window) = app.get_webview_window(RECORDING_MODE_CHOOSER_LABEL) {
         window
             .close()

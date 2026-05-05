@@ -46,6 +46,11 @@ pub const MIN_SELECTION_SIZE: i32 = 20;
 /// Gap radius around cursor center for crosshair
 pub const CROSSHAIR_GAP: f32 = 10.0;
 
+pub const RECORDING_MODE_CHOOSER_WIDTH: i32 = 430;
+pub const RECORDING_MODE_CHOOSER_HEIGHT: i32 = 180;
+pub const RECORDING_MODE_CHOOSER_MARGIN: i32 = 16;
+pub const RECORDING_MODE_CHOOSER_BACK_SIZE: i32 = 32;
+
 /// Extended window style for DirectComposition (no redirection bitmap)
 pub const WS_EX_NOREDIRECTIONBITMAP: u32 = 0x00200000;
 
@@ -360,6 +365,17 @@ impl HandlePosition {
 pub struct DetectedWindow {
     pub hwnd: HWND,
     pub bounds: Rect,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum RecordingModeChooserHitTarget {
+    #[default]
+    None,
+    Shell,
+    Back,
+    Quick,
+    Studio,
+    Remember,
 }
 
 impl DetectedWindow {

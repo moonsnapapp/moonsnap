@@ -6,7 +6,8 @@
 //! Communication uses an atomic pending command that the overlay polls.
 
 use moonsnap_core::error::MoonSnapResult;
-use std::sync::atomic::{AtomicI32, AtomicIsize, AtomicU32, AtomicU8, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI32, AtomicIsize, AtomicU32, AtomicU8, Ordering};
+use std::sync::{Mutex, OnceLock};
 
 use super::types::OverlayCommand;
 
@@ -27,6 +28,19 @@ static PENDING_WIDTH: AtomicU32 = AtomicU32::new(0);
 static PENDING_HEIGHT: AtomicU32 = AtomicU32::new(0);
 static PENDING_MOVE_X: AtomicI32 = AtomicI32::new(0);
 static PENDING_MOVE_Y: AtomicI32 = AtomicI32::new(0);
+static D2D_CHOOSER_REQUEST: OnceLock<Mutex<Option<D2DRecordingModeChooserRequest>>> =
+    OnceLock::new();
+static D2D_CHOOSER_CLOSE_REQUESTED: AtomicBool = AtomicBool::new(false);
+
+#[derive(Debug, Clone)]
+pub struct D2DRecordingModeChooserRequest {
+    pub owner: String,
+    pub allow_drag: bool,
+}
+
+fn d2d_chooser_request() -> &'static Mutex<Option<D2DRecordingModeChooserRequest>> {
+    D2D_CHOOSER_REQUEST.get_or_init(|| Mutex::new(None))
+}
 
 /// Get and clear the pending command.
 ///
@@ -53,6 +67,30 @@ pub fn take_pending_move_delta() -> (i32, i32) {
     (dx, dy)
 }
 
+pub fn request_d2d_recording_mode_chooser(owner: String, allow_drag: bool) {
+    if let Ok(mut request) = d2d_chooser_request().lock() {
+        *request = Some(D2DRecordingModeChooserRequest { owner, allow_drag });
+    }
+}
+
+pub fn take_d2d_recording_mode_chooser_request() -> Option<D2DRecordingModeChooserRequest> {
+    d2d_chooser_request()
+        .lock()
+        .ok()
+        .and_then(|mut request| request.take())
+}
+
+pub fn close_d2d_recording_mode_chooser() {
+    D2D_CHOOSER_CLOSE_REQUESTED.store(true, Ordering::SeqCst);
+    if let Ok(mut request) = d2d_chooser_request().lock() {
+        *request = None;
+    }
+}
+
+pub fn take_d2d_recording_mode_chooser_close_requested() -> bool {
+    D2D_CHOOSER_CLOSE_REQUESTED.swap(false, Ordering::SeqCst)
+}
+
 /// Set a pending command for the overlay.
 fn set_pending_command(cmd: OverlayCommand) {
     PENDING_COMMAND.store(cmd as u8, Ordering::SeqCst);
@@ -66,6 +104,10 @@ pub fn clear_pending_command() {
     PENDING_HEIGHT.store(0, Ordering::SeqCst);
     PENDING_MOVE_X.store(0, Ordering::SeqCst);
     PENDING_MOVE_Y.store(0, Ordering::SeqCst);
+    D2D_CHOOSER_CLOSE_REQUESTED.store(false, Ordering::SeqCst);
+    if let Ok(mut request) = d2d_chooser_request().lock() {
+        *request = None;
+    }
 }
 
 /// Confirm the overlay selection.

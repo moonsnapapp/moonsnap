@@ -155,6 +155,8 @@ mod overlay_command_tests {
         assert_eq!(OverlayCommand::from(2), OverlayCommand::ConfirmScreenshot);
         assert_eq!(OverlayCommand::from(3), OverlayCommand::Reselect);
         assert_eq!(OverlayCommand::from(4), OverlayCommand::Cancel);
+        assert_eq!(OverlayCommand::from(5), OverlayCommand::SetDimensions);
+        assert_eq!(OverlayCommand::from(6), OverlayCommand::MoveSelectionBy);
         assert_eq!(OverlayCommand::from(255), OverlayCommand::None);
     }
 

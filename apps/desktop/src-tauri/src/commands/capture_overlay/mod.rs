@@ -60,7 +60,9 @@ use windows::Win32::UI::WindowsAndMessaging::{
 };
 
 use commands::{
-    clear_pending_command, take_pending_command, take_pending_dimensions, take_pending_move_delta,
+    clear_pending_command, take_d2d_recording_mode_chooser_close_requested,
+    take_d2d_recording_mode_chooser_request, take_pending_command, take_pending_dimensions,
+    take_pending_move_delta,
 };
 use graphics::{compositor, d2d, d3d};
 use state::{GraphicsState, MonitorInfo, OverlayState};
@@ -78,6 +80,10 @@ static PREVIEW_ACTIVE: AtomicBool = AtomicBool::new(false);
 
 /// Signal to stop the preview overlay
 static PREVIEW_SHOULD_STOP: AtomicBool = AtomicBool::new(false);
+
+pub(crate) fn is_capture_overlay_active() -> bool {
+    OVERLAY_ACTIVE.load(Ordering::SeqCst)
+}
 
 /// Show the capture overlay for region selection.
 ///
@@ -391,6 +397,7 @@ fn run_overlay(
             monitor: monitor_info,
             drag: Default::default(),
             adjustment,
+            recording_mode_chooser: None,
             cursor: state::CursorState {
                 position: types::Point::new(initial_cursor_x, initial_cursor_y),
                 hovered_window: None,
@@ -534,8 +541,22 @@ fn run_overlay(
 
             // Check for pending commands from toolbar
             if state.adjustment.is_active {
+                if let Some(request) = take_d2d_recording_mode_chooser_request() {
+                    state.recording_mode_chooser = Some(state::RecordingModeChooserState::new(
+                        request.owner,
+                        request.allow_drag,
+                    ));
+                    let _ = render::render(&state);
+                }
+
+                if take_d2d_recording_mode_chooser_close_requested() {
+                    state.recording_mode_chooser = None;
+                    let _ = render::render(&state);
+                }
+
                 match take_pending_command() {
                     OverlayCommand::ConfirmRecording => {
+                        state.recording_mode_chooser = None;
                         if let Some(selection) = state.get_screen_selection() {
                             state
                                 .result
@@ -544,6 +565,7 @@ fn run_overlay(
                         }
                     },
                     OverlayCommand::ConfirmScreenshot => {
+                        state.recording_mode_chooser = None;
                         if let Some(selection) = state.get_screen_selection() {
                             state
                                 .result
@@ -552,6 +574,7 @@ fn run_overlay(
                         }
                     },
                     OverlayCommand::Reselect => {
+                        state.recording_mode_chooser = None;
                         use windows::Win32::UI::WindowsAndMessaging::{
                             GetWindowLongW, SetWindowLongW, SetWindowPos, GWL_EXSTYLE,
                             HWND_TOPMOST, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,
@@ -578,6 +601,7 @@ fn run_overlay(
                         let _ = render::render(&state);
                     },
                     OverlayCommand::Cancel => {
+                        state.recording_mode_chooser = None;
                         state.cancel();
                     },
                     OverlayCommand::SetDimensions => {
@@ -601,6 +625,7 @@ fn run_overlay(
                                 .app_handle
                                 .emit("selection-updated", SelectionEvent::from(screen_sel));
                             let _ = render::render(&state);
+                            wndproc::keep_auxiliary_windows_above_overlay(&state);
                         }
                     },
                     OverlayCommand::MoveSelectionBy => {
@@ -624,6 +649,7 @@ fn run_overlay(
                                 .app_handle
                                 .emit("selection-updated", SelectionEvent::from(screen_sel));
                             let _ = render::render(&state);
+                            wndproc::keep_auxiliary_windows_above_overlay(&state);
                         }
                     },
                     OverlayCommand::None => {},
