@@ -2,6 +2,11 @@
 
 All notable changes to MoonSnap are documented in this file.
 
+## [0.5.22] - 2026-05-05
+
+### Fixed
+- Dragging the recording mode chooser background now moves the selected capture area while keeping its buttons clickable.
+
 ## [0.5.21] - 2026-05-05
 
 ### Changed
