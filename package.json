@@ -2,7 +2,7 @@
   "name": "moonsnap",
   "private": true,
   "license": "FSL-1.1-Apache-2.0",
-  "version": "0.5.20",
+  "version": "0.5.21",
   "packageManager": "bun@1.3.6",
   "workspaces": [
     "apps/*",
