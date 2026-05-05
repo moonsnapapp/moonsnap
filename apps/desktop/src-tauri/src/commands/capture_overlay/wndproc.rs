@@ -10,9 +10,10 @@ use windows::Win32::Graphics::Gdi::{BeginPaint, EndPaint, PAINTSTRUCT};
 use windows::Win32::UI::Input::KeyboardAndMouse::{ReleaseCapture, SetCapture, VK_SHIFT};
 use windows::Win32::UI::WindowsAndMessaging::{
     DefWindowProcW, GetCursorPos, GetWindowLongPtrW, LoadCursorW, SetCursor, SetWindowPos,
-    GWLP_USERDATA, HTCLIENT, HTTRANSPARENT, HWND_TOPMOST, IDC_ARROW, IDC_CROSS, SWP_NOACTIVATE,
-    SWP_NOMOVE, SWP_NOSIZE, WM_CREATE, WM_DESTROY, WM_KEYDOWN, WM_KEYUP, WM_LBUTTONDOWN,
-    WM_LBUTTONUP, WM_MOUSEMOVE, WM_NCHITTEST, WM_PAINT, WM_RBUTTONDOWN, WM_SETCURSOR,
+    GWLP_USERDATA, HTCLIENT, HTTRANSPARENT, HWND_TOPMOST, IDC_ARROW, IDC_CROSS, IDC_SIZEALL,
+    SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, WM_CREATE, WM_DESTROY, WM_KEYDOWN, WM_KEYUP,
+    WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WM_NCHITTEST, WM_PAINT, WM_RBUTTONDOWN,
+    WM_SETCURSOR,
 };
 
 use super::input::{get_area_target_at_point, get_window_at_point, hit_test_handle};
@@ -133,13 +134,22 @@ fn handle_set_cursor(state_ptr: *mut OverlayState, lparam: LPARAM) -> LRESULT {
         let state = &*state_ptr;
 
         let cursor_id = if state.adjustment.is_active {
-            if render::hit_test_recording_mode_chooser(
+            let chooser_target = render::hit_test_recording_mode_chooser(
                 state,
                 state.cursor.position.x,
                 state.cursor.position.y,
-            ) != RecordingModeChooserHitTarget::None
-            {
-                IDC_ARROW
+            );
+            if chooser_target != RecordingModeChooserHitTarget::None {
+                if matches!(chooser_target, RecordingModeChooserHitTarget::Shell)
+                    && state
+                        .recording_mode_chooser
+                        .as_ref()
+                        .is_some_and(|chooser| chooser.allow_drag)
+                {
+                    IDC_SIZEALL
+                } else {
+                    IDC_ARROW
+                }
             } else {
                 // In adjustment mode - show resize cursor based on handle
                 let handle = if state.adjustment.is_dragging {
@@ -179,7 +189,23 @@ fn handle_mouse_down(state_ptr: *mut OverlayState, lparam: LPARAM) -> LRESULT {
         if state.adjustment.is_active {
             let chooser_target = render::hit_test_recording_mode_chooser(state, x, y);
             if chooser_target != RecordingModeChooserHitTarget::None {
-                handle_recording_mode_chooser_click(state, chooser_target);
+                let can_drag_from_shell =
+                    matches!(chooser_target, RecordingModeChooserHitTarget::Shell)
+                        && state
+                            .recording_mode_chooser
+                            .as_ref()
+                            .is_some_and(|chooser| chooser.allow_drag);
+
+                if can_drag_from_shell {
+                    state
+                        .adjustment
+                        .start_drag(HandlePosition::Interior, Point::new(x, y));
+                    if state.adjustment.is_dragging {
+                        capture_mouse(state.hwnd);
+                    }
+                } else {
+                    handle_recording_mode_chooser_click(state, chooser_target);
+                }
                 let _ = render::render(state);
                 return LRESULT(0);
             }
@@ -230,18 +256,6 @@ fn handle_mouse_move(state_ptr: *mut OverlayState, lparam: LPARAM) -> LRESULT {
         state.cursor.set_position(x, y);
 
         if state.adjustment.is_active {
-            let chooser_target = render::hit_test_recording_mode_chooser(state, x, y);
-            if let Some(chooser) = state.recording_mode_chooser.as_mut() {
-                if chooser.hovered != chooser_target {
-                    chooser.hovered = chooser_target;
-                    let _ = render::render(state);
-                }
-            }
-
-            if chooser_target != RecordingModeChooserHitTarget::None {
-                return LRESULT(0);
-            }
-
             if state.adjustment.is_dragging {
                 // Calculate delta from drag start
                 update_adjustment_drag(state, state.drag.shift_held);
@@ -252,6 +266,21 @@ fn handle_mouse_move(state_ptr: *mut OverlayState, lparam: LPARAM) -> LRESULT {
                     state.mark_emitted();
                     emit_dimensions_update(state);
                 }
+
+                let _ = render::render(state);
+                return LRESULT(0);
+            }
+
+            let chooser_target = render::hit_test_recording_mode_chooser(state, x, y);
+            if let Some(chooser) = state.recording_mode_chooser.as_mut() {
+                if chooser.hovered != chooser_target {
+                    chooser.hovered = chooser_target;
+                    let _ = render::render(state);
+                }
+            }
+
+            if chooser_target != RecordingModeChooserHitTarget::None {
+                return LRESULT(0);
             }
         } else {
             // Mode-specific mouse move behavior
