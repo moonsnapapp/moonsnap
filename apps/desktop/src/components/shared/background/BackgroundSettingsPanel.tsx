@@ -97,10 +97,10 @@ export function BackgroundSettingsPanel<TType extends SharedBackgroundType>({
   const showBody = enabledToggle ? enabledToggle.enabled : true;
 
   return (
-    <div className="space-y-4">
+    <div className="min-w-0 space-y-4">
       {enabledToggle && (
-        <div className="flex items-center justify-between">
-          <span className="text-xs text-[var(--ink-muted)]">
+        <div className="flex min-w-0 items-center justify-between gap-3">
+          <span className="min-w-0 truncate text-xs text-[var(--ink-muted)]">
             {enabledToggle.label ?? 'Show BG'}
           </span>
           <ToggleSwitch enabled={enabledToggle.enabled} onToggle={enabledToggle.onToggle} />

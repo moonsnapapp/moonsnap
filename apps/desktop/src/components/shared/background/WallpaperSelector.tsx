@@ -153,8 +153,8 @@ export function WallpaperSelector({
   }, [isSelected, selectedWallpaperId]);
 
   return (
-    <div className="space-y-3">
-      <div className="flex gap-1.5 overflow-x-auto pb-1 -mx-1 px-1">
+    <div className="min-w-0 space-y-3">
+      <div className="-mx-1 flex min-w-0 gap-1.5 overflow-x-auto px-1 pb-1">
         {WALLPAPER_THEME_KEYS.map((theme) => (
           <button
             key={theme}
@@ -173,7 +173,7 @@ export function WallpaperSelector({
           <Loader2 className="w-5 h-5 animate-spin text-[var(--ink-muted)]" />
         </div>
       ) : (
-        <div className="grid grid-cols-3 gap-2">
+        <div className="grid min-w-0 grid-cols-3 gap-2">
           {loadedWallpapers.map((wallpaper) => {
             const selected = isWallpaperSelected(wallpaper.id);
             return (
@@ -182,7 +182,7 @@ export function WallpaperSelector({
                 onClick={() => {
                   void onSelect(wallpaper.id);
                 }}
-                className={`aspect-video rounded-lg overflow-hidden border-2 transition-all hover:scale-[1.02] relative ${
+                className={`relative min-w-0 overflow-hidden rounded-lg border-2 aspect-video transition-all hover:scale-[1.02] ${
                   selected
                     ? 'border-[var(--coral-400)] ring-2 ring-[var(--coral-200)]'
                     : 'border-transparent hover:border-[var(--glass-border)]'

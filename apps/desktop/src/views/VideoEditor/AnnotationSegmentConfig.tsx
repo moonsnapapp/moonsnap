@@ -75,22 +75,22 @@ export function AnnotationSegmentConfig({
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
+      <div className="space-y-2">
+        <div className="flex items-center justify-between gap-3">
           <button
             onClick={onDone}
-            className="h-7 rounded-md bg-[var(--coral-100)] px-2.5 text-xs font-medium text-[var(--coral-400)] transition-colors hover:bg-[var(--coral-200)]"
+            className="h-7 shrink-0 rounded-md bg-[var(--coral-100)] px-2.5 text-xs font-medium text-[var(--coral-400)] transition-colors hover:bg-[var(--coral-200)]"
           >
             Done
           </button>
-          <span className="text-xs text-[var(--ink-subtle)]">Annotation segment</span>
+          <button
+            onClick={onDeleteSegment}
+            className="h-7 shrink-0 whitespace-nowrap rounded-md bg-[var(--error-light)] px-2.5 text-xs text-[var(--error)] transition-colors hover:bg-[rgba(239,68,68,0.2)]"
+          >
+            Delete Segment
+          </button>
         </div>
-        <button
-          onClick={onDeleteSegment}
-          className="h-7 rounded-md bg-[var(--error-light)] px-2.5 text-xs text-[var(--error)] transition-colors hover:bg-[rgba(239,68,68,0.2)]"
-        >
-          Delete Segment
-        </button>
+        <span className="block text-xs text-[var(--ink-subtle)]">Annotation segment</span>
       </div>
 
       <div>
@@ -98,12 +98,12 @@ export function AnnotationSegmentConfig({
           <span className="text-xs text-[var(--ink-muted)]">Shapes</span>
           <span className="text-xs text-[var(--ink-subtle)]">{segment.shapes.length} total</span>
         </div>
-        <div className="flex flex-wrap gap-1.5">
+        <div className="flex min-w-0 flex-wrap gap-1.5">
           {segment.shapes.map((shape: AnnotationShape, index: number) => (
             <button
               key={shape.id}
               onClick={() => onSelectShape(shape.id)}
-              className={`editor-choice-pill px-2.5 py-1 text-xs ${
+              className={`editor-choice-pill min-w-0 max-w-full truncate px-2.5 py-1 text-xs ${
                 shape.id === selectedShape?.id ? 'editor-choice-pill--active' : ''
               }`}
             >
@@ -120,10 +120,10 @@ export function AnnotationSegmentConfig({
             <button
               key={shapeType}
               onClick={() => onAddShape(shapeType)}
-              className="flex h-8 items-center justify-center gap-1 rounded-md border border-[var(--glass-border)] bg-[var(--polar-mist)] text-xs text-[var(--ink-dark)] transition-colors hover:bg-[var(--glass-highlight)]"
+              className="flex h-8 min-w-0 items-center justify-center gap-1 rounded-md border border-[var(--glass-border)] bg-[var(--polar-mist)] px-2 text-xs text-[var(--ink-dark)] transition-colors hover:bg-[var(--glass-highlight)]"
             >
-              <Plus className="h-3 w-3" />
-              {getAnnotationShapeLabel(shapeType)}
+              <Plus className="h-3 w-3 shrink-0" />
+              <span className="truncate">{getAnnotationShapeLabel(shapeType)}</span>
             </button>
           ))}
         </div>
@@ -284,7 +284,7 @@ export function AnnotationSegmentConfig({
 
           <button
             onClick={() => onDeleteShape(selectedShape.id)}
-            className="h-8 rounded-md border border-[var(--error-light)] bg-[rgba(239,68,68,0.08)] text-xs text-[var(--error)] transition-colors hover:bg-[rgba(239,68,68,0.14)]"
+            className="h-8 w-fit rounded-md border border-[var(--error-light)] bg-[rgba(239,68,68,0.08)] px-2.5 text-xs text-[var(--error)] transition-colors hover:bg-[rgba(239,68,68,0.14)]"
           >
             Delete Shape
           </button>

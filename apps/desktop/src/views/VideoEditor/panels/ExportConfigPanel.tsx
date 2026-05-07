@@ -118,7 +118,7 @@ export function ExportConfigPanel({ project, onUpdateExportConfig, onUpdateAudio
   }
 
   return (
-    <div className="space-y-4">
+    <div className="min-w-0 space-y-4">
       {/* Format */}
       <div>
         <span className="text-xs text-[var(--ink-muted)] block mb-2">Format</span>
@@ -128,7 +128,7 @@ export function ExportConfigPanel({ project, onUpdateExportConfig, onUpdateAudio
             onUpdateExportConfig({ format: value as ExportFormat })
           }
         >
-          <SelectTrigger className="h-8 w-full border-[var(--glass-border)] bg-[var(--polar-mist)] px-2 text-sm text-[var(--ink-dark)]">
+          <SelectTrigger className="h-8 min-w-0 w-full border-[var(--glass-border)] bg-[var(--polar-mist)] px-2 text-sm text-[var(--ink-dark)]">
             <SelectValue />
           </SelectTrigger>
           <SelectContent className="border-[var(--glass-border)] bg-[var(--glass-surface-dark)] text-[var(--ink-dark)]">
@@ -149,8 +149,8 @@ export function ExportConfigPanel({ project, onUpdateExportConfig, onUpdateAudio
 
       {project.export.format === 'mp4' && (
         <div>
-          <div className="flex items-center justify-between gap-3 rounded-md border border-[var(--glass-border)] bg-[var(--polar-mist)] px-3 py-2.5">
-            <div>
+          <div className="flex min-w-0 items-center justify-between gap-3 rounded-md border border-[var(--glass-border)] bg-[var(--polar-mist)] px-3 py-2.5">
+            <div className="min-w-0">
               <span className="text-xs text-[var(--ink-muted)] block">Prefer Hardware Encoding</span>
               <p className="mt-1 text-[11px] text-[var(--ink-muted)]">
                 {hardwareEncodingCopy}
@@ -172,7 +172,7 @@ export function ExportConfigPanel({ project, onUpdateExportConfig, onUpdateAudio
           value={String(sourceFps)}
           disabled
         >
-          <SelectTrigger className="h-8 w-full border-[var(--glass-border)] bg-[var(--polar-mist)] px-2 text-sm text-[var(--ink-dark)]">
+          <SelectTrigger className="h-8 min-w-0 w-full border-[var(--glass-border)] bg-[var(--polar-mist)] px-2 text-sm text-[var(--ink-dark)]">
             <SelectValue />
           </SelectTrigger>
           <SelectContent className="border-[var(--glass-border)] bg-[var(--glass-surface-dark)] text-[var(--ink-dark)]">
@@ -208,7 +208,7 @@ export function ExportConfigPanel({ project, onUpdateExportConfig, onUpdateAudio
             }
           }}
         >
-          <SelectTrigger className="h-8 w-full border-[var(--glass-border)] bg-[var(--polar-mist)] px-2 text-sm text-[var(--ink-dark)]">
+          <SelectTrigger className="h-8 min-w-0 w-full border-[var(--glass-border)] bg-[var(--polar-mist)] px-2 text-sm text-[var(--ink-dark)]">
             <SelectValue />
           </SelectTrigger>
           <SelectContent className="border-[var(--glass-border)] bg-[var(--glass-surface-dark)] text-[var(--ink-dark)]">
@@ -228,9 +228,9 @@ export function ExportConfigPanel({ project, onUpdateExportConfig, onUpdateAudio
             This canvas uses a different aspect ratio than the source, so the video will be centered inside it.
           </p>
         )}
-        <div className="flex items-center gap-2 mt-2 px-2.5 py-1.5 rounded-md bg-[var(--polar-mist)] border border-[var(--glass-border)]">
+        <div className="mt-2 flex min-w-0 items-center gap-2 rounded-md border border-[var(--glass-border)] bg-[var(--polar-mist)] px-2.5 py-1.5">
           <span className="text-[11px] text-[var(--ink-muted)]">Canvas</span>
-          <span className="text-[11px] text-[var(--ink-dark)] font-mono font-medium">
+          <span className="min-w-0 truncate font-mono text-[11px] font-medium text-[var(--ink-dark)]">
             {`${outputResolution.width}x${outputResolution.height}`}
           </span>
         </div>
@@ -241,15 +241,15 @@ export function ExportConfigPanel({ project, onUpdateExportConfig, onUpdateAudio
         <div className="flex items-center justify-between mb-2">
           <span className="text-xs text-[var(--ink-muted)]">Crop Video</span>
         </div>
-        <div className="flex gap-2">
+        <div className="flex min-w-0 gap-2">
           <Button
             variant="outline"
             size="sm"
             onClick={onOpenCropDialog}
-            className="flex-1 justify-start gap-2"
+            className="min-w-0 flex-1 justify-start gap-2"
           >
             <Crop className="w-4 h-4" />
-            {project.export.crop?.enabled ? 'Edit Crop' : 'Add Crop'}
+            <span className="min-w-0 truncate">{project.export.crop?.enabled ? 'Edit Crop' : 'Add Crop'}</span>
           </Button>
           {project.export.crop?.enabled && (
             <Button

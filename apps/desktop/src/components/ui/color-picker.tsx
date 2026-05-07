@@ -164,15 +164,15 @@ export const ColorPicker: React.FC<ColorPickerProps> = ({
   const displayColor = displayHsva.a < 1 ? hsvaToRgbaString(displayHsva) : hsvaToHex(displayHsva);
 
   return (
-    <div ref={containerRef} className={cn('relative', className)}>
+    <div ref={containerRef} className={cn('relative min-w-0', className)}>
       {/* Preset Colors */}
-      <div className="flex flex-wrap gap-2 mb-2">
+      <div className="mb-2 flex min-w-0 flex-wrap gap-2">
         {showTransparent && (
           <button
             type="button"
             onClick={() => onChange('rgba(0, 0, 0, 0)')}
             className={cn(
-              'w-7 h-7 rounded-lg border-2 transition-all hover:scale-110 flex items-center justify-center',
+              'flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border-2 transition-all hover:scale-110',
               isTransparent(value) ? 'border-[var(--ink-black)]' : 'border-[var(--polar-frost)]'
             )}
             style={{ background: 'repeating-conic-gradient(#d4d4d4 0% 25%, transparent 0% 50%) 50% / 8px 8px' }}
@@ -187,7 +187,7 @@ export const ColorPicker: React.FC<ColorPickerProps> = ({
             type="button"
             onClick={() => onChange(color)}
             className={cn(
-              'w-7 h-7 rounded-lg border-2 transition-all hover:scale-110',
+              'h-7 w-7 shrink-0 rounded-lg border-2 transition-all hover:scale-110',
               value === color ? 'border-[var(--ink-black)] shadow-md' : 'border-[var(--glass-border)]'
             )}
             style={{ backgroundColor: color }}
@@ -196,13 +196,13 @@ export const ColorPicker: React.FC<ColorPickerProps> = ({
       </div>
 
       {/* Color Input Row */}
-      <div className="flex items-center gap-2">
+      <div className="flex min-w-0 items-center gap-2">
         {/* Swatch Button to Toggle Wheel */}
         <button
           type="button"
           onClick={() => setIsOpen(!isOpen)}
           className={cn(
-            'w-10 h-10 rounded-lg border-2 transition-all cursor-pointer flex-shrink-0',
+            'h-10 w-10 flex-shrink-0 cursor-pointer rounded-lg border-2 transition-all',
             isOpen ? 'border-[var(--coral-400)] ring-2 ring-[var(--coral-glow)]' : 'border-[var(--polar-frost)]'
           )}
           style={{
@@ -218,7 +218,7 @@ export const ColorPicker: React.FC<ColorPickerProps> = ({
             type="text"
             value={isDragging ? displayColor : value}
             onChange={handleInputChange}
-            className="flex-1 h-10 px-3 rounded-lg bg-[var(--card)] border border-[var(--polar-frost)] text-sm text-[var(--ink-black)] font-mono focus:border-[var(--coral-400)] focus:ring-2 focus:ring-[var(--coral-glow)] focus:outline-none"
+            className="h-10 min-w-0 flex-1 rounded-lg border border-[var(--polar-frost)] bg-[var(--card)] px-3 font-mono text-sm text-[var(--ink-black)] focus:border-[var(--coral-400)] focus:outline-none focus:ring-2 focus:ring-[var(--coral-glow)]"
             placeholder="#000000"
           />
         )}

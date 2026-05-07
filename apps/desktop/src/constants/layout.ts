@@ -50,6 +50,9 @@ export const LAYOUT = {
   IMAGE_EDITOR_SIDEBAR_MAX_SIZE: 32,
   /** Collapsed-rail width as a percentage. ~6px on a 1200px window. */
   IMAGE_EDITOR_SIDEBAR_COLLAPSED_SIZE: 0.5,
+
+  // Video editor properties sidebar
+  VIDEO_EDITOR_SIDEBAR_WIDTH: 360,
 } as const;
 
 export type LayoutConstants = typeof LAYOUT;

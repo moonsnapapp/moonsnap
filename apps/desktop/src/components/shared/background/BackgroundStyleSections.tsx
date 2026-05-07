@@ -26,7 +26,7 @@ export function GradientSection({
   inactivePresetBorderClass = 'border-[var(--glass-border)]',
 }: GradientSectionProps) {
   return (
-    <div className="space-y-3">
+    <div className="min-w-0 space-y-3">
       <div
         className="h-8 rounded-lg border border-[var(--glass-border)]"
         style={{
@@ -52,7 +52,7 @@ export function GradientSection({
         />
       </div>
 
-      <div className="flex items-center gap-2">
+      <div className="flex min-w-0 items-center gap-2">
         <span className="text-[11px] text-[var(--ink-subtle)]">Angle</span>
         <Slider
           value={[gradientAngle]}
@@ -60,7 +60,7 @@ export function GradientSection({
           min={0}
           max={360}
           step={5}
-          className="flex-1"
+          className="min-w-0 flex-1"
         />
         <span className="text-[11px] text-[var(--ink-faint)] w-10 text-right">
           {gradientAngle}&deg;
@@ -69,7 +69,7 @@ export function GradientSection({
 
       <div>
         <span className="text-[11px] text-[var(--ink-subtle)] block mb-1.5">Presets</span>
-        <div className="grid grid-cols-4 gap-1.5">
+        <div className="grid min-w-0 grid-cols-4 gap-1.5">
           {GRADIENT_PRESETS.map((preset, idx) => {
             const isSelected =
               gradientStart === preset.start && gradientEnd === preset.end;
@@ -101,8 +101,8 @@ interface PaddingSectionProps {
 
 export function PaddingSection({ value, onChange }: PaddingSectionProps) {
   return (
-    <div className="pt-3 border-t border-[var(--glass-border)]">
-      <div className="flex items-center justify-between mb-2">
+    <div className="border-t border-[var(--glass-border)] pt-3">
+      <div className="mb-2 flex min-w-0 items-center justify-between">
         <span className="text-xs text-[var(--ink-muted)]">Padding</span>
         <span className="text-xs text-[var(--ink-dark)] font-mono">{value}px</span>
       </div>
@@ -133,8 +133,8 @@ export function CornerRadiusSection({
   onKindChange,
 }: CornerRadiusSectionProps) {
   return (
-    <div className="pt-3 border-t border-[var(--glass-border)]">
-      <div className="flex items-center justify-between mb-2">
+    <div className="border-t border-[var(--glass-border)] pt-3">
+      <div className="mb-2 flex min-w-0 items-center justify-between">
         <span className="text-xs text-[var(--ink-muted)]">Corner Radius</span>
         <span className="text-xs text-[var(--ink-dark)] font-mono">{value}px</span>
       </div>
@@ -145,10 +145,10 @@ export function CornerRadiusSection({
         max={200}
         step={2}
       />
-      <div className="flex gap-1 mt-2">
+      <div className="mt-2 flex min-w-0 gap-1">
         <button
           onClick={() => onKindChange('squircle')}
-          className={`editor-choice-pill flex-1 px-2 py-1.5 text-xs ${
+          className={`editor-choice-pill min-w-0 flex-1 px-2 py-1.5 text-xs ${
             kind === 'squircle' ? 'editor-choice-pill--active' : ''
           }`}
         >
@@ -156,7 +156,7 @@ export function CornerRadiusSection({
         </button>
         <button
           onClick={() => onKindChange('rounded')}
-          className={`editor-choice-pill flex-1 px-2 py-1.5 text-xs ${
+          className={`editor-choice-pill min-w-0 flex-1 px-2 py-1.5 text-xs ${
             kind === 'rounded' ? 'editor-choice-pill--active' : ''
           }`}
         >

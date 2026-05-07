@@ -17,22 +17,22 @@ export function BackgroundTypeTabs({
   onTypeChange,
 }: BackgroundTypeTabsProps) {
   return (
-    <div>
+    <div className="min-w-0">
       <span className="text-xs text-[var(--ink-muted)] block mb-2">Background Type</span>
-      <div className="grid grid-cols-4 gap-1.5">
+      <div className="grid min-w-0 grid-cols-4 gap-1.5">
         {BACKGROUND_TYPES.map((type) => (
           <button
             key={type}
             onClick={() => onTypeChange(type)}
-            className={`editor-choice-pill px-2 py-2 text-xs ${
+            className={`editor-choice-pill min-w-0 px-1.5 py-2 text-xs ${
               currentType === type ? 'editor-choice-pill--active' : ''
             }`}
           >
-            <div className="flex items-center justify-center gap-1.5">
+            <div className="flex min-w-0 items-center justify-center gap-1">
               {type === 'wallpaper' && (
-                <div className="w-3 h-3 rounded-sm bg-gradient-to-br from-blue-400 to-purple-500" />
+                <div className="h-3 w-3 shrink-0 rounded-sm bg-gradient-to-br from-blue-400 to-purple-500" />
               )}
-              <span className="capitalize">{type}</span>
+              <span className="min-w-0 truncate capitalize">{type}</span>
             </div>
           </button>
         ))}

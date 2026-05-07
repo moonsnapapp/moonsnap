@@ -56,6 +56,7 @@ import { ExportConfigPanel } from './panels/ExportConfigPanel';
 import { findTextSegmentById } from '../../utils/textSegmentId';
 import { createDefaultAnnotationShape, getNextAnnotationStepNumber } from '../../utils/videoAnnotations';
 import type { SceneMode, VideoProject } from '../../types';
+import { LAYOUT } from '../../constants';
 
 export interface VideoEditorSidebarProps {
   project: VideoProject | null;
@@ -114,7 +115,14 @@ export function VideoEditorSidebar({ project, onOpenCropDialog }: VideoEditorSid
     selectedTextSegmentId;
 
   return (
-    <div className="w-fit max-w-md compositor-sidebar flex flex-col shrink-0">
+    <div
+      className="compositor-sidebar flex flex-col shrink-0"
+      style={{
+        width: LAYOUT.VIDEO_EDITOR_SIDEBAR_WIDTH,
+        minWidth: LAYOUT.VIDEO_EDITOR_SIDEBAR_WIDTH,
+        maxWidth: LAYOUT.VIDEO_EDITOR_SIDEBAR_WIDTH,
+      }}
+    >
       {/* Tab Bar */}
       <SidebarTabBar
         activeTab={activeTab}
@@ -124,10 +132,10 @@ export function VideoEditorSidebar({ project, onOpenCropDialog }: VideoEditorSid
       />
 
       {/* Tab Content */}
-      <div className="flex-1 overflow-y-auto relative">
+      <div className="relative min-w-0 flex-1 overflow-y-auto">
         {/* Selection Overlay (shown when zoom region, scene segment, mask, or text is selected) */}
         {hasSelectedSegment && project && (
-          <div className="absolute inset-0 p-4 bg-[var(--glass-surface-dark)] z-10 animate-in slide-in-from-bottom-2 fade-in duration-200 overflow-y-auto">
+          <div className="absolute inset-0 min-w-0 overflow-y-auto bg-[var(--glass-surface-dark)] p-4 z-10 animate-in slide-in-from-bottom-2 fade-in duration-200">
             {/* Zoom Region Properties */}
             {selectedZoomRegionId && project.zoom.regions.find(r => r.id === selectedZoomRegionId) && (
               <ZoomRegionConfig
@@ -309,7 +317,7 @@ export function VideoEditorSidebar({ project, onOpenCropDialog }: VideoEditorSid
 
         {/* Background/Style Tab */}
         {activeTab === 'background' && project && (
-          <div className="p-4">
+          <div className="min-w-0 p-4">
             <ProFeature featureName="Custom Backgrounds">
               <BackgroundSettings
                 background={project.export.background}
@@ -323,7 +331,7 @@ export function VideoEditorSidebar({ project, onOpenCropDialog }: VideoEditorSid
 
         {/* Export Tab */}
         {activeTab === 'export' && project && (
-          <div className="p-4">
+          <div className="min-w-0 p-4">
             <ExportConfigPanel
               project={project}
               onUpdateExportConfig={updateExportConfig}
