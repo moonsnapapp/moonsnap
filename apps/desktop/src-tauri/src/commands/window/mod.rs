@@ -50,11 +50,6 @@ pub(crate) const RECORDING_MODE_CHOOSER_LABEL: &str = "recording-mode-chooser";
 /// Track if main window was visible before capture started
 pub(crate) static MAIN_WAS_VISIBLE: AtomicBool = AtomicBool::new(false);
 
-/// Track the first explicit library reveal in this process.
-/// The library starts hidden, and restoring a hidden saved position can leave
-/// the first reveal off-center. Recenter once, then preserve subsequent moves.
-pub(crate) static LIBRARY_WAS_REVEALED: AtomicBool = AtomicBool::new(false);
-
 // ============================================================================
 // Physical Coordinate Helpers
 // ============================================================================
@@ -283,18 +278,11 @@ pub(crate) fn close_all_capture_windows(app: &tauri::AppHandle) {
     close_recording_mode_chooser_window(app);
 }
 
-/// Show the library window, centering it the first time it is explicitly shown
-/// in a process so startup restores do not leave it off-center.
+/// Show the library window at its current/restored position.
 pub(crate) fn reveal_library_window(
     window: &tauri::WebviewWindow,
     focus: bool,
 ) -> MoonSnapResult<()> {
-    if !LIBRARY_WAS_REVEALED.swap(true, Ordering::SeqCst) {
-        window
-            .center()
-            .map_err(|e| format!("Failed to center library window: {}", e))?;
-    }
-
     window
         .show()
         .map_err(|e| format!("Failed to show library window: {}", e))?;

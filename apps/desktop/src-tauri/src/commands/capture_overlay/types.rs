@@ -438,6 +438,7 @@ pub enum OverlayCommand {
     SetDimensions = 5,
     MoveSelectionBy = 6,
     CancelToStartup = 7,
+    ShowSelectionHudFeedback = 8,
 }
 
 impl From<u8> for OverlayCommand {
@@ -450,6 +451,7 @@ impl From<u8> for OverlayCommand {
             5 => Self::SetDimensions,
             6 => Self::MoveSelectionBy,
             7 => Self::CancelToStartup,
+            8 => Self::ShowSelectionHudFeedback,
             _ => Self::None,
         }
     }

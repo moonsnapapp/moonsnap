@@ -34,6 +34,7 @@ static D2D_CHOOSER_REQUEST: OnceLock<Mutex<Option<D2DRecordingModeChooserRequest
     OnceLock::new();
 static D2D_CHOOSER_CLOSE_REQUESTED: AtomicBool = AtomicBool::new(false);
 static SAVED_AREA_MENU_STATE: OnceLock<Mutex<SavedAreaMenuState>> = OnceLock::new();
+static SELECTION_HUD_FEEDBACK_MESSAGE: OnceLock<Mutex<Option<String>>> = OnceLock::new();
 
 #[derive(Debug, Clone)]
 pub struct D2DRecordingModeChooserRequest {
@@ -69,6 +70,10 @@ fn saved_area_menu_state() -> &'static Mutex<SavedAreaMenuState> {
     SAVED_AREA_MENU_STATE.get_or_init(|| Mutex::new(SavedAreaMenuState::default()))
 }
 
+fn selection_hud_feedback_message() -> &'static Mutex<Option<String>> {
+    SELECTION_HUD_FEEDBACK_MESSAGE.get_or_init(|| Mutex::new(None))
+}
+
 pub fn get_saved_area_menu_state() -> SavedAreaMenuState {
     saved_area_menu_state()
         .lock()
@@ -99,6 +104,13 @@ pub fn take_pending_move_delta() -> (i32, i32) {
     let dx = PENDING_MOVE_X.swap(0, Ordering::SeqCst);
     let dy = PENDING_MOVE_Y.swap(0, Ordering::SeqCst);
     (dx, dy)
+}
+
+pub fn take_selection_hud_feedback_message() -> Option<String> {
+    selection_hud_feedback_message()
+        .lock()
+        .ok()
+        .and_then(|mut message| message.take())
 }
 
 pub fn request_d2d_recording_mode_chooser(owner: String, allow_drag: bool) {
@@ -160,6 +172,21 @@ pub async fn capture_overlay_set_saved_areas(
     Ok(())
 }
 
+#[tauri::command]
+pub async fn capture_overlay_show_selection_hud_feedback(message: String) -> MoonSnapResult<()> {
+    let message = message.trim();
+    if message.is_empty() {
+        return Ok(());
+    }
+
+    let message = message.chars().take(40).collect::<String>();
+    if let Ok(mut pending_message) = selection_hud_feedback_message().lock() {
+        *pending_message = Some(message);
+    }
+    set_pending_command(OverlayCommand::ShowSelectionHudFeedback);
+    Ok(())
+}
+
 pub fn take_d2d_recording_mode_chooser_close_requested() -> bool {
     D2D_CHOOSER_CLOSE_REQUESTED.swap(false, Ordering::SeqCst)
 }
@@ -180,6 +207,9 @@ pub fn clear_pending_command() {
     D2D_CHOOSER_CLOSE_REQUESTED.store(false, Ordering::SeqCst);
     if let Ok(mut request) = d2d_chooser_request().lock() {
         *request = None;
+    }
+    if let Ok(mut message) = selection_hud_feedback_message().lock() {
+        *message = None;
     }
 }
 

@@ -68,11 +68,6 @@ export const SourceSelector: React.FC<SourceSelectorProps> = ({
         }),
         await PredefinedMenuItem.new({ item: 'Separator' }),
         await MenuItem.new({
-          id: 'draw-new-area',
-          text: 'Draw New Area',
-          action: () => onSelectArea?.(),
-        }),
-        await MenuItem.new({
           id: 'use-last-area',
           text: lastAreaSelection
             ? `Use Last Area (${formatAreaSelectionLabel(lastAreaSelection)})`
@@ -129,7 +124,7 @@ export const SourceSelector: React.FC<SourceSelectorProps> = ({
     } catch (error) {
       captureLogger.error('Failed to open area menu:', error);
     }
-  }, [disabled, lastAreaSelection, onDeleteSavedArea, onSelectArea, onSelectLastArea, onSelectSavedArea, savedAreaSelections]);
+  }, [disabled, lastAreaSelection, onDeleteSavedArea, onSelectLastArea, onSelectSavedArea, savedAreaSelections]);
 
   return (
     <div className={`glass-source-group ${disabled ? 'opacity-50 pointer-events-none' : ''}`}>

@@ -465,13 +465,6 @@ export const useCaptureSettingsStore = create<CaptureSettingsState>((set, get) =
         };
       }
 
-      if (state.savedAreaSelections.length >= MAX_SAVED_AREA_SELECTIONS) {
-        savedAreaSelection = null;
-        return {
-          lastAreaSelection: normalizedSelection,
-        };
-      }
-
       savedAreaSelection = {
         ...normalizedSelection,
         id: createSavedAreaId(),
@@ -480,9 +473,15 @@ export const useCaptureSettingsStore = create<CaptureSettingsState>((set, get) =
         updatedAt: now,
       };
 
+      const savedAreaSelections =
+        state.savedAreaSelections.length >= MAX_SAVED_AREA_SELECTIONS
+          ? state.savedAreaSelections
+              .slice(0, MAX_SAVED_AREA_SELECTIONS - 1)
+          : state.savedAreaSelections;
+
       return {
         lastAreaSelection: normalizedSelection,
-        savedAreaSelections: [savedAreaSelection, ...state.savedAreaSelections],
+        savedAreaSelections: [savedAreaSelection, ...savedAreaSelections],
       };
     });
 

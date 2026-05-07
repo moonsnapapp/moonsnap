@@ -62,7 +62,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
 use commands::{
     clear_pending_command, take_d2d_recording_mode_chooser_close_requested,
     take_d2d_recording_mode_chooser_request, take_pending_command, take_pending_dimensions,
-    take_pending_move_delta,
+    take_pending_move_delta, take_selection_hud_feedback_message,
 };
 use graphics::{compositor, d2d, d3d};
 use state::{GraphicsState, MonitorInfo, OverlayState};
@@ -684,7 +684,17 @@ fn run_overlay(
                             let _ = render::render(&state);
                         }
                     },
+                    OverlayCommand::ShowSelectionHudFeedback => {
+                        if let Some(message) = take_selection_hud_feedback_message() {
+                            state.show_selection_hud_feedback(message);
+                            let _ = render::render(&state);
+                        }
+                    },
                     OverlayCommand::None => {},
+                }
+
+                if state.clear_expired_selection_hud_feedback() {
+                    let _ = render::render(&state);
                 }
             }
 

@@ -36,7 +36,6 @@ const DIMENSION_PRESETS: [(&str, u32, u32); 6] = [
     ("Square", 1080, 1080),
     ("Story", 1080, 1920),
 ];
-const SAVED_AREA_MENU_DRAW_NEW: usize = 2000;
 const SAVED_AREA_MENU_SAVE_CURRENT: usize = 2001;
 const SAVED_AREA_MENU_USE_LAST: usize = 2002;
 const SAVED_AREA_MENU_SAVED_BASE: usize = 2100;
@@ -671,7 +670,6 @@ fn show_saved_area_menu(state: &mut OverlayState) {
 
         append_menu_item(menu, 0, "Area Options", false);
         let _ = AppendMenuW(menu, MF_SEPARATOR, 0, windows::core::PCWSTR::null());
-        append_menu_item(menu, SAVED_AREA_MENU_DRAW_NEW, "Draw New Area", true);
         append_menu_item(
             menu,
             SAVED_AREA_MENU_USE_LAST,
@@ -726,9 +724,6 @@ fn show_saved_area_menu(state: &mut OverlayState) {
         let _ = DestroyMenu(menu);
 
         match selected.0 {
-            value if value == SAVED_AREA_MENU_DRAW_NEW as i32 => {
-                reselect_area(state);
-            },
             value if value == SAVED_AREA_MENU_SAVE_CURRENT as i32 => {
                 emit_native_selection_hud_save_area(state);
             },

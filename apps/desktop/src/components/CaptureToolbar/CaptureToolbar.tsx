@@ -20,7 +20,6 @@ import { SystemAudioPopover } from './SystemAudioPopover';
 import { SettingsPopover } from './SettingsPopover';
 import { AudioLevelMeter } from './AudioLevelMeter';
 import {
-  MAX_SAVED_AREA_SELECTIONS,
   useCaptureSettingsStore,
   type AreaSelectionBounds,
   type SavedAreaSelection,
@@ -448,13 +447,7 @@ export const CaptureToolbar: React.FC<CaptureToolbarProps> = ({
               onSaveArea={onSaveAreaSelection}
               isAreaSaved={isCurrentAreaSaved}
               isAreaSaveDisabled={isAreaSaveDisabled}
-              saveAreaTitle={
-                isCurrentAreaSaved
-                  ? 'Area already saved'
-                  : isAreaSaveDisabled
-                    ? `Delete one of your ${MAX_SAVED_AREA_SELECTIONS} saved areas first`
-                    : 'Save this area'
-              }
+              saveAreaTitle="Save this area"
               disabled={isBusy}
             />
           )

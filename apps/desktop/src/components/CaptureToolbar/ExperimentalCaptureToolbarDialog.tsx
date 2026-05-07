@@ -12,7 +12,6 @@ import {
 import { CaptureToolbar } from './CaptureToolbar';
 import type { CaptureSource } from './SourceSelector';
 import {
-  MAX_SAVED_AREA_SELECTIONS,
   isSameAreaSelection,
   normalizeAreaSelection,
   useCaptureSettingsStore,
@@ -164,10 +163,7 @@ export function ExperimentalCaptureToolbarDialog({
       savedAreaSelections.some((savedArea) => isSameAreaSelection(savedArea, currentAreaSelection)),
     [currentAreaSelection, savedAreaSelections]
   );
-  const isAreaSaveDisabled = useMemo(
-    () => !isCurrentAreaSaved && savedAreaSelections.length >= MAX_SAVED_AREA_SELECTIONS,
-    [isCurrentAreaSaved, savedAreaSelections.length]
-  );
+  const isAreaSaveDisabled = false;
 
   useEffect(() => {
     if (open && !isInitialized) {
@@ -327,12 +323,12 @@ export function ExperimentalCaptureToolbarDialog({
   }, []);
 
   const handleSaveCurrentArea = useCallback(() => {
-    if (!currentAreaSelection || isAreaSaveDisabled) {
+    if (!currentAreaSelection) {
       return;
     }
 
     saveAreaSelection(currentAreaSelection);
-  }, [currentAreaSelection, isAreaSaveDisabled, saveAreaSelection]);
+  }, [currentAreaSelection, saveAreaSelection]);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>

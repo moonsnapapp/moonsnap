@@ -212,8 +212,8 @@ export const DimensionSelect: React.FC<DimensionSelectProps> = ({
           type="button"
           onClick={onSaveArea}
           className={`glass-source-btn ${isAreaSaved ? 'glass-source-btn--active' : ''}`}
-          disabled={disabled || isAreaSaved || isAreaSaveDisabled}
-          title={saveAreaTitle ?? (isAreaSaved ? 'Area already saved' : 'Save this area')}
+          disabled={disabled || isAreaSaveDisabled}
+          title={saveAreaTitle ?? 'Save this area'}
         >
           <span className="glass-source-icon">
             {isAreaSaved ? <Check size={18} strokeWidth={1.8} /> : <BookmarkPlus size={18} strokeWidth={1.5} />}

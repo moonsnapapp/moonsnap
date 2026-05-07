@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 
 import {
   MAX_SAVED_AREA_SELECTIONS,
+  type SavedAreaSelection,
   useCaptureSettingsStore,
 } from './captureSettingsStore';
 
@@ -141,14 +142,16 @@ describe('captureSettingsStore reusable areas', () => {
     });
   });
 
-  it('limits named saved areas to three entries', () => {
+  it('replaces the oldest saved area when saving beyond the limit', () => {
+    let oldestSavedArea: SavedAreaSelection | null = null;
     for (let index = 0; index < MAX_SAVED_AREA_SELECTIONS; index += 1) {
-      useCaptureSettingsStore.getState().saveAreaSelection({
+      const savedArea = useCaptureSettingsStore.getState().saveAreaSelection({
         x: index * 10,
         y: index * 20,
         width: 800,
         height: 450,
       });
+      oldestSavedArea ??= savedArea;
     }
 
     const overflowArea = useCaptureSettingsStore.getState().saveAreaSelection({
@@ -158,12 +161,13 @@ describe('captureSettingsStore reusable areas', () => {
       height: 720,
     });
 
-    expect(overflowArea).toBeNull();
+    expect(overflowArea).toMatchObject({ x: 999, y: 888 });
     expect(useCaptureSettingsStore.getState().savedAreaSelections).toHaveLength(
       MAX_SAVED_AREA_SELECTIONS
     );
+    expect(useCaptureSettingsStore.getState().savedAreaSelections[0]).toEqual(overflowArea);
     expect(useCaptureSettingsStore.getState().savedAreaSelections).not.toContainEqual(
-      expect.objectContaining({ x: 999, y: 888 })
+      oldestSavedArea
     );
   });
 });

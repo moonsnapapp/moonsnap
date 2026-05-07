@@ -158,6 +158,10 @@ mod overlay_command_tests {
         assert_eq!(OverlayCommand::from(5), OverlayCommand::SetDimensions);
         assert_eq!(OverlayCommand::from(6), OverlayCommand::MoveSelectionBy);
         assert_eq!(OverlayCommand::from(7), OverlayCommand::CancelToStartup);
+        assert_eq!(
+            OverlayCommand::from(8),
+            OverlayCommand::ShowSelectionHudFeedback
+        );
         assert_eq!(OverlayCommand::from(255), OverlayCommand::None);
     }
 
@@ -174,6 +178,7 @@ mod overlay_command_tests {
         assert_eq!(OverlayCommand::None.to_action(), None);
         assert_eq!(OverlayCommand::Cancel.to_action(), None);
         assert_eq!(OverlayCommand::CancelToStartup.to_action(), None);
+        assert_eq!(OverlayCommand::ShowSelectionHudFeedback.to_action(), None);
     }
 }
 

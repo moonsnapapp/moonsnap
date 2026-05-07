@@ -234,6 +234,7 @@ macro_rules! tauri_command_handler {
             crate::commands::capture_overlay::commands::capture_overlay_move_selection_by,
             crate::commands::capture_overlay::commands::capture_overlay_set_dimensions,
             crate::commands::capture_overlay::commands::capture_overlay_set_saved_areas,
+            crate::commands::capture_overlay::commands::capture_overlay_show_selection_hud_feedback,
             crate::commands::capture_overlay::commands::capture_overlay_highlight_monitor,
             crate::commands::capture_overlay::commands::capture_overlay_highlight_window,
             // Preview overlay for picker panels

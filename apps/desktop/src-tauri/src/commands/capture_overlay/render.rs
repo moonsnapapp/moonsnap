@@ -22,7 +22,7 @@ use windows::Win32::Graphics::Dxgi::{IDXGISurface, DXGI_PRESENT};
 
 use super::commands::{get_highlighted_monitor, get_highlighted_window};
 use super::graphics::d2d::{create_target_bitmap, Brushes, D2DResources};
-use super::state::OverlayState;
+use super::state::{OverlayState, SelectionHudState};
 use super::types::*;
 
 /// Render the overlay to the swap chain.
@@ -883,7 +883,7 @@ fn draw_size_indicator(
             radiusX: 4.0,
             radiusY: 4.0,
         };
-        context.FillRoundedRectangle(&rounded_rect, &d2d.brushes.text_bg);
+        context.FillRoundedRectangle(&rounded_rect, &d2d.brushes.window_label_bg);
 
         // Draw text
         context.DrawText(
@@ -1030,7 +1030,7 @@ fn draw_selection_hud(
             context,
             d2d,
             back_rect,
-            "Back",
+            "Redraw",
             hud.hovered == SelectionHudHitTarget::Back,
             false,
         )?;
@@ -1086,6 +1086,51 @@ fn draw_selection_hud(
             hud.hovered == SelectionHudHitTarget::Cancel,
             false,
         )?;
+        draw_selection_hud_feedback(context, d2d, state, shell, hud)?;
+    }
+
+    Ok(())
+}
+
+fn draw_selection_hud_feedback(
+    context: &ID2D1DeviceContext,
+    d2d: &D2DResources,
+    state: &OverlayState,
+    shell: Rect,
+    hud: &SelectionHudState,
+) -> Result<()> {
+    let Some(feedback) = &hud.feedback else {
+        return Ok(());
+    };
+
+    let width = ((feedback.message.chars().count() as i32 * 7) + 28).clamp(70, 180);
+    let height = 26;
+    let margin = 8;
+    let monitor_width = state.monitor.width as i32;
+    let monitor_height = state.monitor.height as i32;
+    let max_left = (monitor_width - width - margin).max(margin);
+    let left = (shell.left + (shell.width() as i32 - width) / 2).clamp(margin, max_left);
+    let mut top = shell.top - height - 8;
+    if top < margin {
+        top = (shell.bottom + 8).min((monitor_height - height - margin).max(margin));
+    }
+
+    let rect = Rect::new(left, top, left + width, top + height);
+    unsafe {
+        let rounded = D2D1_ROUNDED_RECT {
+            rect: rect.to_d2d_rect(),
+            radiusX: 13.0,
+            radiusY: 13.0,
+        };
+        context.FillRoundedRectangle(&rounded, &d2d.brushes.window_label_bg);
+        context.DrawRoundedRectangle(&rounded, &d2d.brushes.chooser_border, 1.0, None);
+        draw_text_with_style(
+            context,
+            &feedback.message,
+            rect.to_d2d_rect(),
+            &d2d.text_format_tiny,
+            &d2d.brushes.text,
+        );
     }
 
     Ok(())

@@ -16,7 +16,7 @@
 //! - `GraphicsState` - All graphics resources (boxed)
 //! - `OverlayState` - Complete overlay state
 
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use tauri::AppHandle;
 use windows::Win32::Foundation::HWND;
@@ -411,6 +411,12 @@ impl RecordingModeChooserState {
 }
 
 #[derive(Debug, Clone)]
+pub struct SelectionHudFeedback {
+    pub message: String,
+    pub expires_at: Instant,
+}
+
+#[derive(Debug, Clone)]
 pub struct SelectionHudState {
     pub owner: String,
     pub hovered: SelectionHudHitTarget,
@@ -418,6 +424,7 @@ pub struct SelectionHudState {
     pub editing_dimension: Option<SelectionHudDimensionEdit>,
     pub dimension_input: String,
     pub saved_areas: SavedAreaMenuState,
+    pub feedback: Option<SelectionHudFeedback>,
 }
 
 impl SelectionHudState {
@@ -429,6 +436,7 @@ impl SelectionHudState {
             editing_dimension: None,
             dimension_input: String::new(),
             saved_areas: SavedAreaMenuState::default(),
+            feedback: None,
         }
     }
 
@@ -444,6 +452,26 @@ impl SelectionHudState {
 
     pub fn is_editing_dimension(&self) -> bool {
         self.editing_dimension.is_some()
+    }
+
+    pub fn show_feedback(&mut self, message: String, duration: Duration) {
+        self.feedback = Some(SelectionHudFeedback {
+            message,
+            expires_at: Instant::now() + duration,
+        });
+    }
+
+    pub fn clear_expired_feedback(&mut self, now: Instant) -> bool {
+        if self
+            .feedback
+            .as_ref()
+            .is_some_and(|feedback| now >= feedback.expires_at)
+        {
+            self.feedback = None;
+            return true;
+        }
+
+        false
     }
 }
 
@@ -737,6 +765,18 @@ impl OverlayState {
         self.selection_hud
             .as_ref()
             .is_some_and(SelectionHudState::is_editing_dimension)
+    }
+
+    pub fn show_selection_hud_feedback(&mut self, message: String) {
+        if let Some(hud) = &mut self.selection_hud {
+            hud.show_feedback(message, Duration::from_millis(1400));
+        }
+    }
+
+    pub fn clear_expired_selection_hud_feedback(&mut self) -> bool {
+        self.selection_hud
+            .as_mut()
+            .is_some_and(|hud| hud.clear_expired_feedback(Instant::now()))
     }
 
     /// Check if event emission should be throttled.

@@ -21,12 +21,12 @@ import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
 import { CaptureToolbar } from '../components/CaptureToolbar/CaptureToolbar';
 import type { CaptureSource } from '../components/CaptureToolbar/SourceSelector';
 import {
-  MAX_SAVED_AREA_SELECTIONS,
   useCaptureSettingsStore,
   type AreaSelectionBounds,
   type CaptureSourceMode,
   type AfterRecordingAction,
   type SavedAreaSelection,
+  MAX_SAVED_AREA_SELECTIONS,
   isSameAreaSelection,
   normalizeAreaSelection,
 } from '../stores/captureSettingsStore';
@@ -233,10 +233,7 @@ const CaptureToolbarWindow: React.FC = () => {
       savedAreaSelections.some((savedArea) => isSameAreaSelection(savedArea, currentAreaSelection)),
     [currentAreaSelection, savedAreaSelections]
   );
-  const isAreaSaveDisabled = useMemo(
-    () => !isCurrentAreaSaved && savedAreaSelections.length >= MAX_SAVED_AREA_SELECTIONS,
-    [isCurrentAreaSaved, savedAreaSelections.length]
-  );
+  const isAreaSaveDisabled = false;
 
   // Keep lastAreaSelection in sync when dimensions change after confirmation
   // (e.g., preset selection, manual dimension input)
@@ -763,12 +760,32 @@ const CaptureToolbarWindow: React.FC = () => {
   }, [deleteAreaSelection]);
 
   const handleSaveCurrentArea = useCallback(() => {
-    if (!currentAreaSelection || isAreaSaveDisabled) {
+    if (!currentAreaSelection) {
       return;
     }
 
-    saveAreaSelection(currentAreaSelection);
-  }, [currentAreaSelection, isAreaSaveDisabled, saveAreaSelection]);
+    const willReplaceOldest =
+      !isCurrentAreaSaved &&
+      savedAreaSelections.length >= MAX_SAVED_AREA_SELECTIONS;
+    const savedArea = saveAreaSelection(currentAreaSelection);
+    if (!savedArea) {
+      return;
+    }
+
+    if (isNativeSelectionHudActive) {
+      void invoke('capture_overlay_show_selection_hud_feedback', {
+        message: willReplaceOldest ? 'Replaced Oldest Area' : 'Saved New Area',
+      }).catch((error) => {
+        toolbarLogger.warn('Failed to show native saved-area feedback:', error);
+      });
+    }
+  }, [
+    currentAreaSelection,
+    isCurrentAreaSaved,
+    isNativeSelectionHudActive,
+    saveAreaSelection,
+    savedAreaSelections.length,
+  ]);
 
   useEffect(() => {
     if (!isNativeSelectionHudActive) {
@@ -778,16 +795,12 @@ const CaptureToolbarWindow: React.FC = () => {
     void invoke('capture_overlay_set_saved_areas', {
       lastArea: lastAreaSelection,
       savedAreas: savedAreaSelections,
-      canSaveCurrent: Boolean(
-        currentAreaSelection && !isCurrentAreaSaved && !isAreaSaveDisabled
-      ),
+      canSaveCurrent: Boolean(currentAreaSelection),
     }).catch((error) => {
       toolbarLogger.warn('Failed to sync native saved-area menu state:', error);
     });
   }, [
     currentAreaSelection,
-    isAreaSaveDisabled,
-    isCurrentAreaSaved,
     isNativeSelectionHudActive,
     lastAreaSelection,
     savedAreaSelections,

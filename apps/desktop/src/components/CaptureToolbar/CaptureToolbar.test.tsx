@@ -360,7 +360,7 @@ describe('CaptureToolbar selection HUD', () => {
     expect(onSaveAreaSelection).toHaveBeenCalledTimes(1);
   });
 
-  it('shows the saved state when the current area already exists as a preset', async () => {
+  it('keeps the save button enabled when the current area already exists as a preset', async () => {
     await act(async () => {
       render(
         <CaptureToolbar
@@ -380,10 +380,10 @@ describe('CaptureToolbar selection HUD', () => {
       );
     });
 
-    expect(screen.getByTitle('Area already saved')).toBeDisabled();
+    expect(screen.getByTitle('Save this area')).not.toBeDisabled();
   });
 
-  it('disables saving a new area when three saved areas already exist', async () => {
+  it('allows saving a new area so the oldest saved area can be replaced', async () => {
     await act(async () => {
       render(
         <CaptureToolbar
@@ -398,11 +398,10 @@ describe('CaptureToolbar selection HUD', () => {
           onRedo={() => {}}
           onCancel={() => {}}
           onSaveAreaSelection={() => {}}
-          isAreaSaveDisabled
         />
       );
     });
 
-    expect(screen.getByTitle('Delete one of your 3 saved areas first')).toBeDisabled();
+    expect(screen.getByTitle('Save this area')).not.toBeDisabled();
   });
 });
