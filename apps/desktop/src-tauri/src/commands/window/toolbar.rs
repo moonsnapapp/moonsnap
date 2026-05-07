@@ -7,8 +7,8 @@ use serde::{Deserialize, Serialize};
 use tauri::{command, AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 
 use super::{
-    apply_dwm_transparency, exclude_window_from_capture, include_window_in_capture,
-    set_physical_bounds, CAPTURE_TOOLBAR_LABEL,
+    apply_dwm_transparency, bring_window_to_front_without_topmost, exclude_window_from_capture,
+    include_window_in_capture, set_physical_bounds, CAPTURE_TOOLBAR_LABEL,
 };
 
 const STARTUP_TOOLBAR_WIDTH: u32 = 738;
@@ -46,6 +46,18 @@ pub struct CaptureToolbarWindowState {
     create_lock: Mutex<()>,
     pending_selection: Mutex<Option<CaptureToolbarSelectionPayload>>,
     pending_startup_context: Mutex<Option<StartupToolbarContextPayload>>,
+    last_startup_position: Mutex<Option<(i32, i32)>>,
+}
+
+impl CaptureToolbarWindowState {
+    pub fn remember_position(&self, x: i32, y: i32) {
+        let mut last_startup_position = self.last_startup_position.lock();
+        *last_startup_position = Some((x, y));
+    }
+
+    fn last_startup_position(&self) -> Option<(i32, i32)> {
+        *self.last_startup_position.lock()
+    }
 }
 
 fn build_selection_payload(
@@ -117,48 +129,6 @@ fn calculate_startup_toolbar_position(
 
     (x, y)
 }
-
-#[cfg(target_os = "windows")]
-fn bring_window_to_front_without_topmost(window: &tauri::WebviewWindow, focus: bool) {
-    use windows::Win32::Foundation::HWND;
-    use windows::Win32::UI::WindowsAndMessaging::{
-        BringWindowToTop, SetForegroundWindow, SetWindowPos, ShowWindow, HWND_NOTOPMOST,
-        HWND_TOPMOST, SWP_NOMOVE, SWP_NOSIZE, SWP_SHOWWINDOW, SW_RESTORE, SW_SHOW,
-    };
-
-    if let Ok(hwnd) = window.hwnd() {
-        unsafe {
-            let hwnd = HWND(hwnd.0);
-            let _ = ShowWindow(hwnd, SW_RESTORE);
-            let _ = ShowWindow(hwnd, SW_SHOW);
-            let _ = SetWindowPos(
-                hwnd,
-                HWND_TOPMOST,
-                0,
-                0,
-                0,
-                0,
-                SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW,
-            );
-            let _ = SetWindowPos(
-                hwnd,
-                HWND_NOTOPMOST,
-                0,
-                0,
-                0,
-                0,
-                SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW,
-            );
-            let _ = BringWindowToTop(hwnd);
-            if focus {
-                let _ = SetForegroundWindow(hwnd);
-            }
-        }
-    }
-}
-
-#[cfg(not(target_os = "windows"))]
-fn bring_window_to_front_without_topmost(_window: &tauri::WebviewWindow, _focus: bool) {}
 
 // ============================================================================
 // Capture Toolbar
@@ -675,7 +645,7 @@ pub async fn show_startup_toolbar(
     let initial_width = STARTUP_TOOLBAR_WIDTH;
     let initial_height = STARTUP_TOOLBAR_HEIGHT;
 
-    let (x, y) = calculate_startup_toolbar_position(
+    let centered_position = calculate_startup_toolbar_position(
         monitor_pos.x,
         monitor_pos.y,
         monitor_size.width,
@@ -683,6 +653,9 @@ pub async fn show_startup_toolbar(
         initial_width,
         initial_height,
     );
+    let (x, y) = toolbar_state
+        .last_startup_position()
+        .unwrap_or(centered_position);
 
     log::debug!(
         "[show_startup_toolbar] Position ({}, {}), size {}x{}",
@@ -692,9 +665,15 @@ pub async fn show_startup_toolbar(
         initial_height
     );
 
-    // Create window - visible immediately, frontend will resize after measuring
+    {
+        let mut pending_startup_context = toolbar_state.pending_startup_context.lock();
+        *pending_startup_context = Some(startup_context);
+    }
+
+    // Create window hidden. The frontend measures the rendered content, resizes
+    // the native window, then shows it to avoid exposing the fallback bounds.
     // Uses custom titlebar like the main library window (decorations: false, transparent: true)
-    let window = WebviewWindowBuilder::new(&app, CAPTURE_TOOLBAR_LABEL, url)
+    let window_result = WebviewWindowBuilder::new(&app, CAPTURE_TOOLBAR_LABEL, url)
         .title("MoonSnap Capture")
         .transparent(true)
         .decorations(false)
@@ -705,26 +684,19 @@ pub async fn show_startup_toolbar(
         .shadow(false)
         .visible(false)
         .focused(false)
-        .build()
-        .map_err(|e| format!("Failed to create startup toolbar window: {}", e))?;
+        .build();
+
+    let window = match window_result {
+        Ok(window) => window,
+        Err(e) => {
+            let mut pending_startup_context = toolbar_state.pending_startup_context.lock();
+            pending_startup_context.take();
+            return Err(format!("Failed to create startup toolbar window: {}", e).into());
+        },
+    };
 
     // Set position/size using physical coordinates
     set_physical_bounds(&window, x, y, initial_width, initial_height)?;
-    if !auto_start_area_selection {
-        window
-            .show()
-            .map_err(|e| format!("Failed to show toolbar: {}", e))?;
-        bring_window_to_front_without_topmost(&window, true);
-        window
-            .set_always_on_top(false)
-            .map_err(|e| format!("Failed to clear toolbar always-on-top: {}", e))?;
-        window
-            .set_focus()
-            .map_err(|e| format!("Failed to focus toolbar: {}", e))?;
-    }
-
-    let mut pending_startup_context = toolbar_state.pending_startup_context.lock();
-    *pending_startup_context = Some(startup_context);
 
     log::info!("[show_startup_toolbar] Toolbar ready");
 

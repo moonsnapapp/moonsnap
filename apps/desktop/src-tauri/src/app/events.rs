@@ -6,6 +6,7 @@ use tauri::{Manager, Window, WindowEvent};
 
 use crate::commands::video_recording::audio_monitor;
 use crate::commands::window::image_editor;
+use crate::commands::window::toolbar::CaptureToolbarWindowState;
 use crate::commands::window::video_editor;
 use crate::config;
 
@@ -27,6 +28,11 @@ pub fn handle_window_event(window: &Window, event: &WindowEvent) {
 
             // Clean up resources when capture toolbar closes
             if label == "capture-toolbar" {
+                if let Ok(position) = window.outer_position() {
+                    let toolbar_state = window.app_handle().state::<CaptureToolbarWindowState>();
+                    toolbar_state.remember_position(position.x, position.y);
+                }
+
                 // Stop audio monitoring (releases microphone)
                 let _ = audio_monitor::stop_monitoring();
 
