@@ -47,7 +47,7 @@ describe('captureSettingsStore reusable areas', () => {
       showPreviewAfterCapture: true,
       afterRecordingAction: 'preview',
       promptRecordingMode: true,
-      snapToolbarToSelection: true,
+      snapToolbarToSelection: false,
       showToolbarInRecording: false,
       lastAreaSelection: null,
       savedAreaSelections: [],

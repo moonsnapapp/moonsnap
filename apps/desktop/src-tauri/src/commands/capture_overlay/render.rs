@@ -56,7 +56,7 @@ pub fn render(state: &OverlayState) -> Result<()> {
 
         // Draw selection border
         if render_info.draw_border {
-            draw_selection_border(&d2d.context, &d2d.brushes, render_info.clear_rect);
+            draw_selection_border(&d2d.context, &d2d.brushes, render_info.clear_rect, state);
         }
 
         // Draw crosshair (only when not adjusting and only in RegionSelect mode)
@@ -724,9 +724,33 @@ fn draw_dim_overlay(
 }
 
 /// Draw the selection border.
-fn draw_selection_border(context: &ID2D1DeviceContext, brushes: &Brushes, rect: D2D_RECT_F) {
+fn draw_selection_border(
+    context: &ID2D1DeviceContext,
+    brushes: &Brushes,
+    rect: D2D_RECT_F,
+    state: &OverlayState,
+) {
+    let rect = if state.overlay_mode == OverlayMode::DisplaySelect {
+        inset_rect(rect, 1.0)
+    } else {
+        rect
+    };
+
     unsafe {
         context.DrawRectangle(&rect, &brushes.border, 2.0, None);
+    }
+}
+
+fn inset_rect(rect: D2D_RECT_F, inset: f32) -> D2D_RECT_F {
+    if rect.right - rect.left <= inset * 2.0 || rect.bottom - rect.top <= inset * 2.0 {
+        return rect;
+    }
+
+    D2D_RECT_F {
+        left: rect.left + inset,
+        top: rect.top + inset,
+        right: rect.right - inset,
+        bottom: rect.bottom - inset,
     }
 }
 

@@ -36,7 +36,7 @@ describe('RecordingsTab', () => {
       },
       afterRecordingAction: 'preview',
       promptRecordingMode: true,
-      snapToolbarToSelection: true,
+      snapToolbarToSelection: false,
       showToolbarInRecording: false,
       saveSettings: async () => {},
     });
