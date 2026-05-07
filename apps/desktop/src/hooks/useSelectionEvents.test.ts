@@ -38,7 +38,7 @@ describe('useSelectionEvents', () => {
       sourceMode: 'area',
       snapToolbarToSelection: false,
     });
-    setInvokeResponse('set_capture_toolbar_position', undefined);
+    setInvokeResponse('set_capture_toolbar_position', null);
   });
 
   it('waits for recording preparation before enabling tray auto-start', async () => {

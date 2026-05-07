@@ -42,6 +42,7 @@ describe('useQuickRecordingFlow', () => {
     setInvokeResponse('close_capture_toolbar', null);
     setInvokeResponse('show_recording_mode_chooser', null);
     setInvokeResponse('capture_overlay_cancel', null);
+    setInvokeResponse('capture_overlay_cancel_to_startup', null);
     vi.mocked(WebviewWindow.getByLabel).mockReturnValue(null);
   });
 
@@ -298,7 +299,7 @@ describe('useQuickRecordingFlow', () => {
 
     await flush();
 
-    expect(mockInvoke).toHaveBeenCalledWith('capture_overlay_cancel');
+    expect(mockInvoke).toHaveBeenCalledWith('capture_overlay_cancel_to_startup');
     expect(mockInvoke).not.toHaveBeenCalledWith('capture_overlay_reselect');
   });
 });
