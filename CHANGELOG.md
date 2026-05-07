@@ -2,6 +2,14 @@
 
 All notable changes to MoonSnap are documented in this file.
 
+## [0.5.23] - 2026-05-07
+
+### Fixed
+- Capture toolbar now opens at its measured size instead of briefly appearing cropped on launch.
+- Capture toolbar reopens at its last position instead of always returning to the center after being closed.
+- Opening the capture toolbar, library, or settings from the menu now brings the window forward without leaving it stuck above other apps.
+- Full-display recording mode chooser buttons are clickable again.
+
 ## [0.5.22] - 2026-05-05
 
 ### Fixed

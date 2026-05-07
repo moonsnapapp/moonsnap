@@ -2,6 +2,21 @@
   "source": "CHANGELOG.md",
   "entries": [
     {
+      "version": "0.5.23",
+      "date": "2026-05-07",
+      "sections": [
+        {
+          "title": "Fixed",
+          "items": [
+            "Capture toolbar now opens at its measured size instead of briefly appearing cropped on launch.",
+            "Capture toolbar reopens at its last position instead of always returning to the center after being closed.",
+            "Opening the capture toolbar, library, or settings from the menu now brings the window forward without leaving it stuck above other apps.",
+            "Full-display recording mode chooser buttons are clickable again."
+          ]
+        }
+      ]
+    },
+    {
       "version": "0.5.22",
       "date": "2026-05-05",
       "sections": [
