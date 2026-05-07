@@ -139,8 +139,7 @@ fn calculate_startup_toolbar_position(
 // ============================================================================
 
 /// Create the capture toolbar window (hidden).
-/// Frontend will measure content, calculate position, and call set_capture_toolbar_bounds to show.
-/// This allows frontend to fully control sizing/positioning without hardcoded dimensions.
+/// Frontend measures content, auto-resizes the window, and controls visibility.
 ///
 /// If selection bounds are provided, emits `confirm-selection` event to the window.
 #[command]
@@ -508,70 +507,6 @@ pub async fn set_capture_toolbar_position(app: AppHandle, x: i32, y: i32) -> Moo
 
     // Set position only (preserve size)
     set_physical_bounds(&window, x, y, size.width, size.height)?;
-
-    Ok(())
-}
-
-/// Set capture toolbar bounds (position + size) and show the window.
-/// Called by frontend after measuring content and calculating position.
-/// This allows frontend to fully control toolbar layout without hardcoded dimensions.
-#[command]
-pub async fn set_capture_toolbar_bounds(
-    app: AppHandle,
-    x: i32,
-    y: i32,
-    width: u32,
-    height: u32,
-) -> MoonSnapResult<()> {
-    let Some(window) = app.get_webview_window(CAPTURE_TOOLBAR_LABEL) else {
-        return Ok(());
-    };
-
-    // Set position and size using physical coordinates
-    set_physical_bounds(&window, x, y, width, height)?;
-
-    // Ensure window is visible and on top
-    window
-        .show()
-        .map_err(|e| format!("Failed to show toolbar: {}", e))?;
-    window
-        .set_always_on_top(true)
-        .map_err(|e| format!("Failed to set always on top: {}", e))?;
-
-    // Re-apply DWM transparency
-    if let Err(e) = apply_dwm_transparency(&window) {
-        log::warn!("Failed to apply DWM transparency: {}", e);
-    }
-
-    // Bring toolbar to front and focus it
-    #[cfg(target_os = "windows")]
-    {
-        use windows::Win32::Foundation::HWND;
-        use windows::Win32::UI::WindowsAndMessaging::{
-            BringWindowToTop, SetForegroundWindow, SetWindowPos, HWND_TOPMOST, SWP_NOMOVE,
-            SWP_NOSIZE, SWP_SHOWWINDOW,
-        };
-
-        if let Ok(hwnd) = window.hwnd() {
-            unsafe {
-                let hwnd = HWND(hwnd.0);
-                // Set as topmost
-                let _ = SetWindowPos(
-                    hwnd,
-                    HWND_TOPMOST,
-                    0,
-                    0,
-                    0,
-                    0,
-                    SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW,
-                );
-                // Bring to top of Z-order
-                let _ = BringWindowToTop(hwnd);
-                // Set as foreground window (gives keyboard focus)
-                let _ = SetForegroundWindow(hwnd);
-            }
-        }
-    }
 
     Ok(())
 }

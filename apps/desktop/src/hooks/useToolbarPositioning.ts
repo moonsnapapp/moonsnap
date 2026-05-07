@@ -122,6 +122,11 @@ export function useToolbarPositioning({
 
     const resizeWindow = async (width: number, height: number) => {
       try {
+        if (suppressWindowShow) {
+          await syncWindowVisibility();
+          return;
+        }
+
         if (width !== lastSizeRef.current.width || height !== lastSizeRef.current.height) {
           lastSizeRef.current = { width, height };
 
@@ -167,6 +172,7 @@ export function useToolbarPositioning({
   useEffect(() => {
     const container = containerRef.current;
     const content = contentRef.current;
+    if (suppressWindowShow) return;
     if (!container || !content) return;
 
     let cancelled = false;
@@ -189,5 +195,12 @@ export function useToolbarPositioning({
       cancelled = true;
       clearTimeout(timeoutId);
     };
-  }, [selectionConfirmed, mode, containerRef, contentRef, measureTargetSize]);
+  }, [
+    selectionConfirmed,
+    mode,
+    containerRef,
+    contentRef,
+    measureTargetSize,
+    suppressWindowShow,
+  ]);
 }
