@@ -474,15 +474,13 @@ fn handle_selection_hud_click(state: &mut OverlayState, target: SelectionHudHitT
             show_dimension_preset_menu(state);
         },
         SelectionHudHitTarget::WidthInput => {
-            let width = state.adjustment.bounds.width();
             if let Some(hud) = state.selection_hud.as_mut() {
-                hud.begin_dimension_edit(SelectionHudDimensionEdit::Width, width);
+                hud.begin_dimension_edit(SelectionHudDimensionEdit::Width);
             }
         },
         SelectionHudHitTarget::HeightInput => {
-            let height = state.adjustment.bounds.height();
             if let Some(hud) = state.selection_hud.as_mut() {
-                hud.begin_dimension_edit(SelectionHudDimensionEdit::Height, height);
+                hud.begin_dimension_edit(SelectionHudDimensionEdit::Height);
             }
         },
         SelectionHudHitTarget::WidthDown => {
@@ -854,6 +852,10 @@ fn handle_key_down(state_ptr: *mut OverlayState, wparam: WPARAM) -> LRESULT {
         let state = &mut *state_ptr;
         let key = wparam.0 as u32;
 
+        if key == VK_ESCAPE && state.suppress_escape_until_release {
+            return LRESULT(0);
+        }
+
         if handle_selection_hud_key_down(state, key) {
             let _ = render::render(state);
             return LRESULT(0);
@@ -902,6 +904,7 @@ fn handle_selection_hud_key_down(state: &mut OverlayState, key: u32) -> bool {
     match key {
         VK_ESCAPE => {
             clear_dimension_edit(state);
+            state.suppress_escape_until_release = true;
             true
         },
         VK_RETURN => {
@@ -910,12 +913,7 @@ fn handle_selection_hud_key_down(state: &mut OverlayState, key: u32) -> bool {
         },
         VK_BACK => {
             if let Some(hud) = state.selection_hud.as_mut() {
-                if hud.replace_dimension_input_on_next_digit {
-                    hud.dimension_input.clear();
-                    hud.replace_dimension_input_on_next_digit = false;
-                } else {
-                    hud.dimension_input.pop();
-                }
+                hud.dimension_input.pop();
             }
             true
         },
@@ -940,10 +938,6 @@ fn handle_char(state_ptr: *mut OverlayState, wparam: WPARAM) -> LRESULT {
         let ch = char::from_u32(wparam.0 as u32);
         if let Some(ch) = ch {
             if ch.is_ascii_digit() && hud.dimension_input.len() < 5 {
-                if hud.replace_dimension_input_on_next_digit {
-                    hud.dimension_input.clear();
-                    hud.replace_dimension_input_on_next_digit = false;
-                }
                 if hud.dimension_input == "0" {
                     hud.dimension_input.clear();
                 }

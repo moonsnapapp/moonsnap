@@ -414,6 +414,7 @@ fn run_overlay(
                 d2d: d2d_resources,
             }),
             should_close: false,
+            suppress_escape_until_release: false,
             last_emit_time: Instant::now(),
             result: Default::default(),
         });
@@ -541,9 +542,21 @@ fn run_overlay(
             // Poll ESC key using GetAsyncKeyState
             // (WS_EX_NOACTIVATE and WS_EX_TRANSPARENT windows don't receive keyboard messages)
             let esc_pressed = (GetAsyncKeyState(0x1B) as u16 & 0x8000) != 0;
-            if esc_pressed && !esc_was_pressed {
-                log::debug!("[Overlay] ESC pressed, cancelling overlay");
-                state.cancel();
+            if esc_pressed {
+                if state.suppress_escape_until_release {
+                    // The current Escape press already exited inline dimension editing.
+                } else if !esc_was_pressed && state.is_editing_selection_hud_dimension() {
+                    if let Some(hud) = state.selection_hud.as_mut() {
+                        hud.clear_dimension_edit();
+                    }
+                    state.suppress_escape_until_release = true;
+                    let _ = render::render(&state);
+                } else if !esc_was_pressed {
+                    log::debug!("[Overlay] ESC pressed, cancelling overlay");
+                    state.cancel();
+                }
+            } else {
+                state.suppress_escape_until_release = false;
             }
             esc_was_pressed = esc_pressed;
 

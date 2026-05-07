@@ -416,7 +416,6 @@ pub struct SelectionHudState {
     pub hovered: SelectionHudHitTarget,
     pub editing_dimension: Option<SelectionHudDimensionEdit>,
     pub dimension_input: String,
-    pub replace_dimension_input_on_next_digit: bool,
 }
 
 impl SelectionHudState {
@@ -426,20 +425,21 @@ impl SelectionHudState {
             hovered: SelectionHudHitTarget::None,
             editing_dimension: None,
             dimension_input: String::new(),
-            replace_dimension_input_on_next_digit: false,
         }
     }
 
-    pub fn begin_dimension_edit(&mut self, field: SelectionHudDimensionEdit, value: u32) {
+    pub fn begin_dimension_edit(&mut self, field: SelectionHudDimensionEdit) {
         self.editing_dimension = Some(field);
-        self.dimension_input = value.to_string();
-        self.replace_dimension_input_on_next_digit = true;
+        self.dimension_input.clear();
     }
 
     pub fn clear_dimension_edit(&mut self) {
         self.editing_dimension = None;
         self.dimension_input.clear();
-        self.replace_dimension_input_on_next_digit = false;
+    }
+
+    pub fn is_editing_dimension(&self) -> bool {
+        self.editing_dimension.is_some()
     }
 }
 
@@ -586,6 +586,9 @@ pub struct OverlayState {
     // Control flags
     /// True when overlay should close
     pub should_close: bool,
+    /// True after Escape exits inline HUD editing; prevents the same key press
+    /// from also cancelling the whole overlay before the key is released.
+    pub suppress_escape_until_release: bool,
     /// Last time an event was emitted (for throttling)
     pub last_emit_time: Instant,
 
@@ -665,6 +668,12 @@ impl OverlayState {
         self.recording_mode_chooser = None;
         self.drag.reset();
         self.cursor.clear_hovered();
+    }
+
+    pub fn is_editing_selection_hud_dimension(&self) -> bool {
+        self.selection_hud
+            .as_ref()
+            .is_some_and(SelectionHudState::is_editing_dimension)
     }
 
     /// Check if event emission should be throttled.
