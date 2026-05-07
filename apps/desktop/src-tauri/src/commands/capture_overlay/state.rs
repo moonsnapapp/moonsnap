@@ -414,6 +414,7 @@ impl RecordingModeChooserState {
 pub struct SelectionHudState {
     pub owner: String,
     pub hovered: SelectionHudHitTarget,
+    pub pressed: SelectionHudHitTarget,
     pub editing_dimension: Option<SelectionHudDimensionEdit>,
     pub dimension_input: String,
     pub saved_areas: SavedAreaMenuState,
@@ -424,6 +425,7 @@ impl SelectionHudState {
         Self {
             owner,
             hovered: SelectionHudHitTarget::None,
+            pressed: SelectionHudHitTarget::None,
             editing_dimension: None,
             dimension_input: String::new(),
             saved_areas: SavedAreaMenuState::default(),

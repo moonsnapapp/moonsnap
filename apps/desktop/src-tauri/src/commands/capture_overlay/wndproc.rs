@@ -62,7 +62,7 @@ pub unsafe extern "system" fn wnd_proc(
         WM_SETCURSOR => handle_set_cursor(state_ptr, lparam),
         WM_LBUTTONDOWN => handle_mouse_down(state_ptr, lparam),
         WM_MOUSEMOVE => handle_mouse_move(state_ptr, lparam),
-        WM_LBUTTONUP => handle_mouse_up(state_ptr),
+        WM_LBUTTONUP => handle_mouse_up(state_ptr, lparam),
         WM_KEYDOWN => handle_key_down(state_ptr, wparam),
         WM_KEYUP => handle_key_up(state_ptr, wparam),
         WM_CHAR => handle_char(state_ptr, wparam),
@@ -256,7 +256,10 @@ fn handle_mouse_down(state_ptr: *mut OverlayState, lparam: LPARAM) -> LRESULT {
             if !state.is_resize_locked_by_recording_mode_chooser() {
                 let hud_target = render::hit_test_selection_hud(state, x, y);
                 if hud_target != SelectionHudHitTarget::None {
-                    handle_selection_hud_click(state, hud_target);
+                    if let Some(hud) = state.selection_hud.as_mut() {
+                        hud.pressed = hud_target;
+                    }
+                    capture_mouse(state.hwnd);
                     let _ = render::render(state);
                     return LRESULT(0);
                 }
@@ -398,20 +401,42 @@ fn handle_mouse_move(state_ptr: *mut OverlayState, lparam: LPARAM) -> LRESULT {
     LRESULT(0)
 }
 
-/// Handle WM_LBUTTONUP - finalize selection
-fn handle_mouse_up(state_ptr: *mut OverlayState) -> LRESULT {
+/// Handle WM_LBUTTONUP - finalize selection or mini-toolbar click
+fn handle_mouse_up(state_ptr: *mut OverlayState, lparam: LPARAM) -> LRESULT {
     unsafe {
         if state_ptr.is_null() {
             return LRESULT(0);
         }
 
         let state = &mut *state_ptr;
+        let Point { x, y } = current_local_mouse_point(state, lparam);
         release_mouse_capture();
 
         if state.adjustment.is_active {
+            let pressed_hud_target = state
+                .selection_hud
+                .as_ref()
+                .map(|hud| hud.pressed)
+                .unwrap_or(SelectionHudHitTarget::None);
+
+            if pressed_hud_target != SelectionHudHitTarget::None && !state.adjustment.is_dragging {
+                let release_target = render::hit_test_selection_hud(state, x, y);
+                if let Some(hud) = state.selection_hud.as_mut() {
+                    hud.pressed = SelectionHudHitTarget::None;
+                }
+                if release_target == pressed_hud_target {
+                    handle_selection_hud_click(state, release_target);
+                }
+                let _ = render::render(state);
+                return LRESULT(0);
+            }
+
             // End adjustment drag
             if state.adjustment.is_dragging {
                 emit_final_selection(state);
+            }
+            if let Some(hud) = state.selection_hud.as_mut() {
+                hud.pressed = SelectionHudHitTarget::None;
             }
             state.adjustment.end_drag();
             let _ = render::render(state);
