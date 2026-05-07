@@ -2,6 +2,25 @@
 
 All notable changes to MoonSnap are documented in this file.
 
+## [0.5.24] - 2026-05-08
+
+### Added
+- Area recording now has a native mini toolbar with dimension controls, presets, saved areas, and redraw/capture actions directly on the overlay.
+- Saved area actions now show clear feedback when a new area is saved or the oldest slot is replaced.
+
+### Changed
+- Display and window captures now center the capture toolbar inside the selected source.
+- Mini-toolbar actions now trigger on mouse release for a more predictable click feel.
+- Recording preview clicks now open the video editor, while dragging still moves the preview.
+- Capture toolbar snapping is now off by default for area selections.
+
+### Fixed
+- Escape no longer closes the capture toolbar during area selection or while editing native dimension inputs.
+- Capture toolbar opens from the Library in front without getting stuck above other apps.
+- Library opened from the tray restores its last window position instead of jumping to the top-left corner.
+- Right sidebar and background panels keep a stable width without shifting or overflowing.
+- Saved area menus stay in sync with the native overlay and saving remains available for the current area.
+
 ## [0.5.23] - 2026-05-07
 
 ### Fixed
