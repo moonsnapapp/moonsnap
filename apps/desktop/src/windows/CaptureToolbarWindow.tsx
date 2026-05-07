@@ -74,6 +74,11 @@ interface NativeSelectionHudCapturePayload extends SelectionBounds {
   owner?: string;
 }
 
+interface NativeSelectionHudDeleteSavedAreaPayload {
+  owner?: string;
+  id: string;
+}
+
 const MIN_REUSABLE_AREA_SIZE = 20;
 
 function getCurrentAreaSelection(selection: SelectionBounds): AreaSelectionBounds | null {
@@ -725,6 +730,29 @@ const CaptureToolbarWindow: React.FC = () => {
   }, [currentAreaSelection, isAreaSaveDisabled, saveAreaSelection]);
 
   useEffect(() => {
+    if (!isNativeSelectionHudActive) {
+      return;
+    }
+
+    void invoke('capture_overlay_set_saved_areas', {
+      lastArea: lastAreaSelection,
+      savedAreas: savedAreaSelections,
+      canSaveCurrent: Boolean(
+        currentAreaSelection && !isCurrentAreaSaved && !isAreaSaveDisabled
+      ),
+    }).catch((error) => {
+      toolbarLogger.warn('Failed to sync native saved-area menu state:', error);
+    });
+  }, [
+    currentAreaSelection,
+    isAreaSaveDisabled,
+    isCurrentAreaSaved,
+    isNativeSelectionHudActive,
+    lastAreaSelection,
+    savedAreaSelections,
+  ]);
+
+  useEffect(() => {
     const unlisten = listen<NativeSelectionHudCapturePayload>(
       'native-selection-hud-save-area',
       (event) => {
@@ -740,6 +768,23 @@ const CaptureToolbarWindow: React.FC = () => {
       unlisten.then((fn) => fn()).catch(() => {});
     };
   }, [handleSaveCurrentArea]);
+
+  useEffect(() => {
+    const unlisten = listen<NativeSelectionHudDeleteSavedAreaPayload>(
+      'native-selection-hud-delete-saved-area',
+      (event) => {
+        if (event.payload.owner && event.payload.owner !== 'capture-toolbar') {
+          return;
+        }
+
+        deleteAreaSelection(event.payload.id);
+      }
+    );
+
+    return () => {
+      unlisten.then((fn) => fn()).catch(() => {});
+    };
+  }, [deleteAreaSelection]);
 
   const handleOpenSettings = useCallback(() => {
     useSettingsStore.getState().openSettingsModal();

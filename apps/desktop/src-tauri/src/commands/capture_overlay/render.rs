@@ -340,6 +340,43 @@ pub fn hit_test_selection_hud(state: &OverlayState, x: i32, y: i32) -> Selection
     SelectionHudHitTarget::Shell
 }
 
+pub fn selection_hud_area_button_rect(state: &OverlayState) -> Option<Rect> {
+    let shell = selection_hud_rect(state)?;
+    let button_top = shell.top + SELECTION_HUD_BUTTON_TOP;
+    let button_bottom = button_top + SELECTION_HUD_BUTTON_HEIGHT;
+    let back = Rect::new(
+        shell.left + 10,
+        button_top,
+        shell.left + 10 + SELECTION_HUD_BACK_WIDTH,
+        button_bottom,
+    );
+    let preset = Rect::new(
+        back.right + SELECTION_HUD_BUTTON_GAP,
+        button_top,
+        back.right + SELECTION_HUD_BUTTON_GAP + SELECTION_HUD_PRESET_WIDTH,
+        button_bottom,
+    );
+    let width_group = Rect::new(
+        preset.right + SELECTION_HUD_BUTTON_GAP,
+        button_top,
+        preset.right + SELECTION_HUD_BUTTON_GAP + SELECTION_HUD_DIMENSION_WIDTH,
+        button_bottom,
+    );
+    let height_group = Rect::new(
+        width_group.right + SELECTION_HUD_BUTTON_GAP,
+        button_top,
+        width_group.right + SELECTION_HUD_BUTTON_GAP + SELECTION_HUD_DIMENSION_WIDTH,
+        button_bottom,
+    );
+
+    Some(Rect::new(
+        height_group.right + SELECTION_HUD_BUTTON_GAP,
+        button_top,
+        height_group.right + SELECTION_HUD_BUTTON_GAP + SELECTION_HUD_SAVE_WIDTH,
+        button_bottom,
+    ))
+}
+
 /// Information about what to render.
 struct RenderInfo {
     /// The "clear" area (not dimmed)
@@ -1008,7 +1045,7 @@ fn draw_selection_hud(
             context,
             d2d,
             save_rect,
-            "Save",
+            "Areas",
             hud.hovered == SelectionHudHitTarget::Save,
             false,
         )?;

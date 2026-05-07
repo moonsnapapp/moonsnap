@@ -416,6 +416,7 @@ pub struct SelectionHudState {
     pub hovered: SelectionHudHitTarget,
     pub editing_dimension: Option<SelectionHudDimensionEdit>,
     pub dimension_input: String,
+    pub saved_areas: SavedAreaMenuState,
 }
 
 impl SelectionHudState {
@@ -425,6 +426,7 @@ impl SelectionHudState {
             hovered: SelectionHudHitTarget::None,
             editing_dimension: None,
             dimension_input: String::new(),
+            saved_areas: SavedAreaMenuState::default(),
         }
     }
 
@@ -441,6 +443,34 @@ impl SelectionHudState {
     pub fn is_editing_dimension(&self) -> bool {
         self.editing_dimension.is_some()
     }
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct SavedAreaMenuState {
+    pub last_area: Option<SavedAreaBounds>,
+    pub saved_areas: Vec<SavedAreaEntry>,
+    pub can_save_current: bool,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct SavedAreaBounds {
+    pub x: i32,
+    pub y: i32,
+    pub width: u32,
+    pub height: u32,
+}
+
+impl SavedAreaBounds {
+    pub fn to_rect(self) -> Rect {
+        Rect::from_xywh(self.x, self.y, self.width, self.height)
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct SavedAreaEntry {
+    pub id: String,
+    pub name: String,
+    pub bounds: SavedAreaBounds,
 }
 
 // ============================================================================

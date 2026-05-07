@@ -9,7 +9,9 @@ use moonsnap_core::error::MoonSnapResult;
 use std::sync::atomic::{AtomicBool, AtomicI32, AtomicIsize, AtomicU32, AtomicU8, Ordering};
 use std::sync::{Mutex, OnceLock};
 
+use super::state::{SavedAreaBounds, SavedAreaEntry, SavedAreaMenuState};
 use super::types::OverlayCommand;
+use serde::Deserialize;
 
 /// Highlighted monitor index (-1 = none, use cursor position)
 static HIGHLIGHTED_MONITOR: AtomicI32 = AtomicI32::new(-1);
@@ -31,6 +33,7 @@ static PENDING_MOVE_Y: AtomicI32 = AtomicI32::new(0);
 static D2D_CHOOSER_REQUEST: OnceLock<Mutex<Option<D2DRecordingModeChooserRequest>>> =
     OnceLock::new();
 static D2D_CHOOSER_CLOSE_REQUESTED: AtomicBool = AtomicBool::new(false);
+static SAVED_AREA_MENU_STATE: OnceLock<Mutex<SavedAreaMenuState>> = OnceLock::new();
 
 #[derive(Debug, Clone)]
 pub struct D2DRecordingModeChooserRequest {
@@ -38,8 +41,39 @@ pub struct D2DRecordingModeChooserRequest {
     pub allow_drag: bool,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SavedAreaBoundsPayload {
+    pub x: i32,
+    pub y: i32,
+    pub width: u32,
+    pub height: u32,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SavedAreaEntryPayload {
+    pub id: String,
+    pub name: String,
+    pub x: i32,
+    pub y: i32,
+    pub width: u32,
+    pub height: u32,
+}
+
 fn d2d_chooser_request() -> &'static Mutex<Option<D2DRecordingModeChooserRequest>> {
     D2D_CHOOSER_REQUEST.get_or_init(|| Mutex::new(None))
+}
+
+fn saved_area_menu_state() -> &'static Mutex<SavedAreaMenuState> {
+    SAVED_AREA_MENU_STATE.get_or_init(|| Mutex::new(SavedAreaMenuState::default()))
+}
+
+pub fn get_saved_area_menu_state() -> SavedAreaMenuState {
+    saved_area_menu_state()
+        .lock()
+        .map(|state| state.clone())
+        .unwrap_or_default()
 }
 
 /// Get and clear the pending command.
@@ -85,6 +119,45 @@ pub fn close_d2d_recording_mode_chooser() {
     if let Ok(mut request) = d2d_chooser_request().lock() {
         *request = None;
     }
+    if let Ok(mut saved_areas) = saved_area_menu_state().lock() {
+        *saved_areas = SavedAreaMenuState::default();
+    }
+}
+
+#[tauri::command]
+pub async fn capture_overlay_set_saved_areas(
+    last_area: Option<SavedAreaBoundsPayload>,
+    saved_areas: Vec<SavedAreaEntryPayload>,
+    can_save_current: bool,
+) -> MoonSnapResult<()> {
+    let next_state = SavedAreaMenuState {
+        last_area: last_area.map(|area| SavedAreaBounds {
+            x: area.x,
+            y: area.y,
+            width: area.width,
+            height: area.height,
+        }),
+        saved_areas: saved_areas
+            .into_iter()
+            .map(|area| SavedAreaEntry {
+                id: area.id,
+                name: area.name,
+                bounds: SavedAreaBounds {
+                    x: area.x,
+                    y: area.y,
+                    width: area.width,
+                    height: area.height,
+                },
+            })
+            .collect(),
+        can_save_current,
+    };
+
+    if let Ok(mut state) = saved_area_menu_state().lock() {
+        *state = next_state;
+    }
+
+    Ok(())
 }
 
 pub fn take_d2d_recording_mode_chooser_close_requested() -> bool {

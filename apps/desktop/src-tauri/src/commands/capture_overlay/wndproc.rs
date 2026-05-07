@@ -3,6 +3,7 @@
 //! Handles all window messages including mouse input, keyboard input,
 //! and cursor management.
 
+use crate::commands::capture_overlay::commands::get_saved_area_menu_state;
 use crate::commands::window::recording::reposition_recording_mode_chooser;
 use tauri::{Emitter, Manager};
 use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
@@ -12,9 +13,10 @@ use windows::Win32::UI::WindowsAndMessaging::{
     AppendMenuW, CreatePopupMenu, DefWindowProcW, DestroyMenu, GetCursorPos, GetWindowLongPtrW,
     GetWindowRect, IsWindowVisible, LoadCursorW, SetCursor, SetWindowPos, TrackPopupMenu,
     GWLP_USERDATA, HTCLIENT, HTTRANSPARENT, HWND_TOPMOST, IDC_ARROW, IDC_CROSS, IDC_SIZEALL,
-    MF_STRING, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, TPM_LEFTALIGN, TPM_RETURNCMD, TPM_TOPALIGN,
-    WM_CHAR, WM_CREATE, WM_DESTROY, WM_KEYDOWN, WM_KEYUP, WM_LBUTTONDOWN, WM_LBUTTONUP,
-    WM_MOUSEMOVE, WM_NCHITTEST, WM_PAINT, WM_RBUTTONDOWN, WM_SETCURSOR,
+    MF_GRAYED, MF_SEPARATOR, MF_STRING, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, TPM_LEFTALIGN,
+    TPM_RETURNCMD, TPM_TOPALIGN, WM_CHAR, WM_CREATE, WM_DESTROY, WM_KEYDOWN, WM_KEYUP,
+    WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WM_NCHITTEST, WM_PAINT, WM_RBUTTONDOWN,
+    WM_SETCURSOR,
 };
 
 use super::input::{get_area_target_at_point, get_window_at_point, hit_test_handle};
@@ -34,6 +36,11 @@ const DIMENSION_PRESETS: [(&str, u32, u32); 6] = [
     ("Square", 1080, 1080),
     ("Story", 1080, 1920),
 ];
+const SAVED_AREA_MENU_DRAW_NEW: usize = 2000;
+const SAVED_AREA_MENU_SAVE_CURRENT: usize = 2001;
+const SAVED_AREA_MENU_USE_LAST: usize = 2002;
+const SAVED_AREA_MENU_SAVED_BASE: usize = 2100;
+const SAVED_AREA_MENU_DELETE_BASE: usize = 2200;
 
 /// Window procedure for the overlay.
 ///
@@ -463,12 +470,16 @@ fn handle_recording_mode_chooser_click(
     }
 }
 
+fn reselect_area(state: &mut OverlayState) {
+    state.reselect();
+    emit_reset_to_startup(state);
+    let _ = state.app_handle.emit("capture-overlay-reselecting", ());
+}
+
 fn handle_selection_hud_click(state: &mut OverlayState, target: SelectionHudHitTarget) {
     match target {
         SelectionHudHitTarget::Back => {
-            state.reselect();
-            emit_reset_to_startup(state);
-            let _ = state.app_handle.emit("capture-overlay-reselecting", ());
+            reselect_area(state);
         },
         SelectionHudHitTarget::Preset => {
             show_dimension_preset_menu(state);
@@ -500,7 +511,7 @@ fn handle_selection_hud_click(state: &mut OverlayState, target: SelectionHudHitT
             adjust_selection_dimensions(state, 0, SELECTION_HUD_DIMENSION_STEP);
         },
         SelectionHudHitTarget::Save => {
-            emit_native_selection_hud_save_area(state);
+            show_saved_area_menu(state);
         },
         SelectionHudHitTarget::Capture => {
             emit_native_selection_hud_capture(state);
@@ -592,6 +603,155 @@ fn show_dimension_preset_menu(state: &mut OverlayState) {
     }
 }
 
+fn show_saved_area_menu(state: &mut OverlayState) {
+    clear_dimension_edit(state);
+    sync_saved_area_menu_state(state);
+
+    let Some(rect) = render::selection_hud_area_button_rect(state) else {
+        return;
+    };
+    let screen_position = state
+        .monitor
+        .local_to_screen(Point::new(rect.left, rect.bottom + 4));
+    let menu_state = state
+        .selection_hud
+        .as_ref()
+        .map(|hud| hud.saved_areas.clone())
+        .unwrap_or_default();
+
+    unsafe {
+        let Ok(menu) = CreatePopupMenu() else {
+            return;
+        };
+
+        append_menu_item(menu, 0, "Area Options", false);
+        let _ = AppendMenuW(menu, MF_SEPARATOR, 0, windows::core::PCWSTR::null());
+        append_menu_item(menu, SAVED_AREA_MENU_DRAW_NEW, "Draw New Area", true);
+        append_menu_item(
+            menu,
+            SAVED_AREA_MENU_USE_LAST,
+            &menu_state
+                .last_area
+                .map(|area| format!("Use Last Area ({})", format_area_label(area.to_rect())))
+                .unwrap_or_else(|| "Use Last Area".to_string()),
+            menu_state.last_area.is_some(),
+        );
+        append_menu_item(
+            menu,
+            SAVED_AREA_MENU_SAVE_CURRENT,
+            "Save Current Area",
+            menu_state.can_save_current,
+        );
+
+        if !menu_state.saved_areas.is_empty() {
+            let _ = AppendMenuW(menu, MF_SEPARATOR, 0, windows::core::PCWSTR::null());
+            for (index, saved_area) in menu_state.saved_areas.iter().enumerate() {
+                append_menu_item(
+                    menu,
+                    SAVED_AREA_MENU_SAVED_BASE + index,
+                    &format!(
+                        "{} ({})",
+                        saved_area.name,
+                        format_area_label(saved_area.bounds.to_rect())
+                    ),
+                    true,
+                );
+            }
+
+            let _ = AppendMenuW(menu, MF_SEPARATOR, 0, windows::core::PCWSTR::null());
+            for (index, saved_area) in menu_state.saved_areas.iter().enumerate() {
+                append_menu_item(
+                    menu,
+                    SAVED_AREA_MENU_DELETE_BASE + index,
+                    &format!("Delete {}", saved_area.name),
+                    true,
+                );
+            }
+        }
+
+        let selected = TrackPopupMenu(
+            menu,
+            TPM_LEFTALIGN | TPM_TOPALIGN | TPM_RETURNCMD,
+            screen_position.x,
+            screen_position.y,
+            0,
+            state.hwnd,
+            None,
+        );
+        let _ = DestroyMenu(menu);
+
+        match selected.0 {
+            value if value == SAVED_AREA_MENU_DRAW_NEW as i32 => {
+                reselect_area(state);
+            },
+            value if value == SAVED_AREA_MENU_SAVE_CURRENT as i32 => {
+                emit_native_selection_hud_save_area(state);
+            },
+            value if value == SAVED_AREA_MENU_USE_LAST as i32 => {
+                if let Some(area) = menu_state.last_area {
+                    set_adjustment_screen_rect(state, area.to_rect());
+                }
+            },
+            value
+                if value >= SAVED_AREA_MENU_SAVED_BASE as i32
+                    && value < SAVED_AREA_MENU_DELETE_BASE as i32 =>
+            {
+                let index = (value as usize).saturating_sub(SAVED_AREA_MENU_SAVED_BASE);
+                if let Some(area) = menu_state.saved_areas.get(index) {
+                    set_adjustment_screen_rect(state, area.bounds.to_rect());
+                }
+            },
+            value if value >= SAVED_AREA_MENU_DELETE_BASE as i32 => {
+                let index = (value as usize).saturating_sub(SAVED_AREA_MENU_DELETE_BASE);
+                if let Some(area) = menu_state.saved_areas.get(index) {
+                    emit_native_selection_hud_delete_saved_area(state, &area.id);
+                }
+            },
+            _ => {},
+        }
+    }
+}
+
+fn sync_saved_area_menu_state(state: &mut OverlayState) {
+    if let Some(hud) = state.selection_hud.as_mut() {
+        hud.saved_areas = get_saved_area_menu_state();
+    }
+}
+
+unsafe fn append_menu_item(
+    menu: windows::Win32::UI::WindowsAndMessaging::HMENU,
+    id: usize,
+    text: &str,
+    enabled: bool,
+) {
+    let wide: Vec<u16> = text.encode_utf16().chain(std::iter::once(0)).collect();
+    let flags = if enabled {
+        MF_STRING
+    } else {
+        MF_STRING | MF_GRAYED
+    };
+    let _ = AppendMenuW(menu, flags, id, windows::core::PCWSTR(wide.as_ptr()));
+}
+
+fn format_area_label(area: Rect) -> String {
+    format!(
+        "{}x{} at {}, {}",
+        area.width(),
+        area.height(),
+        area.left,
+        area.top
+    )
+}
+
+fn set_adjustment_screen_rect(state: &mut OverlayState, screen_rect: Rect) {
+    if state.adjustment.is_locked {
+        return;
+    }
+
+    state.adjustment.bounds = state.monitor.screen_rect_to_local(screen_rect);
+    emit_dimensions_update(state);
+}
+
 fn emit_native_selection_hud_save_area(state: &OverlayState) {
     let Some(hud) = &state.selection_hud else {
         return;
@@ -608,6 +768,20 @@ fn emit_native_selection_hud_save_area(state: &OverlayState) {
             "y": selection.top,
             "width": selection.width(),
             "height": selection.height(),
+        }),
+    );
+}
+
+fn emit_native_selection_hud_delete_saved_area(state: &OverlayState, id: &str) {
+    let Some(hud) = &state.selection_hud else {
+        return;
+    };
+
+    let _ = state.app_handle.emit(
+        "native-selection-hud-delete-saved-area",
+        serde_json::json!({
+            "owner": hud.owner,
+            "id": id,
         }),
     );
 }
