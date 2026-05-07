@@ -546,11 +546,15 @@ fn run_overlay(
                         request.owner,
                         request.allow_drag,
                     ));
+                    wndproc::make_overlay_interactive(&state);
                     let _ = render::render(&state);
                 }
 
                 if take_d2d_recording_mode_chooser_close_requested() {
                     state.recording_mode_chooser = None;
+                    if state.adjustment.is_locked {
+                        wndproc::make_overlay_click_through(&state);
+                    }
                     let _ = render::render(&state);
                 }
 

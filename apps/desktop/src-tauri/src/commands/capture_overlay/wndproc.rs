@@ -80,22 +80,11 @@ fn handle_nchittest(state_ptr: *mut OverlayState, lparam: LPARAM) -> LRESULT {
             return LRESULT(HTCLIENT as isize);
         }
 
-        // Locked selections are already fully click-through via WS_EX_TRANSPARENT
-        if state.adjustment.is_locked {
-            return LRESULT(HTCLIENT as isize);
-        }
-
-        // If actively dragging a handle, keep the overlay interactive
-        if state.adjustment.is_dragging {
-            return LRESULT(HTCLIENT as isize);
-        }
-
         // WM_NCHITTEST reports screen coordinates. Convert them into the overlay's
         // local coordinate space before checking resize handles.
         let (screen_x, screen_y) =
             current_screen_mouse_coords().unwrap_or_else(|| mouse_coords(lparam));
 
-        // Check if the cursor is on a resize handle
         let local = state.monitor.screen_to_local(screen_x, screen_y);
         if render::hit_test_recording_mode_chooser(state, local.x, local.y)
             != RecordingModeChooserHitTarget::None
@@ -103,6 +92,18 @@ fn handle_nchittest(state_ptr: *mut OverlayState, lparam: LPARAM) -> LRESULT {
             return LRESULT(HTCLIENT as isize);
         }
 
+        // Locked selections do not expose adjustment handles. They should stay
+        // click-through except while interacting with the D2D chooser above.
+        if state.adjustment.is_locked {
+            return LRESULT(HTTRANSPARENT as isize);
+        }
+
+        // If actively dragging a handle, keep the overlay interactive
+        if state.adjustment.is_dragging {
+            return LRESULT(HTCLIENT as isize);
+        }
+
+        // Check if the cursor is on a resize handle
         let handle = hit_test_adjustment_handle_at_screen_coords(
             &state.monitor,
             state.adjustment.bounds,
@@ -394,6 +395,9 @@ fn handle_recording_mode_chooser_click(
         RecordingModeChooserHitTarget::Back => {
             emit_recording_mode_chooser_back(state);
             state.recording_mode_chooser = None;
+            if state.adjustment.is_locked {
+                make_overlay_click_through(state);
+            }
         },
         RecordingModeChooserHitTarget::Quick => {
             emit_recording_mode_selected(state, "save");
@@ -876,7 +880,7 @@ fn show_toolbar(state: &OverlayState, screen_bounds: Rect, source: SourceType) {
 
 /// Make the overlay click-through so the toolbar receives all mouse events.
 /// This is bulletproof - no Z-order fighting, overlay just passes input through.
-fn make_overlay_click_through(state: &OverlayState) {
+pub(crate) fn make_overlay_click_through(state: &OverlayState) {
     unsafe {
         use windows::Win32::UI::WindowsAndMessaging::{
             GetWindowLongW, SetWindowLongW, GWL_EXSTYLE, WS_EX_LAYERED, WS_EX_TRANSPARENT,
@@ -890,7 +894,7 @@ fn make_overlay_click_through(state: &OverlayState) {
     }
 }
 
-fn make_overlay_interactive(state: &OverlayState) {
+pub(crate) fn make_overlay_interactive(state: &OverlayState) {
     unsafe {
         use windows::Win32::UI::WindowsAndMessaging::{
             GetWindowLongW, SetWindowLongW, SetWindowPos, GWL_EXSTYLE, HWND_TOPMOST,

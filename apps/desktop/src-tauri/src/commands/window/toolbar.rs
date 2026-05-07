@@ -118,6 +118,48 @@ fn calculate_startup_toolbar_position(
     (x, y)
 }
 
+#[cfg(target_os = "windows")]
+fn bring_window_to_front_without_topmost(window: &tauri::WebviewWindow, focus: bool) {
+    use windows::Win32::Foundation::HWND;
+    use windows::Win32::UI::WindowsAndMessaging::{
+        BringWindowToTop, SetForegroundWindow, SetWindowPos, ShowWindow, HWND_NOTOPMOST,
+        HWND_TOPMOST, SWP_NOMOVE, SWP_NOSIZE, SWP_SHOWWINDOW, SW_RESTORE, SW_SHOW,
+    };
+
+    if let Ok(hwnd) = window.hwnd() {
+        unsafe {
+            let hwnd = HWND(hwnd.0);
+            let _ = ShowWindow(hwnd, SW_RESTORE);
+            let _ = ShowWindow(hwnd, SW_SHOW);
+            let _ = SetWindowPos(
+                hwnd,
+                HWND_TOPMOST,
+                0,
+                0,
+                0,
+                0,
+                SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW,
+            );
+            let _ = SetWindowPos(
+                hwnd,
+                HWND_NOTOPMOST,
+                0,
+                0,
+                0,
+                0,
+                SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW,
+            );
+            let _ = BringWindowToTop(hwnd);
+            if focus {
+                let _ = SetForegroundWindow(hwnd);
+            }
+        }
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+fn bring_window_to_front_without_topmost(_window: &tauri::WebviewWindow, _focus: bool) {}
+
 // ============================================================================
 // Capture Toolbar
 // ============================================================================
@@ -602,38 +644,13 @@ pub async fn show_startup_toolbar(
         log::debug!("[show_startup_toolbar] Window already exists, bringing to front");
 
         if !auto_start_area_selection {
-            // Use Windows API to forcefully bring window to front
-            #[cfg(target_os = "windows")]
-            {
-                use windows::Win32::Foundation::HWND;
-                use windows::Win32::UI::WindowsAndMessaging::{
-                    BringWindowToTop, SetForegroundWindow, SetWindowPos, ShowWindow, HWND_TOPMOST,
-                    SWP_NOMOVE, SWP_NOSIZE, SWP_SHOWWINDOW, SW_RESTORE, SW_SHOW,
-                };
-
-                if let Ok(hwnd) = window.hwnd() {
-                    unsafe {
-                        let hwnd = HWND(hwnd.0);
-                        let _ = ShowWindow(hwnd, SW_RESTORE);
-                        let _ = ShowWindow(hwnd, SW_SHOW);
-                        let _ = SetWindowPos(
-                            hwnd,
-                            HWND_TOPMOST,
-                            0,
-                            0,
-                            0,
-                            0,
-                            SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW,
-                        );
-                        let _ = BringWindowToTop(hwnd);
-                        let _ = SetForegroundWindow(hwnd);
-                    }
-                }
-            }
-
             window
                 .show()
                 .map_err(|e| format!("Failed to show toolbar: {}", e))?;
+            bring_window_to_front_without_topmost(&window, true);
+            window
+                .set_always_on_top(false)
+                .map_err(|e| format!("Failed to clear toolbar always-on-top: {}", e))?;
             window
                 .set_focus()
                 .map_err(|e| format!("Failed to focus toolbar: {}", e))?;
@@ -682,7 +699,7 @@ pub async fn show_startup_toolbar(
         .transparent(true)
         .decorations(false)
         .maximizable(false)
-        .always_on_top(true)
+        .always_on_top(false)
         .skip_taskbar(false)
         .resizable(false) // Auto-resized by frontend
         .shadow(false)
@@ -693,6 +710,18 @@ pub async fn show_startup_toolbar(
 
     // Set position/size using physical coordinates
     set_physical_bounds(&window, x, y, initial_width, initial_height)?;
+    if !auto_start_area_selection {
+        window
+            .show()
+            .map_err(|e| format!("Failed to show toolbar: {}", e))?;
+        bring_window_to_front_without_topmost(&window, true);
+        window
+            .set_always_on_top(false)
+            .map_err(|e| format!("Failed to clear toolbar always-on-top: {}", e))?;
+        window
+            .set_focus()
+            .map_err(|e| format!("Failed to focus toolbar: {}", e))?;
+    }
 
     let mut pending_startup_context = toolbar_state.pending_startup_context.lock();
     *pending_startup_context = Some(startup_context);
