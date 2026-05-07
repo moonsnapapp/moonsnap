@@ -25,8 +25,10 @@ pub use capture::{trigger_capture, trigger_capture_with_options};
 pub use toolbar::show_startup_toolbar;
 
 use moonsnap_core::error::MoonSnapResult;
+use serde_json::Value;
 use std::sync::atomic::{AtomicBool, Ordering};
 use tauri::Manager;
+use tauri_plugin_window_state::{StateFlags, WindowExt, DEFAULT_FILENAME};
 
 // ============================================================================
 // Constants
@@ -283,6 +285,22 @@ pub(crate) fn reveal_library_window(
     window: &tauri::WebviewWindow,
     focus: bool,
 ) -> MoonSnapResult<()> {
+    let has_saved_bounds = has_usable_saved_library_window_bounds(window);
+    if let Err(error) =
+        window.restore_state(StateFlags::POSITION | StateFlags::SIZE | StateFlags::MAXIMIZED)
+    {
+        log::warn!(
+            "Failed to restore library window state before reveal: {}",
+            error
+        );
+    }
+
+    if !has_saved_bounds {
+        window
+            .center()
+            .map_err(|e| format!("Failed to center library window: {}", e))?;
+    }
+
     window
         .show()
         .map_err(|e| format!("Failed to show library window: {}", e))?;
@@ -298,6 +316,58 @@ pub(crate) fn reveal_library_window(
     }
 
     Ok(())
+}
+
+fn has_usable_saved_library_window_bounds(window: &tauri::WebviewWindow) -> bool {
+    let app_handle = window.app_handle();
+    let Ok(config_dir) = app_handle.path().app_config_dir() else {
+        return false;
+    };
+    let Ok(raw_state) = std::fs::read_to_string(config_dir.join(DEFAULT_FILENAME)) else {
+        return false;
+    };
+    let Ok(state) = serde_json::from_str::<Value>(&raw_state) else {
+        return false;
+    };
+    let Some(library_state) = state.get("library") else {
+        return false;
+    };
+
+    let Some(width) = library_state.get("width").and_then(Value::as_u64) else {
+        return false;
+    };
+    let Some(height) = library_state.get("height").and_then(Value::as_u64) else {
+        return false;
+    };
+    let Some(x) = library_state.get("x").and_then(Value::as_i64) else {
+        return false;
+    };
+    let Some(y) = library_state.get("y").and_then(Value::as_i64) else {
+        return false;
+    };
+
+    if width == 0 || height == 0 {
+        return false;
+    }
+
+    let Ok(monitors) = window.available_monitors() else {
+        return true;
+    };
+    monitors.into_iter().any(|monitor| {
+        let position = monitor.position();
+        let size = monitor.size();
+        let monitor_left = position.x as i64;
+        let monitor_top = position.y as i64;
+        let monitor_right = monitor_left + size.width as i64;
+        let monitor_bottom = monitor_top + size.height as i64;
+        let window_right = x + width as i64;
+        let window_bottom = y + height as i64;
+
+        x < monitor_right
+            && window_right > monitor_left
+            && y < monitor_bottom
+            && window_bottom > monitor_top
+    })
 }
 
 /// Restore main window if it was visible before capture started
