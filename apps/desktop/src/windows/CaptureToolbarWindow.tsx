@@ -341,6 +341,20 @@ const CaptureToolbarWindow: React.FC = () => {
     }, 500);
   }, []);
 
+  const bringStartupToolbarToFront = useCallback(async () => {
+    try {
+      await invoke('bring_startup_toolbar_to_front', { focus: true });
+    } catch (error) {
+      toolbarLogger.warn('Failed to bring startup toolbar to front:', error);
+
+      const currentWindow = getCurrentWebviewWindow();
+      await currentWindow.show().catch((showError) => {
+        toolbarLogger.warn('Failed to show startup toolbar fallback:', showError);
+      });
+      await currentWindow.setFocus().catch(() => {});
+    }
+  }, []);
+
   const restoreStartupToolbarWindow = useCallback(async () => {
     suppressStartupEscapeBriefly();
 
@@ -361,13 +375,9 @@ const CaptureToolbarWindow: React.FC = () => {
     resetSelectionToStartup();
     clearSelectionAutoStartRecording();
     await new Promise((resolve) => window.setTimeout(resolve, STARTUP_RESTORE_STATE_FLUSH_MS));
-
-    const currentWindow = getCurrentWebviewWindow();
-    await currentWindow.show().catch((error) => {
-      toolbarLogger.warn('Failed to show capture toolbar after cancel:', error);
-    });
-    await currentWindow.setFocus().catch(() => {});
+    await bringStartupToolbarToFront();
   }, [
+    bringStartupToolbarToFront,
     clearSelectionAutoStartRecording,
     recordingInitiatedRef,
     resetSelectionToStartup,
@@ -920,6 +930,19 @@ const CaptureToolbarWindow: React.FC = () => {
     );
   }, [resetSelectionToStartup, setCaptureSource, setCaptureType, setMode]);
 
+  const bringStartupToolbarToFrontAfterContext = useCallback(
+    (context: StartupToolbarContext) => {
+      if (context.autoStartAreaSelection) {
+        return;
+      }
+
+      window.setTimeout(() => {
+        void bringStartupToolbarToFront();
+      }, STARTUP_RESTORE_STATE_FLUSH_MS);
+    },
+    [bringStartupToolbarToFront]
+  );
+
   useEffect(() => {
     const unlisten = listen<StartupToolbarContext>('startup-toolbar-context', (event) => {
       setIsStartupContextReady(true);
@@ -930,12 +953,13 @@ const CaptureToolbarWindow: React.FC = () => {
       }
 
       applyStartupToolbarContext(event.payload);
+      bringStartupToolbarToFrontAfterContext(event.payload);
     });
 
     return () => {
       unlisten.then((fn) => fn()).catch(() => {});
     };
-  }, [applyStartupToolbarContext, isInitialized]);
+  }, [applyStartupToolbarContext, bringStartupToolbarToFrontAfterContext, isInitialized]);
 
   useEffect(() => {
     if (!isInitialized || !pendingStartupContextRef.current) {
@@ -944,8 +968,9 @@ const CaptureToolbarWindow: React.FC = () => {
 
     setIsStartupContextReady(true);
     applyStartupToolbarContext(pendingStartupContextRef.current);
+    bringStartupToolbarToFrontAfterContext(pendingStartupContextRef.current);
     pendingStartupContextRef.current = null;
-  }, [applyStartupToolbarContext, isInitialized]);
+  }, [applyStartupToolbarContext, bringStartupToolbarToFrontAfterContext, isInitialized]);
 
   useEffect(() => {
     if (

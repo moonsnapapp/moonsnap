@@ -4,7 +4,9 @@ use moonsnap_core::error::MoonSnapResult;
 use parking_lot::Mutex;
 
 use serde::{Deserialize, Serialize};
-use tauri::{command, AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
+use tauri::{
+    command, AppHandle, Emitter, Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder,
+};
 
 use super::{
     apply_dwm_transparency, bring_window_to_front_without_topmost, exclude_window_from_capture,
@@ -16,6 +18,33 @@ const STARTUP_TOOLBAR_HEIGHT: u32 = 147;
 const CAPTURE_TOOLBAR_DEFAULT_WIDTH: u32 = 1280;
 const CAPTURE_TOOLBAR_DEFAULT_HEIGHT: u32 = 144;
 const STARTUP_TOOLBAR_CONTEXT_APPLY_DELAY_MS: u64 = 50;
+
+fn bring_startup_window_to_front_without_sticking(
+    window: &WebviewWindow,
+    focus: bool,
+) -> MoonSnapResult<()> {
+    window.set_always_on_top(false).map_err(|e| {
+        format!(
+            "Failed to clear toolbar always-on-top before showing: {}",
+            e
+        )
+    })?;
+    window
+        .show()
+        .map_err(|e| format!("Failed to show toolbar: {}", e))?;
+    bring_window_to_front_without_topmost(window, focus);
+    window
+        .set_always_on_top(false)
+        .map_err(|e| format!("Failed to clear toolbar always-on-top after showing: {}", e))?;
+
+    if focus {
+        window
+            .set_focus()
+            .map_err(|e| format!("Failed to focus toolbar: {}", e))?;
+    }
+
+    Ok(())
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -465,6 +494,19 @@ pub async fn bring_capture_toolbar_to_front(
     Ok(())
 }
 
+/// Show the startup toolbar above the Library without leaving it sticky/topmost.
+#[command]
+pub async fn bring_startup_toolbar_to_front(
+    app: AppHandle,
+    focus: Option<bool>,
+) -> MoonSnapResult<()> {
+    let Some(window) = app.get_webview_window(CAPTURE_TOOLBAR_LABEL) else {
+        return Ok(());
+    };
+
+    bring_startup_window_to_front_without_sticking(&window, focus.unwrap_or(true))
+}
+
 /// Resize the capture toolbar window based on actual content size.
 /// Called by frontend after measuring rendered content via getBoundingClientRect().
 /// Frontend sends CSS pixels (logical), so we use Logical size to match.
@@ -559,16 +601,7 @@ pub async fn show_startup_toolbar(
             std::thread::sleep(std::time::Duration::from_millis(
                 STARTUP_TOOLBAR_CONTEXT_APPLY_DELAY_MS,
             ));
-            window
-                .show()
-                .map_err(|e| format!("Failed to show toolbar: {}", e))?;
-            bring_window_to_front_without_topmost(&window, true);
-            window
-                .set_always_on_top(false)
-                .map_err(|e| format!("Failed to clear toolbar always-on-top: {}", e))?;
-            window
-                .set_focus()
-                .map_err(|e| format!("Failed to focus toolbar: {}", e))?;
+            bring_startup_window_to_front_without_sticking(&window, true)?;
         }
         return Ok(());
     }

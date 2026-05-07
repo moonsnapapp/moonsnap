@@ -47,6 +47,7 @@ macro_rules! tauri_command_handler {
             crate::commands::window::toolbar::set_capture_toolbar_ignore_cursor,
             crate::commands::window::toolbar::set_toolbar_recording_visibility,
             crate::commands::window::toolbar::show_startup_toolbar,
+            crate::commands::window::toolbar::bring_startup_toolbar_to_front,
             crate::commands::window::toolbar::hide_startup_toolbar,
             // Window commands - settings
             crate::commands::window::settings::show_settings_window,
