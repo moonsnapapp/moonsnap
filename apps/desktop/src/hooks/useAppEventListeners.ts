@@ -138,22 +138,23 @@ export function useAppEventListeners(callbacks: AppEventCallbacks) {
           if (!captureSettingsStore.isInitialized) {
             await captureSettingsStore.loadSettings();
           }
-          const { snapToolbarToSelection } = useCaptureSettingsStore.getState();
-
           // Check if toolbar already exists
           const existing = await WebviewWindow.getByLabel('capture-toolbar');
           if (existing) {
             // Hide first to avoid flashing at old position
             await existing.hide();
 
-            // Reposition before showing
-            if (!autoStartRecording && snapToolbarToSelection) {
-              // Snap to selection — position below, centered horizontally.
-              // When disabled, keep existing window position unchanged.
+            // Reposition before showing. Display/window selections keep the
+            // toolbar centered on the selected bounds; area selections keep
+            // the existing window position.
+            if (
+              !autoStartRecording &&
+              (sourceType === 'display' || sourceType === 'window')
+            ) {
               const { invoke: inv } = await import('@tauri-apps/api/core');
               const outerSize = await existing.outerSize();
               const toolbarX = Math.floor(x + width / 2 - outerSize.width / 2);
-              const toolbarY = y + height + 8;
+              const toolbarY = Math.floor(y + (height - outerSize.height) / 2);
               await inv('set_capture_toolbar_position', { x: toolbarX, y: toolbarY });
             }
 
@@ -195,7 +196,7 @@ export function useAppEventListeners(callbacks: AppEventCallbacks) {
             sourceTitle,
             monitorIndex,
             monitorName,
-            snapToolbarToSelection,
+            snapToolbarToSelection: false,
             nativeControls,
           });
         }

@@ -129,11 +129,16 @@ fn calculate_capture_toolbar_position(
     width: u32,
     height: u32,
     toolbar_width: u32,
-    _toolbar_height: u32,
+    toolbar_height: u32,
+    center_in_selection: bool,
 ) -> (i32, i32) {
-    // Position below the selection, centered horizontally.
     let ix = x + (width as i32 / 2) - (toolbar_width as i32 / 2);
-    let iy = y + height as i32 + 8;
+    let iy = if center_in_selection {
+        y + (height as i32 - toolbar_height as i32) / 2
+    } else {
+        y + height as i32 + 8
+    };
+
     (ix, iy)
 }
 
@@ -186,7 +191,7 @@ pub async fn show_capture_toolbar(
     capture_type: Option<String>,
     source_mode: Option<String>,
     auto_start_recording: Option<bool>,
-    snap_toolbar_to_selection: Option<bool>,
+    _snap_toolbar_to_selection: Option<bool>,
     native_controls: Option<bool>,
 ) -> MoonSnapResult<()> {
     if crate::commands::video_recording::block_capture_attempt_while_recording(&app)? {
@@ -211,14 +216,24 @@ pub async fn show_capture_toolbar(
         auto_start_recording,
         native_controls,
     );
-    let snap_toolbar_to_selection = snap_toolbar_to_selection.unwrap_or(true);
+    let center_toolbar_in_selection = matches!(
+        selection.source_type.as_deref(),
+        Some("display") | Some("window")
+    );
     if let Some(window) = app.get_webview_window(CAPTURE_TOOLBAR_LABEL) {
-        if !auto_start_recording.unwrap_or(false) && snap_toolbar_to_selection {
+        if !auto_start_recording.unwrap_or(false) && center_toolbar_in_selection {
             let size = window
                 .inner_size()
                 .map_err(|e| format!("Failed to get toolbar size: {}", e))?;
-            let (next_x, next_y) =
-                calculate_capture_toolbar_position(x, y, width, height, size.width, size.height);
+            let (next_x, next_y) = calculate_capture_toolbar_position(
+                x,
+                y,
+                width,
+                height,
+                size.width,
+                size.height,
+                center_toolbar_in_selection,
+            );
             set_physical_bounds(&window, next_x, next_y, size.width, size.height)?;
         }
 
@@ -274,8 +289,16 @@ pub async fn show_capture_toolbar(
     // Fixed initial window size before frontend measures actual content.
     let toolbar_width = CAPTURE_TOOLBAR_DEFAULT_WIDTH;
     let toolbar_height = CAPTURE_TOOLBAR_DEFAULT_HEIGHT;
-    let (initial_x, initial_y) = if snap_toolbar_to_selection {
-        calculate_capture_toolbar_position(x, y, width, height, toolbar_width, toolbar_height)
+    let (initial_x, initial_y) = if center_toolbar_in_selection {
+        calculate_capture_toolbar_position(
+            x,
+            y,
+            width,
+            height,
+            toolbar_width,
+            toolbar_height,
+            center_toolbar_in_selection,
+        )
     } else {
         let monitors = app
             .available_monitors()
@@ -693,7 +716,7 @@ pub async fn hide_startup_toolbar(app: AppHandle) -> MoonSnapResult<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::calculate_startup_toolbar_position;
+    use super::{calculate_capture_toolbar_position, calculate_startup_toolbar_position};
 
     #[test]
     fn startup_toolbar_position_centers_on_primary_monitor() {
@@ -701,5 +724,21 @@ mod tests {
 
         assert_eq!(x, 591);
         assert_eq!(y, 466);
+    }
+
+    #[test]
+    fn capture_toolbar_position_can_center_in_display_or_window_selection() {
+        let (x, y) = calculate_capture_toolbar_position(0, 0, 1920, 1080, 738, 147, true);
+
+        assert_eq!(x, 591);
+        assert_eq!(y, 466);
+    }
+
+    #[test]
+    fn capture_toolbar_position_defaults_below_selection() {
+        let (x, y) = calculate_capture_toolbar_position(100, 120, 800, 450, 320, 100, false);
+
+        assert_eq!(x, 340);
+        assert_eq!(y, 578);
     }
 }

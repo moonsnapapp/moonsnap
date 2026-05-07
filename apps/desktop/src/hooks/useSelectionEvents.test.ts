@@ -1,8 +1,14 @@
 import { act, renderHook } from '@testing-library/react';
 import { beforeEach, describe, expect, it } from 'vitest';
-import { useSelectionEvents } from './useSelectionEvents';
+import { repositionToolbar, useSelectionEvents } from './useSelectionEvents';
 import { useCaptureSettingsStore } from '@/stores/captureSettingsStore';
-import { emitMockEvent, mockInvoke, setInvokeResponse } from '@/test/mocks/tauri';
+import {
+  emitMockEvent,
+  mockAvailableMonitors,
+  mockInvoke,
+  mockWebviewWindow,
+  setInvokeResponse,
+} from '@/test/mocks/tauri';
 
 function createDeferred<T>() {
   let resolve!: (value: T | PromiseLike<T>) => void;
@@ -24,6 +30,9 @@ async function flush() {
 
 describe('useSelectionEvents', () => {
   beforeEach(() => {
+    mockInvoke.mockClear();
+    mockAvailableMonitors.mockClear();
+    mockWebviewWindow.outerSize.mockResolvedValue({ width: 640, height: 120 });
     useCaptureSettingsStore.setState({
       activeMode: 'video',
       sourceMode: 'area',
@@ -124,6 +133,51 @@ describe('useSelectionEvents', () => {
       y: 180,
       width: 640,
       height: 360,
+    });
+  });
+
+  it('centers the toolbar inside display selections', async () => {
+    await repositionToolbar({
+      x: 0,
+      y: 0,
+      width: 1920,
+      height: 1080,
+      sourceType: 'display',
+    });
+
+    expect(mockInvoke).toHaveBeenCalledWith('set_capture_toolbar_position', {
+      x: 640,
+      y: 480,
+    });
+  });
+
+  it('centers the toolbar inside window selections', async () => {
+    await repositionToolbar({
+      x: 240,
+      y: 180,
+      width: 1280,
+      height: 720,
+      sourceType: 'window',
+    });
+
+    expect(mockInvoke).toHaveBeenCalledWith('set_capture_toolbar_position', {
+      x: 560,
+      y: 480,
+    });
+  });
+
+  it('keeps area selections below the selected region', async () => {
+    await repositionToolbar({
+      x: 100,
+      y: 120,
+      width: 800,
+      height: 450,
+      sourceType: 'area',
+    });
+
+    expect(mockInvoke).toHaveBeenCalledWith('set_capture_toolbar_position', {
+      x: 180,
+      y: 578,
     });
   });
 });

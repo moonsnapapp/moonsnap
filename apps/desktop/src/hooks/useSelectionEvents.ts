@@ -68,6 +68,9 @@ export async function repositionToolbar(selection: SelectionBounds): Promise<voi
   });
 
   const centeredX = Math.floor(selectionCenterX - toolbarWidth / 2);
+  const centeredY = Math.floor(selection.y + (selection.height - toolbarHeight) / 2);
+  const shouldCenterInSelection =
+    selection.sourceType === 'display' || selection.sourceType === 'window';
   const belowY = selection.y + selection.height + MARGIN;
   const aboveY = selection.y - toolbarHeight - MARGIN;
 
@@ -91,10 +94,15 @@ export async function repositionToolbar(selection: SelectionBounds): Promise<voi
     };
   };
 
-  let finalPos = { x: centeredX, y: belowY };
+  let finalPos = {
+    x: centeredX,
+    y: shouldCenterInSelection ? centeredY : belowY,
+  };
 
   if (currentMonitor) {
-    if (fitsInMonitor(centeredX, belowY, currentMonitor)) {
+    if (shouldCenterInSelection) {
+      finalPos = clampToMonitor(centeredX, centeredY, currentMonitor);
+    } else if (fitsInMonitor(centeredX, belowY, currentMonitor)) {
       finalPos = { x: centeredX, y: belowY };
     } else if (fitsInMonitor(centeredX, aboveY, currentMonitor)) {
       finalPos = { x: centeredX, y: aboveY };
@@ -102,7 +110,11 @@ export async function repositionToolbar(selection: SelectionBounds): Promise<voi
       finalPos = clampToMonitor(centeredX, belowY, currentMonitor);
     }
   } else if (monitors.length > 0) {
-    finalPos = clampToMonitor(centeredX, belowY, monitors[0]);
+    finalPos = clampToMonitor(
+      centeredX,
+      shouldCenterInSelection ? centeredY : belowY,
+      monitors[0]
+    );
   }
 
   await invoke('set_capture_toolbar_position', {
