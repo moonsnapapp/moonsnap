@@ -76,6 +76,14 @@ pub mod colors {
         a: 0.75,
     };
 
+    /// Blue semi-transparent background for the window process badge
+    pub const WINDOW_LABEL_BG: D2D1_COLOR_F = D2D1_COLOR_F {
+        r: 0.23,
+        g: 0.51,
+        b: 0.96,
+        a: 0.88,
+    };
+
     /// White for resize handle fill
     pub const HANDLE_FILL: D2D1_COLOR_F = D2D1_COLOR_F {
         r: 1.0,
@@ -161,6 +169,8 @@ pub struct Brushes {
     pub text: ID2D1SolidColorBrush,
     /// Dark semi-transparent for text background
     pub text_bg: ID2D1SolidColorBrush,
+    /// Blue semi-transparent background for the window process badge
+    pub window_label_bg: ID2D1SolidColorBrush,
     /// White for resize handle fill
     pub handle_fill: ID2D1SolidColorBrush,
     /// Blue for resize handle border
@@ -222,6 +232,8 @@ pub fn create_brushes(context: &ID2D1DeviceContext) -> Result<Brushes> {
             crosshair: render_target.CreateSolidColorBrush(&colors::CROSSHAIR, Some(&props))?,
             text: render_target.CreateSolidColorBrush(&colors::TEXT, Some(&props))?,
             text_bg: render_target.CreateSolidColorBrush(&colors::TEXT_BG, Some(&props))?,
+            window_label_bg: render_target
+                .CreateSolidColorBrush(&colors::WINDOW_LABEL_BG, Some(&props))?,
             handle_fill: render_target.CreateSolidColorBrush(&colors::HANDLE_FILL, Some(&props))?,
             handle_border: render_target
                 .CreateSolidColorBrush(&colors::HANDLE_BORDER, Some(&props))?,

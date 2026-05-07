@@ -841,6 +841,36 @@ const CaptureToolbarWindow: React.FC = () => {
     };
   }, [restoreStartupToolbarWindow]);
 
+  useEffect(() => {
+    const unlisten = listen('capture-overlay-reselecting', () => {
+      chooserSelectionHandledRef.current = false;
+      recordingStartupInProgressRef.current = false;
+      chooserRestorePositionRef.current = null;
+      chooserAnchorPositionRef.current = null;
+      skipModePromptRef.current = false;
+      recordingInitiatedRef.current = false;
+      closeWindowOnCompleteRef.current = false;
+
+      setIsModeChooserVisible(false);
+      setIsRecordingControlsPending(false);
+      setIsRecordingHudActive(false);
+      setIsRestoringToolbarFromChooser(false);
+      setIsStartupContextReady(false);
+      setMode('selection');
+      resetSelectionToStartup();
+      clearSelectionAutoStartRecording();
+    });
+
+    return () => {
+      unlisten.then((fn) => fn()).catch(() => {});
+    };
+  }, [
+    clearSelectionAutoStartRecording,
+    recordingInitiatedRef,
+    resetSelectionToStartup,
+    setMode,
+  ]);
+
   const handleOpenSettings = useCallback(() => {
     useSettingsStore.getState().openSettingsModal();
   }, []);

@@ -417,7 +417,8 @@ fn determine_render_info(state: &OverlayState) -> RenderInfo {
         return RenderInfo {
             clear_rect: state.adjustment.bounds.to_d2d_rect(),
             draw_border: true,
-            draw_handles: true,
+            draw_handles: !state.adjustment.is_locked
+                && !state.is_resize_locked_by_recording_mode_chooser(),
         };
     }
 
@@ -1632,7 +1633,7 @@ fn draw_window_name_indicator(
             radiusX: 8.0,
             radiusY: 8.0,
         };
-        context.FillRoundedRectangle(&rounded_rect, &d2d.brushes.text_bg);
+        context.FillRoundedRectangle(&rounded_rect, &d2d.brushes.window_label_bg);
 
         // Draw text with larger format
         context.DrawText(
