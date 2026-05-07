@@ -5,15 +5,15 @@
 
 use crate::commands::window::recording::reposition_recording_mode_chooser;
 use tauri::{Emitter, Manager};
-use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, POINT, WPARAM};
+use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
 use windows::Win32::Graphics::Gdi::{BeginPaint, EndPaint, PAINTSTRUCT};
 use windows::Win32::UI::Input::KeyboardAndMouse::{ReleaseCapture, SetCapture, VK_SHIFT};
 use windows::Win32::UI::WindowsAndMessaging::{
-    DefWindowProcW, GetCursorPos, GetWindowLongPtrW, LoadCursorW, SetCursor, SetWindowPos,
-    GWLP_USERDATA, HTCLIENT, HTTRANSPARENT, HWND_TOPMOST, IDC_ARROW, IDC_CROSS, IDC_SIZEALL,
-    SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, WM_CREATE, WM_DESTROY, WM_KEYDOWN, WM_KEYUP,
-    WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WM_NCHITTEST, WM_PAINT, WM_RBUTTONDOWN,
-    WM_SETCURSOR,
+    DefWindowProcW, GetCursorPos, GetWindowLongPtrW, GetWindowRect, IsWindowVisible, LoadCursorW,
+    SetCursor, SetWindowPos, GWLP_USERDATA, HTCLIENT, HTTRANSPARENT, HWND_TOPMOST, IDC_ARROW,
+    IDC_CROSS, IDC_SIZEALL, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, WM_CREATE, WM_DESTROY,
+    WM_KEYDOWN, WM_KEYUP, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WM_NCHITTEST, WM_PAINT,
+    WM_RBUTTONDOWN, WM_SETCURSOR,
 };
 
 use super::input::{get_area_target_at_point, get_window_at_point, hit_test_handle};
@@ -91,6 +91,13 @@ fn handle_nchittest(state_ptr: *mut OverlayState, lparam: LPARAM) -> LRESULT {
         {
             return LRESULT(HTCLIENT as isize);
         }
+        if render::hit_test_selection_hud(state, local.x, local.y) != SelectionHudHitTarget::None {
+            return LRESULT(HTCLIENT as isize);
+        }
+
+        if is_screen_point_over_auxiliary_window(state, screen_x, screen_y) {
+            return LRESULT(HTTRANSPARENT as isize);
+        }
 
         // Locked selections do not expose adjustment handles. They should stay
         // click-through except while interacting with the D2D chooser above.
@@ -103,7 +110,9 @@ fn handle_nchittest(state_ptr: *mut OverlayState, lparam: LPARAM) -> LRESULT {
             return LRESULT(HTCLIENT as isize);
         }
 
-        // Check if the cursor is on a resize handle
+        // Check if the cursor is on the selection. Toolbar/window bounds were
+        // already excluded above, so the interior remains draggable without
+        // stealing toolbar input.
         let handle = hit_test_adjustment_handle_at_screen_coords(
             &state.monitor,
             state.adjustment.bounds,
@@ -111,10 +120,8 @@ fn handle_nchittest(state_ptr: *mut OverlayState, lparam: LPARAM) -> LRESULT {
             screen_y,
         );
         if handle.is_active() {
-            // On a handle — overlay handles this click
             LRESULT(HTCLIENT as isize)
         } else {
-            // Not on a handle — pass click through to window below
             LRESULT(HTTRANSPARENT as isize)
         }
     }
@@ -151,6 +158,13 @@ fn handle_set_cursor(state_ptr: *mut OverlayState, lparam: LPARAM) -> LRESULT {
                 } else {
                     IDC_ARROW
                 }
+            } else if render::hit_test_selection_hud(
+                state,
+                state.cursor.position.x,
+                state.cursor.position.y,
+            ) != SelectionHudHitTarget::None
+            {
+                IDC_ARROW
             } else {
                 // In adjustment mode - show resize cursor based on handle
                 let handle = if state.adjustment.is_dragging {
@@ -211,7 +225,16 @@ fn handle_mouse_down(state_ptr: *mut OverlayState, lparam: LPARAM) -> LRESULT {
                 return LRESULT(0);
             }
 
-            // Check if clicking on a handle or inside selection
+            let hud_target = render::hit_test_selection_hud(state, x, y);
+            if hud_target != SelectionHudHitTarget::None {
+                handle_selection_hud_click(state, hud_target);
+                let _ = render::render(state);
+                return LRESULT(0);
+            }
+
+            // Check if clicking on a resize handle or inside the selection.
+            // WM_NCHITTEST keeps toolbar-window bounds pass-through, so
+            // interior drags still work without blocking toolbar interaction.
             let handle = hit_test_handle(x, y, state.adjustment.bounds);
             if handle.is_active() {
                 state.adjustment.start_drag(handle, Point::new(x, y));
@@ -281,6 +304,18 @@ fn handle_mouse_move(state_ptr: *mut OverlayState, lparam: LPARAM) -> LRESULT {
             }
 
             if chooser_target != RecordingModeChooserHitTarget::None {
+                return LRESULT(0);
+            }
+
+            let hud_target = render::hit_test_selection_hud(state, x, y);
+            if let Some(hud) = state.selection_hud.as_mut() {
+                if hud.hovered != hud_target {
+                    hud.hovered = hud_target;
+                    let _ = render::render(state);
+                }
+            }
+
+            if hud_target != SelectionHudHitTarget::None {
                 return LRESULT(0);
             }
         } else {
@@ -414,6 +449,54 @@ fn handle_recording_mode_chooser_click(
         },
         RecordingModeChooserHitTarget::Shell => {},
         RecordingModeChooserHitTarget::None => {},
+    }
+}
+
+fn handle_selection_hud_click(state: &mut OverlayState, target: SelectionHudHitTarget) {
+    match target {
+        SelectionHudHitTarget::Back => {
+            state.reselect();
+            emit_reset_to_startup(state);
+            let _ = state.app_handle.emit("capture-overlay-reselecting", ());
+        },
+        SelectionHudHitTarget::Capture => {
+            emit_native_selection_hud_capture(state);
+        },
+        SelectionHudHitTarget::Cancel => {
+            state.cancel();
+        },
+        SelectionHudHitTarget::Shell | SelectionHudHitTarget::None => {},
+    }
+}
+
+fn emit_native_selection_hud_capture(state: &OverlayState) {
+    let Some(hud) = &state.selection_hud else {
+        return;
+    };
+    let Some(selection) = state.get_screen_selection() else {
+        return;
+    };
+
+    let _ = state.app_handle.emit(
+        "native-selection-hud-capture",
+        serde_json::json!({
+            "owner": hud.owner,
+            "x": selection.left,
+            "y": selection.top,
+            "width": selection.width(),
+            "height": selection.height(),
+            "captureType": state.capture_type.as_str(),
+            "sourceType": "area",
+            "sourceMode": "area"
+        }),
+    );
+}
+
+fn emit_reset_to_startup(state: &OverlayState) {
+    if let Some(owner) = &state.toolbar_owner {
+        let _ = state.app_handle.emit_to(owner, "reset-to-startup", ());
+    } else {
+        let _ = state.app_handle.emit("reset-to-startup", ());
     }
 }
 
@@ -718,6 +801,63 @@ fn hit_test_adjustment_handle_at_screen_coords(
     hit_test_handle(local.x, local.y, bounds)
 }
 
+fn is_screen_point_over_auxiliary_window(
+    state: &OverlayState,
+    screen_x: i32,
+    screen_y: i32,
+) -> bool {
+    if state
+        .toolbar_owner
+        .as_deref()
+        .is_some_and(|label| is_screen_point_over_window(state, label, screen_x, screen_y))
+    {
+        return true;
+    }
+
+    [
+        crate::commands::window::CAPTURE_TOOLBAR_LABEL,
+        crate::commands::window::RECORDING_MODE_CHOOSER_LABEL,
+    ]
+    .iter()
+    .any(|label| is_screen_point_over_window(state, label, screen_x, screen_y))
+}
+
+fn is_screen_point_over_window(
+    state: &OverlayState,
+    label: &str,
+    screen_x: i32,
+    screen_y: i32,
+) -> bool {
+    let Some(win) = state.app_handle.get_webview_window(label) else {
+        return false;
+    };
+
+    if !matches!(win.is_visible(), Ok(true)) {
+        return false;
+    }
+
+    let Ok(hwnd) = win.hwnd() else {
+        return false;
+    };
+
+    unsafe {
+        let hwnd = HWND(hwnd.0);
+        if !IsWindowVisible(hwnd).as_bool() {
+            return false;
+        }
+
+        let mut rect = RECT::default();
+        if GetWindowRect(hwnd, &mut rect).is_err() {
+            return false;
+        }
+
+        screen_x >= rect.left
+            && screen_x < rect.right
+            && screen_y >= rect.top
+            && screen_y < rect.bottom
+    }
+}
+
 fn capture_mouse(hwnd: HWND) {
     unsafe {
         let _ = SetCapture(hwnd);
@@ -745,7 +885,6 @@ fn sync_recording_mode_chooser_to_selection(state: &OverlayState) {
         screen_bounds.width(),
         screen_bounds.height(),
     );
-    bring_auxiliary_window_to_front(state, "recording-mode-chooser");
 }
 
 /// Emit adjustment ready event to show the toolbar
@@ -761,8 +900,6 @@ fn emit_dimensions_update(state: &OverlayState) {
     let screen_bounds = state.monitor.local_rect_to_screen(state.adjustment.bounds);
 
     emit_selection_update(state, screen_bounds);
-
-    keep_auxiliary_windows_above_overlay(state);
 }
 
 /// Emit final selection when adjustment drag ends
@@ -770,8 +907,6 @@ fn emit_final_selection(state: &OverlayState) {
     let screen_bounds = state.monitor.local_rect_to_screen(state.adjustment.bounds);
 
     emit_selection_update(state, screen_bounds);
-
-    keep_auxiliary_windows_above_overlay(state);
 }
 
 fn emit_selection_update(state: &OverlayState, screen_bounds: Rect) {
@@ -818,14 +953,21 @@ fn emit_area_selection_confirmed(state: &OverlayState, screen_bounds: Rect) {
     );
 }
 
-fn show_toolbar(state: &OverlayState, screen_bounds: Rect, source: SourceType) {
-    let keep_area_overlay_interactive =
-        matches!(source, SourceType::Area) && !state.adjustment.is_locked;
+fn show_toolbar(state: &mut OverlayState, screen_bounds: Rect, source: SourceType) {
+    let keep_area_overlay_interactive = matches!(source, SourceType::Area)
+        && !state.adjustment.is_locked
+        && !state.auto_start_recording;
     if keep_area_overlay_interactive {
         make_overlay_interactive(state);
+        let owner = state
+            .toolbar_owner
+            .clone()
+            .unwrap_or_else(|| crate::commands::window::CAPTURE_TOOLBAR_LABEL.to_string());
+        state.selection_hud = Some(super::state::SelectionHudState::new(owner));
     } else {
         // Locked display/window selections do not expose adjustment handles, so
         // the overlay can become a visual-only layer while the control plane owns input.
+        state.selection_hud = None;
         make_overlay_click_through(state);
     }
 
@@ -843,6 +985,7 @@ fn show_toolbar(state: &OverlayState, screen_bounds: Rect, source: SourceType) {
         SourceType::Area => {
             payload["sourceType"] = serde_json::json!("area");
             payload["sourceMode"] = serde_json::json!("area");
+            payload["nativeControls"] = serde_json::json!(state.selection_hud.is_some());
         },
         SourceType::Window { id, title } => {
             payload["sourceType"] = serde_json::json!("window");
@@ -872,10 +1015,9 @@ fn show_toolbar(state: &OverlayState, screen_bounds: Rect, source: SourceType) {
         let _ = state.app_handle.emit(event_name, payload);
     }
 
-    if !state.auto_start_recording && !keep_area_overlay_interactive {
-        make_overlay_not_topmost(state);
-        schedule_toolbar_to_front(state);
-    }
+    // From here on, interaction is routed by WM_NCHITTEST: the overlay handles
+    // selection affordances and passes everything else through to the toolbar.
+    // Avoid foreground/z-order loops here; they cause visible window "dancing".
 }
 
 /// Make the overlay click-through so the toolbar receives all mouse events.
@@ -919,24 +1061,6 @@ pub(crate) fn make_overlay_interactive(state: &OverlayState) {
     }
 }
 
-fn make_overlay_not_topmost(state: &OverlayState) {
-    unsafe {
-        use windows::Win32::UI::WindowsAndMessaging::{
-            SetWindowPos, HWND_NOTOPMOST, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,
-        };
-
-        let _ = SetWindowPos(
-            state.hwnd,
-            HWND_NOTOPMOST,
-            0,
-            0,
-            0,
-            0,
-            SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE,
-        );
-    }
-}
-
 /// Bring the webcam preview window to front (above D2D overlay)
 fn bring_webcam_preview_to_front(state: &OverlayState) {
     if let Some(win) = state.app_handle.get_webview_window("webcam-preview") {
@@ -954,89 +1078,6 @@ fn bring_webcam_preview_to_front(state: &OverlayState) {
                     SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE,
                 );
                 let _ = BringWindowToTop(hwnd);
-            }
-        }
-    }
-}
-
-pub(crate) fn keep_auxiliary_windows_above_overlay(state: &OverlayState) {
-    for label in ["recording-mode-chooser", "capture-toolbar"] {
-        bring_auxiliary_window_to_front(state, label);
-    }
-    if let Some(owner) = &state.toolbar_owner {
-        bring_auxiliary_window_to_front(state, owner);
-    }
-}
-
-fn schedule_toolbar_to_front(state: &OverlayState) {
-    let app = state.app_handle.clone();
-    let label = state
-        .toolbar_owner
-        .clone()
-        .unwrap_or_else(|| crate::commands::window::CAPTURE_TOOLBAR_LABEL.to_string());
-    std::thread::spawn(move || {
-        for _ in 0..12 {
-            std::thread::sleep(std::time::Duration::from_millis(40));
-            if let Some(win) = app.get_webview_window(&label) {
-                if matches!(win.is_visible(), Ok(true)) {
-                    bring_window_to_foreground(
-                        &win,
-                        true,
-                        label == crate::commands::window::CAPTURE_TOOLBAR_LABEL,
-                    );
-                }
-            }
-        }
-    });
-}
-
-fn bring_auxiliary_window_to_front(state: &OverlayState, label: &str) {
-    let Some(win) = state.app_handle.get_webview_window(label) else {
-        return;
-    };
-
-    if !matches!(win.is_visible(), Ok(true)) {
-        return;
-    }
-
-    let is_capture_toolbar = label == crate::commands::window::CAPTURE_TOOLBAR_LABEL;
-    let is_mode_chooser = label == crate::commands::window::RECORDING_MODE_CHOOSER_LABEL;
-
-    bring_window_to_foreground(
-        &win,
-        is_capture_toolbar || label == "library",
-        is_capture_toolbar || is_mode_chooser,
-    );
-}
-
-fn bring_window_to_foreground(win: &tauri::WebviewWindow, focus: bool, topmost: bool) {
-    if let Ok(hwnd) = win.hwnd() {
-        unsafe {
-            use windows::Win32::UI::WindowsAndMessaging::{
-                BringWindowToTop, SetForegroundWindow, ShowWindow, HWND_NOTOPMOST, SWP_SHOWWINDOW,
-                SW_RESTORE, SW_SHOW,
-            };
-
-            let hwnd = HWND(hwnd.0);
-            let insert_after = if topmost {
-                HWND_TOPMOST
-            } else {
-                HWND_NOTOPMOST
-            };
-            let _ = ShowWindow(hwnd, SW_RESTORE);
-            let _ = ShowWindow(hwnd, SW_SHOW);
-            let _ = SetWindowPos(
-                hwnd,
-                insert_after,
-                0,
-                0,
-                0,
-                0,
-                SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW,
-            );
-            let _ = BringWindowToTop(hwnd);
-            if focus {
-                let _ = SetForegroundWindow(hwnd);
             }
         }
     }

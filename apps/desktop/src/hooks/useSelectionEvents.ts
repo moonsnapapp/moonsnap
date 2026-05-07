@@ -28,6 +28,7 @@ export interface SelectionBounds {
   sourceTitle?: string | null;
   monitorName?: string | null;
   monitorIndex?: number | null;
+  nativeControls?: boolean;
 }
 
 const DEFAULT_BOUNDS: SelectionBounds = { x: 0, y: 0, width: 0, height: 0 };

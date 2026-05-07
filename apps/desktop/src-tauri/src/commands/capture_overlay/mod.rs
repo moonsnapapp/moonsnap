@@ -397,6 +397,7 @@ fn run_overlay(
             monitor: monitor_info,
             drag: Default::default(),
             adjustment,
+            selection_hud: None,
             recording_mode_chooser: None,
             cursor: state::CursorState {
                 position: types::Point::new(initial_cursor_x, initial_cursor_y),
@@ -421,9 +422,6 @@ fn run_overlay(
         let state_ptr = &mut *state as *mut OverlayState;
         SetWindowLongPtrW(hwnd, GWLP_USERDATA, state_ptr as isize);
 
-        // Initial render
-        render::render(&state).map_err(|e| format!("Failed to render: {:?}", e))?;
-
         let mut deferred_preselect_area_event: Option<(
             Option<String>,
             &'static str,
@@ -438,6 +436,12 @@ fn run_overlay(
                     && state.preselected_monitor_index.is_none();
 
                 if is_preselected_area {
+                    if state.capture_type.is_recording() && !state.auto_start_recording {
+                        let owner = state.toolbar_owner.clone().unwrap_or_else(|| {
+                            crate::commands::window::CAPTURE_TOOLBAR_LABEL.to_string()
+                        });
+                        state.selection_hud = Some(state::SelectionHudState::new(owner));
+                    }
                     let event_name = if state.auto_start_recording {
                         "quick-recording-selection-ready"
                     } else if state.toolbar_owner.is_some() {
@@ -456,7 +460,8 @@ fn run_overlay(
                             "captureType": state.capture_type.as_str(),
                             "autoStartRecording": state.auto_start_recording,
                             "sourceType": "area",
-                            "sourceMode": "area"
+                            "sourceMode": "area",
+                            "nativeControls": state.selection_hud.is_some()
                         }),
                     ));
                     log::debug!("[run_overlay] Reopened preselected area for adjustment");
@@ -506,6 +511,9 @@ fn run_overlay(
                 }
             }
         }
+
+        // Initial render after any preselected-area native controls are enabled.
+        render::render(&state).map_err(|e| format!("Failed to render: {:?}", e))?;
 
         // Show window
         let _ = ShowWindow(hwnd, SW_SHOW);
@@ -629,7 +637,6 @@ fn run_overlay(
                                 .app_handle
                                 .emit("selection-updated", SelectionEvent::from(screen_sel));
                             let _ = render::render(&state);
-                            wndproc::keep_auxiliary_windows_above_overlay(&state);
                         }
                     },
                     OverlayCommand::MoveSelectionBy => {
@@ -653,7 +660,6 @@ fn run_overlay(
                                 .app_handle
                                 .emit("selection-updated", SelectionEvent::from(screen_sel));
                             let _ = render::render(&state);
-                            wndproc::keep_auxiliary_windows_above_overlay(&state);
                         }
                     },
                     OverlayCommand::None => {},

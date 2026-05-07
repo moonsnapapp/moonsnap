@@ -70,6 +70,10 @@ interface RecordingModeChooserBackPayload {
   owner?: string;
 }
 
+interface NativeSelectionHudCapturePayload extends SelectionBounds {
+  owner?: string;
+}
+
 const MIN_REUSABLE_AREA_SIZE = 20;
 
 function getCurrentAreaSelection(selection: SelectionBounds): AreaSelectionBounds | null {
@@ -209,6 +213,12 @@ const CaptureToolbarWindow: React.FC = () => {
     () => (selectionConfirmed ? getCurrentAreaSelection(selectionBounds) : null),
     [selectionBounds, selectionConfirmed]
   );
+  const isNativeSelectionHudActive = Boolean(
+    selectionConfirmed &&
+    selectionBounds.nativeControls &&
+    selectionBounds.sourceType === 'area' &&
+    mode === 'selection'
+  );
   const isCurrentAreaSaved = useMemo(
     () =>
       currentAreaSelection !== null &&
@@ -269,6 +279,7 @@ const CaptureToolbarWindow: React.FC = () => {
 
   const shouldHidePrimaryToolbarChrome =
     suppressToolbarUntilRecording ||
+    isNativeSelectionHudActive ||
     isModeChooserVisible ||
     isRecordingControlsPending ||
     isRecordingHudActive;
@@ -281,6 +292,7 @@ const CaptureToolbarWindow: React.FC = () => {
     windowReadyToShow: selectionConfirmed || isStartupContextReady,
     suppressWindowShow:
       suppressToolbarUntilRecording ||
+      isNativeSelectionHudActive ||
       suppressPrimaryToolbarDuringRecording ||
       isModeChooserVisible ||
       isRecordingControlsPending ||
@@ -527,6 +539,25 @@ const CaptureToolbarWindow: React.FC = () => {
       void handleCapture();
     };
   }, [handleCapture]);
+
+  useEffect(() => {
+    const unlisten = listen<NativeSelectionHudCapturePayload>(
+      'native-selection-hud-capture',
+      (event) => {
+        if (event.payload.owner && event.payload.owner !== 'capture-toolbar') {
+          return;
+        }
+
+        window.setTimeout(() => {
+          handleCaptureRef.current();
+        }, 30);
+      }
+    );
+
+    return () => {
+      unlisten.then((fn) => fn()).catch(() => {});
+    };
+  }, []);
 
   const handleRedo = useCallback(async () => {
     try {

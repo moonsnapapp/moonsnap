@@ -50,6 +50,14 @@ pub const RECORDING_MODE_CHOOSER_WIDTH: i32 = 504;
 pub const RECORDING_MODE_CHOOSER_HEIGHT: i32 = 252;
 pub const RECORDING_MODE_CHOOSER_MARGIN: i32 = 16;
 pub const RECORDING_MODE_CHOOSER_BACK_SIZE: i32 = 36;
+pub const SELECTION_HUD_WIDTH: i32 = 420;
+pub const SELECTION_HUD_HEIGHT: i32 = 54;
+pub const SELECTION_HUD_MARGIN: i32 = 14;
+pub const SELECTION_HUD_BUTTON_HEIGHT: i32 = 34;
+pub const SELECTION_HUD_BUTTON_TOP: i32 = 10;
+pub const SELECTION_HUD_BACK_WIDTH: i32 = 72;
+pub const SELECTION_HUD_CAPTURE_WIDTH: i32 = 92;
+pub const SELECTION_HUD_CANCEL_WIDTH: i32 = 76;
 
 /// Extended window style for DirectComposition (no redirection bitmap)
 pub const WS_EX_NOREDIRECTIONBITMAP: u32 = 0x00200000;
@@ -376,6 +384,16 @@ pub enum RecordingModeChooserHitTarget {
     Quick,
     Studio,
     Remember,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum SelectionHudHitTarget {
+    #[default]
+    None,
+    Shell,
+    Back,
+    Capture,
+    Cancel,
 }
 
 impl DetectedWindow {

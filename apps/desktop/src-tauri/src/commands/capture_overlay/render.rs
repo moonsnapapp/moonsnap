@@ -89,6 +89,8 @@ pub fn render(state: &OverlayState) -> Result<()> {
 
         if state.recording_mode_chooser.is_some() {
             draw_recording_mode_chooser(&d2d.context, d2d, state)?;
+        } else if state.selection_hud.is_some() {
+            draw_selection_hud(&d2d.context, d2d, state)?;
         }
 
         d2d.context.EndDraw(None, None)?;
@@ -168,6 +170,78 @@ pub fn hit_test_recording_mode_chooser(
     }
 
     RecordingModeChooserHitTarget::Shell
+}
+
+pub fn selection_hud_rect(state: &OverlayState) -> Option<Rect> {
+    if state.recording_mode_chooser.is_some() {
+        return None;
+    }
+
+    state.selection_hud.as_ref()?;
+
+    let selection = state.get_local_selection()?;
+    let (selection_center_x, _) = selection.center();
+    let width = SELECTION_HUD_WIDTH;
+    let height = SELECTION_HUD_HEIGHT;
+
+    let max_left = state.monitor.width as i32 - width - SELECTION_HUD_MARGIN;
+    let left = (selection_center_x - width / 2)
+        .clamp(SELECTION_HUD_MARGIN, max_left.max(SELECTION_HUD_MARGIN));
+
+    let below = selection.bottom + SELECTION_HUD_MARGIN;
+    let above = selection.top - SELECTION_HUD_MARGIN - height;
+    let max_top = state.monitor.height as i32 - height - SELECTION_HUD_MARGIN;
+    let top = if below <= max_top {
+        below
+    } else {
+        above.clamp(SELECTION_HUD_MARGIN, max_top.max(SELECTION_HUD_MARGIN))
+    };
+
+    Some(Rect::new(left, top, left + width, top + height))
+}
+
+pub fn hit_test_selection_hud(state: &OverlayState, x: i32, y: i32) -> SelectionHudHitTarget {
+    let Some(shell) = selection_hud_rect(state) else {
+        return SelectionHudHitTarget::None;
+    };
+    if !shell.contains(x, y) {
+        return SelectionHudHitTarget::None;
+    }
+
+    let button_top = shell.top + SELECTION_HUD_BUTTON_TOP;
+    let button_bottom = button_top + SELECTION_HUD_BUTTON_HEIGHT;
+
+    let back = Rect::new(
+        shell.left + 10,
+        button_top,
+        shell.left + 10 + SELECTION_HUD_BACK_WIDTH,
+        button_bottom,
+    );
+    if back.contains(x, y) {
+        return SelectionHudHitTarget::Back;
+    }
+
+    let cancel = Rect::new(
+        shell.right - 10 - SELECTION_HUD_CANCEL_WIDTH,
+        button_top,
+        shell.right - 10,
+        button_bottom,
+    );
+    if cancel.contains(x, y) {
+        return SelectionHudHitTarget::Cancel;
+    }
+
+    let capture = Rect::new(
+        cancel.left - 8 - SELECTION_HUD_CAPTURE_WIDTH,
+        button_top,
+        cancel.left - 8,
+        button_bottom,
+    );
+    if capture.contains(x, y) {
+        return SelectionHudHitTarget::Capture;
+    }
+
+    SelectionHudHitTarget::Shell
 }
 
 /// Information about what to render.
@@ -705,6 +779,148 @@ fn draw_resize_handles(context: &ID2D1DeviceContext, brushes: &Brushes, rect: D2
     draw_handle(cx, bottom); // Bottom
     draw_handle(left, cy); // Left
     draw_handle(right, cy); // Right
+}
+
+fn draw_selection_hud(
+    context: &ID2D1DeviceContext,
+    d2d: &D2DResources,
+    state: &OverlayState,
+) -> Result<()> {
+    let Some(hud) = &state.selection_hud else {
+        return Ok(());
+    };
+    let Some(shell) = selection_hud_rect(state) else {
+        return Ok(());
+    };
+    let Some(selection) = state.get_local_selection() else {
+        return Ok(());
+    };
+
+    let button_top = shell.top + SELECTION_HUD_BUTTON_TOP;
+    let button_bottom = button_top + SELECTION_HUD_BUTTON_HEIGHT;
+    let back_rect = Rect::new(
+        shell.left + 10,
+        button_top,
+        shell.left + 10 + SELECTION_HUD_BACK_WIDTH,
+        button_bottom,
+    );
+    let cancel_rect = Rect::new(
+        shell.right - 10 - SELECTION_HUD_CANCEL_WIDTH,
+        button_top,
+        shell.right - 10,
+        button_bottom,
+    );
+    let capture_rect = Rect::new(
+        cancel_rect.left - 8 - SELECTION_HUD_CAPTURE_WIDTH,
+        button_top,
+        cancel_rect.left - 8,
+        button_bottom,
+    );
+    let size_rect = D2D_RECT_F {
+        left: back_rect.right as f32 + 10.0,
+        top: button_top as f32,
+        right: capture_rect.left as f32 - 10.0,
+        bottom: button_bottom as f32,
+    };
+    let capture_label = match state.capture_type {
+        CaptureType::Gif => "GIF",
+        _ => "Record",
+    };
+    let size_text = format!("{} x {}", selection.width(), selection.height());
+
+    unsafe {
+        let rounded_shell = D2D1_ROUNDED_RECT {
+            rect: shell.to_d2d_rect(),
+            radiusX: 14.0,
+            radiusY: 14.0,
+        };
+        let shell_brush = create_vertical_gradient(
+            context,
+            shell.to_d2d_rect(),
+            [
+                gradient_stop(0.0, 0.12, 0.12, 0.14, 0.97),
+                gradient_stop(1.0, 0.045, 0.047, 0.055, 0.97),
+            ],
+        )?;
+        context.FillRoundedRectangle(&rounded_shell, &shell_brush);
+        context.DrawRoundedRectangle(&rounded_shell, &d2d.brushes.chooser_border, 1.0, None);
+
+        draw_hud_button(
+            context,
+            d2d,
+            back_rect,
+            "Back",
+            hud.hovered == SelectionHudHitTarget::Back,
+            false,
+        )?;
+        draw_text_with_style(
+            context,
+            &size_text,
+            size_rect,
+            &d2d.text_format_small,
+            &d2d.brushes.chooser_muted_text,
+        );
+        draw_hud_button(
+            context,
+            d2d,
+            capture_rect,
+            capture_label,
+            hud.hovered == SelectionHudHitTarget::Capture,
+            true,
+        )?;
+        draw_hud_button(
+            context,
+            d2d,
+            cancel_rect,
+            "Cancel",
+            hud.hovered == SelectionHudHitTarget::Cancel,
+            false,
+        )?;
+    }
+
+    Ok(())
+}
+
+fn draw_hud_button(
+    context: &ID2D1DeviceContext,
+    d2d: &D2DResources,
+    rect: Rect,
+    label: &str,
+    is_hovered: bool,
+    is_primary: bool,
+) -> Result<()> {
+    unsafe {
+        let rounded = D2D1_ROUNDED_RECT {
+            rect: rect.to_d2d_rect(),
+            radiusX: 9.0,
+            radiusY: 9.0,
+        };
+        if is_primary {
+            let brush = create_vertical_gradient(
+                context,
+                rect.to_d2d_rect(),
+                [
+                    gradient_stop(0.0, 0.12, 0.48, 0.95, if is_hovered { 0.96 } else { 0.86 }),
+                    gradient_stop(1.0, 0.02, 0.32, 0.82, if is_hovered { 0.96 } else { 0.86 }),
+                ],
+            )?;
+            context.FillRoundedRectangle(&rounded, &brush);
+        } else if is_hovered {
+            context.FillRoundedRectangle(&rounded, &d2d.brushes.chooser_surface_hover);
+        } else {
+            context.FillRoundedRectangle(&rounded, &d2d.brushes.chooser_surface);
+        }
+        context.DrawRoundedRectangle(&rounded, &d2d.brushes.chooser_border, 1.0, None);
+        draw_text_with_style(
+            context,
+            label,
+            rect.to_d2d_rect(),
+            &d2d.text_format_tiny,
+            &d2d.brushes.text,
+        );
+    }
+
+    Ok(())
 }
 
 fn draw_recording_mode_chooser(

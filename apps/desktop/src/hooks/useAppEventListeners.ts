@@ -128,10 +128,11 @@ export function useAppEventListeners(callbacks: AppEventCallbacks) {
         sourceTitle?: string | null;
         monitorIndex?: number | null;
         monitorName?: string | null;
+        nativeControls?: boolean;
       }>(
         'create-capture-toolbar',
         async (event) => {
-          const { x, y, width, height, captureType, autoStartRecording, sourceType, windowId, sourceTitle, monitorIndex, monitorName } = event.payload;
+          const { x, y, width, height, captureType, autoStartRecording, sourceType, windowId, sourceTitle, monitorIndex, monitorName, nativeControls } = event.payload;
           const sourceMode = sourceType ?? 'area';
           const captureSettingsStore = useCaptureSettingsStore.getState();
           if (!captureSettingsStore.isInitialized) {
@@ -168,9 +169,10 @@ export function useAppEventListeners(callbacks: AppEventCallbacks) {
               windowId,
               sourceTitle,
               monitorIndex,
-              monitorName
+              monitorName,
+              nativeControls
             });
-            if (!autoStartRecording) {
+            if (!autoStartRecording && !nativeControls) {
               await existing.show();
               await existing.setFocus();
             }
