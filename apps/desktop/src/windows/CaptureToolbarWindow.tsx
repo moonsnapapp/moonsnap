@@ -207,6 +207,7 @@ const CaptureToolbarWindow: React.FC = () => {
   const pendingStartupContextRef = useRef<StartupToolbarContext | null>(null);
   const shouldAutoStartAreaSelectionRef = useRef(false);
   const autoStartRecordingTriggeredRef = useRef(false);
+  const areaSelectionFlowActiveRef = useRef(false);
 
   const {
     selectionBounds,
@@ -358,6 +359,7 @@ const CaptureToolbarWindow: React.FC = () => {
   const restoreStartupToolbarWindow = useCallback(async () => {
     suppressStartupEscapeBriefly();
 
+    areaSelectionFlowActiveRef.current = false;
     chooserSelectionHandledRef.current = false;
     recordingStartupInProgressRef.current = false;
     chooserRestorePositionRef.current = null;
@@ -389,12 +391,14 @@ const CaptureToolbarWindow: React.FC = () => {
     const handleKeyDown = async (e: KeyboardEvent) => {
       if (e.key === 'Escape' && mode === 'selection' && !e.repeat) {
         e.preventDefault();
+        e.stopPropagation();
+        e.stopImmediatePropagation();
 
         if (escHandledRef.current) return;
 
         await closeWebcamPreview();
 
-        if (selectionConfirmed) {
+        if (selectionConfirmed || areaSelectionFlowActiveRef.current) {
           escHandledRef.current = true;
           try {
             await invoke('capture_overlay_cancel_to_startup');
@@ -461,6 +465,7 @@ const CaptureToolbarWindow: React.FC = () => {
         const currentWindow = getCurrentWebviewWindow();
 
         if (captureSource === 'display') {
+          areaSelectionFlowActiveRef.current = false;
           await currentWindow.hide();
 
           if (captureType === 'screenshot') {
@@ -477,6 +482,7 @@ const CaptureToolbarWindow: React.FC = () => {
           }
         } else {
           const ctStr = captureType === 'screenshot' ? 'screenshot' : captureType === 'gif' ? 'gif' : 'video';
+          areaSelectionFlowActiveRef.current = captureSource === 'area';
           await currentWindow.hide();
           await invoke('show_overlay', { captureType: ctStr });
         }
@@ -569,6 +575,7 @@ const CaptureToolbarWindow: React.FC = () => {
       }
     } catch (e) {
       toolbarLogger.error('Failed to capture:', e);
+      areaSelectionFlowActiveRef.current = false;
       recordingInitiatedRef.current = false;
       recordingStartupInProgressRef.current = false;
       chooserSelectionHandledRef.current = false;
@@ -638,6 +645,14 @@ const CaptureToolbarWindow: React.FC = () => {
         }
         await emit('reset-to-startup', null);
         await restoreStartupToolbarWindow();
+      } else if (areaSelectionFlowActiveRef.current) {
+        try {
+          await invoke('capture_overlay_cancel_to_startup');
+        } catch {
+          // Overlay may already be closed.
+        }
+        await emit('reset-to-startup', null);
+        await restoreStartupToolbarWindow();
       } else {
         const currentWindow = getCurrentWebviewWindow();
         await currentWindow.close();
@@ -687,6 +702,7 @@ const CaptureToolbarWindow: React.FC = () => {
 
       try {
         if (source === 'display') {
+          areaSelectionFlowActiveRef.current = false;
           await currentWindow.hide();
 
           if (captureType === 'screenshot') {
@@ -703,11 +719,13 @@ const CaptureToolbarWindow: React.FC = () => {
           }
         } else {
           const ctStr = captureType === 'screenshot' ? 'screenshot' : captureType === 'gif' ? 'gif' : 'video';
+          areaSelectionFlowActiveRef.current = source === 'area';
           await currentWindow.hide();
           await invoke('show_overlay', { captureType: ctStr });
         }
       } catch (e) {
         toolbarLogger.error('Failed to trigger capture:', e);
+        areaSelectionFlowActiveRef.current = false;
         await currentWindow.show();
       }
     }
@@ -725,6 +743,7 @@ const CaptureToolbarWindow: React.FC = () => {
       }
 
       setLastAreaSelection(reusableSelection);
+      areaSelectionFlowActiveRef.current = true;
       await currentWindow.hide();
 
       if (captureType === 'screenshot') {
@@ -749,6 +768,7 @@ const CaptureToolbarWindow: React.FC = () => {
       });
     } catch (error) {
       toolbarLogger.error('Failed to reuse saved area:', error);
+      areaSelectionFlowActiveRef.current = false;
       await currentWindow.show().catch(() => {});
     }
   }, [captureType, setLastAreaSelection]);
@@ -834,6 +854,21 @@ const CaptureToolbarWindow: React.FC = () => {
   }, [handleSaveCurrentArea]);
 
   useEffect(() => {
+    const unlistenConfirm = listen('confirm-selection', () => {
+      areaSelectionFlowActiveRef.current = false;
+    });
+
+    const unlistenReset = listen('reset-to-startup', () => {
+      areaSelectionFlowActiveRef.current = false;
+    });
+
+    return () => {
+      unlistenConfirm.then((fn) => fn()).catch(() => {});
+      unlistenReset.then((fn) => fn()).catch(() => {});
+    };
+  }, []);
+
+  useEffect(() => {
     const unlisten = listen<NativeSelectionHudDeleteSavedAreaPayload>(
       'native-selection-hud-delete-saved-area',
       (event) => {
@@ -910,6 +945,7 @@ const CaptureToolbarWindow: React.FC = () => {
   }, [mode, setCaptureType]);
 
   const applyStartupToolbarContext = useCallback((context: StartupToolbarContext) => {
+    areaSelectionFlowActiveRef.current = false;
     setMode('selection');
     resetSelectionToStartup();
     setIsModeChooserVisible(false);
