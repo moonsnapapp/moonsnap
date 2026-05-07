@@ -196,6 +196,7 @@ export function useAppEventListeners(callbacks: AppEventCallbacks) {
             monitorIndex,
             monitorName,
             snapToolbarToSelection,
+            nativeControls,
           });
         }
       )

@@ -724,6 +724,23 @@ const CaptureToolbarWindow: React.FC = () => {
     saveAreaSelection(currentAreaSelection);
   }, [currentAreaSelection, isAreaSaveDisabled, saveAreaSelection]);
 
+  useEffect(() => {
+    const unlisten = listen<NativeSelectionHudCapturePayload>(
+      'native-selection-hud-save-area',
+      (event) => {
+        if (event.payload.owner && event.payload.owner !== 'capture-toolbar') {
+          return;
+        }
+
+        handleSaveCurrentArea();
+      }
+    );
+
+    return () => {
+      unlisten.then((fn) => fn()).catch(() => {});
+    };
+  }, [handleSaveCurrentArea]);
+
   const handleOpenSettings = useCallback(() => {
     useSettingsStore.getState().openSettingsModal();
   }, []);

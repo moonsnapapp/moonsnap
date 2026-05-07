@@ -180,24 +180,68 @@ pub fn selection_hud_rect(state: &OverlayState) -> Option<Rect> {
     state.selection_hud.as_ref()?;
 
     let selection = state.get_local_selection()?;
+    let monitor_bounds = selection_monitor_local_rect(state, selection);
     let (selection_center_x, _) = selection.center();
     let width = SELECTION_HUD_WIDTH;
     let height = SELECTION_HUD_HEIGHT;
 
-    let max_left = state.monitor.width as i32 - width - SELECTION_HUD_MARGIN;
-    let left = (selection_center_x - width / 2)
-        .clamp(SELECTION_HUD_MARGIN, max_left.max(SELECTION_HUD_MARGIN));
+    let min_left = monitor_bounds.left + SELECTION_HUD_MARGIN;
+    let max_left = monitor_bounds.right - width - SELECTION_HUD_MARGIN;
+    let preferred_left = selection_center_x - width / 2;
+    let left = if min_left <= max_left {
+        preferred_left.clamp(min_left, max_left)
+    } else {
+        monitor_bounds.left + (monitor_bounds.width() as i32 - width) / 2
+    };
 
     let below = selection.bottom + SELECTION_HUD_MARGIN;
     let above = selection.top - SELECTION_HUD_MARGIN - height;
-    let max_top = state.monitor.height as i32 - height - SELECTION_HUD_MARGIN;
+    let min_top = monitor_bounds.top + SELECTION_HUD_MARGIN;
+    let max_top = monitor_bounds.bottom - height - SELECTION_HUD_MARGIN;
     let top = if below <= max_top {
-        below
+        below.max(min_top)
+    } else if above >= min_top {
+        above.min(max_top)
     } else {
-        above.clamp(SELECTION_HUD_MARGIN, max_top.max(SELECTION_HUD_MARGIN))
+        let inside_bottom = selection.bottom - height - SELECTION_HUD_MARGIN;
+        inside_bottom.clamp(min_top, max_top.max(min_top))
     };
 
     Some(Rect::new(left, top, left + width, top + height))
+}
+
+fn selection_monitor_local_rect(state: &OverlayState, selection: Rect) -> Rect {
+    let fallback = Rect::from_xywh(0, 0, state.monitor.width, state.monitor.height);
+    let (center_x, center_y) = selection.center();
+    let screen_center = state
+        .monitor
+        .local_to_screen(Point::new(center_x, center_y));
+
+    let Ok(monitors) = xcap::Monitor::all() else {
+        return fallback;
+    };
+
+    let Some(monitor) = monitors.iter().find(|monitor| {
+        let left = monitor.x().unwrap_or(0);
+        let top = monitor.y().unwrap_or(0);
+        let right = left + monitor.width().unwrap_or(0) as i32;
+        let bottom = top + monitor.height().unwrap_or(0) as i32;
+
+        screen_center.x >= left
+            && screen_center.x < right
+            && screen_center.y >= top
+            && screen_center.y < bottom
+    }) else {
+        return fallback;
+    };
+
+    let screen_rect = Rect::from_xywh(
+        monitor.x().unwrap_or(state.monitor.x),
+        monitor.y().unwrap_or(state.monitor.y),
+        monitor.width().unwrap_or(state.monitor.width),
+        monitor.height().unwrap_or(state.monitor.height),
+    );
+    state.monitor.screen_rect_to_local(screen_rect)
 }
 
 pub fn hit_test_selection_hud(state: &OverlayState, x: i32, y: i32) -> SelectionHudHitTarget {
@@ -219,6 +263,58 @@ pub fn hit_test_selection_hud(state: &OverlayState, x: i32, y: i32) -> Selection
     );
     if back.contains(x, y) {
         return SelectionHudHitTarget::Back;
+    }
+
+    let preset = Rect::new(
+        back.right + SELECTION_HUD_BUTTON_GAP,
+        button_top,
+        back.right + SELECTION_HUD_BUTTON_GAP + SELECTION_HUD_PRESET_WIDTH,
+        button_bottom,
+    );
+    if preset.contains(x, y) {
+        return SelectionHudHitTarget::Preset;
+    }
+
+    let width_group = Rect::new(
+        preset.right + SELECTION_HUD_BUTTON_GAP,
+        button_top,
+        preset.right + SELECTION_HUD_BUTTON_GAP + SELECTION_HUD_DIMENSION_WIDTH,
+        button_bottom,
+    );
+    if width_group.contains(x, y) {
+        if x < width_group.left + SELECTION_HUD_STEP_BUTTON_WIDTH {
+            return SelectionHudHitTarget::WidthDown;
+        }
+        if x >= width_group.right - SELECTION_HUD_STEP_BUTTON_WIDTH {
+            return SelectionHudHitTarget::WidthUp;
+        }
+        return SelectionHudHitTarget::WidthInput;
+    }
+
+    let height_group = Rect::new(
+        width_group.right + SELECTION_HUD_BUTTON_GAP,
+        button_top,
+        width_group.right + SELECTION_HUD_BUTTON_GAP + SELECTION_HUD_DIMENSION_WIDTH,
+        button_bottom,
+    );
+    if height_group.contains(x, y) {
+        if x < height_group.left + SELECTION_HUD_STEP_BUTTON_WIDTH {
+            return SelectionHudHitTarget::HeightDown;
+        }
+        if x >= height_group.right - SELECTION_HUD_STEP_BUTTON_WIDTH {
+            return SelectionHudHitTarget::HeightUp;
+        }
+        return SelectionHudHitTarget::HeightInput;
+    }
+
+    let save = Rect::new(
+        height_group.right + SELECTION_HUD_BUTTON_GAP,
+        button_top,
+        height_group.right + SELECTION_HUD_BUTTON_GAP + SELECTION_HUD_SAVE_WIDTH,
+        button_bottom,
+    );
+    if save.contains(x, y) {
+        return SelectionHudHitTarget::Save;
     }
 
     let cancel = Rect::new(
@@ -804,6 +900,30 @@ fn draw_selection_hud(
         shell.left + 10 + SELECTION_HUD_BACK_WIDTH,
         button_bottom,
     );
+    let preset_rect = Rect::new(
+        back_rect.right + SELECTION_HUD_BUTTON_GAP,
+        button_top,
+        back_rect.right + SELECTION_HUD_BUTTON_GAP + SELECTION_HUD_PRESET_WIDTH,
+        button_bottom,
+    );
+    let width_rect = Rect::new(
+        preset_rect.right + SELECTION_HUD_BUTTON_GAP,
+        button_top,
+        preset_rect.right + SELECTION_HUD_BUTTON_GAP + SELECTION_HUD_DIMENSION_WIDTH,
+        button_bottom,
+    );
+    let height_rect = Rect::new(
+        width_rect.right + SELECTION_HUD_BUTTON_GAP,
+        button_top,
+        width_rect.right + SELECTION_HUD_BUTTON_GAP + SELECTION_HUD_DIMENSION_WIDTH,
+        button_bottom,
+    );
+    let save_rect = Rect::new(
+        height_rect.right + SELECTION_HUD_BUTTON_GAP,
+        button_top,
+        height_rect.right + SELECTION_HUD_BUTTON_GAP + SELECTION_HUD_SAVE_WIDTH,
+        button_bottom,
+    );
     let cancel_rect = Rect::new(
         shell.right - 10 - SELECTION_HUD_CANCEL_WIDTH,
         button_top,
@@ -816,17 +936,20 @@ fn draw_selection_hud(
         cancel_rect.left - 8,
         button_bottom,
     );
-    let size_rect = D2D_RECT_F {
-        left: back_rect.right as f32 + 10.0,
-        top: button_top as f32,
-        right: capture_rect.left as f32 - 10.0,
-        bottom: button_bottom as f32,
-    };
     let capture_label = match state.capture_type {
         CaptureType::Gif => "GIF",
         _ => "Record",
     };
-    let size_text = format!("{} x {}", selection.width(), selection.height());
+    let width_text = if hud.editing_dimension == Some(SelectionHudDimensionEdit::Width) {
+        format!("W {}_", hud.dimension_input)
+    } else {
+        format!("W {}", selection.width())
+    };
+    let height_text = if hud.editing_dimension == Some(SelectionHudDimensionEdit::Height) {
+        format!("H {}_", hud.dimension_input)
+    } else {
+        format!("H {}", selection.height())
+    };
 
     unsafe {
         let rounded_shell = D2D1_ROUNDED_RECT {
@@ -853,13 +976,42 @@ fn draw_selection_hud(
             hud.hovered == SelectionHudHitTarget::Back,
             false,
         )?;
-        draw_text_with_style(
+        draw_hud_button(
             context,
-            &size_text,
-            size_rect,
-            &d2d.text_format_small,
-            &d2d.brushes.chooser_muted_text,
-        );
+            d2d,
+            preset_rect,
+            "Preset",
+            hud.hovered == SelectionHudHitTarget::Preset,
+            false,
+        )?;
+        draw_dimension_stepper(
+            context,
+            d2d,
+            width_rect,
+            &width_text,
+            hud.hovered == SelectionHudHitTarget::WidthDown,
+            hud.hovered == SelectionHudHitTarget::WidthUp,
+            hud.hovered == SelectionHudHitTarget::WidthInput,
+            hud.editing_dimension == Some(SelectionHudDimensionEdit::Width),
+        )?;
+        draw_dimension_stepper(
+            context,
+            d2d,
+            height_rect,
+            &height_text,
+            hud.hovered == SelectionHudHitTarget::HeightDown,
+            hud.hovered == SelectionHudHitTarget::HeightUp,
+            hud.hovered == SelectionHudHitTarget::HeightInput,
+            hud.editing_dimension == Some(SelectionHudDimensionEdit::Height),
+        )?;
+        draw_hud_button(
+            context,
+            d2d,
+            save_rect,
+            "Save",
+            hud.hovered == SelectionHudHitTarget::Save,
+            false,
+        )?;
         draw_hud_button(
             context,
             d2d,
@@ -876,6 +1028,99 @@ fn draw_selection_hud(
             hud.hovered == SelectionHudHitTarget::Cancel,
             false,
         )?;
+    }
+
+    Ok(())
+}
+
+fn draw_dimension_stepper(
+    context: &ID2D1DeviceContext,
+    d2d: &D2DResources,
+    rect: Rect,
+    label: &str,
+    is_minus_hovered: bool,
+    is_plus_hovered: bool,
+    is_input_hovered: bool,
+    is_input_active: bool,
+) -> Result<()> {
+    unsafe {
+        let rounded = D2D1_ROUNDED_RECT {
+            rect: rect.to_d2d_rect(),
+            radiusX: 9.0,
+            radiusY: 9.0,
+        };
+        if is_input_active {
+            context.FillRoundedRectangle(&rounded, &d2d.brushes.chooser_surface_hover);
+        } else {
+            context.FillRoundedRectangle(&rounded, &d2d.brushes.chooser_surface);
+        }
+        context.DrawRoundedRectangle(&rounded, &d2d.brushes.chooser_border, 1.0, None);
+
+        let minus_rect = Rect::new(
+            rect.left,
+            rect.top,
+            rect.left + SELECTION_HUD_STEP_BUTTON_WIDTH,
+            rect.bottom,
+        );
+        let plus_rect = Rect::new(
+            rect.right - SELECTION_HUD_STEP_BUTTON_WIDTH,
+            rect.top,
+            rect.right,
+            rect.bottom,
+        );
+
+        if is_minus_hovered {
+            context.FillRoundedRectangle(
+                &D2D1_ROUNDED_RECT {
+                    rect: minus_rect.to_d2d_rect(),
+                    radiusX: 9.0,
+                    radiusY: 9.0,
+                },
+                &d2d.brushes.chooser_surface_hover,
+            );
+        }
+        if is_plus_hovered {
+            context.FillRoundedRectangle(
+                &D2D1_ROUNDED_RECT {
+                    rect: plus_rect.to_d2d_rect(),
+                    radiusX: 9.0,
+                    radiusY: 9.0,
+                },
+                &d2d.brushes.chooser_surface_hover,
+            );
+        }
+
+        let input_rect = D2D_RECT_F {
+            left: minus_rect.right as f32,
+            top: rect.top as f32,
+            right: plus_rect.left as f32,
+            bottom: rect.bottom as f32,
+        };
+        if is_input_hovered && !is_input_active {
+            context.FillRectangle(&input_rect, &d2d.brushes.chooser_surface_hover);
+        }
+
+        draw_text_with_style(
+            context,
+            "-",
+            minus_rect.to_d2d_rect(),
+            &d2d.text_format_small,
+            &d2d.brushes.text,
+        );
+        draw_text_with_style(
+            context,
+            "+",
+            plus_rect.to_d2d_rect(),
+            &d2d.text_format_small,
+            &d2d.brushes.text,
+        );
+        draw_text_with_style(
+            context,
+            label,
+            input_rect,
+            &d2d.text_format_tiny,
+            &d2d.brushes.chooser_muted_text,
+        );
     }
 
     Ok(())

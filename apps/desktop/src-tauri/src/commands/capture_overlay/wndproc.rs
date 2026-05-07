@@ -9,11 +9,12 @@ use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
 use windows::Win32::Graphics::Gdi::{BeginPaint, EndPaint, PAINTSTRUCT};
 use windows::Win32::UI::Input::KeyboardAndMouse::{ReleaseCapture, SetCapture, VK_SHIFT};
 use windows::Win32::UI::WindowsAndMessaging::{
-    DefWindowProcW, GetCursorPos, GetWindowLongPtrW, GetWindowRect, IsWindowVisible, LoadCursorW,
-    SetCursor, SetWindowPos, GWLP_USERDATA, HTCLIENT, HTTRANSPARENT, HWND_TOPMOST, IDC_ARROW,
-    IDC_CROSS, IDC_SIZEALL, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, WM_CREATE, WM_DESTROY,
-    WM_KEYDOWN, WM_KEYUP, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WM_NCHITTEST, WM_PAINT,
-    WM_RBUTTONDOWN, WM_SETCURSOR,
+    AppendMenuW, CreatePopupMenu, DefWindowProcW, DestroyMenu, GetCursorPos, GetWindowLongPtrW,
+    GetWindowRect, IsWindowVisible, LoadCursorW, SetCursor, SetWindowPos, TrackPopupMenu,
+    GWLP_USERDATA, HTCLIENT, HTTRANSPARENT, HWND_TOPMOST, IDC_ARROW, IDC_CROSS, IDC_SIZEALL,
+    MF_STRING, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, TPM_LEFTALIGN, TPM_RETURNCMD, TPM_TOPALIGN,
+    WM_CHAR, WM_CREATE, WM_DESTROY, WM_KEYDOWN, WM_KEYUP, WM_LBUTTONDOWN, WM_LBUTTONUP,
+    WM_MOUSEMOVE, WM_NCHITTEST, WM_PAINT, WM_RBUTTONDOWN, WM_SETCURSOR,
 };
 
 use super::input::{get_area_target_at_point, get_window_at_point, hit_test_handle};
@@ -24,6 +25,15 @@ use super::types::*;
 /// Virtual key codes
 const VK_ESCAPE: u32 = 0x1B;
 const VK_RETURN: u32 = 0x0D;
+const VK_BACK: u32 = 0x08;
+const DIMENSION_PRESETS: [(&str, u32, u32); 6] = [
+    ("1080p", 1920, 1080),
+    ("720p", 1280, 720),
+    ("480p", 854, 480),
+    ("4:3", 640, 480),
+    ("Square", 1080, 1080),
+    ("Story", 1080, 1920),
+];
 
 /// Window procedure for the overlay.
 ///
@@ -48,6 +58,7 @@ pub unsafe extern "system" fn wnd_proc(
         WM_LBUTTONUP => handle_mouse_up(state_ptr),
         WM_KEYDOWN => handle_key_down(state_ptr, wparam),
         WM_KEYUP => handle_key_up(state_ptr, wparam),
+        WM_CHAR => handle_char(state_ptr, wparam),
         WM_RBUTTONDOWN => LRESULT(0), // Ignore right-click
         _ => DefWindowProcW(hwnd, msg, wparam, lparam),
     }
@@ -459,14 +470,148 @@ fn handle_selection_hud_click(state: &mut OverlayState, target: SelectionHudHitT
             emit_reset_to_startup(state);
             let _ = state.app_handle.emit("capture-overlay-reselecting", ());
         },
+        SelectionHudHitTarget::Preset => {
+            show_dimension_preset_menu(state);
+        },
+        SelectionHudHitTarget::WidthInput => {
+            let width = state.adjustment.bounds.width();
+            if let Some(hud) = state.selection_hud.as_mut() {
+                hud.begin_dimension_edit(SelectionHudDimensionEdit::Width, width);
+            }
+        },
+        SelectionHudHitTarget::HeightInput => {
+            let height = state.adjustment.bounds.height();
+            if let Some(hud) = state.selection_hud.as_mut() {
+                hud.begin_dimension_edit(SelectionHudDimensionEdit::Height, height);
+            }
+        },
+        SelectionHudHitTarget::WidthDown => {
+            clear_dimension_edit(state);
+            adjust_selection_dimensions(state, -SELECTION_HUD_DIMENSION_STEP, 0);
+        },
+        SelectionHudHitTarget::WidthUp => {
+            clear_dimension_edit(state);
+            adjust_selection_dimensions(state, SELECTION_HUD_DIMENSION_STEP, 0);
+        },
+        SelectionHudHitTarget::HeightDown => {
+            clear_dimension_edit(state);
+            adjust_selection_dimensions(state, 0, -SELECTION_HUD_DIMENSION_STEP);
+        },
+        SelectionHudHitTarget::HeightUp => {
+            clear_dimension_edit(state);
+            adjust_selection_dimensions(state, 0, SELECTION_HUD_DIMENSION_STEP);
+        },
+        SelectionHudHitTarget::Save => {
+            emit_native_selection_hud_save_area(state);
+        },
         SelectionHudHitTarget::Capture => {
             emit_native_selection_hud_capture(state);
         },
         SelectionHudHitTarget::Cancel => {
             state.cancel();
         },
-        SelectionHudHitTarget::Shell | SelectionHudHitTarget::None => {},
+        SelectionHudHitTarget::Shell | SelectionHudHitTarget::None => {
+            clear_dimension_edit(state);
+        },
     }
+}
+
+fn clear_dimension_edit(state: &mut OverlayState) {
+    if let Some(hud) = state.selection_hud.as_mut() {
+        hud.clear_dimension_edit();
+    }
+}
+
+fn adjust_selection_dimensions(state: &mut OverlayState, width_delta: i32, height_delta: i32) {
+    if state.adjustment.is_locked {
+        return;
+    }
+
+    let current = state.adjustment.bounds;
+    let new_width = (current.width() as i32 + width_delta).max(MIN_SELECTION_SIZE) as u32;
+    let new_height = (current.height() as i32 + height_delta).max(MIN_SELECTION_SIZE) as u32;
+    set_adjustment_dimensions(state, new_width, new_height);
+}
+
+fn set_adjustment_dimensions(state: &mut OverlayState, new_width: u32, new_height: u32) {
+    let current = state.adjustment.bounds;
+    let (cx, cy) = current.center();
+    let half_w = new_width as i32 / 2;
+    let half_h = new_height as i32 / 2;
+    state.adjustment.bounds = Rect::new(
+        cx - half_w,
+        cy - half_h,
+        cx - half_w + new_width as i32,
+        cy - half_h + new_height as i32,
+    );
+    emit_dimensions_update(state);
+}
+
+fn show_dimension_preset_menu(state: &mut OverlayState) {
+    clear_dimension_edit(state);
+
+    let Some(rect) = render::selection_hud_rect(state) else {
+        return;
+    };
+    let screen_position = state.monitor.local_to_screen(Point::new(
+        rect.left + SELECTION_HUD_BACK_WIDTH,
+        rect.bottom,
+    ));
+
+    unsafe {
+        let Ok(menu) = CreatePopupMenu() else {
+            return;
+        };
+
+        for (index, (label, width, height)) in DIMENSION_PRESETS.iter().enumerate() {
+            let text = format!("{label}  ({width}x{height})");
+            let wide: Vec<u16> = text.encode_utf16().chain(std::iter::once(0)).collect();
+            let _ = AppendMenuW(
+                menu,
+                MF_STRING,
+                1000 + index,
+                windows::core::PCWSTR(wide.as_ptr()),
+            );
+        }
+
+        let selected = TrackPopupMenu(
+            menu,
+            TPM_LEFTALIGN | TPM_TOPALIGN | TPM_RETURNCMD,
+            screen_position.x,
+            screen_position.y,
+            0,
+            state.hwnd,
+            None,
+        );
+        let _ = DestroyMenu(menu);
+
+        if selected.0 >= 1000 {
+            let index = (selected.0 - 1000) as usize;
+            if let Some((_, width, height)) = DIMENSION_PRESETS.get(index) {
+                set_adjustment_dimensions(state, *width, *height);
+            }
+        }
+    }
+}
+
+fn emit_native_selection_hud_save_area(state: &OverlayState) {
+    let Some(hud) = &state.selection_hud else {
+        return;
+    };
+    let Some(selection) = state.get_screen_selection() else {
+        return;
+    };
+
+    let _ = state.app_handle.emit(
+        "native-selection-hud-save-area",
+        serde_json::json!({
+            "owner": hud.owner,
+            "x": selection.left,
+            "y": selection.top,
+            "width": selection.width(),
+            "height": selection.height(),
+        }),
+    );
 }
 
 fn emit_native_selection_hud_capture(state: &OverlayState) {
@@ -709,6 +854,11 @@ fn handle_key_down(state_ptr: *mut OverlayState, wparam: WPARAM) -> LRESULT {
         let state = &mut *state_ptr;
         let key = wparam.0 as u32;
 
+        if handle_selection_hud_key_down(state, key) {
+            let _ = render::render(state);
+            return LRESULT(0);
+        }
+
         match key {
             VK_ESCAPE => {
                 release_mouse_capture();
@@ -739,6 +889,97 @@ fn handle_key_down(state_ptr: *mut OverlayState, wparam: WPARAM) -> LRESULT {
         }
     }
     LRESULT(0)
+}
+
+fn handle_selection_hud_key_down(state: &mut OverlayState, key: u32) -> bool {
+    let Some(hud) = state.selection_hud.as_ref() else {
+        return false;
+    };
+    if hud.editing_dimension.is_none() {
+        return false;
+    }
+
+    match key {
+        VK_ESCAPE => {
+            clear_dimension_edit(state);
+            true
+        },
+        VK_RETURN => {
+            apply_dimension_input(state);
+            true
+        },
+        VK_BACK => {
+            if let Some(hud) = state.selection_hud.as_mut() {
+                if hud.replace_dimension_input_on_next_digit {
+                    hud.dimension_input.clear();
+                    hud.replace_dimension_input_on_next_digit = false;
+                } else {
+                    hud.dimension_input.pop();
+                }
+            }
+            true
+        },
+        _ => false,
+    }
+}
+
+fn handle_char(state_ptr: *mut OverlayState, wparam: WPARAM) -> LRESULT {
+    unsafe {
+        if state_ptr.is_null() {
+            return LRESULT(0);
+        }
+
+        let state = &mut *state_ptr;
+        let Some(hud) = state.selection_hud.as_mut() else {
+            return LRESULT(0);
+        };
+        if hud.editing_dimension.is_none() {
+            return LRESULT(0);
+        }
+
+        let ch = char::from_u32(wparam.0 as u32);
+        if let Some(ch) = ch {
+            if ch.is_ascii_digit() && hud.dimension_input.len() < 5 {
+                if hud.replace_dimension_input_on_next_digit {
+                    hud.dimension_input.clear();
+                    hud.replace_dimension_input_on_next_digit = false;
+                }
+                if hud.dimension_input == "0" {
+                    hud.dimension_input.clear();
+                }
+                hud.dimension_input.push(ch);
+                let _ = render::render(state);
+            }
+        }
+    }
+
+    LRESULT(0)
+}
+
+fn apply_dimension_input(state: &mut OverlayState) {
+    let Some(hud) = state.selection_hud.as_mut() else {
+        return;
+    };
+    let Some(field) = hud.editing_dimension else {
+        return;
+    };
+
+    let Ok(value) = hud.dimension_input.parse::<u32>() else {
+        hud.clear_dimension_edit();
+        return;
+    };
+    let value = value.max(MIN_SELECTION_SIZE as u32);
+    hud.clear_dimension_edit();
+
+    let current = state.adjustment.bounds;
+    match field {
+        SelectionHudDimensionEdit::Width => {
+            set_adjustment_dimensions(state, value, current.height());
+        },
+        SelectionHudDimensionEdit::Height => {
+            set_adjustment_dimensions(state, current.width(), value);
+        },
+    }
 }
 
 /// Handle WM_KEYUP

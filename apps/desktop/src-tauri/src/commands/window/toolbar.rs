@@ -31,6 +31,7 @@ pub struct CaptureToolbarSelectionPayload {
     pub capture_type: Option<String>,
     pub source_mode: Option<String>,
     pub auto_start_recording: Option<bool>,
+    pub native_controls: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -73,6 +74,7 @@ fn build_selection_payload(
     capture_type: Option<String>,
     source_mode: Option<String>,
     auto_start_recording: Option<bool>,
+    native_controls: Option<bool>,
 ) -> CaptureToolbarSelectionPayload {
     CaptureToolbarSelectionPayload {
         x,
@@ -87,6 +89,7 @@ fn build_selection_payload(
         capture_type,
         source_mode,
         auto_start_recording,
+        native_controls,
     }
 }
 
@@ -155,6 +158,7 @@ pub async fn show_capture_toolbar(
     source_mode: Option<String>,
     auto_start_recording: Option<bool>,
     snap_toolbar_to_selection: Option<bool>,
+    native_controls: Option<bool>,
 ) -> MoonSnapResult<()> {
     if crate::commands::video_recording::block_capture_attempt_while_recording(&app)? {
         return Ok(());
@@ -176,6 +180,7 @@ pub async fn show_capture_toolbar(
         capture_type,
         source_mode,
         auto_start_recording,
+        native_controls,
     );
     let snap_toolbar_to_selection = snap_toolbar_to_selection.unwrap_or(true);
     if let Some(window) = app.get_webview_window(CAPTURE_TOOLBAR_LABEL) {
@@ -192,7 +197,7 @@ pub async fn show_capture_toolbar(
         pending_selection.take();
 
         let _ = window.emit("confirm-selection", &selection);
-        if auto_start_recording.unwrap_or(false) {
+        if auto_start_recording.unwrap_or(false) || native_controls.unwrap_or(false) {
             let _ = window.hide();
         } else {
             window

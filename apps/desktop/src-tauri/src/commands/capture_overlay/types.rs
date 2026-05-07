@@ -50,14 +50,20 @@ pub const RECORDING_MODE_CHOOSER_WIDTH: i32 = 504;
 pub const RECORDING_MODE_CHOOSER_HEIGHT: i32 = 252;
 pub const RECORDING_MODE_CHOOSER_MARGIN: i32 = 16;
 pub const RECORDING_MODE_CHOOSER_BACK_SIZE: i32 = 36;
-pub const SELECTION_HUD_WIDTH: i32 = 420;
+pub const SELECTION_HUD_WIDTH: i32 = 660;
 pub const SELECTION_HUD_HEIGHT: i32 = 54;
 pub const SELECTION_HUD_MARGIN: i32 = 14;
 pub const SELECTION_HUD_BUTTON_HEIGHT: i32 = 34;
 pub const SELECTION_HUD_BUTTON_TOP: i32 = 10;
-pub const SELECTION_HUD_BACK_WIDTH: i32 = 72;
-pub const SELECTION_HUD_CAPTURE_WIDTH: i32 = 92;
-pub const SELECTION_HUD_CANCEL_WIDTH: i32 = 76;
+pub const SELECTION_HUD_BACK_WIDTH: i32 = 58;
+pub const SELECTION_HUD_PRESET_WIDTH: i32 = 72;
+pub const SELECTION_HUD_DIMENSION_WIDTH: i32 = 120;
+pub const SELECTION_HUD_SAVE_WIDTH: i32 = 60;
+pub const SELECTION_HUD_CAPTURE_WIDTH: i32 = 88;
+pub const SELECTION_HUD_CANCEL_WIDTH: i32 = 72;
+pub const SELECTION_HUD_BUTTON_GAP: i32 = 8;
+pub const SELECTION_HUD_STEP_BUTTON_WIDTH: i32 = 26;
+pub const SELECTION_HUD_DIMENSION_STEP: i32 = 1;
 
 /// Extended window style for DirectComposition (no redirection bitmap)
 pub const WS_EX_NOREDIRECTIONBITMAP: u32 = 0x00200000;
@@ -392,8 +398,22 @@ pub enum SelectionHudHitTarget {
     None,
     Shell,
     Back,
+    Preset,
+    WidthDown,
+    WidthInput,
+    WidthUp,
+    HeightDown,
+    HeightInput,
+    HeightUp,
+    Save,
     Capture,
     Cancel,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SelectionHudDimensionEdit {
+    Width,
+    Height,
 }
 
 impl DetectedWindow {

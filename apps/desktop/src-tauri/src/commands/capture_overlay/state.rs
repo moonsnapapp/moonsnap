@@ -414,6 +414,9 @@ impl RecordingModeChooserState {
 pub struct SelectionHudState {
     pub owner: String,
     pub hovered: SelectionHudHitTarget,
+    pub editing_dimension: Option<SelectionHudDimensionEdit>,
+    pub dimension_input: String,
+    pub replace_dimension_input_on_next_digit: bool,
 }
 
 impl SelectionHudState {
@@ -421,7 +424,22 @@ impl SelectionHudState {
         Self {
             owner,
             hovered: SelectionHudHitTarget::None,
+            editing_dimension: None,
+            dimension_input: String::new(),
+            replace_dimension_input_on_next_digit: false,
         }
+    }
+
+    pub fn begin_dimension_edit(&mut self, field: SelectionHudDimensionEdit, value: u32) {
+        self.editing_dimension = Some(field);
+        self.dimension_input = value.to_string();
+        self.replace_dimension_input_on_next_digit = true;
+    }
+
+    pub fn clear_dimension_edit(&mut self) {
+        self.editing_dimension = None;
+        self.dimension_input.clear();
+        self.replace_dimension_input_on_next_digit = false;
     }
 }
 
