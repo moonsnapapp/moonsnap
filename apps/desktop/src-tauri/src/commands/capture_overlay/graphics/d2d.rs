@@ -188,6 +188,7 @@ pub struct D2DResources {
     /// Larger text format for window name indicator
     pub text_format_large: IDWriteTextFormat,
     pub text_format_small: IDWriteTextFormat,
+    pub text_format_small_left: IDWriteTextFormat,
     pub text_format_tiny: IDWriteTextFormat,
     pub text_format_tiny_left: IDWriteTextFormat,
     /// Stroke style for dashed crosshair
@@ -354,6 +355,11 @@ pub fn create_resources(d3d_device: &ID3D11Device) -> Result<D2DResources> {
         DWRITE_FONT_WEIGHT_SEMI_BOLD,
         DWRITE_TEXT_ALIGNMENT_CENTER,
     )?;
+    let text_format_small_left = create_text_format_with_size(
+        16.0,
+        DWRITE_FONT_WEIGHT_SEMI_BOLD,
+        DWRITE_TEXT_ALIGNMENT_LEADING,
+    )?;
     let text_format_tiny = create_text_format_with_size(
         13.0,
         DWRITE_FONT_WEIGHT_NORMAL,
@@ -372,6 +378,7 @@ pub fn create_resources(d3d_device: &ID3D11Device) -> Result<D2DResources> {
         text_format,
         text_format_large,
         text_format_small,
+        text_format_small_left,
         text_format_tiny,
         text_format_tiny_left,
         crosshair_stroke,

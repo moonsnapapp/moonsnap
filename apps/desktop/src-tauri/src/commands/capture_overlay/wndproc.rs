@@ -109,11 +109,18 @@ fn handle_nchittest(state_ptr: *mut OverlayState, lparam: LPARAM) -> LRESULT {
         {
             return LRESULT(HTCLIENT as isize);
         }
-        if render::hit_test_selection_hud(state, local.x, local.y) != SelectionHudHitTarget::None {
+        if !state.is_resize_locked_by_recording_mode_chooser()
+            && render::hit_test_selection_hud(state, local.x, local.y)
+                != SelectionHudHitTarget::None
+        {
             return LRESULT(HTCLIENT as isize);
         }
 
         if is_screen_point_over_auxiliary_window(state, screen_x, screen_y) {
+            return LRESULT(HTTRANSPARENT as isize);
+        }
+
+        if state.is_resize_locked_by_recording_mode_chooser() {
             return LRESULT(HTTRANSPARENT as isize);
         }
 
@@ -176,12 +183,15 @@ fn handle_set_cursor(state_ptr: *mut OverlayState, lparam: LPARAM) -> LRESULT {
                 } else {
                     IDC_ARROW
                 }
-            } else if render::hit_test_selection_hud(
-                state,
-                state.cursor.position.x,
-                state.cursor.position.y,
-            ) != SelectionHudHitTarget::None
+            } else if !state.is_resize_locked_by_recording_mode_chooser()
+                && render::hit_test_selection_hud(
+                    state,
+                    state.cursor.position.x,
+                    state.cursor.position.y,
+                ) != SelectionHudHitTarget::None
             {
+                IDC_ARROW
+            } else if state.is_resize_locked_by_recording_mode_chooser() {
                 IDC_ARROW
             } else {
                 // In adjustment mode - show resize cursor based on handle
@@ -243,21 +253,25 @@ fn handle_mouse_down(state_ptr: *mut OverlayState, lparam: LPARAM) -> LRESULT {
                 return LRESULT(0);
             }
 
-            let hud_target = render::hit_test_selection_hud(state, x, y);
-            if hud_target != SelectionHudHitTarget::None {
-                handle_selection_hud_click(state, hud_target);
-                let _ = render::render(state);
-                return LRESULT(0);
+            if !state.is_resize_locked_by_recording_mode_chooser() {
+                let hud_target = render::hit_test_selection_hud(state, x, y);
+                if hud_target != SelectionHudHitTarget::None {
+                    handle_selection_hud_click(state, hud_target);
+                    let _ = render::render(state);
+                    return LRESULT(0);
+                }
             }
 
             // Check if clicking on a resize handle or inside the selection.
             // WM_NCHITTEST keeps toolbar-window bounds pass-through, so
             // interior drags still work without blocking toolbar interaction.
-            let handle = hit_test_handle(x, y, state.adjustment.bounds);
-            if handle.is_active() {
-                state.adjustment.start_drag(handle, Point::new(x, y));
-                if state.adjustment.is_dragging {
-                    capture_mouse(state.hwnd);
+            if !state.is_resize_locked_by_recording_mode_chooser() {
+                let handle = hit_test_handle(x, y, state.adjustment.bounds);
+                if handle.is_active() {
+                    state.adjustment.start_drag(handle, Point::new(x, y));
+                    if state.adjustment.is_dragging {
+                        capture_mouse(state.hwnd);
+                    }
                 }
             }
         } else {
@@ -325,16 +339,23 @@ fn handle_mouse_move(state_ptr: *mut OverlayState, lparam: LPARAM) -> LRESULT {
                 return LRESULT(0);
             }
 
-            let hud_target = render::hit_test_selection_hud(state, x, y);
-            if let Some(hud) = state.selection_hud.as_mut() {
-                if hud.hovered != hud_target {
-                    hud.hovered = hud_target;
+            if !state.is_resize_locked_by_recording_mode_chooser() {
+                let hud_target = render::hit_test_selection_hud(state, x, y);
+                if let Some(hud) = state.selection_hud.as_mut() {
+                    if hud.hovered != hud_target {
+                        hud.hovered = hud_target;
+                        let _ = render::render(state);
+                    }
+                }
+
+                if hud_target != SelectionHudHitTarget::None {
+                    return LRESULT(0);
+                }
+            } else if let Some(hud) = state.selection_hud.as_mut() {
+                if hud.hovered != SelectionHudHitTarget::None {
+                    hud.hovered = SelectionHudHitTarget::None;
                     let _ = render::render(state);
                 }
-            }
-
-            if hud_target != SelectionHudHitTarget::None {
-                return LRESULT(0);
             }
         } else {
             // Mode-specific mouse move behavior
@@ -447,18 +468,18 @@ fn handle_recording_mode_chooser_click(
     match target {
         RecordingModeChooserHitTarget::Back => {
             emit_recording_mode_chooser_back(state);
-            state.recording_mode_chooser = None;
+            state.close_recording_mode_chooser();
             if state.adjustment.is_locked {
                 make_overlay_click_through(state);
             }
         },
         RecordingModeChooserHitTarget::Quick => {
             emit_recording_mode_selected(state, "save");
-            state.recording_mode_chooser = None;
+            state.dismiss_recording_mode_chooser_keep_resize_locked();
         },
         RecordingModeChooserHitTarget::Studio => {
             emit_recording_mode_selected(state, "preview");
-            state.recording_mode_chooser = None;
+            state.dismiss_recording_mode_chooser_keep_resize_locked();
         },
         RecordingModeChooserHitTarget::Remember => {
             if let Some(chooser) = state.recording_mode_chooser.as_mut() {
@@ -472,7 +493,6 @@ fn handle_recording_mode_chooser_click(
 
 fn reselect_area(state: &mut OverlayState) {
     state.reselect();
-    emit_reset_to_startup(state);
     let _ = state.app_handle.emit("capture-overlay-reselecting", ());
 }
 
@@ -517,7 +537,7 @@ fn handle_selection_hud_click(state: &mut OverlayState, target: SelectionHudHitT
             emit_native_selection_hud_capture(state);
         },
         SelectionHudHitTarget::Cancel => {
-            state.cancel();
+            state.cancel_to_startup();
         },
         SelectionHudHitTarget::Shell | SelectionHudHitTarget::None => {
             clear_dimension_edit(state);
@@ -809,14 +829,6 @@ fn emit_native_selection_hud_capture(state: &OverlayState) {
     );
 }
 
-fn emit_reset_to_startup(state: &OverlayState) {
-    if let Some(owner) = &state.toolbar_owner {
-        let _ = state.app_handle.emit_to(owner, "reset-to-startup", ());
-    } else {
-        let _ = state.app_handle.emit("reset-to-startup", ());
-    }
-}
-
 fn emit_recording_mode_selected(state: &OverlayState, action: &str) {
     let Some(chooser) = &state.recording_mode_chooser else {
         return;
@@ -1041,7 +1053,7 @@ fn handle_key_down(state_ptr: *mut OverlayState, wparam: WPARAM) -> LRESULT {
                 if state.adjustment.is_active {
                     state.adjustment.reset();
                 }
-                state.cancel();
+                state.cancel_to_startup();
             },
             VK_RETURN => {
                 if state.adjustment.is_active {

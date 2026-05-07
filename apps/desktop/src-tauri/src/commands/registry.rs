@@ -229,6 +229,7 @@ macro_rules! tauri_command_handler {
             crate::commands::capture_overlay::show_capture_overlay,
             crate::commands::capture_overlay::commands::capture_overlay_confirm,
             crate::commands::capture_overlay::commands::capture_overlay_cancel,
+            crate::commands::capture_overlay::commands::capture_overlay_cancel_to_startup,
             crate::commands::capture_overlay::commands::capture_overlay_reselect,
             crate::commands::capture_overlay::commands::capture_overlay_move_selection_by,
             crate::commands::capture_overlay::commands::capture_overlay_set_dimensions,

@@ -41,6 +41,7 @@ interface UseSelectionEventsReturn {
   autoStartRecording: boolean;
   setAutoStartRecording: (enabled: boolean) => void;
   clearSelectionAutoStartRecording: () => void;
+  resetSelectionToStartup: () => void;
 }
 
 const MARGIN = 8;
@@ -129,6 +130,13 @@ export function useSelectionEvents(): UseSelectionEventsReturn {
     });
   }, []);
 
+  const resetSelectionToStartup = useCallback(() => {
+    setSelectionConfirmed(false);
+    setAutoStartRecording(false);
+    setSelectionBounds(DEFAULT_BOUNDS);
+    selectionBoundsRef.current = DEFAULT_BOUNDS;
+  }, []);
+
   useEffect(() => {
     let unlistenSelection: UnlistenFn | null = null;
 
@@ -203,12 +211,7 @@ export function useSelectionEvents(): UseSelectionEventsReturn {
         setAutoStartRecording(Boolean(bounds.autoStartRecording));
       });
 
-      unlistenReset = await listen('reset-to-startup', () => {
-        setSelectionConfirmed(false);
-        setAutoStartRecording(false);
-        setSelectionBounds(DEFAULT_BOUNDS);
-        selectionBoundsRef.current = DEFAULT_BOUNDS;
-      });
+      unlistenReset = await listen('reset-to-startup', resetSelectionToStartup);
     };
 
     void setup();
@@ -217,7 +220,7 @@ export function useSelectionEvents(): UseSelectionEventsReturn {
       unlistenConfirm?.();
       unlistenReset?.();
     };
-  }, []);
+  }, [resetSelectionToStartup]);
 
   return {
     selectionBounds,
@@ -227,5 +230,6 @@ export function useSelectionEvents(): UseSelectionEventsReturn {
     autoStartRecording,
     setAutoStartRecording,
     clearSelectionAutoStartRecording,
+    resetSelectionToStartup,
   };
 }

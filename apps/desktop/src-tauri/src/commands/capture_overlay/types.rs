@@ -46,10 +46,10 @@ pub const MIN_SELECTION_SIZE: i32 = 20;
 /// Gap radius around cursor center for crosshair
 pub const CROSSHAIR_GAP: f32 = 10.0;
 
-pub const RECORDING_MODE_CHOOSER_WIDTH: i32 = 504;
-pub const RECORDING_MODE_CHOOSER_HEIGHT: i32 = 252;
+pub const RECORDING_MODE_CHOOSER_WIDTH: i32 = 520;
+pub const RECORDING_MODE_CHOOSER_HEIGHT: i32 = 192;
 pub const RECORDING_MODE_CHOOSER_MARGIN: i32 = 16;
-pub const RECORDING_MODE_CHOOSER_BACK_SIZE: i32 = 36;
+pub const RECORDING_MODE_CHOOSER_BACK_SIZE: i32 = 34;
 pub const SELECTION_HUD_WIDTH: i32 = 660;
 pub const SELECTION_HUD_HEIGHT: i32 = 54;
 pub const SELECTION_HUD_MARGIN: i32 = 14;
@@ -437,6 +437,7 @@ pub enum OverlayCommand {
     Cancel = 4,
     SetDimensions = 5,
     MoveSelectionBy = 6,
+    CancelToStartup = 7,
 }
 
 impl From<u8> for OverlayCommand {
@@ -448,6 +449,7 @@ impl From<u8> for OverlayCommand {
             4 => Self::Cancel,
             5 => Self::SetDimensions,
             6 => Self::MoveSelectionBy,
+            7 => Self::CancelToStartup,
             _ => Self::None,
         }
     }

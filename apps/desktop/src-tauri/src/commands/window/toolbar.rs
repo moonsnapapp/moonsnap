@@ -15,6 +15,7 @@ const STARTUP_TOOLBAR_WIDTH: u32 = 738;
 const STARTUP_TOOLBAR_HEIGHT: u32 = 147;
 const CAPTURE_TOOLBAR_DEFAULT_WIDTH: u32 = 1280;
 const CAPTURE_TOOLBAR_DEFAULT_HEIGHT: u32 = 144;
+const STARTUP_TOOLBAR_CONTEXT_APPLY_DELAY_MS: u64 = 50;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -617,8 +618,12 @@ pub async fn show_startup_toolbar(
     // Check if window already exists
     if let Some(window) = app.get_webview_window(CAPTURE_TOOLBAR_LABEL) {
         log::debug!("[show_startup_toolbar] Window already exists, bringing to front");
+        let _ = window.emit("startup-toolbar-context", startup_context);
 
         if !auto_start_area_selection {
+            std::thread::sleep(std::time::Duration::from_millis(
+                STARTUP_TOOLBAR_CONTEXT_APPLY_DELAY_MS,
+            ));
             window
                 .show()
                 .map_err(|e| format!("Failed to show toolbar: {}", e))?;
@@ -630,7 +635,6 @@ pub async fn show_startup_toolbar(
                 .set_focus()
                 .map_err(|e| format!("Failed to focus toolbar: {}", e))?;
         }
-        let _ = window.emit("startup-toolbar-context", startup_context);
         return Ok(());
     }
 

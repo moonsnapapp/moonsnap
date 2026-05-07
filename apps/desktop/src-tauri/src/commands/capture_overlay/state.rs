@@ -598,6 +598,8 @@ pub struct OverlayState {
     pub selection_hud: Option<SelectionHudState>,
     /// Native D2D recording mode chooser shown above the active area.
     pub recording_mode_chooser: Option<RecordingModeChooserState>,
+    /// Temporarily blocks resize/HUD edits after the recording chooser opens.
+    pub resize_locked_by_recording_mode_chooser: bool,
     /// Cursor position and hovered window
     pub cursor: CursorState,
     /// Preselected window HWND (for window capture mode)
@@ -619,6 +621,8 @@ pub struct OverlayState {
     /// True after Escape exits inline HUD editing; prevents the same key press
     /// from also cancelling the whole overlay before the key is released.
     pub suppress_escape_until_release: bool,
+    /// True when cancel should restore the startup capture toolbar.
+    pub restore_toolbar_on_cancel: bool,
     /// Last time an event was emitted (for throttling)
     pub last_emit_time: Instant,
 
@@ -677,6 +681,27 @@ impl OverlayState {
         self.cursor.clear_hovered();
     }
 
+    pub fn show_recording_mode_chooser(&mut self, owner: String, allow_drag: bool) {
+        self.adjustment.end_drag();
+        self.resize_locked_by_recording_mode_chooser = true;
+        self.recording_mode_chooser = Some(RecordingModeChooserState::new(owner, allow_drag));
+    }
+
+    pub fn close_recording_mode_chooser(&mut self) {
+        self.recording_mode_chooser = None;
+        self.resize_locked_by_recording_mode_chooser = false;
+        self.adjustment.end_drag();
+    }
+
+    pub fn dismiss_recording_mode_chooser_keep_resize_locked(&mut self) {
+        self.recording_mode_chooser = None;
+        self.adjustment.end_drag();
+    }
+
+    pub fn is_resize_locked_by_recording_mode_chooser(&self) -> bool {
+        self.recording_mode_chooser.is_some() || self.resize_locked_by_recording_mode_chooser
+    }
+
     /// Confirm the current selection with the given action.
     pub fn confirm(&mut self, action: OverlayAction) {
         if let Some(selection) = self.get_screen_selection() {
@@ -691,11 +716,17 @@ impl OverlayState {
         self.should_close = true;
     }
 
+    pub fn cancel_to_startup(&mut self) {
+        self.restore_toolbar_on_cancel = true;
+        self.cancel();
+    }
+
     /// Go back to selection mode (reselect).
     pub fn reselect(&mut self) {
         self.adjustment.reset();
         self.selection_hud = None;
         self.recording_mode_chooser = None;
+        self.resize_locked_by_recording_mode_chooser = false;
         self.drag.reset();
         self.cursor.clear_hovered();
     }

@@ -80,6 +80,7 @@ interface NativeSelectionHudDeleteSavedAreaPayload {
 }
 
 const MIN_REUSABLE_AREA_SIZE = 20;
+const STARTUP_RESTORE_STATE_FLUSH_MS = 50;
 
 function getCurrentAreaSelection(selection: SelectionBounds): AreaSelectionBounds | null {
   if (selection.sourceType !== 'area') {
@@ -196,6 +197,7 @@ const CaptureToolbarWindow: React.FC = () => {
   const [isRestoringToolbarFromChooser, setIsRestoringToolbarFromChooser] = useState(false);
   const [isStartupContextReady, setIsStartupContextReady] = useState(false);
   const skipModePromptRef = useRef(false);
+  const suppressStartupRestoreRef = useRef(false);
   const handleCaptureRef = useRef<() => void>(() => {});
   const recordingStartupInProgressRef = useRef(false);
   const chooserSelectionHandledRef = useRef(false);
@@ -212,6 +214,7 @@ const CaptureToolbarWindow: React.FC = () => {
     selectionConfirmed,
     autoStartRecording,
     clearSelectionAutoStartRecording,
+    resetSelectionToStartup,
   } = useSelectionEvents();
 
   const currentAreaSelection = useMemo(
@@ -334,6 +337,47 @@ const CaptureToolbarWindow: React.FC = () => {
 
   const escHandledRef = useRef(false);
 
+  const suppressStartupEscapeBriefly = useCallback(() => {
+    escHandledRef.current = true;
+    window.setTimeout(() => {
+      escHandledRef.current = false;
+    }, 500);
+  }, []);
+
+  const restoreStartupToolbarWindow = useCallback(async () => {
+    suppressStartupEscapeBriefly();
+
+    chooserSelectionHandledRef.current = false;
+    recordingStartupInProgressRef.current = false;
+    chooserRestorePositionRef.current = null;
+    chooserAnchorPositionRef.current = null;
+    skipModePromptRef.current = false;
+    recordingInitiatedRef.current = false;
+    closeWindowOnCompleteRef.current = false;
+
+    setIsModeChooserVisible(false);
+    setIsRecordingControlsPending(false);
+    setIsRecordingHudActive(false);
+    setIsRestoringToolbarFromChooser(false);
+    setIsStartupContextReady(true);
+    setMode('selection');
+    resetSelectionToStartup();
+    clearSelectionAutoStartRecording();
+    await new Promise((resolve) => window.setTimeout(resolve, STARTUP_RESTORE_STATE_FLUSH_MS));
+
+    const currentWindow = getCurrentWebviewWindow();
+    await currentWindow.show().catch((error) => {
+      toolbarLogger.warn('Failed to show capture toolbar after cancel:', error);
+    });
+    await currentWindow.setFocus().catch(() => {});
+  }, [
+    clearSelectionAutoStartRecording,
+    recordingInitiatedRef,
+    resetSelectionToStartup,
+    setMode,
+    suppressStartupEscapeBriefly,
+  ]);
+
   useEffect(() => {
     const handleKeyDown = async (e: KeyboardEvent) => {
       if (e.key === 'Escape' && mode === 'selection' && !e.repeat) {
@@ -346,24 +390,19 @@ const CaptureToolbarWindow: React.FC = () => {
         if (selectionConfirmed) {
           escHandledRef.current = true;
           try {
-            await invoke('capture_overlay_cancel');
+            await invoke('capture_overlay_cancel_to_startup');
           } catch {
             // Overlay may already be closed.
           }
           await emit('reset-to-startup', null);
-          setTimeout(() => {
-            escHandledRef.current = false;
-          }, 200);
-        } else {
-          const currentWindow = getCurrentWebviewWindow();
-          await currentWindow.close();
+          await restoreStartupToolbarWindow();
         }
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [mode, selectionConfirmed, closeWebcamPreview]);
+  }, [mode, selectionConfirmed, closeWebcamPreview, restoreStartupToolbarWindow]);
 
   const showRecordingControlsWindow = useCallback(async () => {
     const currentWindow = getCurrentWebviewWindow();
@@ -567,15 +606,16 @@ const CaptureToolbarWindow: React.FC = () => {
   const handleRedo = useCallback(async () => {
     try {
       try {
-        await invoke('capture_overlay_cancel');
+        await invoke('capture_overlay_cancel_to_startup');
       } catch {
         // Overlay may already be closed.
       }
       await emit('reset-to-startup', null);
+      await restoreStartupToolbarWindow();
     } catch (e) {
       toolbarLogger.error('Failed to go back:', e);
     }
-  }, []);
+  }, [restoreStartupToolbarWindow]);
 
   const handleCancel = useCallback(async () => {
     try {
@@ -585,11 +625,12 @@ const CaptureToolbarWindow: React.FC = () => {
         await invoke('cancel_recording');
       } else if (selectionConfirmed) {
         try {
-          await invoke('capture_overlay_cancel');
+          await invoke('capture_overlay_cancel_to_startup');
         } catch {
           // Overlay may already be closed.
         }
         await emit('reset-to-startup', null);
+        await restoreStartupToolbarWindow();
       } else {
         const currentWindow = getCurrentWebviewWindow();
         await currentWindow.close();
@@ -597,7 +638,7 @@ const CaptureToolbarWindow: React.FC = () => {
     } catch (e) {
       toolbarLogger.error('Failed to cancel:', e);
     }
-  }, [mode, selectionConfirmed, closeWebcamPreview]);
+  }, [mode, selectionConfirmed, closeWebcamPreview, restoreStartupToolbarWindow]);
 
   const handlePause = useCallback(async () => {
     try {
@@ -786,6 +827,20 @@ const CaptureToolbarWindow: React.FC = () => {
     };
   }, [deleteAreaSelection]);
 
+  useEffect(() => {
+    const unlisten = listen('capture-overlay-cancelled-to-startup', () => {
+      if (suppressStartupRestoreRef.current) {
+        return;
+      }
+
+      void restoreStartupToolbarWindow();
+    });
+
+    return () => {
+      unlisten.then((fn) => fn()).catch(() => {});
+    };
+  }, [restoreStartupToolbarWindow]);
+
   const handleOpenSettings = useCallback(() => {
     useSettingsStore.getState().openSettingsModal();
   }, []);
@@ -802,7 +857,12 @@ const CaptureToolbarWindow: React.FC = () => {
   }, [mode, setCaptureType]);
 
   const applyStartupToolbarContext = useCallback((context: StartupToolbarContext) => {
-    if (mode !== 'selection') return;
+    setMode('selection');
+    resetSelectionToStartup();
+    setIsModeChooserVisible(false);
+    setIsRecordingControlsPending(false);
+    setIsRecordingHudActive(false);
+    setIsRestoringToolbarFromChooser(false);
 
     if (context.captureType) {
       setCaptureType(context.captureType);
@@ -815,7 +875,7 @@ const CaptureToolbarWindow: React.FC = () => {
     shouldAutoStartAreaSelectionRef.current = Boolean(
       context.autoStartAreaSelection && context.sourceMode === 'area'
     );
-  }, [mode, setCaptureSource, setCaptureType]);
+  }, [resetSelectionToStartup, setCaptureSource, setCaptureType, setMode]);
 
   useEffect(() => {
     const unlisten = listen<StartupToolbarContext>('startup-toolbar-context', (event) => {
@@ -908,16 +968,23 @@ const CaptureToolbarWindow: React.FC = () => {
       setIsRestoringToolbarFromChooser(false);
       skipModePromptRef.current = false;
       clearSelectionAutoStartRecording();
-      invoke('capture_overlay_cancel').catch((error) => {
-        toolbarLogger.error('Failed to cancel selection from recording mode chooser back:', error);
-      });
+      void (async () => {
+        try {
+          await invoke('capture_overlay_cancel_to_startup');
+        } catch (error) {
+          toolbarLogger.error('Failed to cancel selection from recording mode chooser back:', error);
+        }
+
+        await emit('reset-to-startup', null).catch(() => {});
+        await restoreStartupToolbarWindow();
+      })();
     });
 
     return () => {
       unlistenSelected.then((fn) => fn()).catch(() => {});
       unlistenBack.then((fn) => fn()).catch(() => {});
     };
-  }, [clearSelectionAutoStartRecording]);
+  }, [clearSelectionAutoStartRecording, restoreStartupToolbarWindow]);
 
   useEffect(() => {
     if (
@@ -1049,6 +1116,7 @@ const CaptureToolbarWindow: React.FC = () => {
   }, []);
 
   const handleCloseToolbar = useCallback(async () => {
+    suppressStartupRestoreRef.current = true;
     try {
       await invoke('capture_overlay_cancel');
     } catch {

@@ -215,6 +215,12 @@ pub async fn capture_overlay_cancel() -> MoonSnapResult<()> {
     Ok(())
 }
 
+#[tauri::command]
+pub async fn capture_overlay_cancel_to_startup() -> MoonSnapResult<()> {
+    set_pending_command(OverlayCommand::CancelToStartup);
+    Ok(())
+}
+
 /// Go back to selection mode (reselect region).
 ///
 /// Called from the toolbar when the user clicks the redo/reselect button.

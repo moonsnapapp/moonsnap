@@ -287,7 +287,7 @@ export function useQuickRecordingFlow() {
         }
 
         resetQuickFlowState();
-        invoke('capture_overlay_cancel').catch((error) => {
+        invoke('capture_overlay_cancel_to_startup').catch((error) => {
           logger.error('Failed to cancel quick recording overlay from chooser back:', error);
         });
       }

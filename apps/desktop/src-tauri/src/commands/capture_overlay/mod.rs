@@ -399,6 +399,7 @@ fn run_overlay(
             adjustment,
             selection_hud: None,
             recording_mode_chooser: None,
+            resize_locked_by_recording_mode_chooser: false,
             cursor: state::CursorState {
                 position: types::Point::new(initial_cursor_x, initial_cursor_y),
                 hovered_window: None,
@@ -415,6 +416,7 @@ fn run_overlay(
             }),
             should_close: false,
             suppress_escape_until_release: false,
+            restore_toolbar_on_cancel: false,
             last_emit_time: Instant::now(),
             result: Default::default(),
         });
@@ -553,7 +555,7 @@ fn run_overlay(
                     let _ = render::render(&state);
                 } else if !esc_was_pressed {
                     log::debug!("[Overlay] ESC pressed, cancelling overlay");
-                    state.cancel();
+                    state.cancel_to_startup();
                 }
             } else {
                 state.suppress_escape_until_release = false;
@@ -563,16 +565,13 @@ fn run_overlay(
             // Check for pending commands from toolbar
             if state.adjustment.is_active {
                 if let Some(request) = take_d2d_recording_mode_chooser_request() {
-                    state.recording_mode_chooser = Some(state::RecordingModeChooserState::new(
-                        request.owner,
-                        request.allow_drag,
-                    ));
+                    state.show_recording_mode_chooser(request.owner, request.allow_drag);
                     wndproc::make_overlay_interactive(&state);
                     let _ = render::render(&state);
                 }
 
                 if take_d2d_recording_mode_chooser_close_requested() {
-                    state.recording_mode_chooser = None;
+                    state.close_recording_mode_chooser();
                     if state.adjustment.is_locked {
                         wndproc::make_overlay_click_through(&state);
                     }
@@ -581,7 +580,7 @@ fn run_overlay(
 
                 match take_pending_command() {
                     OverlayCommand::ConfirmRecording => {
-                        state.recording_mode_chooser = None;
+                        state.close_recording_mode_chooser();
                         if let Some(selection) = state.get_screen_selection() {
                             state
                                 .result
@@ -590,7 +589,7 @@ fn run_overlay(
                         }
                     },
                     OverlayCommand::ConfirmScreenshot => {
-                        state.recording_mode_chooser = None;
+                        state.close_recording_mode_chooser();
                         if let Some(selection) = state.get_screen_selection() {
                             state
                                 .result
@@ -599,7 +598,7 @@ fn run_overlay(
                         }
                     },
                     OverlayCommand::Reselect => {
-                        state.recording_mode_chooser = None;
+                        state.close_recording_mode_chooser();
                         use windows::Win32::UI::WindowsAndMessaging::{
                             GetWindowLongW, SetWindowLongW, SetWindowPos, GWL_EXSTYLE,
                             HWND_TOPMOST, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,
@@ -626,10 +625,20 @@ fn run_overlay(
                         let _ = render::render(&state);
                     },
                     OverlayCommand::Cancel => {
-                        state.recording_mode_chooser = None;
+                        state.close_recording_mode_chooser();
                         state.cancel();
                     },
+                    OverlayCommand::CancelToStartup => {
+                        state.close_recording_mode_chooser();
+                        state.cancel_to_startup();
+                    },
                     OverlayCommand::SetDimensions => {
+                        if state.is_resize_locked_by_recording_mode_chooser()
+                            || state.adjustment.is_locked
+                        {
+                            continue;
+                        }
+
                         let (new_width, new_height) = take_pending_dimensions();
                         if new_width > 0 && new_height > 0 {
                             // Calculate new bounds centered on current selection
@@ -706,16 +715,22 @@ fn run_overlay(
             None
         };
 
-        // Emit overlay closed event
-        if state.result.action != OverlayAction::StartRecording {
+        // Emit overlay closed event. Cancel-to-startup has its own ordered reset/restore
+        // event below; sending the generic close event first lets stale toolbar state react.
+        if state.result.action != OverlayAction::StartRecording && !state.restore_toolbar_on_cancel
+        {
             let _ = state.app_handle.emit("capture-overlay-closed", ());
         } else {
             // For recording, emit a different event so the toolbar knows it's safe to proceed
-            let _ = state.app_handle.emit("overlay-ready-for-recording", ());
+            if state.result.action == OverlayAction::StartRecording {
+                let _ = state.app_handle.emit("overlay-ready-for-recording", ());
+            }
         }
 
-        // Bring toolbar back to front after overlay closes (with delay for z-order to settle)
-        if !state.auto_start_recording {
+        // Bring toolbar back to front after overlay closes (with delay for z-order to settle).
+        // Esc/cancel-to-startup has a dedicated restore path below so the React toolbar can
+        // reset out of confirmed-selection mode before the window is shown.
+        if !state.auto_start_recording && !state.restore_toolbar_on_cancel {
             let app_for_toolbar = state.app_handle.clone();
             let toolbar_label = state
                 .toolbar_owner
@@ -760,26 +775,31 @@ fn run_overlay(
         }
 
         // If cancelled (no result), reset toolbar to startup state and show it
-        if result.is_none() {
+        if result.is_none() && state.restore_toolbar_on_cancel {
             log::debug!("[Overlay] Cancelled, resetting toolbar to startup state");
             // Emit reset event so frontend resets selectionConfirmed=false
             if let Some(owner) = &state.toolbar_owner {
                 let _ = state.app_handle.emit_to(owner, "reset-to-startup", ());
+                let _ = state
+                    .app_handle
+                    .emit_to(owner, "capture-overlay-cancelled-to-startup", ());
             } else {
                 let _ = state.app_handle.emit("reset-to-startup", ());
+                let _ = state
+                    .app_handle
+                    .emit("capture-overlay-cancelled-to-startup", ());
             }
 
-            if !state.auto_start_recording && state.toolbar_owner.is_none() {
-                let app_handle = state.app_handle.clone();
-                tauri::async_runtime::spawn(async move {
-                    if let Err(e) =
-                        crate::commands::window::show_startup_toolbar(app_handle, None, None, None)
-                            .await
-                    {
-                        log::error!("Failed to show startup toolbar after cancel: {}", e);
-                    }
-                });
-            }
+            let app_handle = state.app_handle.clone();
+            tauri::async_runtime::spawn(async move {
+                tokio::time::sleep(std::time::Duration::from_millis(80)).await;
+                if let Err(e) =
+                    crate::commands::window::show_startup_toolbar(app_handle, None, None, None)
+                        .await
+                {
+                    log::error!("Failed to show startup toolbar after cancel: {}", e);
+                }
+            });
         } else {
             log::debug!("[Overlay] Selection confirmed");
         }
