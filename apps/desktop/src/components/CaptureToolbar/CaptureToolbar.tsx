@@ -349,7 +349,7 @@ export const CaptureToolbar: React.FC<CaptureToolbarProps> = ({
             <button
               type="button"
               onClick={onStop}
-              className="glass-btn glass-btn--md"
+              className="glass-btn glass-btn--md glass-btn--recording-stop"
               aria-label="Stop and save recording"
               title="Stop and save"
             >
@@ -358,15 +358,17 @@ export const CaptureToolbar: React.FC<CaptureToolbarProps> = ({
           )}
 
           {/* Cancel button */}
-          <button
-            type="button"
-            onClick={onCancel}
-            className="glass-btn glass-btn--md glass-btn--danger"
-            aria-label="Cancel recording"
-            title="Cancel"
-          >
-            <X size={14} strokeWidth={2.5} />
-          </button>
+          {!isProcessing && (
+            <button
+              type="button"
+              onClick={onCancel}
+              className="glass-btn glass-btn--md glass-btn--danger"
+              aria-label="Cancel recording"
+              title="Cancel"
+            >
+              <X size={14} strokeWidth={2.5} />
+            </button>
+          )}
         </div>
       </div>
     );

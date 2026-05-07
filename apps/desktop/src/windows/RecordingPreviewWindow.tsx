@@ -10,7 +10,7 @@ import { invoke, convertFileSrc } from '@tauri-apps/api/core';
 import { emit } from '@tauri-apps/api/event';
 import { cursorPosition, getCurrentWindow } from '@tauri-apps/api/window';
 
-const AUTO_DISMISS_MS = 5000;
+const AUTO_DISMISS_MS = 10000;
 const SLIDE_DURATION_MS = 300;
 const CURSOR_SYNC_MS = 100;
 
@@ -30,6 +30,7 @@ function RecordingPreviewWindow() {
   const [isVisible, setIsVisible] = useState(false);
   const [isExiting, setIsExiting] = useState(false);
   const [timerPaused, setTimerPaused] = useState(false);
+  const [deleteArmed, setDeleteArmed] = useState(false);
   const dismissTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isVisibleRef = useRef(false);
   const isCursorInsideRef = useRef(false);
@@ -166,6 +167,12 @@ function RecordingPreviewWindow() {
   }, [outputPath]);
 
   const handleDelete = useCallback(async () => {
+    if (!deleteArmed) {
+      setDeleteArmed(true);
+      pauseTimer();
+      return;
+    }
+
     try {
       // Extract project ID (folder name) from the output path
       const projectId = outputPath.replace(/[\\/]+$/, '').split(/[\\/]/).pop() || '';
@@ -177,7 +184,7 @@ function RecordingPreviewWindow() {
       // Ignore
     }
     closePreview();
-  }, [outputPath, closePreview]);
+  }, [deleteArmed, outputPath, closePreview, pauseTimer]);
 
   // Disable right-click context menu
   useEffect(() => {
@@ -300,12 +307,12 @@ function RecordingPreviewWindow() {
           {/* Delete button - top left */}
           <ActionButton
             onClick={handleDelete}
-            title="Delete recording"
+            title={deleteArmed ? 'Delete recording' : 'Click again to delete'}
             style={{
               position: 'absolute',
               top: 6,
               left: 6,
-              background: 'rgba(0,0,0,0.5)',
+              background: deleteArmed ? 'rgba(220,38,38,0.82)' : 'rgba(0,0,0,0.5)',
               color: '#fff',
             }}
             hoverBackground="rgba(220,38,38,0.8)"

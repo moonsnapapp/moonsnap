@@ -348,50 +348,6 @@ const CaptureToolbarWindow: React.FC = () => {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [mode, selectionConfirmed, closeWebcamPreview]);
 
-  const showRecordingControlsWindow = useCallback(async () => {
-    const currentWindow = getCurrentWebviewWindow();
-    const {
-      showToolbarInRecording: showToolbarInCapture,
-      settings,
-    } = useCaptureSettingsStore.getState();
-    const recordingMicrophoneDeviceIndex =
-      captureType === 'video' ? settings.video.microphoneDeviceIndex : null;
-    const recordingSystemAudioEnabled =
-      captureType === 'video' ? settings.video.captureSystemAudio : false;
-    const recordingFormat = captureType === 'gif' ? 'gif' : 'mp4';
-    const [position, size] = await Promise.all([
-      currentWindow.outerPosition(),
-      currentWindow.outerSize(),
-    ]);
-    let hudAnchor: RecordingHudAnchor = {
-      x: position.x,
-      y: position.y,
-      width: size.width,
-      height: size.height,
-    };
-
-    if (snapToolbarToSelection && selectionConfirmed) {
-      const monitors = await availableMonitors().catch(() => []);
-      const selectionMonitor =
-        monitors.length > 0
-          ? getSelectionMonitor(monitors, selectionBoundsRef.current) ?? monitors[0]
-          : undefined;
-      hudAnchor = getSnappedRecordingHudAnchor(selectionBoundsRef.current, selectionMonitor);
-    }
-
-    await invoke('show_recording_controls', {
-      x: hudAnchor.x,
-      y: hudAnchor.y,
-      width: hudAnchor.width,
-      height: hudAnchor.height,
-      includeInCapture: showToolbarInCapture,
-      microphoneDeviceIndex: recordingMicrophoneDeviceIndex ?? null,
-      systemAudioEnabled: recordingSystemAudioEnabled,
-      recordingFormat,
-    });
-    await currentWindow.hide();
-  }, [captureType, selectionBoundsRef, selectionConfirmed, snapToolbarToSelection]);
-
   const handleCapture = useCallback(async () => {
     try {
       if (!selectionConfirmed) {
@@ -915,27 +871,6 @@ const CaptureToolbarWindow: React.FC = () => {
       cancelled = true;
     };
   }, [isRestoringToolbarFromChooser]);
-
-  useEffect(() => {
-    if (
-      !selectionConfirmed ||
-      (mode !== 'recording' && mode !== 'paused' && mode !== 'processing')
-    ) {
-      return;
-    }
-
-    const timeoutId = window.setTimeout(async () => {
-      try {
-        await showRecordingControlsWindow();
-      } catch (e) {
-        toolbarLogger.error('Failed to swap to recording controls window:', e);
-      }
-    }, 80);
-
-    return () => {
-      clearTimeout(timeoutId);
-    };
-  }, [mode, selectionConfirmed, showRecordingControlsWindow]);
 
   useEffect(() => {
     if (mode === 'starting' || mode === 'recording' || mode === 'paused' || mode === 'processing') {

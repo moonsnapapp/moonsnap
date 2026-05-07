@@ -118,12 +118,14 @@ export function useQuickRecordingFlow() {
   const quickSessionActiveRef = useRef(false);
   const recordingStartupInProgressRef = useRef(false);
   const chooserSelectionHandledRef = useRef(false);
+  const restoreToolbarOnIdleRef = useRef(false);
 
   const resetQuickFlowState = useCallback(() => {
     pendingSelectionRef.current = null;
     quickSessionActiveRef.current = false;
     recordingStartupInProgressRef.current = false;
     chooserSelectionHandledRef.current = false;
+    restoreToolbarOnIdleRef.current = false;
   }, []);
 
   const cleanupQuickRecordingUi = useCallback(async () => {
@@ -136,6 +138,35 @@ export function useQuickRecordingFlow() {
       useWebcamSettingsStore.getState().closePreview().catch(() => {}),
     ]);
   }, []);
+
+  const restoreCaptureToolbarFromSelection = useCallback(
+    async (selection: QuickRecordingSelectionPayload) => {
+      const captureSettingsStore = useCaptureSettingsStore.getState();
+      if (!captureSettingsStore.isInitialized) {
+        await captureSettingsStore.loadSettings();
+      }
+
+      const sourceType = selection.sourceType ?? selection.sourceMode ?? 'area';
+      const sourceMode = selection.sourceMode ?? sourceType;
+
+      await invoke('show_capture_toolbar', {
+        x: selection.x,
+        y: selection.y,
+        width: selection.width,
+        height: selection.height,
+        captureType: getQuickRecordingCaptureType(selection),
+        sourceMode,
+        sourceType,
+        windowId: selection.windowId ?? null,
+        sourceTitle: selection.sourceTitle ?? null,
+        monitorIndex: selection.monitorIndex ?? null,
+        monitorName: selection.monitorName ?? null,
+        autoStartRecording: false,
+        snapToolbarToSelection: captureSettingsStore.snapToolbarToSelection,
+      });
+    },
+    []
+  );
 
   const startQuickRecording = useCallback(
     async (
@@ -293,6 +324,14 @@ export function useQuickRecordingFlow() {
       }
     );
 
+    const unlistenCancelledFromControls = listen('recording-cancelled-from-controls', () => {
+      if (!quickSessionActiveRef.current) {
+        return;
+      }
+
+      restoreToolbarOnIdleRef.current = true;
+    });
+
     const unlistenRecordingState = listen<RecordingState>(
       'recording-state-changed',
       (event) => {
@@ -308,12 +347,25 @@ export function useQuickRecordingFlow() {
           return;
         }
 
+        const shouldRestoreToolbar =
+          restoreToolbarOnIdleRef.current && event.payload.status === 'idle';
+        const selectionToRestore = shouldRestoreToolbar ? pendingSelectionRef.current : null;
+
         quickSessionActiveRef.current = false;
         recordingStartupInProgressRef.current = false;
         chooserSelectionHandledRef.current = false;
+        restoreToolbarOnIdleRef.current = false;
         pendingSelectionRef.current = null;
 
-        void cleanupQuickRecordingUi();
+        void (async () => {
+          await cleanupQuickRecordingUi();
+
+          if (selectionToRestore) {
+            await restoreCaptureToolbarFromSelection(selectionToRestore).catch((error) => {
+              logger.error('Failed to restore capture toolbar after quick recording cancel:', error);
+            });
+          }
+        })();
       }
     );
 
@@ -322,7 +374,13 @@ export function useQuickRecordingFlow() {
       unlistenSelectionUpdated.then((fn) => fn()).catch(() => {});
       unlistenSelected.then((fn) => fn()).catch(() => {});
       unlistenBack.then((fn) => fn()).catch(() => {});
+      unlistenCancelledFromControls.then((fn) => fn()).catch(() => {});
       unlistenRecordingState.then((fn) => fn()).catch(() => {});
     };
-  }, [cleanupQuickRecordingUi, resetQuickFlowState, startQuickRecording]);
+  }, [
+    cleanupQuickRecordingUi,
+    resetQuickFlowState,
+    restoreCaptureToolbarFromSelection,
+    startQuickRecording,
+  ]);
 }

@@ -47,6 +47,19 @@ pub(crate) const RECORDING_CONTROLS_LABEL: &str = "recording-controls";
 /// Recording mode chooser window label
 pub(crate) const RECORDING_MODE_CHOOSER_LABEL: &str = "recording-mode-chooser";
 
+/// Default library window size in logical pixels.
+const LIBRARY_DEFAULT_WIDTH: f64 = 1200.0;
+const LIBRARY_DEFAULT_HEIGHT: f64 = 800.0;
+
+/// Smallest useful physical size for the library shell. Smaller restored
+/// values usually come from a bad saved state for the transparent hidden window.
+const LIBRARY_MIN_VISIBLE_WIDTH: u32 = 800;
+const LIBRARY_MIN_VISIBLE_HEIGHT: u32 = 600;
+
+/// Allow a little slop for window frame/shadow extents when comparing against
+/// the monitor that should contain the window.
+const LIBRARY_MONITOR_SLOP_PX: u32 = 80;
+
 /// Track if main window was visible before capture started
 pub(crate) static MAIN_WAS_VISIBLE: AtomicBool = AtomicBool::new(false);
 
@@ -283,17 +296,115 @@ pub(crate) fn close_all_capture_windows(app: &tauri::AppHandle) {
     close_recording_mode_chooser_window(app);
 }
 
-/// Show the library window, centering it the first time it is explicitly shown
-/// in a process so startup restores do not leave it off-center.
-pub(crate) fn reveal_library_window(
+fn library_window_geometry_is_bad(window: &tauri::WebviewWindow) -> bool {
+    let Ok(size) = window.outer_size() else {
+        return true;
+    };
+
+    if size.width < LIBRARY_MIN_VISIBLE_WIDTH || size.height < LIBRARY_MIN_VISIBLE_HEIGHT {
+        return true;
+    }
+
+    let Ok(position) = window.outer_position() else {
+        return true;
+    };
+
+    let Ok(monitors) = window.app_handle().available_monitors() else {
+        return false;
+    };
+
+    if monitors.is_empty() {
+        return false;
+    }
+
+    let center_x = position.x + (size.width / 2) as i32;
+    let center_y = position.y + (size.height / 2) as i32;
+
+    monitors.iter().all(|monitor| {
+        let monitor_position = monitor.position();
+        let monitor_size = monitor.size();
+        let monitor_left = monitor_position.x;
+        let monitor_top = monitor_position.y;
+        let monitor_right = monitor_left + monitor_size.width as i32;
+        let monitor_bottom = monitor_top + monitor_size.height as i32;
+
+        center_x < monitor_left
+            || center_x > monitor_right
+            || center_y < monitor_top
+            || center_y > monitor_bottom
+            || size.width > monitor_size.width + LIBRARY_MONITOR_SLOP_PX
+            || size.height > monitor_size.height + LIBRARY_MONITOR_SLOP_PX
+    })
+}
+
+fn reset_library_window_bounds(window: &tauri::WebviewWindow) -> MoonSnapResult<()> {
+    window
+        .set_size(tauri::Size::Logical(tauri::LogicalSize {
+            width: LIBRARY_DEFAULT_WIDTH,
+            height: LIBRARY_DEFAULT_HEIGHT,
+        }))
+        .map_err(|e| format!("Failed to reset library window size: {}", e))?;
+    window
+        .center()
+        .map_err(|e| format!("Failed to center library window: {}", e))?;
+
+    Ok(())
+}
+
+fn normalize_library_window_for_reveal(
     window: &tauri::WebviewWindow,
-    focus: bool,
+    first_reveal: bool,
+    was_visible: bool,
 ) -> MoonSnapResult<()> {
-    if !LIBRARY_WAS_REVEALED.swap(true, Ordering::SeqCst) {
+    window
+        .set_always_on_top(false)
+        .map_err(|e| format!("Failed to clear library always-on-top: {}", e))?;
+
+    let is_restoring_hidden_window = first_reveal || !was_visible;
+    let was_fullscreen = window.is_fullscreen().unwrap_or(false);
+    if was_fullscreen && is_restoring_hidden_window {
+        window
+            .set_fullscreen(false)
+            .map_err(|e| format!("Failed to exit library fullscreen: {}", e))?;
+    }
+
+    if window.is_minimized().unwrap_or(false) {
+        window
+            .unminimize()
+            .map_err(|e| format!("Failed to unminimize library window: {}", e))?;
+    }
+
+    let was_maximized = window.is_maximized().unwrap_or(false);
+    if was_maximized && is_restoring_hidden_window {
+        window
+            .unmaximize()
+            .map_err(|e| format!("Failed to restore library window: {}", e))?;
+    }
+
+    let should_reset_bounds = library_window_geometry_is_bad(window)
+        || (is_restoring_hidden_window && (was_maximized || was_fullscreen));
+    if should_reset_bounds {
+        reset_library_window_bounds(window)?;
+    } else if first_reveal {
         window
             .center()
             .map_err(|e| format!("Failed to center library window: {}", e))?;
     }
+
+    Ok(())
+}
+
+/// Show the library window, centering it the first time it is explicitly shown
+/// in a process so startup restores do not leave it off-center. The library is
+/// transparent and starts hidden, so stale minimized/maximized/fullscreen or
+/// off-screen state can otherwise reveal as a blank black shell.
+pub(crate) fn reveal_library_window(
+    window: &tauri::WebviewWindow,
+    focus: bool,
+) -> MoonSnapResult<()> {
+    let first_reveal = !LIBRARY_WAS_REVEALED.swap(true, Ordering::SeqCst);
+    let was_visible = window.is_visible().unwrap_or(false);
+    normalize_library_window_for_reveal(window, first_reveal, was_visible)?;
 
     window
         .show()
@@ -301,9 +412,6 @@ pub(crate) fn reveal_library_window(
 
     if focus {
         bring_window_to_front_without_topmost(window, true);
-        window
-            .set_always_on_top(false)
-            .map_err(|e| format!("Failed to clear library always-on-top: {}", e))?;
         window
             .set_focus()
             .map_err(|e| format!("Failed to focus library window: {}", e))?;

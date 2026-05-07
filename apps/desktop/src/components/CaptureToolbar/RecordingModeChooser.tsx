@@ -64,7 +64,7 @@ export const RecordingModeChooser = memo(function RecordingModeChooser({
             </div>
             <div className="recording-mode-chooser-card-text">
               <div className="recording-mode-chooser-card-title">Quick</div>
-              <div className="recording-mode-chooser-card-subtitle">Ready to share</div>
+              <div className="recording-mode-chooser-card-subtitle">Save when done</div>
             </div>
           </button>
 
@@ -80,7 +80,7 @@ export const RecordingModeChooser = memo(function RecordingModeChooser({
             </div>
             <div className="recording-mode-chooser-card-text">
               <div className="recording-mode-chooser-card-title">Studio</div>
-              <div className="recording-mode-chooser-card-subtitle">Edit with effects</div>
+              <div className="recording-mode-chooser-card-subtitle">Open editor after</div>
             </div>
           </button>
         </div>

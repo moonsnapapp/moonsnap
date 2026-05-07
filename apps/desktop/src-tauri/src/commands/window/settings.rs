@@ -8,6 +8,8 @@
 use moonsnap_core::error::MoonSnapResult;
 use tauri::{command, AppHandle, Emitter, Manager};
 
+use super::reveal_library_window;
+
 /// Main library window label — the only window that hosts the settings dialog.
 const LIBRARY_WINDOW_LABEL: &str = "library";
 
@@ -19,15 +21,7 @@ pub async fn show_settings_window(app: AppHandle, tab: Option<String>) -> MoonSn
         return Err("Library window is not available".into());
     };
 
-    window
-        .show()
-        .map_err(|e| format!("Failed to show library window: {}", e))?;
-    window
-        .unminimize()
-        .map_err(|e| format!("Failed to unminimize library window: {}", e))?;
-    window
-        .set_focus()
-        .map_err(|e| format!("Failed to focus library window: {}", e))?;
+    reveal_library_window(&window, true)?;
 
     let payload = serde_json::json!({ "tab": tab });
     window

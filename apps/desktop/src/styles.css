@@ -6463,8 +6463,8 @@ body.floating-toolbar-window #root {
 }
 
 .glass-toolbar--minimal-floating .glass-btn--md {
-  width: 32px;
-  height: 32px;
+  width: 40px;
+  height: 40px;
   border: none;
   background: transparent;
   box-shadow: none;
@@ -6485,7 +6485,21 @@ body.floating-toolbar-window #root {
 
 .glass-toolbar--minimal-floating .glass-btn--md:active {
   background: rgba(255, 255, 255, 0.08);
-  transform: none;
+  transform: scale(0.96);
+}
+
+.glass-toolbar--minimal-floating .glass-btn--recording-stop {
+  background: rgba(239, 68, 68, 0.12);
+  color: rgba(248, 113, 113, 0.98);
+}
+
+.glass-toolbar--minimal-floating .glass-btn--recording-stop:hover {
+  background: rgba(239, 68, 68, 0.2);
+  color: rgba(254, 202, 202, 1);
+}
+
+.glass-toolbar--minimal-floating .glass-btn--recording-stop:active {
+  background: rgba(239, 68, 68, 0.26);
 }
 
 .glass-toolbar--minimal-floating .glass-btn--danger {
@@ -6956,6 +6970,16 @@ body.floating-toolbar-window #root {
 
 .light .glass-toolbar--minimal-floating .glass-btn--md:active {
   background: rgba(0, 0, 0, 0.06);
+}
+
+.light .glass-toolbar--minimal-floating .glass-btn--recording-stop {
+  background: rgba(239, 68, 68, 0.1);
+  color: rgba(220, 38, 38, 0.9);
+}
+
+.light .glass-toolbar--minimal-floating .glass-btn--recording-stop:hover {
+  background: rgba(239, 68, 68, 0.18);
+  color: rgba(185, 28, 28, 0.96);
 }
 
 .light .glass-toolbar--minimal-floating .glass-btn--danger {

@@ -1,3 +1,4 @@
+// @refresh reset
 import { useState, useCallback, useMemo, useRef, useEffect, Activity } from 'react';
 import { Toaster } from 'sonner';
 import { invoke } from '@tauri-apps/api/core';
@@ -30,6 +31,13 @@ import { handleScreenshotCompletion } from './utils/screenshotCompletion';
 import { isTextInputTarget } from './utils/keyboard';
 import { LAYOUT, STORAGE } from './constants';
 import type { CaptureListItem } from './types';
+
+interface RecordingPreviewAnchor {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
 
 const clampSidebarSize = (size: number) =>
   Math.min(
@@ -104,6 +112,7 @@ function App() {
   const applyingSidebarResizeRef = useRef(false);
   const savedCaptureProjectIdsRef = useRef(new Map<string, string>());
   const pendingPreviewOpenPathRef = useRef<string | null>(null);
+  const recordingPreviewAnchorRef = useRef<RecordingPreviewAnchor | null>(null);
   const lastOpenedCapture = useMemo(() => {
     if (!lastOpenedCaptureId) {
       return null;
@@ -171,25 +180,48 @@ function App() {
             // Open editor directly
             const hasExtension = /\.\w+$/.test(data.outputPath);
             const videoPath = hasExtension ? data.outputPath : `${data.outputPath}/screen.mp4`;
-            invoke('show_video_editor_window', { projectPath: videoPath }).catch((error) => {
-              logger.error('Failed to open video editor:', error);
-              // Fallback to floating preview
-              invoke('show_recording_preview', {
-                outputPath: data.outputPath,
-                durationSecs: data.durationSecs,
-                fileSizeBytes: data.fileSizeBytes,
-              }).catch(() => {});
-            });
+            invoke('show_video_editor_window', { projectPath: videoPath })
+              .catch((error) => {
+                logger.error('Failed to open video editor:', error);
+                // Fallback to floating preview
+                const previewAnchor = recordingPreviewAnchorRef.current;
+                invoke('show_recording_preview', {
+                  outputPath: data.outputPath,
+                  durationSecs: data.durationSecs,
+                  fileSizeBytes: data.fileSizeBytes,
+                  ...(previewAnchor
+                    ? {
+                        previewX: previewAnchor.x,
+                        previewY: previewAnchor.y,
+                        previewWidth: previewAnchor.width,
+                        previewHeight: previewAnchor.height,
+                      }
+                    : {}),
+                }).catch(() => {});
+              })
+              .finally(() => {
+                recordingPreviewAnchorRef.current = null;
+              });
           } else {
             // Show floating recording preview
+            const previewAnchor = recordingPreviewAnchorRef.current;
             invoke('show_recording_preview', {
               outputPath: data.outputPath,
               durationSecs: data.durationSecs,
               fileSizeBytes: data.fileSizeBytes,
+              ...(previewAnchor
+                ? {
+                    previewX: previewAnchor.x,
+                    previewY: previewAnchor.y,
+                    previewWidth: previewAnchor.width,
+                    previewHeight: previewAnchor.height,
+                  }
+                : {}),
             }).catch((error) => {
               logger.error('Failed to show recording preview:', error);
             });
           }
+          recordingPreviewAnchorRef.current = null;
         }
       },
       onThumbnailReady: useCaptureStore.getState().updateCaptureThumbnail,
@@ -234,6 +266,16 @@ function App() {
   // Consolidated Tauri event listeners
   useAppEventListeners(eventCallbacks);
   useQuickRecordingFlow();
+
+  useEffect(() => {
+    const unlisten = listen<RecordingPreviewAnchor>('recording-preview-anchor', (event) => {
+      recordingPreviewAnchorRef.current = event.payload;
+    });
+
+    return () => {
+      unlisten.then((fn) => fn()).catch(() => {});
+    };
+  }, []);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {

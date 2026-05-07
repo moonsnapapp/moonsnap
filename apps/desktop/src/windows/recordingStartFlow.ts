@@ -67,11 +67,10 @@ export async function startRecordingCaptureFlow({
   const fps = captureType === 'video' ? settings.video.fps : settings.gif.fps;
   const quality = captureType === 'video' ? settings.video.quality : 80;
   const gifQualityPreset = settings.gif.qualityPreset;
-  const countdownSecs = quickCapture
-    ? 0
-    : (captureType === 'video' ? settings.video.countdownSecs : settings.gif.countdownSecs);
+  const countdownSecs =
+    captureType === 'video' ? settings.video.countdownSecs : settings.gif.countdownSecs;
   const includeCursor = captureType === 'video'
-    ? (quickCapture ? settings.video.includeCursor : false)
+    ? settings.video.includeCursor
     : settings.gif.includeCursor;
   const maxDurationSecs =
     captureType === 'video'
@@ -83,10 +82,17 @@ export async function startRecordingCaptureFlow({
 
   if (captureType === 'video') {
     await invoke('set_hide_desktop_icons', { enabled: settings.video.hideDesktopIcons });
-    await invoke('set_webcam_enabled', { enabled: !quickCapture && webcamSettings.enabled });
+    await invoke('set_webcam_enabled', { enabled: webcamSettings.enabled });
   } else {
     await invoke('set_webcam_enabled', { enabled: false });
   }
+
+  await emit('recording-preview-anchor', {
+    x: selection.x,
+    y: selection.y,
+    width: selection.width,
+    height: selection.height,
+  });
 
   const overlayReadyPromise = new Promise<void>((resolve) => {
     const timeoutId = window.setTimeout(resolve, 500);

@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { listen, type UnlistenFn } from '@tauri-apps/api/event';
+import { emit, listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { getCurrentWindow, LogicalSize } from '@tauri-apps/api/window';
 
 import {
@@ -49,6 +49,17 @@ const RecordingControlsWindow: React.FC = () => {
   const timerStartedAtRef = useRef<number | null>(null);
   const isRecordingActiveRef = useRef(false);
   const isClosingRef = useRef(false);
+
+  const closeCurrentWindow = useCallback(async () => {
+    if (isClosingRef.current) {
+      return;
+    }
+
+    isClosingRef.current = true;
+    await getCurrentWindow().close().catch((error) => {
+      toolbarLogger.error('Failed to close recording controls window:', error);
+    });
+  }, []);
 
   useEffect(() => {
     const currentWindow = getCurrentWindow();
@@ -163,9 +174,17 @@ const RecordingControlsWindow: React.FC = () => {
             break;
           case 'idle':
           case 'completed':
+            isRecordingActiveRef.current = false;
+            setCountdownSeconds(undefined);
+            void closeCurrentWindow();
+            break;
           case 'error':
             isRecordingActiveRef.current = false;
             setCountdownSeconds(undefined);
+            setMode('error');
+            window.setTimeout(() => {
+              void closeCurrentWindow();
+            }, 2500);
             break;
         }
       });
@@ -187,7 +206,7 @@ const RecordingControlsWindow: React.FC = () => {
       unlistenFormat?.();
       unlistenCountdown?.();
     };
-  }, []);
+  }, [closeCurrentWindow]);
 
   const handlePause = useCallback(async () => {
     await invoke('pause_recording').catch((error) => {
@@ -208,10 +227,18 @@ const RecordingControlsWindow: React.FC = () => {
   }, []);
 
   const handleCancel = useCallback(async () => {
+    if (mode === 'processing' || mode === 'error') {
+      return;
+    }
+
+    await emit('recording-cancelled-from-controls').catch((error) => {
+      toolbarLogger.error('Failed to notify capture toolbar about recording cancel:', error);
+    });
+
     await invoke('cancel_recording').catch((error) => {
       toolbarLogger.error('Failed to cancel recording from controls window:', error);
     });
-  }, []);
+  }, [mode]);
 
   const handleMouseDown = useCallback(async (event: React.MouseEvent<HTMLDivElement>) => {
     if ((event.target as HTMLElement).closest('button')) {

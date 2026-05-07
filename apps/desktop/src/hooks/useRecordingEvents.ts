@@ -63,6 +63,7 @@ export function useRecordingEvents(
   const timerBaseTimeRef = useRef(0);
   const timerStartedAtRef = useRef<number | null>(null);
   const closeWindowOnCompleteRef = options.closeWindowOnCompleteRef;
+  const restoreToolbarOnIdleRef = useRef(false);
 
   // Wrapper to update both state and ref
   const setMode = useCallback((newMode: ToolbarMode) => {
@@ -110,6 +111,7 @@ export function useRecordingEvents(
     let unlistenClosed: UnlistenFn | null = null;
     let unlistenReselecting: UnlistenFn | null = null;
     let unlistenCountdownTick: UnlistenFn | null = null;
+    let unlistenCancelledFromControls: UnlistenFn | null = null;
 
     const currentWindow = getCurrentWebviewWindow();
 
@@ -208,10 +210,12 @@ export function useRecordingEvents(
             });
             break;
           }
-          case 'idle':
+          case 'idle': {
             isRecordingActiveRef.current = false;
             timerBaseTimeRef.current = 0;
             timerStartedAtRef.current = null;
+            const shouldRestoreToolbar = restoreToolbarOnIdleRef.current;
+            restoreToolbarOnIdleRef.current = false;
             if (closeWindowOnCompleteRef) {
               closeWindowOnCompleteRef.current = false;
             }
@@ -232,11 +236,22 @@ export function useRecordingEvents(
                 createErrorHandler({ operation: 'close webcam preview', silent: true })
               ),
             ]).finally(() => {
+              if (shouldRestoreToolbar) {
+                currentWindow.show().catch(
+                  createErrorHandler({ operation: 'show toolbar window', silent: true })
+                );
+                currentWindow.setFocus().catch(
+                  createErrorHandler({ operation: 'focus toolbar window', silent: true })
+                );
+                return;
+              }
+
               currentWindow.close().catch(
                 createErrorHandler({ operation: 'close toolbar window', silent: true })
               );
             });
             break;
+          }
 
           case 'error':
             isRecordingActiveRef.current = false;
@@ -301,6 +316,10 @@ export function useRecordingEvents(
         }
         // Don't close toolbar - keep it open for the new selection
       });
+
+      unlistenCancelledFromControls = await listen('recording-cancelled-from-controls', () => {
+        restoreToolbarOnIdleRef.current = true;
+      });
     };
 
     setupListeners();
@@ -311,6 +330,7 @@ export function useRecordingEvents(
       unlistenClosed?.();
       unlistenReselecting?.();
       unlistenCountdownTick?.();
+      unlistenCancelledFromControls?.();
     };
   }, [closeWindowOnCompleteRef, setMode]);
 

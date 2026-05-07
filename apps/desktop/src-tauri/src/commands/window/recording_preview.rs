@@ -4,7 +4,9 @@
 //! Auto-dismisses after a timeout unless the user interacts with it.
 
 use moonsnap_core::error::MoonSnapResult;
-use tauri::{command, AppHandle, Manager, WebviewUrl, WebviewWindowBuilder};
+use tauri::{
+    command, AppHandle, Manager, PhysicalPosition, Position, WebviewUrl, WebviewWindowBuilder,
+};
 
 /// Recording preview window label
 const PREVIEW_LABEL: &str = "recording-preview";
@@ -24,6 +26,10 @@ pub async fn show_recording_preview(
     output_path: String,
     duration_secs: f64,
     file_size_bytes: u64,
+    preview_x: Option<i32>,
+    preview_y: Option<i32>,
+    preview_width: Option<u32>,
+    preview_height: Option<u32>,
 ) -> MoonSnapResult<()> {
     // Close existing preview if any
     if let Some(existing) = app.get_webview_window(PREVIEW_LABEL) {
@@ -45,20 +51,49 @@ pub async fn show_recording_preview(
         .into(),
     );
 
-    // Get primary monitor to position in bottom-right
-    let monitor = app
-        .primary_monitor()
-        .map_err(|e| format!("Failed to get monitor: {}", e))?
-        .ok_or("No primary monitor found")?;
+    let mut monitors = app
+        .available_monitors()
+        .map_err(|e| format!("Failed to get monitors: {}", e))?;
+
+    let anchor_center = preview_x
+        .zip(preview_y)
+        .zip(preview_width.zip(preview_height))
+        .map(|((x, y), (width, height))| (x + width as i32 / 2, y + height as i32 / 2));
+
+    let anchor_monitor_index = anchor_center.and_then(|(center_x, center_y)| {
+        monitors.iter().position(|monitor| {
+            let pos = monitor.position();
+            let size = monitor.size();
+
+            center_x >= pos.x
+                && center_x < pos.x + size.width as i32
+                && center_y >= pos.y
+                && center_y < pos.y + size.height as i32
+        })
+    });
+
+    let monitor = if let Some(index) = anchor_monitor_index {
+        monitors.swap_remove(index)
+    } else if let Some(primary_monitor) = app.primary_monitor().ok().flatten() {
+        primary_monitor
+    } else if !monitors.is_empty() {
+        monitors.swap_remove(0)
+    } else {
+        return Err("No monitor found".into());
+    };
 
     let monitor_size = monitor.size();
+    let monitor_position = monitor.position();
     let scale_factor = monitor.scale_factor();
 
-    let logical_width = monitor_size.width as f64 / scale_factor;
-    let logical_height = monitor_size.height as f64 / scale_factor;
+    let preview_width_physical = (PREVIEW_WIDTH * scale_factor).round() as i32;
+    let preview_height_physical = (PREVIEW_HEIGHT * scale_factor).round() as i32;
+    let margin_physical = (MARGIN * scale_factor).round() as i32;
 
-    let x = logical_width - PREVIEW_WIDTH - MARGIN;
-    let y = logical_height - PREVIEW_HEIGHT - MARGIN;
+    let x =
+        monitor_position.x + monitor_size.width as i32 - preview_width_physical - margin_physical;
+    let y =
+        monitor_position.y + monitor_size.height as i32 - preview_height_physical - margin_physical;
 
     let window = WebviewWindowBuilder::new(&app, PREVIEW_LABEL, url)
         .title("Recording Preview")
@@ -71,11 +106,14 @@ pub async fn show_recording_preview(
         .always_on_top(true)
         .skip_taskbar(true)
         .shadow(false)
-        .position(x, y)
         .visible(false)
         .focused(false)
         .build()
         .map_err(|e| format!("Failed to create recording preview window: {}", e))?;
+
+    window
+        .set_position(Position::Physical(PhysicalPosition { x, y }))
+        .map_err(|e| format!("Failed to position recording preview window: {}", e))?;
 
     let _ = window.show();
 

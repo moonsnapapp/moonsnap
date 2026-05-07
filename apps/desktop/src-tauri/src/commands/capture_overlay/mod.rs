@@ -695,8 +695,11 @@ fn run_overlay(
             let _ = state.app_handle.emit("overlay-ready-for-recording", ());
         }
 
-        // Bring toolbar back to front after overlay closes (with delay for z-order to settle)
-        if !state.auto_start_recording {
+        // Bring the toolbar back after normal selection/cancel flows. For
+        // recording, the frontend swaps to the recording-controls window; if
+        // the hidden primary toolbar is shown here it can sit above the HUD and
+        // swallow stop/pause clicks.
+        if !state.auto_start_recording && state.result.action != OverlayAction::StartRecording {
             let app_for_toolbar = state.app_handle.clone();
             let toolbar_label = state
                 .toolbar_owner
