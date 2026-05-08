@@ -1098,7 +1098,7 @@ export function VideoTimeline({ onExport, onResetTrimSegments, onSetInPoint, onS
               <TooltipContent side="bottom">
                 <div className="flex items-center gap-2">
                   <span className="text-xs">Cut Mode</span>
-                  <kbd className="kbd text-[10px] px-1.5 py-0.5">S</kbd>
+                  <kbd className="kbd text-[10px] px-1.5 py-0.5">C</kbd>
                 </div>
               </TooltipContent>
             </Tooltip>

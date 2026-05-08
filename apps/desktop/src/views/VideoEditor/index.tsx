@@ -329,6 +329,10 @@ export const VideoEditorView = forwardRef<VideoEditorViewRef, VideoEditorViewPro
     setSplitMode(!splitMode);
   }, [setSplitMode, splitMode]);
 
+  const handleSelectMode = useCallback(() => {
+    setSplitMode(false);
+  }, [setSplitMode]);
+
   // Handle reset trim segments - restore full video
   const handleResetTrimSegments = useCallback(() => {
     resetTrimSegments();
@@ -617,6 +621,7 @@ export const VideoEditorView = forwardRef<VideoEditorViewRef, VideoEditorViewPro
     onSkipBack: handleSkipBack,
     onSkipForward: handleSkipForward,
     onToggleCutMode: handleToggleCutMode,
+    onSelectMode: handleSelectMode,
     onDeleteSelected: handleDeleteSelected,
     onTimelineZoomIn: handleTimelineZoomIn,
     onTimelineZoomOut: handleTimelineZoomOut,

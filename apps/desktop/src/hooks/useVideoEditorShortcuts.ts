@@ -10,7 +10,8 @@ import { isTextInputTarget } from '../utils/keyboard';
  * - End: Seek to end
  * - ArrowLeft: Skip back 5 seconds
  * - ArrowRight: Skip forward 5 seconds
- * - S: Toggle cut mode
+ * - C: Toggle cut mode
+ * - V: Select/normal mode
  * - Delete/Backspace: Delete selected item (annotations delete a shape or a whole segment based on current annotation context)
  * - Escape: Deselect all
  *
@@ -34,6 +35,7 @@ interface UseVideoEditorShortcutsProps {
   onSkipBack: () => void;
   onSkipForward: () => void;
   onToggleCutMode: () => void;
+  onSelectMode: () => void;
   onDeleteSelected: () => void;
   onTimelineZoomIn: () => void;
   onTimelineZoomOut: () => void;
@@ -55,6 +57,7 @@ export function useVideoEditorShortcuts({
   onSkipBack,
   onSkipForward,
   onToggleCutMode,
+  onSelectMode,
   onDeleteSelected,
   onTimelineZoomIn,
   onTimelineZoomOut,
@@ -134,10 +137,15 @@ export function useVideoEditorShortcuts({
           e.preventDefault();
           onSkipForward();
           break;
-        case 's':
-        case 'S':
+        case 'c':
+        case 'C':
           e.preventDefault();
           onToggleCutMode();
+          break;
+        case 'v':
+        case 'V':
+          e.preventDefault();
+          onSelectMode();
           break;
         case 'Delete':
         case 'Backspace':
@@ -176,6 +184,7 @@ export function useVideoEditorShortcuts({
     onSkipBack,
     onSkipForward,
     onToggleCutMode,
+    onSelectMode,
     onDeleteSelected,
     onTimelineZoomIn,
     onTimelineZoomOut,
