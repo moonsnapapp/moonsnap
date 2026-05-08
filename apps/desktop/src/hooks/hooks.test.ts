@@ -312,6 +312,69 @@ describe('useKeyboardShortcuts', () => {
       // Cleanup
       document.body.removeChild(input);
     });
+
+    it('should not handle delete when focused on select controls', () => {
+      const shape1 = createTestShape({ id: 'shape1' });
+
+      renderHook(() =>
+        useKeyboardShortcuts({
+          selectedIds: ['shape1'],
+          setSelectedIds: mockSetSelectedIds,
+          shapes: [shape1],
+          onShapesChange: mockOnShapesChange,
+          recordAction: mockRecordAction,
+          ...defaultProps,
+        }),
+        { wrapper: createWrapper() }
+      );
+
+      const select = document.createElement('select');
+      document.body.appendChild(select);
+      select.focus();
+
+      const event = new KeyboardEvent('keydown', {
+        key: 'Delete',
+        bubbles: true,
+      });
+      Object.defineProperty(event, 'target', { value: select });
+      window.dispatchEvent(event);
+
+      expect(mockOnShapesChange).not.toHaveBeenCalled();
+
+      document.body.removeChild(select);
+    });
+
+    it('should not handle delete when focused on contenteditable text', () => {
+      const shape1 = createTestShape({ id: 'shape1' });
+
+      renderHook(() =>
+        useKeyboardShortcuts({
+          selectedIds: ['shape1'],
+          setSelectedIds: mockSetSelectedIds,
+          shapes: [shape1],
+          onShapesChange: mockOnShapesChange,
+          recordAction: mockRecordAction,
+          ...defaultProps,
+        }),
+        { wrapper: createWrapper() }
+      );
+
+      const editable = document.createElement('div');
+      editable.setAttribute('contenteditable', 'true');
+      document.body.appendChild(editable);
+      editable.focus();
+
+      const event = new KeyboardEvent('keydown', {
+        key: 'Delete',
+        bubbles: true,
+      });
+      Object.defineProperty(event, 'target', { value: editable });
+      window.dispatchEvent(event);
+
+      expect(mockOnShapesChange).not.toHaveBeenCalled();
+
+      document.body.removeChild(editable);
+    });
   });
 
   describe('cleanup', () => {
