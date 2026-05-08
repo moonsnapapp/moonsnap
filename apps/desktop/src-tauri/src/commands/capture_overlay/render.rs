@@ -18,12 +18,20 @@ use windows::Win32::Graphics::Direct2D::{
     D2D1_LINEAR_GRADIENT_BRUSH_PROPERTIES, D2D1_ROUNDED_RECT,
 };
 use windows::Win32::Graphics::DirectWrite::{IDWriteTextFormat, DWRITE_MEASURING_MODE_NATURAL};
+use windows::Win32::Graphics::DirectWrite::{
+    DWRITE_FONT_WEIGHT_NORMAL, DWRITE_FONT_WEIGHT_SEMI_BOLD, DWRITE_TEXT_ALIGNMENT_CENTER,
+    DWRITE_TEXT_ALIGNMENT_LEADING,
+};
 use windows::Win32::Graphics::Dxgi::{IDXGISurface, DXGI_PRESENT};
 
 use super::commands::{get_highlighted_monitor, get_highlighted_window};
-use super::graphics::d2d::{create_target_bitmap, Brushes, D2DResources};
+use super::graphics::d2d::{
+    create_target_bitmap, create_text_format_with_size, Brushes, D2DResources,
+};
 use super::state::{OverlayState, SelectionHudState};
 use super::types::*;
+
+const OVERLAY_CONTROL_MAX_SCALE: f32 = 1.3;
 
 /// Render the overlay to the swap chain.
 ///
@@ -108,21 +116,105 @@ pub fn recording_mode_chooser_rect(state: &OverlayState) -> Option<Rect> {
 
     let selection = state.get_local_selection()?;
     let (selection_center_x, selection_center_y) = selection.center();
-    let width = RECORDING_MODE_CHOOSER_WIDTH;
-    let height = RECORDING_MODE_CHOOSER_HEIGHT;
+    let metrics = RecordingModeChooserMetrics::for_state(state);
+    let width = metrics.width;
+    let height = metrics.height;
 
-    let max_left = state.monitor.width as i32 - width - RECORDING_MODE_CHOOSER_MARGIN;
-    let max_top = state.monitor.height as i32 - height - RECORDING_MODE_CHOOSER_MARGIN;
-    let left = (selection_center_x - width / 2).clamp(
-        RECORDING_MODE_CHOOSER_MARGIN,
-        max_left.max(RECORDING_MODE_CHOOSER_MARGIN),
-    );
-    let top = (selection_center_y - height / 2).clamp(
-        RECORDING_MODE_CHOOSER_MARGIN,
-        max_top.max(RECORDING_MODE_CHOOSER_MARGIN),
-    );
+    let max_left = state.monitor.width as i32 - width - metrics.margin;
+    let max_top = state.monitor.height as i32 - height - metrics.margin;
+    let left = (selection_center_x - width / 2).clamp(metrics.margin, max_left.max(metrics.margin));
+    let top = (selection_center_y - height / 2).clamp(metrics.margin, max_top.max(metrics.margin));
 
     Some(Rect::new(left, top, left + width, top + height))
+}
+
+#[derive(Debug, Clone, Copy)]
+struct RecordingModeChooserMetrics {
+    scale: f32,
+    width: i32,
+    height: i32,
+    margin: i32,
+    back_size: i32,
+}
+
+impl RecordingModeChooserMetrics {
+    fn for_state(state: &OverlayState) -> Self {
+        let scale = recording_mode_chooser_scale(state);
+        Self {
+            scale,
+            width: scaled_i32(RECORDING_MODE_CHOOSER_WIDTH, scale),
+            height: scaled_i32(RECORDING_MODE_CHOOSER_HEIGHT, scale),
+            margin: scaled_i32(RECORDING_MODE_CHOOSER_MARGIN, scale),
+            back_size: scaled_i32(RECORDING_MODE_CHOOSER_BACK_SIZE, scale),
+        }
+    }
+
+    fn from_shell(shell: Rect) -> Self {
+        let scale = (shell.width() as f32 / RECORDING_MODE_CHOOSER_WIDTH as f32)
+            .clamp(1.0, OVERLAY_CONTROL_MAX_SCALE);
+        Self {
+            scale,
+            width: shell.width() as i32,
+            height: shell.height() as i32,
+            margin: scaled_i32(RECORDING_MODE_CHOOSER_MARGIN, scale),
+            back_size: scaled_i32(RECORDING_MODE_CHOOSER_BACK_SIZE, scale),
+        }
+    }
+
+    fn s(&self, value: i32) -> i32 {
+        scaled_i32(value, self.scale)
+    }
+
+    fn sf(&self, value: f32) -> f32 {
+        value * self.scale
+    }
+}
+
+fn scaled_i32(value: i32, scale: f32) -> i32 {
+    ((value as f32) * scale).round() as i32
+}
+
+fn overlay_control_scale(state: &OverlayState) -> f32 {
+    let Some(selection) = state.get_local_selection() else {
+        return 1.0;
+    };
+
+    let (center_x, center_y) = selection.center();
+    let screen_center = state
+        .monitor
+        .local_to_screen(Point::new(center_x, center_y));
+
+    let mut dpi_scale = 1.0_f32;
+    let mut resolution_scale = (state.monitor.height as f32 / 1080.0).max(1.0);
+
+    if let Ok(monitors) = xcap::Monitor::all() {
+        for monitor in monitors {
+            let left = monitor.x().unwrap_or(0);
+            let top = monitor.y().unwrap_or(0);
+            let width = monitor.width().unwrap_or(0);
+            let height = monitor.height().unwrap_or(0);
+            let right = left + width as i32;
+            let bottom = top + height as i32;
+
+            if screen_center.x >= left
+                && screen_center.x < right
+                && screen_center.y >= top
+                && screen_center.y < bottom
+            {
+                dpi_scale = monitor.scale_factor().unwrap_or(1.0).max(1.0);
+                resolution_scale = (height as f32 / 1080.0).max(1.0);
+                break;
+            }
+        }
+    }
+
+    dpi_scale
+        .max(resolution_scale)
+        .clamp(1.0, OVERLAY_CONTROL_MAX_SCALE)
+}
+
+fn recording_mode_chooser_scale(state: &OverlayState) -> f32 {
+    overlay_control_scale(state)
 }
 
 pub fn hit_test_recording_mode_chooser(
@@ -157,38 +249,42 @@ pub fn hit_test_recording_mode_chooser(
 }
 
 fn recording_mode_chooser_back_rect(shell: Rect) -> Rect {
+    let metrics = RecordingModeChooserMetrics::from_shell(shell);
     Rect::new(
-        shell.left + 12,
-        shell.top + 12,
-        shell.left + 12 + RECORDING_MODE_CHOOSER_BACK_SIZE,
-        shell.top + 12 + RECORDING_MODE_CHOOSER_BACK_SIZE,
+        shell.left + metrics.s(12),
+        shell.top + metrics.s(12),
+        shell.left + metrics.s(12) + metrics.back_size,
+        shell.top + metrics.s(12) + metrics.back_size,
     )
 }
 
 fn recording_mode_chooser_quick_rect(shell: Rect) -> Rect {
+    let metrics = RecordingModeChooserMetrics::from_shell(shell);
     Rect::new(
-        shell.left + 18,
-        shell.top + 60,
-        shell.left + 251,
-        shell.top + 132,
+        shell.left + metrics.s(18),
+        shell.top + metrics.s(60),
+        shell.left + metrics.s(251),
+        shell.top + metrics.s(132),
     )
 }
 
 fn recording_mode_chooser_studio_rect(shell: Rect) -> Rect {
+    let metrics = RecordingModeChooserMetrics::from_shell(shell);
     Rect::new(
-        shell.left + 269,
-        shell.top + 60,
-        shell.right - 18,
-        shell.top + 132,
+        shell.left + metrics.s(269),
+        shell.top + metrics.s(60),
+        shell.right - metrics.s(18),
+        shell.top + metrics.s(132),
     )
 }
 
 fn recording_mode_chooser_remember_rect(shell: Rect) -> Rect {
+    let metrics = RecordingModeChooserMetrics::from_shell(shell);
     Rect::new(
-        shell.left + 18,
-        shell.top + 146,
-        shell.right - 18,
-        shell.top + 176,
+        shell.left + metrics.s(18),
+        shell.top + metrics.s(146),
+        shell.right - metrics.s(18),
+        shell.top + metrics.s(176),
     )
 }
 
@@ -202,11 +298,12 @@ pub fn selection_hud_rect(state: &OverlayState) -> Option<Rect> {
     let selection = state.get_local_selection()?;
     let monitor_bounds = selection_monitor_local_rect(state, selection);
     let (selection_center_x, _) = selection.center();
-    let width = SELECTION_HUD_WIDTH;
-    let height = SELECTION_HUD_HEIGHT;
+    let metrics = SelectionHudMetrics::for_state(state);
+    let width = metrics.width;
+    let height = metrics.height;
 
-    let min_left = monitor_bounds.left + SELECTION_HUD_MARGIN;
-    let max_left = monitor_bounds.right - width - SELECTION_HUD_MARGIN;
+    let min_left = monitor_bounds.left + metrics.margin;
+    let max_left = monitor_bounds.right - width - metrics.margin;
     let preferred_left = selection_center_x - width / 2;
     let left = if min_left <= max_left {
         preferred_left.clamp(min_left, max_left)
@@ -214,20 +311,135 @@ pub fn selection_hud_rect(state: &OverlayState) -> Option<Rect> {
         monitor_bounds.left + (monitor_bounds.width() as i32 - width) / 2
     };
 
-    let below = selection.bottom + SELECTION_HUD_MARGIN;
-    let above = selection.top - SELECTION_HUD_MARGIN - height;
-    let min_top = monitor_bounds.top + SELECTION_HUD_MARGIN;
-    let max_top = monitor_bounds.bottom - height - SELECTION_HUD_MARGIN;
+    let below = selection.bottom + metrics.margin;
+    let above = selection.top - metrics.margin - height;
+    let min_top = monitor_bounds.top + metrics.margin;
+    let max_top = monitor_bounds.bottom - height - metrics.margin;
     let top = if below <= max_top {
         below.max(min_top)
     } else if above >= min_top {
         above.min(max_top)
     } else {
-        let inside_bottom = selection.bottom - height - SELECTION_HUD_MARGIN;
+        let inside_bottom = selection.bottom - height - metrics.margin;
         inside_bottom.clamp(min_top, max_top.max(min_top))
     };
 
     Some(Rect::new(left, top, left + width, top + height))
+}
+
+#[derive(Debug, Clone, Copy)]
+struct SelectionHudMetrics {
+    scale: f32,
+    width: i32,
+    height: i32,
+    margin: i32,
+    button_top: i32,
+    button_height: i32,
+    button_gap: i32,
+    step_button_width: i32,
+}
+
+impl SelectionHudMetrics {
+    fn for_state(state: &OverlayState) -> Self {
+        let scale = overlay_control_scale(state);
+        Self::new(scale)
+    }
+
+    fn from_shell(shell: Rect) -> Self {
+        let scale = (shell.width() as f32 / SELECTION_HUD_WIDTH as f32)
+            .clamp(1.0, OVERLAY_CONTROL_MAX_SCALE);
+        Self::new(scale)
+    }
+
+    fn new(scale: f32) -> Self {
+        Self {
+            scale,
+            width: scaled_i32(SELECTION_HUD_WIDTH, scale),
+            height: scaled_i32(SELECTION_HUD_HEIGHT, scale),
+            margin: scaled_i32(SELECTION_HUD_MARGIN, scale),
+            button_top: scaled_i32(SELECTION_HUD_BUTTON_TOP, scale),
+            button_height: scaled_i32(SELECTION_HUD_BUTTON_HEIGHT, scale),
+            button_gap: scaled_i32(SELECTION_HUD_BUTTON_GAP, scale),
+            step_button_width: scaled_i32(SELECTION_HUD_STEP_BUTTON_WIDTH, scale),
+        }
+    }
+
+    fn s(&self, value: i32) -> i32 {
+        scaled_i32(value, self.scale)
+    }
+
+    fn sf(&self, value: f32) -> f32 {
+        value * self.scale
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+struct SelectionHudButtonRects {
+    back: Rect,
+    preset: Rect,
+    width: Rect,
+    height: Rect,
+    save: Rect,
+    capture: Rect,
+    cancel: Rect,
+}
+
+fn selection_hud_button_rects(shell: Rect) -> SelectionHudButtonRects {
+    let metrics = SelectionHudMetrics::from_shell(shell);
+    let button_top = shell.top + metrics.button_top;
+    let button_bottom = button_top + metrics.button_height;
+    let back = Rect::new(
+        shell.left + metrics.s(10),
+        button_top,
+        shell.left + metrics.s(10) + metrics.s(SELECTION_HUD_BACK_WIDTH),
+        button_bottom,
+    );
+    let preset = Rect::new(
+        back.right + metrics.button_gap,
+        button_top,
+        back.right + metrics.button_gap + metrics.s(SELECTION_HUD_PRESET_WIDTH),
+        button_bottom,
+    );
+    let width = Rect::new(
+        preset.right + metrics.button_gap,
+        button_top,
+        preset.right + metrics.button_gap + metrics.s(SELECTION_HUD_DIMENSION_WIDTH),
+        button_bottom,
+    );
+    let height = Rect::new(
+        width.right + metrics.button_gap,
+        button_top,
+        width.right + metrics.button_gap + metrics.s(SELECTION_HUD_DIMENSION_WIDTH),
+        button_bottom,
+    );
+    let save = Rect::new(
+        height.right + metrics.button_gap,
+        button_top,
+        height.right + metrics.button_gap + metrics.s(SELECTION_HUD_SAVE_WIDTH),
+        button_bottom,
+    );
+    let cancel = Rect::new(
+        shell.right - metrics.s(10) - metrics.s(SELECTION_HUD_CANCEL_WIDTH),
+        button_top,
+        shell.right - metrics.s(10),
+        button_bottom,
+    );
+    let capture = Rect::new(
+        cancel.left - metrics.button_gap - metrics.s(SELECTION_HUD_CAPTURE_WIDTH),
+        button_top,
+        cancel.left - metrics.button_gap,
+        button_bottom,
+    );
+
+    SelectionHudButtonRects {
+        back,
+        preset,
+        width,
+        height,
+        save,
+        capture,
+        cancel,
+    }
 }
 
 fn selection_monitor_local_rect(state: &OverlayState, selection: Rect) -> Rect {
@@ -272,88 +484,46 @@ pub fn hit_test_selection_hud(state: &OverlayState, x: i32, y: i32) -> Selection
         return SelectionHudHitTarget::None;
     }
 
-    let button_top = shell.top + SELECTION_HUD_BUTTON_TOP;
-    let button_bottom = button_top + SELECTION_HUD_BUTTON_HEIGHT;
+    let metrics = SelectionHudMetrics::from_shell(shell);
+    let rects = selection_hud_button_rects(shell);
 
-    let back = Rect::new(
-        shell.left + 10,
-        button_top,
-        shell.left + 10 + SELECTION_HUD_BACK_WIDTH,
-        button_bottom,
-    );
-    if back.contains(x, y) {
+    if rects.back.contains(x, y) {
         return SelectionHudHitTarget::Back;
     }
 
-    let preset = Rect::new(
-        back.right + SELECTION_HUD_BUTTON_GAP,
-        button_top,
-        back.right + SELECTION_HUD_BUTTON_GAP + SELECTION_HUD_PRESET_WIDTH,
-        button_bottom,
-    );
-    if preset.contains(x, y) {
+    if rects.preset.contains(x, y) {
         return SelectionHudHitTarget::Preset;
     }
 
-    let width_group = Rect::new(
-        preset.right + SELECTION_HUD_BUTTON_GAP,
-        button_top,
-        preset.right + SELECTION_HUD_BUTTON_GAP + SELECTION_HUD_DIMENSION_WIDTH,
-        button_bottom,
-    );
-    if width_group.contains(x, y) {
-        if x < width_group.left + SELECTION_HUD_STEP_BUTTON_WIDTH {
+    if rects.width.contains(x, y) {
+        if x < rects.width.left + metrics.step_button_width {
             return SelectionHudHitTarget::WidthDown;
         }
-        if x >= width_group.right - SELECTION_HUD_STEP_BUTTON_WIDTH {
+        if x >= rects.width.right - metrics.step_button_width {
             return SelectionHudHitTarget::WidthUp;
         }
         return SelectionHudHitTarget::WidthInput;
     }
 
-    let height_group = Rect::new(
-        width_group.right + SELECTION_HUD_BUTTON_GAP,
-        button_top,
-        width_group.right + SELECTION_HUD_BUTTON_GAP + SELECTION_HUD_DIMENSION_WIDTH,
-        button_bottom,
-    );
-    if height_group.contains(x, y) {
-        if x < height_group.left + SELECTION_HUD_STEP_BUTTON_WIDTH {
+    if rects.height.contains(x, y) {
+        if x < rects.height.left + metrics.step_button_width {
             return SelectionHudHitTarget::HeightDown;
         }
-        if x >= height_group.right - SELECTION_HUD_STEP_BUTTON_WIDTH {
+        if x >= rects.height.right - metrics.step_button_width {
             return SelectionHudHitTarget::HeightUp;
         }
         return SelectionHudHitTarget::HeightInput;
     }
 
-    let save = Rect::new(
-        height_group.right + SELECTION_HUD_BUTTON_GAP,
-        button_top,
-        height_group.right + SELECTION_HUD_BUTTON_GAP + SELECTION_HUD_SAVE_WIDTH,
-        button_bottom,
-    );
-    if save.contains(x, y) {
+    if rects.save.contains(x, y) {
         return SelectionHudHitTarget::Save;
     }
 
-    let cancel = Rect::new(
-        shell.right - 10 - SELECTION_HUD_CANCEL_WIDTH,
-        button_top,
-        shell.right - 10,
-        button_bottom,
-    );
-    if cancel.contains(x, y) {
+    if rects.cancel.contains(x, y) {
         return SelectionHudHitTarget::Cancel;
     }
 
-    let capture = Rect::new(
-        cancel.left - 8 - SELECTION_HUD_CAPTURE_WIDTH,
-        button_top,
-        cancel.left - 8,
-        button_bottom,
-    );
-    if capture.contains(x, y) {
+    if rects.capture.contains(x, y) {
         return SelectionHudHitTarget::Capture;
     }
 
@@ -362,39 +532,7 @@ pub fn hit_test_selection_hud(state: &OverlayState, x: i32, y: i32) -> Selection
 
 pub fn selection_hud_area_button_rect(state: &OverlayState) -> Option<Rect> {
     let shell = selection_hud_rect(state)?;
-    let button_top = shell.top + SELECTION_HUD_BUTTON_TOP;
-    let button_bottom = button_top + SELECTION_HUD_BUTTON_HEIGHT;
-    let back = Rect::new(
-        shell.left + 10,
-        button_top,
-        shell.left + 10 + SELECTION_HUD_BACK_WIDTH,
-        button_bottom,
-    );
-    let preset = Rect::new(
-        back.right + SELECTION_HUD_BUTTON_GAP,
-        button_top,
-        back.right + SELECTION_HUD_BUTTON_GAP + SELECTION_HUD_PRESET_WIDTH,
-        button_bottom,
-    );
-    let width_group = Rect::new(
-        preset.right + SELECTION_HUD_BUTTON_GAP,
-        button_top,
-        preset.right + SELECTION_HUD_BUTTON_GAP + SELECTION_HUD_DIMENSION_WIDTH,
-        button_bottom,
-    );
-    let height_group = Rect::new(
-        width_group.right + SELECTION_HUD_BUTTON_GAP,
-        button_top,
-        width_group.right + SELECTION_HUD_BUTTON_GAP + SELECTION_HUD_DIMENSION_WIDTH,
-        button_bottom,
-    );
-
-    Some(Rect::new(
-        height_group.right + SELECTION_HUD_BUTTON_GAP,
-        button_top,
-        height_group.right + SELECTION_HUD_BUTTON_GAP + SELECTION_HUD_SAVE_WIDTH,
-        button_bottom,
-    ))
+    Some(selection_hud_button_rects(shell).save)
 }
 
 /// Information about what to render.
@@ -921,6 +1059,51 @@ fn draw_size_indicator(
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn chooser_metrics_scale_all_hit_targets_from_shell_width() {
+        let shell = Rect::new(100, 80, 776, 330);
+        let metrics = RecordingModeChooserMetrics::from_shell(shell);
+
+        assert!((metrics.scale - OVERLAY_CONTROL_MAX_SCALE).abs() < f32::EPSILON);
+        assert_eq!(
+            recording_mode_chooser_back_rect(shell),
+            Rect::new(116, 96, 160, 140)
+        );
+        assert_eq!(
+            recording_mode_chooser_quick_rect(shell),
+            Rect::new(123, 158, 426, 252)
+        );
+        assert_eq!(
+            recording_mode_chooser_studio_rect(shell),
+            Rect::new(450, 158, 753, 252)
+        );
+        assert_eq!(
+            recording_mode_chooser_remember_rect(shell),
+            Rect::new(123, 270, 753, 309)
+        );
+    }
+
+    #[test]
+    fn selection_hud_metrics_scale_all_button_rects_from_shell_width() {
+        let shell = Rect::new(100, 80, 958, 150);
+        let metrics = SelectionHudMetrics::from_shell(shell);
+        let rects = selection_hud_button_rects(shell);
+
+        assert!((metrics.scale - OVERLAY_CONTROL_MAX_SCALE).abs() < f32::EPSILON);
+        assert_eq!(rects.back, Rect::new(113, 93, 188, 137));
+        assert_eq!(rects.preset, Rect::new(198, 93, 292, 137));
+        assert_eq!(rects.width, Rect::new(302, 93, 458, 137));
+        assert_eq!(rects.height, Rect::new(468, 93, 624, 137));
+        assert_eq!(rects.save, Rect::new(634, 93, 712, 137));
+        assert_eq!(rects.capture, Rect::new(727, 93, 841, 137));
+        assert_eq!(rects.cancel, Rect::new(851, 93, 945, 137));
+    }
+}
+
 /// Draw the 8 resize handles.
 fn draw_resize_handles(context: &ID2D1DeviceContext, brushes: &Brushes, rect: D2D_RECT_F) {
     let hh = HANDLE_HALF as f32;
@@ -974,50 +1157,18 @@ fn draw_selection_hud(
         return Ok(());
     };
 
-    let button_top = shell.top + SELECTION_HUD_BUTTON_TOP;
-    let button_bottom = button_top + SELECTION_HUD_BUTTON_HEIGHT;
-    let back_rect = Rect::new(
-        shell.left + 10,
-        button_top,
-        shell.left + 10 + SELECTION_HUD_BACK_WIDTH,
-        button_bottom,
-    );
-    let preset_rect = Rect::new(
-        back_rect.right + SELECTION_HUD_BUTTON_GAP,
-        button_top,
-        back_rect.right + SELECTION_HUD_BUTTON_GAP + SELECTION_HUD_PRESET_WIDTH,
-        button_bottom,
-    );
-    let width_rect = Rect::new(
-        preset_rect.right + SELECTION_HUD_BUTTON_GAP,
-        button_top,
-        preset_rect.right + SELECTION_HUD_BUTTON_GAP + SELECTION_HUD_DIMENSION_WIDTH,
-        button_bottom,
-    );
-    let height_rect = Rect::new(
-        width_rect.right + SELECTION_HUD_BUTTON_GAP,
-        button_top,
-        width_rect.right + SELECTION_HUD_BUTTON_GAP + SELECTION_HUD_DIMENSION_WIDTH,
-        button_bottom,
-    );
-    let save_rect = Rect::new(
-        height_rect.right + SELECTION_HUD_BUTTON_GAP,
-        button_top,
-        height_rect.right + SELECTION_HUD_BUTTON_GAP + SELECTION_HUD_SAVE_WIDTH,
-        button_bottom,
-    );
-    let cancel_rect = Rect::new(
-        shell.right - 10 - SELECTION_HUD_CANCEL_WIDTH,
-        button_top,
-        shell.right - 10,
-        button_bottom,
-    );
-    let capture_rect = Rect::new(
-        cancel_rect.left - 8 - SELECTION_HUD_CAPTURE_WIDTH,
-        button_top,
-        cancel_rect.left - 8,
-        button_bottom,
-    );
+    let metrics = SelectionHudMetrics::from_shell(shell);
+    let rects = selection_hud_button_rects(shell);
+    let text_tiny = create_text_format_with_size(
+        metrics.sf(13.0),
+        DWRITE_FONT_WEIGHT_NORMAL,
+        DWRITE_TEXT_ALIGNMENT_CENTER,
+    )?;
+    let text_small = create_text_format_with_size(
+        metrics.sf(16.0),
+        DWRITE_FONT_WEIGHT_SEMI_BOLD,
+        DWRITE_TEXT_ALIGNMENT_CENTER,
+    )?;
     let capture_label = match state.capture_type {
         CaptureType::Gif => "GIF",
         _ => "Record",
@@ -1036,8 +1187,8 @@ fn draw_selection_hud(
     unsafe {
         let rounded_shell = D2D1_ROUNDED_RECT {
             rect: shell.to_d2d_rect(),
-            radiusX: 14.0,
-            radiusY: 14.0,
+            radiusX: metrics.sf(14.0),
+            radiusY: metrics.sf(14.0),
         };
         let shell_brush = create_vertical_gradient(
             context,
@@ -1048,69 +1199,90 @@ fn draw_selection_hud(
             ],
         )?;
         context.FillRoundedRectangle(&rounded_shell, &shell_brush);
-        context.DrawRoundedRectangle(&rounded_shell, &d2d.brushes.chooser_border, 1.0, None);
+        context.DrawRoundedRectangle(
+            &rounded_shell,
+            &d2d.brushes.chooser_border,
+            metrics.sf(1.0),
+            None,
+        );
 
         draw_hud_button(
             context,
             d2d,
-            back_rect,
+            metrics,
+            rects.back,
             "Redraw",
             hud.hovered == SelectionHudHitTarget::Back,
             false,
+            &text_tiny,
         )?;
         draw_hud_button(
             context,
             d2d,
-            preset_rect,
+            metrics,
+            rects.preset,
             "Preset",
             hud.hovered == SelectionHudHitTarget::Preset,
             false,
+            &text_tiny,
         )?;
         draw_dimension_stepper(
             context,
             d2d,
-            width_rect,
+            metrics,
+            rects.width,
             &width_text,
             hud.hovered == SelectionHudHitTarget::WidthDown,
             hud.hovered == SelectionHudHitTarget::WidthUp,
             hud.hovered == SelectionHudHitTarget::WidthInput,
             hud.editing_dimension == Some(SelectionHudDimensionEdit::Width),
+            &text_small,
+            &text_tiny,
         )?;
         draw_dimension_stepper(
             context,
             d2d,
-            height_rect,
+            metrics,
+            rects.height,
             &height_text,
             hud.hovered == SelectionHudHitTarget::HeightDown,
             hud.hovered == SelectionHudHitTarget::HeightUp,
             hud.hovered == SelectionHudHitTarget::HeightInput,
             hud.editing_dimension == Some(SelectionHudDimensionEdit::Height),
+            &text_small,
+            &text_tiny,
         )?;
         draw_hud_button(
             context,
             d2d,
-            save_rect,
+            metrics,
+            rects.save,
             "Areas",
             hud.hovered == SelectionHudHitTarget::Save,
             false,
+            &text_tiny,
         )?;
         draw_hud_button(
             context,
             d2d,
-            capture_rect,
+            metrics,
+            rects.capture,
             capture_label,
             hud.hovered == SelectionHudHitTarget::Capture,
             true,
+            &text_tiny,
         )?;
         draw_hud_button(
             context,
             d2d,
-            cancel_rect,
+            metrics,
+            rects.cancel,
             "Cancel",
             hud.hovered == SelectionHudHitTarget::Cancel,
             false,
+            &text_tiny,
         )?;
-        draw_selection_hud_feedback(context, d2d, state, shell, hud)?;
+        draw_selection_hud_feedback(context, d2d, state, shell, hud, metrics, &text_tiny)?;
     }
 
     Ok(())
@@ -1122,37 +1294,42 @@ fn draw_selection_hud_feedback(
     state: &OverlayState,
     shell: Rect,
     hud: &SelectionHudState,
+    metrics: SelectionHudMetrics,
+    text_format: &IDWriteTextFormat,
 ) -> Result<()> {
     let Some(feedback) = &hud.feedback else {
         return Ok(());
     };
 
-    let width = ((feedback.message.chars().count() as i32 * 7) + 28).clamp(70, 180);
-    let height = 26;
-    let margin = 8;
+    let width = scaled_i32(
+        ((feedback.message.chars().count() as i32 * 7) + 28).clamp(70, 180),
+        metrics.scale,
+    );
+    let height = metrics.s(26);
+    let margin = metrics.s(8);
     let monitor_width = state.monitor.width as i32;
     let monitor_height = state.monitor.height as i32;
     let max_left = (monitor_width - width - margin).max(margin);
     let left = (shell.left + (shell.width() as i32 - width) / 2).clamp(margin, max_left);
-    let mut top = shell.top - height - 8;
+    let mut top = shell.top - height - metrics.s(8);
     if top < margin {
-        top = (shell.bottom + 8).min((monitor_height - height - margin).max(margin));
+        top = (shell.bottom + metrics.s(8)).min((monitor_height - height - margin).max(margin));
     }
 
     let rect = Rect::new(left, top, left + width, top + height);
     unsafe {
         let rounded = D2D1_ROUNDED_RECT {
             rect: rect.to_d2d_rect(),
-            radiusX: 13.0,
-            radiusY: 13.0,
+            radiusX: metrics.sf(13.0),
+            radiusY: metrics.sf(13.0),
         };
         context.FillRoundedRectangle(&rounded, &d2d.brushes.window_label_bg);
-        context.DrawRoundedRectangle(&rounded, &d2d.brushes.chooser_border, 1.0, None);
+        context.DrawRoundedRectangle(&rounded, &d2d.brushes.chooser_border, metrics.sf(1.0), None);
         draw_text_with_style(
             context,
             &feedback.message,
             rect.to_d2d_rect(),
-            &d2d.text_format_tiny,
+            text_format,
             &d2d.brushes.text,
         );
     }
@@ -1163,34 +1340,37 @@ fn draw_selection_hud_feedback(
 fn draw_dimension_stepper(
     context: &ID2D1DeviceContext,
     d2d: &D2DResources,
+    metrics: SelectionHudMetrics,
     rect: Rect,
     label: &str,
     is_minus_hovered: bool,
     is_plus_hovered: bool,
     is_input_hovered: bool,
     is_input_active: bool,
+    text_small: &IDWriteTextFormat,
+    text_tiny: &IDWriteTextFormat,
 ) -> Result<()> {
     unsafe {
         let rounded = D2D1_ROUNDED_RECT {
             rect: rect.to_d2d_rect(),
-            radiusX: 9.0,
-            radiusY: 9.0,
+            radiusX: metrics.sf(9.0),
+            radiusY: metrics.sf(9.0),
         };
         if is_input_active {
             context.FillRoundedRectangle(&rounded, &d2d.brushes.chooser_surface_hover);
         } else {
             context.FillRoundedRectangle(&rounded, &d2d.brushes.chooser_surface);
         }
-        context.DrawRoundedRectangle(&rounded, &d2d.brushes.chooser_border, 1.0, None);
+        context.DrawRoundedRectangle(&rounded, &d2d.brushes.chooser_border, metrics.sf(1.0), None);
 
         let minus_rect = Rect::new(
             rect.left,
             rect.top,
-            rect.left + SELECTION_HUD_STEP_BUTTON_WIDTH,
+            rect.left + metrics.step_button_width,
             rect.bottom,
         );
         let plus_rect = Rect::new(
-            rect.right - SELECTION_HUD_STEP_BUTTON_WIDTH,
+            rect.right - metrics.step_button_width,
             rect.top,
             rect.right,
             rect.bottom,
@@ -1200,8 +1380,8 @@ fn draw_dimension_stepper(
             context.FillRoundedRectangle(
                 &D2D1_ROUNDED_RECT {
                     rect: minus_rect.to_d2d_rect(),
-                    radiusX: 9.0,
-                    radiusY: 9.0,
+                    radiusX: metrics.sf(9.0),
+                    radiusY: metrics.sf(9.0),
                 },
                 &d2d.brushes.chooser_surface_hover,
             );
@@ -1210,8 +1390,8 @@ fn draw_dimension_stepper(
             context.FillRoundedRectangle(
                 &D2D1_ROUNDED_RECT {
                     rect: plus_rect.to_d2d_rect(),
-                    radiusX: 9.0,
-                    radiusY: 9.0,
+                    radiusX: metrics.sf(9.0),
+                    radiusY: metrics.sf(9.0),
                 },
                 &d2d.brushes.chooser_surface_hover,
             );
@@ -1231,21 +1411,21 @@ fn draw_dimension_stepper(
             context,
             "-",
             minus_rect.to_d2d_rect(),
-            &d2d.text_format_small,
+            text_small,
             &d2d.brushes.text,
         );
         draw_text_with_style(
             context,
             "+",
             plus_rect.to_d2d_rect(),
-            &d2d.text_format_small,
+            text_small,
             &d2d.brushes.text,
         );
         draw_text_with_style(
             context,
             label,
             input_rect,
-            &d2d.text_format_tiny,
+            text_tiny,
             &d2d.brushes.chooser_muted_text,
         );
     }
@@ -1256,16 +1436,18 @@ fn draw_dimension_stepper(
 fn draw_hud_button(
     context: &ID2D1DeviceContext,
     d2d: &D2DResources,
+    metrics: SelectionHudMetrics,
     rect: Rect,
     label: &str,
     is_hovered: bool,
     is_primary: bool,
+    text_format: &IDWriteTextFormat,
 ) -> Result<()> {
     unsafe {
         let rounded = D2D1_ROUNDED_RECT {
             rect: rect.to_d2d_rect(),
-            radiusX: 9.0,
-            radiusY: 9.0,
+            radiusX: metrics.sf(9.0),
+            radiusY: metrics.sf(9.0),
         };
         if is_primary {
             let brush = create_vertical_gradient(
@@ -1282,12 +1464,12 @@ fn draw_hud_button(
         } else {
             context.FillRoundedRectangle(&rounded, &d2d.brushes.chooser_surface);
         }
-        context.DrawRoundedRectangle(&rounded, &d2d.brushes.chooser_border, 1.0, None);
+        context.DrawRoundedRectangle(&rounded, &d2d.brushes.chooser_border, metrics.sf(1.0), None);
         draw_text_with_style(
             context,
             label,
             rect.to_d2d_rect(),
-            &d2d.text_format_tiny,
+            text_format,
             &d2d.brushes.text,
         );
     }
@@ -1306,12 +1488,33 @@ fn draw_recording_mode_chooser(
     let Some(shell) = recording_mode_chooser_rect(state) else {
         return Ok(());
     };
+    let metrics = RecordingModeChooserMetrics::from_shell(shell);
+    let text_small = create_text_format_with_size(
+        metrics.sf(16.0),
+        DWRITE_FONT_WEIGHT_SEMI_BOLD,
+        DWRITE_TEXT_ALIGNMENT_CENTER,
+    )?;
+    let text_small_left = create_text_format_with_size(
+        metrics.sf(16.0),
+        DWRITE_FONT_WEIGHT_SEMI_BOLD,
+        DWRITE_TEXT_ALIGNMENT_LEADING,
+    )?;
+    let text_tiny = create_text_format_with_size(
+        metrics.sf(13.0),
+        DWRITE_FONT_WEIGHT_NORMAL,
+        DWRITE_TEXT_ALIGNMENT_CENTER,
+    )?;
+    let text_tiny_left = create_text_format_with_size(
+        metrics.sf(13.0),
+        DWRITE_FONT_WEIGHT_NORMAL,
+        DWRITE_TEXT_ALIGNMENT_LEADING,
+    )?;
 
     unsafe {
         let rounded_shell = D2D1_ROUNDED_RECT {
             rect: shell.to_d2d_rect(),
-            radiusX: 14.0,
-            radiusY: 14.0,
+            radiusX: metrics.sf(14.0),
+            radiusY: metrics.sf(14.0),
         };
         let shell_brush = create_vertical_gradient(
             context,
@@ -1326,107 +1529,120 @@ fn draw_recording_mode_chooser(
 
         let header_band = D2D1_ROUNDED_RECT {
             rect: D2D_RECT_F {
-                left: shell.left as f32 + 1.0,
-                top: shell.top as f32 + 1.0,
-                right: shell.right as f32 - 1.0,
-                bottom: shell.top as f32 + 54.0,
+                left: shell.left as f32 + metrics.sf(1.0),
+                top: shell.top as f32 + metrics.sf(1.0),
+                right: shell.right as f32 - metrics.sf(1.0),
+                bottom: shell.top as f32 + metrics.sf(54.0),
             },
-            radiusX: 13.0,
-            radiusY: 13.0,
+            radiusX: metrics.sf(13.0),
+            radiusY: metrics.sf(13.0),
         };
         context.FillRoundedRectangle(&header_band, &d2d.brushes.chooser_surface);
-        context.DrawRoundedRectangle(&rounded_shell, &d2d.brushes.chooser_border, 1.0, None);
+        context.DrawRoundedRectangle(
+            &rounded_shell,
+            &d2d.brushes.chooser_border,
+            metrics.sf(1.0),
+            None,
+        );
 
         let back_rect = recording_mode_chooser_back_rect(shell).to_d2d_rect();
         let rounded_back = D2D1_ROUNDED_RECT {
             rect: back_rect,
-            radiusX: 8.0,
-            radiusY: 8.0,
+            radiusX: metrics.sf(8.0),
+            radiusY: metrics.sf(8.0),
         };
         if chooser.hovered == RecordingModeChooserHitTarget::Back {
             context.FillRoundedRectangle(&rounded_back, &d2d.brushes.chooser_surface_hover);
         } else {
             context.FillRoundedRectangle(&rounded_back, &d2d.brushes.chooser_surface);
         }
-        context.DrawRoundedRectangle(&rounded_back, &d2d.brushes.chooser_border, 1.0, None);
-        draw_text_with_style(
-            context,
-            "<",
-            back_rect,
-            &d2d.text_format_small,
-            &d2d.brushes.text,
+        context.DrawRoundedRectangle(
+            &rounded_back,
+            &d2d.brushes.chooser_border,
+            metrics.sf(1.0),
+            None,
         );
+        draw_text_with_style(context, "<", back_rect, &text_small, &d2d.brushes.text);
 
         let header_rect = D2D_RECT_F {
-            left: shell.left as f32 + 58.0,
-            top: shell.top as f32 + 10.0,
-            right: shell.right as f32 - 18.0,
-            bottom: shell.top as f32 + 30.0,
+            left: shell.left as f32 + metrics.sf(58.0),
+            top: shell.top as f32 + metrics.sf(10.0),
+            right: shell.right as f32 - metrics.sf(18.0),
+            bottom: shell.top as f32 + metrics.sf(30.0),
         };
         draw_text_with_style(
             context,
             "Recording Mode",
             header_rect,
-            &d2d.text_format_small_left,
+            &text_small_left,
             &d2d.brushes.text,
         );
         draw_text_with_style(
             context,
             "Choose what happens after capture.",
             D2D_RECT_F {
-                left: shell.left as f32 + 58.0,
-                top: shell.top as f32 + 28.0,
-                right: shell.right as f32 - 18.0,
-                bottom: shell.top as f32 + 47.0,
+                left: shell.left as f32 + metrics.sf(58.0),
+                top: shell.top as f32 + metrics.sf(28.0),
+                right: shell.right as f32 - metrics.sf(18.0),
+                bottom: shell.top as f32 + metrics.sf(47.0),
             },
-            &d2d.text_format_tiny_left,
+            &text_tiny_left,
             &d2d.brushes.chooser_muted_text,
         );
 
         draw_chooser_card(
             context,
             d2d,
+            metrics,
             recording_mode_chooser_quick_rect(shell),
             "Quick Save",
             "Record and export",
-            ">",
             &d2d.brushes.chooser_quick_icon,
             chooser.hovered == RecordingModeChooserHitTarget::Quick,
+            &text_small_left,
+            &text_tiny_left,
         )?;
         draw_chooser_card(
             context,
             d2d,
+            metrics,
             recording_mode_chooser_studio_rect(shell),
             "Open Studio",
             "Record then edit",
-            "*",
             &d2d.brushes.chooser_studio_icon,
             chooser.hovered == RecordingModeChooserHitTarget::Studio,
+            &text_small_left,
+            &text_tiny_left,
         )?;
 
         let remember_rect = recording_mode_chooser_remember_rect(shell);
         let rounded_remember = D2D1_ROUNDED_RECT {
             rect: remember_rect.to_d2d_rect(),
-            radiusX: 8.0,
-            radiusY: 8.0,
+            radiusX: metrics.sf(8.0),
+            radiusY: metrics.sf(8.0),
         };
         if chooser.hovered == RecordingModeChooserHitTarget::Remember {
             context.FillRoundedRectangle(&rounded_remember, &d2d.brushes.chooser_surface_hover);
         } else {
             context.FillRoundedRectangle(&rounded_remember, &d2d.brushes.chooser_surface);
         }
-        context.DrawRoundedRectangle(&rounded_remember, &d2d.brushes.chooser_border, 1.0, None);
+        context.DrawRoundedRectangle(
+            &rounded_remember,
+            &d2d.brushes.chooser_border,
+            metrics.sf(1.0),
+            None,
+        );
 
         let checkbox = Rect::new(
-            remember_rect.left + 12,
-            remember_rect.top + 8,
-            remember_rect.left + 26,
-            remember_rect.top + 22,
+            remember_rect.left + metrics.s(12),
+            remember_rect.top + metrics.s(8),
+            remember_rect.left + metrics.s(26),
+            remember_rect.top + metrics.s(22),
         );
         let checkbox_rounded = D2D1_ROUNDED_RECT {
             rect: checkbox.to_d2d_rect(),
-            radiusX: 3.0,
-            radiusY: 3.0,
+            radiusX: metrics.sf(3.0),
+            radiusY: metrics.sf(3.0),
         };
         if chooser.remember {
             context.FillRoundedRectangle(&checkbox_rounded, &d2d.brushes.chooser_quick_icon);
@@ -1434,25 +1650,30 @@ fn draw_recording_mode_chooser(
                 context,
                 "x",
                 checkbox.to_d2d_rect(),
-                &d2d.text_format_tiny,
+                &text_tiny,
                 &d2d.brushes.text,
             );
         } else {
             context.FillRoundedRectangle(&checkbox_rounded, &d2d.brushes.chooser_surface);
-            context.DrawRoundedRectangle(&checkbox_rounded, &d2d.brushes.chooser_border, 1.0, None);
+            context.DrawRoundedRectangle(
+                &checkbox_rounded,
+                &d2d.brushes.chooser_border,
+                metrics.sf(1.0),
+                None,
+            );
         }
 
         let remember_text_rect = D2D_RECT_F {
-            left: remember_rect.left as f32 + 36.0,
-            top: remember_rect.top as f32 + 5.0,
-            right: remember_rect.right as f32 - 10.0,
-            bottom: remember_rect.bottom as f32 - 5.0,
+            left: remember_rect.left as f32 + metrics.sf(36.0),
+            top: remember_rect.top as f32 + metrics.sf(5.0),
+            right: remember_rect.right as f32 - metrics.sf(10.0),
+            bottom: remember_rect.bottom as f32 - metrics.sf(5.0),
         };
         draw_text_with_style(
             context,
             "Remember this choice",
             remember_text_rect,
-            &d2d.text_format_tiny_left,
+            &text_tiny_left,
             &d2d.brushes.chooser_muted_text,
         );
     }
@@ -1463,18 +1684,20 @@ fn draw_recording_mode_chooser(
 fn draw_chooser_card(
     context: &ID2D1DeviceContext,
     d2d: &D2DResources,
+    metrics: RecordingModeChooserMetrics,
     rect: Rect,
     title: &str,
     subtitle: &str,
-    icon: &str,
     icon_brush: &ID2D1SolidColorBrush,
     is_hovered: bool,
+    text_small_left: &IDWriteTextFormat,
+    text_tiny_left: &IDWriteTextFormat,
 ) -> Result<()> {
     unsafe {
         let rounded = D2D1_ROUNDED_RECT {
             rect: rect.to_d2d_rect(),
-            radiusX: 10.0,
-            radiusY: 10.0,
+            radiusX: metrics.sf(10.0),
+            radiusY: metrics.sf(10.0),
         };
         let card_brush = if is_hovered {
             create_vertical_gradient(
@@ -1496,46 +1719,49 @@ fn draw_chooser_card(
             )?
         };
         context.FillRoundedRectangle(&rounded, &card_brush);
-        context.DrawRoundedRectangle(&rounded, &d2d.brushes.chooser_border, 1.0, None);
+        context.DrawRoundedRectangle(&rounded, &d2d.brushes.chooser_border, metrics.sf(1.0), None);
 
-        let icon_rect = Rect::new(rect.left + 14, rect.top + 18, rect.left + 48, rect.top + 52);
+        let icon_rect = Rect::new(
+            rect.left + metrics.s(14),
+            rect.top + metrics.s(18),
+            rect.left + metrics.s(48),
+            rect.top + metrics.s(52),
+        );
         let rounded_icon = D2D1_ROUNDED_RECT {
             rect: icon_rect.to_d2d_rect(),
-            radiusX: 9.0,
-            radiusY: 9.0,
+            radiusX: metrics.sf(9.0),
+            radiusY: metrics.sf(9.0),
         };
         context.FillRoundedRectangle(&rounded_icon, icon_brush);
-        context.DrawRoundedRectangle(&rounded_icon, &d2d.brushes.chooser_border, 1.0, None);
-        draw_text_with_style(
-            context,
-            icon,
-            icon_rect.to_d2d_rect(),
-            &d2d.text_format_small,
-            &d2d.brushes.text,
+        context.DrawRoundedRectangle(
+            &rounded_icon,
+            &d2d.brushes.chooser_border,
+            metrics.sf(1.0),
+            None,
         );
 
         draw_text_with_style(
             context,
             title,
             D2D_RECT_F {
-                left: rect.left as f32 + 60.0,
-                top: rect.top as f32 + 15.0,
-                right: rect.right as f32 - 14.0,
-                bottom: rect.top as f32 + 35.0,
+                left: rect.left as f32 + metrics.sf(60.0),
+                top: rect.top as f32 + metrics.sf(15.0),
+                right: rect.right as f32 - metrics.sf(14.0),
+                bottom: rect.top as f32 + metrics.sf(35.0),
             },
-            &d2d.text_format_small_left,
+            text_small_left,
             &d2d.brushes.text,
         );
         draw_text_with_style(
             context,
             subtitle,
             D2D_RECT_F {
-                left: rect.left as f32 + 60.0,
-                top: rect.top as f32 + 35.0,
-                right: rect.right as f32 - 14.0,
-                bottom: rect.bottom as f32 - 12.0,
+                left: rect.left as f32 + metrics.sf(60.0),
+                top: rect.top as f32 + metrics.sf(35.0),
+                right: rect.right as f32 - metrics.sf(14.0),
+                bottom: rect.bottom as f32 - metrics.sf(12.0),
             },
-            &d2d.text_format_tiny_left,
+            text_tiny_left,
             &d2d.brushes.chooser_muted_text,
         );
     }
