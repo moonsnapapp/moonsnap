@@ -2521,6 +2521,11 @@ body.floating-toolbar-window #root {
   padding: 2px 11px 12px;
 }
 
+.video-sidebar-selection-overlay {
+  background:
+    linear-gradient(180deg, rgba(20, 19, 19, 0.995) 0%, rgba(12, 12, 14, 0.998) 100%);
+}
+
 .editor-choice-pill--danger {
   border-color: rgba(239, 68, 68, 0.42);
   background: linear-gradient(180deg, rgba(248, 113, 113, 0.94) 0%, rgba(239, 68, 68, 0.94) 100%);
@@ -3172,6 +3177,11 @@ body.floating-toolbar-window #root {
 
 .light .video-sidebar-section__icon {
   background: rgba(249, 112, 102, 0.13);
+}
+
+.light .video-sidebar-selection-overlay {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.995) 0%, rgba(241, 245, 249, 0.998) 100%);
 }
 
 .light .editor-choice-pill--danger {

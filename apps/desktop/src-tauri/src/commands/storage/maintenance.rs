@@ -366,7 +366,7 @@ fn create_migration_project_json(
         },
         "zoom": {
             "mode": "auto",
-            "autoZoomScale": 2.0,
+            "autoZoomScale": 1.4,
             "regions": []
         },
         "cursor": {

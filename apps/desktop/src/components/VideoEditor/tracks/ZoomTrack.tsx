@@ -2,6 +2,7 @@ import { memo, useCallback, useMemo } from 'react';
 import { GripVertical, Plus } from 'lucide-react';
 import type { ZoomRegion, ZoomTransition } from '../../../types';
 import { useVideoEditorStore, generateZoomRegionId } from '../../../stores/videoEditorStore';
+import { VIDEO } from '../../../constants';
 import {
   selectAddZoomRegion,
   selectDeleteZoomRegion,
@@ -181,7 +182,7 @@ export const ZoomTrackContent = memo(function ZoomTrackContent({
       id: generateZoomRegionId(),
       startMs: previewRegionDetails.startMs,
       endMs: previewRegionDetails.endMs,
-      scale: 2.0,
+      scale: VIDEO.INITIAL_ZOOM_SCALE,
       targetX: 0.5,
       targetY: 0.5,
       mode: 'auto',

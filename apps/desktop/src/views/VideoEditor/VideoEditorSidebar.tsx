@@ -178,10 +178,10 @@ export function VideoEditorSidebar({ project, onOpenCropDialog }: VideoEditorSid
       />
 
       {/* Tab Content */}
-      <div className="relative min-w-0 flex-1 overflow-y-auto">
+      <div className="relative min-w-0 flex-1 overflow-hidden">
         {/* Selection Overlay (shown when zoom region, scene segment, mask, or text is selected) */}
         {hasSelectedSegment && project && (
-          <div className="absolute inset-0 min-w-0 overflow-y-auto bg-[var(--glass-surface-dark)] p-4 z-10 animate-in slide-in-from-bottom-2 fade-in duration-200">
+          <div className="video-sidebar-selection-overlay absolute inset-0 min-w-0 overflow-y-auto p-4 z-20 animate-in slide-in-from-bottom-2 fade-in duration-200">
             {/* Zoom Region Properties */}
             {selectedZoomRegionId && project.zoom.regions.find(r => r.id === selectedZoomRegionId) && (
               <ZoomRegionConfig
@@ -323,86 +323,88 @@ export function VideoEditorSidebar({ project, onOpenCropDialog }: VideoEditorSid
           </div>
         )}
 
-        {/* Project Tab */}
-        {activeTab === 'project' && (
-          <div className="p-4 space-y-4">
-            <ProjectInfoPanel project={project} />
-          </div>
-        )}
+        <div className="h-full min-w-0 overflow-y-auto">
+          {/* Project Tab */}
+          {activeTab === 'project' && (
+            <div className="p-4 space-y-4">
+              <ProjectInfoPanel project={project} />
+            </div>
+          )}
 
-        {/* Captions Tab */}
-        {activeTab === 'captions' && (
-          <div className="p-4">
-            <ProFeature featureName="Auto Captions">
-              <CaptionPanel videoPath={project?.sources.screenVideo || null} />
-            </ProFeature>
-          </div>
-        )}
+          {/* Captions Tab */}
+          {activeTab === 'captions' && (
+            <div className="p-4">
+              <ProFeature featureName="Auto Captions">
+                <CaptionPanel videoPath={project?.sources.screenVideo || null} />
+              </ProFeature>
+            </div>
+          )}
 
-        {/* Style Tab */}
-        {activeTab === 'background' && project && (
-          <div className="min-w-0 p-4">
-            <div className="video-sidebar-section-stack">
-              {project.sources.cursorData && (
-                <SidebarSettingsSection
-                  title="Cursor"
-                  description="Pointer scale, smoothing, and click highlights"
-                  icon={<MousePointer2 className="h-3.5 w-3.5" />}
-                  defaultOpen
-                >
-                  <CursorConfigPanel
-                    project={project}
-                    onUpdateCursorConfig={updateCursorConfig}
-                  />
-                </SidebarSettingsSection>
-              )}
-
-              {project.sources.webcamVideo && (
-                <SidebarSettingsSection
-                  title="Webcam"
-                  description="Camera size, position, shape, and visibility"
-                  icon={<Video className="h-3.5 w-3.5" />}
-                  defaultOpen={!project.sources.cursorData}
-                >
-                  <ProFeature featureName="Webcam Overlay">
-                    <WebcamConfigPanel
+          {/* Style Tab */}
+          {activeTab === 'background' && project && (
+            <div className="min-w-0 p-4">
+              <div className="video-sidebar-section-stack">
+                {project.sources.cursorData && (
+                  <SidebarSettingsSection
+                    title="Cursor"
+                    description="Pointer scale, smoothing, and click highlights"
+                    icon={<MousePointer2 className="h-3.5 w-3.5" />}
+                    defaultOpen
+                  >
+                    <CursorConfigPanel
                       project={project}
-                      onUpdateWebcamConfig={updateWebcamConfig}
+                      onUpdateCursorConfig={updateCursorConfig}
+                    />
+                  </SidebarSettingsSection>
+                )}
+
+                {project.sources.webcamVideo && (
+                  <SidebarSettingsSection
+                    title="Webcam"
+                    description="Camera size, position, shape, and visibility"
+                    icon={<Video className="h-3.5 w-3.5" />}
+                    defaultOpen={!project.sources.cursorData}
+                  >
+                    <ProFeature featureName="Webcam Overlay">
+                      <WebcamConfigPanel
+                        project={project}
+                        onUpdateWebcamConfig={updateWebcamConfig}
+                      />
+                    </ProFeature>
+                  </SidebarSettingsSection>
+                )}
+
+                <SidebarSettingsSection
+                  title="Background"
+                  description="Canvas padding, corners, shadows, and frame style"
+                  icon={<Palette className="h-3.5 w-3.5" />}
+                  defaultOpen={!project.sources.cursorData && !project.sources.webcamVideo}
+                >
+                  <ProFeature featureName="Custom Backgrounds">
+                    <BackgroundSettings
+                      background={project.export.background}
+                      onUpdate={(updates) => updateExportConfig({
+                        background: { ...project.export.background, ...updates }
+                      })}
                     />
                   </ProFeature>
                 </SidebarSettingsSection>
-              )}
-
-              <SidebarSettingsSection
-                title="Background"
-                description="Canvas padding, corners, shadows, and frame style"
-                icon={<Palette className="h-3.5 w-3.5" />}
-                defaultOpen={!project.sources.cursorData && !project.sources.webcamVideo}
-              >
-                <ProFeature featureName="Custom Backgrounds">
-                  <BackgroundSettings
-                    background={project.export.background}
-                    onUpdate={(updates) => updateExportConfig({
-                      background: { ...project.export.background, ...updates }
-                    })}
-                  />
-                </ProFeature>
-              </SidebarSettingsSection>
+              </div>
             </div>
-          </div>
-        )}
+          )}
 
-        {/* Export Tab */}
-        {activeTab === 'export' && project && (
-          <div className="min-w-0 p-4">
-            <ExportConfigPanel
-              project={project}
-              onUpdateExportConfig={updateExportConfig}
-              onUpdateAudioConfig={updateAudioConfig}
-              onOpenCropDialog={onOpenCropDialog}
-            />
-          </div>
-        )}
+          {/* Export Tab */}
+          {activeTab === 'export' && project && (
+            <div className="min-w-0 p-4">
+              <ExportConfigPanel
+                project={project}
+                onUpdateExportConfig={updateExportConfig}
+                onUpdateAudioConfig={updateAudioConfig}
+                onOpenCropDialog={onOpenCropDialog}
+              />
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

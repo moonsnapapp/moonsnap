@@ -324,6 +324,8 @@ impl Default for AudioTrackSettings {
 // Zoom Configuration
 // ============================================================================
 
+pub const DEFAULT_ZOOM_SCALE: f32 = 1.4;
+
 /// Zoom configuration for the video.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
@@ -341,7 +343,7 @@ impl Default for ZoomConfig {
     fn default() -> Self {
         Self {
             mode: ZoomMode::Off,
-            auto_zoom_scale: 2.0,
+            auto_zoom_scale: DEFAULT_ZOOM_SCALE,
             regions: Vec::new(),
         }
     }
@@ -473,7 +475,7 @@ pub struct AutoZoomConfig {
 impl Default for AutoZoomConfig {
     fn default() -> Self {
         Self {
-            scale: 2.0,
+            scale: DEFAULT_ZOOM_SCALE,
             hold_duration_ms: 1500,
             min_gap_ms: 500,
             transition_in_ms: 300,
