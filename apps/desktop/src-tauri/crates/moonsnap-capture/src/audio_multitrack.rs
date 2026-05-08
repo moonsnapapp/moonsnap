@@ -51,6 +51,7 @@ use wasapi::*;
 const SAMPLE_RATE: u32 = 48000;
 const CHANNELS: u16 = 2;
 const BITS_PER_SAMPLE: u16 = 32;
+const CHANNEL_SILENCE_EPSILON: f32 = 1.0e-6;
 
 /// Async write queue buffer size (in sample batches).
 /// ~5 seconds of audio buffer at 48kHz stereo (48000 * 2 channels * 5 seconds / 4800 batch size)
@@ -794,7 +795,8 @@ fn record_microphone(
             && sample_queue.len() >= 4
         {
             // Convert to f32 samples
-            let samples = bytes_to_f32_samples(&sample_queue);
+            let mut samples = bytes_to_f32_samples(&sample_queue);
+            duplicate_left_channel_when_right_is_silent(&mut samples);
             captured_samples += samples.len() as u64;
             sample_queue.clear();
             got_samples = true;
@@ -855,6 +857,31 @@ fn bytes_to_f32_samples(bytes: &VecDeque<u8>) -> Vec<f32> {
     samples
 }
 
+/// Some mono microphones are exposed through WASAPI as a stereo stream with the
+/// signal on channel 0 and silence on channel 1. Keep true stereo untouched, but
+/// make that left-only mono presentation play centered in the exported WAV.
+fn duplicate_left_channel_when_right_is_silent(samples: &mut [f32]) {
+    if CHANNELS != 2 || samples.len() < CHANNELS as usize {
+        return;
+    }
+
+    let mut left_peak = 0.0f32;
+    let mut right_peak = 0.0f32;
+
+    for frame in samples.chunks_exact(CHANNELS as usize) {
+        left_peak = left_peak.max(frame[0].abs());
+        right_peak = right_peak.max(frame[1].abs());
+    }
+
+    if left_peak <= CHANNEL_SILENCE_EPSILON || right_peak > CHANNEL_SILENCE_EPSILON {
+        return;
+    }
+
+    for frame in samples.chunks_exact_mut(CHANNELS as usize) {
+        frame[1] = frame[0];
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -871,5 +898,23 @@ mod tests {
         assert_eq!(samples.len(), 2);
         assert!((samples[0] - 0.5).abs() < 0.001);
         assert!((samples[1] - (-0.25)).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_duplicate_left_channel_when_right_is_silent_centers_mono_mic() {
+        let mut samples = vec![0.25, 0.0, -0.5, 0.0, 0.125, 0.0];
+
+        duplicate_left_channel_when_right_is_silent(&mut samples);
+
+        assert_eq!(samples, vec![0.25, 0.25, -0.5, -0.5, 0.125, 0.125]);
+    }
+
+    #[test]
+    fn test_duplicate_left_channel_when_right_is_silent_preserves_stereo() {
+        let mut samples = vec![0.25, 0.1, -0.5, 0.05];
+
+        duplicate_left_channel_when_right_is_silent(&mut samples);
+
+        assert_eq!(samples, vec![0.25, 0.1, -0.5, 0.05]);
     }
 }
