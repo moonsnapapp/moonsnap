@@ -657,37 +657,38 @@ export const VideoEditorView = forwardRef<VideoEditorViewRef, VideoEditorViewPro
   }), [togglePlayback, handleSeekToStart, handleSeekToEnd, handleExport]);
 
   return (
-    <div className="editor-workspace video-editor-workspace flex-1 flex flex-col min-h-0">
-      {/* Main content area - Preview and Properties */}
-      <div className="editor-workspace__main flex-1 flex min-h-0">
-        {/* Left side: Top bar + Video Preview */}
-        <div className="video-editor-main-pane flex-1 flex flex-col min-w-0">
-          {/* Top Bar - hidden when embedded in window with its own titlebar */}
-          {!hideTopBar && (
-            <VideoEditorToolbar project={project} onBack={handleBack} />
-          )}
+    <div className="editor-workspace video-editor-workspace flex-1 flex min-h-0">
+      <div className="video-editor-content-column flex-1 flex flex-col min-w-0 min-h-0">
+        {/* Main content area - Preview */}
+        <div className="editor-workspace__main flex-1 flex min-h-0">
+          <div className="video-editor-main-pane flex-1 flex flex-col min-w-0">
+            {/* Top Bar - hidden when embedded in window with its own titlebar */}
+            {!hideTopBar && (
+              <VideoEditorToolbar project={project} onBack={handleBack} />
+            )}
 
-          {/* Video Preview */}
-          <VideoEditorPreview
-            isActive={isActive}
-            captureNavigation={captureNavigation}
-          />
+            {/* Video Preview */}
+            <VideoEditorPreview
+              isActive={isActive}
+              captureNavigation={captureNavigation}
+            />
+          </div>
         </div>
 
-        {/* Right sidebar with tabbed properties panel */}
-        <VideoEditorSidebar
-          project={project}
-          onOpenCropDialog={() => setIsCropDialogOpen(true)}
+        {/* Timeline with integrated controls */}
+        <VideoEditorTimeline
+          onExport={handleExport}
+          onResetTrimSegments={handleResetTrimSegments}
+          onSetInPoint={handleSetInPoint}
+          onSetOutPoint={handleSetOutPoint}
+          onClearExportRange={handleClearExportRange}
         />
       </div>
 
-      {/* Timeline with integrated controls */}
-      <VideoEditorTimeline
-        onExport={handleExport}
-        onResetTrimSegments={handleResetTrimSegments}
-        onSetInPoint={handleSetInPoint}
-        onSetOutPoint={handleSetOutPoint}
-        onClearExportRange={handleClearExportRange}
+      {/* Right sidebar with tabbed properties panel */}
+      <VideoEditorSidebar
+        project={project}
+        onOpenCropDialog={() => setIsCropDialogOpen(true)}
       />
 
       {/* Crop Dialog - lazy loaded, crops video content before composition */}

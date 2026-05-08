@@ -1,8 +1,9 @@
 /**
  * VideoEditorSidebar - Right sidebar with tabbed properties panel.
- * Contains Project, Cursor, Webcam, Captions, Style, and Export tabs.
+ * Contains Project, Style, Captions, and Export tabs.
  */
-import { useState } from 'react';
+import { useId, useState, type ReactNode } from 'react';
+import { ChevronDown, MousePointer2, Palette, Video } from 'lucide-react';
 import { useVideoEditorStore } from '../../stores/videoEditorStore';
 import {
   selectAddAnnotationShape,
@@ -61,6 +62,53 @@ import { LAYOUT } from '../../constants';
 export interface VideoEditorSidebarProps {
   project: VideoProject | null;
   onOpenCropDialog: () => void;
+}
+
+interface SidebarSettingsSectionProps {
+  title: string;
+  description: string;
+  icon: ReactNode;
+  defaultOpen?: boolean;
+  children: ReactNode;
+}
+
+function SidebarSettingsSection({
+  title,
+  description,
+  icon,
+  defaultOpen = false,
+  children,
+}: SidebarSettingsSectionProps) {
+  const contentId = useId();
+  const [isOpen, setIsOpen] = useState(defaultOpen);
+
+  return (
+    <section className="video-sidebar-section">
+      <button
+        type="button"
+        className="video-sidebar-section__trigger"
+        aria-expanded={isOpen}
+        aria-controls={contentId}
+        onClick={() => setIsOpen((open) => !open)}
+      >
+        <span className="video-sidebar-section__icon">{icon}</span>
+        <span className="min-w-0 flex-1 text-left">
+          <span className="video-sidebar-section__title">{title}</span>
+          <span className="video-sidebar-section__description">{description}</span>
+        </span>
+        <ChevronDown
+          className={`video-sidebar-section__chevron ${isOpen ? 'video-sidebar-section__chevron--open' : ''}`}
+          aria-hidden="true"
+        />
+      </button>
+
+      {isOpen && (
+        <div id={contentId} className="video-sidebar-section__content">
+          {children}
+        </div>
+      )}
+    </section>
+  );
 }
 
 export function VideoEditorSidebar({ project, onOpenCropDialog }: VideoEditorSidebarProps) {
@@ -127,8 +175,6 @@ export function VideoEditorSidebar({ project, onOpenCropDialog }: VideoEditorSid
       <SidebarTabBar
         activeTab={activeTab}
         onTabChange={handleTabChange}
-        hasCursor={!!project?.sources.cursorData}
-        hasWebcam={!!project?.sources.webcamVideo}
       />
 
       {/* Tab Content */}
@@ -284,28 +330,6 @@ export function VideoEditorSidebar({ project, onOpenCropDialog }: VideoEditorSid
           </div>
         )}
 
-        {/* Cursor Tab */}
-        {activeTab === 'cursor' && project?.sources.cursorData && (
-          <div className="p-4">
-            <CursorConfigPanel
-              project={project}
-              onUpdateCursorConfig={updateCursorConfig}
-            />
-          </div>
-        )}
-
-        {/* Webcam Tab */}
-        {activeTab === 'webcam' && project?.sources.webcamVideo && (
-          <div className="p-4">
-            <ProFeature featureName="Webcam Overlay">
-              <WebcamConfigPanel
-                project={project}
-                onUpdateWebcamConfig={updateWebcamConfig}
-              />
-            </ProFeature>
-          </div>
-        )}
-
         {/* Captions Tab */}
         {activeTab === 'captions' && (
           <div className="p-4">
@@ -315,17 +339,56 @@ export function VideoEditorSidebar({ project, onOpenCropDialog }: VideoEditorSid
           </div>
         )}
 
-        {/* Background/Style Tab */}
+        {/* Style Tab */}
         {activeTab === 'background' && project && (
           <div className="min-w-0 p-4">
-            <ProFeature featureName="Custom Backgrounds">
-              <BackgroundSettings
-                background={project.export.background}
-                onUpdate={(updates) => updateExportConfig({
-                  background: { ...project.export.background, ...updates }
-                })}
-              />
-            </ProFeature>
+            <div className="video-sidebar-section-stack">
+              {project.sources.cursorData && (
+                <SidebarSettingsSection
+                  title="Cursor"
+                  description="Pointer scale, smoothing, and click highlights"
+                  icon={<MousePointer2 className="h-3.5 w-3.5" />}
+                  defaultOpen
+                >
+                  <CursorConfigPanel
+                    project={project}
+                    onUpdateCursorConfig={updateCursorConfig}
+                  />
+                </SidebarSettingsSection>
+              )}
+
+              {project.sources.webcamVideo && (
+                <SidebarSettingsSection
+                  title="Webcam"
+                  description="Camera size, position, shape, and visibility"
+                  icon={<Video className="h-3.5 w-3.5" />}
+                  defaultOpen={!project.sources.cursorData}
+                >
+                  <ProFeature featureName="Webcam Overlay">
+                    <WebcamConfigPanel
+                      project={project}
+                      onUpdateWebcamConfig={updateWebcamConfig}
+                    />
+                  </ProFeature>
+                </SidebarSettingsSection>
+              )}
+
+              <SidebarSettingsSection
+                title="Background"
+                description="Canvas padding, corners, shadows, and frame style"
+                icon={<Palette className="h-3.5 w-3.5" />}
+                defaultOpen={!project.sources.cursorData && !project.sources.webcamVideo}
+              >
+                <ProFeature featureName="Custom Backgrounds">
+                  <BackgroundSettings
+                    background={project.export.background}
+                    onUpdate={(updates) => updateExportConfig({
+                      background: { ...project.export.background, ...updates }
+                    })}
+                  />
+                </ProFeature>
+              </SidebarSettingsSection>
+            </div>
           </div>
         )}
 

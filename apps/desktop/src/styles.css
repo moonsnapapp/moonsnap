@@ -1315,6 +1315,15 @@ textarea,
   gap: 12px;
 }
 
+.video-editor-content-column {
+  min-width: 0;
+}
+
+.video-editor-workspace > .compositor-sidebar {
+  align-self: stretch;
+  margin: 14px 14px 14px 0;
+}
+
 .video-editor-workspace .video-editor-main-pane {
   gap: 12px;
 }
@@ -2383,6 +2392,8 @@ body.floating-toolbar-window #root {
 
 .video-sidebar-tabs {
   position: relative;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(72px, 1fr));
   gap: 6px;
   padding: 12px 12px 10px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.05);
@@ -2392,6 +2403,10 @@ body.floating-toolbar-window #root {
 .editor-choice-pill,
 .video-sidebar-tab {
   position: relative;
+  display: inline-flex;
+  min-height: 34px;
+  align-items: center;
+  justify-content: center;
   border: 1px solid transparent;
   border-radius: var(--editor-pill-radius, 10px);
   letter-spacing: 0.04em;
@@ -2420,6 +2435,90 @@ body.floating-toolbar-window #root {
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.085) 0%, rgba(255, 255, 255, 0.03) 100%);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.035), inset 0 -1px 0 rgba(0, 0, 0, 0.22); /* tauri-shadow-allow */
   color: var(--ink-black);
+}
+
+.video-sidebar-section-stack {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.video-sidebar-section {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.055);
+  border-radius: var(--editor-panel-radius);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.032) 0%, rgba(255, 255, 255, 0.012) 100%);
+}
+
+.video-sidebar-section__trigger {
+  display: flex;
+  width: 100%;
+  min-height: 48px;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 11px;
+  color: var(--ink-dark);
+  transition:
+    background-color var(--duration-fast) var(--ease-smooth),
+    color var(--duration-fast) var(--ease-smooth);
+}
+
+.video-sidebar-section__trigger:hover {
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--ink-black);
+}
+
+.video-sidebar-section__icon {
+  display: inline-flex;
+  height: 24px;
+  width: 24px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  background: rgba(249, 112, 102, 0.12);
+  color: var(--coral-400);
+}
+
+.video-sidebar-section__title,
+.video-sidebar-section__description {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.video-sidebar-section__title {
+  font-size: 12px;
+  font-weight: 650;
+  color: var(--ink-black);
+}
+
+.video-sidebar-section__description {
+  margin-top: 2px;
+  font-size: 10px;
+  color: var(--ink-muted);
+}
+
+.video-sidebar-section__chevron {
+  height: 15px;
+  width: 15px;
+  flex: 0 0 auto;
+  color: var(--ink-muted);
+  transition: transform var(--duration-fast) var(--ease-smooth);
+}
+
+.video-sidebar-section__chevron--open {
+  transform: rotate(180deg);
+}
+
+.video-sidebar-section__content {
+  min-width: 0;
+  padding: 2px 11px 12px;
 }
 
 .editor-choice-pill--danger {
@@ -3060,6 +3159,19 @@ body.floating-toolbar-window #root {
   border-color: rgba(15, 23, 42, 0.08);
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.92) 0%, rgba(241, 245, 249, 0.8) 100%);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.96), inset 0 -1px 0 rgba(15, 23, 42, 0.05); /* tauri-shadow-allow */
+}
+
+.light .video-sidebar-section {
+  border-color: rgba(15, 23, 42, 0.08);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.68) 0%, rgba(248, 250, 252, 0.46) 100%);
+}
+
+.light .video-sidebar-section__trigger:hover {
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.light .video-sidebar-section__icon {
+  background: rgba(249, 112, 102, 0.13);
 }
 
 .light .editor-choice-pill--danger {
