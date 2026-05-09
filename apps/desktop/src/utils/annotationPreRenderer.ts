@@ -26,9 +26,10 @@ function preRenderAnnotationSegment(
 export async function preRenderAnnotationsForExport(
   segments: AnnotationSegment[],
   exportWidth: number,
-  exportHeight: number,
-  startIndex: number
+  exportHeight: number
 ): Promise<void> {
+  await invoke('clear_prerendered_annotations');
+
   const registrations: Promise<void>[] = [];
 
   for (let index = 0; index < segments.length; index += 1) {
@@ -38,8 +39,8 @@ export async function preRenderAnnotationsForExport(
     }
 
     registrations.push(
-      invoke('register_prerendered_text', {
-        segmentIndex: startIndex + index,
+      invoke('register_prerendered_annotation', {
+        segmentIndex: index,
         width: exportWidth,
         height: exportHeight,
         centerX: 0.5,

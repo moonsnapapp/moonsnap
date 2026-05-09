@@ -42,6 +42,7 @@ pub struct FrameTextOverlayRequest<'a> {
     pub video_frame_width: u32,
     pub video_frame_height: u32,
     pub zoom_state: ZoomState,
+    pub scale_with_zoom: bool,
 }
 
 /// Build render options and prepared caption overlays for a frame.
@@ -92,6 +93,7 @@ pub fn build_frame_text_overlay_quads(
             video_w: request.video_frame_width,
             video_h: request.video_frame_height,
             zoom: request.zoom_state,
+            scale_with_zoom: request.scale_with_zoom,
         },
     })
 }
@@ -252,6 +254,7 @@ mod tests {
                 video_frame_width: 1280,
                 video_frame_height: 720,
                 zoom_state: ZoomState::identity(),
+                scale_with_zoom: true,
             },
         );
         assert!(quads.is_empty());
@@ -290,6 +293,7 @@ mod tests {
                 video_frame_width: 1280,
                 video_frame_height: 720,
                 zoom_state: ZoomState::identity(),
+                scale_with_zoom: true,
             },
         );
         assert_eq!(quads.len(), 1);

@@ -15,7 +15,12 @@ import { getContentDimensionsFromCrop } from '../../utils/videoContentDimensions
 
 const MIN_FRAME_DIMENSION = MIN_COMPOSITION_FRAME_DIMENSION;
 
-function calculateTextFrameSizeForExport(project: VideoProject): { width: number; height: number } {
+interface ExportOverlayFrameSizes {
+  composition: { width: number; height: number };
+  frame: { x: number; y: number; width: number; height: number };
+}
+
+function calculateExportOverlayFrameSizes(project: VideoProject): ExportOverlayFrameSizes {
   const crop = project.export.crop;
   const { width: rawVideoW, height: rawVideoH } = getContentDimensionsFromCrop(
     crop,
@@ -32,15 +37,6 @@ function calculateTextFrameSizeForExport(project: VideoProject): { width: number
     padding,
     project.export.composition
   );
-
-  // Mirrors Rust parity::calculate_composition_bounds() used by exporter/mod.rs.
-  if (project.export.composition.mode !== 'manual') {
-    return {
-      width: Math.max(MIN_FRAME_DIMENSION, videoW),
-      height: Math.max(MIN_FRAME_DIMENSION, videoH),
-    };
-  }
-
   const frameBounds = calculateFrameBoundsInComposition(
     videoW,
     videoH,
@@ -50,8 +46,16 @@ function calculateTextFrameSizeForExport(project: VideoProject): { width: number
   );
 
   return {
-    width: Math.max(MIN_FRAME_DIMENSION, Math.floor(frameBounds.width)),
-    height: Math.max(MIN_FRAME_DIMENSION, Math.floor(frameBounds.height)),
+    composition: {
+      width: Math.max(MIN_FRAME_DIMENSION, composition.width),
+      height: Math.max(MIN_FRAME_DIMENSION, composition.height),
+    },
+    frame: {
+      x: frameBounds.x,
+      y: frameBounds.y,
+      width: Math.max(MIN_FRAME_DIMENSION, Math.floor(frameBounds.width)),
+      height: Math.max(MIN_FRAME_DIMENSION, Math.floor(frameBounds.height)),
+    },
   };
 }
 
@@ -252,29 +256,40 @@ export const createExportSlice: SliceCreator<ExportSlice> = (set, get) => ({
     try {
       // Pre-render text segments using OffscreenCanvas (WYSIWYG matching CSS preview)
       const textSegments = sanitizedProject.text?.segments ?? [];
+      const overlayFrameSizes = calculateExportOverlayFrameSizes(sanitizedProject);
       if (textSegments.length > 0) {
-        const textFrameSize = calculateTextFrameSizeForExport(sanitizedProject);
         videoEditorLogger.info(
-          `Pre-rendering ${textSegments.length} text segments at ${textFrameSize.width}x${textFrameSize.height} (video-content frame)`
+          `Pre-rendering ${textSegments.length} text segments at ${overlayFrameSizes.frame.width}x${overlayFrameSizes.frame.height} (video-content scale, composition placement)`
         );
-        await preRenderForExport(textSegments, textFrameSize.width, textFrameSize.height);
+        await preRenderForExport(
+          textSegments,
+          overlayFrameSizes.frame.width,
+          overlayFrameSizes.frame.height,
+          {
+            getPlacement: (segment) => ({
+              centerX:
+                (overlayFrameSizes.frame.x + segment.center.x * overlayFrameSizes.frame.width) /
+                overlayFrameSizes.composition.width,
+              centerY:
+                (overlayFrameSizes.frame.y + segment.center.y * overlayFrameSizes.frame.height) /
+                overlayFrameSizes.composition.height,
+            }),
+          }
+        );
         await preRenderAnnotationsForExport(
           sanitizedProject.annotations?.segments ?? [],
-          textFrameSize.width,
-          textFrameSize.height,
-          textSegments.length
+          overlayFrameSizes.composition.width,
+          overlayFrameSizes.composition.height
         );
       } else if ((sanitizedProject.annotations?.segments.length ?? 0) > 0) {
-        const textFrameSize = calculateTextFrameSizeForExport(sanitizedProject);
         videoEditorLogger.info(
-          `Pre-rendering ${sanitizedProject.annotations.segments.length} annotation segments at ${textFrameSize.width}x${textFrameSize.height} (video-content frame)`
+          `Pre-rendering ${sanitizedProject.annotations.segments.length} annotation segments at ${overlayFrameSizes.composition.width}x${overlayFrameSizes.composition.height} (composition frame)`
         );
-        await preRenderForExport([], textFrameSize.width, textFrameSize.height);
+        await preRenderForExport([], overlayFrameSizes.frame.width, overlayFrameSizes.frame.height);
         await preRenderAnnotationsForExport(
           sanitizedProject.annotations.segments,
-          textFrameSize.width,
-          textFrameSize.height,
-          0
+          overlayFrameSizes.composition.width,
+          overlayFrameSizes.composition.height
         );
       }
 

@@ -244,6 +244,8 @@ macro_rules! tauri_command_handler {
             // Pre-rendered text commands (WYSIWYG text export)
             crate::commands::text_prerender::register_prerendered_text,
             crate::commands::text_prerender::clear_prerendered_texts,
+            crate::commands::text_prerender::register_prerendered_annotation,
+            crate::commands::text_prerender::clear_prerendered_annotations,
             // Caption/transcription commands
             crate::commands::captions::check_whisper_model,
             crate::commands::captions::list_whisper_models,

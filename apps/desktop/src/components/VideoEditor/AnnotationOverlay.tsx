@@ -7,6 +7,10 @@ import {
   getAnnotationArrowRenderGeometry,
   getAnnotationArrowShaftOutline,
   getAnnotationArrowShapeUpdate,
+  getAnnotationCornerRadius,
+  getAnnotationRenderBox,
+  getAnnotationStepRenderGeometry,
+  getAnnotationStrokeWidth,
   isEndpointAnnotationShapeType,
 } from '@/utils/videoAnnotations';
 import {
@@ -49,14 +53,6 @@ interface DragState {
 const HANDLE_SIZE_PX = 10;
 const ARROW_HANDLE_SIZE_PX = 12;
 
-function getScaledStrokeWidth(shape: AnnotationShape, previewHeight: number): number {
-  return Math.max(1, shape.strokeWidth * (previewHeight / 1080));
-}
-
-function getScaledFontSize(shape: AnnotationShape, previewHeight: number): number {
-  return Math.max(12, shape.fontSize * (previewHeight / 1080));
-}
-
 function AnnotationShapeNode({
   segmentId,
   shape,
@@ -79,17 +75,9 @@ function AnnotationShapeNode({
     mode: DragMode
   ) => void;
 }) {
-  const left = shape.x * previewWidth;
-  const top = shape.y * previewHeight;
-  const width = shape.width * previewWidth;
-  const height = shape.height * previewHeight;
-  const strokeWidth = getScaledStrokeWidth(shape, previewHeight);
-  const fontSize = getScaledFontSize(shape, previewHeight);
-  const stepDiameter = Math.min(width, height);
-  const stepRadius = stepDiameter / 2;
-  const stepCenterX = left + width / 2;
-  const stepCenterY = top + height / 2;
-  const stepFontSize = Math.max(12, stepRadius * 0.93);
+  const box = getAnnotationRenderBox(shape, previewWidth, previewHeight);
+  const strokeWidth = getAnnotationStrokeWidth(shape, previewHeight);
+  const stepGeometry = getAnnotationStepRenderGeometry(box);
   const endpointGeometry = isEndpointAnnotationShapeType(shape.shapeType)
     ? getAnnotationArrowRenderGeometry(shape, previewWidth, previewHeight, strokeWidth)
     : null;
@@ -105,11 +93,11 @@ function AnnotationShapeNode({
     >
       {shape.shapeType === 'rectangle' && (
         <rect
-          x={left}
-          y={top}
-          width={width}
-          height={height}
-          rx={Math.min(width, height) * 0.08}
+          x={box.left}
+          y={box.top}
+          width={box.width}
+          height={box.height}
+          rx={getAnnotationCornerRadius(box)}
           fill={shape.fillColor}
           stroke={shape.strokeColor}
           strokeWidth={strokeWidth}
@@ -119,10 +107,10 @@ function AnnotationShapeNode({
 
       {shape.shapeType === 'ellipse' && (
         <ellipse
-          cx={left + width / 2}
-          cy={top + height / 2}
-          rx={width / 2}
-          ry={height / 2}
+          cx={box.centerX}
+          cy={box.centerY}
+          rx={box.width / 2}
+          ry={box.height / 2}
           fill={shape.fillColor}
           stroke={shape.strokeColor}
           strokeWidth={strokeWidth}
@@ -133,17 +121,17 @@ function AnnotationShapeNode({
       {shape.shapeType === 'step' && (
         <>
           <circle
-            cx={stepCenterX}
-            cy={stepCenterY}
-            r={stepRadius}
+            cx={stepGeometry.centerX}
+            cy={stepGeometry.centerY}
+            r={stepGeometry.radius}
             fill={shape.fillColor}
             opacity={shape.opacity}
           />
           <text
-            x={stepCenterX}
-            y={stepCenterY}
+            x={stepGeometry.centerX}
+            y={stepGeometry.centerY}
             fill={ANNOTATIONS.DEFAULT_STEP_TEXT_COLOR}
-            fontSize={stepFontSize}
+            fontSize={stepGeometry.fontSize}
             fontFamily={shape.fontFamily}
             fontWeight={Math.max(700, shape.fontWeight)}
             opacity={shape.opacity}
@@ -186,31 +174,6 @@ function AnnotationShapeNode({
         />
       )}
 
-      {shape.shapeType === 'text' && (
-        <text
-          x={left + width / 2}
-          y={top + height / 2}
-          fill={shape.strokeColor}
-          fontSize={fontSize}
-          fontFamily={shape.fontFamily}
-          fontWeight={shape.fontWeight}
-          opacity={shape.opacity}
-          textAnchor="middle"
-          dominantBaseline="middle"
-          style={{ paintOrder: 'stroke', stroke: 'rgba(15, 23, 42, 0.25)', strokeWidth: 1.5 }}
-        >
-          {(shape.text || ANNOTATIONS.DEFAULT_TEXT).split('\n').map((line: string, index: number, lines: string[]) => (
-            <tspan
-              key={`${shape.id}_${index}`}
-              x={left + width / 2}
-              dy={index === 0 ? `${((1 - lines.length) * 0.6).toFixed(2)}em` : '1.2em'}
-            >
-              {line}
-            </tspan>
-          ))}
-        </text>
-      )}
-
       {isSelected && (
         <>
           {showEndpointSelection ? (
@@ -234,10 +197,10 @@ function AnnotationShapeNode({
           ) : (
             <>
               <rect
-                x={left}
-                y={top}
-                width={width}
-                height={height}
+                x={box.left}
+                y={box.top}
+                width={box.width}
+                height={box.height}
                 fill="none"
                 stroke="var(--coral-400)"
                 strokeWidth={1.5}
@@ -245,10 +208,10 @@ function AnnotationShapeNode({
                 pointerEvents="none"
               />
               {[
-                { cx: left, cy: top, mode: 'resize-tl' },
-                { cx: left + width, cy: top, mode: 'resize-tr' },
-                { cx: left, cy: top + height, mode: 'resize-bl' },
-                { cx: left + width, cy: top + height, mode: 'resize-br' },
+                { cx: box.left, cy: box.top, mode: 'resize-tl' },
+                { cx: box.left + box.width, cy: box.top, mode: 'resize-tr' },
+                { cx: box.left, cy: box.top + box.height, mode: 'resize-bl' },
+                { cx: box.left + box.width, cy: box.top + box.height, mode: 'resize-br' },
               ].map((handle) => (
                 <circle
                   key={`${shape.id}_${handle.mode}`}

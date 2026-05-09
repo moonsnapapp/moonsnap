@@ -7,7 +7,11 @@ import {
   drawAnnotationShape,
   getAnnotationArrowRenderGeometry,
   getAnnotationBoxSliderBounds,
+  getAnnotationCornerRadius,
   getNextAnnotationStepNumber,
+  getAnnotationRenderBox,
+  getAnnotationStepRenderGeometry,
+  getAnnotationStrokeWidth,
 } from './videoAnnotations';
 
 describe('getAnnotationBoxSliderBounds', () => {
@@ -107,6 +111,78 @@ describe('getNextAnnotationStepNumber', () => {
 });
 
 describe('drawAnnotationShape', () => {
+  it('computes shared preview/export geometry for box annotations', () => {
+    const shape = createDefaultAnnotationShape('rectangle', {
+      x: 0.1,
+      y: 0.2,
+      width: 0.4,
+      height: 0.3,
+      strokeWidth: 12,
+    });
+    const box = getAnnotationRenderBox(shape, 800, 450);
+
+    expect(box).toEqual({
+      left: 80,
+      top: 90,
+      width: 320,
+      height: 135,
+      centerX: 240,
+      centerY: 157.5,
+    });
+    expect(getAnnotationCornerRadius(box)).toBe(10.8);
+    expect(getAnnotationStrokeWidth(shape, 450)).toBe(5);
+  });
+
+  it('computes shared preview/export geometry for step annotations', () => {
+    const shape = createDefaultAnnotationShape('step', {
+      x: 0.25,
+      y: 0.25,
+      width: 0.1,
+      height: 0.1,
+    });
+    const box = getAnnotationRenderBox(shape, 1280, 720);
+    const step = getAnnotationStepRenderGeometry(box);
+
+    expect(step.diameter).toBe(72);
+    expect(step.radius).toBe(36);
+    expect(step.centerX).toBe(384);
+    expect(step.centerY).toBe(216);
+    expect(step.fontSize).toBeCloseTo(33.48);
+  });
+
+  it('does not render legacy annotation text shapes', () => {
+    const shape = createDefaultAnnotationShape('text');
+    const operations: string[] = [];
+    const ctx = {
+      globalAlpha: 1,
+      save() {
+        operations.push('save');
+      },
+      restore() {
+        operations.push('restore');
+      },
+      fillText() {
+        operations.push('fillText');
+      },
+      fill() {
+        operations.push('fill');
+      },
+      stroke() {
+        operations.push('stroke');
+      },
+      beginPath() {
+        operations.push('beginPath');
+      },
+      roundRect() {
+        operations.push('roundRect');
+      },
+    } as unknown as CanvasRenderingContext2D;
+
+    drawAnnotationShape(ctx, shape, 1280, 720, 720);
+
+    expect(operations).toEqual(['save', 'restore']);
+  });
+
   it('extends the shaft slightly into the head to avoid a visible gap', () => {
     const shape = createDefaultAnnotationShape('arrow');
     const strokeWidth = 3;

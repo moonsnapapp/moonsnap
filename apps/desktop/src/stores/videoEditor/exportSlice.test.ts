@@ -4,6 +4,7 @@ import { useVideoEditorStore } from './index';
 import { DEFAULT_CAPTION_SETTINGS } from './captionSlice';
 import type { TextSegment, VideoProject } from '@/types';
 import { preRenderForExport } from '../../utils/textPreRenderer';
+import { preRenderAnnotationsForExport } from '../../utils/annotationPreRenderer';
 
 vi.mock('../../utils/textPreRenderer', () => ({
   preRenderForExport: vi.fn().mockResolvedValue(undefined),
@@ -161,6 +162,9 @@ function createTestProject(textSegments: TextSegment[]): VideoProject {
     text: {
       segments: textSegments,
     },
+    annotations: {
+      segments: [],
+    },
     mask: {
       segments: [],
     },
@@ -245,7 +249,7 @@ describe('exportSlice', () => {
     expect(useVideoEditorStore.getState().isExporting).toBe(false);
   });
 
-  it('uses manual composition frame size (not raw crop size) for text pre-render', async () => {
+  it('uses video-frame scale and composition placement for text pre-render', async () => {
     const mockedPreRenderForExport = vi.mocked(preRenderForExport);
     const project = createTestProject([createTestTextSegment()]);
 
@@ -263,7 +267,82 @@ describe('exportSlice', () => {
     expect(mockedPreRenderForExport).toHaveBeenCalledWith(
       project.text.segments,
       1840,
-      736
+      736,
+      expect.objectContaining({
+        getPlacement: expect.any(Function),
+      })
+    );
+
+    const [, , , options] = mockedPreRenderForExport.mock.calls[0];
+    const placement = options.getPlacement?.({
+      ...project.text.segments[0],
+      center: { x: 0.25, y: 0.25 },
+    });
+
+    expect(placement?.centerX).toBeCloseTo((40 + 0.25 * 1840) / 1920, 5);
+    expect(placement?.centerY).toBeCloseTo((172 + 0.25 * 736) / 1080, 5);
+  });
+
+  it('pre-renders annotations as a separate layer from text', async () => {
+    const mockedPreRenderForExport = vi.mocked(preRenderForExport);
+    const mockedPreRenderAnnotationsForExport = vi.mocked(preRenderAnnotationsForExport);
+    const project = createTestProject([createTestTextSegment()]);
+    project.annotations = {
+      segments: [
+        {
+          id: 'annotation-1',
+          startMs: 0,
+          endMs: 3000,
+          enabled: true,
+          shapes: [
+            {
+              id: 'shape-1',
+              shapeType: 'rectangle',
+              x: 0.1,
+              y: 0.1,
+              width: 0.2,
+              height: 0.2,
+              arrowStartX: null,
+              arrowStartY: null,
+              arrowEndX: null,
+              arrowEndY: null,
+              strokeColor: '#F97316',
+              fillColor: 'rgba(249, 115, 22, 0.16)',
+              strokeWidth: 16,
+              opacity: 1,
+              number: 1,
+              text: 'Note',
+              fontSize: 42,
+              fontFamily: 'sans-serif',
+              fontWeight: 700,
+            },
+          ],
+        },
+      ],
+    };
+
+    setInvokeResponse('export_video', {
+      outputPath: 'C:/tmp/out.mp4',
+      durationSecs: 10,
+      fileSizeBytes: 1_000_000,
+      format: 'mp4',
+    });
+
+    useVideoEditorStore.getState().setProject(project);
+    await useVideoEditorStore.getState().exportVideo('C:/tmp/out.mp4');
+
+    expect(mockedPreRenderForExport).toHaveBeenCalledWith(
+      project.text.segments,
+      1840,
+      736,
+      expect.objectContaining({
+        getPlacement: expect.any(Function),
+      })
+    );
+    expect(mockedPreRenderAnnotationsForExport).toHaveBeenCalledWith(
+      project.annotations.segments,
+      1920,
+      1080
     );
   });
 });

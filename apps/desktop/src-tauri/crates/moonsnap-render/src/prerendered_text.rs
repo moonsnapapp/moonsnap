@@ -82,6 +82,7 @@ pub struct TextFrameLayout {
     pub video_w: u32,
     pub video_h: u32,
     pub zoom: ZoomState,
+    pub scale_with_zoom: bool,
 }
 
 /// Input payload for pre-rendered text planning at a given frame.
@@ -90,6 +91,15 @@ pub struct TextFrameRequest<'a> {
     pub frame_time: f64,
     pub segments: &'a [TextSegment],
     pub layout: TextFrameLayout,
+}
+
+#[inline]
+fn overlay_bitmap_scale(zoom_scale: f32, scale_with_zoom: bool) -> f64 {
+    if scale_with_zoom {
+        (zoom_scale as f64).max(1.0)
+    } else {
+        1.0
+    }
 }
 
 fn calculate_segment_opacity(segment: &TextSegment, frame_time: f64) -> f32 {
@@ -346,8 +356,8 @@ impl PreRenderedTextStore {
             let (zoomed_cx, zoomed_cy) =
                 apply_zoom_to_normalized_point(image.center_x, image.center_y, request.layout.zoom);
 
-            // Scale text image size by zoom factor.
-            let scale = (request.layout.zoom.scale as f64).max(1.0);
+            let scale =
+                overlay_bitmap_scale(request.layout.zoom.scale, request.layout.scale_with_zoom);
             let scaled_w = image.width as f64 * scale;
             let scaled_h = image.height as f64 * scale;
 
@@ -455,8 +465,8 @@ impl PreRenderedTextStore {
             let (zoomed_cx, zoomed_cy) =
                 apply_zoom_to_normalized_point(image.center_x, image.center_y, request.layout.zoom);
 
-            // Scale text image size by zoom factor.
-            let scale = (request.layout.zoom.scale as f64).max(1.0);
+            let scale =
+                overlay_bitmap_scale(request.layout.zoom.scale, request.layout.scale_with_zoom);
             let scaled_w = (image.width as f64 * scale).round();
             let scaled_h = (image.height as f64 * scale).round();
 
@@ -818,5 +828,211 @@ fn composite_text_scaled(
                 frame[di + 3] = (alpha + (dst_a * (255 - alpha) + 128) / 255).min(255) as u8;
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use moonsnap_project_types::video_project::XY;
+
+    fn segment(center_x: f64, center_y: f64) -> TextSegment {
+        TextSegment {
+            start: 0.0,
+            end: 5.0,
+            enabled: true,
+            content: "Text".to_string(),
+            center: XY {
+                x: center_x,
+                y: center_y,
+            },
+            size: XY { x: 0.2, y: 0.1 },
+            font_family: "sans-serif".to_string(),
+            font_size: 48.0,
+            font_weight: 700.0,
+            italic: false,
+            color: "#ffffff".to_string(),
+            fade_duration: 0.0,
+            animation: TextAnimation::None,
+            typewriter_chars_per_second: 24.0,
+            typewriter_sound_enabled: false,
+        }
+    }
+
+    fn store_with_image(
+        width: u32,
+        height: u32,
+        center_x: f64,
+        center_y: f64,
+    ) -> PreRenderedTextStore {
+        let mut store = PreRenderedTextStore::new();
+        store.register(PreRenderedTextImage {
+            segment_index: 0,
+            width,
+            height,
+            center_x,
+            center_y,
+            size_x: 0.2,
+            size_y: 0.1,
+            rgba_data: Arc::new(vec![255; width as usize * height as usize * 4]),
+            line_metrics: Vec::new(),
+        });
+        store
+    }
+
+    fn quad_pixel_bounds(
+        quad: &TextOverlayQuad,
+        output_w: u32,
+        output_h: u32,
+    ) -> (f64, f64, f64, f64) {
+        let left = ((quad.quad_min[0] as f64 + 1.0) / 2.0) * output_w as f64;
+        let right = ((quad.quad_max[0] as f64 + 1.0) / 2.0) * output_w as f64;
+        let bottom = ((1.0 - quad.quad_min[1] as f64) / 2.0) * output_h as f64;
+        let top = ((1.0 - quad.quad_max[1] as f64) / 2.0) * output_h as f64;
+        (left, top, right, bottom)
+    }
+
+    #[test]
+    fn gpu_quad_uses_registered_bitmap_size_and_composition_center() {
+        let output_w = 1920;
+        let output_h = 1080;
+        let bitmap_w = 376;
+        let bitmap_h = 82;
+        let center_x = (40.0 + 0.25 * 1840.0) / 1920.0;
+        let center_y = (172.0 + 0.25 * 736.0) / 1080.0;
+        let store = store_with_image(bitmap_w, bitmap_h, center_x, center_y);
+        let segments = vec![segment(center_x, center_y)];
+
+        let quads = store.get_gpu_quads_for_frame(TextFrameRequest {
+            frame_time: 1.0,
+            segments: &segments,
+            layout: TextFrameLayout {
+                output_w,
+                output_h,
+                video_x: 0,
+                video_y: 0,
+                video_w: output_w,
+                video_h: output_h,
+                zoom: ZoomState::identity(),
+                scale_with_zoom: true,
+            },
+        });
+
+        assert_eq!(quads.len(), 1);
+        let (left, top, right, bottom) = quad_pixel_bounds(&quads[0], output_w, output_h);
+
+        assert!((right - left - bitmap_w as f64).abs() < 0.01);
+        assert!((bottom - top - bitmap_h as f64).abs() < 0.01);
+        assert!(((left + right) / 2.0 - center_x * output_w as f64).abs() < 0.01);
+        assert!(((top + bottom) / 2.0 - center_y * output_h as f64).abs() < 0.01);
+    }
+
+    #[test]
+    fn gpu_quad_scales_registered_bitmap_with_zoom() {
+        let output_w = 1920;
+        let output_h = 1080;
+        let bitmap_w = 376;
+        let bitmap_h = 82;
+        let store = store_with_image(bitmap_w, bitmap_h, 0.5, 0.5);
+        let segments = vec![segment(0.5, 0.5)];
+
+        let quads = store.get_gpu_quads_for_frame(TextFrameRequest {
+            frame_time: 1.0,
+            segments: &segments,
+            layout: TextFrameLayout {
+                output_w,
+                output_h,
+                video_x: 0,
+                video_y: 0,
+                video_w: output_w,
+                video_h: output_h,
+                zoom: ZoomState {
+                    scale: 2.0,
+                    center_x: 0.5,
+                    center_y: 0.5,
+                },
+                scale_with_zoom: true,
+            },
+        });
+
+        assert_eq!(quads.len(), 1);
+        let (left, top, right, bottom) = quad_pixel_bounds(&quads[0], output_w, output_h);
+
+        assert!((right - left - bitmap_w as f64 * 2.0).abs() < 0.01);
+        assert!((bottom - top - bitmap_h as f64 * 2.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn gpu_quad_can_follow_zoom_without_scaling_bitmap() {
+        let output_w = 1920;
+        let output_h = 1080;
+        let bitmap_w = 376;
+        let bitmap_h = 82;
+        let store = store_with_image(bitmap_w, bitmap_h, 0.6, 0.5);
+        let segments = vec![segment(0.6, 0.5)];
+
+        let quads = store.get_gpu_quads_for_frame(TextFrameRequest {
+            frame_time: 1.0,
+            segments: &segments,
+            layout: TextFrameLayout {
+                output_w,
+                output_h,
+                video_x: 0,
+                video_y: 0,
+                video_w: output_w,
+                video_h: output_h,
+                zoom: ZoomState {
+                    scale: 2.0,
+                    center_x: 0.5,
+                    center_y: 0.5,
+                },
+                scale_with_zoom: false,
+            },
+        });
+
+        assert_eq!(quads.len(), 1);
+        let (left, top, right, bottom) = quad_pixel_bounds(&quads[0], output_w, output_h);
+
+        assert!((right - left - bitmap_w as f64).abs() < 0.01);
+        assert!((bottom - top - bitmap_h as f64).abs() < 0.01);
+        assert!(((left + right) / 2.0 - 0.7 * output_w as f64).abs() < 0.01);
+    }
+
+    #[test]
+    fn cpu_composite_can_follow_zoom_without_scaling_bitmap() {
+        let output_w = 1920;
+        let output_h = 1080;
+        let bitmap_w = 376;
+        let bitmap_h = 82;
+        let store = store_with_image(bitmap_w, bitmap_h, 0.6, 0.5);
+        let segments = vec![segment(0.6, 0.5)];
+
+        let composites = store.get_for_frame(TextFrameRequest {
+            frame_time: 1.0,
+            segments: &segments,
+            layout: TextFrameLayout {
+                output_w,
+                output_h,
+                video_x: 0,
+                video_y: 0,
+                video_w: output_w,
+                video_h: output_h,
+                zoom: ZoomState {
+                    scale: 2.0,
+                    center_x: 0.5,
+                    center_y: 0.5,
+                },
+                scale_with_zoom: false,
+            },
+        });
+
+        assert_eq!(composites.len(), 1);
+        assert_eq!(composites[0].dst_w, bitmap_w);
+        assert_eq!(composites[0].dst_h, bitmap_h);
+        assert!((composites[0].zoom_scale - 1.0).abs() < f64::EPSILON);
+        assert!(
+            (composites[0].dst_x as f64 + bitmap_w as f64 / 2.0 - 0.7 * output_w as f64).abs()
+                < 1.0
+        );
     }
 }

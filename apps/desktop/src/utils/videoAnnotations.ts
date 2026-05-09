@@ -58,6 +58,66 @@ export interface AnnotationBoxSliderBounds {
   heightMax: number;
 }
 
+export interface AnnotationRenderBox {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+  centerX: number;
+  centerY: number;
+}
+
+export interface AnnotationStepRenderGeometry {
+  diameter: number;
+  radius: number;
+  centerX: number;
+  centerY: number;
+  fontSize: number;
+}
+
+export function getAnnotationRenderBox(
+  shape: AnnotationShape,
+  renderWidth: number,
+  renderHeight: number
+): AnnotationRenderBox {
+  const clampedShape = clampAnnotationShape(shape);
+  const left = clampedShape.x * renderWidth;
+  const top = clampedShape.y * renderHeight;
+  const width = clampedShape.width * renderWidth;
+  const height = clampedShape.height * renderHeight;
+
+  return {
+    left,
+    top,
+    width,
+    height,
+    centerX: left + width / 2,
+    centerY: top + height / 2,
+  };
+}
+
+export function getAnnotationStrokeWidth(shape: AnnotationShape, referenceHeight: number): number {
+  const clampedShape = clampAnnotationShape(shape);
+  return Math.max(1, clampedShape.strokeWidth * (referenceHeight / 1080));
+}
+
+export function getAnnotationCornerRadius(box: AnnotationRenderBox): number {
+  return Math.min(box.width, box.height) * 0.08;
+}
+
+export function getAnnotationStepRenderGeometry(box: AnnotationRenderBox): AnnotationStepRenderGeometry {
+  const diameter = Math.min(box.width, box.height);
+  const radius = diameter / 2;
+
+  return {
+    diameter,
+    radius,
+    centerX: box.centerX,
+    centerY: box.centerY,
+    fontSize: Math.max(12, radius * 0.93),
+  };
+}
+
 export function isEndpointAnnotationShapeType(shapeType: AnnotationShapeType): boolean {
   return shapeType === 'arrow' || shapeType === 'line';
 }
@@ -572,60 +632,23 @@ function drawLine(
   ctx.stroke();
 }
 
-function drawTextShape(
-  ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D,
-  shape: AnnotationShape,
-  left: number,
-  top: number,
-  width: number,
-  height: number,
-  referenceHeight: number
-) {
-  const fontSize = Math.max(1, shape.fontSize * (referenceHeight / 1080));
-  ctx.font = `${shape.fontWeight} ${fontSize}px ${shape.fontFamily}`;
-  ctx.fillStyle = shape.strokeColor;
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.shadowColor = 'rgba(15, 23, 42, 0.28)';
-  ctx.shadowBlur = 4;
-  ctx.shadowOffsetX = 0;
-  ctx.shadowOffsetY = 1;
-
-  const centerX = left + width / 2;
-  const centerY = top + height / 2;
-  const lines = (shape.text || ANNOTATIONS.DEFAULT_TEXT).split('\n');
-  const lineHeight = fontSize * 1.2;
-  const firstLineY = centerY - ((lines.length - 1) * lineHeight) / 2;
-
-  lines.forEach((line: string, index: number) => {
-    ctx.fillText(line, centerX, firstLineY + index * lineHeight, width);
-  });
-}
-
 function drawStepShape(
   ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D,
   shape: AnnotationShape,
-  left: number,
-  top: number,
-  width: number,
-  height: number
+  box: AnnotationRenderBox
 ) {
-  const diameter = Math.min(width, height);
-  const radius = diameter / 2;
-  const centerX = left + width / 2;
-  const centerY = top + height / 2;
-  const fontSize = Math.max(12, radius * 0.93);
+  const geometry = getAnnotationStepRenderGeometry(box);
 
   ctx.beginPath();
-  ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
+  ctx.arc(geometry.centerX, geometry.centerY, geometry.radius, 0, Math.PI * 2);
   ctx.fillStyle = shape.fillColor;
   ctx.fill();
 
-  ctx.font = `${Math.max(700, shape.fontWeight)} ${fontSize}px ${shape.fontFamily}`;
+  ctx.font = `${Math.max(700, shape.fontWeight)} ${geometry.fontSize}px ${shape.fontFamily}`;
   ctx.fillStyle = ANNOTATIONS.DEFAULT_STEP_TEXT_COLOR;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.fillText(String(Math.max(1, Math.round(shape.number))), centerX, centerY);
+  ctx.fillText(String(Math.max(1, Math.round(shape.number))), geometry.centerX, geometry.centerY);
 }
 
 export function drawAnnotationShape(
@@ -636,23 +659,19 @@ export function drawAnnotationShape(
   referenceHeight: number
 ): void {
   const clampedShape = clampAnnotationShape(shape);
-  const left = clampedShape.x * renderWidth;
-  const top = clampedShape.y * renderHeight;
-  const width = clampedShape.width * renderWidth;
-  const height = clampedShape.height * renderHeight;
-  const strokeWidth = Math.max(1, clampedShape.strokeWidth * (referenceHeight / 1080));
+  const box = getAnnotationRenderBox(clampedShape, renderWidth, renderHeight);
+  const strokeWidth = getAnnotationStrokeWidth(clampedShape, referenceHeight);
 
   ctx.save();
   ctx.globalAlpha = clampedShape.opacity;
 
   if (clampedShape.shapeType === 'text') {
-    drawTextShape(ctx, clampedShape, left, top, width, height, referenceHeight);
     ctx.restore();
     return;
   }
 
   if (clampedShape.shapeType === 'step') {
-    drawStepShape(ctx, clampedShape, left, top, width, height);
+    drawStepShape(ctx, clampedShape, box);
     ctx.restore();
     return;
   }
@@ -676,10 +695,10 @@ export function drawAnnotationShape(
 
   if (clampedShape.shapeType === 'ellipse') {
     ctx.beginPath();
-    ctx.ellipse(left + width / 2, top + height / 2, width / 2, height / 2, 0, 0, Math.PI * 2);
+    ctx.ellipse(box.centerX, box.centerY, box.width / 2, box.height / 2, 0, 0, Math.PI * 2);
   } else {
     ctx.beginPath();
-    ctx.roundRect(left, top, width, height, Math.min(width, height) * 0.08);
+    ctx.roundRect(box.left, box.top, box.width, box.height, getAnnotationCornerRadius(box));
   }
 
   ctx.fill();

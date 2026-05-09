@@ -68,7 +68,7 @@ use moonsnap_domain::video_project::{
 };
 use moonsnap_render::nv12_converter::{CropRect, Nv12Converter};
 use moonsnap_render::scene::SceneInterpolator;
-use moonsnap_render::types::{BackgroundStyle, PixelFormat};
+use moonsnap_render::types::{BackgroundStyle, PixelFormat, TextOverlayQuad};
 use moonsnap_render::webcam_overlay::is_webcam_visible_at;
 use moonsnap_render::zoom::ZoomInterpolator;
 
@@ -76,6 +76,49 @@ use moonsnap_render::zoom::ZoomInterpolator;
 pub use ffmpeg::emit_progress;
 
 use ffmpeg::start_ffmpeg_encoder;
+
+fn log_text_overlay_quad_trace(
+    label: &str,
+    quads: &[TextOverlayQuad],
+    composition_w: u32,
+    composition_h: u32,
+    frame_index: u32,
+    frame_time_secs: f64,
+    zoom_scale: f32,
+) {
+    if quads.is_empty() {
+        return;
+    }
+
+    log::info!(
+        "[TextOverlayTrace] {} frame={} t={:.3}s zoom={:.3} quads={}",
+        label,
+        frame_index,
+        frame_time_secs,
+        zoom_scale,
+        quads.len()
+    );
+
+    for quad in quads.iter().take(4) {
+        let left = ((quad.quad_min[0] as f64 + 1.0) / 2.0) * composition_w as f64;
+        let right = ((quad.quad_max[0] as f64 + 1.0) / 2.0) * composition_w as f64;
+        let bottom = ((1.0 - quad.quad_min[1] as f64) / 2.0) * composition_h as f64;
+        let top = ((1.0 - quad.quad_max[1] as f64) / 2.0) * composition_h as f64;
+
+        log::info!(
+            "[TextOverlayTrace] {} texture={} px=({:.1},{:.1})-({:.1},{:.1}) size={:.1}x{:.1} opacity={:.3}",
+            label,
+            quad.texture_index,
+            left,
+            top,
+            right,
+            bottom,
+            right - left,
+            bottom - top,
+            quad.opacity
+        );
+    }
+}
 
 /// Constant context for CPU frame compositing, shared across all export frames.
 struct CpuCompositeCtx<'a> {
@@ -256,15 +299,22 @@ pub async fn export_video_gpu(
     let renderer = Renderer::new().await?;
     let mut compositor = Compositor::new(&renderer);
 
-    // Get pre-rendered text store (populated by frontend before export starts)
-    let prerendered_text_store = {
+    // Get pre-rendered overlay stores (populated by frontend before export starts).
+    // Text and annotations are intentionally separate layers so their segment
+    // indices and bitmap geometry cannot affect each other.
+    let (prerendered_text_store, prerendered_annotation_store) = {
         let state = app.state::<PreRenderedTextState>();
-        state.store.clone()
+        (state.text_store.clone(), state.annotation_store.clone())
     };
     {
         let store = prerendered_text_store.lock();
         store.log_summary();
         compositor.upload_text_overlays(&store);
+    }
+    {
+        let store = prerendered_annotation_store.lock();
+        store.log_summary();
+        compositor.upload_annotation_overlays(&store);
     }
 
     emit_progress(&app, 0.02, ExportStage::Preparing, "Loading video...");
@@ -506,10 +556,8 @@ pub async fn export_video_gpu(
         None
     };
 
-    let mut overlay_segments = project.text.segments.clone();
-    overlay_segments.extend(build_annotation_overlay_segments(
-        &project.annotations.segments,
-    ));
+    let annotation_overlay_segments =
+        build_annotation_overlay_segments(&project.annotations.segments);
 
     emit_progress(&app, 0.08, ExportStage::Encoding, "Rendering frames...");
 
@@ -599,9 +647,11 @@ pub async fn export_video_gpu(
     let background_style_ref = &background_style;
     let timeline_captions_ref = &timeline_captions;
     let prerendered_text_store_ref = &prerendered_text_store;
+    let prerendered_annotation_store_ref = &prerendered_annotation_store;
     let cpu_ctx_ref = &cpu_ctx;
     let encode_tx_ref = &encode_tx;
-    let overlay_segments_ref = &overlay_segments;
+    let text_segments_ref = &project.text.segments;
+    let annotation_overlay_segments_ref = &annotation_overlay_segments;
 
     // Pipeline with triple-buffered staging (4-stage depth):
     //   1. complete_readback for frame N-2  → ~0ms fence (GPU done 2 iters ago) + data copy
@@ -633,6 +683,7 @@ pub async fn export_video_gpu(
         let background_style = background_style_ref;
         let timeline_captions = timeline_captions_ref;
         let prerendered_text_store = prerendered_text_store_ref;
+        let prerendered_annotation_store = prerendered_annotation_store_ref;
         let cpu_ctx = cpu_ctx_ref;
         let encode_tx = encode_tx_ref;
         loop_state
@@ -812,27 +863,65 @@ pub async fn export_video_gpu(
         let frame_time_secs = overlay_plan.frame_time_secs;
         let prepared_captions = overlay_plan.prepared_captions;
 
-        // Get GPU-ready text overlay quads for this frame.
-        // Text coordinates are normalized 0-1 relative to the video content area,
-        // positions are returned in NDC for direct GPU rendering.
+        // Get GPU-ready overlay quads for this frame. Text and annotations are
+        // separate logical layers, both normalized to the full composition and
+        // both transformed by the active zoom state.
         let text_overlay_quads = {
             let store = prerendered_text_store.lock();
             build_frame_text_overlay_quads(
                 &store,
                 FrameTextOverlayRequest {
                     frame_time_secs,
-                    text_segments: overlay_segments_ref,
+                    text_segments: text_segments_ref,
                     composition_width: composition_w,
                     composition_height: composition_h,
-                    video_frame_x: composition_bounds.frame_x as u32,
-                    video_frame_y: composition_bounds.frame_y as u32,
-                    video_frame_width: composition_bounds.frame_width as u32,
-                    video_frame_height: composition_bounds.frame_height as u32,
+                    video_frame_x: 0,
+                    video_frame_y: 0,
+                    video_frame_width: composition_w,
+                    video_frame_height: composition_h,
                     zoom_state,
+                    scale_with_zoom: true,
                 },
             )
         };
-
+        let annotation_overlay_quads = {
+            let store = prerendered_annotation_store.lock();
+            build_frame_text_overlay_quads(
+                &store,
+                FrameTextOverlayRequest {
+                    frame_time_secs,
+                    text_segments: annotation_overlay_segments_ref,
+                    composition_width: composition_w,
+                    composition_height: composition_h,
+                    video_frame_x: 0,
+                    video_frame_y: 0,
+                    video_frame_width: composition_w,
+                    video_frame_height: composition_h,
+                    zoom_state,
+                    scale_with_zoom: true,
+                },
+            )
+        };
+        if loop_state.output_frame_count < 3 || loop_state.output_frame_count % fps == 0 {
+            log_text_overlay_quad_trace(
+                "text",
+                &text_overlay_quads,
+                composition_w,
+                composition_h,
+                loop_state.output_frame_count,
+                frame_time_secs,
+                zoom_state.scale,
+            );
+            log_text_overlay_quad_trace(
+                "annotation",
+                &annotation_overlay_quads,
+                composition_w,
+                composition_h,
+                loop_state.output_frame_count,
+                frame_time_secs,
+                zoom_state.scale,
+            );
+        }
         let cursor_overlay_plan = if let Some(cursor_interp) = cpu_ctx.cursor_interpolator {
             let cursor_overlay_ctx = CursorOverlayContext {
                 composition_w: cpu_ctx.composition_w,
@@ -907,6 +996,7 @@ pub async fn export_video_gpu(
 
         // Render pre-rendered text overlays on GPU (after video/captions, before readback)
         compositor.render_text_overlays(output_texture, &text_overlay_quads);
+        compositor.render_annotation_overlays(output_texture, &annotation_overlay_quads);
 
         if let Some(ref cursor_overlay) = cursor_overlay_plan.gpu_overlay {
             compositor.render_cursor_overlay(output_texture, cursor_overlay);

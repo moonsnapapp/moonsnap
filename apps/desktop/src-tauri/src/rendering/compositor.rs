@@ -382,6 +382,8 @@ pub struct Compositor {
     text_layer: TextLayer,
     // Pre-rendered text overlay layer for export
     text_overlay_layer: TextOverlayLayer,
+    // Pre-rendered annotation overlay layer for export
+    annotation_overlay_layer: TextOverlayLayer,
     // GPU cursor overlay layer for export
     cursor_overlay_layer: CursorOverlayLayer,
 }
@@ -552,6 +554,7 @@ impl Compositor {
         // Initialize text layer
         let text_layer = TextLayer::new(&device, &queue);
         let text_overlay_layer = TextOverlayLayer::new(&device, &queue);
+        let annotation_overlay_layer = TextOverlayLayer::new(&device, &queue);
         let cursor_overlay_layer = CursorOverlayLayer::new(&device, &queue);
 
         Self {
@@ -566,6 +569,7 @@ impl Compositor {
             background_layer,
             text_layer,
             text_overlay_layer,
+            annotation_overlay_layer,
             cursor_overlay_layer,
         }
     }
@@ -1352,6 +1356,12 @@ impl Compositor {
         self.text_overlay_layer.upload_textures(store);
     }
 
+    /// Upload pre-rendered annotation images to GPU textures for export.
+    /// Called once at export start.
+    pub fn upload_annotation_overlays(&mut self, store: &PreRenderedTextStore) {
+        self.annotation_overlay_layer.upload_textures(store);
+    }
+
     /// Render pre-rendered text overlay quads onto the output texture.
     /// Called per-frame during export, after the main composite pass.
     pub fn render_text_overlays(&self, output_texture: &wgpu::Texture, quads: &[TextOverlayQuad]) {
@@ -1367,6 +1377,29 @@ impl Compositor {
             });
 
         self.text_overlay_layer
+            .render_overlays(&mut encoder, &output_view, quads);
+
+        self.queue.submit(Some(encoder.finish()));
+    }
+
+    /// Render pre-rendered annotation overlay quads onto the output texture.
+    pub fn render_annotation_overlays(
+        &self,
+        output_texture: &wgpu::Texture,
+        quads: &[TextOverlayQuad],
+    ) {
+        if quads.is_empty() || !self.annotation_overlay_layer.has_textures() {
+            return;
+        }
+
+        let output_view = output_texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("Annotation Overlay Encoder"),
+            });
+
+        self.annotation_overlay_layer
             .render_overlays(&mut encoder, &output_view, quads);
 
         self.queue.submit(Some(encoder.finish()));

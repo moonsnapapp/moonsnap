@@ -21,13 +21,15 @@ pub struct LineMetricInput {
 
 /// Global state for pre-rendered text images.
 pub struct PreRenderedTextState {
-    pub store: Arc<Mutex<PreRenderedTextStore>>,
+    pub text_store: Arc<Mutex<PreRenderedTextStore>>,
+    pub annotation_store: Arc<Mutex<PreRenderedTextStore>>,
 }
 
 impl PreRenderedTextState {
     pub fn new() -> Self {
         Self {
-            store: Arc::new(Mutex::new(PreRenderedTextStore::new())),
+            text_store: Arc::new(Mutex::new(PreRenderedTextStore::new())),
+            annotation_store: Arc::new(Mutex::new(PreRenderedTextStore::new())),
         }
     }
 }
@@ -56,6 +58,67 @@ pub async fn register_prerendered_text(
     rgba_data: Vec<u8>,
     line_metrics: Option<Vec<LineMetricInput>>,
 ) -> MoonSnapResult<()> {
+    register_prerendered_overlay(
+        &state.text_store,
+        "PreRenderedText",
+        segment_index,
+        width,
+        height,
+        center_x,
+        center_y,
+        size_x,
+        size_y,
+        rgba_data,
+        line_metrics,
+    )
+}
+
+/// Register a pre-rendered annotation image from the frontend.
+///
+/// Annotation overlays are deliberately stored separately from Text-track
+/// overlays so their segment indices, bitmap sizes, and zoom behavior cannot
+/// affect each other.
+#[command]
+pub async fn register_prerendered_annotation(
+    state: State<'_, PreRenderedTextState>,
+    segment_index: usize,
+    width: u32,
+    height: u32,
+    center_x: f64,
+    center_y: f64,
+    size_x: f64,
+    size_y: f64,
+    rgba_data: Vec<u8>,
+    line_metrics: Option<Vec<LineMetricInput>>,
+) -> MoonSnapResult<()> {
+    register_prerendered_overlay(
+        &state.annotation_store,
+        "PreRenderedAnnotation",
+        segment_index,
+        width,
+        height,
+        center_x,
+        center_y,
+        size_x,
+        size_y,
+        rgba_data,
+        line_metrics,
+    )
+}
+
+fn register_prerendered_overlay(
+    store: &Arc<Mutex<PreRenderedTextStore>>,
+    label: &str,
+    segment_index: usize,
+    width: u32,
+    height: u32,
+    center_x: f64,
+    center_y: f64,
+    size_x: f64,
+    size_y: f64,
+    rgba_data: Vec<u8>,
+    line_metrics: Option<Vec<LineMetricInput>>,
+) -> MoonSnapResult<()> {
     let expected_size = (width * height * 4) as usize;
     if rgba_data.len() != expected_size {
         return Err(format!(
@@ -68,7 +131,7 @@ pub async fn register_prerendered_text(
         .into());
     }
 
-    let metrics = line_metrics
+    let metrics: Vec<LineMetric> = line_metrics
         .unwrap_or_default()
         .into_iter()
         .map(|m| LineMetric {
@@ -80,6 +143,7 @@ pub async fn register_prerendered_text(
         })
         .collect();
 
+    let line_metrics_len = metrics.len();
     let image = PreRenderedTextImage {
         segment_index,
         width,
@@ -92,14 +156,20 @@ pub async fn register_prerendered_text(
         line_metrics: metrics,
     };
 
-    state.store.lock().register(image);
+    store.lock().register(image);
 
-    log::debug!(
-        "[PreRenderedText] Registered segment {} ({}x{}, {:.0}KB)",
+    log::info!(
+        "[{}] Registered segment {} bitmap={}x{} center=({:.4},{:.4}) size=({:.4},{:.4}) bytes={:.0}KB lines={}",
+        label,
         segment_index,
         width,
         height,
-        (width * height * 4) as f32 / 1024.0
+        center_x,
+        center_y,
+        size_x,
+        size_y,
+        (width * height * 4) as f32 / 1024.0,
+        line_metrics_len
     );
 
     Ok(())
@@ -110,7 +180,17 @@ pub async fn register_prerendered_text(
 /// Called at export start and end.
 #[command]
 pub async fn clear_prerendered_texts(state: State<'_, PreRenderedTextState>) -> MoonSnapResult<()> {
-    state.store.lock().clear();
+    state.text_store.lock().clear();
     log::debug!("[PreRenderedText] Cleared all pre-rendered texts");
+    Ok(())
+}
+
+/// Clear all pre-rendered annotation images.
+#[command]
+pub async fn clear_prerendered_annotations(
+    state: State<'_, PreRenderedTextState>,
+) -> MoonSnapResult<()> {
+    state.annotation_store.lock().clear();
+    log::debug!("[PreRenderedAnnotation] Cleared all pre-rendered annotations");
     Ok(())
 }

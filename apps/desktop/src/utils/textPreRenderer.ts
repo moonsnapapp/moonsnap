@@ -8,6 +8,7 @@
 
 import { invoke } from '@tauri-apps/api/core';
 import type { TextSegment } from '../types';
+import { videoEditorLogger } from './logger';
 
 /** Per-line layout info for typewriter reveal in export. */
 export interface LineMetric {
@@ -29,6 +30,15 @@ export interface PreRenderedSegment {
   sizeY: number;
   rgbaData: Uint8Array;
   lineMetrics: LineMetric[];
+}
+
+export interface TextPreRenderPlacement {
+  centerX: number;
+  centerY: number;
+}
+
+export interface TextPreRenderOptions {
+  getPlacement?: (segment: TextSegment) => TextPreRenderPlacement;
 }
 
 /** Options for renderTextOnCanvas. */
@@ -291,6 +301,7 @@ function preRenderSegment(
   segmentIndex: number,
   exportWidth: number,
   exportHeight: number,
+  placement?: TextPreRenderPlacement,
 ): PreRenderedSegment | null {
   if (!segment.enabled || !segment.content) return null;
 
@@ -344,8 +355,8 @@ function preRenderSegment(
     segmentIndex,
     width: boxWidth,
     height: boxHeight,
-    centerX: segment.center.x,
-    centerY: segment.center.y,
+    centerX: placement?.centerX ?? segment.center.x,
+    centerY: placement?.centerY ?? segment.center.y,
     sizeX: segment.size.x,
     sizeY: segment.size.y,
     rgbaData: new Uint8Array(imageData.data.buffer),
@@ -360,6 +371,7 @@ export async function preRenderForExport(
   segments: TextSegment[],
   exportWidth: number,
   exportHeight: number,
+  options: TextPreRenderOptions = {},
 ): Promise<void> {
   // Clear any previous pre-rendered texts
   await invoke('clear_prerendered_texts');
@@ -370,8 +382,22 @@ export async function preRenderForExport(
     const segment = segments[i];
     if (!segment.enabled) continue;
 
-    const rendered = preRenderSegment(segment, i, exportWidth, exportHeight);
+    const rendered = preRenderSegment(
+      segment,
+      i,
+      exportWidth,
+      exportHeight,
+      options.getPlacement?.(segment),
+    );
     if (!rendered) continue;
+
+    videoEditorLogger.info(
+      `[TextPreRender] segment=${i} text="${segment.content.slice(0, 32)}" ` +
+      `export=${exportWidth}x${exportHeight} bitmap=${rendered.width}x${rendered.height} ` +
+      `center=(${rendered.centerX.toFixed(4)},${rendered.centerY.toFixed(4)}) ` +
+      `size=(${segment.size.x.toFixed(4)},${segment.size.y.toFixed(4)}) ` +
+      `font=${segment.fontSize}`
+    );
 
     // Send to Rust
     promises.push(
