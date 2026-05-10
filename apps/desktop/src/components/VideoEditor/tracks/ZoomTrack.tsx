@@ -173,8 +173,8 @@ export const ZoomTrackContent = memo(function ZoomTrackContent({
     if ((e.target as HTMLElement).closest('[data-segment]')) return;
 
     const defaultTransition: ZoomTransition = {
-      durationInMs: 300,
-      durationOutMs: 300,
+      durationInMs: 1200,
+      durationOutMs: 900,
       easing: 'easeInOut',
     };
 

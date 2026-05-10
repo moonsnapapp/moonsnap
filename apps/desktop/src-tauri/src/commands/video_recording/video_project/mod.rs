@@ -32,6 +32,7 @@ pub use metadata::{load_video_project_from_file, VideoMetadata};
 mod tests {
     use moonsnap_domain::video_project::{
         AutoZoomConfig, CursorConfig, VideoProject, ZoomRegion, ZoomRegionMode, ZoomTransition,
+        DEFAULT_ZOOM_SCALE,
     };
 
     #[test]
@@ -74,8 +75,10 @@ mod tests {
         assert!(json.contains("minGapMs"));
 
         let deserialized: AutoZoomConfig = serde_json::from_str(&json).unwrap();
-        assert_eq!(deserialized.scale, 2.0);
+        assert_eq!(deserialized.scale, DEFAULT_ZOOM_SCALE);
         assert_eq!(deserialized.hold_duration_ms, 1500);
+        assert_eq!(deserialized.transition_in_ms, 1200);
+        assert_eq!(deserialized.transition_out_ms, 900);
     }
 
     #[test]

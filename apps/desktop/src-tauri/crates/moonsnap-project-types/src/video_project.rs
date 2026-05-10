@@ -423,8 +423,8 @@ pub struct ZoomTransition {
 impl Default for ZoomTransition {
     fn default() -> Self {
         Self {
-            duration_in_ms: 300,
-            duration_out_ms: 300,
+            duration_in_ms: 1200,
+            duration_out_ms: 900,
             easing: EasingFunction::EaseInOut,
         }
     }
@@ -478,8 +478,8 @@ impl Default for AutoZoomConfig {
             scale: DEFAULT_ZOOM_SCALE,
             hold_duration_ms: 1500,
             min_gap_ms: 500,
-            transition_in_ms: 300,
-            transition_out_ms: 300,
+            transition_in_ms: 1200,
+            transition_out_ms: 900,
             easing: EasingFunction::EaseInOut,
             left_clicks_only: true,
         }
@@ -789,12 +789,16 @@ pub struct ExportConfig {
     pub prefer_hardware_encoding: Option<bool>,
     /// Camera-style motion blur applied while zoom scale or focus changes.
     /// 0.0 = off, 1.0 = normal strength, 2.0 = extra strong.
-    #[serde(default)]
+    #[serde(default = "default_zoom_motion_blur")]
     pub zoom_motion_blur: f32,
 }
 
 fn default_prefer_hardware() -> Option<bool> {
     Some(false)
+}
+
+const fn default_zoom_motion_blur() -> f32 {
+    0.35
 }
 
 impl Default for ExportConfig {
@@ -807,7 +811,7 @@ impl Default for ExportConfig {
             crop: CropConfig::default(),
             composition: CompositionConfig::default(),
             prefer_hardware_encoding: Some(false),
-            zoom_motion_blur: 0.0,
+            zoom_motion_blur: default_zoom_motion_blur(),
         }
     }
 }

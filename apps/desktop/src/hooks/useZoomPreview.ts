@@ -17,8 +17,10 @@ import { CURSOR } from '../constants';
 import type { ZoomRegion, CursorRecording } from '../types';
 import { useCursorInterpolation, type InterpolatedCursor } from './useCursorInterpolation';
 
-/** Fixed zoom transition duration in seconds (matches Cap) */
-const ZOOM_DURATION_S = 1.0;
+const DEFAULT_ZOOM_IN_DURATION_MS = 1200;
+const DEFAULT_ZOOM_OUT_DURATION_MS = 900;
+const CONNECTED_ZOOM_GAP_MS = 1200;
+const CURSOR_FOLLOW_SAFE_ZONE_RATIO = 0.25;
 
 // ============================================================================
 // Bezier Easing (Cap's curves) - Proper cubic bezier implementation
@@ -80,6 +82,8 @@ function cubicBezier(x1: number, y1: number, x2: number, y2: number) {
 // Pre-create Cap's easing functions for performance
 const easeInCurve = cubicBezier(0.1, 0.0, 0.3, 1.0);
 const easeOutCurve = cubicBezier(0.5, 0.0, 0.5, 1.0);
+const snappyCurve = cubicBezier(0.16, 1.0, 0.3, 1.0);
+const cinematicCurve = cubicBezier(0.22, 0.0, 0.18, 1.0);
 
 /**
  * Cap's ease-in curve: bezier(0.1, 0.0, 0.3, 1.0)
@@ -95,6 +99,35 @@ function easeIn(t: number): number {
  */
 function easeOut(t: number): number {
   return easeOutCurve(t);
+}
+
+function smoothstep01(t: number): number {
+  const x = clamp01(t);
+  return x * x * (3 - 2 * x);
+}
+
+function applyEasing(t: number, easing?: ZoomRegion['transition']['easing']): number {
+  const x = clamp01(t);
+  switch (easing) {
+    case 'linear':
+      return x;
+    case 'easeIn':
+      return easeIn(x);
+    case 'easeOut':
+      return easeOut(x);
+    case 'smooth':
+      return smoothstep01(x);
+    case 'snappy':
+      return snappyCurve(x);
+    case 'bouncy': {
+      const c1 = 1.70158;
+      const c3 = c1 + 1;
+      return clamp01(1 + c3 * Math.pow(x - 1, 3) + c1 * Math.pow(x - 1, 2));
+    }
+    case 'easeInOut':
+    default:
+      return cinematicCurve(x);
+  }
 }
 
 // ============================================================================
@@ -137,6 +170,63 @@ function boundsFromRegion(
     topLeft: { x: 0 - centerDiff.x, y: 0 - centerDiff.y },
     bottomRight: { x: amount - centerDiff.x, y: amount - centerDiff.y },
   };
+}
+
+function clampFocusToScale(focus: XY, zoomScale: number): XY {
+  if (zoomScale <= 1.001) {
+    return {
+      x: Math.max(0, Math.min(1, focus.x)),
+      y: Math.max(0, Math.min(1, focus.y)),
+    };
+  }
+
+  const halfSpan = 1 / (2 * zoomScale);
+  return {
+    x: Math.max(halfSpan, Math.min(1 - halfSpan, focus.x)),
+    y: Math.max(halfSpan, Math.min(1 - halfSpan, focus.y)),
+  };
+}
+
+function resolveCameraFocus(region: ZoomRegion, cursorPos: XY | null): XY {
+  const regionFocus = clampFocusToScale({ x: region.targetX, y: region.targetY }, region.scale);
+  if (region.mode !== 'auto' || !cursorPos) {
+    return regionFocus;
+  }
+
+  const halfSpan = 1 / (2 * Math.max(1, region.scale));
+  const visibleSpan = halfSpan * 2;
+  const safeInset = visibleSpan * CURSOR_FOLLOW_SAFE_ZONE_RATIO;
+  const safeLeft = regionFocus.x - halfSpan + safeInset;
+  const safeRight = regionFocus.x + halfSpan - safeInset;
+  const safeTop = regionFocus.y - halfSpan + safeInset;
+  const safeBottom = regionFocus.y + halfSpan - safeInset;
+
+  if (
+    cursorPos.x >= safeLeft &&
+    cursorPos.x <= safeRight &&
+    cursorPos.y >= safeTop &&
+    cursorPos.y <= safeBottom
+  ) {
+    return regionFocus;
+  }
+
+  return clampFocusToScale(cursorPos, region.scale);
+}
+
+function boundsFromRegionWithCamera(
+  region: ZoomRegion,
+  cursorPos: XY | null
+): SegmentBounds {
+  const focus = resolveCameraFocus(region, cursorPos);
+  return boundsFromRegion(
+    {
+      ...region,
+      targetX: focus.x,
+      targetY: focus.y,
+      mode: 'manual',
+    },
+    null
+  );
 }
 
 function lerpXY(a: XY, b: XY, t: number): XY {
@@ -250,8 +340,9 @@ function interpolateZoom(
   // Case 1: After a segment, zooming out
   if (prevSegment && !segment) {
     const prevEndS = prevSegment.endMs / 1000;
-    const zoomT = easeOut(clamp01((timeS - prevEndS) / ZOOM_DURATION_S));
-    const prevBounds = boundsFromRegion(prevSegment, cursorPos);
+    const durationS = Math.max(0.001, (prevSegment.transition?.durationOutMs ?? DEFAULT_ZOOM_OUT_DURATION_MS) / 1000);
+    const zoomT = applyEasing((timeS - prevEndS) / durationS, prevSegment.transition?.easing);
+    const prevBounds = boundsFromRegionWithCamera(prevSegment, cursorPos);
 
     return {
       t: 1 - zoomT,
@@ -262,8 +353,9 @@ function interpolateZoom(
   // Case 2: In first segment, zooming in
   if (!prevSegment && segment) {
     const startS = segment.startMs / 1000;
-    const t = easeIn(clamp01((timeS - startS) / ZOOM_DURATION_S));
-    const segmentBounds = boundsFromRegion(segment, cursorPos);
+    const durationS = Math.max(0.001, (segment.transition?.durationInMs ?? DEFAULT_ZOOM_IN_DURATION_MS) / 1000);
+    const t = applyEasing((timeS - startS) / durationS, segment.transition?.easing);
+    const segmentBounds = boundsFromRegionWithCamera(segment, cursorPos);
 
     return {
       t,
@@ -273,12 +365,13 @@ function interpolateZoom(
 
   // Case 3: Transitioning between segments
   if (prevSegment && segment) {
-    const prevBounds = boundsFromRegion(prevSegment, cursorPos);
-    const segmentBounds = boundsFromRegion(segment, cursorPos);
+    const prevBounds = boundsFromRegionWithCamera(prevSegment, cursorPos);
+    const segmentBounds = boundsFromRegionWithCamera(segment, cursorPos);
     const segmentStartS = segment.startMs / 1000;
     const prevEndS = prevSegment.endMs / 1000;
+    const inDurationS = Math.max(0.001, (segment.transition?.durationInMs ?? DEFAULT_ZOOM_IN_DURATION_MS) / 1000);
 
-    const zoomT = easeIn(clamp01((timeS - segmentStartS) / ZOOM_DURATION_S));
+    const zoomT = applyEasing((timeS - segmentStartS) / inDurationS, segment.transition?.easing);
 
     // No gap: direct transition between segments
     if (Math.abs(segment.startMs - prevSegment.endMs) < 10) {
@@ -288,7 +381,7 @@ function interpolateZoom(
       };
     }
     // Small gap: interrupted zoom-out
-    else if (segmentStartS - prevEndS < ZOOM_DURATION_S) {
+    else if (segmentStartS - prevEndS < CONNECTED_ZOOM_GAP_MS / 1000) {
       // Find where the zoom-out was interrupted
       const minCursor = createCursor(segmentStartS, segments);
       const min = interpolateZoom(minCursor, cursorPos);

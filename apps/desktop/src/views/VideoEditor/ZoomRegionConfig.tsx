@@ -6,7 +6,14 @@ import { useRef, useEffect } from 'react';
 import { useWebCodecsPreview } from '../../hooks/useWebCodecsPreview';
 import { usePreviewOrPlaybackTime } from '../../hooks/usePlaybackEngine';
 import { Slider } from '../../components/ui/slider';
-import type { ZoomRegion } from '../../types';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '../../components/ui/select';
+import type { EasingFunction, ZoomRegion } from '../../types';
 
 export interface ZoomRegionConfigProps {
   region: ZoomRegion;
@@ -56,6 +63,11 @@ export function ZoomRegionConfig({ region, videoSrc, canUseAuto, onUpdate, onDel
   }, [isReady, dimensions, currentTimeMs, getFrame, prefetchAround]);
 
   const isLoaded = isReady && dimensions !== null;
+  const transition = region.transition ?? {
+    durationInMs: 1200,
+    durationOutMs: 900,
+    easing: 'easeInOut' as EasingFunction,
+  };
 
   // Handle position drag on the thumbnail
   const handleMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
@@ -158,6 +170,61 @@ export function ZoomRegionConfig({ region, videoSrc, canUseAuto, onUpdate, onDel
             No cursor data for auto mode
           </p>
         )}
+      </div>
+
+      <div className="space-y-3">
+        <div>
+          <div className="flex items-center justify-between mb-1.5">
+            <span className="text-xs text-[var(--ink-muted)]">Zoom In</span>
+            <span className="text-xs text-[var(--ink-dark)] font-mono">{transition.durationInMs}ms</span>
+          </div>
+          <Slider
+            value={[transition.durationInMs]}
+            min={200}
+            max={2000}
+            step={50}
+            onValueChange={(values) => onUpdate({
+              transition: { ...transition, durationInMs: values[0] },
+            })}
+          />
+        </div>
+
+        <div>
+          <div className="flex items-center justify-between mb-1.5">
+            <span className="text-xs text-[var(--ink-muted)]">Zoom Out</span>
+            <span className="text-xs text-[var(--ink-dark)] font-mono">{transition.durationOutMs}ms</span>
+          </div>
+          <Slider
+            value={[transition.durationOutMs]}
+            min={200}
+            max={2000}
+            step={50}
+            onValueChange={(values) => onUpdate({
+              transition: { ...transition, durationOutMs: values[0] },
+            })}
+          />
+        </div>
+
+        <div>
+          <span className="text-xs text-[var(--ink-muted)] block mb-2">Curve</span>
+          <Select
+            value={transition.easing}
+            onValueChange={(value) => onUpdate({
+              transition: { ...transition, easing: value as EasingFunction },
+            })}
+          >
+            <SelectTrigger className="h-8 w-full border-[var(--glass-border)] bg-[var(--polar-mist)] px-2 text-sm text-[var(--ink-dark)]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent className="border-[var(--glass-border)] bg-[var(--glass-surface-dark)] text-[var(--ink-dark)]">
+              <SelectItem value="easeInOut">Cinematic</SelectItem>
+              <SelectItem value="snappy">Snappy</SelectItem>
+              <SelectItem value="smooth">Smooth</SelectItem>
+              <SelectItem value="easeOut">Ease Out</SelectItem>
+              <SelectItem value="linear">Linear</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
       </div>
 
       {/* Manual Mode: Video thumbnail with focus picker */}

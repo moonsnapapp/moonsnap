@@ -6,12 +6,14 @@ import { DEFAULT_TIMELINE_ZOOM } from './timelineSlice';
 import { getEffectiveDuration } from './trimSlice';
 import { normalizeAnnotationConfig } from '../../utils/videoAnnotations';
 
+const DEFAULT_ZOOM_MOTION_BLUR = 0.35;
+
 function normalizeProject(project: VideoProject): VideoProject {
   return {
     ...project,
     export: {
       ...project.export,
-      zoomMotionBlur: project.export.zoomMotionBlur ?? 0,
+      zoomMotionBlur: project.export.zoomMotionBlur ?? DEFAULT_ZOOM_MOTION_BLUR,
     },
     annotations: normalizeAnnotationConfig(project.annotations),
   };

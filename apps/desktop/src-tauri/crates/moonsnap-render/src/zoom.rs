@@ -7,10 +7,14 @@
 #![allow(dead_code)]
 
 use crate::{types::ZoomMotionBlur, zoom_state::ZoomState};
-use moonsnap_project_types::video_project::{ZoomConfig, ZoomRegion, ZoomRegionMode};
+use moonsnap_project_types::video_project::{
+    EasingFunction, ZoomConfig, ZoomRegion, ZoomRegionMode,
+};
 
-/// Fixed zoom transition duration in seconds (matches Cap).
-pub const ZOOM_DURATION: f64 = 1.0;
+pub const DEFAULT_ZOOM_IN_DURATION_MS: f64 = 1200.0;
+pub const DEFAULT_ZOOM_OUT_DURATION_MS: f64 = 900.0;
+pub const CONNECTED_ZOOM_GAP_MS: f64 = 1200.0;
+pub const CURSOR_FOLLOW_SAFE_ZONE_RATIO: f64 = 0.25;
 
 /// Apply a zoom state to a normalized point (0-1 space).
 /// Used by CPU overlays (cursor/text) to stay aligned with shader zoom.
@@ -147,6 +151,18 @@ impl SegmentBounds {
         )
     }
 
+    pub fn from_region_with_camera(region: &ZoomRegion, cursor_pos: Option<(f64, f64)>) -> Self {
+        let focus = resolve_camera_focus(region, cursor_pos);
+        let amount = region.scale as f64;
+        let scaled_center = [focus.0 * amount, focus.1 * amount];
+        let center_diff = [scaled_center[0] - focus.0, scaled_center[1] - focus.1];
+
+        SegmentBounds::new(
+            XY::new(0.0 - center_diff[0], 0.0 - center_diff[1]),
+            XY::new(amount - center_diff[0], amount - center_diff[1]),
+        )
+    }
+
     /// Get the zoom amount (width of the viewport).
     pub fn zoom_amount(&self) -> f64 {
         (self.bottom_right - self.top_left).x
@@ -158,6 +174,84 @@ impl SegmentBounds {
             self.top_left * (1.0 - t) + other.top_left * t,
             self.bottom_right * (1.0 - t) + other.bottom_right * t,
         )
+    }
+}
+
+fn clamp_focus_to_scale(focus: (f64, f64), zoom_scale: f32) -> (f64, f64) {
+    if zoom_scale <= 1.001 {
+        return (focus.0.clamp(0.0, 1.0), focus.1.clamp(0.0, 1.0));
+    }
+
+    let half_span = 1.0 / (2.0 * zoom_scale as f64);
+    (
+        focus.0.clamp(half_span, 1.0 - half_span),
+        focus.1.clamp(half_span, 1.0 - half_span),
+    )
+}
+
+fn resolve_camera_focus(region: &ZoomRegion, cursor_pos: Option<(f64, f64)>) -> (f64, f64) {
+    let region_focus = clamp_focus_to_scale(
+        (region.target_x as f64, region.target_y as f64),
+        region.scale,
+    );
+    if region.mode != ZoomRegionMode::Auto {
+        return region_focus;
+    }
+
+    let Some(cursor_pos) = cursor_pos else {
+        return region_focus;
+    };
+
+    let half_span = 1.0 / (2.0 * f64::from(region.scale.max(1.0)));
+    let visible_span = half_span * 2.0;
+    let safe_inset = visible_span * CURSOR_FOLLOW_SAFE_ZONE_RATIO;
+    let safe_left = region_focus.0 - half_span + safe_inset;
+    let safe_right = region_focus.0 + half_span - safe_inset;
+    let safe_top = region_focus.1 - half_span + safe_inset;
+    let safe_bottom = region_focus.1 + half_span - safe_inset;
+
+    if cursor_pos.0 >= safe_left
+        && cursor_pos.0 <= safe_right
+        && cursor_pos.1 >= safe_top
+        && cursor_pos.1 <= safe_bottom
+    {
+        return region_focus;
+    }
+
+    clamp_focus_to_scale(cursor_pos, region.scale)
+}
+
+fn smoothstep(t: f64) -> f64 {
+    let x = t_clamp(t);
+    x * x * (3.0 - 2.0 * x)
+}
+
+fn apply_easing(t: f64, easing: EasingFunction) -> f64 {
+    let x = t_clamp(t);
+    match easing {
+        EasingFunction::Linear => x,
+        EasingFunction::EaseIn => bezier_easing::bezier_easing(0.1, 0.0, 0.3, 1.0)
+            .ok()
+            .map(|f| f(x as f32) as f64)
+            .unwrap_or(x),
+        EasingFunction::EaseOut => bezier_easing::bezier_easing(0.5, 0.0, 0.5, 1.0)
+            .ok()
+            .map(|f| f(x as f32) as f64)
+            .unwrap_or(x),
+        EasingFunction::Smooth => smoothstep(x),
+        EasingFunction::Snappy => bezier_easing::bezier_easing(0.16, 1.0, 0.3, 1.0)
+            .ok()
+            .map(|f| f(x as f32) as f64)
+            .unwrap_or(x),
+        EasingFunction::Bouncy => {
+            let c1 = 1.70158;
+            let c3 = c1 + 1.0;
+            (1.0 + c3 * (x - 1.0).powi(3) + c1 * (x - 1.0).powi(2)).clamp(0.0, 1.0)
+        },
+        EasingFunction::EaseInOut => bezier_easing::bezier_easing(0.22, 0.0, 0.18, 1.0)
+            .ok()
+            .map(|f| f(x as f32) as f64)
+            .unwrap_or(x),
     }
 }
 
@@ -237,24 +331,11 @@ impl InterpolatedZoom {
     ) -> Self {
         let default = SegmentBounds::default();
 
-        // Create easing functions once. These parameters are valid, so ok() won't fail,
-        // but we handle the error case with a linear fallback for robustness.
-        let ease_in_fn = bezier_easing::bezier_easing(0.1, 0.0, 0.3, 1.0).ok();
-        let ease_out_fn = bezier_easing::bezier_easing(0.5, 0.0, 0.5, 1.0).ok();
-
-        // Helper to apply easing - uses bezier if available and enabled, else linear
-        let apply_ease_in = |t: f32| -> f32 {
+        let apply_curve = |t: f64, easing: EasingFunction| -> f64 {
             if use_bezier {
-                ease_in_fn.as_ref().map(|f| f(t)).unwrap_or(t)
+                apply_easing(t, easing)
             } else {
-                t
-            }
-        };
-        let apply_ease_out = |t: f32| -> f32 {
-            if use_bezier {
-                ease_out_fn.as_ref().map(|f| f(t)).unwrap_or(t)
-            } else {
-                t
+                t_clamp(t)
             }
         };
 
@@ -262,11 +343,13 @@ impl InterpolatedZoom {
             // Case 1: After a segment, zooming out
             (Some(prev_segment), None) => {
                 let prev_end_s = prev_segment.end_ms as f64 / 1000.0;
-                let zoom_t =
-                    apply_ease_out(t_clamp((cursor.time - prev_end_s) / ZOOM_DURATION) as f32)
-                        as f64;
+                let duration_s = (prev_segment.transition.duration_out_ms as f64).max(1.0) / 1000.0;
+                let zoom_t = apply_curve(
+                    (cursor.time - prev_end_s) / duration_s,
+                    prev_segment.transition.easing,
+                );
 
-                let prev_bounds = SegmentBounds::from_region(prev_segment, cursor_pos);
+                let prev_bounds = SegmentBounds::from_region_with_camera(prev_segment, cursor_pos);
 
                 Self {
                     t: 1.0 - zoom_t,
@@ -277,10 +360,13 @@ impl InterpolatedZoom {
             // Case 2: In first segment, zooming in
             (None, Some(segment)) => {
                 let start_s = segment.start_ms as f64 / 1000.0;
-                let t =
-                    apply_ease_in(t_clamp((cursor.time - start_s) / ZOOM_DURATION) as f32) as f64;
+                let duration_s = (segment.transition.duration_in_ms as f64).max(1.0) / 1000.0;
+                let t = apply_curve(
+                    (cursor.time - start_s) / duration_s,
+                    segment.transition.easing,
+                );
 
-                let segment_bounds = SegmentBounds::from_region(segment, cursor_pos);
+                let segment_bounds = SegmentBounds::from_region_with_camera(segment, cursor_pos);
 
                 Self {
                     t,
@@ -290,14 +376,16 @@ impl InterpolatedZoom {
 
             // Case 3: Transitioning between segments
             (Some(prev_segment), Some(segment)) => {
-                let prev_bounds = SegmentBounds::from_region(prev_segment, cursor_pos);
-                let segment_bounds = SegmentBounds::from_region(segment, cursor_pos);
+                let prev_bounds = SegmentBounds::from_region_with_camera(prev_segment, cursor_pos);
+                let segment_bounds = SegmentBounds::from_region_with_camera(segment, cursor_pos);
                 let segment_start_s = segment.start_ms as f64 / 1000.0;
                 let prev_end_s = prev_segment.end_ms as f64 / 1000.0;
+                let duration_s = (segment.transition.duration_in_ms as f64).max(1.0) / 1000.0;
 
-                let zoom_t =
-                    apply_ease_in(t_clamp((cursor.time - segment_start_s) / ZOOM_DURATION) as f32)
-                        as f64;
+                let zoom_t = apply_curve(
+                    (cursor.time - segment_start_s) / duration_s,
+                    segment.transition.easing,
+                );
 
                 // No gap: direct transition between segments
                 if (segment.start_ms as i64 - prev_segment.end_ms as i64).abs() < 10 {
@@ -307,7 +395,7 @@ impl InterpolatedZoom {
                     }
                 }
                 // Small gap: interrupted zoom-out
-                else if segment_start_s - prev_end_s < ZOOM_DURATION {
+                else if segment_start_s - prev_end_s < CONNECTED_ZOOM_GAP_MS / 1000.0 {
                     // Find where the zoom-out was interrupted
                     let min = Self::new_internal(
                         SegmentsCursor::new(segment_start_s, cursor.segments),
@@ -791,7 +879,9 @@ mod tests {
 
     #[test]
     fn test_interpolated_zoom_linear_zoom_in() {
-        let segments = vec![make_region(0, 2000, 2.0, 0.5, 0.5)];
+        let mut region = make_region(0, 2000, 2.0, 0.5, 0.5);
+        region.transition.duration_in_ms = 1000;
+        let segments = vec![region];
 
         // Halfway through zoom-in (0.5s into 1s transition)
         let cursor = SegmentsCursor::new(0.5, &segments);
@@ -807,7 +897,9 @@ mod tests {
 
     #[test]
     fn test_interpolated_zoom_linear_zoom_out() {
-        let segments = vec![make_region(0, 1000, 2.0, 0.5, 0.5)];
+        let mut region = make_region(0, 1000, 2.0, 0.5, 0.5);
+        region.transition.duration_out_ms = 1000;
+        let segments = vec![region];
 
         // Halfway through zoom-out (0.5s after end)
         let cursor = SegmentsCursor::new(1.5, &segments);
