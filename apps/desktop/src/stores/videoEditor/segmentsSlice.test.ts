@@ -235,6 +235,45 @@ describe('annotation shape selection', () => {
     expect(useVideoEditorStore.getState().annotationDeleteMode).toBe('shape');
   });
 
+  it('reorders annotation shapes so higher indexes render above lower layers', () => {
+    const bottomShape = { ...createDefaultAnnotationShape('rectangle'), id: 'shape-bottom' };
+    const middleShape = { ...createDefaultAnnotationShape('ellipse'), id: 'shape-middle' };
+    const topShape = { ...createDefaultAnnotationShape('arrow'), id: 'shape-top' };
+    const segment = {
+      id: 'segment-reorder',
+      startMs: 0,
+      endMs: 1000,
+      enabled: true,
+      shapes: [bottomShape, middleShape, topShape],
+    };
+
+    useVideoEditorStore.getState().setProject(createTestProject({
+      annotations: {
+        segments: [segment],
+      },
+    }));
+
+    const store = useVideoEditorStore.getState();
+    store.selectAnnotationSegment(segment.id, middleShape.id);
+    store.reorderAnnotationShape(segment.id, middleShape.id, 2);
+
+    expect(useVideoEditorStore.getState().project?.annotations.segments[0]?.shapes.map((shape) => shape.id)).toEqual([
+      bottomShape.id,
+      topShape.id,
+      middleShape.id,
+    ]);
+    expect(useVideoEditorStore.getState().selectedAnnotationShapeId).toBe(middleShape.id);
+    expect(useVideoEditorStore.getState().activeUndoDomain).toBe('annotation');
+
+    useVideoEditorStore.getState().undoAnnotation();
+
+    expect(useVideoEditorStore.getState().project?.annotations.segments[0]?.shapes.map((shape) => shape.id)).toEqual([
+      bottomShape.id,
+      middleShape.id,
+      topShape.id,
+    ]);
+  });
+
   it('keeps annotation undo active after deleting the selected annotation segment', () => {
     const shape = { ...createDefaultAnnotationShape('rectangle'), id: 'shape-delete-segment' };
     const segment = {

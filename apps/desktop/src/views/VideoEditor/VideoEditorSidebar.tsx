@@ -15,6 +15,7 @@ import {
   selectDeleteZoomRegion,
   selectSelectAnnotationSegment,
   selectSelectAnnotationShape,
+  selectReorderAnnotationShape,
   selectSelectMaskSegment,
   selectSelectSceneSegment,
   selectSelectTextSegment,
@@ -122,6 +123,7 @@ export function VideoEditorSidebar({ project, onOpenCropDialog }: VideoEditorSid
   const selectAnnotationShape = useVideoEditorStore(selectSelectAnnotationShape);
   const addAnnotationShape = useVideoEditorStore(selectAddAnnotationShape);
   const updateAnnotationShape = useVideoEditorStore(selectUpdateAnnotationShape);
+  const reorderAnnotationShape = useVideoEditorStore(selectReorderAnnotationShape);
   const deleteAnnotationSegment = useVideoEditorStore(selectDeleteAnnotationSegment);
   const deleteAnnotationShape = useVideoEditorStore(selectDeleteAnnotationShape);
   const selectedZoomRegionId = useVideoEditorStore(selectSelectedZoomRegionId);
@@ -278,6 +280,9 @@ export function VideoEditorSidebar({ project, onOpenCropDialog }: VideoEditorSid
                   }}
                   onUpdateShape={(shapeId, updates) => {
                     updateAnnotationShape(selectedAnnotationSegmentId, shapeId, updates);
+                  }}
+                  onReorderShape={(shapeId, targetIndex) => {
+                    reorderAnnotationShape(selectedAnnotationSegmentId, shapeId, targetIndex);
                   }}
                   onDeleteShape={(shapeId) => {
                     deleteAnnotationShape(selectedAnnotationSegmentId, shapeId);

@@ -1,5 +1,34 @@
-import { useMemo } from 'react';
-import { Plus } from 'lucide-react';
+import { useMemo, useState, type CSSProperties, type HTMLAttributes } from 'react';
+import {
+  DndContext,
+  DragOverlay,
+  KeyboardSensor,
+  PointerSensor,
+  closestCenter,
+  pointerWithin,
+  useSensor,
+  useSensors,
+  type CollisionDetection,
+  type DragEndEvent,
+  type DragStartEvent,
+} from '@dnd-kit/core';
+import {
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
+import {
+  ArrowUpRight,
+  Circle,
+  Diamond,
+  FileText,
+  ListOrdered,
+  Plus,
+  Square,
+  Trash2,
+} from 'lucide-react';
 import { ColorPicker } from '@/components/ui/color-picker';
 import {
   Select,
@@ -22,6 +51,7 @@ export interface AnnotationSegmentConfigProps {
   onSelectShape: (id: string) => void;
   onAddShape: (shapeType: AnnotationShapeType) => void;
   onUpdateShape: (shapeId: string, updates: Partial<AnnotationShape>) => void;
+  onReorderShape: (shapeId: string, targetIndex: number) => void;
   onDeleteShape: (shapeId: string) => void;
   onDeleteSegment: () => void;
   onDone: () => void;
@@ -29,6 +59,40 @@ export interface AnnotationSegmentConfigProps {
 
 const ADDABLE_SHAPE_TYPES: AnnotationShapeType[] = ['rectangle', 'ellipse', 'arrow', 'step'];
 const LEGACY_TEXT_SHAPE_TYPE: AnnotationShapeType = 'text';
+const getLayerPositionLabel = (index: number, total: number) => {
+  if (total === 1) {
+    return 'Only layer';
+  }
+
+  if (index === total - 1) {
+    return 'Top layer';
+  }
+
+  if (index === 0) {
+    return 'Bottom layer';
+  }
+
+  return `Layer ${index + 1}`;
+};
+
+const getShapeIcon = (shapeType: AnnotationShapeType) => {
+  switch (shapeType) {
+    case 'rectangle':
+      return Square;
+    case 'ellipse':
+      return Circle;
+    case 'arrow':
+    case 'line':
+      return ArrowUpRight;
+    case 'step':
+      return ListOrdered;
+    case 'text':
+      return FileText;
+    default:
+      return Diamond;
+  }
+};
+
 const COLOR_PRESETS = [
   '#EF4444',
   '#F97316',
@@ -40,16 +104,152 @@ const COLOR_PRESETS = [
   '#1A1A1A',
 ];
 
+const layerCollisionDetection: CollisionDetection = (args) => {
+  const pointerCollisions = pointerWithin(args);
+  return pointerCollisions.length > 0 ? pointerCollisions : closestCenter(args);
+};
+
+interface LayerRowData {
+  shape: AnnotationShape;
+  index: number;
+}
+
+interface LayerCardProps {
+  shape: AnnotationShape;
+  index: number;
+  total: number;
+  isSelected: boolean;
+  isDragging?: boolean;
+  isOverlay?: boolean;
+  dragAttributes?: HTMLAttributes<HTMLElement>;
+  dragListeners?: HTMLAttributes<HTMLElement>;
+  setNodeRef?: (node: HTMLDivElement | null) => void;
+  style?: CSSProperties;
+  onSelectShape?: (id: string) => void;
+  onDeleteShape?: (shapeId: string) => void;
+}
+
+function LayerCard({
+  shape,
+  index,
+  total,
+  isSelected,
+  isDragging = false,
+  isOverlay = false,
+  dragAttributes,
+  dragListeners,
+  setNodeRef,
+  style,
+  onSelectShape,
+  onDeleteShape,
+}: LayerCardProps) {
+  const LayerIcon = getShapeIcon(shape.shapeType);
+  const shapeLabel = getAnnotationShapeLabel(shape.shapeType);
+  const positionLabel = getLayerPositionLabel(index, total);
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className={`group flex min-h-10 w-full min-w-0 cursor-grab touch-none items-center gap-2 rounded-md border px-2.5 py-2 text-left transition-[background-color,border-color,box-shadow,opacity] active:cursor-grabbing ${
+        isSelected
+          ? 'border-[var(--coral-300)] bg-[var(--coral-50)] text-[var(--ink-dark)]'
+          : 'border-[var(--glass-border)] bg-[var(--polar-mist)] text-[var(--ink-dark)] hover:bg-[var(--glass-highlight)]'
+      } ${isOverlay ? 'border-[var(--coral-300)] bg-[var(--coral-50)] opacity-100' : ''} ${
+        isDragging ? 'scale-[0.985] opacity-40' : ''
+      }`}
+      {...dragAttributes}
+      {...dragListeners}
+    >
+      <button
+        type="button"
+        onClick={() => onSelectShape?.(shape.id)}
+        aria-current={isSelected ? 'true' : undefined}
+        aria-label={`Select ${shapeLabel} annotation layer ${index + 1}`}
+        className="flex min-w-0 flex-1 items-center gap-2 text-left"
+      >
+        <span
+          className={`flex h-6 w-6 shrink-0 items-center justify-center rounded border ${
+            isSelected
+              ? 'border-[var(--coral-300)] bg-[var(--coral-100)] text-[var(--coral-400)]'
+              : 'border-[var(--glass-border)] bg-[var(--glass-surface-dark)] text-[var(--ink-muted)]'
+          }`}
+          aria-hidden="true"
+        >
+          <LayerIcon className="h-3.5 w-3.5" />
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-xs font-medium">{shapeLabel}</span>
+          <span className="block truncate text-[11px] text-[var(--ink-subtle)]">
+            {positionLabel}
+            {isSelected ? ' - Selected' : ''}
+          </span>
+        </span>
+      </button>
+      {onDeleteShape && (
+        <span className="flex shrink-0 items-center gap-0.5">
+          <button
+            type="button"
+            onPointerDown={(event) => event.stopPropagation()}
+            onClick={() => onDeleteShape(shape.id)}
+            aria-label={`Delete ${shapeLabel} layer`}
+            title="Delete layer"
+            className="flex h-6 w-6 items-center justify-center rounded text-[var(--ink-muted)] transition-colors hover:bg-[var(--error-light)] hover:text-[var(--error)]"
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+          </button>
+        </span>
+      )}
+    </div>
+  );
+}
+
+function SortableLayerCard(props: Omit<LayerCardProps, 'dragAttributes' | 'dragListeners' | 'setNodeRef' | 'style' | 'isDragging'>) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    isDragging,
+  } = useSortable({ id: props.shape.id });
+
+  return (
+    <LayerCard
+      {...props}
+      isDragging={isDragging}
+      dragAttributes={attributes}
+      dragListeners={listeners}
+      setNodeRef={setNodeRef}
+      style={{
+        transform: CSS.Transform.toString(transform),
+      }}
+    />
+  );
+}
+
 export function AnnotationSegmentConfig({
   segment,
   selectedShapeId,
   onSelectShape,
   onAddShape,
   onUpdateShape,
+  onReorderShape,
   onDeleteShape,
   onDeleteSegment,
   onDone,
 }: AnnotationSegmentConfigProps) {
+  const [activeLayerId, setActiveLayerId] = useState<string | null>(null);
+  const [activeLayerWidth, setActiveLayerWidth] = useState<number | null>(null);
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 4,
+      },
+    }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
   const selectedShape = useMemo(() => {
     if (selectedShapeId == null) {
       return null;
@@ -64,6 +264,22 @@ export function AnnotationSegmentConfig({
 
     return ADDABLE_SHAPE_TYPES;
   }, [selectedShape]);
+  const visibleLayerCount = segment.shapes.length;
+  const layerCountLabel = visibleLayerCount === 1 ? '1 layer' : `${visibleLayerCount} layers`;
+  const layerRows = useMemo(
+    (): LayerRowData[] =>
+      segment.shapes
+        .map((shape, index) => ({
+          shape,
+          index,
+        }))
+        .reverse(),
+    [segment.shapes]
+  );
+  const layerIds = useMemo(() => layerRows.map((row) => row.shape.id), [layerRows]);
+  const activeLayer = activeLayerId
+    ? layerRows.find((row) => row.shape.id === activeLayerId) ?? null
+    : null;
   const isStepShape = selectedShape?.shapeType === 'step';
   const isLegacyTextShape = selectedShape?.shapeType === LEGACY_TEXT_SHAPE_TYPE;
   const showStrokeControls = selectedShape != null && !isStepShape;
@@ -72,6 +288,28 @@ export function AnnotationSegmentConfig({
     !isEndpointAnnotationShapeType(selectedShape.shapeType) &&
     !isLegacyTextShape &&
     !isStepShape;
+  const handleLayerDragStart = (event: DragStartEvent) => {
+    setActiveLayerId(String(event.active.id));
+    setActiveLayerWidth(event.active.rect.current.initial?.width ?? null);
+  };
+
+  const handleLayerDragEnd = (event: DragEndEvent) => {
+    const activeId = String(event.active.id);
+    const overId = event.over?.id != null ? String(event.over.id) : null;
+    setActiveLayerId(null);
+    setActiveLayerWidth(null);
+
+    if (!overId || activeId === overId) {
+      return;
+    }
+
+    const nextDisplayIndex = layerIds.indexOf(overId);
+    if (nextDisplayIndex < 0) {
+      return;
+    }
+
+    onReorderShape(activeId, segment.shapes.length - 1 - nextDisplayIndex);
+  };
 
   return (
     <div className="space-y-4">
@@ -93,39 +331,82 @@ export function AnnotationSegmentConfig({
         <span className="block text-xs text-[var(--ink-subtle)]">Annotation segment</span>
       </div>
 
-      <div>
+      <div className="space-y-2">
         <div className="mb-2 flex items-center justify-between">
-          <span className="text-xs text-[var(--ink-muted)]">Shapes</span>
-          <span className="text-xs text-[var(--ink-subtle)]">{segment.shapes.length} total</span>
+          <span className="text-xs font-medium text-[var(--ink-muted)]">Layers</span>
+          <span className="text-xs text-[var(--ink-subtle)]">{layerCountLabel}</span>
         </div>
-        <div className="flex min-w-0 flex-wrap gap-1.5">
-          {segment.shapes.map((shape: AnnotationShape, index: number) => (
-            <button
-              key={shape.id}
-              onClick={() => onSelectShape(shape.id)}
-              className={`editor-choice-pill min-w-0 max-w-full truncate px-2.5 py-1 text-xs ${
-                shape.id === selectedShape?.id ? 'editor-choice-pill--active' : ''
-              }`}
-            >
-              {index + 1}. {getAnnotationShapeLabel(shape.shapeType)}
-            </button>
-          ))}
-        </div>
+        {segment.shapes.length > 0 ? (
+          <DndContext
+            sensors={sensors}
+            collisionDetection={layerCollisionDetection}
+            onDragStart={handleLayerDragStart}
+            onDragCancel={() => {
+              setActiveLayerId(null);
+              setActiveLayerWidth(null);
+            }}
+            onDragEnd={handleLayerDragEnd}
+          >
+            <SortableContext items={layerIds} strategy={verticalListSortingStrategy}>
+              <div className="space-y-1.5 py-1">
+                {layerRows.map(({ shape, index }) => (
+                  <SortableLayerCard
+                    key={shape.id}
+                    shape={shape}
+                    index={index}
+                    total={segment.shapes.length}
+                    isSelected={shape.id === selectedShape?.id}
+                    onSelectShape={onSelectShape}
+                    onDeleteShape={onDeleteShape}
+                  />
+                ))}
+              </div>
+            </SortableContext>
+            <DragOverlay adjustScale={false} dropAnimation={null} zIndex={1000}>
+              {activeLayer ? (
+                <LayerCard
+                  shape={activeLayer.shape}
+                  index={activeLayer.index}
+                  total={segment.shapes.length}
+                  isSelected
+                  isOverlay
+                  style={{
+                    width: activeLayerWidth ?? undefined,
+                    transform: 'scale(1.03)',
+                    filter: 'drop-shadow(0 12px 24px rgba(0, 0, 0, 0.28))',
+                  }}
+                />
+              ) : null}
+            </DragOverlay>
+          </DndContext>
+        ) : (
+          <div className="rounded-md border border-dashed border-[var(--glass-border)] bg-[var(--polar-mist)] px-3 py-4 text-center text-xs text-[var(--ink-subtle)]">
+            No annotation layers yet.
+          </div>
+        )}
       </div>
 
       <div>
-        <span className="mb-2 block text-xs text-[var(--ink-muted)]">Add Shape</span>
+        <span className="mb-2 block text-xs font-medium text-[var(--ink-muted)]">Add annotation</span>
         <div className="grid grid-cols-2 gap-2">
-          {ADDABLE_SHAPE_TYPES.map((shapeType) => (
-            <button
-              key={shapeType}
-              onClick={() => onAddShape(shapeType)}
-              className="flex h-8 min-w-0 items-center justify-center gap-1 rounded-md border border-[var(--glass-border)] bg-[var(--polar-mist)] px-2 text-xs text-[var(--ink-dark)] transition-colors hover:bg-[var(--glass-highlight)]"
-            >
-              <Plus className="h-3 w-3 shrink-0" />
-              <span className="truncate">{getAnnotationShapeLabel(shapeType)}</span>
-            </button>
-          ))}
+          {ADDABLE_SHAPE_TYPES.map((shapeType) => {
+            const AddIcon = getShapeIcon(shapeType);
+            const shapeLabel = getAnnotationShapeLabel(shapeType);
+
+            return (
+              <button
+                key={shapeType}
+                type="button"
+                onClick={() => onAddShape(shapeType)}
+                aria-label={`Add ${shapeLabel} annotation`}
+                className="flex h-8 min-w-0 items-center justify-center gap-1.5 rounded-md border border-[var(--glass-border)] bg-[var(--polar-mist)] px-2 text-xs text-[var(--ink-dark)] transition-colors hover:bg-[var(--glass-highlight)]"
+              >
+                <Plus className="h-3 w-3 shrink-0 text-[var(--ink-subtle)]" />
+                <AddIcon className="h-3.5 w-3.5 shrink-0" />
+                <span className="truncate">{shapeLabel}</span>
+              </button>
+            );
+          })}
         </div>
       </div>
 
@@ -282,12 +563,6 @@ export function AnnotationSegmentConfig({
             </>
           )}
 
-          <button
-            onClick={() => onDeleteShape(selectedShape.id)}
-            className="h-8 w-fit rounded-md border border-[var(--error-light)] bg-[rgba(239,68,68,0.08)] px-2.5 text-xs text-[var(--error)] transition-colors hover:bg-[rgba(239,68,68,0.14)]"
-          >
-            Delete Shape
-          </button>
         </>
       )}
 

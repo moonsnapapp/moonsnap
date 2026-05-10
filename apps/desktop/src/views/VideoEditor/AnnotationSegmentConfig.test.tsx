@@ -20,13 +20,14 @@ describe('AnnotationSegmentConfig', () => {
         onSelectShape={noop}
         onAddShape={noop}
         onUpdateShape={noop}
+        onReorderShape={noop}
         onDeleteShape={noop}
         onDeleteSegment={noop}
         onDone={noop}
       />
     );
 
-    expect(screen.getByRole('button', { name: /^Step$/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^Add Step annotation$/i })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /^Line$/i })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /^Text$/i })).not.toBeInTheDocument();
   });
@@ -47,13 +48,14 @@ describe('AnnotationSegmentConfig', () => {
         onSelectShape={noop}
         onAddShape={noop}
         onUpdateShape={noop}
+        onReorderShape={noop}
         onDeleteShape={noop}
         onDeleteSegment={noop}
         onDone={noop}
       />
     );
 
-    expect(screen.getByRole('button', { name: '1. Line (Legacy)' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Select Line (Legacy) annotation layer 1' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /^Line$/i })).not.toBeInTheDocument();
   });
 
@@ -73,6 +75,7 @@ describe('AnnotationSegmentConfig', () => {
         onSelectShape={noop}
         onAddShape={noop}
         onUpdateShape={noop}
+        onReorderShape={noop}
         onDeleteShape={noop}
         onDeleteSegment={noop}
         onDone={noop}
@@ -80,7 +83,7 @@ describe('AnnotationSegmentConfig', () => {
     );
 
     expect(screen.getByText('Text annotations are legacy. Use the Text track for new text overlays.')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '1. Text (Legacy)' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Select Text (Legacy) annotation layer 1' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /^Text$/i })).not.toBeInTheDocument();
   });
 
@@ -99,6 +102,7 @@ describe('AnnotationSegmentConfig', () => {
         onSelectShape={noop}
         onAddShape={noop}
         onUpdateShape={noop}
+        onReorderShape={noop}
         onDeleteShape={noop}
         onDeleteSegment={noop}
         onDone={noop}
@@ -132,6 +136,7 @@ describe('AnnotationSegmentConfig', () => {
         onSelectShape={noop}
         onAddShape={noop}
         onUpdateShape={noop}
+        onReorderShape={noop}
         onDeleteShape={noop}
         onDeleteSegment={noop}
         onDone={noop}
@@ -160,6 +165,7 @@ describe('AnnotationSegmentConfig', () => {
         onSelectShape={noop}
         onAddShape={noop}
         onUpdateShape={noop}
+        onReorderShape={noop}
         onDeleteShape={noop}
         onDeleteSegment={noop}
         onDone={noop}

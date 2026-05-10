@@ -125,6 +125,7 @@ export interface SegmentsSlice {
   deleteAnnotationSegment: (id: string) => void;
   addAnnotationShape: (segmentId: string, shape: AnnotationShape) => void;
   updateAnnotationShape: (segmentId: string, shapeId: string, updates: Partial<AnnotationShape>) => void;
+  reorderAnnotationShape: (segmentId: string, shapeId: string, targetIndex: number) => void;
   deleteAnnotationShape: (segmentId: string, shapeId: string) => void;
 
   // Annotation undo/redo
@@ -783,6 +784,62 @@ export const createSegmentsSlice: SliceCreator<SegmentsSlice> = (set, get) => ({
 
     const { selectedAnnotationSegmentId, selectedAnnotationShapeId } = get();
     let { annotationHistory, annotationHistoryIndex } = get();
+
+    if (annotationHistory.length === 0) {
+      const init = pushAnnotationHistory([], -1, {
+        segments: annotations.segments,
+        selectedSegmentId: selectedAnnotationSegmentId,
+        selectedShapeId: selectedAnnotationShapeId,
+        deleteMode: annotationDeleteMode,
+      });
+      annotationHistory = init.history;
+      annotationHistoryIndex = init.index;
+    }
+
+    const { history, index } = pushAnnotationHistory(annotationHistory, annotationHistoryIndex, {
+      segments: newSegments,
+      selectedSegmentId: selectedAnnotationSegmentId,
+      selectedShapeId: selectedAnnotationShapeId,
+      deleteMode: annotationDeleteMode,
+    });
+
+    set({
+      project: {
+        ...project,
+        annotations: { ...annotations, segments: newSegments },
+      },
+      activeUndoDomain: 'annotation',
+      annotationHistory: history,
+      annotationHistoryIndex: index,
+    });
+  },
+
+  reorderAnnotationShape: (segmentId, shapeId, targetIndex) => {
+    const { project, selectedAnnotationSegmentId, selectedAnnotationShapeId, annotationDeleteMode } = get();
+    let { annotationHistory, annotationHistoryIndex } = get();
+    if (!project) return;
+    const annotations = normalizeAnnotationConfig(project.annotations);
+    let didReorder = false;
+
+    const newSegments = annotations.segments.map((segment) => {
+      if (segment.id !== segmentId) return segment;
+
+      const currentIndex = segment.shapes.findIndex((shape) => shape.id === shapeId);
+      if (currentIndex < 0) return segment;
+
+      const nextIndex = Math.max(0, Math.min(Math.round(targetIndex), segment.shapes.length - 1));
+      if (nextIndex === currentIndex) return segment;
+      if (nextIndex < 0 || nextIndex >= segment.shapes.length) return segment;
+
+      const nextShapes = [...segment.shapes];
+      const [movedShape] = nextShapes.splice(currentIndex, 1);
+      nextShapes.splice(nextIndex, 0, movedShape);
+      didReorder = true;
+
+      return { ...segment, shapes: nextShapes };
+    });
+
+    if (!didReorder) return;
 
     if (annotationHistory.length === 0) {
       const init = pushAnnotationHistory([], -1, {
