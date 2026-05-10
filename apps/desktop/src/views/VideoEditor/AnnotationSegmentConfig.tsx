@@ -59,21 +59,6 @@ export interface AnnotationSegmentConfigProps {
 
 const ADDABLE_SHAPE_TYPES: AnnotationShapeType[] = ['rectangle', 'ellipse', 'arrow', 'step'];
 const LEGACY_TEXT_SHAPE_TYPE: AnnotationShapeType = 'text';
-const getLayerPositionLabel = (index: number, total: number) => {
-  if (total === 1) {
-    return 'Only layer';
-  }
-
-  if (index === total - 1) {
-    return 'Top layer';
-  }
-
-  if (index === 0) {
-    return 'Bottom layer';
-  }
-
-  return `Layer ${index + 1}`;
-};
 
 const getShapeIcon = (shapeType: AnnotationShapeType) => {
   switch (shapeType) {
@@ -117,7 +102,6 @@ interface LayerRowData {
 interface LayerCardProps {
   shape: AnnotationShape;
   index: number;
-  total: number;
   isSelected: boolean;
   isDragging?: boolean;
   isOverlay?: boolean;
@@ -132,7 +116,6 @@ interface LayerCardProps {
 function LayerCard({
   shape,
   index,
-  total,
   isSelected,
   isDragging = false,
   isOverlay = false,
@@ -145,7 +128,7 @@ function LayerCard({
 }: LayerCardProps) {
   const LayerIcon = getShapeIcon(shape.shapeType);
   const shapeLabel = getAnnotationShapeLabel(shape.shapeType);
-  const positionLabel = getLayerPositionLabel(index, total);
+  const layerLabel = `Layer ${index + 1} - ${shapeLabel}`;
 
   return (
     <div
@@ -169,21 +152,17 @@ function LayerCard({
         className="flex min-w-0 flex-1 items-center gap-2 text-left"
       >
         <span
-          className={`flex h-6 w-6 shrink-0 items-center justify-center rounded border ${
+          className={`flex h-5 w-5 shrink-0 items-center justify-center ${
             isSelected
-              ? 'border-[var(--coral-300)] bg-[var(--coral-100)] text-[var(--coral-400)]'
-              : 'border-[var(--glass-border)] bg-[var(--glass-surface-dark)] text-[var(--ink-muted)]'
+              ? 'text-[var(--coral-400)]'
+              : 'text-[var(--ink-muted)]'
           }`}
           aria-hidden="true"
         >
           <LayerIcon className="h-3.5 w-3.5" />
         </span>
-        <span className="min-w-0 flex-1">
-          <span className="block truncate text-xs font-medium">{shapeLabel}</span>
-          <span className="block truncate text-[11px] text-[var(--ink-subtle)]">
-            {positionLabel}
-            {isSelected ? ' - Selected' : ''}
-          </span>
+        <span className="min-w-0 flex-1 truncate text-xs font-medium">
+          {layerLabel}
         </span>
       </button>
       {onDeleteShape && (
@@ -348,13 +327,12 @@ export function AnnotationSegmentConfig({
             onDragEnd={handleLayerDragEnd}
           >
             <SortableContext items={layerIds} strategy={verticalListSortingStrategy}>
-              <div className="space-y-1.5 py-1">
+              <div className="annotation-layer-list space-y-1.5 py-1">
                 {layerRows.map(({ shape, index }) => (
                   <SortableLayerCard
                     key={shape.id}
                     shape={shape}
                     index={index}
-                    total={segment.shapes.length}
                     isSelected={shape.id === selectedShape?.id}
                     onSelectShape={onSelectShape}
                     onDeleteShape={onDeleteShape}
@@ -367,7 +345,6 @@ export function AnnotationSegmentConfig({
                 <LayerCard
                   shape={activeLayer.shape}
                   index={activeLayer.index}
-                  total={segment.shapes.length}
                   isSelected
                   isOverlay
                   style={{

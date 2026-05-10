@@ -2526,6 +2526,18 @@ body.floating-toolbar-window #root {
     linear-gradient(180deg, rgba(20, 19, 19, 0.995) 0%, rgba(12, 12, 14, 0.998) 100%);
 }
 
+.video-sidebar-scroll-area {
+  scrollbar-gutter: stable;
+}
+
+.annotation-layer-list {
+  max-height: 260px;
+  overflow-y: auto;
+  padding-right: 4px;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
 .editor-choice-pill--danger {
   border-color: rgba(239, 68, 68, 0.42);
   background: linear-gradient(180deg, rgba(248, 113, 113, 0.94) 0%, rgba(239, 68, 68, 0.94) 100%);

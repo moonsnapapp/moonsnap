@@ -183,7 +183,7 @@ export function VideoEditorSidebar({ project, onOpenCropDialog }: VideoEditorSid
       <div className="relative min-w-0 flex-1 overflow-hidden">
         {/* Selection Overlay (shown when zoom region, scene segment, mask, or text is selected) */}
         {hasSelectedSegment && project && (
-          <div className="video-sidebar-selection-overlay absolute inset-0 min-w-0 overflow-y-auto p-4 z-20 animate-in slide-in-from-bottom-2 fade-in duration-200">
+          <div className="video-sidebar-scroll-area video-sidebar-selection-overlay absolute inset-0 min-w-0 overflow-y-auto p-4 z-20 animate-in slide-in-from-bottom-2 fade-in duration-200">
             {/* Zoom Region Properties */}
             {selectedZoomRegionId && project.zoom.regions.find(r => r.id === selectedZoomRegionId) && (
               <ZoomRegionConfig
@@ -328,7 +328,7 @@ export function VideoEditorSidebar({ project, onOpenCropDialog }: VideoEditorSid
           </div>
         )}
 
-        <div className="h-full min-w-0 overflow-y-auto">
+        <div className="video-sidebar-scroll-area h-full min-w-0 overflow-y-auto">
           {/* Project Tab */}
           {activeTab === 'project' && (
             <div className="p-4 space-y-4">
