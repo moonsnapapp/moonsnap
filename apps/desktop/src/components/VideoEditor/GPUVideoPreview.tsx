@@ -21,7 +21,7 @@ import { hasActiveTypewriterSound } from '../../utils/textSegmentAnimation';
 import { usePreviewOrPlaybackTime } from '../../hooks/usePlaybackEngine';
 import { usePreviewOrPlaybackTimeThrottled } from '../../hooks/usePlaybackTimeThrottled';
 import { useTimelineToSourceTime } from '../../hooks/useTimelineSourceTime';
-import { getZoomScaleAt, useZoomPreview } from '../../hooks/useZoomPreview';
+import { getZoomScaleAt, useZoomMotionBlurStyle, useZoomPreview } from '../../hooks/useZoomPreview';
 import { useInterpolatedScene, shouldRenderScreen, shouldRenderCursor, getCameraOnlyTransitionOpacity, getRegularCameraTransitionOpacity } from '../../hooks/useSceneMode';
 import { WebcamOverlay } from './WebcamOverlay';
 import { CursorOverlay } from './CursorOverlay';
@@ -189,6 +189,7 @@ const ZoomTransformController = memo(function ZoomTransformController({
   rounding,
   videoWidth,
   videoHeight,
+  zoomMotionBlur = 0,
 }: {
   frameRef: React.RefObject<HTMLDivElement | null>;
   borderOverlayRef: React.RefObject<HTMLDivElement | null>;
@@ -199,6 +200,7 @@ const ZoomTransformController = memo(function ZoomTransformController({
   rounding: number;
   videoWidth: number;
   videoHeight: number;
+  zoomMotionBlur?: number;
 }) {
   const currentTimeMs = usePreviewOrPlaybackTime();
   const toSourceTime = useTimelineToSourceTime();
@@ -214,6 +216,16 @@ const ZoomTransformController = memo(function ZoomTransformController({
     cursorDampening: cursorConfig?.dampening ?? CURSOR.DAMPENING_DEFAULT,
     cursorTimeMs: sourceTimeMs,
   });
+  const zoomMotionBlurStyle = useZoomMotionBlurStyle(
+    zoomRegions,
+    currentTimeMs,
+    zoomMotionBlur,
+    cursorRecording,
+    {
+      cursorDampening: cursorConfig?.dampening ?? CURSOR.DAMPENING_DEFAULT,
+      cursorTimeMs: sourceTimeMs,
+    }
+  );
 
   useLayoutEffect(() => {
     const applyStyle = (element: HTMLDivElement | null) => {
@@ -222,11 +234,12 @@ const ZoomTransformController = memo(function ZoomTransformController({
       }
       element.style.transform = zoomStyle.transform;
       element.style.transformOrigin = zoomStyle.transformOrigin;
+      element.style.filter = zoomMotionBlurStyle.filter ?? '';
     };
 
     applyStyle(frameRef.current);
     applyStyle(borderOverlayRef.current);
-  }, [borderOverlayRef, frameRef, zoomStyle]);
+  }, [borderOverlayRef, frameRef, zoomMotionBlurStyle.filter, zoomStyle]);
 
   return null;
 });
@@ -366,6 +379,7 @@ type SceneModeRendererProps = {
   frameBorderOverlayStyle?: React.CSSProperties | null;
   shadowStyle?: React.CSSProperties;
   cropConfig?: CropConfig;
+  zoomMotionBlur?: number;
 };
 
 const StaticSceneModeRenderer = memo(function StaticSceneModeRenderer({
@@ -392,6 +406,7 @@ const StaticSceneModeRenderer = memo(function StaticSceneModeRenderer({
   cropConfig,
   videoWidth,
   videoHeight,
+  zoomMotionBlur = 0,
 }: SceneModeRendererProps) {
   const originalVideoPath = useVideoEditorStore(selectScreenVideoPath);
   const frameOpacity = defaultSceneMode === 'cameraOnly' ? 0 : 1;
@@ -435,6 +450,7 @@ const StaticSceneModeRenderer = memo(function StaticSceneModeRenderer({
         rounding={rounding}
         videoWidth={videoWidth}
         videoHeight={videoHeight}
+        zoomMotionBlur={zoomMotionBlur}
       />
       <div
         ref={frameRef}
@@ -528,6 +544,7 @@ const DynamicSceneModeRenderer = memo(function DynamicSceneModeRenderer({
   frameBorderOverlayStyle,
   shadowStyle,
   cropConfig,
+  zoomMotionBlur = 0,
 }: SceneModeRendererProps) {
   const currentTimeMs = usePreviewOrPlaybackTime();
   const toSourceTime = useTimelineToSourceTime();
@@ -556,6 +573,16 @@ const DynamicSceneModeRenderer = memo(function DynamicSceneModeRenderer({
     cursorDampening: cursorConfig?.dampening ?? CURSOR.DAMPENING_DEFAULT,
     cursorTimeMs: sourceTimeMs,
   });
+  const zoomMotionBlurStyle = useZoomMotionBlurStyle(
+    zoomRegions,
+    currentTimeMs,
+    zoomMotionBlur,
+    cursorRecording,
+    {
+      cursorDampening: cursorConfig?.dampening ?? CURSOR.DAMPENING_DEFAULT,
+      cursorTimeMs: sourceTimeMs,
+    }
+  );
 
   const screenStyle: React.CSSProperties = {
     position: 'absolute',
@@ -582,6 +609,7 @@ const DynamicSceneModeRenderer = memo(function DynamicSceneModeRenderer({
     overflow: 'hidden',
     ...frameStyle,
     ...(showScreen ? zoomStyle : {}),
+    ...(showScreen ? zoomMotionBlurStyle : {}),
     opacity: frameOpacity,
     visibility: frameOpacity < 0.01 ? 'hidden' : 'visible',
     width: '100%',
@@ -1135,6 +1163,7 @@ export function GPUVideoPreview({ isActive = true }: GPUVideoPreviewProps) {
               frameStyle={frameStyle}
               frameBorderOverlayStyle={frameBorderOverlayStyle}
               shadowStyle={frameShadowStyle}
+              zoomMotionBlur={project?.export.zoomMotionBlur ?? 0}
             />
           ) : (
             <div className="absolute inset-0 flex items-center justify-center">

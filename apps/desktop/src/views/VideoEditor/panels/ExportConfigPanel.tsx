@@ -5,6 +5,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { useEffect, useMemo, useState } from 'react';
 import { Crop, X, Lock } from 'lucide-react';
 import { Button } from '../../../components/ui/button';
+import { Slider } from '../../../components/ui/slider';
 import {
   Select,
   SelectContent,
@@ -34,6 +35,7 @@ export function ExportConfigPanel({ project, onUpdateExportConfig, onUpdateAudio
   const sourceFps = project.sources.fps;
   const sourceAspectRatio = project.sources.originalWidth / project.sources.originalHeight;
   const preferHardwareEncoding = project.export.preferHardwareEncoding ?? false;
+  const zoomMotionBlur = Math.max(0, Math.min(2, project.export.zoomMotionBlur ?? 0));
 
   const outputResolution = useMemo(() => {
     const crop = project.export.crop;
@@ -234,6 +236,24 @@ export function ExportConfigPanel({ project, onUpdateExportConfig, onUpdateAudio
             {`${outputResolution.width}x${outputResolution.height}`}
           </span>
         </div>
+      </div>
+
+      {/* Zoom Motion Blur */}
+      <div className="pt-3 border-t border-[var(--glass-border)]">
+        <div className="flex items-center justify-between mb-1.5">
+          <span className="text-xs text-[var(--ink-muted)]">Zoom Motion Blur</span>
+          <span className="text-xs text-[var(--ink-dark)] font-mono">{Math.round(zoomMotionBlur * 100)}%</span>
+        </div>
+        <Slider
+          value={[zoomMotionBlur * 100]}
+          min={0}
+          max={200}
+          step={5}
+          onValueChange={(values) => onUpdateExportConfig({ zoomMotionBlur: values[0] / 100 })}
+        />
+        <p className="mt-1.5 text-[11px] text-[var(--ink-muted)]">
+          Softens fast zoom-ins, zoom-outs, and focus moves in preview and export.
+        </p>
       </div>
 
       {/* Crop Video */}

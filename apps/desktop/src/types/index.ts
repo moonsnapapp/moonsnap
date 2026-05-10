@@ -473,7 +473,6 @@ export type {
   VisibilitySegment,
   CornerStyle,
   ShadowConfig,
-  ExportConfig,
   ExportFormat,
   BackgroundType as VideoBackgroundType,
   BackgroundConfig,
@@ -500,6 +499,7 @@ export type {
 
 import type {
   CursorConfig as GeneratedCursorConfig,
+  ExportConfig as GeneratedExportConfig,
   TextConfig as GeneratedTextConfig,
   TextSegment as GeneratedTextSegment,
   VideoProject as GeneratedVideoProject,
@@ -515,6 +515,11 @@ export type CursorConfig = Omit<
   hideWhenIdle?: boolean;
   // Zoom-adaptive cursor smoothing strength (0 = linear, 1 = smooth).
   dampening?: number;
+};
+
+// Keep app-level export settings compatible with older generated files.
+export type ExportConfig = GeneratedExportConfig & {
+  zoomMotionBlur?: number;
 };
 
 // Text animation style for text overlay segments.
@@ -537,8 +542,9 @@ export type TextConfig = Omit<GeneratedTextConfig, 'segments'> & {
 };
 
 // Keep VideoProject aligned with app-level CursorConfig/TextConfig extensions.
-export type VideoProject = Omit<GeneratedVideoProject, 'cursor' | 'text' | 'originalFileName'> & {
+export type VideoProject = Omit<GeneratedVideoProject, 'cursor' | 'text' | 'export' | 'originalFileName'> & {
   cursor: CursorConfig;
+  export: ExportConfig;
   text: TextConfig;
   originalFileName?: string | null;
   quickCapture?: boolean;

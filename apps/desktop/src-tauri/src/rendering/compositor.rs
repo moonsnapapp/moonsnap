@@ -41,6 +41,7 @@ struct Uniforms {
     frame_shadow: vec4<f32>,    // enabled, size, opacity, blur
     frame_border: vec4<f32>,    // enabled, width, opacity, 0
     border_color: vec4<f32>,    // r, g, b, a (linear space)
+    zoom_motion_blur: vec4<f32>, // directional_px, dir_x, dir_y, radial_px
 }
 
 @group(0) @binding(0) var<uniform> uniforms: Uniforms;
@@ -151,6 +152,30 @@ fn webcam_sdf(p: vec2<f32>, half_size: vec2<f32>, shape: f32, corner_radius: f32
     } else {
         return sdf_rounded_rect(p, half_size, corner_radius);
     }
+}
+
+fn sample_zoom_motion_blur(video_uv: vec2<f32>, zoom_center: vec2<f32>, frame_half_size: vec2<f32>) -> vec4<f32> {
+    let directional_px = uniforms.zoom_motion_blur.x;
+    let direction = uniforms.zoom_motion_blur.yz;
+    let radial_px = uniforms.zoom_motion_blur.w;
+    let max_blur_px = max(directional_px, radial_px);
+
+    if (max_blur_px <= 0.01) {
+        return textureSample(video_texture, video_sampler, video_uv);
+    }
+
+    let frame_size = max(frame_half_size * 2.0, vec2<f32>(1.0));
+    let dir_uv = direction * directional_px / frame_size;
+    let radial_dir = normalize(video_uv - zoom_center + vec2<f32>(0.0001, 0.0001));
+    let radial_uv = radial_dir * radial_px / frame_size;
+    let sample_step = dir_uv + radial_uv;
+
+    var color = textureSample(video_texture, video_sampler, clamp(video_uv, vec2<f32>(0.0), vec2<f32>(1.0))) * 0.28;
+    color += textureSample(video_texture, video_sampler, clamp(video_uv - sample_step * 0.50, vec2<f32>(0.0), vec2<f32>(1.0))) * 0.20;
+    color += textureSample(video_texture, video_sampler, clamp(video_uv + sample_step * 0.50, vec2<f32>(0.0), vec2<f32>(1.0))) * 0.20;
+    color += textureSample(video_texture, video_sampler, clamp(video_uv - sample_step, vec2<f32>(0.0), vec2<f32>(1.0))) * 0.16;
+    color += textureSample(video_texture, video_sampler, clamp(video_uv + sample_step, vec2<f32>(0.0), vec2<f32>(1.0))) * 0.16;
+    return color;
 }
 
 @fragment
@@ -265,8 +290,8 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
         // rel_pos is relative to zoomed frame center, frame_half_size is zoomed
         let video_uv = clamp(rel_pos / (frame_half_size * 2.0) + vec2<f32>(0.5), vec2<f32>(0.0), vec2<f32>(1.0));
 
-        // Sample video
-        var video_color = textureSample(video_texture, video_sampler, video_uv);
+        // Sample video, optionally adding camera-style blur while zoom is moving.
+        var video_color = sample_zoom_motion_blur(video_uv, zoom_center, frame_half_size);
 
         // Anti-alias the edges (matching Cap's approach)
         let anti_alias_width = max(fwidth(frame_dist), 0.5);
@@ -358,11 +383,12 @@ pub struct ExtendedUniforms {
     pub webcam_shadow: [f32; 4], // shadow_size, shadow_opacity, shadow_blur, 0
     pub webcam_tex_size: [f32; 4],
     // Video frame styling
-    pub frame_bounds: [f32; 4],   // x, y, width, height in pixels
-    pub frame_rounding: [f32; 4], // rounding_px, rounding_type, 0, 0
-    pub frame_shadow: [f32; 4],   // enabled, size, opacity, blur
-    pub frame_border: [f32; 4],   // enabled, width, opacity, 0
-    pub border_color: [f32; 4],   // r, g, b, a
+    pub frame_bounds: [f32; 4],     // x, y, width, height in pixels
+    pub frame_rounding: [f32; 4],   // rounding_px, rounding_type, 0, 0
+    pub frame_shadow: [f32; 4],     // enabled, size, opacity, blur
+    pub frame_border: [f32; 4],     // enabled, width, opacity, 0
+    pub border_color: [f32; 4],     // r, g, b, a
+    pub zoom_motion_blur: [f32; 4], // directional_px, dir_x, dir_y, radial_px
 }
 
 /// Compositor for GPU-accelerated frame rendering.
@@ -804,6 +830,12 @@ impl Compositor {
             frame_shadow,
             frame_border,
             border_color,
+            zoom_motion_blur: [
+                options.zoom_motion_blur.directional_px,
+                options.zoom_motion_blur.direction_x,
+                options.zoom_motion_blur.direction_y,
+                options.zoom_motion_blur.radial_px,
+            ],
         };
         self.queue
             .write_buffer(&self.uniform_buffer, 0, bytemuck::cast_slice(&[uniforms]));
@@ -1180,6 +1212,12 @@ impl Compositor {
                 0.0,
             ],
             border_color: options.background.border.color,
+            zoom_motion_blur: [
+                options.zoom_motion_blur.directional_px,
+                options.zoom_motion_blur.direction_x,
+                options.zoom_motion_blur.direction_y,
+                options.zoom_motion_blur.radial_px,
+            ],
         };
         self.queue
             .write_buffer(&self.uniform_buffer, 0, bytemuck::cast_slice(&[uniforms]));

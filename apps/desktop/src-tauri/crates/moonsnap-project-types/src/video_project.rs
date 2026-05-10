@@ -787,6 +787,10 @@ pub struct ExportConfig {
     /// Defaults to true. Set to false to force software encoding.
     #[serde(default = "default_prefer_hardware")]
     pub prefer_hardware_encoding: Option<bool>,
+    /// Camera-style motion blur applied while zoom scale or focus changes.
+    /// 0.0 = off, 1.0 = normal strength, 2.0 = extra strong.
+    #[serde(default)]
+    pub zoom_motion_blur: f32,
 }
 
 fn default_prefer_hardware() -> Option<bool> {
@@ -803,6 +807,7 @@ impl Default for ExportConfig {
             crop: CropConfig::default(),
             composition: CompositionConfig::default(),
             prefer_hardware_encoding: Some(false),
+            zoom_motion_blur: 0.0,
         }
     }
 }

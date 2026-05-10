@@ -412,6 +412,7 @@ impl PreviewRenderer {
             output_height,
             use_manual_composition: false,
             zoom: ZoomState::default(),
+            zoom_motion_blur: Default::default(),
             webcam: None,
             cursor: None,
             background,

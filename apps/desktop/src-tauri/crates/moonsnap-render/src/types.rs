@@ -135,6 +135,8 @@ pub struct RenderOptions {
     pub use_manual_composition: bool,
     /// Current zoom state.
     pub zoom: ZoomState,
+    /// Camera motion blur derived from zoom movement.
+    pub zoom_motion_blur: ZoomMotionBlur,
     /// Webcam overlay options (if enabled).
     pub webcam: Option<WebcamOverlay>,
     /// Cursor rendering options (if enabled).
@@ -150,11 +152,24 @@ impl Default for RenderOptions {
             output_height: 1080,
             use_manual_composition: false,
             zoom: ZoomState::default(),
+            zoom_motion_blur: ZoomMotionBlur::default(),
             webcam: None,
             cursor: None,
             background: BackgroundStyle::default(),
         }
     }
+}
+
+/// Per-frame zoom motion blur parameters consumed by preview/export renderers.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct ZoomMotionBlur {
+    /// Directional blur strength in pixels.
+    pub directional_px: f32,
+    /// Direction of camera movement in normalized screen space.
+    pub direction_x: f32,
+    pub direction_y: f32,
+    /// Radial blur strength for scale changes.
+    pub radial_px: f32,
 }
 
 /// Webcam overlay configuration for rendering.

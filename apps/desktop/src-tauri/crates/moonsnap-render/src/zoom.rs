@@ -6,7 +6,7 @@
 // Allow unused interpolation modes - keeping full implementation
 #![allow(dead_code)]
 
-use crate::zoom_state::ZoomState;
+use crate::{types::ZoomMotionBlur, zoom_state::ZoomState};
 use moonsnap_project_types::video_project::{ZoomConfig, ZoomRegion, ZoomRegionMode};
 
 /// Fixed zoom transition duration in seconds (matches Cap).
@@ -23,6 +23,43 @@ pub fn apply_zoom_to_normalized_point(x: f64, y: f64, zoom: ZoomState) -> (f64, 
     let zx = 0.5 - (zoom.center_x as f64 - 0.5) * (s - 1.0) + (x - 0.5) * s;
     let zy = 0.5 - (zoom.center_y as f64 - 0.5) * (s - 1.0) + (y - 0.5) * s;
     (zx, zy)
+}
+
+/// Estimate camera motion blur from neighboring zoom states.
+pub fn calculate_zoom_motion_blur(
+    previous: ZoomState,
+    current: ZoomState,
+    next: ZoomState,
+    amount: f32,
+) -> ZoomMotionBlur {
+    let amount = amount.clamp(0.0, 2.0);
+    if amount <= 0.001 {
+        return ZoomMotionBlur::default();
+    }
+
+    let scale_delta = (next.scale - previous.scale).abs();
+    let center_dx = next.center_x - previous.center_x;
+    let center_dy = next.center_y - previous.center_y;
+    let center_distance = (center_dx * center_dx + center_dy * center_dy).sqrt();
+
+    let directional_px = (center_distance * current.scale.max(1.0) * 44.0 * amount).min(18.0);
+    let radial_px = (scale_delta * 28.0 * amount).min(20.0);
+    let direction_len = center_distance.max(0.0001);
+
+    ZoomMotionBlur {
+        directional_px,
+        direction_x: if center_distance > 0.0001 {
+            center_dx / direction_len
+        } else {
+            0.0
+        },
+        direction_y: if center_distance > 0.0001 {
+            center_dy / direction_len
+        } else {
+            0.0
+        },
+        radial_px,
+    }
 }
 
 /// XY coordinate for bounds calculations.

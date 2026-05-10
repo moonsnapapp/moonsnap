@@ -70,7 +70,7 @@ use moonsnap_render::nv12_converter::{CropRect, Nv12Converter};
 use moonsnap_render::scene::SceneInterpolator;
 use moonsnap_render::types::{BackgroundStyle, PixelFormat, TextOverlayQuad};
 use moonsnap_render::webcam_overlay::is_webcam_visible_at;
-use moonsnap_render::zoom::ZoomInterpolator;
+use moonsnap_render::zoom::{calculate_zoom_motion_blur, ZoomInterpolator};
 
 // Re-export submodule functions used externally
 pub use ffmpeg::emit_progress;
@@ -847,6 +847,13 @@ pub async fn export_video_gpu(
         });
         let frame_to_render = composition.frame_to_render;
         let webcam_overlay = composition.webcam_overlay;
+        let blur_frame_delta_ms = (500 / fps.max(1) as u64).max(1);
+        let zoom_motion_blur = calculate_zoom_motion_blur(
+            zoom_interpolator.get_zoom_at(relative_time_ms.saturating_sub(blur_frame_delta_ms)),
+            zoom_state,
+            zoom_interpolator.get_zoom_at(relative_time_ms.saturating_add(blur_frame_delta_ms)),
+            project.export.zoom_motion_blur,
+        );
 
         let overlay_plan = build_frame_overlay_plan(FrameOverlayRequest {
             relative_time_ms,
@@ -854,6 +861,7 @@ pub async fn export_video_gpu(
             composition_height: composition_h,
             use_manual_composition,
             zoom_state,
+            zoom_motion_blur,
             webcam_overlay,
             background_style,
             timeline_captions,

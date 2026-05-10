@@ -36,4 +36,9 @@ composition: CompositionConfig,
  * Prefer hardware encoding (NVENC) when available.
  * Defaults to true. Set to false to force software encoding.
  */
-preferHardwareEncoding: boolean | null, };
+preferHardwareEncoding: boolean | null, 
+/**
+ * Camera-style motion blur applied while zoom scale or focus changes.
+ * 0.0 = off, 1.0 = normal strength, 2.0 = extra strong.
+ */
+zoomMotionBlur: number, };

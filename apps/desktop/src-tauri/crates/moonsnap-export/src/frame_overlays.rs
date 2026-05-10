@@ -5,7 +5,9 @@ use moonsnap_project_types::video_project::TextSegment;
 use moonsnap_render::caption_layer::prepare_captions;
 use moonsnap_render::prerendered_text::{PreRenderedTextStore, TextFrameLayout, TextFrameRequest};
 use moonsnap_render::text::PreparedText;
-use moonsnap_render::types::{BackgroundStyle, RenderOptions, TextOverlayQuad, WebcamOverlay};
+use moonsnap_render::types::{
+    BackgroundStyle, RenderOptions, TextOverlayQuad, WebcamOverlay, ZoomMotionBlur,
+};
 use moonsnap_render::ZoomState;
 
 /// Inputs required to build render options and caption overlays for one frame.
@@ -16,6 +18,7 @@ pub struct FrameOverlayRequest<'a> {
     pub composition_height: u32,
     pub use_manual_composition: bool,
     pub zoom_state: ZoomState,
+    pub zoom_motion_blur: ZoomMotionBlur,
     pub webcam_overlay: Option<WebcamOverlay>,
     pub background_style: &'a BackgroundStyle,
     pub timeline_captions: &'a [CaptionSegment],
@@ -65,6 +68,7 @@ pub fn build_frame_overlay_plan(request: FrameOverlayRequest<'_>) -> FrameOverla
         output_height: request.composition_height,
         use_manual_composition: request.use_manual_composition,
         zoom: request.zoom_state,
+        zoom_motion_blur: request.zoom_motion_blur,
         webcam: request.webcam_overlay,
         cursor: None,
         background: request.background_style.clone(),
@@ -184,6 +188,7 @@ mod tests {
             composition_height: 1080,
             use_manual_composition: true,
             zoom_state: ZoomState::identity(),
+            zoom_motion_blur: ZoomMotionBlur::default(),
             webcam_overlay: Some(sample_webcam_overlay()),
             background_style: &background,
             timeline_captions: &[],
@@ -208,6 +213,7 @@ mod tests {
             composition_height: 720,
             use_manual_composition: false,
             zoom_state: ZoomState::identity(),
+            zoom_motion_blur: ZoomMotionBlur::default(),
             webcam_overlay: None,
             background_style: &BackgroundStyle::default(),
             timeline_captions: &captions,
@@ -230,6 +236,7 @@ mod tests {
             composition_height: 720,
             use_manual_composition: false,
             zoom_state: ZoomState::identity(),
+            zoom_motion_blur: ZoomMotionBlur::default(),
             webcam_overlay: None,
             background_style: &BackgroundStyle::default(),
             timeline_captions: &captions,

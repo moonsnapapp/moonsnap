@@ -9,6 +9,10 @@ import { normalizeAnnotationConfig } from '../../utils/videoAnnotations';
 function normalizeProject(project: VideoProject): VideoProject {
   return {
     ...project,
+    export: {
+      ...project.export,
+      zoomMotionBlur: project.export.zoomMotionBlur ?? 0,
+    },
     annotations: normalizeAnnotationConfig(project.annotations),
   };
 }

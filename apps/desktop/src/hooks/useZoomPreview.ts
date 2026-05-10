@@ -326,6 +326,34 @@ interface ZoomTransformStyle {
   transformOrigin: string;
 }
 
+interface ZoomMotionBlurStyle {
+  filter?: string;
+}
+
+function computeZoomMotionBlurPx(
+  sortedRegions: ZoomRegion[],
+  timestampMs: number,
+  amount: number,
+  getCursorAt?: ((timeMs: number) => InterpolatedCursor) | null
+): number {
+  const clampedAmount = Math.max(0, Math.min(2, amount));
+  if (sortedRegions.length === 0 || clampedAmount <= 0.001) {
+    return 0;
+  }
+
+  const frameDeltaMs = 1000 / 60;
+  const previous = getZoomStateAtSorted(sortedRegions, Math.max(0, timestampMs - frameDeltaMs), getCursorAt);
+  const current = getZoomStateAtSorted(sortedRegions, timestampMs, getCursorAt);
+  const next = getZoomStateAtSorted(sortedRegions, timestampMs + frameDeltaMs, getCursorAt);
+
+  const scaleDelta = Math.abs(next.scale - previous.scale);
+  const centerDelta = Math.hypot(next.centerX - previous.centerX, next.centerY - previous.centerY);
+  const directionalPx = centerDelta * Math.max(current.scale, 1) * 20;
+  const radialPx = scaleDelta * 10;
+
+  return Math.min(12, (directionalPx + radialPx) * clampedAmount);
+}
+
 function boundsToZoomState(interp: InterpolatedZoom): ZoomState {
   const scale = boundsWidth(interp.bounds);
 
@@ -522,6 +550,42 @@ export function useZoomPreview(
     videoHeight,
     cursorTimeMs,
   ]);
+}
+
+export function useZoomMotionBlurStyle(
+  regions: ZoomRegion[] | undefined,
+  currentTimeMs: number,
+  amount: number | null | undefined,
+  cursorRecording?: CursorRecording | null,
+  options: Pick<UseZoomPreviewOptions, 'cursorDampening' | 'cursorTimeMs'> = {}
+): ZoomMotionBlurStyle {
+  const { cursorDampening = CURSOR.DAMPENING_DEFAULT, cursorTimeMs } = options;
+  const sortedRegions = useMemo(
+    () => (regions && regions.length > 0 ? sortRegionsByStart(regions) : []),
+    [regions]
+  );
+  const currentZoomScale = useMemo(
+    () => getZoomScaleAtSorted(sortedRegions, currentTimeMs),
+    [sortedRegions, currentTimeMs]
+  );
+  const getPreviewZoomScale = useCallback(() => currentZoomScale, [currentZoomScale]);
+  const { getCursorAt, hasCursorData } = useCursorInterpolation(cursorRecording, {
+    dampening: cursorDampening,
+    getZoomScale: currentZoomScale > 1.001 ? getPreviewZoomScale : null,
+  });
+
+  return useMemo(() => {
+    const blurPx = computeZoomMotionBlurPx(
+      sortedRegions,
+      currentTimeMs,
+      amount ?? 0,
+      hasCursorData
+        ? (timeMs) => getCursorAt(cursorTimeMs ?? timeMs)
+        : null
+    );
+
+    return blurPx > 0.05 ? { filter: `blur(${blurPx.toFixed(2)}px)` } : {};
+  }, [amount, currentTimeMs, cursorTimeMs, getCursorAt, hasCursorData, sortedRegions]);
 }
 
 /**
