@@ -32,6 +32,9 @@ use super::state::{OverlayState, SelectionHudState};
 use super::types::*;
 
 const OVERLAY_CONTROL_MAX_SCALE: f32 = 1.3;
+const OVERLAY_CONTROL_COMPACT_HEIGHT: f32 = 1440.0;
+const OVERLAY_CONTROL_REFERENCE_HEIGHT: f32 = 2160.0;
+const OVERLAY_CONTROL_COMPACT_MAX_SCALE: f32 = 1.12;
 
 /// Render the overlay to the swap chain.
 ///
@@ -186,6 +189,7 @@ fn overlay_control_scale(state: &OverlayState) -> f32 {
 
     let mut dpi_scale = 1.0_f32;
     let mut resolution_scale = (state.monitor.height as f32 / 1080.0).max(1.0);
+    let mut physical_height = state.monitor.height as f32;
 
     if let Ok(monitors) = xcap::Monitor::all() {
         for monitor in monitors {
@@ -203,14 +207,43 @@ fn overlay_control_scale(state: &OverlayState) -> f32 {
             {
                 dpi_scale = monitor.scale_factor().unwrap_or(1.0).max(1.0);
                 resolution_scale = (height as f32 / 1080.0).max(1.0);
+                physical_height = height as f32;
                 break;
             }
         }
     }
 
-    dpi_scale
-        .max(resolution_scale)
-        .clamp(1.0, OVERLAY_CONTROL_MAX_SCALE)
+    overlay_control_scale_for_metrics(dpi_scale, resolution_scale, physical_height)
+}
+
+fn overlay_control_scale_for_metrics(
+    dpi_scale: f32,
+    resolution_scale: f32,
+    physical_height: f32,
+) -> f32 {
+    let max_scale = overlay_control_max_scale_for_height(physical_height);
+
+    dpi_scale.max(resolution_scale).clamp(1.0, max_scale)
+}
+
+fn overlay_control_max_scale_for_height(physical_height: f32) -> f32 {
+    if !physical_height.is_finite() || physical_height <= 0.0 {
+        return OVERLAY_CONTROL_MAX_SCALE;
+    }
+
+    if physical_height <= OVERLAY_CONTROL_COMPACT_HEIGHT {
+        return OVERLAY_CONTROL_COMPACT_MAX_SCALE;
+    }
+
+    if physical_height >= OVERLAY_CONTROL_REFERENCE_HEIGHT {
+        return OVERLAY_CONTROL_MAX_SCALE;
+    }
+
+    let progress = (physical_height - OVERLAY_CONTROL_COMPACT_HEIGHT)
+        / (OVERLAY_CONTROL_REFERENCE_HEIGHT - OVERLAY_CONTROL_COMPACT_HEIGHT);
+
+    OVERLAY_CONTROL_COMPACT_MAX_SCALE
+        + (OVERLAY_CONTROL_MAX_SCALE - OVERLAY_CONTROL_COMPACT_MAX_SCALE) * progress
 }
 
 fn recording_mode_chooser_scale(state: &OverlayState) -> f32 {
@@ -1101,6 +1134,27 @@ mod tests {
         assert_eq!(rects.save, Rect::new(634, 93, 712, 137));
         assert_eq!(rects.capture, Rect::new(727, 93, 841, 137));
         assert_eq!(rects.cancel, Rect::new(851, 93, 945, 137));
+    }
+
+    #[test]
+    fn overlay_control_scale_keeps_4k_size() {
+        let scale = overlay_control_scale_for_metrics(1.5, 2.0, 2160.0);
+
+        assert!((scale - OVERLAY_CONTROL_MAX_SCALE).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn overlay_control_scale_caps_2k_size() {
+        let scale = overlay_control_scale_for_metrics(1.5, 1440.0 / 1080.0, 1440.0);
+
+        assert!((scale - OVERLAY_CONTROL_COMPACT_MAX_SCALE).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn overlay_control_scale_interpolates_between_2k_and_4k() {
+        let scale = overlay_control_scale_for_metrics(1.5, 1800.0 / 1080.0, 1800.0);
+
+        assert!((scale - 1.21).abs() < 0.001);
     }
 }
 

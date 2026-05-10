@@ -2,6 +2,28 @@
 
 All notable changes to MoonSnap are documented in this file.
 
+## [0.5.25] - 2026-05-10
+
+### Added
+- Annotation layers in the video editor can now be reordered with drag and drop, including a clearer drop indicator.
+- Video zoom effects now support smoother motion blur and longer transitions.
+
+### Changed
+- Video editor sidebars now use a full-height layout with cleaner scrolling and improved segment styling.
+- Native overlay controls scale more cleanly across display sizes.
+- Mini toolbar sizing is slightly smaller on 2K displays while preserving the 4K layout. (uncommitted)
+
+### Fixed
+- Favorites now load correctly for videos that store metadata in sidecar files.
+- Text previews more closely match exported typewriter and annotation layering.
+- Video preview playback keeps frame stride and zoom state stable, reducing zoom flicker and blur.
+- Timeline overlay segments now get enough width to remain visible.
+- Cursor motion blur now follows rendered cursor movement more smoothly.
+- Video cut shortcuts and editor delete shortcuts work more reliably.
+- Mono microphone capture no longer leaves the right audio channel silent.
+- Sidebar segment overlays no longer show background bleed.
+- Annotation layer scrolling in the video sidebar works correctly.
+
 ## [0.5.24] - 2026-05-08
 
 ### Added
