@@ -37,6 +37,9 @@ const MOTION_BLUR_MAX_USER_AMOUNT = 0.15;
 const MOTION_BLUR_VELOCITY_SCALE = 2.0;
 const MAX_MOTION_PIXELS = 320.0;
 const MIN_MOTION_THRESHOLD = 0.01;
+const MOTION_BLUR_VELOCITY_SMOOTHING = 0.35;
+const MOTION_BLUR_RESET_GAP_MS = 120;
+const MOTION_BLUR_MAX_FRAME_JUMP = 0.18;
 
 // SVG rasterization - now done at exact target size for lossless quality
 // Cache key includes size to avoid re-rasterizing at the same size
@@ -46,6 +49,11 @@ function smoothstep(low: number, high: number, value: number): number {
   return t * t * (3 - 2 * t);
 }
 
+interface MotionBlurSample {
+  x: number;
+  y: number;
+  timeMs: number;
+}
 
 interface CursorOverlayProps {
   cursorRecording: CursorRecording | null | undefined;
@@ -249,6 +257,8 @@ export const CursorOverlay = memo(function CursorOverlay({
   cropConfig,
 }: CursorOverlayProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const motionBlurSampleRef = useRef<MotionBlurSample | null>(null);
+  const motionBlurVelocityRef = useRef({ x: 0, y: 0 });
   const currentTimeMs = usePreviewOrPlaybackTime();
   const toSourceTime = useTimelineToSourceTime();
 
@@ -271,6 +281,10 @@ export const CursorOverlay = memo(function CursorOverlay({
     [zoomRegions, currentTimeMs]
   );
   const getPreviewZoomScale = useCallback(() => currentZoomScale, [currentZoomScale]);
+  const resetMotionBlurState = useCallback(() => {
+    motionBlurSampleRef.current = null;
+    motionBlurVelocityRef.current = { x: 0, y: 0 };
+  }, []);
 
   // Get interpolated cursor data
   const { getCursorAt, hasCursorData, cursorImages } = useCursorInterpolation(
@@ -358,7 +372,7 @@ export const CursorOverlay = memo(function CursorOverlay({
   // Draw cursor on canvas
   useEffect(() => {
     const canvas = canvasRef.current;
-    if (!canvas || !cursorData || !visible) return;
+    if (!canvas) return;
 
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
@@ -383,7 +397,14 @@ export const CursorOverlay = memo(function CursorOverlay({
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = 'high';
 
+    if (!cursorData || !visible) {
+      resetMotionBlurState();
+      ctx.clearRect(0, 0, roundedRenderWidth, roundedRenderHeight);
+      return;
+    }
+
     if (cursorOpacity <= 0) {
+      resetMotionBlurState();
       ctx.clearRect(0, 0, roundedRenderWidth, roundedRenderHeight);
       return;
     }
@@ -408,6 +429,7 @@ export const CursorOverlay = memo(function CursorOverlay({
 
     // Hide cursor if outside visible region after crop remap.
     if (!remappedCursor.inVisibleBounds) {
+      resetMotionBlurState();
       ctx.clearRect(0, 0, roundedRenderWidth, roundedRenderHeight);
       return;
     }
@@ -430,8 +452,39 @@ export const CursorOverlay = memo(function CursorOverlay({
     // Account for DPR so the SVG is rasterized at screen pixel resolution
     const svgTargetExtent = Math.round(finalCursorHeight * clickAnimationScale * renderScale);
 
-    const velocityX = cursorData.velocityX ?? 0;
-    const velocityY = cursorData.velocityY ?? 0;
+    let velocityX = 0;
+    let velocityY = 0;
+    const previousBlurSample = motionBlurSampleRef.current;
+    if (motionBlur > 0 && previousBlurSample) {
+      const deltaMs = currentTimeMs - previousBlurSample.timeMs;
+      const deltaX = pixelX - previousBlurSample.x;
+      const deltaY = pixelY - previousBlurSample.y;
+      const normalizedJump = Math.sqrt(
+        (deltaX / roundedRenderWidth) ** 2 + (deltaY / roundedRenderHeight) ** 2
+      );
+      const canUseRenderedDelta =
+        deltaMs > 0 &&
+        deltaMs <= MOTION_BLUR_RESET_GAP_MS &&
+        normalizedJump <= MOTION_BLUR_MAX_FRAME_JUMP;
+
+      if (canUseRenderedDelta) {
+        const dtSeconds = deltaMs / 1000;
+        const instantVelocityX = (deltaX / roundedRenderWidth) / dtSeconds;
+        const instantVelocityY = (deltaY / roundedRenderHeight) / dtSeconds;
+        const previousVelocity = motionBlurVelocityRef.current;
+        velocityX =
+          previousVelocity.x +
+          (instantVelocityX - previousVelocity.x) * MOTION_BLUR_VELOCITY_SMOOTHING;
+        velocityY =
+          previousVelocity.y +
+          (instantVelocityY - previousVelocity.y) * MOTION_BLUR_VELOCITY_SMOOTHING;
+        motionBlurVelocityRef.current = { x: velocityX, y: velocityY };
+      } else {
+        motionBlurVelocityRef.current = { x: 0, y: 0 };
+      }
+    }
+    motionBlurSampleRef.current = { x: pixelX, y: pixelY, timeMs: currentTimeMs };
+
     const velocityMagnitude = Math.sqrt(velocityX * velocityX + velocityY * velocityY);
     const frameDiagonal = Math.sqrt(
       roundedRenderWidth * roundedRenderWidth + roundedRenderHeight * roundedRenderHeight
@@ -609,6 +662,7 @@ export const CursorOverlay = memo(function CursorOverlay({
     cropConfig?.y,
     cropConfig?.width,
     cropConfig?.height,
+    resetMotionBlurState,
     imageLoadCounter, // Re-run when SVG/bitmap images finish loading
   ]);
 
