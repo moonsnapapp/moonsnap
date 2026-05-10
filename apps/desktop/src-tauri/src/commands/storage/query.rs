@@ -3,7 +3,7 @@
 use base64::{engine::general_purpose::STANDARD, Engine};
 use chrono::{DateTime, Utc};
 use moonsnap_core::error::MoonSnapResult;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use tauri::{command, AppHandle, Emitter};
 use tokio::fs as async_fs;
 
@@ -12,6 +12,28 @@ use super::{
 };
 use moonsnap_domain::storage::*;
 use moonsnap_media::ffmpeg::{generate_gif_thumbnail, generate_video_thumbnail};
+
+async fn load_metadata_sidecar(base_dir: &Path, id: &str) -> Option<(Vec<String>, bool)> {
+    let sidecar_path = base_dir.join("projects").join(id).join("project.json");
+    if !async_fs::try_exists(&sidecar_path).await.unwrap_or(false) {
+        return None;
+    }
+
+    let content = async_fs::read_to_string(&sidecar_path).await.ok()?;
+    let project = serde_json::from_str::<CaptureProject>(&content).ok()?;
+    Some((project.tags, project.favorite))
+}
+
+fn merge_project_metadata(
+    json_tags: Vec<String>,
+    json_favorite: bool,
+    sidecar_metadata: Option<(Vec<String>, bool)>,
+) -> (Vec<String>, bool) {
+    match sidecar_metadata {
+        Some((tags, favorite)) => (tags, favorite),
+        None => (json_tags, json_favorite),
+    }
+}
 
 /// Process a single project directory into a CaptureListItem.
 /// Returns None if the project can't be loaded.
@@ -131,27 +153,6 @@ async fn load_video_project_folder(
         .unwrap_or("recording")
         .to_string();
 
-    // Check for metadata sidecar in projects/{id}/project.json
-    let base_dir = get_app_data_dir(&app).ok()?;
-    let sidecar_path = base_dir
-        .join("projects")
-        .join(&fallback_id)
-        .join("project.json");
-    let (sidecar_tags, sidecar_favorite) =
-        if async_fs::try_exists(&sidecar_path).await.unwrap_or(false) {
-            if let Ok(content) = async_fs::read_to_string(&sidecar_path).await {
-                if let Ok(project) = serde_json::from_str::<CaptureProject>(&content) {
-                    (project.tags, project.favorite)
-                } else {
-                    (Vec::new(), false)
-                }
-            } else {
-                (Vec::new(), false)
-            }
-        } else {
-            (Vec::new(), false)
-        };
-
     // Try to read metadata from project.json, fall back to file metadata
     let (created_at, updated_at, dimensions, json_tags, json_favorite, json_quick_capture) =
         if async_fs::try_exists(&project_json).await.unwrap_or(false) {
@@ -259,15 +260,19 @@ async fn load_video_project_folder(
     } else {
         None
     };
-    let id = json_id.unwrap_or(fallback_id);
+    let id = json_id.unwrap_or_else(|| fallback_id.clone());
 
-    // Sidecar metadata (from projects/ dir) takes priority over video project.json
-    let final_tags = if !sidecar_tags.is_empty() {
-        sidecar_tags
-    } else {
-        json_tags
-    };
-    let final_favorite = sidecar_favorite || json_favorite;
+    // Sidecar metadata (from projects/ dir) takes priority over video project.json.
+    // Read it after resolving the display ID because video folder names and project
+    // IDs can differ. Fall back to the folder name for sidecars written by older builds.
+    let base_dir = get_app_data_dir(&app).ok()?;
+    let mut sidecar_metadata = load_metadata_sidecar(&base_dir, &id).await;
+    if sidecar_metadata.is_none() && id != fallback_id {
+        sidecar_metadata = load_metadata_sidecar(&base_dir, &fallback_id).await;
+    }
+
+    let (final_tags, final_favorite) =
+        merge_project_metadata(json_tags, json_favorite, sidecar_metadata);
 
     // Check/generate thumbnail
     let thumbnail_filename = format!("{}_thumb.png", &id);
@@ -436,20 +441,9 @@ async fn load_media_item(
 
     // Check for metadata sidecar in projects/{id}/project.json
     let (sidecar_tags, sidecar_favorite) = if let Ok(base_dir) = get_app_data_dir(&app) {
-        let sidecar_path = base_dir.join("projects").join(&id).join("project.json");
-        if async_fs::try_exists(&sidecar_path).await.unwrap_or(false) {
-            if let Ok(content) = async_fs::read_to_string(&sidecar_path).await {
-                if let Ok(project) = serde_json::from_str::<CaptureProject>(&content) {
-                    (project.tags, project.favorite)
-                } else {
-                    (Vec::new(), false)
-                }
-            } else {
-                (Vec::new(), false)
-            }
-        } else {
-            (Vec::new(), false)
-        }
+        load_metadata_sidecar(&base_dir, &id)
+            .await
+            .unwrap_or_else(|| (Vec::new(), false))
     } else {
         (Vec::new(), false)
     };
@@ -630,4 +624,38 @@ pub fn get_saved_capture_by_temp_path(file_path: String) -> Option<SavedCaptureL
 pub fn get_library_folder(app: AppHandle) -> MoonSnapResult<String> {
     let captures_dir = get_captures_dir(&app)?;
     Ok(captures_dir.to_string_lossy().into_owned())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::merge_project_metadata;
+
+    #[test]
+    fn sidecar_metadata_overrides_true_json_favorite_with_false() {
+        let (tags, favorite) = merge_project_metadata(
+            vec!["json".to_string()],
+            true,
+            Some((vec!["sidecar".to_string()], false)),
+        );
+
+        assert_eq!(tags, vec!["sidecar"]);
+        assert!(!favorite);
+    }
+
+    #[test]
+    fn sidecar_metadata_can_clear_json_tags() {
+        let (tags, favorite) =
+            merge_project_metadata(vec!["json".to_string()], true, Some((Vec::new(), true)));
+
+        assert!(tags.is_empty());
+        assert!(favorite);
+    }
+
+    #[test]
+    fn json_metadata_is_used_without_sidecar() {
+        let (tags, favorite) = merge_project_metadata(vec!["json".to_string()], true, None);
+
+        assert_eq!(tags, vec!["json"]);
+        assert!(favorite);
+    }
 }
