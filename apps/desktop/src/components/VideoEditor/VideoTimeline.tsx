@@ -33,6 +33,7 @@ import {
   getEffectiveDuration,
   TRACK_LABEL_WIDTH,
   getFitZoom,
+  getTimelineContentDuration,
   DEFAULT_FULL_SEGMENT_ID,
   MIN_TRIM_SEGMENT_SPEED,
   MAX_TRIM_SEGMENT_SPEED,
@@ -566,7 +567,8 @@ export function VideoTimeline({ onExport, onResetTrimSegments, onSetInPoint, onS
   const selectedTrimSegmentSpeed = selectedTrimSegment?.speed ?? (isDefaultFullSegmentSelected ? 1 : null);
   const canSetSelectedTrimSegmentSpeed = selectedTrimSegmentSpeed !== null && !splitMode;
   const effectiveDurationMs = getEffectiveDuration(segments ?? [], sourceDurationMs);
-  const durationWidth = effectiveDurationMs * timelineZoom;
+  const contentDurationMs = project ? getTimelineContentDuration(project) : effectiveDurationMs;
+  const durationWidth = contentDurationMs * timelineZoom;
   const timelineWidth = Math.max(durationWidth, containerWidth - TRACK_LABEL_WIDTH);
   const hasVideoTrack = trackVisibility.video;
   const hasTextTrack = !!project && trackVisibility.text;

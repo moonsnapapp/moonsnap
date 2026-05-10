@@ -1,5 +1,11 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { useVideoEditorStore, DEFAULT_TIMELINE_ZOOM, MIN_ZOOM_PERCENT, MAX_ZOOM_PERCENT } from './index';
+import {
+  useVideoEditorStore,
+  DEFAULT_TIMELINE_ZOOM,
+  MIN_ZOOM_PERCENT,
+  MAX_ZOOM_PERCENT,
+  getTimelineContentDuration,
+} from './index';
 import type { VideoProject } from '../../types';
 
 // Helper to create a minimal test project
@@ -323,6 +329,44 @@ describe('timelineSlice', () => {
       const expectedFitZoom = 920 / 20000;
       expect(timelineZoom).toBeCloseTo(expectedFitZoom);
       expect(timelineScrollLeft).toBe(0);
+    });
+
+    it('should include overlay segments beyond the video when fitting', () => {
+      const project = createTestProject({
+        timeline: {
+          durationMs: 60000,
+          inPoint: 0,
+          outPoint: 60000,
+          speed: 1.0,
+        },
+        mask: {
+          segments: [
+            {
+              id: 'late-blur',
+              startMs: 70000,
+              endMs: 90000,
+              x: 0.3,
+              y: 0.3,
+              width: 0.2,
+              height: 0.15,
+              maskType: 'blur',
+              intensity: 50,
+              feather: 10,
+              color: '#000000',
+            },
+          ],
+        },
+      });
+
+      useVideoEditorStore.setState({
+        project,
+        timelineContainerWidth: 1000,
+      });
+
+      useVideoEditorStore.getState().fitTimelineToWindow();
+
+      expect(getTimelineContentDuration(project)).toBe(90000);
+      expect(useVideoEditorStore.getState().timelineZoom).toBeCloseTo(920 / 90000);
     });
 
     it('should reset scroll position when fitting', () => {

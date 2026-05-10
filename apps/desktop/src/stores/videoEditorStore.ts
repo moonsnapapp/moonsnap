@@ -12,6 +12,7 @@ export {
   DEFAULT_TIMELINE_ZOOM,
   TRACK_LABEL_WIDTH,
   getFitZoom,
+  getTimelineContentDuration,
   // Trim slice exports
   generateTrimSegmentId,
   timelineToSource,

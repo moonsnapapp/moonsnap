@@ -8,13 +8,37 @@ export const MAX_ZOOM_PERCENT = 2.0; // 200%
 
 export const TRACK_LABEL_WIDTH = 80;
 
-/** Compute the zoom level where the full timeline exactly fills the viewport. */
-export function getFitZoom(project: VideoProject | null, containerWidth: number): number | null {
-  if (!project || containerWidth <= 0) return null;
-  const durationMs = getEffectiveDuration(
+function maxSegmentEndMs(segments: Array<{ endMs: number }> | undefined): number {
+  return Math.max(0, ...(segments ?? []).map((segment) => segment.endMs));
+}
+
+function maxTextSegmentEndMs(segments: Array<{ end: number }> | undefined): number {
+  return Math.max(0, ...(segments ?? []).map((segment) => segment.end * 1000));
+}
+
+/** Timeline content can extend past the rendered video via overlays/masks. */
+export function getTimelineContentDuration(project: VideoProject | null): number {
+  if (!project) return 0;
+
+  const effectiveDurationMs = getEffectiveDuration(
     project.timeline.segments ?? [],
     project.timeline.durationMs,
   );
+
+  return Math.max(
+    effectiveDurationMs,
+    maxSegmentEndMs(project.zoom.regions),
+    maxSegmentEndMs(project.annotations?.segments),
+    maxSegmentEndMs(project.mask.segments),
+    maxSegmentEndMs(project.scene.segments),
+    maxTextSegmentEndMs(project.text.segments),
+  );
+}
+
+/** Compute the zoom level where the full timeline exactly fills the viewport. */
+export function getFitZoom(project: VideoProject | null, containerWidth: number): number | null {
+  if (!project || containerWidth <= 0) return null;
+  const durationMs = getTimelineContentDuration(project);
   if (durationMs <= 0) return null;
   return (containerWidth - TRACK_LABEL_WIDTH) / durationMs;
 }
