@@ -54,6 +54,7 @@ export interface RenderTextOptions {
   backgroundStrokeWidth?: number;
   strokeColor?: string | null;
   strokeWidth?: number;
+  renderMode?: 'all' | 'background' | 'text';
 }
 
 type RenderContext = CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
@@ -292,8 +293,15 @@ export function renderTextOnCanvas(
   const heightScale = referenceHeight / 1080;
   const scaledStrokeWidth = Math.max(0, opts.strokeWidth ?? 0) * heightScale;
   const scaledBackgroundStrokeWidth = Math.max(0, opts.backgroundStrokeWidth ?? 0) * heightScale;
+  const renderMode = opts.renderMode ?? 'all';
+  const shouldRenderBackground = renderMode === 'all' || renderMode === 'background';
+  const shouldRenderText = renderMode === 'all' || renderMode === 'text';
 
-  if (hasVisibleColor(opts.backgroundColor) || (hasVisibleColor(opts.backgroundStrokeColor) && scaledBackgroundStrokeWidth > 0)) {
+  if (
+    shouldRenderBackground &&
+    (hasVisibleColor(opts.backgroundColor) ||
+      (hasVisibleColor(opts.backgroundStrokeColor) && scaledBackgroundStrokeWidth > 0))
+  ) {
     ctx.save();
     ctx.shadowColor = 'transparent';
     ctx.shadowBlur = 0;
@@ -332,14 +340,16 @@ export function renderTextOnCanvas(
   for (let i = 0; i < lines.length; i++) {
     const lineTopPx = startY + i * lineHeightPx;
     const lineText = lines[i];
-    if (hasVisibleColor(opts.strokeColor) && scaledStrokeWidth > 0) {
+    if (shouldRenderText && hasVisibleColor(opts.strokeColor) && scaledStrokeWidth > 0) {
       ctx.lineJoin = 'round';
       ctx.miterLimit = 2;
       ctx.strokeStyle = opts.strokeColor;
       ctx.lineWidth = scaledStrokeWidth;
       ctx.strokeText(lineText, centerX, lineTopPx + baselineInLinePx);
     }
-    ctx.fillText(lineText, centerX, lineTopPx + baselineInLinePx);
+    if (shouldRenderText) {
+      ctx.fillText(lineText, centerX, lineTopPx + baselineInLinePx);
+    }
     const graphemes = splitGraphemes(lineText);
     const revealWidthsPx: number[] = [];
     let prefix = '';

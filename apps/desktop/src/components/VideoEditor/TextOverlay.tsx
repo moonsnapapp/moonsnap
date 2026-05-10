@@ -84,7 +84,8 @@ interface CachedTextRender {
   dpr: number;
   widthPx: number;
   heightPx: number;
-  canvas: HTMLCanvasElement;
+  backgroundCanvas: HTMLCanvasElement;
+  textCanvas: HTMLCanvasElement;
   lineMetrics: TypewriterLineMetric[];
   totalRenderedChars: number;
 }
@@ -243,14 +244,19 @@ const TextItem = memo(function TextItem({
       return cacheRef.current;
     }
 
-    const canvas = document.createElement('canvas');
-    canvas.width = pixelWidth;
-    canvas.height = pixelHeight;
-    const ctx = canvas.getContext('2d', { alpha: true });
-    if (!ctx) return null;
+    const backgroundCanvas = document.createElement('canvas');
+    backgroundCanvas.width = pixelWidth;
+    backgroundCanvas.height = pixelHeight;
+    const backgroundCtx = backgroundCanvas.getContext('2d', { alpha: true });
+    if (!backgroundCtx) return null;
 
-    ctx.scale(dpr, dpr);
-    const lineInfos = renderTextOnCanvas(ctx, {
+    const textCanvas = document.createElement('canvas');
+    textCanvas.width = pixelWidth;
+    textCanvas.height = pixelHeight;
+    const textCtx = textCanvas.getContext('2d', { alpha: true });
+    if (!textCtx) return null;
+
+    const renderOptions = {
       content: segment.content,
       fontFamily: segment.fontFamily || 'sans-serif',
       fontWeight: segment.fontWeight || 700,
@@ -262,6 +268,18 @@ const TextItem = memo(function TextItem({
       backgroundStrokeWidth: segment.backgroundStrokeWidth,
       strokeColor: segment.strokeColor,
       strokeWidth: segment.strokeWidth,
+    };
+
+    backgroundCtx.scale(dpr, dpr);
+    renderTextOnCanvas(backgroundCtx, {
+      ...renderOptions,
+      renderMode: 'background',
+    }, safeWidth, safeHeight, renderSize.height);
+
+    textCtx.scale(dpr, dpr);
+    const lineInfos = renderTextOnCanvas(textCtx, {
+      ...renderOptions,
+      renderMode: 'text',
     }, safeWidth, safeHeight, renderSize.height);
 
     let cumulativeChars = 0;
@@ -281,7 +299,8 @@ const TextItem = memo(function TextItem({
       dpr,
       widthPx: pixelWidth,
       heightPx: pixelHeight,
-      canvas,
+      backgroundCanvas,
+      textCanvas,
       lineMetrics,
       totalRenderedChars: cumulativeChars,
     };
@@ -302,6 +321,10 @@ const TextItem = memo(function TextItem({
 
     const { dpr, widthPx, heightPx } = cached;
     const isTypewriter = normalizeTextAnimation(segment.animation) === 'typeWriter';
+    const heightScale = renderSize.height / 1080;
+    const textRevealBleedPx = Math.ceil(
+      Math.max(6, (segment.strokeWidth ?? 0) * heightScale + 5),
+    );
     const visibleChars = isTypewriter
       ? calculateTypewriterVisibleChars(segment, currentTimeSec, cached.totalRenderedChars)
       : cached.totalRenderedChars;
@@ -329,7 +352,13 @@ const TextItem = memo(function TextItem({
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, safeWidth, safeHeight);
 
-    const drawLineSlice = (leftPx: number, topPx: number, widthSlicePx: number, heightSlicePx: number) => {
+    const drawCanvasSlice = (
+      sourceCanvas: HTMLCanvasElement,
+      leftPx: number,
+      topPx: number,
+      widthSlicePx: number,
+      heightSlicePx: number,
+    ) => {
       const clampedLeft = clamp(leftPx, 0, safeWidth);
       const clampedTop = clamp(topPx, 0, safeHeight);
       const clampedWidth = Math.min(widthSlicePx, safeWidth - clampedLeft);
@@ -339,7 +368,7 @@ const TextItem = memo(function TextItem({
       }
 
       ctx.drawImage(
-        cached.canvas,
+        sourceCanvas,
         clampedLeft * dpr,
         clampedTop * dpr,
         clampedWidth * dpr,
@@ -351,16 +380,42 @@ const TextItem = memo(function TextItem({
       );
     };
 
+    const drawBackground = () => {
+      drawCanvasSlice(cached.backgroundCanvas, 0, 0, safeWidth, safeHeight);
+    };
+
+    const drawTextClipped = (leftPx: number, topPx: number, widthClipPx: number, heightClipPx: number) => {
+      const clampedLeft = clamp(leftPx, 0, safeWidth);
+      const clampedTop = clamp(topPx, 0, safeHeight);
+      const clampedRight = clamp(leftPx + widthClipPx, 0, safeWidth);
+      const clampedBottom = clamp(topPx + heightClipPx, 0, safeHeight);
+      const clampedWidth = clampedRight - clampedLeft;
+      const clampedHeight = clampedBottom - clampedTop;
+      if (clampedWidth <= 0 || clampedHeight <= 0) {
+        return;
+      }
+
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(clampedLeft, clampedTop, clampedWidth, clampedHeight);
+      ctx.clip();
+      ctx.drawImage(cached.textCanvas, 0, 0, widthPx, heightPx, 0, 0, safeWidth, safeHeight);
+      ctx.restore();
+    };
+
     if (!isTypewriter) {
-      drawLineSlice(0, 0, safeWidth, safeHeight);
+      drawBackground();
+      drawTextClipped(0, 0, safeWidth, safeHeight);
       return;
     }
+
+    drawBackground();
 
     if (visibleChars <= 0) {
       return;
     }
     if (visibleChars >= cached.totalRenderedChars) {
-      drawLineSlice(0, 0, safeWidth, safeHeight);
+      drawTextClipped(0, 0, safeWidth, safeHeight);
       return;
     }
 
@@ -369,14 +424,19 @@ const TextItem = memo(function TextItem({
         1,
         Math.ceil(safeWidth * (visibleChars / Math.max(cached.totalRenderedChars, 1))),
       );
-      drawLineSlice(0, 0, fallbackRevealWidth, safeHeight);
+      drawTextClipped(0, 0, fallbackRevealWidth + textRevealBleedPx, safeHeight);
       return;
     }
 
     let previousCumulative = 0;
     for (const metric of cached.lineMetrics) {
       if (visibleChars > metric.cumulativeChars) {
-        drawLineSlice(0, metric.topPx, safeWidth, metric.heightPx);
+        drawTextClipped(
+          0,
+          metric.topPx - textRevealBleedPx,
+          safeWidth,
+          metric.heightPx + textRevealBleedPx * 2,
+        );
         previousCumulative = metric.cumulativeChars;
         continue;
       }
@@ -393,8 +453,13 @@ const TextItem = memo(function TextItem({
           measuredRevealWidth ?? proportionalRevealWidth,
         );
         const textLeft = Math.max(0, (safeWidth - metric.contentWidthPx) / 2);
-        const revealWidth = Math.max(1, Math.ceil(textLeft + revealContentWidth));
-        drawLineSlice(0, metric.topPx, revealWidth, metric.heightPx);
+        const revealWidth = Math.max(1, Math.ceil(textLeft + revealContentWidth + textRevealBleedPx));
+        drawTextClipped(
+          0,
+          metric.topPx - textRevealBleedPx,
+          revealWidth,
+          metric.heightPx + textRevealBleedPx * 2,
+        );
       }
       break;
     }
@@ -402,6 +467,7 @@ const TextItem = memo(function TextItem({
     ensureCachedRender,
     segment,
     currentTimeSec,
+    renderSize.height,
   ]);
 
   // Render text on canvas — same code path as export for WYSIWYG
