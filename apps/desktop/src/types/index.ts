@@ -529,11 +529,23 @@ export type TextAnimation = 'none' | 'typeWriter';
 // with older project payloads and in-flight generated type changes.
 export type TextSegment = Omit<
   GeneratedTextSegment,
-  'animation' | 'typewriterCharsPerSecond' | 'typewriterSoundEnabled'
+  | 'animation'
+  | 'typewriterCharsPerSecond'
+  | 'typewriterSoundEnabled'
+  | 'backgroundColor'
+  | 'backgroundStrokeColor'
+  | 'backgroundStrokeWidth'
+  | 'strokeColor'
+  | 'strokeWidth'
 > & {
   animation?: TextAnimation;
   typewriterCharsPerSecond?: number;
   typewriterSoundEnabled?: boolean;
+  backgroundColor?: string | null;
+  backgroundStrokeColor?: string | null;
+  backgroundStrokeWidth?: number;
+  strokeColor?: string | null;
+  strokeWidth?: number;
 };
 
 // Keep text config aligned with app-level TextSegment extensions.

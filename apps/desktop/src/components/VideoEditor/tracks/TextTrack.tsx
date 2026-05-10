@@ -1,7 +1,7 @@
 import { memo, useCallback, useMemo, useRef } from 'react';
 import { Type, GripVertical, Plus } from 'lucide-react';
 import type { TextSegment } from '../../../types';
-import { TEXT_ANIMATION } from '../../../constants';
+import { TEXT_ANIMATION, TEXT_STYLE } from '../../../constants';
 import { useVideoEditorStore, formatTimeSimple } from '../../../stores/videoEditorStore';
 import { fitTextSegmentToContent } from '../../../utils/textMeasure';
 import {
@@ -413,7 +413,12 @@ export const TextTrackContent = memo(function TextTrackContent({
       fontSize,
       fontWeight,
       italic: false,
-      color: '#ffffff',
+      color: TEXT_STYLE.DEFAULT_COLOR,
+      backgroundColor: null,
+      backgroundStrokeColor: null,
+      backgroundStrokeWidth: 0,
+      strokeColor: null,
+      strokeWidth: 0,
       fadeDuration: TEXT_ANIMATION.DEFAULT_FADE_DURATION_SEC,
       animation: TEXT_ANIMATION.DEFAULT_MODE,
       typewriterCharsPerSecond: TEXT_ANIMATION.DEFAULT_TYPEWRITER_CHARS_PER_SECOND,

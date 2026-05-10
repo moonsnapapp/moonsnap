@@ -96,7 +96,23 @@ function buildTextRenderKey(
   dpr: number,
   referenceHeight: number,
 ): string {
-  return `${segment.content}|${segment.fontFamily}|${segment.fontWeight}|${segment.italic ? 1 : 0}|${segment.fontSize}|${segment.color}|${safeWidth}|${safeHeight}|${dpr}|${referenceHeight}`;
+  return [
+    segment.content,
+    segment.fontFamily,
+    segment.fontWeight,
+    segment.italic ? 1 : 0,
+    segment.fontSize,
+    segment.color,
+    segment.backgroundColor ?? '',
+    segment.backgroundStrokeColor ?? '',
+    segment.backgroundStrokeWidth ?? 0,
+    segment.strokeColor ?? '',
+    segment.strokeWidth ?? 0,
+    safeWidth,
+    safeHeight,
+    dpr,
+    referenceHeight,
+  ].join('|');
 }
 
 /**
@@ -241,6 +257,11 @@ const TextItem = memo(function TextItem({
       italic: !!segment.italic,
       fontSize: segment.fontSize,
       color: segment.color || '#ffffff',
+      backgroundColor: segment.backgroundColor,
+      backgroundStrokeColor: segment.backgroundStrokeColor,
+      backgroundStrokeWidth: segment.backgroundStrokeWidth,
+      strokeColor: segment.strokeColor,
+      strokeWidth: segment.strokeWidth,
     }, safeWidth, safeHeight, renderSize.height);
 
     let cumulativeChars = 0;

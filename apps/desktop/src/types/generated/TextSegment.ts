@@ -53,6 +53,26 @@ italic: boolean,
  */
 color: string, 
 /**
+ * Optional background color (hex format). None = transparent.
+ */
+backgroundColor: string | null, 
+/**
+ * Optional background outline color (hex format). None = no outline.
+ */
+backgroundStrokeColor: string | null, 
+/**
+ * Background outline width in pixels (at 1080p reference).
+ */
+backgroundStrokeWidth: number, 
+/**
+ * Optional text outline color (hex format). None = no outline.
+ */
+strokeColor: string | null, 
+/**
+ * Text outline width in pixels (at 1080p reference).
+ */
+strokeWidth: number, 
+/**
  * Fade duration in seconds (for fade in/out animation).
  */
 fadeDuration: number, 

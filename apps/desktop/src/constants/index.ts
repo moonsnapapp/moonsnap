@@ -8,8 +8,10 @@ export {
 export {
   TEXT_ANIMATION,
   TEXT_LAYOUT,
+  TEXT_STYLE,
   type TextAnimationConstants,
   type TextLayoutConstants,
+  type TextStyleConstants,
 } from './text';
 export { ANNOTATIONS, type AnnotationConstants } from './annotations';
 export { WAVEFORM, type WaveformConstants } from './waveform';

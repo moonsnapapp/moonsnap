@@ -1458,6 +1458,21 @@ pub struct TextSegment {
     pub italic: bool,
     /// Text color (hex format, e.g., "#ffffff").
     pub color: String,
+    /// Optional background color (hex format). None = transparent.
+    #[serde(default)]
+    pub background_color: Option<String>,
+    /// Optional background outline color (hex format). None = no outline.
+    #[serde(default)]
+    pub background_stroke_color: Option<String>,
+    /// Background outline width in pixels (at 1080p reference).
+    #[serde(default)]
+    pub background_stroke_width: f32,
+    /// Optional text outline color (hex format). None = no outline.
+    #[serde(default)]
+    pub stroke_color: Option<String>,
+    /// Text outline width in pixels (at 1080p reference).
+    #[serde(default)]
+    pub stroke_width: f32,
     /// Fade duration in seconds (for fade in/out animation).
     pub fade_duration: f64,
     /// Text animation mode.
@@ -1511,6 +1526,16 @@ struct TextSegmentRaw {
     italic: Option<bool>,
     #[serde(default)]
     color: Option<String>,
+    #[serde(default)]
+    background_color: Option<String>,
+    #[serde(default)]
+    background_stroke_color: Option<String>,
+    #[serde(default)]
+    background_stroke_width: Option<f32>,
+    #[serde(default)]
+    stroke_color: Option<String>,
+    #[serde(default)]
+    stroke_width: Option<f32>,
 }
 
 impl<'de> Deserialize<'de> for TextSegment {
@@ -1573,6 +1598,11 @@ impl<'de> Deserialize<'de> for TextSegment {
             font_weight: raw.font_weight.unwrap_or(700.0),
             italic: raw.italic.unwrap_or(false),
             color: raw.color.unwrap_or_else(|| "#ffffff".to_string()),
+            background_color: raw.background_color,
+            background_stroke_color: raw.background_stroke_color,
+            background_stroke_width: raw.background_stroke_width.unwrap_or(0.0).max(0.0),
+            stroke_color: raw.stroke_color,
+            stroke_width: raw.stroke_width.unwrap_or(0.0).max(0.0),
             fade_duration,
             animation,
             typewriter_chars_per_second,
@@ -1595,6 +1625,11 @@ impl Default for TextSegment {
             font_weight: 700.0,
             italic: false,
             color: "#ffffff".to_string(),
+            background_color: None,
+            background_stroke_color: None,
+            background_stroke_width: 0.0,
+            stroke_color: None,
+            stroke_width: 0.0,
             fade_duration: 0.15,
             animation: TextAnimation::None,
             typewriter_chars_per_second: default_typewriter_chars_per_second(),

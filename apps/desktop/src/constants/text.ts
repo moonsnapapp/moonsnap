@@ -25,3 +25,19 @@ export const TEXT_LAYOUT = {
 } as const;
 
 export type TextLayoutConstants = typeof TEXT_LAYOUT;
+
+/**
+ * Visual styling defaults for text overlay segments.
+ */
+export const TEXT_STYLE = {
+  DEFAULT_COLOR: '#ffffff',
+  DEFAULT_BACKGROUND_COLOR: '#000000',
+  DEFAULT_BACKGROUND_STROKE_COLOR: '#ffffff',
+  DEFAULT_BACKGROUND_STROKE_WIDTH: 2,
+  DEFAULT_STROKE_COLOR: '#000000',
+  DEFAULT_STROKE_WIDTH: 4,
+  MIN_STROKE_WIDTH: 0,
+  MAX_STROKE_WIDTH: 24,
+} as const;
+
+export type TextStyleConstants = typeof TEXT_STYLE;

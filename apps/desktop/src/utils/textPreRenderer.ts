@@ -49,6 +49,11 @@ export interface RenderTextOptions {
   italic: boolean;
   fontSize: number;
   color: string;
+  backgroundColor?: string | null;
+  backgroundStrokeColor?: string | null;
+  backgroundStrokeWidth?: number;
+  strokeColor?: string | null;
+  strokeWidth?: number;
 }
 
 type RenderContext = CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
@@ -186,6 +191,32 @@ function configureTextContext(
   };
 }
 
+function hasVisibleColor(color: string | null | undefined): color is string {
+  return Boolean(color && color !== 'transparent');
+}
+
+function drawRoundedRect(
+  ctx: RenderContext,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  radius: number,
+): void {
+  const safeRadius = Math.max(0, Math.min(radius, width / 2, height / 2));
+  ctx.beginPath();
+  ctx.moveTo(x + safeRadius, y);
+  ctx.lineTo(x + width - safeRadius, y);
+  ctx.quadraticCurveTo(x + width, y, x + width, y + safeRadius);
+  ctx.lineTo(x + width, y + height - safeRadius);
+  ctx.quadraticCurveTo(x + width, y + height, x + width - safeRadius, y + height);
+  ctx.lineTo(x + safeRadius, y + height);
+  ctx.quadraticCurveTo(x, y + height, x, y + height - safeRadius);
+  ctx.lineTo(x, y + safeRadius);
+  ctx.quadraticCurveTo(x, y, x + safeRadius, y);
+  ctx.closePath();
+}
+
 /**
  * Measure the wrapped text layout using the same font and word-wrap rules
  * as preview/export rendering.
@@ -258,6 +289,36 @@ export function renderTextOnCanvas(
 
   // Vertically center the text block
   const startY = Math.max(0, (canvasHeight - totalHeightPx) / 2);
+  const heightScale = referenceHeight / 1080;
+  const scaledStrokeWidth = Math.max(0, opts.strokeWidth ?? 0) * heightScale;
+  const scaledBackgroundStrokeWidth = Math.max(0, opts.backgroundStrokeWidth ?? 0) * heightScale;
+
+  if (hasVisibleColor(opts.backgroundColor) || (hasVisibleColor(opts.backgroundStrokeColor) && scaledBackgroundStrokeWidth > 0)) {
+    ctx.save();
+    ctx.shadowColor = 'transparent';
+    ctx.shadowBlur = 0;
+    ctx.shadowOffsetX = 0;
+    ctx.shadowOffsetY = 0;
+    const inset = scaledBackgroundStrokeWidth / 2;
+    drawRoundedRect(
+      ctx,
+      inset,
+      inset,
+      Math.max(0, canvasWidth - scaledBackgroundStrokeWidth),
+      Math.max(0, canvasHeight - scaledBackgroundStrokeWidth),
+      8 * heightScale,
+    );
+    if (hasVisibleColor(opts.backgroundColor)) {
+      ctx.fillStyle = opts.backgroundColor;
+      ctx.fill();
+    }
+    if (hasVisibleColor(opts.backgroundStrokeColor) && scaledBackgroundStrokeWidth > 0) {
+      ctx.strokeStyle = opts.backgroundStrokeColor;
+      ctx.lineWidth = scaledBackgroundStrokeWidth;
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
 
   // Text shadow
   ctx.shadowColor = 'rgba(0, 0, 0, 0.5)';
@@ -271,6 +332,13 @@ export function renderTextOnCanvas(
   for (let i = 0; i < lines.length; i++) {
     const lineTopPx = startY + i * lineHeightPx;
     const lineText = lines[i];
+    if (hasVisibleColor(opts.strokeColor) && scaledStrokeWidth > 0) {
+      ctx.lineJoin = 'round';
+      ctx.miterLimit = 2;
+      ctx.strokeStyle = opts.strokeColor;
+      ctx.lineWidth = scaledStrokeWidth;
+      ctx.strokeText(lineText, centerX, lineTopPx + baselineInLinePx);
+    }
     ctx.fillText(lineText, centerX, lineTopPx + baselineInLinePx);
     const graphemes = splitGraphemes(lineText);
     const revealWidthsPx: number[] = [];
@@ -330,6 +398,11 @@ function preRenderSegment(
     italic: !!segment.italic,
     fontSize: segment.fontSize,
     color: segment.color || '#ffffff',
+    backgroundColor: segment.backgroundColor,
+    backgroundStrokeColor: segment.backgroundStrokeColor,
+    backgroundStrokeWidth: segment.backgroundStrokeWidth,
+    strokeColor: segment.strokeColor,
+    strokeWidth: segment.strokeWidth,
   }, contentWidth, contentHeight, exportHeight);
 
   ctx.restore();
