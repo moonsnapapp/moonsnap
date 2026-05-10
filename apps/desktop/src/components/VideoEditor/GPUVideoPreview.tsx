@@ -43,7 +43,7 @@ import type { SceneSegment, SceneMode, WebcamConfig, ZoomRegion, CursorRecording
 const ZOOM_LAYER_STYLE: React.CSSProperties = {
   transform: 'translateZ(0) scale(1)',
   transformOrigin: 'center center',
-  willChange: 'transform, filter',
+  willChange: 'transform',
   backfaceVisibility: 'hidden',
 };
 

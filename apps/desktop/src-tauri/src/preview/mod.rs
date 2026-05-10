@@ -24,8 +24,9 @@ use moonsnap_render::caption_layer::prepare_captions;
 use moonsnap_render::text::{parse_color, PreparedText};
 use moonsnap_render::types::{
     BackgroundStyle, BackgroundType, BorderStyle, CornerStyle, DecodedFrame, PixelFormat,
-    RenderOptions, ShadowStyle, ZoomState,
+    RenderOptions, ShadowStyle,
 };
+use moonsnap_render::zoom::{calculate_zoom_motion_blur, ZoomInterpolator};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Instant;
@@ -249,7 +250,7 @@ impl PreviewRenderer {
         };
 
         // Build render options from project
-        let render_options = self.build_render_options(project);
+        let render_options = self.build_render_options(project, time_ms);
         let prepared_texts = prepare_text_overlays(
             &project.text.segments,
             time_ms as f64 / 1000.0,
@@ -382,7 +383,7 @@ impl PreviewRenderer {
 
     /// Build render options from project configuration.
     /// For preview, we render at video dimensions (no padding) - CSS handles frame styling.
-    fn build_render_options(&self, project: &VideoProject) -> RenderOptions {
+    fn build_render_options(&self, project: &VideoProject, time_ms: u64) -> RenderOptions {
         // Preview renders at video dimensions (CSS handles padding/background)
         let output_width = project.sources.original_width;
         let output_height = project.sources.original_height;
@@ -407,12 +408,21 @@ impl PreviewRenderer {
             },
         };
 
+        let zoom = ZoomInterpolator::new(&project.zoom);
+        let zoom_state = zoom.get_zoom_at(time_ms);
+        let zoom_motion_blur = calculate_zoom_motion_blur(
+            zoom.get_zoom_at(time_ms.saturating_sub(16)),
+            zoom_state,
+            zoom.get_zoom_at(time_ms.saturating_add(16)),
+            project.export.zoom_motion_blur,
+        );
+
         RenderOptions {
             output_width,
             output_height,
             use_manual_composition: false,
-            zoom: ZoomState::default(),
-            zoom_motion_blur: Default::default(),
+            zoom: zoom_state,
+            zoom_motion_blur,
             webcam: None,
             cursor: None,
             background,

@@ -24,6 +24,29 @@ pub struct DecodedFrame {
     pub timestamp_ms: u64,
 }
 
+fn compact_rgba_frame(frame: &ffmpeg_next::frame::Video, width: u32, height: u32) -> Vec<u8> {
+    let row_bytes = width as usize * 4;
+    let stride = frame.stride(0);
+    let data = frame.data(0);
+
+    if stride == row_bytes {
+        return data[..row_bytes * height as usize].to_vec();
+    }
+
+    let mut compact = vec![0u8; row_bytes * height as usize];
+    for row in 0..height as usize {
+        let src_start = row * stride;
+        let src_end = src_start + row_bytes;
+        let dst_start = row * row_bytes;
+
+        if src_end <= data.len() {
+            compact[dst_start..dst_start + row_bytes].copy_from_slice(&data[src_start..src_end]);
+        }
+    }
+
+    compact
+}
+
 /// Message sent to decoder thread.
 pub enum DecoderMessage {
     /// Request frame at time (seconds).
@@ -243,7 +266,7 @@ pub fn spawn_decoder(path: PathBuf) -> Result<AsyncVideoDecoderHandle, String> {
                             let rgba_data = if let Some(ref mut scaler) = scaler {
                                 let mut rgb_frame = ffmpeg_next::frame::Video::empty();
                                 if scaler.run(&decoded, &mut rgb_frame).is_ok() {
-                                    rgb_frame.data(0).to_vec()
+                                    compact_rgba_frame(&rgb_frame, width, height)
                                 } else {
                                     vec![0u8; (width * height * 4) as usize]
                                 }
