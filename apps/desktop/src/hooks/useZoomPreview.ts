@@ -21,6 +21,7 @@ const DEFAULT_ZOOM_IN_DURATION_MS = 1200;
 const DEFAULT_ZOOM_OUT_DURATION_MS = 900;
 const CONNECTED_ZOOM_GAP_MS = 1200;
 const CURSOR_FOLLOW_SAFE_ZONE_RATIO = 0.25;
+const IDENTITY_SCALE_EPSILON = 0.000001;
 
 // ============================================================================
 // Bezier Easing (Cap's curves) - Proper cubic bezier implementation
@@ -419,39 +420,12 @@ interface ZoomTransformStyle {
   transformOrigin: string;
 }
 
-interface ZoomMotionBlurStyle {
-  filter?: string;
-}
-
-function computeZoomMotionBlurPx(
-  sortedRegions: ZoomRegion[],
-  timestampMs: number,
-  amount: number,
-  getCursorAt?: ((timeMs: number) => InterpolatedCursor) | null
-): number {
-  const clampedAmount = Math.max(0, Math.min(2, amount));
-  if (sortedRegions.length === 0 || clampedAmount <= 0.001) {
-    return 0;
-  }
-
-  const frameDeltaMs = 1000 / 60;
-  const previous = getZoomStateAtSorted(sortedRegions, Math.max(0, timestampMs - frameDeltaMs), getCursorAt);
-  const current = getZoomStateAtSorted(sortedRegions, timestampMs, getCursorAt);
-  const next = getZoomStateAtSorted(sortedRegions, timestampMs + frameDeltaMs, getCursorAt);
-
-  const scaleDelta = Math.abs(next.scale - previous.scale);
-  const centerDelta = Math.hypot(next.centerX - previous.centerX, next.centerY - previous.centerY);
-  const directionalPx = centerDelta * Math.max(current.scale, 1) * 20;
-  const radialPx = scaleDelta * 10;
-
-  return Math.min(12, (directionalPx + radialPx) * clampedAmount);
-}
-
 function boundsToZoomState(interp: InterpolatedZoom): ZoomState {
   const scale = boundsWidth(interp.bounds);
 
-  // No zoom (scale ~= 1.0)
-  if (Math.abs(scale - 1) < 0.001) {
+  // Exact identity has no stable focus point. Near-identity values still carry
+  // useful focus data, so preserve them to avoid origin snaps at zoom boundaries.
+  if (Math.abs(scale - 1) < IDENTITY_SCALE_EPSILON) {
     return { scale: 1, centerX: 0.5, centerY: 0.5 };
   }
 
@@ -543,17 +517,8 @@ export function zoomStateToTransform(
   state: ZoomState,
   _options: ZoomTransformOptions = {}
 ): ZoomTransformStyle {
-  // Always use an actual transform (even identity) to ensure consistent GPU compositing
-  // Using 'none' vs actual transforms can cause rendering artifacts
-  if (state.scale <= 1.001) {
-    return {
-      transform: 'scale(1)',
-      transformOrigin: 'center center',
-    };
-  }
-
   return {
-    transform: `scale(${state.scale})`,
+    transform: `translateZ(0) scale(${state.scale})`,
     transformOrigin: `${state.centerX * 100}% ${state.centerY * 100}%`,
   };
 }
@@ -614,7 +579,7 @@ export function useZoomPreview(
     // This ensures consistent GPU compositing and prevents rendering artifacts
     // that can occur when switching between 'none' and actual transforms
     const identityTransform: ZoomTransformStyle = {
-      transform: 'scale(1)',
+      transform: 'translateZ(0) scale(1)',
       transformOrigin: 'center center',
     };
 
@@ -643,42 +608,6 @@ export function useZoomPreview(
     videoHeight,
     cursorTimeMs,
   ]);
-}
-
-export function useZoomMotionBlurStyle(
-  regions: ZoomRegion[] | undefined,
-  currentTimeMs: number,
-  amount: number | null | undefined,
-  cursorRecording?: CursorRecording | null,
-  options: Pick<UseZoomPreviewOptions, 'cursorDampening' | 'cursorTimeMs'> = {}
-): ZoomMotionBlurStyle {
-  const { cursorDampening = CURSOR.DAMPENING_DEFAULT, cursorTimeMs } = options;
-  const sortedRegions = useMemo(
-    () => (regions && regions.length > 0 ? sortRegionsByStart(regions) : []),
-    [regions]
-  );
-  const currentZoomScale = useMemo(
-    () => getZoomScaleAtSorted(sortedRegions, currentTimeMs),
-    [sortedRegions, currentTimeMs]
-  );
-  const getPreviewZoomScale = useCallback(() => currentZoomScale, [currentZoomScale]);
-  const { getCursorAt, hasCursorData } = useCursorInterpolation(cursorRecording, {
-    dampening: cursorDampening,
-    getZoomScale: currentZoomScale > 1.001 ? getPreviewZoomScale : null,
-  });
-
-  return useMemo(() => {
-    const blurPx = computeZoomMotionBlurPx(
-      sortedRegions,
-      currentTimeMs,
-      amount ?? 0,
-      hasCursorData
-        ? (timeMs) => getCursorAt(cursorTimeMs ?? timeMs)
-        : null
-    );
-
-    return blurPx > 0.05 ? { filter: `blur(${blurPx.toFixed(2)}px)` } : {};
-  }, [amount, currentTimeMs, cursorTimeMs, getCursorAt, hasCursorData, sortedRegions]);
 }
 
 /**

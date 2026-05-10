@@ -252,7 +252,7 @@ export function ExportConfigPanel({ project, onUpdateExportConfig, onUpdateAudio
           onValueChange={(values) => onUpdateExportConfig({ zoomMotionBlur: values[0] / 100 })}
         />
         <p className="mt-1.5 text-[11px] text-[var(--ink-muted)]">
-          Softens fast zoom-ins, zoom-outs, and focus moves in preview and export.
+          Softens fast zoom-ins, zoom-outs, and focus moves in export.
         </p>
       </div>
 

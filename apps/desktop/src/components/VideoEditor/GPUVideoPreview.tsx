@@ -21,7 +21,7 @@ import { hasActiveTypewriterSound } from '../../utils/textSegmentAnimation';
 import { usePreviewOrPlaybackTime } from '../../hooks/usePlaybackEngine';
 import { usePreviewOrPlaybackTimeThrottled } from '../../hooks/usePlaybackTimeThrottled';
 import { useTimelineToSourceTime } from '../../hooks/useTimelineSourceTime';
-import { getZoomScaleAt, useZoomMotionBlurStyle, useZoomPreview } from '../../hooks/useZoomPreview';
+import { getZoomScaleAt, useZoomPreview } from '../../hooks/useZoomPreview';
 import { useInterpolatedScene, shouldRenderScreen, shouldRenderCursor, getCameraOnlyTransitionOpacity, getRegularCameraTransitionOpacity } from '../../hooks/useSceneMode';
 import { WebcamOverlay } from './WebcamOverlay';
 import { CursorOverlay } from './CursorOverlay';
@@ -39,6 +39,13 @@ import {
   usePlaybackSync,
 } from './gpu';
 import type { SceneSegment, SceneMode, WebcamConfig, ZoomRegion, CursorRecording, CursorConfig, AnnotationSegment, MaskSegment, TextSegment, CropConfig, AudioTrackSettings } from '../../types';
+
+const ZOOM_LAYER_STYLE: React.CSSProperties = {
+  transform: 'translateZ(0) scale(1)',
+  transformOrigin: 'center center',
+  willChange: 'transform, filter',
+  backfaceVisibility: 'hidden',
+};
 
 const PlaybackSyncController = memo(function PlaybackSyncController({
   videoRef,
@@ -189,7 +196,6 @@ const ZoomTransformController = memo(function ZoomTransformController({
   rounding,
   videoWidth,
   videoHeight,
-  zoomMotionBlur = 0,
 }: {
   frameRef: React.RefObject<HTMLDivElement | null>;
   borderOverlayRef: React.RefObject<HTMLDivElement | null>;
@@ -200,7 +206,6 @@ const ZoomTransformController = memo(function ZoomTransformController({
   rounding: number;
   videoWidth: number;
   videoHeight: number;
-  zoomMotionBlur?: number;
 }) {
   const currentTimeMs = usePreviewOrPlaybackTime();
   const toSourceTime = useTimelineToSourceTime();
@@ -216,17 +221,6 @@ const ZoomTransformController = memo(function ZoomTransformController({
     cursorDampening: cursorConfig?.dampening ?? CURSOR.DAMPENING_DEFAULT,
     cursorTimeMs: sourceTimeMs,
   });
-  const zoomMotionBlurStyle = useZoomMotionBlurStyle(
-    zoomRegions,
-    currentTimeMs,
-    zoomMotionBlur,
-    cursorRecording,
-    {
-      cursorDampening: cursorConfig?.dampening ?? CURSOR.DAMPENING_DEFAULT,
-      cursorTimeMs: sourceTimeMs,
-    }
-  );
-
   useLayoutEffect(() => {
     const applyStyle = (element: HTMLDivElement | null) => {
       if (!element) {
@@ -234,12 +228,11 @@ const ZoomTransformController = memo(function ZoomTransformController({
       }
       element.style.transform = zoomStyle.transform;
       element.style.transformOrigin = zoomStyle.transformOrigin;
-      element.style.filter = zoomMotionBlurStyle.filter ?? '';
     };
 
     applyStyle(frameRef.current);
     applyStyle(borderOverlayRef.current);
-  }, [borderOverlayRef, frameRef, zoomMotionBlurStyle.filter, zoomStyle]);
+  }, [borderOverlayRef, frameRef, zoomStyle]);
 
   return null;
 });
@@ -379,7 +372,6 @@ type SceneModeRendererProps = {
   frameBorderOverlayStyle?: React.CSSProperties | null;
   shadowStyle?: React.CSSProperties;
   cropConfig?: CropConfig;
-  zoomMotionBlur?: number;
 };
 
 const StaticSceneModeRenderer = memo(function StaticSceneModeRenderer({
@@ -406,7 +398,6 @@ const StaticSceneModeRenderer = memo(function StaticSceneModeRenderer({
   cropConfig,
   videoWidth,
   videoHeight,
-  zoomMotionBlur = 0,
 }: SceneModeRendererProps) {
   const originalVideoPath = useVideoEditorStore(selectScreenVideoPath);
   const frameOpacity = defaultSceneMode === 'cameraOnly' ? 0 : 1;
@@ -450,13 +441,13 @@ const StaticSceneModeRenderer = memo(function StaticSceneModeRenderer({
         rounding={rounding}
         videoWidth={videoWidth}
         videoHeight={videoHeight}
-        zoomMotionBlur={zoomMotionBlur}
       />
       <div
         ref={frameRef}
         style={{
           position: 'relative',
           overflow: 'hidden',
+          ...ZOOM_LAYER_STYLE,
           ...frameStyle,
           opacity: frameOpacity,
           visibility: frameOpacity < 0.01 ? 'hidden' : 'visible',
@@ -508,7 +499,15 @@ const StaticSceneModeRenderer = memo(function StaticSceneModeRenderer({
         />
       </div>
 
-      {frameBorderOverlayStyle && <div ref={borderOverlayRef} style={frameBorderOverlayStyle} />}
+      {frameBorderOverlayStyle && (
+        <div
+          ref={borderOverlayRef}
+          style={{
+            ...ZOOM_LAYER_STYLE,
+            ...frameBorderOverlayStyle,
+          }}
+        />
+      )}
     </div>
   );
 });
@@ -544,7 +543,6 @@ const DynamicSceneModeRenderer = memo(function DynamicSceneModeRenderer({
   frameBorderOverlayStyle,
   shadowStyle,
   cropConfig,
-  zoomMotionBlur = 0,
 }: SceneModeRendererProps) {
   const currentTimeMs = usePreviewOrPlaybackTime();
   const toSourceTime = useTimelineToSourceTime();
@@ -573,17 +571,6 @@ const DynamicSceneModeRenderer = memo(function DynamicSceneModeRenderer({
     cursorDampening: cursorConfig?.dampening ?? CURSOR.DAMPENING_DEFAULT,
     cursorTimeMs: sourceTimeMs,
   });
-  const zoomMotionBlurStyle = useZoomMotionBlurStyle(
-    zoomRegions,
-    currentTimeMs,
-    zoomMotionBlur,
-    cursorRecording,
-    {
-      cursorDampening: cursorConfig?.dampening ?? CURSOR.DAMPENING_DEFAULT,
-      cursorTimeMs: sourceTimeMs,
-    }
-  );
-
   const screenStyle: React.CSSProperties = {
     position: 'absolute',
     inset: 0,
@@ -607,9 +594,9 @@ const DynamicSceneModeRenderer = memo(function DynamicSceneModeRenderer({
   const frameZoomStyle: React.CSSProperties = {
     position: 'relative',
     overflow: 'hidden',
+    ...ZOOM_LAYER_STYLE,
     ...frameStyle,
     ...(showScreen ? zoomStyle : {}),
-    ...(showScreen ? zoomMotionBlurStyle : {}),
     opacity: frameOpacity,
     visibility: frameOpacity < 0.01 ? 'hidden' : 'visible',
     width: '100%',
@@ -750,6 +737,7 @@ const DynamicSceneModeRenderer = memo(function DynamicSceneModeRenderer({
         {/* Squircle border overlay — outside the clipped frame so border extends outward.
             Apply the same zoom transform so the border follows the frame during zoom. */}
         {frameBorderOverlayStyle && <div style={{
+          ...ZOOM_LAYER_STYLE,
           ...frameBorderOverlayStyle,
           ...(showScreen ? zoomStyle : {}),
         }} />}
@@ -1163,7 +1151,6 @@ export function GPUVideoPreview({ isActive = true }: GPUVideoPreviewProps) {
               frameStyle={frameStyle}
               frameBorderOverlayStyle={frameBorderOverlayStyle}
               shadowStyle={frameShadowStyle}
-              zoomMotionBlur={project?.export.zoomMotionBlur ?? 0}
             />
           ) : (
             <div className="absolute inset-0 flex items-center justify-center">
