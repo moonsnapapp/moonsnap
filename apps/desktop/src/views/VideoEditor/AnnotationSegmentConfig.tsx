@@ -10,6 +10,7 @@ import {
   useSensors,
   type CollisionDetection,
   type DragEndEvent,
+  type DragOverEvent,
   type DragStartEvent,
 } from '@dnd-kit/core';
 import {
@@ -99,12 +100,15 @@ interface LayerRowData {
   index: number;
 }
 
+type LayerDropIndicatorPosition = 'before' | 'after';
+
 interface LayerCardProps {
   shape: AnnotationShape;
   index: number;
   isSelected: boolean;
   isDragging?: boolean;
   isOverlay?: boolean;
+  dropIndicator?: LayerDropIndicatorPosition | null;
   dragAttributes?: HTMLAttributes<HTMLElement>;
   dragListeners?: HTMLAttributes<HTMLElement>;
   setNodeRef?: (node: HTMLDivElement | null) => void;
@@ -119,6 +123,7 @@ function LayerCard({
   isSelected,
   isDragging = false,
   isOverlay = false,
+  dropIndicator = null,
   dragAttributes,
   dragListeners,
   setNodeRef,
@@ -134,7 +139,7 @@ function LayerCard({
     <div
       ref={setNodeRef}
       style={style}
-      className={`group flex min-h-10 w-full min-w-0 cursor-grab touch-none items-center gap-2 rounded-md border px-2.5 py-2 text-left transition-[background-color,border-color,box-shadow,opacity] active:cursor-grabbing ${
+      className={`group relative flex min-h-10 w-full min-w-0 cursor-grab touch-none items-center gap-2 rounded-md border px-2.5 py-2 text-left transition-[background-color,border-color,box-shadow,opacity] active:cursor-grabbing ${
         isSelected
           ? 'border-[var(--coral-300)] bg-[var(--coral-50)] text-[var(--ink-dark)]'
           : 'border-[var(--glass-border)] bg-[var(--polar-mist)] text-[var(--ink-dark)] hover:bg-[var(--glass-highlight)]'
@@ -144,6 +149,20 @@ function LayerCard({
       {...dragAttributes}
       {...dragListeners}
     >
+      {dropIndicator && (
+        <span
+          aria-hidden="true"
+          className={`pointer-events-none absolute left-1 right-1 z-20 h-0.5 rounded-full bg-[var(--coral-400)] ${
+            dropIndicator === 'before' ? '-top-1' : '-bottom-1'
+          }`}
+          style={{
+            filter: 'drop-shadow(0 0 4px rgba(249, 115, 22, 0.55))',
+          }}
+        >
+          <span className="absolute left-0 top-1/2 h-1.5 w-1.5 -translate-y-1/2 rounded-full bg-[var(--coral-400)]" />
+          <span className="absolute right-0 top-1/2 h-1.5 w-1.5 -translate-y-1/2 rounded-full bg-[var(--coral-400)]" />
+        </span>
+      )}
       <button
         type="button"
         onClick={() => onSelectShape?.(shape.id)}
@@ -219,6 +238,10 @@ export function AnnotationSegmentConfig({
 }: AnnotationSegmentConfigProps) {
   const [activeLayerId, setActiveLayerId] = useState<string | null>(null);
   const [activeLayerWidth, setActiveLayerWidth] = useState<number | null>(null);
+  const [dropIndicator, setDropIndicator] = useState<{
+    overId: string;
+    position: LayerDropIndicatorPosition;
+  } | null>(null);
   const sensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: {
@@ -270,6 +293,29 @@ export function AnnotationSegmentConfig({
   const handleLayerDragStart = (event: DragStartEvent) => {
     setActiveLayerId(String(event.active.id));
     setActiveLayerWidth(event.active.rect.current.initial?.width ?? null);
+    setDropIndicator(null);
+  };
+
+  const handleLayerDragOver = (event: DragOverEvent) => {
+    const activeId = String(event.active.id);
+    const overId = event.over?.id != null ? String(event.over.id) : null;
+
+    if (!overId || activeId === overId) {
+      setDropIndicator(null);
+      return;
+    }
+
+    const activeDisplayIndex = layerIds.indexOf(activeId);
+    const overDisplayIndex = layerIds.indexOf(overId);
+    if (activeDisplayIndex < 0 || overDisplayIndex < 0) {
+      setDropIndicator(null);
+      return;
+    }
+
+    setDropIndicator({
+      overId,
+      position: activeDisplayIndex < overDisplayIndex ? 'after' : 'before',
+    });
   };
 
   const handleLayerDragEnd = (event: DragEndEvent) => {
@@ -277,6 +323,7 @@ export function AnnotationSegmentConfig({
     const overId = event.over?.id != null ? String(event.over.id) : null;
     setActiveLayerId(null);
     setActiveLayerWidth(null);
+    setDropIndicator(null);
 
     if (!overId || activeId === overId) {
       return;
@@ -323,7 +370,9 @@ export function AnnotationSegmentConfig({
             onDragCancel={() => {
               setActiveLayerId(null);
               setActiveLayerWidth(null);
+              setDropIndicator(null);
             }}
+            onDragOver={handleLayerDragOver}
             onDragEnd={handleLayerDragEnd}
           >
             <SortableContext items={layerIds} strategy={verticalListSortingStrategy}>
@@ -334,6 +383,7 @@ export function AnnotationSegmentConfig({
                     shape={shape}
                     index={index}
                     isSelected={shape.id === selectedShape?.id}
+                    dropIndicator={dropIndicator?.overId === shape.id ? dropIndicator.position : null}
                     onSelectShape={onSelectShape}
                     onDeleteShape={onDeleteShape}
                   />

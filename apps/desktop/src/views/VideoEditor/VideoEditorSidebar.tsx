@@ -67,9 +67,10 @@ export interface VideoEditorSidebarProps {
 
 interface SidebarSettingsSectionProps {
   title: string;
-  description: string;
+  description?: string;
   icon: ReactNode;
   defaultOpen?: boolean;
+  variant?: 'card' | 'flat';
   children: ReactNode;
 }
 
@@ -78,13 +79,14 @@ function SidebarSettingsSection({
   description,
   icon,
   defaultOpen = false,
+  variant = 'card',
   children,
 }: SidebarSettingsSectionProps) {
   const contentId = useId();
   const [isOpen, setIsOpen] = useState(defaultOpen);
 
   return (
-    <section className="video-sidebar-section">
+    <section className={`video-sidebar-section ${variant === 'flat' ? 'video-sidebar-section--flat' : ''}`}>
       <button
         type="button"
         className="video-sidebar-section__trigger"
@@ -95,7 +97,7 @@ function SidebarSettingsSection({
         <span className="video-sidebar-section__icon">{icon}</span>
         <span className="min-w-0 flex-1 text-left">
           <span className="video-sidebar-section__title">{title}</span>
-          <span className="video-sidebar-section__description">{description}</span>
+          {description && <span className="video-sidebar-section__description">{description}</span>}
         </span>
         <ChevronDown
           className={`video-sidebar-section__chevron ${isOpen ? 'video-sidebar-section__chevron--open' : ''}`}
@@ -352,9 +354,9 @@ export function VideoEditorSidebar({ project, onOpenCropDialog }: VideoEditorSid
                 {project.sources.cursorData && (
                   <SidebarSettingsSection
                     title="Cursor"
-                    description="Pointer scale, smoothing, and click highlights"
                     icon={<MousePointer2 className="h-3.5 w-3.5" />}
                     defaultOpen
+                    variant="flat"
                   >
                     <CursorConfigPanel
                       project={project}
@@ -366,9 +368,9 @@ export function VideoEditorSidebar({ project, onOpenCropDialog }: VideoEditorSid
                 {project.sources.webcamVideo && (
                   <SidebarSettingsSection
                     title="Webcam"
-                    description="Camera size, position, shape, and visibility"
                     icon={<Video className="h-3.5 w-3.5" />}
                     defaultOpen={!project.sources.cursorData}
+                    variant="flat"
                   >
                     <ProFeature featureName="Webcam Overlay">
                       <WebcamConfigPanel
@@ -381,9 +383,9 @@ export function VideoEditorSidebar({ project, onOpenCropDialog }: VideoEditorSid
 
                 <SidebarSettingsSection
                   title="Background"
-                  description="Canvas padding, corners, shadows, and frame style"
                   icon={<Palette className="h-3.5 w-3.5" />}
                   defaultOpen={!project.sources.cursorData && !project.sources.webcamVideo}
+                  variant="flat"
                 >
                   <ProFeature featureName="Custom Backgrounds">
                     <BackgroundSettings

@@ -199,7 +199,7 @@ export const CaptureCard: React.FC<CaptureCardProps> = memo(
                 onMouseDown={(e) => e.stopPropagation()}
                 onDoubleClick={(e) => e.stopPropagation()}
                 aria-label={capture.favorite ? 'Remove from favorites' : 'Add to favorites'}
-                className={`absolute top-3 right-3 z-10 w-7 h-7 rounded-lg flex items-center justify-center border shadow-sm transition-all duration-200 hover:scale-110 ${
+                className={`absolute top-3 right-3 z-10 w-[26px] h-[26px] rounded-lg flex items-center justify-center border shadow-sm transition-all duration-200 hover:scale-110 ${
                   capture.favorite
                     ? 'bg-[var(--card)] border-[var(--coral-200)] opacity-100'
                     : 'bg-[var(--card)]/80 border-transparent opacity-0 group-hover:opacity-100'

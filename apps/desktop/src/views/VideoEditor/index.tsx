@@ -123,6 +123,12 @@ export interface VideoEditorViewProps {
 const SKIP_AMOUNT_MS = 5000;
 const SAVE_WAIT_TIMEOUT_MS = 5000;
 const SAVE_WAIT_POLL_MS = 50;
+type ExportTarget = 'video' | 'gif';
+
+function withFileExtension(filename: string, extension: 'mp4' | 'webm' | 'gif'): string {
+  const withoutExtension = filename.replace(/\.[^./\\]+$/, '');
+  return `${withoutExtension}.${extension}`;
+}
 
 /**
  * VideoEditorView - Main video editor component with preview, timeline, and controls.
@@ -214,7 +220,7 @@ export const VideoEditorView = forwardRef<VideoEditorViewRef, VideoEditorViewPro
   const [isCropDialogOpen, setIsCropDialogOpen] = useState(false);
   const [lockedProFeature, setLockedProFeature] = useState<string | null>(null);
   const lastUserActivityAtRef = useRef(Date.now());
-  const handleExportRef = useRef<() => void>(() => {});
+  const handleExportRef = useRef<(target?: ExportTarget) => void>(() => {});
 
   // Diagnostic: log when VideoEditorView renders
   useEffect(() => {
@@ -518,7 +524,7 @@ export const VideoEditorView = forwardRef<VideoEditorViewRef, VideoEditorViewPro
   }, [clearEditor, flushSaveBeforeClose, setView, onBack]);
 
   // Export video with zoom effects applied
-  const handleExport = useCallback(async () => {
+  const handleExport = useCallback(async (target: ExportTarget = 'video') => {
     if (!project) return;
 
     // Pro feature gate: export requires a license
@@ -531,11 +537,15 @@ export const VideoEditorView = forwardRef<VideoEditorViewRef, VideoEditorViewPro
       return;
     }
 
-    const outputMode = getVideoOutputMode(project);
+    const outputMode = target === 'gif' ? 'render' : getVideoOutputMode(project);
     const exportActionLabel = getVideoPrimaryActionLabel(project);
-    const exportDialogTitle = getVideoExportDialogTitle(project);
+    const exportDialogTitle = target === 'gif' ? 'Export GIF' : getVideoExportDialogTitle(project);
     const sourceFilename = getVideoOriginalFilename(project);
-    const editedDefaultFilename = getVideoEditedDefaultFilename(project);
+    const videoExtension = project.export.format === 'webm' ? 'webm' : 'mp4';
+    const editedDefaultFilename =
+      target === 'gif'
+        ? withFileExtension(getVideoEditedDefaultFilename(project), 'gif')
+        : withFileExtension(getVideoEditedDefaultFilename(project), videoExtension);
 
     if (outputMode === 'original') {
       try {
@@ -579,11 +589,12 @@ export const VideoEditorView = forwardRef<VideoEditorViewRef, VideoEditorViewPro
       const outputPath = await save({
         title: exportDialogTitle,
         defaultPath: editedDefaultFilename,
-        filters: [
-          { name: 'MP4 Video', extensions: ['mp4'] },
-          { name: 'WebM Video', extensions: ['webm'] },
-          { name: 'GIF Animation', extensions: ['gif'] },
-        ],
+        filters: target === 'gif'
+          ? [{ name: 'GIF Animation', extensions: ['gif'] }]
+          : [
+              { name: 'MP4 Video', extensions: ['mp4'] },
+              { name: 'WebM Video', extensions: ['webm'] },
+            ],
       });
 
       if (!outputPath) {
@@ -596,7 +607,7 @@ export const VideoEditorView = forwardRef<VideoEditorViewRef, VideoEditorViewPro
 
       // Show success toast with file info
       const sizeMB = (result.fileSizeBytes / (1024 * 1024)).toFixed(1);
-      toast.success(exportActionLabel, {
+      toast.success(target === 'gif' ? 'GIF exported' : exportActionLabel, {
         description: `${sizeMB} MB - ${result.format.toUpperCase()}`,
       });
     } catch (error) {
@@ -607,8 +618,8 @@ export const VideoEditorView = forwardRef<VideoEditorViewRef, VideoEditorViewPro
   }, [project, exportVideo]);
 
   useEffect(() => {
-    handleExportRef.current = () => {
-      void handleExport();
+    handleExportRef.current = (target) => {
+      void handleExport(target);
     };
   }, [handleExport]);
 

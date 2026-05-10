@@ -610,14 +610,22 @@ describe('VideoTimeline', () => {
       expect(useVideoEditorStore.getState().isPlaying).toBe(false);
     });
 
-    it('should call onExport when export button is clicked', () => {
+    it('should call onExport with the selected export target', () => {
       const onExport = vi.fn();
       render(<VideoTimeline {...defaultProps} onExport={onExport} />);
 
       const exportButton = screen.getByRole('button', { name: /export/i });
-      fireEvent.click(exportButton);
+      fireEvent.pointerDown(exportButton, { button: 0, ctrlKey: false });
+      fireEvent.click(screen.getByRole('menuitem', { name: /export video/i }));
 
       expect(onExport).toHaveBeenCalledTimes(1);
+      expect(onExport).toHaveBeenCalledWith('video');
+
+      fireEvent.pointerDown(exportButton, { button: 0, ctrlKey: false });
+      fireEvent.click(screen.getByRole('menuitem', { name: /export gif/i }));
+
+      expect(onExport).toHaveBeenCalledTimes(2);
+      expect(onExport).toHaveBeenLastCalledWith('gif');
     });
   });
 

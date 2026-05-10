@@ -3,6 +3,7 @@ import { TIMING } from '@/constants';
 import {
   Film,
   Download,
+  ChevronDown,
   ZoomIn,
   ZoomOut,
   Maximize2,
@@ -21,6 +22,12 @@ import {
   X,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import {
   Tooltip,
   TooltipContent,
@@ -67,7 +74,6 @@ import {
 } from '../../stores/videoEditor/selectors';
 import { usePlaybackTime, usePlaybackControls, getPlaybackState } from '../../hooks/usePlaybackEngine';
 import { usePlaybackTimeThrottled } from '../../hooks/usePlaybackTimeThrottled';
-import { getVideoPrimaryActionLabel } from '../../utils/videoExportMode';
 import { TimelineRuler } from './TimelineRuler';
 import { ZoomTrackContent, AnnotationTrackContent, SceneTrackContent, MaskTrackContent, TextTrackContent, TrimTrackContent } from './tracks';
 import { TrackManager } from './TrackManager';
@@ -214,7 +220,7 @@ const TimelineTimeLabel = memo(function TimelineTimeLabel({
 });
 
 interface VideoTimelineProps {
-  onExport: () => void;
+  onExport: (target?: 'video' | 'gif') => void;
   onResetTrimSegments?: () => void;
   onSetInPoint?: () => void;
   onSetOutPoint?: () => void;
@@ -441,8 +447,6 @@ export function VideoTimeline({ onExport, onResetTrimSegments, onSetInPoint, onS
   const fitTimelineToWindow = useVideoEditorStore(selectFitTimelineToWindow);
   const setExportInPoint = useVideoEditorStore(selectSetExportInPoint);
   const setExportOutPoint = useVideoEditorStore(selectSetExportOutPoint);
-  const exportActionLabel = getVideoPrimaryActionLabel(project);
-
   const [draggingIOMarker, setDraggingIOMarker] = useState<'in' | 'out' | null>(null);
   const [isSpeedPopoverOpen, setIsSpeedPopoverOpen] = useState(false);
   const isIOLoopEnabled = useVideoEditorStore(selectIsIOLoopEnabled);
@@ -1395,23 +1399,25 @@ export function VideoTimeline({ onExport, onResetTrimSegments, onSetInPoint, onS
 
             <div className="w-px h-5 bg-[var(--glass-border)]" />
 
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  onClick={onExport}
-                  className="btn-coral h-8 px-3 rounded-md flex items-center gap-1.5"
-                >
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button className="btn-coral h-8 px-3 rounded-md flex items-center gap-1.5">
                   <Download className="w-3.5 h-3.5" />
-                  <span className="text-xs font-medium">{exportActionLabel}</span>
+                  <span className="text-xs font-medium">Export</span>
+                  <ChevronDown className="w-3 h-3" />
                 </Button>
-              </TooltipTrigger>
-              <TooltipContent side="bottom">
-                <div className="flex items-center gap-2">
-                  <span className="text-xs">{exportActionLabel}</span>
-                  <kbd className="kbd text-[10px] px-1.5 py-0.5">Ctrl+E</kbd>
-                </div>
-              </TooltipContent>
-            </Tooltip>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" sideOffset={6}>
+                <DropdownMenuItem onClick={() => onExport('video')}>
+                  <Download className="mr-2 h-3.5 w-3.5" />
+                  <span>Export Video</span>
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => onExport('gif')}>
+                  <Film className="mr-2 h-3.5 w-3.5" />
+                  <span>Export GIF</span>
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </div>
       </TooltipProvider>

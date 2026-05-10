@@ -7,7 +7,7 @@ import { selectProject, selectTrackVisibility } from '../../stores/videoEditor/s
 import { VideoTimeline } from '../../components/VideoEditor/VideoTimeline';
 
 export interface VideoEditorTimelineProps {
-  onExport: () => void;
+  onExport: (target?: 'video' | 'gif') => void;
   onResetTrimSegments?: () => void;
   onSetInPoint?: () => void;
   onSetOutPoint?: () => void;
