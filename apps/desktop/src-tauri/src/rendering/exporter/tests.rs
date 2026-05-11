@@ -9,7 +9,9 @@ use moonsnap_domain::video_project::{
     WebcamConfig, WebcamOverlayPosition, WebcamOverlayShape, ZoomConfig,
 };
 use moonsnap_export::frame_path_plan::can_use_nv12_fast_path;
-use moonsnap_render::types::{DecodedFrame, PixelFormat, RenderOptions, ZoomState};
+use moonsnap_render::types::{
+    BackgroundStyle, BackgroundType, DecodedFrame, PixelFormat, RenderOptions, ZoomState,
+};
 use moonsnap_render::webcam_overlay::build_webcam_overlay;
 
 #[test]
@@ -105,6 +107,17 @@ fn make_test_frame() -> DecodedFrame {
         data: vec![0u8; 1280 * 720 * 4],
         width: 1280,
         height: 720,
+        format: PixelFormat::Rgba,
+    }
+}
+
+fn make_rgba_frame(width: u32, height: u32, rgba: [u8; 4]) -> DecodedFrame {
+    DecodedFrame {
+        frame_number: 0,
+        timestamp_ms: 0,
+        data: rgba.repeat((width * height) as usize),
+        width,
+        height,
         format: PixelFormat::Rgba,
     }
 }
@@ -642,6 +655,59 @@ fn test_gpu_webcam_pixel_position_bottom_right() {
     );
 
     eprintln!("[GPU TEST] PASSED: Webcam position verified at pixel level!");
+}
+
+#[test]
+fn test_gpu_background_does_not_show_through_video_edge_alpha() {
+    let renderer = match pollster::block_on(crate::rendering::renderer::Renderer::new()) {
+        Ok(r) => r,
+        Err(e) => {
+            eprintln!("[SKIP] GPU not available: {}", e);
+            return;
+        },
+    };
+
+    let mut compositor = crate::rendering::compositor::Compositor::new(&renderer);
+    let out_w = 8;
+    let out_h = 8;
+    let mut frame = make_rgba_frame(out_w, out_h, [255, 0, 0, 255]);
+
+    for x in 0..out_w {
+        let idx = ((x * 4) + 3) as usize;
+        frame.data[idx] = 0;
+    }
+    for y in 0..out_h {
+        let idx = (((y * out_w) * 4) + 3) as usize;
+        frame.data[idx] = 0;
+    }
+
+    let render_options = RenderOptions {
+        output_width: out_w,
+        output_height: out_h,
+        use_manual_composition: false,
+        zoom: ZoomState::identity(),
+        zoom_motion_blur: Default::default(),
+        webcam: None,
+        cursor: None,
+        background: BackgroundStyle {
+            background_type: BackgroundType::Solid([0.0, 1.0, 0.0, 1.0]),
+            ..BackgroundStyle::default()
+        },
+    };
+
+    let pixels = pollster::block_on(async {
+        let output_texture = compositor
+            .composite(&renderer, &frame, &render_options, 0.0)
+            .await;
+        renderer.read_texture(&output_texture, out_w, out_h).await
+    });
+
+    let top_left = &pixels[0..4];
+    assert!(
+        top_left[0] > 200 && top_left[1] < 50 && top_left[2] < 50,
+        "video should cover the top-left pixel even if source alpha is zero; got rgba={:?}",
+        top_left
+    );
 }
 
 /// GPU pixel test: Verify webcam is circular (not oval).

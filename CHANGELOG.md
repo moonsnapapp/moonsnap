@@ -2,6 +2,11 @@
 
 All notable changes to MoonSnap are documented in this file.
 
+## [0.5.26] - 2026-05-11
+
+### Fixed
+- Video exports no longer show hidden wallpaper backgrounds along the top or left edge when background styling is turned off. (uncommitted)
+
 ## [0.5.25] - 2026-05-10
 
 ### Added

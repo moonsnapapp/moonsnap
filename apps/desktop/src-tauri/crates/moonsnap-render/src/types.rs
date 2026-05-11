@@ -408,6 +408,10 @@ impl BackgroundStyle {
     /// Create a BackgroundStyle from a project BackgroundConfig.
     /// `resource_dir` is used to resolve wallpaper paths (assets/backgrounds/).
     pub fn from_config(config: &BackgroundConfig, resource_dir: Option<&Path>) -> Self {
+        if !config.enabled {
+            return Self::default();
+        }
+
         let background_type = match config.bg_type {
             ProjectBackgroundType::Solid => {
                 BackgroundType::Solid(hex_to_linear_rgba(&config.solid_color))
@@ -611,4 +615,35 @@ pub struct EditorInstanceInfo {
     pub has_webcam: bool,
     /// Whether cursor data exists.
     pub has_cursor: bool,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn disabled_background_config_resolves_to_no_background() {
+        let config = BackgroundConfig::default();
+        let style = BackgroundStyle::from_config(&config, None);
+
+        assert!(matches!(style.background_type, BackgroundType::None));
+        assert_eq!(style.padding, 0.0);
+        assert_eq!(style.rounding, 0.0);
+        assert!(!style.shadow.enabled);
+        assert!(!style.border.enabled);
+    }
+
+    #[test]
+    fn enabled_wallpaper_config_resolves_wallpaper() {
+        let config = BackgroundConfig {
+            enabled: true,
+            ..BackgroundConfig::default()
+        };
+        let style = BackgroundStyle::from_config(&config, None);
+
+        assert!(matches!(
+            style.background_type,
+            BackgroundType::Wallpaper(_)
+        ));
+    }
 }

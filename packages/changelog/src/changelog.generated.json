@@ -2,6 +2,18 @@
   "source": "CHANGELOG.md",
   "entries": [
     {
+      "version": "0.5.26",
+      "date": "2026-05-11",
+      "sections": [
+        {
+          "title": "Fixed",
+          "items": [
+            "Video exports no longer show hidden wallpaper backgrounds along the top or left edge when background styling is turned off."
+          ]
+        }
+      ]
+    },
+    {
       "version": "0.5.25",
       "date": "2026-05-10",
       "sections": [

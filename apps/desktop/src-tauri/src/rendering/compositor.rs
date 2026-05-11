@@ -296,7 +296,10 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
         // Anti-alias the edges (matching Cap's approach)
         let anti_alias_width = max(fwidth(frame_dist), 0.5);
         let coverage = clamp(1.0 - smoothstep(0.0, anti_alias_width, frame_dist), 0.0, 1.0);
-        video_color.a = video_color.a * coverage;
+        // Screen/video content is opaque. Some decode/upload paths can leave edge
+        // alpha at zero, which lets wallpaper backgrounds show through the top/left
+        // pixels even though the source video should fully cover the frame.
+        video_color.a = coverage;
 
         // Blend video over shadow/border
         color = mix(color, video_color, video_color.a);
@@ -647,20 +650,18 @@ impl Compositor {
             }
         }
 
-        if !matches!(background, Background::None) {
-            if let Err(e) = self
-                .background_layer
-                .prepare(
-                    &self.device,
-                    &self.queue,
-                    options.output_width,
-                    options.output_height,
-                    background,
-                )
-                .await
-            {
-                log::warn!("Failed to prepare background: {}", e);
-            }
+        if let Err(e) = self
+            .background_layer
+            .prepare(
+                &self.device,
+                &self.queue,
+                options.output_width,
+                options.output_height,
+                background,
+            )
+            .await
+        {
+            log::warn!("Failed to prepare background: {}", e);
         }
         // Create video texture
         let video_texture = renderer.create_texture_from_rgba(
@@ -1050,20 +1051,18 @@ impl Compositor {
             }
         }
 
-        if !matches!(background, Background::None) {
-            if let Err(e) = self
-                .background_layer
-                .prepare(
-                    &self.device,
-                    &self.queue,
-                    options.output_width,
-                    options.output_height,
-                    background,
-                )
-                .await
-            {
-                log::warn!("Failed to prepare background: {}", e);
-            }
+        if let Err(e) = self
+            .background_layer
+            .prepare(
+                &self.device,
+                &self.queue,
+                options.output_width,
+                options.output_height,
+                background,
+            )
+            .await
+        {
+            log::warn!("Failed to prepare background: {}", e);
         }
 
         // Upload video frame data if provided; otherwise texture is pre-populated
