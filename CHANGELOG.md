@@ -5,7 +5,7 @@ All notable changes to MoonSnap are documented in this file.
 ## [0.5.26] - 2026-05-11
 
 ### Fixed
-- Video exports no longer show hidden wallpaper backgrounds along the top or left edge when background styling is turned off. (uncommitted)
+- Video exports no longer show hidden wallpaper backgrounds along the top or left edge when background styling is turned off.
 
 ## [0.5.25] - 2026-05-10
 
@@ -16,7 +16,7 @@ All notable changes to MoonSnap are documented in this file.
 ### Changed
 - Video editor sidebars now use a full-height layout with cleaner scrolling and improved segment styling.
 - Native overlay controls scale more cleanly across display sizes.
-- Mini toolbar sizing is slightly smaller on 2K displays while preserving the 4K layout. (uncommitted)
+- Mini toolbar sizing is slightly smaller on 2K displays while preserving the 4K layout.
 
 ### Fixed
 - Favorites now load correctly for videos that store metadata in sidecar files.

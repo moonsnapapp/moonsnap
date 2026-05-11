@@ -51,7 +51,7 @@ git diff --stat HEAD
 git diff HEAD
 ```
 
-If there are uncommitted changes, include them in the changelog entry alongside committed changes. Mark any entries derived from uncommitted work with `(uncommitted)` in the draft output so the user knows which items may still change.
+If there are uncommitted changes, include user-facing changes in the changelog entry alongside committed changes. Do not append parenthetical commit-state labels to changelog bullets; changelog text should read like final release notes.
 
 ### 3. Read the existing CHANGELOG.md
 
