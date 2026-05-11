@@ -2,6 +2,18 @@
   "source": "CHANGELOG.md",
   "entries": [
     {
+      "version": "0.5.27",
+      "date": "2026-05-11",
+      "sections": [
+        {
+          "title": "Fixed",
+          "items": [
+            "Video exports no longer stall when combining multiple trimmed segments with different playback speeds."
+          ]
+        }
+      ]
+    },
+    {
       "version": "0.5.26",
       "date": "2026-05-11",
       "sections": [

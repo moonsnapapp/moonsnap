@@ -6,6 +6,14 @@ use moonsnap_project_types::video_project::{ExportFormat, TextAnimation, VideoPr
 use crate::encoder_selection::{EncoderConfig, EncoderType};
 
 const TYPEWRITER_SOUND_MIN_TAIL_TRIM_SECS: f64 = 0.10;
+const EXPORT_AUDIO_SAMPLE_RATE: u32 = 48_000;
+
+fn normalize_audio_segment_filter(filter: &mut String) {
+    filter.push_str(&format!(
+        ",aresample={}:async=1:first_pts=0,aformat=sample_fmts=fltp:sample_rates={}:channel_layouts=stereo",
+        EXPORT_AUDIO_SAMPLE_RATE, EXPORT_AUDIO_SAMPLE_RATE
+    ));
+}
 
 fn screen_video_has_embedded_audio(screen_video_path: &str) -> bool {
     let path = std::path::Path::new(screen_video_path);
@@ -326,6 +334,7 @@ pub fn build_audio_filter(
                     for tempo in atempo_chain(segment.speed) {
                         segment_filter.push_str(&format!(",atempo={:.3}", tempo));
                     }
+                    normalize_audio_segment_filter(&mut segment_filter);
                     segment_filter.push_str(&format!("[{}]", label));
                     filter_parts.push(segment_filter);
                     segment_labels.push(format!("[{}]", label));
@@ -361,10 +370,13 @@ pub fn build_audio_filter(
                     let duration_sec = window.timeline_duration_sec();
                     let delay_ms = (window.start_sec.max(0.0) * 1000.0).round() as u64;
                     let label = format!("a{}w{}", input_idx, window_idx);
-                    filter_parts.push(format!(
-                        "[{}:a]atrim=start=0:end={:.3},asetpts=PTS-STARTPTS,adelay={}:all=1[{}]",
-                        input.input_index, duration_sec, delay_ms, label
-                    ));
+                    let mut window_filter = format!(
+                        "[{}:a]atrim=start=0:end={:.3},asetpts=PTS-STARTPTS",
+                        input.input_index, duration_sec
+                    );
+                    normalize_audio_segment_filter(&mut window_filter);
+                    window_filter.push_str(&format!(",adelay={}:all=1[{}]", delay_ms, label));
+                    filter_parts.push(window_filter);
                     filter_parts.push(format!("[{}]anull[{}]", label, base_label));
                 } else {
                     // Multiple non-overlapping windows: use concat with silence
@@ -384,17 +396,24 @@ pub fn build_audio_filter(
                         if gap > 0.001 {
                             let gap_label = format!("a{}g{}", input_idx, window_idx);
                             filter_parts.push(format!(
-                                "[{}:a]atrim=start=0:end={:.3},volume=0,asetpts=PTS-STARTPTS[{}]",
-                                input.input_index, gap, gap_label
+                                "[{}:a]atrim=start=0:end={:.3},volume=0,asetpts=PTS-STARTPTS,aresample={}:async=1:first_pts=0,aformat=sample_fmts=fltp:sample_rates={}:channel_layouts=stereo[{}]",
+                                input.input_index,
+                                gap,
+                                EXPORT_AUDIO_SAMPLE_RATE,
+                                EXPORT_AUDIO_SAMPLE_RATE,
+                                gap_label
                             ));
                             concat_labels.push(format!("[{}]", gap_label));
                         }
 
                         let label = format!("a{}w{}", input_idx, window_idx);
-                        filter_parts.push(format!(
-                            "[{}:a]atrim=start=0:end={:.3},asetpts=PTS-STARTPTS[{}]",
-                            input.input_index, duration_sec, label
-                        ));
+                        let mut window_filter = format!(
+                            "[{}:a]atrim=start=0:end={:.3},asetpts=PTS-STARTPTS",
+                            input.input_index, duration_sec
+                        );
+                        normalize_audio_segment_filter(&mut window_filter);
+                        window_filter.push_str(&format!("[{}]", label));
+                        filter_parts.push(window_filter);
                         concat_labels.push(format!("[{}]", label));
 
                         prev_end = window.end_sec;
@@ -774,6 +793,34 @@ mod tests {
     }
 
     #[test]
+    fn normalizes_mixed_speed_source_segments_before_concat() {
+        let inputs = vec![AudioInput {
+            input_index: 1,
+            volume: 1.0,
+            source: AudioInputSource::SourceTrack,
+        }];
+        let segments = vec![
+            AudioSegment {
+                start_sec: 0.0,
+                end_sec: 4.0,
+                speed: 2.0,
+            },
+            AudioSegment {
+                start_sec: 6.0,
+                end_sec: 8.0,
+                speed: 1.0,
+            },
+        ];
+
+        let filter = build_audio_filter(&inputs, &segments).expect("filter should be built");
+
+        assert!(filter.contains("[1:a]atrim=start=0.000:end=4.000,asetpts=PTS-STARTPTS,atempo=2.000,aresample=48000:async=1:first_pts=0,aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo[a0s0]"));
+        assert!(filter.contains("[1:a]atrim=start=6.000:end=8.000,asetpts=PTS-STARTPTS,aresample=48000:async=1:first_pts=0,aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo[a0s1]"));
+        assert!(filter.contains("[a0s0][a0s1]concat=n=2:v=0:a=1[a0_base]"));
+        assert!(filter.contains("apad=whole_dur=4.000[aout]"));
+    }
+
+    #[test]
     fn builds_timeline_window_audio_filter() {
         let inputs = vec![AudioInput {
             input_index: 2,
@@ -799,9 +846,9 @@ mod tests {
 
         let filter = build_audio_filter(&inputs, &segments).expect("filter should be built");
         assert!(filter.contains("atrim=start=0:end=0.500,volume=0"));
-        assert!(filter.contains("atrim=start=0:end=1.000,asetpts=PTS-STARTPTS[a0w0]"));
-        assert!(filter.contains("atrim=start=0:end=0.500,volume=0,asetpts=PTS-STARTPTS[a0g1]"));
-        assert!(filter.contains("atrim=start=0:end=0.400,asetpts=PTS-STARTPTS[a0w1]"));
+        assert!(filter.contains("atrim=start=0:end=1.000,asetpts=PTS-STARTPTS,aresample=48000:async=1:first_pts=0,aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo[a0w0]"));
+        assert!(filter.contains("atrim=start=0:end=0.500,volume=0,asetpts=PTS-STARTPTS,aresample=48000:async=1:first_pts=0,aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo[a0g1]"));
+        assert!(filter.contains("atrim=start=0:end=0.400,asetpts=PTS-STARTPTS,aresample=48000:async=1:first_pts=0,aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo[a0w1]"));
         assert!(filter.contains("concat=n=4:v=0:a=1"));
         assert!(filter.contains("apad=whole_dur=3.000[aout]"));
     }

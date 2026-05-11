@@ -92,6 +92,20 @@ impl StreamDecoder {
 
     /// Start the decoder with a single FFmpeg process.
     pub fn start(&mut self, path: &Path) -> Result<(), String> {
+        let mut input_args = Vec::new();
+        if self.start_time_secs > 0.0 {
+            input_args.extend(["-ss".to_string(), format!("{:.3}", self.start_time_secs)]);
+        }
+        input_args.extend(["-i".to_string(), path.to_string_lossy().into_owned()]);
+        self.start_with_inputs(input_args, None)
+    }
+
+    /// Start the decoder from caller-provided FFmpeg input args and optional video filter graph.
+    pub fn start_with_inputs(
+        &mut self,
+        input_args: Vec<String>,
+        video_filter: Option<&str>,
+    ) -> Result<(), String> {
         let ffmpeg_path = moonsnap_media::ffmpeg::find_ffmpeg().ok_or("FFmpeg not found")?;
 
         let pix_fmt = match self.pixel_format {
@@ -100,8 +114,7 @@ impl StreamDecoder {
         };
 
         log::info!(
-            "[STREAM_DECODER] Starting: {:?} at {:.3}s, {}x{} @ {:.2}fps, {} frames, fmt={}",
-            path,
+            "[STREAM_DECODER] Starting at {:.3}s, {}x{} @ {:.2}fps, {} frames, fmt={}",
             self.start_time_secs,
             self.width,
             self.height,
@@ -110,32 +123,42 @@ impl StreamDecoder {
             pix_fmt
         );
 
-        // Build FFmpeg command to output continuous raw frames
+        let mut args = vec![
+            "-hwaccel".to_string(),
+            "auto".to_string(),
+            "-threads".to_string(),
+            "0".to_string(),
+        ];
+        args.extend(input_args);
+        if let Some(filter) = video_filter {
+            log::info!("[STREAM_DECODER] Using filter graph: {}", filter);
+            args.extend([
+                "-filter_complex".to_string(),
+                filter.to_string(),
+                "-map".to_string(),
+                "[vout]".to_string(),
+            ]);
+        }
+        args.extend([
+            "-frames:v".to_string(),
+            self.frame_count.to_string(),
+            "-f".to_string(),
+            "rawvideo".to_string(),
+            "-pix_fmt".to_string(),
+            pix_fmt.to_string(),
+            "-s".to_string(),
+            format!("{}x{}", self.width, self.height),
+            "-".to_string(),
+        ]);
+
+        // Build FFmpeg command to output continuous raw frames.
         #[cfg(windows)]
         let mut process = {
             use std::os::windows::process::CommandExt;
             const CREATE_NO_WINDOW: u32 = 0x08000000;
             Command::new(&ffmpeg_path)
                 .creation_flags(CREATE_NO_WINDOW)
-                .args([
-                    "-hwaccel",
-                    "auto",
-                    "-threads",
-                    "0",
-                    "-ss",
-                    &format!("{:.3}", self.start_time_secs),
-                    "-i",
-                    &path.to_string_lossy(),
-                    "-frames:v",
-                    &self.frame_count.to_string(),
-                    "-f",
-                    "rawvideo",
-                    "-pix_fmt",
-                    pix_fmt,
-                    "-s",
-                    &format!("{}x{}", self.width, self.height),
-                    "-",
-                ])
+                .args(&args)
                 .stdin(Stdio::null())
                 .stdout(Stdio::piped())
                 .stderr(Stdio::null())
@@ -145,25 +168,7 @@ impl StreamDecoder {
 
         #[cfg(not(windows))]
         let mut process = Command::new(&ffmpeg_path)
-            .args([
-                "-hwaccel",
-                "auto",
-                "-threads",
-                "0",
-                "-ss",
-                &format!("{:.3}", self.start_time_secs),
-                "-i",
-                &path.to_string_lossy(),
-                "-frames:v",
-                &self.frame_count.to_string(),
-                "-f",
-                "rawvideo",
-                "-pix_fmt",
-                pix_fmt,
-                "-s",
-                &format!("{}x{}", self.width, self.height),
-                "-",
-            ])
+            .args(&args)
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::null())

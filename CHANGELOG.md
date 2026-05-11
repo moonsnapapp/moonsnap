@@ -2,6 +2,11 @@
 
 All notable changes to MoonSnap are documented in this file.
 
+## [0.5.27] - 2026-05-11
+
+### Fixed
+- Video exports no longer stall when combining multiple trimmed segments with different playback speeds.
+
 ## [0.5.26] - 2026-05-11
 
 ### Fixed

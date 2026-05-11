@@ -5,14 +5,59 @@
 use moonsnap_domain::captions::{CaptionSegment, CaptionSettings};
 use moonsnap_domain::video_project::{
     AnnotationConfig, AudioTrackSettings, CornerStyle, CursorConfig, ExportConfig, MaskConfig,
-    SceneConfig, ShadowConfig, TextConfig, TimelineState, VideoProject, VideoSources, WebcamBorder,
-    WebcamConfig, WebcamOverlayPosition, WebcamOverlayShape, ZoomConfig,
+    SceneConfig, ShadowConfig, TextConfig, TimelineState, TrimSegment, VideoProject, VideoSources,
+    WebcamBorder, WebcamConfig, WebcamOverlayPosition, WebcamOverlayShape, ZoomConfig,
 };
 use moonsnap_export::frame_path_plan::can_use_nv12_fast_path;
 use moonsnap_render::types::{
     BackgroundStyle, BackgroundType, DecodedFrame, PixelFormat, RenderOptions, ZoomState,
 };
 use moonsnap_render::webcam_overlay::build_webcam_overlay;
+
+#[test]
+fn builds_segmented_video_decode_plan_with_seek_inputs_speed_and_concat() {
+    let segments = vec![
+        TrimSegment {
+            id: "fast".to_string(),
+            source_start_ms: 0,
+            source_end_ms: 4_000,
+            speed: 2.0,
+        },
+        TrimSegment {
+            id: "normal".to_string(),
+            source_start_ms: 6_000,
+            source_end_ms: 8_000,
+            speed: 1.0,
+        },
+    ];
+
+    let plan =
+        super::build_segmented_video_decode_plan(std::path::Path::new("screen.mp4"), &segments, 30)
+            .expect("plan");
+
+    assert_eq!(
+        plan.input_args,
+        vec![
+            "-ss".to_string(),
+            "0.000".to_string(),
+            "-t".to_string(),
+            "4.000".to_string(),
+            "-i".to_string(),
+            "screen.mp4".to_string(),
+            "-ss".to_string(),
+            "6.000".to_string(),
+            "-t".to_string(),
+            "2.000".to_string(),
+            "-i".to_string(),
+            "screen.mp4".to_string(),
+        ]
+    );
+    assert!(plan
+        .filter
+        .contains("[0:v]setpts=(PTS-STARTPTS)/2.000000[v0]"));
+    assert!(plan.filter.contains("[1:v]setpts=PTS-STARTPTS[v1]"));
+    assert!(plan.filter.contains("[v0][v1]concat=n=2:v=1:a=0,tpad=stop_mode=clone:stop_duration=0.033333,fps=30,setpts=N/(30*TB)[vout]"));
+}
 
 #[test]
 fn test_nv12_fast_path_requires_even_source_dimensions() {

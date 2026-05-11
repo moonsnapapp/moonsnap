@@ -46,6 +46,7 @@ use moonsnap_export::job_finalize::{
     finalize_completed_export_with_decode_shutdown, EncoderFinalizeError,
 };
 use moonsnap_export::job_runner::{ExportJobRunner, ExportJobRunnerConfig, LoopControl};
+use moonsnap_export::timeline_plan::timeline_time_ms_for_output_frame;
 use moonsnap_export::timing::FrameTimingAverages;
 use tauri::{AppHandle, Manager};
 
@@ -64,7 +65,7 @@ use crate::commands::text_prerender::PreRenderedTextState;
 use crate::commands::video_recording::cursor::events::load_cursor_recording;
 use crate::commands::video_recording::cursor::events::WindowsCursorShape;
 use moonsnap_domain::video_project::{
-    AnnotationSegment, CursorType, TextAnimation, TextSegment, VideoProject, XY,
+    AnnotationSegment, CursorType, TextAnimation, TextSegment, TrimSegment, VideoProject, XY,
 };
 use moonsnap_render::nv12_converter::{CropRect, Nv12Converter};
 use moonsnap_render::scene::SceneInterpolator;
@@ -118,6 +119,95 @@ fn log_text_overlay_quad_trace(
             quad.opacity
         );
     }
+}
+
+fn normalized_segment_speed(speed: f32) -> f64 {
+    if speed.is_finite() {
+        (speed as f64).clamp(1.0, 10.0)
+    } else {
+        1.0
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+struct SegmentedVideoDecodePlan {
+    input_args: Vec<String>,
+    filter: String,
+}
+
+fn build_segmented_video_decode_plan(
+    path: &Path,
+    segments: &[TrimSegment],
+    fps: u32,
+) -> Option<SegmentedVideoDecodePlan> {
+    if segments.is_empty() {
+        return None;
+    }
+
+    let fps = fps.max(1);
+    let path = path.to_string_lossy().into_owned();
+    let mut input_args = Vec::new();
+    let mut parts = Vec::new();
+    let mut labels = Vec::new();
+
+    for (idx, segment) in segments.iter().enumerate() {
+        if segment.source_end_ms <= segment.source_start_ms {
+            continue;
+        }
+
+        let label = format!("v{}", idx);
+        let start_sec = segment.source_start_ms as f64 / 1000.0;
+        let duration_sec = segment
+            .source_end_ms
+            .saturating_sub(segment.source_start_ms) as f64
+            / 1000.0;
+        let speed = normalized_segment_speed(segment.speed);
+        let setpts = if (speed - 1.0).abs() < f64::EPSILON {
+            "PTS-STARTPTS".to_string()
+        } else {
+            format!("(PTS-STARTPTS)/{:.6}", speed)
+        };
+
+        input_args.extend([
+            "-ss".to_string(),
+            format!("{:.3}", start_sec),
+            "-t".to_string(),
+            format!("{:.3}", duration_sec),
+            "-i".to_string(),
+            path.clone(),
+        ]);
+        parts.push(format!("[{}:v]setpts={}[{}]", labels.len(), setpts, label));
+        labels.push(format!("[{}]", label));
+    }
+
+    if labels.is_empty() {
+        return None;
+    }
+
+    if labels.len() == 1 {
+        let label = labels[0].trim_start_matches('[').trim_end_matches(']');
+        parts.push(format!(
+            "[{}]tpad=stop_mode=clone:stop_duration={:.6},fps={},setpts=N/({}*TB)[vout]",
+            label,
+            1.0 / fps as f64,
+            fps,
+            fps
+        ));
+    } else {
+        parts.push(format!(
+            "{}concat=n={}:v=1:a=0,tpad=stop_mode=clone:stop_duration={:.6},fps={},setpts=N/({}*TB)[vout]",
+            labels.join(""),
+            labels.len(),
+            1.0 / fps as f64,
+            fps,
+            fps
+        ));
+    }
+
+    Some(SegmentedVideoDecodePlan {
+        input_args,
+        filter: parts.join(";"),
+    })
 }
 
 /// Constant context for CPU frame compositing, shared across all export frames.
@@ -339,10 +429,36 @@ pub async fn export_video_gpu(
 
     let duration_secs = timeline_plan.duration_secs;
     let total_output_frames = timeline_plan.total_output_frames;
-    let decode_start_ms = decode_plan.decode_start_ms;
-    let decode_end_ms = decode_plan.decode_end_ms;
     let has_segments = timeline_plan.has_segments;
-    let total_decode_frames = decode_plan.total_decode_frames;
+    let screen_path = Path::new(&decode_plan.screen_video_path);
+    let segmented_video_plan =
+        build_segmented_video_decode_plan(screen_path, &project.timeline.segments, fps);
+    let uses_segmented_video_filter = segmented_video_plan.is_some();
+    if let Some(plan) = &segmented_video_plan {
+        log::info!(
+            "[EXPORT] Segmented video decode: using {} seeked input(s); filter={}",
+            plan.input_args
+                .iter()
+                .filter(|arg| arg.as_str() == "-i")
+                .count(),
+            plan.filter
+        );
+    }
+    let decode_start_ms = if uses_segmented_video_filter {
+        0
+    } else {
+        decode_plan.decode_start_ms
+    };
+    let decode_end_ms = if uses_segmented_video_filter {
+        timeline_plan.effective_duration_ms
+    } else {
+        decode_plan.decode_end_ms
+    };
+    let total_decode_frames = if uses_segmented_video_filter {
+        total_output_frames
+    } else {
+        decode_plan.total_decode_frames
+    };
 
     log::info!(
         "[EXPORT] Timeline: effective_duration={}ms, decode_range={}ms-{}ms, segments={}, decode_frames={}, output_frames={}",
@@ -425,7 +541,6 @@ pub async fn export_video_gpu(
     // Initialize streaming decoders (ONE FFmpeg process each!)
     // Use decode_range which respects segments (first seg start to last seg end).
     // NV12 fast path is disabled for odd source/crop alignment to avoid frame jitter.
-    let screen_path = Path::new(&decode_plan.screen_video_path);
     if !use_nv12_decode {
         log::info!(
             "[EXPORT] NV12 fast path disabled for source {}x{} crop=({},{} {}x{} enabled={}); using RGBA decode",
@@ -442,13 +557,27 @@ pub async fn export_video_gpu(
     if use_nv12_decode {
         screen_decoder = screen_decoder.with_pixel_format(PixelFormat::Nv12);
     }
-    screen_decoder.start(screen_path)?;
+    if let Some(plan) = &segmented_video_plan {
+        screen_decoder.start_with_inputs(plan.input_args.clone(), Some(&plan.filter))?;
+    } else {
+        screen_decoder.start(screen_path)?;
+    }
 
     // Webcam decoder if planned and available.
     let webcam_decoder = if let Some(ref path) = decode_plan.webcam_video_path {
         let webcam_path = Path::new(path);
         let mut decoder = StreamDecoder::new(webcam_path, decode_start_ms, decode_end_ms)?;
-        decoder.start(webcam_path)?;
+        if uses_segmented_video_filter {
+            if let Some(plan) =
+                build_segmented_video_decode_plan(webcam_path, &project.timeline.segments, fps)
+            {
+                decoder.start_with_inputs(plan.input_args, Some(&plan.filter))?;
+            } else {
+                decoder.start(webcam_path)?;
+            }
+        } else {
+            decoder.start(webcam_path)?;
+        }
         Some(decoder)
     } else {
         None
@@ -717,20 +846,59 @@ pub async fn export_video_gpu(
         }
 
         let current_webcam_frame = bundle.webcam_frame;
-        let source_time_ms = decode_start_ms.saturating_add(bundle.screen_frame.timestamp_ms);
-
-        let frame_timeline = build_frame_timeline_context(
-            source_time_ms,
-            loop_state.output_frame_count,
-            fps,
-            &project.timeline,
-            has_segments,
-        );
-        let source_time_ms = frame_timeline.source_time_ms;
-        let relative_time_ms = frame_timeline.relative_time_ms;
+        let decoded_source_time_ms = decode_start_ms.saturating_add(bundle.screen_frame.timestamp_ms);
+        let (source_time_ms, relative_time_ms, should_skip_frame) = if uses_segmented_video_filter {
+            let relative_time_ms = timeline_time_ms_for_output_frame(loop_state.output_frame_count, fps);
+            let source_time_ms = project
+                .timeline
+                .timeline_to_source(relative_time_ms)
+                .unwrap_or(decoded_source_time_ms);
+            (source_time_ms, relative_time_ms, false)
+        } else {
+            let frame_timeline = build_frame_timeline_context(
+                decoded_source_time_ms,
+                loop_state.output_frame_count,
+                fps,
+                &project.timeline,
+                has_segments,
+            );
+            (
+                frame_timeline.source_time_ms,
+                frame_timeline.relative_time_ms,
+                frame_timeline.should_skip,
+            )
+        };
 
         // Skip decoded frames that fall in deleted regions.
-        if frame_timeline.should_skip {
+        if should_skip_frame {
+            if let Some(mut prev) = loop_state.pending_cpu.take() {
+                let t_cpu_start = std::time::Instant::now();
+                if !prev.skip_cursor_composite {
+                    apply_cpu_compositing(&mut prev, cpu_ctx);
+                }
+                loop_state
+                    .timing
+                    .add_cpu_us(t_cpu_start.elapsed().as_micros() as u64);
+
+                let t_encode_start = std::time::Instant::now();
+                let sent_count = prev.output_frame_idx + 1;
+                if encode_tx.send(prev.rgba_data).await.is_err() {
+                    log::error!("[EXPORT] Encode channel closed unexpectedly");
+                    return Ok(ExportLoopDirective::Stop);
+                }
+                loop_state
+                    .timing
+                    .add_encode_us(t_encode_start.elapsed().as_micros() as u64);
+
+                job_runner.on_frame_sent(sent_count, |progress| {
+                    emit_progress(
+                        app,
+                        progress.stage_progress,
+                        ExportStage::Encoding,
+                        &format!("Rendering: {}%", progress.percent),
+                    );
+                });
+            }
             loop_state.t_decode_start = std::time::Instant::now();
             return Ok(ExportLoopDirective::Continue);
         }
