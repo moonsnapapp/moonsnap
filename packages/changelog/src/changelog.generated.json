@@ -8,7 +8,7 @@
         {
           "title": "Fixed",
           "items": [
-            "Video exports no longer show hidden wallpaper backgrounds along the top or left edge when background styling is turned off."
+            "Video exports no longer show hidden wallpaper backgrounds along the top or left edge when background styling is turned off. (uncommitted)"
           ]
         }
       ]
