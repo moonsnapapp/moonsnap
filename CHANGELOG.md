@@ -2,6 +2,11 @@
 
 All notable changes to MoonSnap are documented in this file.
 
+## [0.5.28] - 2026-05-22
+
+### Fixed
+- Image captures keep their correct proportions when reopening or returning to the editor.
+
 ## [0.5.27] - 2026-05-11
 
 ### Fixed
