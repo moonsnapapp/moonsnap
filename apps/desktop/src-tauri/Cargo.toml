@@ -81,7 +81,7 @@ moonsnap-render = { path = "crates/moonsnap-render" }
 moonsnap-export = { path = "crates/moonsnap-export" }
 
 # Image processing
-image = "0.25"
+image = { version = "0.25", default-features = false, features = ["bmp", "gif", "ico", "jpeg", "png", "tiff", "webp"] }
 
 # Audio capture
 cpal = "0.17"

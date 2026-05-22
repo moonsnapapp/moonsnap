@@ -761,5 +761,15 @@ describe('timelineSlice', () => {
       expect(state.isDraggingSceneSegment).toBe(true);
       expect(state.draggedSceneEdge).toBe('move');
     });
+
+    it('should track and clear annotation drag state', () => {
+      useVideoEditorStore.getState().setDraggingAnnotationSegment(true, 'start');
+      expect(useVideoEditorStore.getState().isDraggingAnnotationSegment).toBe(true);
+      expect(useVideoEditorStore.getState().draggedAnnotationEdge).toBe('start');
+
+      useVideoEditorStore.getState().setDraggingAnnotationSegment(false);
+      expect(useVideoEditorStore.getState().isDraggingAnnotationSegment).toBe(false);
+      expect(useVideoEditorStore.getState().draggedAnnotationEdge).toBeNull();
+    });
   });
 });

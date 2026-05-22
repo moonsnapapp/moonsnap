@@ -556,7 +556,7 @@ pub async fn get_capture_list(app: AppHandle) -> MoonSnapResult<Vec<CaptureListI
         captures.extend(file_results.into_iter().flatten());
     }
 
-    captures.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+    captures.sort_by_key(|capture| std::cmp::Reverse(capture.created_at));
 
     Ok(captures)
 }

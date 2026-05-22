@@ -182,15 +182,13 @@ fn handle_set_cursor(state_ptr: *mut OverlayState, lparam: LPARAM) -> LRESULT {
                 } else {
                     IDC_ARROW
                 }
-            } else if !state.is_resize_locked_by_recording_mode_chooser()
-                && render::hit_test_selection_hud(
+            } else if state.is_resize_locked_by_recording_mode_chooser()
+                || render::hit_test_selection_hud(
                     state,
                     state.cursor.position.x,
                     state.cursor.position.y,
                 ) != SelectionHudHitTarget::None
             {
-                IDC_ARROW
-            } else if state.is_resize_locked_by_recording_mode_chooser() {
                 IDC_ARROW
             } else {
                 // In adjustment mode - show resize cursor based on handle
@@ -1075,13 +1073,11 @@ fn handle_key_down(state_ptr: *mut OverlayState, wparam: WPARAM) -> LRESULT {
                 }
                 state.cancel_to_startup();
             },
-            VK_RETURN => {
-                if state.adjustment.is_active {
-                    // Confirm with recording action (Enter in adjustment mode starts recording)
-                    if let Some(selection) = state.get_screen_selection() {
-                        if selection.width() > 10 && selection.height() > 10 {
-                            state.confirm(OverlayAction::StartRecording);
-                        }
+            VK_RETURN if state.adjustment.is_active => {
+                // Confirm with recording action (Enter in adjustment mode starts recording)
+                if let Some(selection) = state.get_screen_selection() {
+                    if selection.width() > 10 && selection.height() > 10 {
+                        state.confirm(OverlayAction::StartRecording);
                     }
                 }
             },

@@ -8,7 +8,7 @@ license = "MIT"
 bezier_easing = "0.1"
 bytemuck = { version = "1", features = ["derive"] }
 glyphon = "0.9"
-image = "0.25"
+image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp"] }
 log = "0.4"
 serde = { version = "1", features = ["derive"] }
 moonsnap-project-types = { path = "../moonsnap-project-types" }
