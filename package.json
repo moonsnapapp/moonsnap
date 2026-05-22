@@ -20,6 +20,7 @@
     "lint": "bun run changelog:build && turbo lint",
     "test": "bun run changelog:build && turbo test",
     "test:run": "bun run changelog:build && turbo test:run",
+    "check:pinned-deps": "node scripts/check-pinned-dependencies.cjs",
     "typecheck": "bun run changelog:build && turbo typecheck",
     "tauri": "cd apps/desktop && tauri",
     "tauri:dev": "bun run changelog:build && node scripts/run-with-msvc.cjs bun run --cwd apps/desktop tauri:dev:inner",
@@ -34,8 +35,8 @@
   },
   "devDependencies": {
     "concurrently": "9.2.1",
-    "husky": "^9.1.7",
-    "lint-staged": "^15.5.2",
+    "husky": "9.1.7",
+    "lint-staged": "15.5.2",
     "turbo": "2.9.8"
   },
   "lint-staged": {
