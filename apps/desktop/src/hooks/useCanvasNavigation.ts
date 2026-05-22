@@ -89,6 +89,7 @@ export const useCanvasNavigation = ({
 
   const [canvasSize, setCanvasSize] = useState({ width: 800, height: 600 });
   const [containerSize, setContainerSize] = useState({ width: 800, height: 600 });
+  const [hasMeasuredContainer, setHasMeasuredContainer] = useState(false);
   const [zoom, setZoom] = useState(1);
   const [position, setPosition] = useState({ x: 0, y: 0 });
   const [isInitialFit, setIsInitialFit] = useState(true);
@@ -260,7 +261,10 @@ export const useCanvasNavigation = ({
     const updateContainerSize = () => {
       if (containerRef.current) {
         const rect = containerRef.current.getBoundingClientRect();
-        setContainerSize({ width: rect.width, height: rect.height });
+        if (rect.width > 0 && rect.height > 0) {
+          setContainerSize({ width: rect.width, height: rect.height });
+          setHasMeasuredContainer(true);
+        }
       }
     };
 
@@ -386,7 +390,7 @@ export const useCanvasNavigation = ({
 
   // Initial fit and resize handling
   useEffect(() => {
-    if (image && containerSize.width > 0 && containerSize.height > 0) {
+    if (image) {
       setCanvasSize({ width: image.width, height: image.height });
       setOriginalImageSize({ width: image.width, height: image.height });
 
@@ -399,7 +403,7 @@ export const useCanvasNavigation = ({
         });
       }
 
-      if (isInitialFit) {
+      if (isInitialFit && hasMeasuredContainer && containerSize.width > 0 && containerSize.height > 0) {
         // Initial load - calculate and apply fit synchronously to avoid flash
         const fit = calculateFitToSize();
         if (fit) {
@@ -413,7 +417,7 @@ export const useCanvasNavigation = ({
       // On resize: keep current zoom and position to avoid disrupting the user.
       // Users can press F to fit-to-frame manually.
     }
-  }, [image, containerSize, isInitialFit, calculateFitToSize, canvasBounds, setCanvasBounds, setOriginalImageSize]);
+  }, [image, containerSize, hasMeasuredContainer, isInitialFit, calculateFitToSize, canvasBounds, setCanvasBounds, setOriginalImageSize]);
 
   // Fit when exiting crop mode
   useEffect(() => {

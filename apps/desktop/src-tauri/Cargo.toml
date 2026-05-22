@@ -131,7 +131,7 @@ sha2 = "0.10"
 ffmpeg-sidecar = "2.4"
 
 # Native FFmpeg bindings for hardware-accelerated video decoding
-ffmpeg-next = "7"
+ffmpeg-next = "8.1"
 
 # GPU-accelerated rendering for video editor
 wgpu = "25"
@@ -161,7 +161,7 @@ font-kit = "0.14"
 raw-window-handle = "0.6"
 
 # Whisper speech-to-text for caption transcription
-whisper-rs = "0.11"
+whisper-rs = "0.16"
 
 # Temporary directory for audio extraction
 tempfile = "3"

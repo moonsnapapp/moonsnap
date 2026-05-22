@@ -235,7 +235,7 @@ fn process_with_whisper(
     params.set_print_progress(false);
     params.set_print_realtime(false);
     params.set_token_timestamps(true);
-    params.set_suppress_non_speech_tokens(true);
+    params.set_suppress_nst(true);
     params.set_language(Some(if language == "auto" { "auto" } else { language }));
     params.set_max_len(i32::MAX);
 
@@ -247,37 +247,42 @@ fn process_with_whisper(
         .full(params, samples)
         .map_err(|e| format!("Transcription failed: {}", e))?;
 
-    let num_segments = state
-        .full_n_segments()
-        .map_err(|e| format!("Failed to get segments: {}", e))?;
+    let num_segments = state.full_n_segments();
 
     log::info!("Found {} raw segments", num_segments);
 
     let mut segments = Vec::new();
 
     for i in 0..num_segments {
-        let _segment_text = state
-            .full_get_segment_text(i)
-            .map_err(|e| format!("Failed to get text: {}", e))?;
+        let Some(segment) = state.get_segment(i) else {
+            continue;
+        };
 
-        let start_t = state.full_get_segment_t0(i).unwrap_or(0) as f32 / 100.0;
-        let end_t = state.full_get_segment_t1(i).unwrap_or(0) as f32 / 100.0;
+        let start_t = segment.start_timestamp() as f32 / 100.0;
+        let end_t = segment.end_timestamp() as f32 / 100.0;
 
         // Extract words with timing
-        let num_tokens = state.full_n_tokens(i).unwrap_or(0);
+        let num_tokens = segment.n_tokens();
         let mut words = Vec::new();
         let mut current_word = String::new();
         let mut word_start: Option<f32> = None;
         let mut word_end = start_t;
 
         for t in 0..num_tokens {
-            let token_text = state.full_get_token_text(i, t).unwrap_or_default();
+            let Some(token) = segment.get_token(t) else {
+                continue;
+            };
+            let token_text = token
+                .to_str_lossy()
+                .map(|text| text.into_owned())
+                .unwrap_or_default();
 
             if is_special_token(&token_text) {
                 continue;
             }
 
-            if let Ok(data) = state.full_get_token_data(i, t) {
+            {
+                let data = token.token_data();
                 let t0 = data.t0 as f32 / 100.0;
                 let t1 = data.t1 as f32 / 100.0;
 

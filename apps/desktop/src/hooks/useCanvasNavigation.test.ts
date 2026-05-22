@@ -336,6 +336,19 @@ describe('useCanvasNavigation', () => {
 
       expect(result.current.canvasSize).toEqual({ width: 1920, height: 1080 });
     });
+
+    it('should wait for a measured container before marking the initial fit ready', () => {
+      const image = createMockImage(1920, 1080);
+      const props = createMockProps({ image });
+
+      const { result } = renderHook(() => useCanvasNavigation(props));
+
+      act(() => {
+        flushRAF();
+      });
+
+      expect(result.current.isReady).toBe(false);
+    });
   });
 
   describe('container ref', () => {

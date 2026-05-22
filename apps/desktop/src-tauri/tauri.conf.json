@@ -61,8 +61,7 @@
       "binaries/ffprobe"
     ],
     "resources": {
-      "assets/backgrounds/": "assets/backgrounds/",
-      "binaries/*.dll": "./"
+      "assets/backgrounds/": "assets/backgrounds/"
     },
     "windows": {
       "webviewInstallMode": {
