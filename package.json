@@ -15,6 +15,7 @@
     "dev:desktop": "bun run changelog:build && turbo dev --filter=@moonsnap/desktop",
     "dev:web": "bun run changelog:build && cd apps/web && bun run dev",
     "dev:all": "bun run changelog:build && concurrently -k -n desktop,web -c blue,magenta \"node scripts/run-with-msvc.cjs bun run --cwd apps/desktop tauri:dev:inner\" \"bun run --cwd apps/web dev\"",
+    "gpui:poc": "cargo run --manifest-path apps/desktop/gpui-poc/Cargo.toml",
     "setup:dev": "powershell -ExecutionPolicy Bypass -File scripts/setup-dev.ps1",
     "build": "bun run changelog:build && turbo build",
     "lint": "bun run changelog:build && turbo lint",
