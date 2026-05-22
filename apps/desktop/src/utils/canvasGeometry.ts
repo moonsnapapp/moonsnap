@@ -512,6 +512,28 @@ export function createBackgroundShape(width: number, height: number): CanvasShap
 }
 
 /**
+ * Check whether the persisted background shape matches the loaded source image.
+ */
+export function shouldNormalizeBackgroundShape(
+  shapes: CanvasShape[],
+  width: number,
+  height: number,
+): boolean {
+  const backgroundIndex = shapes.findIndex(s => s.id === BACKGROUND_SHAPE_ID);
+  if (backgroundIndex !== 0) return true;
+
+  const background = shapes[backgroundIndex];
+  return (
+    background.type !== 'image' ||
+    background.x !== 0 ||
+    background.y !== 0 ||
+    background.width !== width ||
+    background.height !== height ||
+    background.isBackground !== true
+  );
+}
+
+/**
  * Ensure the shapes array contains a background shape at index 0.
  * If one already exists, normalize it to the actual source image dimensions.
  * Otherwise, inserts a new background shape at the beginning.

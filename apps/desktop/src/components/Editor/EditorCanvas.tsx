@@ -35,7 +35,13 @@ import { CropOverlay } from './overlays/CropOverlay';
 import { ResetRotationButton } from './overlays/ResetRotationButton';
 
 // Utility functions
-import { expandBoundsForShapes, expandCropRegionForShapes, ensureBackgroundShape, BACKGROUND_SHAPE_ID } from '../../utils/canvasGeometry';
+import {
+  expandBoundsForShapes,
+  expandCropRegionForShapes,
+  ensureBackgroundShape,
+  shouldNormalizeBackgroundShape,
+  BACKGROUND_SHAPE_ID,
+} from '../../utils/canvasGeometry';
 
 interface EditorCanvasProps {
   imageData: string;
@@ -179,14 +185,14 @@ export const EditorCanvas = React.memo(forwardRef<EditorCanvasRef, EditorCanvasP
   const imageInitRef = useRef(false);
   React.useEffect(() => {
     if (!image || imageInitRef.current) return;
+    if (image.width <= 0 || image.height <= 0) return;
     imageInitRef.current = true;
 
-    const hasBackground = shapes.some(s => s.id === BACKGROUND_SHAPE_ID);
-    if (!hasBackground) {
+    if (shouldNormalizeBackgroundShape(shapes, image.width, image.height)) {
       onShapesChange(ensureBackgroundShape(shapes, image.width, image.height));
     }
     // Initialize artboard (cropRegion) to image dimensions if not set
-    if (!cropRegion) {
+    if (!cropRegion || cropRegion.width <= 0 || cropRegion.height <= 0) {
       setCropRegion({ x: 0, y: 0, width: image.width, height: image.height });
     }
   }, [image, shapes, cropRegion, onShapesChange, setCropRegion]);
