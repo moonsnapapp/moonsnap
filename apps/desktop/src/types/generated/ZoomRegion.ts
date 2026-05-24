@@ -43,4 +43,9 @@ isAuto: boolean,
 /**
  * Transition settings.
  */
-transition: ZoomTransition, };
+transition: ZoomTransition, 
+/**
+ * Motion blur strength for this zoom transition (0.0 = off, 2.0 = max).
+ * Snappier zooms benefit from more blur; gentle pans from less.
+ */
+motionBlur: number, };

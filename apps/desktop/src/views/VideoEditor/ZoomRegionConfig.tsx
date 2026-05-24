@@ -225,6 +225,22 @@ export function ZoomRegionConfig({ region, videoSrc, canUseAuto, onUpdate, onDel
             </SelectContent>
           </Select>
         </div>
+
+        <div>
+          <div className="flex items-center justify-between mb-1.5">
+            <span className="text-xs text-[var(--ink-muted)]">Motion Blur</span>
+            <span className="text-xs text-[var(--ink-dark)] font-mono">
+              {Math.round(Math.max(0, Math.min(2, region.motionBlur ?? 0)) * 100)}%
+            </span>
+          </div>
+          <Slider
+            value={[Math.max(0, Math.min(2, region.motionBlur ?? 0)) * 100]}
+            min={0}
+            max={200}
+            step={5}
+            onValueChange={(values) => onUpdate({ motionBlur: values[0] / 100 })}
+          />
+        </div>
       </div>
 
       {/* Manual Mode: Video thumbnail with focus picker */}

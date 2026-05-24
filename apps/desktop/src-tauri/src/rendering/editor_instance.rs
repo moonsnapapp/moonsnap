@@ -27,7 +27,9 @@ use moonsnap_render::types::{
     BackgroundStyle, EditorInstanceInfo, PlaybackEvent, PlaybackState, RenderOptions, RenderedFrame,
 };
 use moonsnap_render::webcam_overlay::{build_webcam_overlay_with_zoom, is_webcam_visible_at};
-use moonsnap_render::zoom::{calculate_zoom_motion_blur, ZoomInterpolator};
+use moonsnap_render::zoom::{
+    calculate_zoom_motion_blur, ZoomInterpolator, ZOOM_MOTION_BLUR_WINDOW_MS,
+};
 
 /// Events sent from playback loop to main thread.
 enum PlaybackCommand {
@@ -285,10 +287,12 @@ impl EditorInstance {
         // Get zoom state
         let zoom_state = self.zoom.get_zoom_at(timestamp_ms);
         let zoom_motion_blur = calculate_zoom_motion_blur(
-            self.zoom.get_zoom_at(timestamp_ms.saturating_sub(16)),
+            self.zoom
+                .get_zoom_at(timestamp_ms.saturating_sub(ZOOM_MOTION_BLUR_WINDOW_MS)),
             zoom_state,
-            self.zoom.get_zoom_at(timestamp_ms.saturating_add(16)),
-            self.project.export.zoom_motion_blur,
+            self.zoom
+                .get_zoom_at(timestamp_ms.saturating_add(ZOOM_MOTION_BLUR_WINDOW_MS)),
+            self.zoom.motion_blur_at(timestamp_ms),
         );
 
         // Use project's background settings for WYSIWYG preview

@@ -58,6 +58,7 @@ mod tests {
             mode: ZoomRegionMode::Manual,
             is_auto: true,
             transition: ZoomTransition::default(),
+            motion_blur: 0.0,
         };
 
         let json = serde_json::to_string(&region).unwrap();

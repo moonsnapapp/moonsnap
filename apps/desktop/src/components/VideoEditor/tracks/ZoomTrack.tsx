@@ -188,6 +188,7 @@ export const ZoomTrackContent = memo(function ZoomTrackContent({
       mode: 'auto',
       isAuto: false,
       transition: defaultTransition,
+      motionBlur: 0,
     };
 
     addZoomRegion(newRegion);

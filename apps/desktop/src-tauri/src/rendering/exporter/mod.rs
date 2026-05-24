@@ -71,7 +71,9 @@ use moonsnap_render::nv12_converter::{CropRect, Nv12Converter};
 use moonsnap_render::scene::SceneInterpolator;
 use moonsnap_render::types::{BackgroundStyle, PixelFormat, TextOverlayQuad};
 use moonsnap_render::webcam_overlay::is_webcam_visible_at;
-use moonsnap_render::zoom::{calculate_zoom_motion_blur, ZoomInterpolator};
+use moonsnap_render::zoom::{
+    calculate_zoom_motion_blur, ZoomInterpolator, ZOOM_MOTION_BLUR_WINDOW_MS,
+};
 
 // Re-export submodule functions used externally
 pub use ffmpeg::emit_progress;
@@ -470,9 +472,9 @@ pub async fn export_video_gpu(
         total_output_frames
     );
     if project.export.fps != fps {
-        log::warn!(
-            "[EXPORT] Requested {}fps export, but using source fps {} because frame-rate conversion is not supported yet",
-            project.export.fps,
+        log::info!(
+            "[EXPORT] Resampling export from source fps {} to requested fps {}",
+            project.sources.fps,
             fps
         );
     }
@@ -553,12 +555,19 @@ pub async fn export_video_gpu(
             crop_enabled
         );
     }
+    // Resample to the export fps via an ffmpeg filter when it differs from
+    // the source rate, so the decode task reads one source frame per output
+    // frame. Segmented decode already bakes `fps={fps}` into its filter graph.
+    let source_fps = project.sources.fps.max(1);
+    let needs_fps_resample = fps != source_fps;
     let mut screen_decoder = StreamDecoder::new(screen_path, decode_start_ms, decode_end_ms)?;
     if use_nv12_decode {
         screen_decoder = screen_decoder.with_pixel_format(PixelFormat::Nv12);
     }
     if let Some(plan) = &segmented_video_plan {
         screen_decoder.start_with_inputs(plan.input_args.clone(), Some(&plan.filter))?;
+    } else if needs_fps_resample {
+        screen_decoder.start_with_resample_fps(screen_path, fps)?;
     } else {
         screen_decoder.start(screen_path)?;
     }
@@ -575,6 +584,8 @@ pub async fn export_video_gpu(
             } else {
                 decoder.start(webcam_path)?;
             }
+        } else if needs_fps_resample {
+            decoder.start_with_resample_fps(webcam_path, fps)?;
         } else {
             decoder.start(webcam_path)?;
         }
@@ -1020,12 +1031,11 @@ pub async fn export_video_gpu(
         });
         let frame_to_render = composition.frame_to_render;
         let webcam_overlay = composition.webcam_overlay;
-        let blur_frame_delta_ms = (500 / fps.max(1) as u64).max(1);
         let zoom_motion_blur = calculate_zoom_motion_blur(
-            zoom_interpolator.get_zoom_at(relative_time_ms.saturating_sub(blur_frame_delta_ms)),
+            zoom_interpolator.get_zoom_at(relative_time_ms.saturating_sub(ZOOM_MOTION_BLUR_WINDOW_MS)),
             zoom_state,
-            zoom_interpolator.get_zoom_at(relative_time_ms.saturating_add(blur_frame_delta_ms)),
-            project.export.zoom_motion_blur,
+            zoom_interpolator.get_zoom_at(relative_time_ms.saturating_add(ZOOM_MOTION_BLUR_WINDOW_MS)),
+            zoom_interpolator.motion_blur_at(relative_time_ms),
         );
 
         let overlay_plan = build_frame_overlay_plan(FrameOverlayRequest {

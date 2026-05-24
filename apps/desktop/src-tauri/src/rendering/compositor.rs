@@ -170,11 +170,17 @@ fn sample_zoom_motion_blur(video_uv: vec2<f32>, zoom_center: vec2<f32>, frame_ha
     let radial_uv = radial_dir * radial_px / frame_size;
     let sample_step = dir_uv + radial_uv;
 
-    var color = textureSample(video_texture, video_sampler, clamp(video_uv, vec2<f32>(0.0), vec2<f32>(1.0))) * 0.28;
-    color += textureSample(video_texture, video_sampler, clamp(video_uv - sample_step * 0.50, vec2<f32>(0.0), vec2<f32>(1.0))) * 0.20;
-    color += textureSample(video_texture, video_sampler, clamp(video_uv + sample_step * 0.50, vec2<f32>(0.0), vec2<f32>(1.0))) * 0.20;
-    color += textureSample(video_texture, video_sampler, clamp(video_uv - sample_step, vec2<f32>(0.0), vec2<f32>(1.0))) * 0.16;
-    color += textureSample(video_texture, video_sampler, clamp(video_uv + sample_step, vec2<f32>(0.0), vec2<f32>(1.0))) * 0.16;
+    // 9-tap symmetric kernel with gaussian-like weights. More taps + smaller
+    // inter-sample steps keep the smear smooth even at small blur radii.
+    var color = textureSample(video_texture, video_sampler, clamp(video_uv, vec2<f32>(0.0), vec2<f32>(1.0))) * 0.18;
+    color += textureSample(video_texture, video_sampler, clamp(video_uv - sample_step * 0.25, vec2<f32>(0.0), vec2<f32>(1.0))) * 0.16;
+    color += textureSample(video_texture, video_sampler, clamp(video_uv + sample_step * 0.25, vec2<f32>(0.0), vec2<f32>(1.0))) * 0.16;
+    color += textureSample(video_texture, video_sampler, clamp(video_uv - sample_step * 0.50, vec2<f32>(0.0), vec2<f32>(1.0))) * 0.13;
+    color += textureSample(video_texture, video_sampler, clamp(video_uv + sample_step * 0.50, vec2<f32>(0.0), vec2<f32>(1.0))) * 0.13;
+    color += textureSample(video_texture, video_sampler, clamp(video_uv - sample_step * 0.75, vec2<f32>(0.0), vec2<f32>(1.0))) * 0.09;
+    color += textureSample(video_texture, video_sampler, clamp(video_uv + sample_step * 0.75, vec2<f32>(0.0), vec2<f32>(1.0))) * 0.09;
+    color += textureSample(video_texture, video_sampler, clamp(video_uv - sample_step, vec2<f32>(0.0), vec2<f32>(1.0))) * 0.03;
+    color += textureSample(video_texture, video_sampler, clamp(video_uv + sample_step, vec2<f32>(0.0), vec2<f32>(1.0))) * 0.03;
     return color;
 }
 

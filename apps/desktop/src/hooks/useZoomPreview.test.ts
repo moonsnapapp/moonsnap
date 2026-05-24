@@ -16,6 +16,7 @@ const manualZoomRegion: ZoomRegion = {
     durationOutMs: 1000,
     easing: 'linear',
   },
+  motionBlur: 0,
 };
 
 describe('useZoomPreview math', () => {

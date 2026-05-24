@@ -16,6 +16,12 @@ pub const DEFAULT_ZOOM_OUT_DURATION_MS: f64 = 900.0;
 pub const CONNECTED_ZOOM_GAP_MS: f64 = 1200.0;
 pub const CURSOR_FOLLOW_SAFE_ZONE_RATIO: f64 = 0.25;
 
+/// Finite-difference window used to estimate zoom velocity for motion blur.
+///
+/// Kept fps-independent so the perceived smear matches a shutter-style
+/// "exposure" rather than scaling inversely with output fps.
+pub const ZOOM_MOTION_BLUR_WINDOW_MS: u64 = 100;
+
 /// Apply a zoom state to a normalized point (0-1 space).
 /// Used by CPU overlays (cursor/text) to stay aligned with shader zoom.
 pub fn apply_zoom_to_normalized_point(x: f64, y: f64, zoom: ZoomState) -> (f64, f64) {
@@ -46,8 +52,11 @@ pub fn calculate_zoom_motion_blur(
     let center_dy = next.center_y - previous.center_y;
     let center_distance = (center_dx * center_dx + center_dy * center_dy).sqrt();
 
-    let directional_px = (center_distance * current.scale.max(1.0) * 44.0 * amount).min(18.0);
-    let radial_px = (scale_delta * 28.0 * amount).min(20.0);
+    // Magnitudes are tuned for ZOOM_MOTION_BLUR_WINDOW_MS (~100ms) so the
+    // default amount (≈0.35) produces a subtle but visible smear during a
+    // typical 1.2s ease, and amount=2.0 is clearly blurred.
+    let directional_px = (center_distance * current.scale.max(1.0) * 150.0 * amount).min(35.0);
+    let radial_px = (scale_delta * 100.0 * amount).min(30.0);
     let direction_len = center_distance.max(0.0001);
 
     ZoomMotionBlur {
@@ -505,6 +514,32 @@ impl ZoomInterpolator {
         let state = self.get_zoom_at(timestamp_ms);
         state.scale > 1.001
     }
+
+    /// Motion-blur amount sourced from the zoom region driving the transition
+    /// at `timestamp_ms`. Falls back to the most recently ended region (so
+    /// zoom-out tails inherit the originating region's setting) and finally
+    /// to 0.0 when no regions are nearby.
+    pub fn motion_blur_at(&self, timestamp_ms: u64) -> f32 {
+        if self.regions.is_empty() {
+            return 0.0;
+        }
+        let time_s = timestamp_ms as f64 / 1000.0;
+        let active = self.regions.iter().find(|r| {
+            let start_s = r.start_ms as f64 / 1000.0;
+            let end_s = r.end_ms as f64 / 1000.0;
+            time_s > start_s && time_s <= end_s
+        });
+        if let Some(region) = active {
+            return region.motion_blur;
+        }
+        // Find the most recent region whose end is before this time.
+        self.regions
+            .iter()
+            .filter(|r| (r.end_ms as f64 / 1000.0) <= time_s)
+            .max_by_key(|r| r.end_ms)
+            .map(|r| r.motion_blur)
+            .unwrap_or(0.0)
+    }
 }
 
 #[cfg(test)]
@@ -528,6 +563,7 @@ mod tests {
                 duration_out_ms: 300,
                 easing: EasingFunction::EaseInOut,
             },
+            motion_blur: 0.0,
         }
     }
 

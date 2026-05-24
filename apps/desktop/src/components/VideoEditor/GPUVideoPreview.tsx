@@ -24,6 +24,7 @@ import { usePreviewOrPlaybackTime } from '../../hooks/usePlaybackEngine';
 import { usePreviewOrPlaybackTimeThrottled } from '../../hooks/usePlaybackTimeThrottled';
 import { useTimelineToSourceTime } from '../../hooks/useTimelineSourceTime';
 import { getZoomScaleAt, useZoomPreview } from '../../hooks/useZoomPreview';
+import { useZoomMotionBlurFilter } from '../../hooks/useZoomMotionBlurFilter';
 import { useInterpolatedScene, shouldRenderScreen, shouldRenderCursor, getCameraOnlyTransitionOpacity, getRegularCameraTransitionOpacity } from '../../hooks/useSceneMode';
 import { WebcamOverlay } from './WebcamOverlay';
 import { CursorOverlay } from './CursorOverlay';
@@ -240,6 +241,27 @@ const ZoomTransformController = memo(function ZoomTransformController({
   return null;
 });
 
+const MotionBlurController = memo(function MotionBlurController({
+  targetRef,
+  zoomRegions,
+}: {
+  targetRef: React.RefObject<HTMLDivElement | null>;
+  zoomRegions: ZoomRegion[] | undefined;
+}) {
+  // ~30fps is enough for the smear to feel continuous without forcing a
+  // full re-render on every playback tick.
+  const currentTimeMs = usePreviewOrPlaybackTimeThrottled(33);
+  const filter = useZoomMotionBlurFilter(zoomRegions, currentTimeMs);
+
+  useLayoutEffect(() => {
+    const el = targetRef.current;
+    if (!el) return;
+    el.style.filter = filter ?? '';
+  }, [filter, targetRef]);
+
+  return null;
+});
+
 const MaskOverlayController = memo(function MaskOverlayController({
   segments,
   previewWidth,
@@ -406,6 +428,7 @@ const StaticSceneModeRenderer = memo(function StaticSceneModeRenderer({
   const frameOpacity = defaultSceneMode === 'cameraOnly' ? 0 : 1;
   const frameRef = useRef<HTMLDivElement>(null);
   const borderOverlayRef = useRef<HTMLDivElement>(null);
+  const videoFilterRef = useRef<HTMLDivElement>(null);
 
   const videoCropStyle: React.CSSProperties = useMemo(() => {
     if (!hasEnabledCrop(cropConfig) || !cropConfig) {
@@ -458,22 +481,31 @@ const StaticSceneModeRenderer = memo(function StaticSceneModeRenderer({
           height: '100%',
         }}
       >
-        {videoSrc && (
-          <VideoNoZoom
-            videoRef={videoRef}
-            videoSrc={videoSrc}
-            onVideoClick={onVideoClick}
-            hidden={false}
-            cropStyle={videoCropStyle}
-          />
-        )}
+        <div
+          ref={videoFilterRef}
+          style={{ position: 'absolute', inset: 0, willChange: 'filter' }}
+        >
+          {videoSrc && (
+            <VideoNoZoom
+              videoRef={videoRef}
+              videoSrc={videoSrc}
+              onVideoClick={onVideoClick}
+              hidden={false}
+              cropStyle={videoCropStyle}
+            />
+          )}
 
-        {originalVideoPath && !isPlaying && (
-          <WebCodecsCanvasNoZoom
-            videoPath={originalVideoPath}
-            cropStyle={videoCropStyle}
-          />
-        )}
+          {originalVideoPath && !isPlaying && (
+            <WebCodecsCanvasNoZoom
+              videoPath={originalVideoPath}
+              cropStyle={videoCropStyle}
+            />
+          )}
+        </div>
+        <MotionBlurController
+          targetRef={videoFilterRef}
+          zoomRegions={zoomRegions}
+        />
 
         <MaskOverlayController
           segments={maskSegments}
@@ -550,6 +582,7 @@ const DynamicSceneModeRenderer = memo(function DynamicSceneModeRenderer({
   const currentTimeMs = usePreviewOrPlaybackTime();
   const toSourceTime = useTimelineToSourceTime();
   const scene = useInterpolatedScene(sceneSegments, defaultSceneMode, currentTimeMs);
+  const motionBlurFilter = useZoomMotionBlurFilter(zoomRegions, currentTimeMs);
 
   const sourceTimeMs = useMemo(
     () => toSourceTime(currentTimeMs),
@@ -574,11 +607,14 @@ const DynamicSceneModeRenderer = memo(function DynamicSceneModeRenderer({
     cursorDampening: cursorConfig?.dampening ?? CURSOR.DAMPENING_DEFAULT,
     cursorTimeMs: sourceTimeMs,
   });
+  const sceneBlurFilter = scene.screenBlur > 0.01 ? `blur(${scene.screenBlur * 20}px)` : undefined;
+  const combinedFilter =
+    [sceneBlurFilter, motionBlurFilter].filter(Boolean).join(' ') || undefined;
   const screenStyle: React.CSSProperties = {
     position: 'absolute',
     inset: 0,
     opacity: scene.screenOpacity,
-    filter: scene.screenBlur > 0.01 ? `blur(${scene.screenBlur * 20}px)` : undefined,
+    filter: combinedFilter,
   };
 
   const frameOpacity = 1 - cameraOnlyOpacity;

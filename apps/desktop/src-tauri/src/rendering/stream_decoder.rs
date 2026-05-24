@@ -100,6 +100,20 @@ impl StreamDecoder {
         self.start_with_inputs(input_args, None)
     }
 
+    /// Start the decoder with a single FFmpeg process and an `fps` resample filter.
+    ///
+    /// Used to downsample the source to the export frame rate so the decode
+    /// task reads frames at the same cadence the renderer expects.
+    pub fn start_with_resample_fps(&mut self, path: &Path, target_fps: u32) -> Result<(), String> {
+        let mut input_args = Vec::new();
+        if self.start_time_secs > 0.0 {
+            input_args.extend(["-ss".to_string(), format!("{:.3}", self.start_time_secs)]);
+        }
+        input_args.extend(["-i".to_string(), path.to_string_lossy().into_owned()]);
+        let filter = format!("[0:v]fps={}[vout]", target_fps.max(1));
+        self.start_with_inputs(input_args, Some(&filter))
+    }
+
     /// Start the decoder from caller-provided FFmpeg input args and optional video filter graph.
     pub fn start_with_inputs(
         &mut self,

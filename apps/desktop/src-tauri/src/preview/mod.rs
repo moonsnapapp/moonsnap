@@ -26,7 +26,9 @@ use moonsnap_render::types::{
     BackgroundStyle, BackgroundType, BorderStyle, CornerStyle, DecodedFrame, PixelFormat,
     RenderOptions, ShadowStyle,
 };
-use moonsnap_render::zoom::{calculate_zoom_motion_blur, ZoomInterpolator};
+use moonsnap_render::zoom::{
+    calculate_zoom_motion_blur, ZoomInterpolator, ZOOM_MOTION_BLUR_WINDOW_MS,
+};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Instant;
@@ -411,10 +413,10 @@ impl PreviewRenderer {
         let zoom = ZoomInterpolator::new(&project.zoom);
         let zoom_state = zoom.get_zoom_at(time_ms);
         let zoom_motion_blur = calculate_zoom_motion_blur(
-            zoom.get_zoom_at(time_ms.saturating_sub(16)),
+            zoom.get_zoom_at(time_ms.saturating_sub(ZOOM_MOTION_BLUR_WINDOW_MS)),
             zoom_state,
-            zoom.get_zoom_at(time_ms.saturating_add(16)),
-            project.export.zoom_motion_blur,
+            zoom.get_zoom_at(time_ms.saturating_add(ZOOM_MOTION_BLUR_WINDOW_MS)),
+            zoom.motion_blur_at(time_ms),
         );
 
         RenderOptions {

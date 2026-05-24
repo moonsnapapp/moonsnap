@@ -18,8 +18,20 @@ pub struct VideoExportPlan {
     pub decode: StreamDecodePlan,
 }
 
+/// Resolve the export frame rate for a project.
+///
+/// Honors `project.export.fps`, clamped to the source fps. Upsampling above
+/// the source rate is disallowed today because the pipeline cannot synthesize
+/// real intermediate frames — duplicating frames produces no visual benefit,
+/// so we cap at the source rate until true frame interpolation lands.
 pub fn resolve_export_fps(project: &VideoProject) -> u32 {
-    project.sources.fps.max(1)
+    let source_fps = project.sources.fps.max(1);
+    let requested = project.export.fps;
+    if requested == 0 {
+        source_fps
+    } else {
+        requested.min(source_fps)
+    }
 }
 
 /// Build the reusable planning view for export orchestration.
@@ -108,5 +120,26 @@ mod tests {
         assert_eq!(plan.output_fps, 30);
         assert_eq!(plan.timeline.total_output_frames, 30);
         assert_eq!(plan.timeline.total_decode_frames, 30);
+    }
+
+    #[test]
+    fn honors_lower_export_fps_for_downsample() {
+        let mut project = VideoProject::new("screen.mp4", 1920, 1080, 1_000, 60);
+        project.export.fps = 30;
+
+        let plan = plan_video_export(&project);
+
+        assert_eq!(plan.output_fps, 30);
+        assert_eq!(plan.timeline.total_output_frames, 30);
+    }
+
+    #[test]
+    fn falls_back_to_source_fps_when_export_fps_is_zero() {
+        let mut project = VideoProject::new("screen.mp4", 1920, 1080, 1_000, 30);
+        project.export.fps = 0;
+
+        let plan = plan_video_export(&project);
+
+        assert_eq!(plan.output_fps, 30);
     }
 }

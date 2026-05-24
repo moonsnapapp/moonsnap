@@ -6,14 +6,23 @@ import { DEFAULT_TIMELINE_ZOOM } from './timelineSlice';
 import { getEffectiveDuration } from './trimSlice';
 import { normalizeAnnotationConfig } from '../../utils/videoAnnotations';
 
-const DEFAULT_ZOOM_MOTION_BLUR = 0.35;
+const DEFAULT_ZOOM_MOTION_BLUR = 0;
 
 function normalizeProject(project: VideoProject): VideoProject {
   return {
     ...project,
     export: {
       ...project.export,
+      // Kept for backwards-compat with older project files. Per-region
+      // `motionBlur` on each ZoomRegion is what the renderer actually reads.
       zoomMotionBlur: project.export.zoomMotionBlur ?? DEFAULT_ZOOM_MOTION_BLUR,
+    },
+    zoom: {
+      ...project.zoom,
+      regions: project.zoom.regions.map((region) => ({
+        ...region,
+        motionBlur: region.motionBlur ?? DEFAULT_ZOOM_MOTION_BLUR,
+      })),
     },
     annotations: normalizeAnnotationConfig(project.annotations),
   };

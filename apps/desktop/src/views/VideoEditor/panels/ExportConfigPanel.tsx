@@ -6,7 +6,6 @@
  */
 import { invoke } from '@tauri-apps/api/core';
 import { useEffect, useState } from 'react';
-import { Slider } from '../../../components/ui/slider';
 import {
   Select,
   SelectContent,
@@ -24,18 +23,28 @@ export interface ExportConfigPanelProps {
   onUpdateAudioConfig: (updates: Partial<AudioTrackSettings>) => void;
 }
 
+// Common downsample targets offered alongside "Match Source" — filtered to
+// values strictly below the source fps to keep the UI honest. The renderer
+// caps any requested fps to the source rate.
+const FPS_DOWNSAMPLE_PRESETS = [60, 50, 30, 25, 24, 15] as const;
+
 export function ExportConfigPanel({ project, onUpdateExportConfig, onUpdateAudioConfig }: ExportConfigPanelProps) {
   const [nvencAvailable, setNvencAvailable] = useState<boolean | null>(null);
   const [isCheckingNvenc, setIsCheckingNvenc] = useState(false);
   const sourceFps = project.sources.fps;
   const preferHardwareEncoding = project.export.preferHardwareEncoding ?? false;
-  const zoomMotionBlur = Math.max(0, Math.min(2, project.export.zoomMotionBlur ?? 0));
 
-  useEffect(() => {
-    if (project.export.fps !== sourceFps) {
-      onUpdateExportConfig({ fps: sourceFps });
-    }
-  }, [onUpdateExportConfig, project.export.fps, sourceFps]);
+  const fpsOptions = [
+    { value: sourceFps, label: `Match Source (${sourceFps} fps)` },
+    ...FPS_DOWNSAMPLE_PRESETS.filter((preset) => preset < sourceFps).map((preset) => ({
+      value: preset,
+      label: `${preset} fps`,
+    })),
+  ];
+  const exportFpsValue = Math.min(
+    Math.max(1, project.export.fps || sourceFps),
+    sourceFps
+  );
 
   useEffect(() => {
     let isCancelled = false;
@@ -129,39 +138,20 @@ export function ExportConfigPanel({ project, onUpdateExportConfig, onUpdateAudio
       <div>
         <span className="text-xs text-[var(--ink-muted)] block mb-2">Frame Rate</span>
         <Select
-          value={String(sourceFps)}
-          disabled
+          value={String(exportFpsValue)}
+          onValueChange={(value) => onUpdateExportConfig({ fps: Number(value) })}
         >
           <SelectTrigger className="h-8 min-w-0 w-full border-[var(--glass-border)] bg-[var(--polar-mist)] px-2 text-sm text-[var(--ink-dark)]">
             <SelectValue />
           </SelectTrigger>
           <SelectContent className="border-[var(--glass-border)] bg-[var(--glass-surface-dark)] text-[var(--ink-dark)]">
-            <SelectItem value={String(sourceFps)}>
-              Match Source ({sourceFps} fps)
-            </SelectItem>
+            {fpsOptions.map((opt) => (
+              <SelectItem key={opt.value} value={String(opt.value)}>
+                {opt.label}
+              </SelectItem>
+            ))}
           </SelectContent>
         </Select>
-        <p className="mt-1.5 text-[11px] text-[var(--ink-muted)]">
-          Frame-rate conversion is not supported yet, so exports match the source.
-        </p>
-      </div>
-
-      {/* Zoom Motion Blur */}
-      <div className="pt-3 border-t border-[var(--glass-border)]">
-        <div className="flex items-center justify-between mb-1.5">
-          <span className="text-xs text-[var(--ink-muted)]">Zoom Motion Blur</span>
-          <span className="text-xs text-[var(--ink-dark)] font-mono">{Math.round(zoomMotionBlur * 100)}%</span>
-        </div>
-        <Slider
-          value={[zoomMotionBlur * 100]}
-          min={0}
-          max={200}
-          step={5}
-          onValueChange={(values) => onUpdateExportConfig({ zoomMotionBlur: values[0] / 100 })}
-        />
-        <p className="mt-1.5 text-[11px] text-[var(--ink-muted)]">
-          Softens fast zoom-ins, zoom-outs, and focus moves in export.
-        </p>
       </div>
 
       {/* Audio Controls */}

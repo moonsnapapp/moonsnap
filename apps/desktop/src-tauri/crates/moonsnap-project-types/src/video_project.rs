@@ -405,6 +405,10 @@ pub struct ZoomRegion {
     pub is_auto: bool,
     /// Transition settings.
     pub transition: ZoomTransition,
+    /// Motion blur strength for this zoom transition (0.0 = off, 2.0 = max).
+    /// Snappier zooms benefit from more blur; gentle pans from less.
+    #[serde(default = "default_zoom_motion_blur")]
+    pub motion_blur: f32,
 }
 
 /// Zoom transition settings.
@@ -798,7 +802,7 @@ fn default_prefer_hardware() -> Option<bool> {
 }
 
 const fn default_zoom_motion_blur() -> f32 {
-    0.35
+    0.0
 }
 
 impl Default for ExportConfig {

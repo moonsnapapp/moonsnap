@@ -105,6 +105,7 @@ pub fn generate_auto_zoom_regions(
                 duration_out_ms: config.transition_out_ms,
                 easing: config.easing,
             },
+            motion_blur: 0.0,
         };
 
         log::debug!(
