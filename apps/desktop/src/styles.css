@@ -2520,8 +2520,7 @@ body.floating-toolbar-window #root {
 
 .editor-choice-pill--active {
   border-color: rgba(255, 255, 255, 0.08);
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.085) 0%, rgba(255, 255, 255, 0.03) 100%);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.035), inset 0 -1px 0 rgba(0, 0, 0, 0.22); /* tauri-shadow-allow */
+  background: rgba(255, 255, 255, 0.06);
   color: var(--ink-black);
 }
 
@@ -2660,13 +2659,12 @@ body.floating-toolbar-window #root {
 
 .editor-choice-pill--danger {
   border-color: rgba(239, 68, 68, 0.42);
-  background: linear-gradient(180deg, rgba(248, 113, 113, 0.94) 0%, rgba(239, 68, 68, 0.94) 100%);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14), inset 0 -1px 0 rgba(127, 29, 29, 0.24); /* tauri-shadow-allow */
+  background: rgba(239, 68, 68, 0.94);
   color: #FFFFFF;
 }
 
 .editor-choice-pill--danger:hover {
-  background: linear-gradient(180deg, rgba(252, 165, 165, 0.98) 0%, rgba(239, 68, 68, 0.98) 100%);
+  background: rgba(220, 38, 38, 0.98);
   border-color: rgba(252, 165, 165, 0.52);
   color: #FFFFFF;
 }
@@ -3352,8 +3350,7 @@ body.floating-toolbar-window #root {
 
 .light .editor-choice-pill--active {
   border-color: rgba(15, 23, 42, 0.08);
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.92) 0%, rgba(241, 245, 249, 0.8) 100%);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.96), inset 0 -1px 0 rgba(15, 23, 42, 0.05); /* tauri-shadow-allow */
+  background: rgba(248, 250, 252, 0.88);
 }
 
 .light .video-sidebar-section {
@@ -3391,14 +3388,13 @@ body.floating-toolbar-window #root {
 
 .light .editor-choice-pill--danger {
   border-color: rgba(220, 38, 38, 0.4);
-  background: linear-gradient(180deg, rgba(248, 113, 113, 0.96) 0%, rgba(239, 68, 68, 0.96) 100%);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22), inset 0 -1px 0 rgba(127, 29, 29, 0.18); /* tauri-shadow-allow */
+  background: rgba(239, 68, 68, 0.96);
   color: #FFFFFF;
 }
 
 .light .editor-choice-pill--danger:hover {
   border-color: rgba(220, 38, 38, 0.5);
-  background: linear-gradient(180deg, rgba(252, 165, 165, 1) 0%, rgba(239, 68, 68, 1) 100%);
+  background: rgba(220, 38, 38, 1);
   color: #FFFFFF;
 }
 
@@ -5379,6 +5375,11 @@ body.floating-toolbar-window #root {
 
 .light .cloud-search__input::placeholder {
   color: var(--ink-muted);
+}
+
+.light .cloud-search__icon,
+.light .cloud-search__icon-btn {
+  color: rgba(30, 41, 59, 0.72);
 }
 
 .light .cloud-selection__count {
