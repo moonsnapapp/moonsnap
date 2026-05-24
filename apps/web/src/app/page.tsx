@@ -29,7 +29,7 @@ export default async function Home() {
         className="fixed inset-0 pointer-events-none"
         style={{
           background:
-            "radial-gradient(ellipse 80% 50% at 50% -20%, rgba(255, 77, 77, 0.12) 0%, transparent 50%)",
+            "radial-gradient(ellipse 80% 50% at 50% -20%, rgba(156, 163, 175, 0.16) 0%, transparent 55%)",
         }}
       />
 
@@ -64,12 +64,6 @@ export default async function Home() {
             >
               Changelog
             </Link>
-            <a
-              href="#download"
-              className="btn-primary text-sm px-4 py-2"
-            >
-              Download
-            </a>
           </div>
         </div>
       </nav>
@@ -96,7 +90,10 @@ export default async function Home() {
             >
               <span className="gradient-text">Screen capture</span>
               <br />
-              <span className="text-[var(--accent)] text-glow">
+              <span
+                className="text-glow"
+                style={{ color: "var(--accent-strong)" }}
+              >
                 made beautiful
               </span>
             </h1>
@@ -115,10 +112,6 @@ export default async function Home() {
                 Download for Windows
               </a>
             </div>
-
-            <p className="text-sm text-[var(--muted)] mb-16 animate-slide-up opacity-0 delay-300">
-              All features included &middot; No account required
-            </p>
 
             {/* Hero screenshot */}
             <div className="relative animate-scale-in opacity-0 delay-400">
@@ -160,7 +153,7 @@ export default async function Home() {
             >
               Everything you need to
               <br />
-              <span className="text-[var(--accent)]">capture & create</span>
+              <span style={{ color: "var(--accent-strong)" }}>capture & create</span>
             </h2>
             <p className="text-[var(--muted)] max-w-xl mx-auto">
               Professional-grade tools wrapped in an intuitive interface.
@@ -343,8 +336,6 @@ export default async function Home() {
           </h2>
           <p className="text-[var(--muted)] mb-10 text-lg">
             Download MoonSnap and start creating polished captures.
-            <br />
-            No account required.
           </p>
 
           <div className="inline-flex flex-col items-center gap-4">
@@ -362,11 +353,6 @@ export default async function Home() {
             </span>
           </div>
 
-          <div className="mt-16 pt-16 border-t border-[var(--border)]">
-            <p className="text-sm text-[var(--muted)]">
-              All features included · No account required
-            </p>
-          </div>
         </div>
       </section>
 

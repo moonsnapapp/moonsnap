@@ -4,20 +4,22 @@
 @source "../../../../packages/ui/src/**/*.tsx";
 
 :root {
-  --background: #08080a;
-  --foreground: #f4f4f5;
+  --background: #0d0e11;
+  --foreground: #fafafa;
 
-  /* MoonSnap brand - cinematic palette */
-  --accent: #ff4d4d;
-  --accent-glow: rgba(255, 77, 77, 0.4);
-  --surface: #111113;
-  --surface-elevated: #18181b;
-  --border: rgba(255, 255, 255, 0.06);
-  --muted: #71717a;
+  /* MoonSnap brand - graphite palette (matches desktop app) */
+  --accent: #9ca3af;
+  --accent-strong: #c8ccd3;
+  --accent-deep: #6b7280;
+  --accent-glow: rgba(156, 163, 175, 0.35);
+  --surface: #171719;
+  --surface-elevated: #1f1f21;
+  --border: rgba(255, 255, 255, 0.07);
+  --muted: #888580;
 
   /* Gradients */
-  --gradient-radial: radial-gradient(ellipse at 50% 0%, rgba(255, 77, 77, 0.15) 0%, transparent 50%);
-  --gradient-spotlight: radial-gradient(circle at var(--mouse-x, 50%) var(--mouse-y, 0%), rgba(255, 77, 77, 0.08) 0%, transparent 40%);
+  --gradient-radial: radial-gradient(ellipse at 50% 0%, rgba(156, 163, 175, 0.14) 0%, transparent 50%);
+  --gradient-spotlight: radial-gradient(circle at var(--mouse-x, 50%) var(--mouse-y, 0%), rgba(156, 163, 175, 0.08) 0%, transparent 40%);
 }
 
 @theme inline {
@@ -86,14 +88,14 @@ body {
 .glow-red {
   box-shadow:
     0 0 20px var(--accent-glow),
-    0 0 40px rgba(255, 77, 77, 0.2),
-    0 0 80px rgba(255, 77, 77, 0.1);
+    0 0 40px rgba(156, 163, 175, 0.18),
+    0 0 80px rgba(156, 163, 175, 0.08);
 }
 
 .text-glow {
   text-shadow:
-    0 0 30px var(--accent-glow),
-    0 0 60px rgba(255, 77, 77, 0.3);
+    0 0 30px rgba(156, 163, 175, 0.35),
+    0 0 60px rgba(156, 163, 175, 0.18);
 }
 
 /* Animations */
@@ -179,9 +181,9 @@ body {
 
 /* Glass morphism */
 .glass {
-  background: rgba(17, 17, 19, 0.6);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
+  background: rgba(23, 23, 25, 0.7);
+  backdrop-filter: blur(24px) saturate(160%);
+  -webkit-backdrop-filter: blur(24px) saturate(160%);
   border: 1px solid var(--border);
 }
 
@@ -191,7 +193,7 @@ body {
 }
 
 .feature-card:hover {
-  border-color: rgba(255, 77, 77, 0.3);
+  border-color: rgba(156, 163, 175, 0.28);
   box-shadow:
     0 20px 40px -20px rgba(0, 0, 0, 0.5),
     0 0 30px -10px var(--accent-glow);
@@ -200,11 +202,17 @@ body {
 /* Button styles */
 .btn-primary {
   position: relative;
-  background: var(--accent);
-  color: white;
-  font-weight: 500;
+  background: linear-gradient(180deg, var(--accent-strong) 0%, var(--accent) 55%, var(--accent-deep) 100%);
+  color: #0a0a0c;
+  font-weight: 600;
   padding: 14px 32px;
   border-radius: 12px;
+  border: 0;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.28),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.28),
+    inset 0 0 0 1px rgba(0, 0, 0, 0.18),
+    0 4px 14px rgba(0, 0, 0, 0.35);
   transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
   overflow: hidden;
 }
@@ -221,7 +229,10 @@ body {
 .btn-primary:hover {
   transform: translateY(-2px);
   box-shadow:
-    0 10px 30px -10px var(--accent-glow),
+    inset 0 1px 0 rgba(255, 255, 255, 0.34),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.28),
+    inset 0 0 0 1px rgba(0, 0, 0, 0.18),
+    0 10px 30px -10px rgba(156, 163, 175, 0.45),
     0 0 40px -10px var(--accent-glow);
 }
 

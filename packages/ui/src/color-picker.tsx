@@ -198,7 +198,7 @@ export const ColorPicker: React.FC<ColorPickerProps> = ({
             type="text"
             value={isDragging ? displayColor : value}
             onChange={handleInputChange}
-            className="flex-1 h-10 px-3 rounded-lg bg-[var(--card)] border border-[var(--polar-frost)] text-sm text-[var(--ink-black)] font-mono focus:border-[var(--coral-400)] focus:ring-2 focus:ring-[var(--coral-glow)] focus:outline-none"
+            className="flex-1 h-10 px-3 rounded-lg bg-[var(--card)] border border-[var(--polar-frost)] text-sm text-[var(--ink-black)] font-mono focus:ring-[var(--coral-400)] focus:ring-2 focus:ring-[var(--coral-glow)] focus:outline-none"
             placeholder="#000000"
           />
         )}

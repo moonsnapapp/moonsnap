@@ -39,7 +39,7 @@ export default async function ChangelogPage() {
         className="fixed inset-0 pointer-events-none"
         style={{
           background:
-            "radial-gradient(ellipse 70% 45% at 50% -20%, rgba(255, 77, 77, 0.14) 0%, transparent 55%)",
+            "radial-gradient(ellipse 70% 45% at 50% -20%, rgba(156, 163, 175, 0.16) 0%, transparent 55%)",
         }}
       />
 

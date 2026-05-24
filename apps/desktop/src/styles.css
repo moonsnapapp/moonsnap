@@ -417,12 +417,12 @@ textarea,
   min-width: 26px;
   min-height: 26px;
   border-radius: 8px;
-  background: linear-gradient(135deg, var(--coral-400) 0%, var(--coral-500) 100%);
+  background: linear-gradient(180deg, var(--coral-300) 0%, var(--coral-500) 100%);
   display: flex;
   align-items: center;
   justify-content: center;
-  color: white;
-  box-shadow: 0 2px 8px rgba(156, 163, 175, 0.4), inset 0 1px 0 rgba(255,255,255,0.2);
+  color: #14161a;
+  box-shadow: 0 2px 8px rgba(156, 163, 175, 0.4), inset 0 1px 0 rgba(255,255,255,0.22); /* tauri-shadow-allow */
 }
 
 .titlebar-title {
