@@ -7,7 +7,6 @@ import {
   Camera,
   MessageSquare,
   FileText,
-  Key,
   X,
 } from 'lucide-react';
 import {
@@ -21,7 +20,6 @@ import { RecordingsTab } from './RecordingsTab';
 import { ScreenshotsTab } from './ScreenshotsTab';
 import { FeedbackTab } from './FeedbackTab';
 import { ChangelogTab } from './ChangelogTab';
-import { LicenseTab } from './LicenseTab';
 import { useSettingsStore, type SettingsSection } from '@/stores/settingsStore';
 import { useCaptureSettingsStore } from '@/stores/captureSettingsStore';
 import { useUpdater } from '@/hooks/useUpdater';
@@ -39,7 +37,6 @@ const sidebarItems: SidebarItem[] = [
   { id: 'screenshots', label: 'Screenshots', icon: <Camera className="w-4 h-4" /> },
   { id: 'feedback', label: 'Feedback', icon: <MessageSquare className="w-4 h-4" /> },
   { id: 'changelog', label: 'Changelog', icon: <FileText className="w-4 h-4" /> },
-  { id: 'license', label: 'License', icon: <Key className="w-4 h-4" /> },
 ];
 
 function renderTab(section: SettingsSection): React.ReactNode {
@@ -56,8 +53,6 @@ function renderTab(section: SettingsSection): React.ReactNode {
       return <FeedbackTab />;
     case 'changelog':
       return <ChangelogTab />;
-    case 'license':
-      return <LicenseTab />;
   }
 }
 

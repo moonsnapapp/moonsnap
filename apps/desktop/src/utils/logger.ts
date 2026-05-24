@@ -223,7 +223,6 @@ export const videoEditorLogger = createLogger('VideoEditor');
 export const settingsLogger = createLogger('Settings');
 export const hotkeyLogger = createLogger('Hotkey');
 export const audioLogger = createLogger('Audio');
-export const licenseLogger = createLogger('License');
 
 /**
  * Flush all pending logs immediately (call on app shutdown)

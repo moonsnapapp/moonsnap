@@ -245,60 +245,12 @@ body {
   transform: translateY(-2px);
 }
 
-/* Mockup window */
-.window-mockup {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 16px;
-  overflow: hidden;
-  box-shadow:
-    0 50px 100px -20px rgba(0, 0, 0, 0.8),
-    0 0 0 1px rgba(255, 255, 255, 0.05) inset;
-}
-
-.window-titlebar {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 14px 16px;
-  background: rgba(0, 0, 0, 0.3);
-  border-bottom: 1px solid var(--border);
-}
-
-.window-dot {
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-}
-
 /* Gradient text */
 .gradient-text {
   background: linear-gradient(135deg, #fff 0%, rgba(255, 255, 255, 0.6) 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
-}
-
-/* Pricing card */
-.pricing-card {
-  transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-.pricing-card:hover {
-  transform: translateY(-4px);
-}
-
-.pricing-card-pro {
-  box-shadow:
-    0 0 40px -10px rgba(255, 77, 77, 0.15),
-    0 25px 50px -20px rgba(0, 0, 0, 0.5);
-}
-
-.pricing-card-pro:hover {
-  border-color: rgba(255, 77, 77, 0.6);
-  box-shadow:
-    0 0 60px -10px rgba(255, 77, 77, 0.25),
-    0 30px 60px -20px rgba(0, 0, 0, 0.6);
 }
 
 /* Grid pattern background */

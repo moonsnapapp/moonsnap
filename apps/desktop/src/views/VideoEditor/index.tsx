@@ -82,7 +82,6 @@ import { VideoEditorSidebar } from './VideoEditorSidebar';
 import { VideoEditorPreview } from './VideoEditorPreview';
 import { VideoEditorTimeline } from './VideoEditorTimeline';
 import { ExportProgressOverlay } from './components/ExportProgressOverlay';
-import { ProFeatureDialog } from '../../components/ProFeatureDialog';
 import type { ExportProgress, CropConfig } from '../../types';
 import { TIMING } from '../../constants';
 import { videoEditorLogger } from '../../utils/logger';
@@ -218,7 +217,6 @@ export const VideoEditorView = forwardRef<VideoEditorViewRef, VideoEditorViewPro
 
   // Crop dialog state
   const [isCropDialogOpen, setIsCropDialogOpen] = useState(false);
-  const [lockedProFeature, setLockedProFeature] = useState<string | null>(null);
   const lastUserActivityAtRef = useRef(Date.now());
   const handleExportRef = useRef<(target?: ExportTarget) => void>(() => {});
 
@@ -527,16 +525,6 @@ export const VideoEditorView = forwardRef<VideoEditorViewRef, VideoEditorViewPro
   const handleExport = useCallback(async (target: ExportTarget = 'video') => {
     if (!project) return;
 
-    // Pro feature gate: export requires a license
-    const { isPro } = await import('../../stores/licenseStore').then(m => {
-      const store = m.useLicenseStore.getState();
-      return { isPro: store.isPro() };
-    });
-    if (!isPro) {
-      setLockedProFeature('Video export');
-      return;
-    }
-
     const outputMode = target === 'gif' ? 'render' : getVideoOutputMode(project);
     const exportActionLabel = getVideoPrimaryActionLabel(project);
     const exportDialogTitle = target === 'gif' ? 'Export GIF' : getVideoExportDialogTitle(project);
@@ -727,16 +715,6 @@ export const VideoEditorView = forwardRef<VideoEditorViewRef, VideoEditorViewPro
         isExporting={isExporting}
         exportProgress={exportProgress}
         onCancel={cancelExport}
-      />
-
-      <ProFeatureDialog
-        open={lockedProFeature !== null}
-        featureName={lockedProFeature ?? 'This feature'}
-        onOpenChange={(open) => {
-          if (!open) {
-            setLockedProFeature(null);
-          }
-        }}
       />
     </div>
   );

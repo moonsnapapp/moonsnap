@@ -303,20 +303,7 @@ pub fn stop_prewarm() {
 /// Start native webcam capture service for preview.
 /// Call this before showing the preview window.
 #[command]
-pub fn start_webcam_preview(
-    device_index: usize,
-    license: tauri::State<'_, crate::commands::license::LicenseState>,
-) -> MoonSnapResult<()> {
-    // Pro feature gate: webcam overlay requires a license
-    {
-        let guard = license.cache.read();
-        if let Some(ref cache) = *guard {
-            let status =
-                crate::license::validation::resolve_status(cache, env!("CARGO_PKG_VERSION"));
-            crate::license::feature_gate::require_pro(&status)?;
-        }
-    }
-
+pub fn start_webcam_preview(device_index: usize) -> MoonSnapResult<()> {
     log::debug!(
         "[WEBCAM] start_webcam_preview(device_index={})",
         device_index
@@ -378,18 +365,7 @@ pub async fn start_gpu_webcam_preview(
     size: WebcamSize,
     shape: WebcamShape,
     mirror: bool,
-    license: tauri::State<'_, crate::commands::license::LicenseState>,
 ) -> MoonSnapResult<()> {
-    // Pro feature gate: webcam overlay requires a license
-    {
-        let guard = license.cache.read();
-        if let Some(ref cache) = *guard {
-            let status =
-                crate::license::validation::resolve_status(cache, env!("CARGO_PKG_VERSION"));
-            crate::license::feature_gate::require_pro(&status)?;
-        }
-    }
-
     log::debug!(
         "[WEBCAM] start_gpu_webcam_preview(device_index={}, size={:?}, shape={:?}, mirror={})",
         device_index,
@@ -485,21 +461,7 @@ pub async fn update_gpu_webcam_preview_settings(
 /// Creates window HIDDEN, initializes wgpu, then shows window (Cap pattern).
 /// Uses the CameraPreviewManager to ensure only ONE preview exists at a time.
 #[command]
-pub async fn show_camera_preview(
-    app: tauri::AppHandle,
-    device_index: usize,
-    license: tauri::State<'_, crate::commands::license::LicenseState>,
-) -> MoonSnapResult<()> {
-    // Pro feature gate: webcam overlay requires a license
-    {
-        let guard = license.cache.read();
-        if let Some(ref cache) = *guard {
-            let status =
-                crate::license::validation::resolve_status(cache, env!("CARGO_PKG_VERSION"));
-            crate::license::feature_gate::require_pro(&status)?;
-        }
-    }
-
+pub async fn show_camera_preview(app: tauri::AppHandle, device_index: usize) -> MoonSnapResult<()> {
     log::debug!(
         "[WEBCAM] show_camera_preview(device_index={})",
         device_index
@@ -1306,21 +1268,7 @@ pub async fn export_video(
     app: AppHandle,
     project: VideoProject,
     output_path: String,
-    license: tauri::State<'_, crate::commands::license::LicenseState>,
 ) -> MoonSnapResult<ExportResult> {
-    // Pro feature gate: GIF export requires a license
-    if matches!(
-        project.export.format,
-        moonsnap_domain::video_project::ExportFormat::Gif
-    ) {
-        let guard = license.cache.read();
-        if let Some(ref cache) = *guard {
-            let status =
-                crate::license::validation::resolve_status(cache, env!("CARGO_PKG_VERSION"));
-            crate::license::feature_gate::require_pro(&status)?;
-        }
-    }
-
     // Check if FFmpeg is available (required for video encoding)
     if moonsnap_media::ffmpeg::find_ffmpeg().is_none() {
         return Err(

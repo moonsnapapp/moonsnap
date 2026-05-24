@@ -13,7 +13,6 @@ pub mod app;
 mod commands;
 pub mod config;
 pub mod cursor;
-pub mod license;
 pub mod preview;
 pub mod rendering;
 
@@ -127,23 +126,6 @@ pub fn run() {
 
             // Initialize native caption preview state for zero-latency caption preview
             app.manage(commands::preview::NativeCaptionPreviewState::new());
-
-            // Initialize license state
-            let app_data_dir = app.path().app_data_dir().map_err(|e| {
-                Box::<dyn std::error::Error>::from(format!("Failed to get app data dir: {}", e))
-            })?;
-            app.manage(commands::license::LicenseState::new(app_data_dir));
-
-            // Spawn background license re-validation
-            {
-                let license_state: tauri::State<'_, commands::license::LicenseState> = app.state();
-                let cache = license_state.cache.clone();
-                let key = license_state.encryption_key;
-                let path = license_state.cache_path.clone();
-                tauri::async_runtime::spawn(async move {
-                    commands::license::background_revalidation(cache, key, path).await;
-                });
-            }
 
             // Set window icon on library window (kept for when it's shown via tray)
             if let Some(window) = app.get_webview_window("library") {

@@ -166,13 +166,9 @@ whisper-rs = "0.16"
 # Temporary directory for audio extraction
 tempfile = "3"
 
-# HTTP client for model downloads and Polar.sh API calls
+# HTTP client for model downloads
 reqwest = { version = "0.12", features = ["stream", "json", "rustls-tls"], default-features = false }
 futures-util = "0.3"
-
-# Licensing system - encrypted cache
-aes-gcm = "0.10"
-hex = "0.4"
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 tauri-plugin-global-shortcut = "2"

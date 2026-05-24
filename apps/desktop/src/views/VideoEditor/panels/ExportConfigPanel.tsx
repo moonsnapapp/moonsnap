@@ -3,7 +3,7 @@
  */
 import { invoke } from '@tauri-apps/api/core';
 import { useEffect, useMemo, useState } from 'react';
-import { Crop, X, Lock } from 'lucide-react';
+import { Crop, X } from 'lucide-react';
 import { Button } from '../../../components/ui/button';
 import { Slider } from '../../../components/ui/slider';
 import {
@@ -19,7 +19,6 @@ import type { VideoProject, ExportConfig, ExportFormat, AudioTrackSettings } fro
 import { calculateCompositionOutputSize } from '@/utils/compositionBounds';
 import { hasVideoBackgroundFrameStyling } from '@/utils/backgroundFrameStyling';
 import { getContentDimensionsFromCrop } from '@/utils/videoContentDimensions';
-import { useLicenseStore } from '@/stores/licenseStore';
 
 export interface ExportConfigPanelProps {
   project: VideoProject;
@@ -29,7 +28,6 @@ export interface ExportConfigPanelProps {
 }
 
 export function ExportConfigPanel({ project, onUpdateExportConfig, onUpdateAudioConfig, onOpenCropDialog }: ExportConfigPanelProps) {
-  const isPro = useLicenseStore((s) => s.isPro());
   const [nvencAvailable, setNvencAvailable] = useState<boolean | null>(null);
   const [isCheckingNvenc, setIsCheckingNvenc] = useState(false);
   const sourceFps = project.sources.fps;
@@ -136,17 +134,9 @@ export function ExportConfigPanel({ project, onUpdateExportConfig, onUpdateAudio
           <SelectContent className="border-[var(--glass-border)] bg-[var(--glass-surface-dark)] text-[var(--ink-dark)]">
             <SelectItem value="mp4">MP4</SelectItem>
             <SelectItem value="webm">WebM</SelectItem>
-            <SelectItem value="gif" disabled={!isPro}>
-              {isPro ? 'GIF' : 'GIF (Pro)'}
-            </SelectItem>
+            <SelectItem value="gif">GIF</SelectItem>
           </SelectContent>
         </Select>
-        {!isPro && project.export.format === 'gif' && (
-          <div className="flex items-center gap-1.5 mt-1.5 text-xs text-[var(--coral-500)]">
-            <Lock size={12} />
-            <span>GIF export requires MoonSnap Pro</span>
-          </div>
-        )}
       </div>
 
       {project.export.format === 'mp4' && (

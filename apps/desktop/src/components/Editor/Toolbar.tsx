@@ -18,13 +18,11 @@ import {
   Pencil,
   Save,
   Trash2,
-  Lock,
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import type { Tool } from '../../types';
 import { useEditorStore } from '../../stores/editorStore';
-import { useLicenseStore } from '../../stores/licenseStore';
-import { LICENSE, TIMING } from '../../constants';
+import { TIMING } from '../../constants';
 
 import {
   Tooltip,
@@ -43,8 +41,6 @@ interface ToolbarProps {
   isCopying?: boolean;
   isSaving?: boolean;
 }
-
-const PRO_TOOLS: Set<Tool> = new Set(['background']);
 
 const toolDefs: { id: Tool; Icon: typeof MousePointer2; label: string; shortcut: string }[] = [
   { id: 'select', Icon: MousePointer2, label: 'Select', shortcut: 'V' },
@@ -78,7 +74,6 @@ export const Toolbar: React.FC<ToolbarProps> = ({
   // Get undo/redo state from store
   const canUndo = useEditorStore((state) => state.canUndo);
   const canRedo = useEditorStore((state) => state.canRedo);
-  const isPro = useLicenseStore((s) => s.isPro());
 
   useEffect(() => {
     let debounceTimer: ReturnType<typeof setTimeout> | null = null;
@@ -154,28 +149,20 @@ export const Toolbar: React.FC<ToolbarProps> = ({
           {/* Tool Buttons */}
           <div className="flex items-center gap-0.5">
             {toolDefs.map((tool) => {
-              const needsPro = !isPro && PRO_TOOLS.has(tool.id);
               return (
                 <Tooltip key={tool.id}>
                   <TooltipTrigger asChild>
                     <button
-                      onClick={() => {
-                        if (needsPro) {
-                          window.open(LICENSE.PURCHASE_URL, '_blank');
-                          return;
-                        }
-                        onToolChange(tool.id);
-                      }}
+                      onClick={() => onToolChange(tool.id)}
                       aria-label={tool.label}
-                      className={`tool-button ${buttonSize} ${selectedTool === tool.id ? 'active' : ''} ${needsPro ? 'opacity-50' : ''}`}
+                      className={`tool-button ${buttonSize} ${selectedTool === tool.id ? 'active' : ''}`}
                     >
                       <tool.Icon className={`${iconSize} relative z-10`} />
-                      {needsPro && <Lock size={8} className="absolute top-0.5 right-0.5 opacity-60" />}
                     </button>
                   </TooltipTrigger>
                   <TooltipContent side="top">
                     <div className="flex items-center gap-2">
-                      <span className="text-xs">{needsPro ? `${tool.label} (Pro)` : tool.label}</span>
+                      <span className="text-xs">{tool.label}</span>
                       <kbd className="kbd text-[10px] px-1.5 py-0.5">{tool.shortcut}</kbd>
                     </div>
                   </TooltipContent>

@@ -37,7 +37,6 @@ import {
   selectUpdateZoomRegion,
 } from '../../stores/videoEditor/selectors';
 import { BackgroundSettings } from '../../components/VideoEditor/BackgroundSettings';
-import { ProFeature } from '../../components/ProFeature';
 import {
   Select,
   SelectContent,
@@ -341,9 +340,7 @@ export function VideoEditorSidebar({ project, onOpenCropDialog }: VideoEditorSid
           {/* Captions Tab */}
           {activeTab === 'captions' && (
             <div className="p-4">
-              <ProFeature featureName="Auto Captions">
-                <CaptionPanel videoPath={project?.sources.screenVideo || null} />
-              </ProFeature>
+              <CaptionPanel videoPath={project?.sources.screenVideo || null} />
             </div>
           )}
 
@@ -372,12 +369,10 @@ export function VideoEditorSidebar({ project, onOpenCropDialog }: VideoEditorSid
                     defaultOpen={!project.sources.cursorData}
                     variant="flat"
                   >
-                    <ProFeature featureName="Webcam Overlay">
-                      <WebcamConfigPanel
-                        project={project}
-                        onUpdateWebcamConfig={updateWebcamConfig}
-                      />
-                    </ProFeature>
+                    <WebcamConfigPanel
+                      project={project}
+                      onUpdateWebcamConfig={updateWebcamConfig}
+                    />
                   </SidebarSettingsSection>
                 )}
 
@@ -387,14 +382,12 @@ export function VideoEditorSidebar({ project, onOpenCropDialog }: VideoEditorSid
                   defaultOpen={!project.sources.cursorData && !project.sources.webcamVideo}
                   variant="flat"
                 >
-                  <ProFeature featureName="Custom Backgrounds">
-                    <BackgroundSettings
-                      background={project.export.background}
-                      onUpdate={(updates) => updateExportConfig({
-                        background: { ...project.export.background, ...updates }
-                      })}
-                    />
-                  </ProFeature>
+                  <BackgroundSettings
+                    background={project.export.background}
+                    onUpdate={(updates) => updateExportConfig({
+                      background: { ...project.export.background, ...updates }
+                    })}
+                  />
                 </SidebarSettingsSection>
               </div>
             </div>

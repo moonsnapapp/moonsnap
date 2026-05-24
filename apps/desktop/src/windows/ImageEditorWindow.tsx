@@ -14,7 +14,7 @@ import { Titlebar } from '@/components/Titlebar/Titlebar';
 import { EditorStoreProvider, createEditorStore, useEditorStore, type EditorStore } from '@/stores/editorStore';
 import { useTheme } from '@/hooks/useTheme';
 import { editorLogger } from '@/utils/logger';
-import { LICENSE, TIMING } from '@/constants';
+import { TIMING } from '@/constants';
 
 // Lazy load editor components
 const EditorCanvas = React.lazy(() =>
@@ -34,7 +34,6 @@ import { isCropBoundsAnnotation, isCropRegionAnnotation, isCompositorSettingsAnn
 import { ensureBackgroundShape } from '@/utils/canvasGeometry';
 import { toast } from 'sonner';
 import { reportError } from '@/utils/errorReporting';
-import { useLicenseStore } from '@/stores/licenseStore';
 import { useEditorActions } from '@/hooks/useEditorActions';
 import { useEditorKeyboardShortcuts } from '@/hooks/useEditorKeyboardShortcuts';
 import { DeleteDialog } from '@/components/Library/components/DeleteDialog';
@@ -47,7 +46,6 @@ const TOOL_DEFAULT_COLORS: Partial<Record<Tool, string>> = {
   // All other tools use the default red (#ef4444)
 };
 const DEFAULT_STROKE_COLOR = '#ef4444';
-const PRO_TOOLS: ReadonlySet<Tool> = new Set(['background']);
 
 interface SavedCaptureLookup {
   projectId: string;
@@ -123,20 +121,8 @@ export const ImageEditorContent: React.FC<{
     setCompositorSettings({ enabled: !compositorSettings.enabled });
   }, [compositorSettings.enabled, setCompositorSettings]);
 
-  const isPro = useLicenseStore((s) => s.isPro());
-
-  // Pro-gated tools in the image editor
   // Handle tool change
   const handleToolChange = useCallback((newTool: Tool) => {
-    if (PRO_TOOLS.has(newTool) && !isPro) {
-      toast('This feature requires MoonSnap Pro', {
-        action: {
-          label: 'Upgrade',
-          onClick: () => window.open(LICENSE.PURCHASE_URL, '_blank'),
-        },
-      });
-      return;
-    }
     if (newTool !== selectedTool && selectedTool === 'select') {
       setSelectedIds([]);
     }
@@ -148,7 +134,7 @@ export const ImageEditorContent: React.FC<{
     if (newTool === 'background' && !compositorSettings.enabled) {
       setCompositorSettings({ enabled: true });
     }
-  }, [selectedTool, setSelectedIds, setStrokeColor, isPro, compositorSettings.enabled, setCompositorSettings]);
+  }, [selectedTool, setSelectedIds, setStrokeColor, compositorSettings.enabled, setCompositorSettings]);
 
   // Crop commit handler - switch to select tool and fit
   const handleCropCommit = useCallback(() => {

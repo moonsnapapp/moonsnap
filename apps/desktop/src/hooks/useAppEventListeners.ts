@@ -92,7 +92,6 @@ export function useAppEventListeners(callbacks: AppEventCallbacks) {
       'screenshots',
       'feedback',
       'changelog',
-      'license',
     ]);
     unlisteners.push(
       listen<{ tab?: string }>('open-settings', (event) => {

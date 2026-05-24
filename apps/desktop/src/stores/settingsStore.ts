@@ -35,8 +35,7 @@ export type SettingsSection =
   | 'recordings'
   | 'screenshots'
   | 'feedback'
-  | 'changelog'
-  | 'license';
+  | 'changelog';
 
 // Create a lazy store instance (initialized on first access)
 let storeInstance: LazyStore | null = null;

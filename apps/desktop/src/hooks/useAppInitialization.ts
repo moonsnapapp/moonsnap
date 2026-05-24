@@ -14,7 +14,6 @@ import { useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { useCaptureStore } from '../stores/captureStore';
 import { useSettingsStore } from '../stores/settingsStore';
-import { useLicenseStore } from '../stores/licenseStore';
 import { useVideoRecordingStore } from '../stores/videoRecordingStore';
 import { initializeShortcutRegistration } from '../utils/hotkeyManager';
 import { createErrorHandler } from '../utils/errorReporting';
@@ -59,12 +58,11 @@ export function useAppInitialization() {
         const { loadSettings } = useSettingsStore.getState();
         await loadSettings();
 
-        // Run backend sync, shortcut registration, and license check in parallel
+        // Run backend sync and shortcut registration in parallel
         const updatedSettings = useSettingsStore.getState().settings;
         await Promise.allSettled([
           invoke('set_close_to_tray', { enabled: updatedSettings.general.minimizeToTray }),
           initializeShortcutRegistration(),
-          useLicenseStore.getState().fetchStatus(),
         ]);
       } catch (error) {
         settingsLogger.error('Failed to initialize settings:', error);
