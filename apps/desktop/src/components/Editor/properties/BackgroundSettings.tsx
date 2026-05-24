@@ -131,12 +131,10 @@ export const BackgroundSettings: React.FC<BackgroundSettingsProps> = ({
         onSettingsChange({ padding: value });
       }}
       cornerRadius={localBorderRadius}
-      cornerKind={settings.borderRadiusType}
       onCornerRadiusChange={(value) => {
         setLocalBorderRadius(value);
         onSettingsChange({ borderRadius: value });
       }}
-      onCornerKindChange={(kind) => onSettingsChange({ borderRadiusType: kind })}
       border={{
         mode: 'opacity',
         enabled: localBorderOpacity > 0,

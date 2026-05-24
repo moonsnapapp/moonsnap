@@ -28,10 +28,7 @@ export function BackgroundTypeTabs({
               currentType === type ? 'editor-choice-pill--active' : ''
             }`}
           >
-            <div className="flex min-w-0 items-center justify-center gap-1">
-              {type === 'wallpaper' && (
-                <div className="h-3 w-3 shrink-0 rounded-sm bg-gradient-to-br from-blue-400 to-purple-500" />
-              )}
+            <div className="flex min-w-0 items-center justify-center">
               <span className="min-w-0 truncate capitalize">{type}</span>
             </div>
           </button>

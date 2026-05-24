@@ -17,7 +17,6 @@ import {
   type GradientPreset,
   PaddingSection,
   CornerRadiusSection,
-  type CornerKind,
 } from '@/components/shared/background/BackgroundStyleSections';
 import {
   ImageBackgroundSection,
@@ -62,9 +61,7 @@ interface BackgroundSettingsPanelProps<TType extends SharedBackgroundType> {
   padding: number;
   onPaddingChange: (value: number) => void;
   cornerRadius: number;
-  cornerKind: CornerKind;
   onCornerRadiusChange: (value: number) => void;
-  onCornerKindChange: (kind: CornerKind) => void;
   border: BorderEffectsSectionProps;
   shadow: ShadowEffectsSectionProps;
 }
@@ -88,14 +85,10 @@ export function BackgroundSettingsPanel<TType extends SharedBackgroundType>({
   padding,
   onPaddingChange,
   cornerRadius,
-  cornerKind,
   onCornerRadiusChange,
-  onCornerKindChange,
   border,
   shadow,
 }: BackgroundSettingsPanelProps<TType>) {
-  const showBody = enabledToggle ? enabledToggle.enabled : true;
-
   return (
     <div className="min-w-0 space-y-4">
       {enabledToggle && (
@@ -107,68 +100,62 @@ export function BackgroundSettingsPanel<TType extends SharedBackgroundType>({
         </div>
       )}
 
-      {showBody && (
-        <>
-          <BackgroundTypeTabs
-            currentType={type}
-            onTypeChange={(next) => onTypeChange(next as TType)}
-          />
+      <BackgroundTypeTabs
+        currentType={type}
+        onTypeChange={(next) => onTypeChange(next as TType)}
+      />
 
-          <div className="border-t border-dashed border-[var(--glass-border)]" />
+      <div className="border-t border-dashed border-[var(--glass-border)]" />
 
-          {type === 'wallpaper' && (
-            <WallpaperSelector
-              selectedWallpaperId={wallpaper.id}
-              onSelect={wallpaper.onSelect}
-              isSelected={wallpaper.isSelected}
-              onLoadError={wallpaper.onLoadError}
-            />
-          )}
-
-          {type === 'image' && (
-            <ImageBackgroundSection
-              imageSrc={image.src}
-              onRemove={image.onRemove}
-              uploader={image.uploader}
-            />
-          )}
-
-          {type === 'solid' && (
-            <div className="space-y-3">
-              <ColorPicker
-                value={solidColor}
-                onChange={onSolidColorChange}
-                presets={COLOR_PRESETS}
-              />
-            </div>
-          )}
-
-          {type === 'gradient' && (
-            <GradientSection
-              gradientStart={gradientStart}
-              gradientEnd={gradientEnd}
-              gradientAngle={gradientAngle}
-              onGradientStartChange={onGradientStartChange}
-              onGradientEndChange={onGradientEndChange}
-              onGradientAngleChange={onGradientAngleChange}
-              onPresetSelect={onGradientPresetSelect}
-              inactivePresetBorderClass={gradientPresetInactiveBorderClass}
-            />
-          )}
-
-          <PaddingSection value={padding} onChange={onPaddingChange} />
-
-          <CornerRadiusSection
-            value={cornerRadius}
-            kind={cornerKind}
-            onValueChange={onCornerRadiusChange}
-            onKindChange={onCornerKindChange}
-          />
-
-          <BorderEffectsSection {...border} />
-          <ShadowEffectsSection {...shadow} />
-        </>
+      {type === 'wallpaper' && (
+        <WallpaperSelector
+          selectedWallpaperId={wallpaper.id}
+          onSelect={wallpaper.onSelect}
+          isSelected={wallpaper.isSelected}
+          onLoadError={wallpaper.onLoadError}
+        />
       )}
+
+      {type === 'image' && (
+        <ImageBackgroundSection
+          imageSrc={image.src}
+          onRemove={image.onRemove}
+          uploader={image.uploader}
+        />
+      )}
+
+      {type === 'solid' && (
+        <div className="space-y-3">
+          <ColorPicker
+            value={solidColor}
+            onChange={onSolidColorChange}
+            presets={COLOR_PRESETS}
+          />
+        </div>
+      )}
+
+      {type === 'gradient' && (
+        <GradientSection
+          gradientStart={gradientStart}
+          gradientEnd={gradientEnd}
+          gradientAngle={gradientAngle}
+          onGradientStartChange={onGradientStartChange}
+          onGradientEndChange={onGradientEndChange}
+          onGradientAngleChange={onGradientAngleChange}
+          onPresetSelect={onGradientPresetSelect}
+          inactivePresetBorderClass={gradientPresetInactiveBorderClass}
+        />
+      )}
+
+      <PaddingSection value={padding} onChange={onPaddingChange} />
+
+      <CornerRadiusSection
+        value={cornerRadius}
+        onValueChange={onCornerRadiusChange}
+      />
+
+      <BorderEffectsSection {...border} />
+      <ShadowEffectsSection {...shadow} />
     </div>
   );
 }

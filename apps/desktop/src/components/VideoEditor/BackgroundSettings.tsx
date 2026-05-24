@@ -135,9 +135,7 @@ export function BackgroundSettings({ background, onUpdate }: BackgroundSettingsP
       padding={background.padding}
       onPaddingChange={(value) => onUpdate({ padding: value })}
       cornerRadius={background.rounding}
-      cornerKind={background.roundingType}
       onCornerRadiusChange={(value) => onUpdate({ rounding: value })}
-      onCornerKindChange={(kind) => onUpdate({ roundingType: kind })}
       border={{
         mode: 'toggle',
         enabled: background.border.enabled,

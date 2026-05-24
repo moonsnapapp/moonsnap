@@ -117,20 +117,14 @@ export function PaddingSection({ value, onChange }: PaddingSectionProps) {
   );
 }
 
-export type CornerKind = 'squircle' | 'rounded';
-
 interface CornerRadiusSectionProps {
   value: number;
-  kind: CornerKind;
   onValueChange: (value: number) => void;
-  onKindChange: (kind: CornerKind) => void;
 }
 
 export function CornerRadiusSection({
   value,
-  kind,
   onValueChange,
-  onKindChange,
 }: CornerRadiusSectionProps) {
   return (
     <div className="border-t border-[var(--glass-border)] pt-3">
@@ -145,24 +139,6 @@ export function CornerRadiusSection({
         max={200}
         step={2}
       />
-      <div className="mt-2 flex min-w-0 gap-1">
-        <button
-          onClick={() => onKindChange('squircle')}
-          className={`editor-choice-pill min-w-0 flex-1 px-2 py-1.5 text-xs ${
-            kind === 'squircle' ? 'editor-choice-pill--active' : ''
-          }`}
-        >
-          Squircle
-        </button>
-        <button
-          onClick={() => onKindChange('rounded')}
-          className={`editor-choice-pill min-w-0 flex-1 px-2 py-1.5 text-xs ${
-            kind === 'rounded' ? 'editor-choice-pill--active' : ''
-          }`}
-        >
-          Rounded
-        </button>
-      </div>
     </div>
   );
 }
