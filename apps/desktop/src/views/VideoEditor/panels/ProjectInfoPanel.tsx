@@ -20,7 +20,7 @@ export function ProjectInfoPanel({ project }: ProjectInfoPanelProps) {
       {project && (
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className="text-[10px] text-[var(--ink-subtle)] uppercase">Resolution</label>
+            <label className="text-[10px] text-[var(--ink-subtle)] uppercase">Source Resolution</label>
             <p className="text-xs text-[var(--ink-dark)] font-mono mt-0.5">
               {project.sources.originalWidth}x{project.sources.originalHeight}
             </p>
