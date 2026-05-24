@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { DEFAULT_CAPTION_SETTINGS } from '../../../stores/videoEditor/captionSlice';
 import type { VideoProject } from '../../../types';
 import { setInvokeResponse } from '../../../test/mocks/tauri';
-import { ExportConfigPanel } from './ExportConfigPanel';
+import { ExportDialog } from './ExportDialog';
 
 function createTestProject(overrides: Partial<VideoProject> = {}): VideoProject {
   return {
@@ -153,16 +153,19 @@ function createTestProject(overrides: Partial<VideoProject> = {}): VideoProject 
   };
 }
 
-describe('ExportConfigPanel', () => {
+describe('ExportDialog', () => {
   it('shows the MP4 hardware-encoding toggle and updates export config', async () => {
     setInvokeResponse('check_nvenc_available', true);
     const onUpdateExportConfig = vi.fn();
 
     render(
-      <ExportConfigPanel
+      <ExportDialog
+        open
+        target="video"
         project={createTestProject()}
+        onOpenChange={vi.fn()}
         onUpdateExportConfig={onUpdateExportConfig}
-        onUpdateAudioConfig={vi.fn()}
+        onConfirm={vi.fn()}
       />
     );
 
@@ -179,19 +182,55 @@ describe('ExportConfigPanel', () => {
     const project = createTestProject();
 
     render(
-      <ExportConfigPanel
+      <ExportDialog
+        open
+        target="video"
         project={{
           ...project,
-          export: {
-            ...project.export,
-            format: 'webm',
-          },
+          export: { ...project.export, format: 'webm' },
         }}
+        onOpenChange={vi.fn()}
         onUpdateExportConfig={vi.fn()}
-        onUpdateAudioConfig={vi.fn()}
+        onConfirm={vi.fn()}
       />
     );
 
     expect(screen.queryByRole('switch', { name: /prefer hardware encoding/i })).not.toBeInTheDocument();
+  });
+
+  it('hides format and hardware-encoding controls when target is gif', () => {
+    render(
+      <ExportDialog
+        open
+        target="gif"
+        project={createTestProject()}
+        onOpenChange={vi.fn()}
+        onUpdateExportConfig={vi.fn()}
+        onConfirm={vi.fn()}
+      />
+    );
+
+    expect(screen.queryByText(/^Format$/)).not.toBeInTheDocument();
+    expect(screen.queryByRole('switch', { name: /prefer hardware encoding/i })).not.toBeInTheDocument();
+    // Frame rate label is still rendered for GIF
+    expect(screen.getByText(/^Frame Rate$/)).toBeInTheDocument();
+  });
+
+  it('fires onConfirm when the save button is clicked', () => {
+    const onConfirm = vi.fn();
+
+    render(
+      <ExportDialog
+        open
+        target="video"
+        project={createTestProject()}
+        onOpenChange={vi.fn()}
+        onUpdateExportConfig={vi.fn()}
+        onConfirm={onConfirm}
+      />
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /save video/i }));
+    expect(onConfirm).toHaveBeenCalledTimes(1);
   });
 });

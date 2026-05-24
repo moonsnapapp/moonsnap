@@ -15,6 +15,7 @@ import {
   useEffect,
   useLayoutEffect,
   useRef,
+  useState,
 } from 'react';
 import type { ImperativePanelHandle } from 'react-resizable-panels';
 import { toast } from 'sonner';
@@ -84,6 +85,7 @@ import { VideoEditorPreview } from './VideoEditorPreview';
 import { VideoEditorTimeline } from './VideoEditorTimeline';
 import { PreviewTopBar } from './PreviewTopBar';
 import { ExportProgressOverlay } from './components/ExportProgressOverlay';
+import { ExportDialog } from './components/ExportDialog';
 import { ChevronRight } from 'lucide-react';
 import {
   ResizableHandle,
@@ -130,7 +132,12 @@ const SAVE_WAIT_POLL_MS = 50;
 const VIDEO_EDITOR_LAYOUT_ID = 'moonsnap-video-editor-layout';
 const VIDEO_EDITOR_LAYOUT_STORAGE_KEY = `react-resizable-panels:${VIDEO_EDITOR_LAYOUT_ID}`;
 const DEFAULT_SIDEBAR_WIDTH_PX = 380;
-const SIDEBAR_MIN_PCT = 18;
+// Hard pixel floor for the sidebar — translated to a percentage at runtime
+// against the current workspace width (see `sidebarMinPct` below).
+const SIDEBAR_MIN_PX = 380;
+// Safety floor used only when the workspace is so narrow that 380px would
+// exceed the sidebar's max, so the panel keeps a feasible [min, max] range.
+const SIDEBAR_MIN_FLOOR_PCT = 18;
 const SIDEBAR_MAX_PCT = 45;
 type ExportTarget = 'video' | 'gif';
 
@@ -229,23 +236,69 @@ export const VideoEditorView = forwardRef<VideoEditorViewRef, VideoEditorViewPro
 
   const lastUserActivityAtRef = useRef(Date.now());
   const handleExportRef = useRef<(target?: ExportTarget) => void>(() => {});
+  const [exportDialogTarget, setExportDialogTarget] = useState<ExportTarget | null>(null);
   const workspaceRef = useRef<HTMLDivElement>(null);
   const sidebarPanelRef = useRef<ImperativePanelHandle>(null);
+  // react-resizable-panels takes minSize as a percentage, but we want a 380px
+  // floor regardless of window width — recompute on resize.
+  const [sidebarMinPct, setSidebarMinPct] = useState(SIDEBAR_MIN_FLOOR_PCT);
 
-  // Seed the sidebar at ~380px on first ever load. After that the library's
-  // autoSaveId persists any user resize, so we skip when a saved layout exists.
+  // Single observer that:
+  //   1) updates `sidebarMinPct` so the 380px floor stays accurate,
+  //   2) seeds the sidebar to ~380px on first mount when no saved layout exists,
+  //   3) on window resize, reflows the panel so its *pixel* width stays
+  //      constant (react-resizable-panels stores percentages, so without this
+  //      a wider window would proportionally widen the sidebar).
   useLayoutEffect(() => {
-    if (localStorage.getItem(VIDEO_EDITOR_LAYOUT_STORAGE_KEY)) return;
     const container = workspaceRef.current;
-    const panel = sidebarPanelRef.current;
-    if (!container || !panel) return;
-    const width = container.clientWidth;
-    if (width <= 0) return;
-    const pct = Math.min(
-      SIDEBAR_MAX_PCT,
-      Math.max(SIDEBAR_MIN_PCT, (DEFAULT_SIDEBAR_WIDTH_PX / width) * 100)
-    );
-    panel.resize(pct);
+    if (!container) return;
+
+    const hasSavedLayout = !!localStorage.getItem(VIDEO_EDITOR_LAYOUT_STORAGE_KEY);
+    let prevWidth = 0; // sentinel for "first observation"
+
+    const update = () => {
+      const width = container.clientWidth;
+      if (width <= 0) return;
+
+      const minPct = Math.min(
+        SIDEBAR_MAX_PCT,
+        Math.max(SIDEBAR_MIN_FLOOR_PCT, (SIDEBAR_MIN_PX / width) * 100)
+      );
+      setSidebarMinPct(minPct);
+
+      const panel = sidebarPanelRef.current;
+      if (panel) {
+        if (prevWidth === 0) {
+          if (!hasSavedLayout) {
+            const seedPct = Math.min(
+              SIDEBAR_MAX_PCT,
+              Math.max(minPct, (DEFAULT_SIDEBAR_WIDTH_PX / width) * 100)
+            );
+            panel.resize(seedPct);
+          }
+        } else if (width !== prevWidth) {
+          // Convert the current percentage to pixels using the *previous*
+          // width, then back to a percentage using the new width — that
+          // keeps the visible sidebar size in pixels stable.
+          const currentPct = panel.getSize();
+          const sidebarPx = (currentPct / 100) * prevWidth;
+          const targetPct = Math.min(
+            SIDEBAR_MAX_PCT,
+            Math.max(minPct, (sidebarPx / width) * 100)
+          );
+          if (Math.abs(targetPct - currentPct) > 0.01) {
+            panel.resize(targetPct);
+          }
+        }
+      }
+
+      prevWidth = width;
+    };
+
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(container);
+    return () => observer.disconnect();
   }, []);
 
   // Diagnostic: log when VideoEditorView renders
@@ -549,47 +602,19 @@ export const VideoEditorView = forwardRef<VideoEditorViewRef, VideoEditorViewPro
     }
   }, [clearEditor, flushSaveBeforeClose, setView, onBack]);
 
-  // Export video with zoom effects applied
-  const handleExport = useCallback(async (target: ExportTarget = 'video') => {
+  // Run the actual export (file picker + render). Assumes the user has already
+  // confirmed their format/fps choices via the ExportDialog (or there are none
+  // to make — see `handleExport` below for the 'original' bypass).
+  const runExport = useCallback(async (target: ExportTarget) => {
     if (!project) return;
 
-    const outputMode = target === 'gif' ? 'render' : getVideoOutputMode(project);
     const exportActionLabel = getVideoPrimaryActionLabel(project);
     const exportDialogTitle = target === 'gif' ? 'Export GIF' : getVideoExportDialogTitle(project);
-    const sourceFilename = getVideoOriginalFilename(project);
     const videoExtension = project.export.format === 'webm' ? 'webm' : 'mp4';
     const editedDefaultFilename =
       target === 'gif'
         ? withFileExtension(getVideoEditedDefaultFilename(project), 'gif')
         : withFileExtension(getVideoEditedDefaultFilename(project), videoExtension);
-
-    if (outputMode === 'original') {
-      try {
-        const outputPath = await save({
-          title: exportDialogTitle,
-          defaultPath: sourceFilename,
-          filters: [{ name: 'MP4 Video', extensions: ['mp4'] }],
-        });
-
-        if (!outputPath) {
-          return;
-        }
-
-        await invoke('save_copy_of_file', {
-          sourcePath: project.sources.screenVideo,
-          destinationPath: outputPath,
-        });
-
-        toast.success('Original video saved', {
-          description: 'Copied without rendering',
-        });
-      } catch (error) {
-        videoEditorLogger.error('Save original failed:', error);
-        const message = error instanceof Error ? error.message : 'Failed to save original video';
-        toast.error(message);
-      }
-      return;
-    }
 
     if (project.export.fps !== project.sources.fps) {
       toast.info(`Export uses source frame rate (${project.sources.fps} fps)`, {
@@ -632,6 +657,52 @@ export const VideoEditorView = forwardRef<VideoEditorViewRef, VideoEditorViewPro
       toast.error(message);
     }
   }, [project, exportVideo]);
+
+  // Entry point for the Export button / shortcut. Opens the ExportDialog so
+  // the user can pick format/fps/encoder first, except for the 'original'
+  // bypass (no edits → just copy the source).
+  const handleExport = useCallback(async (target: ExportTarget = 'video') => {
+    if (!project) return;
+
+    const outputMode = target === 'gif' ? 'render' : getVideoOutputMode(project);
+
+    if (outputMode === 'original') {
+      const exportDialogTitle = getVideoExportDialogTitle(project);
+      const sourceFilename = getVideoOriginalFilename(project);
+      try {
+        const outputPath = await save({
+          title: exportDialogTitle,
+          defaultPath: sourceFilename,
+          filters: [{ name: 'MP4 Video', extensions: ['mp4'] }],
+        });
+
+        if (!outputPath) return;
+
+        await invoke('save_copy_of_file', {
+          sourcePath: project.sources.screenVideo,
+          destinationPath: outputPath,
+        });
+
+        toast.success('Original video saved', {
+          description: 'Copied without rendering',
+        });
+      } catch (error) {
+        videoEditorLogger.error('Save original failed:', error);
+        const message = error instanceof Error ? error.message : 'Failed to save original video';
+        toast.error(message);
+      }
+      return;
+    }
+
+    setExportDialogTarget(target);
+  }, [project]);
+
+  const handleExportDialogConfirm = useCallback(() => {
+    const target = exportDialogTarget;
+    if (!target) return;
+    setExportDialogTarget(null);
+    void runExport(target);
+  }, [exportDialogTarget, runExport]);
 
   useEffect(() => {
     handleExportRef.current = (target) => {
@@ -736,7 +807,7 @@ export const VideoEditorView = forwardRef<VideoEditorViewRef, VideoEditorViewPro
         <ResizablePanel
           ref={sidebarPanelRef}
           defaultSize={26}
-          minSize={SIDEBAR_MIN_PCT}
+          minSize={sidebarMinPct}
           maxSize={SIDEBAR_MAX_PCT}
           className="min-w-0"
         >
@@ -751,6 +822,20 @@ export const VideoEditorView = forwardRef<VideoEditorViewRef, VideoEditorViewPro
         exportProgress={exportProgress}
         onCancel={cancelExport}
       />
+
+      {/* Export configuration dialog (format / fps / encoder) */}
+      {project && exportDialogTarget && (
+        <ExportDialog
+          open
+          target={exportDialogTarget}
+          project={project}
+          onOpenChange={(open) => {
+            if (!open) setExportDialogTarget(null);
+          }}
+          onUpdateExportConfig={updateExportConfig}
+          onConfirm={handleExportDialogConfirm}
+        />
+      )}
     </div>
   );
 });
