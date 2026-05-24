@@ -56,6 +56,26 @@ class PlaybackEngine {
 
     // Update store with current video time
     if (this.videoElement) {
+      // Safety net: if the video element has stopped (ended or paused) while
+      // we still think we're playing, the `ended`/`pause` event may have
+      // failed to flip store.isPlaying (seen on muted video paired with
+      // separate audio in WebView2). Detect it here and snap to end so the
+      // play button resets and a single click restarts from the start.
+      if (this.videoElement.ended || this.videoElement.paused) {
+        const state = useVideoEditorStore.getState();
+        if (state.isPlaying) {
+          const segments = state.project?.timeline.segments;
+          const sourceDurationMs = state.project?.timeline.durationMs ?? 0;
+          const endTime = segments && segments.length > 0
+            ? getEffectiveDuration(segments, sourceDurationMs)
+            : sourceDurationMs;
+          state.setCurrentTime(endTime);
+          state.setIsPlaying(false);
+          this.stopSelf();
+          return;
+        }
+      }
+
       const sourceTimeMs = this.videoElement.currentTime * 1000;
       const state = useVideoEditorStore.getState();
       const segments = state.project?.timeline.segments;

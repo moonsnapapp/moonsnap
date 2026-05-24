@@ -190,10 +190,8 @@ export function usePlaybackSync(options: PlaybackSyncOptions): PlaybackSyncResul
       });
     };
 
-    const onEnded = () => {
+    const snapToEnd = () => {
       controls.stopRAFLoop();
-      // Snap playhead to the exact end — the browser fires `ended` before the
-      // next RAF callback, so the RAF loop never reads the final position.
       const state = useVideoEditorStore.getState();
       const segments = state.project?.timeline.segments;
       const sourceDuration = state.project?.timeline.durationMs ?? 0;
@@ -202,6 +200,27 @@ export function usePlaybackSync(options: PlaybackSyncOptions): PlaybackSyncResul
         : sourceDuration;
       state.setCurrentTime(endTime);
       state.setIsPlaying(false);
+    };
+
+    const onEnded = () => {
+      // Snap playhead to the exact end — the browser fires `ended` before the
+      // next RAF callback, so the RAF loop never reads the final position.
+      snapToEnd();
+    };
+
+    // Safety net: if the video naturally stops at end (e.g. `ended` didn't
+    // fire because the element was muted alongside separate audio tracks),
+    // make sure the store still flips isPlaying → false so the play button
+    // resets and clicking it restarts from the start. We can't require
+    // `video.ended` here because some builds pause at duration without
+    // setting that flag — fall back to a position-based check.
+    const onPause = () => {
+      if (!useVideoEditorStore.getState().isPlaying) return;
+      const atDuration = Number.isFinite(video.duration)
+        && video.duration > 0
+        && video.currentTime >= video.duration - 0.05;
+      if (!video.ended && !atDuration) return;
+      snapToEnd();
     };
 
     const onError = (e: Event) => {
@@ -225,12 +244,14 @@ export function usePlaybackSync(options: PlaybackSyncOptions): PlaybackSyncResul
 
     video.addEventListener('loadedmetadata', onLoadedMetadata);
     video.addEventListener('ended', onEnded);
+    video.addEventListener('pause', onPause);
     video.addEventListener('error', onError);
     video.addEventListener('loadeddata', onLoadedData);
 
     return () => {
       video.removeEventListener('loadedmetadata', onLoadedMetadata);
       video.removeEventListener('ended', onEnded);
+      video.removeEventListener('pause', onPause);
       video.removeEventListener('error', onError);
       video.removeEventListener('loadeddata', onLoadedData);
     };
