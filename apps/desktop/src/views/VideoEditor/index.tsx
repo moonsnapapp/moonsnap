@@ -82,6 +82,12 @@ import { VideoEditorSidebar } from './VideoEditorSidebar';
 import { VideoEditorPreview } from './VideoEditorPreview';
 import { VideoEditorTimeline } from './VideoEditorTimeline';
 import { ExportProgressOverlay } from './components/ExportProgressOverlay';
+import { ChevronRight } from 'lucide-react';
+import {
+  ResizableHandle,
+  ResizablePanel,
+  ResizablePanelGroup,
+} from '../../components/ui/resizable';
 import type { ExportProgress, CropConfig } from '../../types';
 import { TIMING } from '../../constants';
 import { videoEditorLogger } from '../../utils/logger';
@@ -662,38 +668,54 @@ export const VideoEditorView = forwardRef<VideoEditorViewRef, VideoEditorViewPro
 
   return (
     <div className="editor-workspace video-editor-workspace flex-1 flex min-h-0">
-      <div className="video-editor-content-column flex-1 flex flex-col min-w-0 min-h-0">
-        {/* Main content area - Preview */}
-        <div className="editor-workspace__main flex-1 flex min-h-0">
-          <div className="video-editor-main-pane flex-1 flex flex-col min-w-0">
-            {/* Top Bar - hidden when embedded in window with its own titlebar */}
-            {!hideTopBar && (
-              <VideoEditorToolbar project={project} onBack={handleBack} />
-            )}
+      <ResizablePanelGroup
+        direction="horizontal"
+        autoSaveId="moonsnap-video-editor-layout"
+        className="flex-1 min-h-0"
+      >
+        <ResizablePanel defaultSize={74} minSize={50} className="min-w-0">
+          <div className="video-editor-content-column h-full flex flex-col min-w-0 min-h-0">
+            {/* Main content area - Preview */}
+            <div className="editor-workspace__main flex-1 flex min-h-0">
+              <div className="video-editor-main-pane flex-1 flex flex-col min-w-0">
+                {/* Top Bar - hidden when embedded in window with its own titlebar */}
+                {!hideTopBar && (
+                  <VideoEditorToolbar project={project} onBack={handleBack} />
+                )}
 
-            {/* Video Preview */}
-            <VideoEditorPreview
-              isActive={isActive}
-              captureNavigation={captureNavigation}
+                {/* Video Preview */}
+                <VideoEditorPreview
+                  isActive={isActive}
+                  captureNavigation={captureNavigation}
+                />
+              </div>
+            </div>
+
+            {/* Timeline with integrated controls */}
+            <VideoEditorTimeline
+              onExport={handleExport}
+              onResetTrimSegments={handleResetTrimSegments}
+              onSetInPoint={handleSetInPoint}
+              onSetOutPoint={handleSetOutPoint}
+              onClearExportRange={handleClearExportRange}
             />
           </div>
-        </div>
+        </ResizablePanel>
 
-        {/* Timeline with integrated controls */}
-        <VideoEditorTimeline
-          onExport={handleExport}
-          onResetTrimSegments={handleResetTrimSegments}
-          onSetInPoint={handleSetInPoint}
-          onSetOutPoint={handleSetOutPoint}
-          onClearExportRange={handleClearExportRange}
-        />
-      </div>
+        <ResizableHandle className="video-editor-resize-handle">
+          <span className="sidebar-toggle-handle__chip" aria-hidden="true">
+            <ChevronRight className="w-3 h-3" />
+          </span>
+        </ResizableHandle>
 
-      {/* Right sidebar with tabbed properties panel */}
-      <VideoEditorSidebar
-        project={project}
-        onOpenCropDialog={() => setIsCropDialogOpen(true)}
-      />
+        <ResizablePanel defaultSize={26} minSize={18} maxSize={45} className="min-w-0">
+          {/* Right sidebar with tabbed properties panel */}
+          <VideoEditorSidebar
+            project={project}
+            onOpenCropDialog={() => setIsCropDialogOpen(true)}
+          />
+        </ResizablePanel>
+      </ResizablePanelGroup>
 
       {/* Crop Dialog - lazy loaded, crops video content before composition */}
       {project && isCropDialogOpen && (

@@ -1024,7 +1024,8 @@ textarea,
 /* Resize handle straddles the seam with negative margins on both sides so
    it takes zero layout space â€” it sits on top of the library/canvas
    boundary instead of carving out its own column for the chevron. */
-.image-editor-layout__resize-handle {
+.image-editor-layout__resize-handle,
+.video-editor-resize-handle {
   position: relative;
   z-index: 20;
   align-self: stretch;
@@ -1041,7 +1042,8 @@ textarea,
   justify-content: center;
 }
 
-.image-editor-layout__resize-handle::before {
+.image-editor-layout__resize-handle::before,
+.video-editor-resize-handle::before {
   content: '';
   position: absolute;
   top: 0;
@@ -1054,7 +1056,10 @@ textarea,
 
 .image-editor-layout__resize-handle:hover::before,
 .image-editor-layout__resize-handle:focus-visible::before,
-.image-editor-layout__resize-handle[data-resize-handle-active]::before {
+.image-editor-layout__resize-handle[data-resize-handle-active]::before,
+.video-editor-resize-handle:hover::before,
+.video-editor-resize-handle:focus-visible::before,
+.video-editor-resize-handle[data-resize-handle-active]::before {
   background: rgba(255, 255, 255, 0.22);
 }
 
@@ -1087,7 +1092,10 @@ textarea,
 
 .image-editor-layout__resize-handle:hover .sidebar-toggle-handle__chip,
 .image-editor-layout__resize-handle:focus-visible .sidebar-toggle-handle__chip,
-.image-editor-layout__resize-handle[data-resize-handle-active] .sidebar-toggle-handle__chip {
+.image-editor-layout__resize-handle[data-resize-handle-active] .sidebar-toggle-handle__chip,
+.video-editor-resize-handle:hover .sidebar-toggle-handle__chip,
+.video-editor-resize-handle:focus-visible .sidebar-toggle-handle__chip,
+.video-editor-resize-handle[data-resize-handle-active] .sidebar-toggle-handle__chip {
   opacity: 1;
 }
 
@@ -1287,7 +1295,7 @@ textarea,
   content: none;
 }
 
-.video-editor-workspace > .compositor-sidebar {
+.video-editor-workspace .compositor-sidebar {
   align-self: stretch;
   margin: 0;
   border: 0;
@@ -1296,8 +1304,8 @@ textarea,
   box-shadow: none; /* tauri-shadow-allow */
 }
 
-.video-editor-workspace > .compositor-sidebar::before,
-.video-editor-workspace > .compositor-sidebar::after {
+.video-editor-workspace .compositor-sidebar::before,
+.video-editor-workspace .compositor-sidebar::after {
   content: none;
 }
 
@@ -2850,7 +2858,7 @@ body.floating-toolbar-window #root {
   filter: none;
 }
 
-.light .video-editor-workspace > .compositor-sidebar {
+.light .video-editor-workspace .compositor-sidebar {
   border: 0;
   border-left: 1px solid rgba(15, 23, 42, 0.08);
   border-radius: 0;
@@ -2927,17 +2935,22 @@ body.floating-toolbar-window #root {
   border-right: 1px solid rgba(15, 23, 42, 0.1);
 }
 
-.light .image-editor-layout__resize-handle::before {
+.light .image-editor-layout__resize-handle::before,
+.light .video-editor-resize-handle::before {
   background: rgba(15, 23, 42, 0.16);
 }
 
-.light .image-editor-layout__resize-handle::after {
+.light .image-editor-layout__resize-handle::after,
+.light .video-editor-resize-handle::after {
   background: linear-gradient(90deg, rgba(15, 23, 42, 0.06) 0%, transparent 100%);
 }
 
 .light .image-editor-layout__resize-handle:hover::before,
 .light .image-editor-layout__resize-handle:focus-visible::before,
-.light .image-editor-layout__resize-handle[data-resize-handle-active]::before {
+.light .image-editor-layout__resize-handle[data-resize-handle-active]::before,
+.light .video-editor-resize-handle:hover::before,
+.light .video-editor-resize-handle:focus-visible::before,
+.light .video-editor-resize-handle[data-resize-handle-active]::before {
   background: rgba(15, 23, 42, 0.28);
 }
 

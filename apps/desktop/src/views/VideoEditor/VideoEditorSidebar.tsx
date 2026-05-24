@@ -56,7 +56,6 @@ import { ExportConfigPanel } from './panels/ExportConfigPanel';
 import { findTextSegmentById } from '../../utils/textSegmentId';
 import { createDefaultAnnotationShape, getNextAnnotationStepNumber } from '../../utils/videoAnnotations';
 import type { SceneMode, VideoProject } from '../../types';
-import { LAYOUT } from '../../constants';
 
 export interface VideoEditorSidebarProps {
   project: VideoProject | null;
@@ -166,14 +165,7 @@ export function VideoEditorSidebar({ project, onOpenCropDialog }: VideoEditorSid
     selectedTextSegmentId;
 
   return (
-    <div
-      className="compositor-sidebar flex flex-col shrink-0"
-      style={{
-        width: LAYOUT.VIDEO_EDITOR_SIDEBAR_WIDTH,
-        minWidth: LAYOUT.VIDEO_EDITOR_SIDEBAR_WIDTH,
-        maxWidth: LAYOUT.VIDEO_EDITOR_SIDEBAR_WIDTH,
-      }}
-    >
+    <div className="compositor-sidebar relative flex h-full w-full flex-col">
       {/* Tab Bar */}
       <SidebarTabBar
         activeTab={activeTab}
