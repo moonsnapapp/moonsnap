@@ -870,11 +870,67 @@ textarea,
 }
 
 .image-editor-workspace {
-  gap: 12px;
+  gap: 0;
 }
 
 .image-editor-workspace .editor-workspace__main {
-  padding-bottom: 0;
+  gap: 0;
+  padding: 0;
+}
+
+/* Flatten the image editor: no rounded "card" shells, no floating shadows.
+   Panels sit flush against the window edges and are separated by thin
+   dividers instead of corner radii. */
+.image-editor-workspace .editor-stage-shell {
+  border: 0;
+  border-radius: 0;
+  filter: none;
+}
+
+.image-editor-workspace .editor-stage-shell::before {
+  content: none;
+}
+
+.image-editor-workspace .compositor-sidebar {
+  border: 0;
+  border-left: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 0;
+  box-shadow: none; /* tauri-shadow-allow */
+}
+
+.image-editor-workspace .compositor-sidebar::before,
+.image-editor-workspace .compositor-sidebar::after {
+  content: none;
+}
+
+.image-editor-workspace .properties-panel-header {
+  background: transparent;
+}
+
+.image-editor-workspace .editor-toolbar-container {
+  padding: 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  background: linear-gradient(180deg, rgba(20, 21, 24, 0.96) 0%, rgba(12, 13, 16, 0.99) 100%);
+}
+
+.image-editor-workspace .editor-toolbar-container::before {
+  content: none;
+}
+
+.image-editor-workspace .floating-toolbar {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none; /* tauri-shadow-allow */
+  filter: none;
+  padding: 10px 16px;
+  justify-content: center;
+  width: 100%;
+}
+
+.image-editor-workspace .floating-toolbar::before,
+.image-editor-workspace .floating-toolbar::after {
+  content: none;
 }
 
 .canvas-capture-nav {
@@ -889,44 +945,41 @@ textarea,
   position: absolute;
   top: 50%;
   display: inline-flex;
-  width: 44px;
-  height: 56px;
+  width: 28px;
+  height: 28px;
   align-items: center;
   justify-content: center;
-  border: 1px solid rgba(255, 255, 255, 0.07);
-  background: rgba(18, 18, 20, 0.34);
-  color: var(--ink-dark);
-  filter: drop-shadow(0 6px 14px rgba(0, 0, 0, 0.22));
-  opacity: 0.58;
+  border: 0;
+  background: transparent;
+  color: rgba(225, 231, 238, 0.55);
+  opacity: 0.4;
   transform: translateY(-50%);
   transition:
     background var(--duration-fast) var(--ease-out),
-    border-color var(--duration-fast) var(--ease-out),
     color var(--duration-fast) var(--ease-out),
     opacity var(--duration-fast) var(--ease-out),
     transform var(--duration-fast) var(--ease-out);
 }
 
 .canvas-capture-nav__button:hover {
-  border-color: rgba(255, 255, 255, 0.12);
-  background: rgba(24, 24, 27, 0.58);
+  background: rgba(24, 24, 27, 0.55);
   color: var(--ink-black);
-  opacity: 0.92;
+  opacity: 1;
 }
 
 .canvas-capture-nav__button:active {
-  transform: translateY(-50%) scale(0.97);
+  transform: translateY(-50%) scale(0.94);
 }
 
 .canvas-capture-nav__button:focus-visible {
   outline: 2px solid var(--coral-400);
-  outline-offset: 3px;
+  outline-offset: 2px;
   opacity: 1;
 }
 
 .canvas-capture-nav__button svg {
-  width: 32px;
-  height: 32px;
+  width: 22px;
+  height: 22px;
   stroke-width: 2;
 }
 
@@ -952,13 +1005,8 @@ textarea,
   /* Width is governed by react-resizable-panels (minSize / collapsedSize=0).
      CSS min-width must stay 0 so clicking the handle can collapse the panel. */
   min-width: 0;
-  padding-right: 8px;
   background: linear-gradient(180deg, rgba(18, 18, 21, 0.98) 0%, rgba(10, 10, 12, 0.995) 100%);
   overflow: hidden;
-}
-
-.image-editor-layout__library--collapsed {
-  padding-right: 0;
 }
 
 /* Themed rail shown when the library sidebar is collapsed. */
@@ -973,6 +1021,9 @@ textarea,
   border-right: 1px solid rgba(255, 255, 255, 0.04);
 }
 
+/* Resize handle straddles the seam with negative margins on both sides so
+   it takes zero layout space — it sits on top of the library/canvas
+   boundary instead of carving out its own column for the chevron. */
 .image-editor-layout__resize-handle {
   position: relative;
   z-index: 20;
@@ -981,13 +1032,10 @@ textarea,
   min-height: 100%;
   width: 12px;
   flex: 0 0 12px;
-  margin-left: 0;
-  margin-right: -12px;
+  margin-left: -6px;
+  margin-right: -6px;
   border: 0;
   background: transparent !important;
-  /* Cursor is handled by react-resizable-panels via a global `*{cursor:...}`
-     rule during hover/drag — declaring it here too causes a brief double
-     cursor on enter/exit. */
   display: flex;
   align-items: center;
   justify-content: center;
@@ -998,42 +1046,16 @@ textarea,
   position: absolute;
   top: 0;
   bottom: 0;
-  left: 0;
+  left: 6px;
   width: 1px;
-  height: auto;
-  transform: none;
-  background: rgba(255, 255, 255, 0.12);
-  transition:
-    width 0.16s ease,
-    background 0.16s ease;
-}
-
-.image-editor-layout__resize-handle::after {
-  content: '';
-  position: absolute;
-  top: 0;
-  right: auto;
-  bottom: 0;
-  left: 0;
-  width: 12px;
-  height: auto;
-  transform: none;
-  background: linear-gradient(90deg, rgba(255, 255, 255, 0.04) 0%, transparent 100%);
-  opacity: 0;
-  transition: opacity 0.16s ease;
+  background: rgba(255, 255, 255, 0.06);
+  transition: background 0.16s ease;
 }
 
 .image-editor-layout__resize-handle:hover::before,
 .image-editor-layout__resize-handle:focus-visible::before,
 .image-editor-layout__resize-handle[data-resize-handle-active]::before {
-  width: 1px;
   background: rgba(255, 255, 255, 0.22);
-}
-
-.image-editor-layout__resize-handle:hover::after,
-.image-editor-layout__resize-handle:focus-visible::after,
-.image-editor-layout__resize-handle[data-resize-handle-active]::after {
-  opacity: 1;
 }
 
 /* Transparent overlay over the resize handle for our own click-with-tolerance
@@ -1045,8 +1067,8 @@ textarea,
   z-index: 1;
 }
 
-/* Inline collapse chevron on the resize handle — always present, just
-   faded out so it reads as a quiet hint rather than a button glued on. */
+/* Inline collapse chevron — sits centered in the 12px handle, which
+   itself straddles the seam via negative margins. */
 .sidebar-toggle-handle__chip {
   position: relative;
   z-index: 2;
@@ -1084,6 +1106,14 @@ textarea,
 
 .library-panel--sidebar .library-stage {
   padding: 14px 12px 16px;
+}
+
+/* In the embedded image-editor layout the library sits flush against the
+   canvas — drop the right padding so cards reach the seam instead of
+   leaving a visible "column" behind for the collapse chevron. */
+.image-editor-workspace .library-panel--sidebar .library-stage,
+.image-editor-layout .library-panel--sidebar .library-stage {
+  padding-right: 0;
 }
 
 .library-density-control {
@@ -1312,20 +1342,58 @@ textarea,
 }
 
 .video-editor-workspace {
-  gap: 12px;
+  gap: 0;
 }
 
 .video-editor-content-column {
   min-width: 0;
 }
 
-.video-editor-workspace > .compositor-sidebar {
-  align-self: stretch;
-  margin: 14px 14px 14px 0;
+/* Flatten the video editor: same flush-panel treatment as the image editor.
+   Panels sit edge-to-edge separated by thin dividers instead of card radii
+   and drop-shadows. */
+.video-editor-workspace .editor-workspace__main {
+  gap: 0;
+  padding: 0;
 }
 
 .video-editor-workspace .video-editor-main-pane {
-  gap: 12px;
+  gap: 0;
+}
+
+.video-editor-workspace .editor-preview-shell {
+  border: 0;
+  border-radius: 0;
+  filter: none;
+}
+
+.video-editor-workspace .editor-preview-shell::before {
+  content: none;
+}
+
+.video-editor-workspace > .compositor-sidebar {
+  align-self: stretch;
+  margin: 0;
+  border: 0;
+  border-left: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 0;
+  box-shadow: none; /* tauri-shadow-allow */
+}
+
+.video-editor-workspace > .compositor-sidebar::before,
+.video-editor-workspace > .compositor-sidebar::after {
+  content: none;
+}
+
+.video-editor-workspace .video-editor-toolbar {
+  border: 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 0;
+  filter: none;
+}
+
+.video-editor-workspace .video-editor-toolbar::before {
+  content: none;
 }
 
 .video-editor-workspace .timeline-shell {
@@ -1333,7 +1401,7 @@ textarea,
   border-right: 0;
   border-bottom: 0;
   border-left: 0;
-  border-top: 1px solid rgba(255, 255, 255, 0.038);
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
   border-radius: 0;
   background: linear-gradient(180deg, rgba(18, 19, 22, 0.975) 0%, rgba(14, 15, 18, 0.99) 100%);
 }
@@ -2756,9 +2824,32 @@ body.floating-toolbar-window #root {
 }
 
 .light .video-editor-workspace .timeline-shell {
-  border-color: rgba(15, 23, 42, 0.08);
-  border-top-color: rgba(15, 23, 42, 0.06);
+  border: 0;
+  border-top: 1px solid rgba(15, 23, 42, 0.08);
+  border-radius: 0;
   background: linear-gradient(180deg, rgba(250, 251, 253, 0.95) 0%, rgba(241, 245, 249, 0.97) 100%);
+}
+
+/* Light-mode mirror of the video-editor flat-panel overrides. Comes after
+   the generic .light rules so it wins on equal specificity. */
+.light .video-editor-workspace .editor-preview-shell {
+  border: 0;
+  border-radius: 0;
+  filter: none;
+}
+
+.light .video-editor-workspace > .compositor-sidebar {
+  border: 0;
+  border-left: 1px solid rgba(15, 23, 42, 0.08);
+  border-radius: 0;
+  box-shadow: none; /* tauri-shadow-allow */
+}
+
+.light .video-editor-workspace .video-editor-toolbar {
+  border: 0;
+  border-bottom: 1px solid rgba(15, 23, 42, 0.08);
+  border-radius: 0;
+  filter: none;
 }
 
 .light .library-panel {
@@ -2998,6 +3089,34 @@ body.floating-toolbar-window #root {
 .light .titlebar::after {
   opacity: 0.8;
   background: var(--glass-accent-line);
+}
+
+/* Light-mode mirror of the image-editor flat-panel overrides. Must come
+   after the generic .light rules above so it wins on equal specificity. */
+.light .image-editor-workspace .editor-stage-shell {
+  border: 0;
+  border-radius: 0;
+  filter: none;
+}
+
+.light .image-editor-workspace .compositor-sidebar {
+  border: 0;
+  border-left: 1px solid rgba(15, 23, 42, 0.08);
+  border-radius: 0;
+  box-shadow: none; /* tauri-shadow-allow */
+}
+
+.light .image-editor-workspace .editor-toolbar-container {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.92) 0%, rgba(241, 245, 249, 0.96) 100%);
+  border-top: 1px solid rgba(15, 23, 42, 0.08);
+}
+
+.light .image-editor-workspace .floating-toolbar {
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none; /* tauri-shadow-allow */
+  filter: none;
 }
 
 .light .titlebar-badge-pro {
