@@ -5391,9 +5391,31 @@ body.floating-toolbar-window #root {
   color: #ffffff;
 }
 
-/* Cloud toolbar tooltip - ensure it renders above the toolbar (portaled to body) */
+/* Radix tooltips/popovers are portaled to body — pin them above editor
+   overlays (zoom controls, cloud toolbar, etc.) which sit in the z-10 to
+   z-120 range. */
 [data-radix-popper-content-wrapper] {
-  z-index: 150 !important;
+  z-index: 1000 !important;
+}
+
+/* Light-theme tooltip override. The tooltip ships with neutral-900/white,
+   which is unreadable on light surfaces — flip to a near-white card with
+   dark ink. Scoped via .app-tooltip (Radix's role="tooltip" lives on a
+   VisuallyHidden a11y node, not the visible content). */
+.light .app-tooltip {
+  background-color: #ffffff;
+  color: var(--ink-dark);
+  border: 1px solid rgba(15, 23, 42, 0.1);
+  box-shadow:
+    0 4px 12px rgba(15, 23, 42, 0.08),
+    0 1px 2px rgba(15, 23, 42, 0.06);
+}
+
+.light .app-tooltip .kbd {
+  background: rgba(15, 23, 42, 0.04);
+  border-color: rgba(15, 23, 42, 0.1);
+  color: var(--ink-muted);
+  box-shadow: 0 1px 0 rgba(15, 23, 42, 0.08);
 }
 
 /* ========================================
