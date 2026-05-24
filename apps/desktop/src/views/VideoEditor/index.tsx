@@ -776,6 +776,7 @@ export const VideoEditorView = forwardRef<VideoEditorViewRef, VideoEditorViewPro
                     isCropEditing={isCropEditing}
                     onSetIsCropEditing={setIsCropEditing}
                     onUpdateExportConfig={updateExportConfig}
+                    onExport={handleExport}
                   />
                 )}
 
@@ -789,7 +790,6 @@ export const VideoEditorView = forwardRef<VideoEditorViewRef, VideoEditorViewPro
 
             {/* Timeline with integrated controls */}
             <VideoEditorTimeline
-              onExport={handleExport}
               onResetTrimSegments={handleResetTrimSegments}
               onSetInPoint={handleSetInPoint}
               onSetOutPoint={handleSetOutPoint}

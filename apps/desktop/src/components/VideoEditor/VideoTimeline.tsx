@@ -2,8 +2,6 @@ import { memo, useCallback, useRef, useState, useEffect } from 'react';
 import { TIMING } from '@/constants';
 import {
   Film,
-  Download,
-  ChevronDown,
   ZoomIn,
   ZoomOut,
   Maximize2,
@@ -21,13 +19,6 @@ import {
   Repeat2,
   X,
 } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
 import {
   Tooltip,
   TooltipContent,
@@ -220,7 +211,6 @@ const TimelineTimeLabel = memo(function TimelineTimeLabel({
 });
 
 interface VideoTimelineProps {
-  onExport: (target?: 'video' | 'gif') => void;
   onResetTrimSegments?: () => void;
   onSetInPoint?: () => void;
   onSetOutPoint?: () => void;
@@ -423,7 +413,7 @@ const IORangeBar = memo(function IORangeBar({
  * VideoTimeline - Main timeline component with ruler, tracks, and playhead.
  * Optimized to prevent re-renders during playback.
  */
-export function VideoTimeline({ onExport, onResetTrimSegments, onSetInPoint, onSetOutPoint, onClearExportRange }: VideoTimelineProps) {
+export function VideoTimeline({ onResetTrimSegments, onSetInPoint, onSetOutPoint, onClearExportRange }: VideoTimelineProps) {
   const project = useVideoEditorStore(selectProject);
   const timelineZoom = useVideoEditorStore(selectTimelineZoom);
   const isDraggingPlayhead = useVideoEditorStore(selectIsDraggingPlayhead);
@@ -1397,27 +1387,6 @@ export function VideoTimeline({ onExport, onResetTrimSegments, onSetInPoint, onS
               </Tooltip>
             </div>
 
-            <div className="w-px h-5 bg-[var(--glass-border)]" />
-
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button className="btn-coral h-8 px-3 rounded-md flex items-center gap-1.5">
-                  <Download className="w-3.5 h-3.5" />
-                  <span className="text-xs font-medium">Export</span>
-                  <ChevronDown className="w-3 h-3" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" sideOffset={6}>
-                <DropdownMenuItem onClick={() => onExport('video')}>
-                  <Download className="mr-2 h-3.5 w-3.5" />
-                  <span>Export Video</span>
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => onExport('gif')}>
-                  <Film className="mr-2 h-3.5 w-3.5" />
-                  <span>Export GIF</span>
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
           </div>
         </div>
       </TooltipProvider>

@@ -7,7 +7,6 @@ import { selectProject, selectTrackVisibility } from '../../stores/videoEditor/s
 import { VideoTimeline } from '../../components/VideoEditor/VideoTimeline';
 
 export interface VideoEditorTimelineProps {
-  onExport: (target?: 'video' | 'gif') => void;
   onResetTrimSegments?: () => void;
   onSetInPoint?: () => void;
   onSetOutPoint?: () => void;
@@ -20,7 +19,7 @@ const TIMELINE_TRACK_HEIGHT_PX = 48;
 const TIMELINE_SCROLLBAR_ALLOWANCE_PX = 14;
 const TIMELINE_BASE_HEIGHT_PX = 320;
 
-export function VideoEditorTimeline({ onExport, onResetTrimSegments, onSetInPoint, onSetOutPoint, onClearExportRange }: VideoEditorTimelineProps) {
+export function VideoEditorTimeline({ onResetTrimSegments, onSetInPoint, onSetOutPoint, onClearExportRange }: VideoEditorTimelineProps) {
   const project = useVideoEditorStore(selectProject);
   const trackVisibility = useVideoEditorStore(selectTrackVisibility);
 
@@ -43,7 +42,6 @@ export function VideoEditorTimeline({ onExport, onResetTrimSegments, onSetInPoin
   return (
     <div className="timeline-shell flex flex-col" style={{ height: `${timelineHeight}px` }}>
       <VideoTimeline
-        onExport={onExport}
         onResetTrimSegments={onResetTrimSegments}
         onSetInPoint={onSetInPoint}
         onSetOutPoint={onSetOutPoint}

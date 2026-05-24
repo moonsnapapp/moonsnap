@@ -122,22 +122,13 @@ beforeEach(() => {
 });
 
 describe('VideoTimeline', () => {
-  const defaultProps = {
-    onExport: vi.fn(),
-  };
+  const defaultProps = {};
 
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
   describe('rendering', () => {
-    it('should render timeline with export button', () => {
-      render(<VideoTimeline {...defaultProps} />);
-
-      // Export button is always visible
-      expect(screen.getByRole('button', { name: /export/i })).toBeInTheDocument();
-    });
-
     it('should render time display showing 0:00 initially', () => {
       const { container } = render(<VideoTimeline {...defaultProps} />);
 
@@ -610,23 +601,6 @@ describe('VideoTimeline', () => {
       expect(useVideoEditorStore.getState().isPlaying).toBe(false);
     });
 
-    it('should call onExport with the selected export target', () => {
-      const onExport = vi.fn();
-      render(<VideoTimeline {...defaultProps} onExport={onExport} />);
-
-      const exportButton = screen.getByRole('button', { name: /export/i });
-      fireEvent.pointerDown(exportButton, { button: 0, ctrlKey: false });
-      fireEvent.click(screen.getByRole('menuitem', { name: /export video/i }));
-
-      expect(onExport).toHaveBeenCalledTimes(1);
-      expect(onExport).toHaveBeenCalledWith('video');
-
-      fireEvent.pointerDown(exportButton, { button: 0, ctrlKey: false });
-      fireEvent.click(screen.getByRole('menuitem', { name: /export gif/i }));
-
-      expect(onExport).toHaveBeenCalledTimes(2);
-      expect(onExport).toHaveBeenLastCalledWith('gif');
-    });
   });
 
   describe('zoom controls', () => {
@@ -1552,7 +1526,7 @@ describe('VideoTimeline', () => {
 
       let container: HTMLElement;
       await act(async () => {
-        const result = render(<VideoEditorTimeline onExport={vi.fn()} />);
+        const result = render(<VideoEditorTimeline />);
         container = result.container;
       });
 

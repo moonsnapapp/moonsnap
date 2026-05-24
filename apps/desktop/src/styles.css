@@ -1694,7 +1694,7 @@ body.resizing * {
    ======================================== */
 
 .btn-coral {
-  background: var(--coral-400);
+  background: var(--coral-500);
   color: white;
   font-weight: 600;
   border: 1px solid rgba(255, 255, 255, 0.15);
@@ -1703,7 +1703,7 @@ body.resizing * {
 }
 
 .btn-coral:hover {
-  background: var(--coral-500);
+  background: var(--coral-400);
   box-shadow: 0 6px 20px rgba(156, 163, 175, 0.45), inset 0 1px 0 rgba(255,255,255,0.25);
   transform: translateY(-1px);
 }

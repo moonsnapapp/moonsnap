@@ -4,8 +4,25 @@
  * Always shows the Output Canvas size selector. When crop edit mode is on,
  * adds aspect-ratio presets, lock A/R toggle, Fill, Reset, and a Done button.
  */
-import { Crop, Lock, Unlock, Maximize2, RotateCcw, Check, Info } from 'lucide-react';
+import {
+  Crop,
+  Lock,
+  Unlock,
+  Maximize2,
+  RotateCcw,
+  Check,
+  Info,
+  Download,
+  ChevronDown,
+  Film,
+} from 'lucide-react';
 import { Button } from '../../components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '../../components/ui/dropdown-menu';
 import {
   Popover,
   PopoverContent,
@@ -49,6 +66,31 @@ interface PreviewTopBarProps {
   isCropEditing: boolean;
   onSetIsCropEditing: (enabled: boolean) => void;
   onUpdateExportConfig: (updates: Partial<ExportConfig>) => void;
+  onExport: (target?: 'video' | 'gif') => void;
+}
+
+function ExportButton({ onExport }: { onExport: (target?: 'video' | 'gif') => void }) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button className="btn-coral h-7 px-2.5 rounded-md flex items-center gap-1.5">
+          <Download className="w-3 h-3" />
+          <span className="text-[11px] font-medium">Export</span>
+          <ChevronDown className="w-3 h-3" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" sideOffset={6}>
+        <DropdownMenuItem onClick={() => onExport('video')}>
+          <Download className="mr-2 h-3.5 w-3.5" />
+          <span>Export Video</span>
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={() => onExport('gif')}>
+          <Film className="mr-2 h-3.5 w-3.5" />
+          <span>Export GIF</span>
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
 }
 
 const ASPECT_PRESETS: Array<{ label: string; value: 'free' | 'original' | number }> = [
@@ -77,6 +119,7 @@ export function PreviewTopBar({
   isCropEditing,
   onSetIsCropEditing,
   onUpdateExportConfig,
+  onExport,
 }: PreviewTopBarProps) {
   const videoWidth = project.sources.originalWidth;
   const videoHeight = project.sources.originalHeight;
@@ -333,6 +376,7 @@ export function PreviewTopBar({
               Done
             </Button>
             <ProjectInfoButton project={project} />
+            <ExportButton onExport={onExport} />
           </div>
         </>
       ) : (
@@ -380,8 +424,9 @@ export function PreviewTopBar({
             </Button>
           )}
 
-          <div className="ml-auto">
+          <div className="ml-auto flex items-center gap-2">
             <ProjectInfoButton project={project} />
+            <ExportButton onExport={onExport} />
           </div>
         </>
       )}
