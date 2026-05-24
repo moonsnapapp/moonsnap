@@ -2414,6 +2414,66 @@ body.floating-toolbar-window #root {
   content: none;
 }
 
+/* Flat preset chip used in the properties panel's Quick Styles / Size
+   rows. Replaces the old bordered-card look with a subtle hover/active
+   background tint — no border, minimal rounding. */
+.preset-option {
+  flex: 1;
+  height: 48px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ink-muted);
+  cursor: pointer;
+  transition:
+    background var(--duration-fast) var(--ease-out),
+    color var(--duration-fast) var(--ease-out);
+}
+
+.preset-option--text {
+  height: 32px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.preset-option:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--ink-dark);
+}
+
+.preset-option--active,
+.preset-option--active:hover:not(:disabled) {
+  background: rgba(249, 112, 102, 0.12);
+  color: var(--coral-300);
+}
+
+.preset-option:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.preset-option__label {
+  font-size: 10px;
+  font-weight: 500;
+  color: inherit;
+}
+
+.light .preset-option:hover:not(:disabled) {
+  background: rgba(15, 23, 42, 0.05);
+  color: var(--ink-dark);
+}
+
+.light .preset-option--active,
+.light .preset-option--active:hover:not(:disabled) {
+  background: rgba(249, 112, 102, 0.14);
+  color: var(--coral-500);
+}
+
 /* Properties panel header with glass effect */
 .properties-panel-header {
   display: flex;

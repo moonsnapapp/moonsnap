@@ -159,7 +159,7 @@ export const TextToolSettings: React.FC<TextToolSettingsProps> = ({
           <PopoverTrigger asChild>
             <button
               disabled={!textShape}
-              className="w-full h-9 px-3 pr-8 rounded-lg text-xs font-medium bg-[var(--card)] border border-[var(--polar-frost)] text-[var(--ink-dark)] cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-between text-left relative"
+              className="w-full h-9 px-3 pr-8 rounded-md text-xs font-medium bg-transparent hover:bg-white/[0.04] text-[var(--ink-dark)] cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-between text-left relative transition-colors"
               style={{ fontFamily: currentFontFamily }}
             >
               <span className="truncate">{currentFontFamily}</span>

@@ -364,7 +364,7 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
         {(effectiveTool === 'arrow' || effectiveTool === 'line' || effectiveTool === 'pen') && (
           <div className="space-y-3">
             <Label className="text-xs text-[var(--ink-muted)] uppercase tracking-wide font-medium">Quick Styles</Label>
-            <div className="flex gap-2">
+            <div className="flex gap-1">
               {STROKE_PRESETS_DATA.map((preset) => {
                 const isActive = strokeColor === preset.stroke && strokeWidth === preset.strokeWidth;
                 const IconComponent = effectiveTool === 'arrow' ? MoveUpRight : effectiveTool === 'line' ? Minus : Pencil;
@@ -372,20 +372,14 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
                   <button
                     key={preset.id}
                     onClick={() => applyStrokePreset(preset)}
-                    className={`flex-1 h-12 rounded-lg flex flex-col items-center justify-center gap-0.5 transition-all border ${
-                      isActive
-                        ? 'bg-[var(--coral-50)] border-[var(--coral-200)]'
-                        : 'bg-[var(--card)] border-[var(--polar-frost)] hover:bg-[var(--polar-ice)]'
-                    }`}
+                    className={`preset-option ${isActive ? 'preset-option--active' : ''}`}
                     title={`${preset.name}: ${preset.strokeWidth}px`}
                   >
                     <IconComponent
                       size={20}
                       style={{ color: preset.stroke, strokeWidth: preset.strokeWidth * 0.8 }}
                     />
-                    <span className={`text-[10px] font-medium ${isActive ? 'text-[var(--coral-500)]' : 'text-[var(--ink-muted)]'}`}>
-                      {preset.name}
-                    </span>
+                    <span className="preset-option__label">{preset.name}</span>
                   </button>
                 );
               })}
@@ -397,7 +391,7 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
         {(effectiveTool === 'rect' || effectiveTool === 'circle') && (
           <div className="space-y-3">
             <Label className="text-xs text-[var(--ink-muted)] uppercase tracking-wide font-medium">Quick Styles</Label>
-            <div className="flex gap-2">
+            <div className="flex gap-1">
               {STROKE_PRESETS_DATA.map((preset) => {
                 const isActive = strokeColor === preset.stroke && strokeWidth === preset.strokeWidth;
                 const IconComponent = effectiveTool === 'rect' ? Square : Circle;
@@ -405,20 +399,14 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
                   <button
                     key={preset.id}
                     onClick={() => applyShapePreset(preset)}
-                    className={`flex-1 h-12 rounded-lg flex flex-col items-center justify-center gap-0.5 transition-all border ${
-                      isActive
-                        ? 'bg-[var(--coral-50)] border-[var(--coral-200)]'
-                        : 'bg-[var(--card)] border-[var(--polar-frost)] hover:bg-[var(--polar-ice)]'
-                    }`}
+                    className={`preset-option ${isActive ? 'preset-option--active' : ''}`}
                     title={`${preset.name}: ${preset.strokeWidth}px`}
                   >
                     <IconComponent
                       size={20}
                       style={{ color: preset.stroke, strokeWidth: preset.strokeWidth * 0.8 }}
                     />
-                    <span className={`text-[10px] font-medium ${isActive ? 'text-[var(--coral-500)]' : 'text-[var(--ink-muted)]'}`}>
-                      {preset.name}
-                    </span>
+                    <span className="preset-option__label">{preset.name}</span>
                   </button>
                 );
               })}
@@ -430,7 +418,7 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
         {effectiveTool === 'highlight' && (
           <div className="space-y-3">
             <Label className="text-xs text-[var(--ink-muted)] uppercase tracking-wide font-medium">Quick Styles</Label>
-            <div className="flex gap-2">
+            <div className="flex gap-1">
               {HIGHLIGHT_PRESETS_DATA.map((preset) => {
                 // Check if this preset's fill matches
                 const selectedHighlight = singleSelection?.type === 'highlight' ? singleSelection : null;
@@ -439,20 +427,14 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
                   <button
                     key={preset.id}
                     onClick={() => applyHighlightPreset(preset)}
-                    className={`flex-1 h-12 rounded-lg flex flex-col items-center justify-center gap-0.5 transition-all border ${
-                      isActive
-                        ? 'bg-[var(--coral-50)] border-[var(--coral-200)]'
-                        : 'bg-[var(--card)] border-[var(--polar-frost)] hover:bg-[var(--polar-ice)]'
-                    }`}
+                    className={`preset-option ${isActive ? 'preset-option--active' : ''}`}
                     title={preset.name}
                   >
                     <div
-                      className="w-8 h-4 rounded"
+                      className="w-8 h-4 rounded-sm"
                       style={{ backgroundColor: preset.fill }}
                     />
-                    <span className={`text-[10px] font-medium ${isActive ? 'text-[var(--coral-500)]' : 'text-[var(--ink-muted)]'}`}>
-                      {preset.name}
-                    </span>
+                    <span className="preset-option__label">{preset.name}</span>
                   </button>
                 );
               })}
@@ -464,18 +446,14 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
         {effectiveTool === 'steps' && (
           <div className="space-y-3">
             <Label className="text-xs text-[var(--ink-muted)] uppercase tracking-wide font-medium">Quick Styles</Label>
-            <div className="flex gap-2">
+            <div className="flex gap-1">
               {STROKE_PRESETS_DATA.map((preset) => {
                 const isActive = strokeColor === preset.stroke;
                 return (
                   <button
                     key={preset.id}
                     onClick={() => applyStepsPreset(preset)}
-                    className={`flex-1 h-12 rounded-lg flex flex-col items-center justify-center gap-0.5 transition-all border ${
-                      isActive
-                        ? 'bg-[var(--coral-50)] border-[var(--coral-200)]'
-                        : 'bg-[var(--card)] border-[var(--polar-frost)] hover:bg-[var(--polar-ice)]'
-                    }`}
+                    className={`preset-option ${isActive ? 'preset-option--active' : ''}`}
                     title={preset.name}
                   >
                     <div
@@ -484,9 +462,7 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
                     >
                       1
                     </div>
-                    <span className={`text-[10px] font-medium ${isActive ? 'text-[var(--coral-500)]' : 'text-[var(--ink-muted)]'}`}>
-                      {preset.name}
-                    </span>
+                    <span className="preset-option__label">{preset.name}</span>
                   </button>
                 );
               })}
@@ -573,7 +549,7 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
               <Separator className="bg-[var(--polar-frost)]" />
               <div className="space-y-3">
                 <Label className="text-xs text-[var(--ink-muted)] uppercase tracking-wide font-medium">Size</Label>
-                <div className="flex gap-2">
+                <div className="flex gap-1">
                   {[
                     { label: 'Smallest', targetRadius: minRadius },
                     { label: 'Average', targetRadius: avgRadius },
@@ -589,11 +565,7 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
                           });
                         });
                       }}
-                      className={`flex-1 h-9 rounded-lg text-xs font-medium transition-all border ${
-                        !hasSteps || allSame
-                          ? 'bg-[var(--polar-ice)] text-[var(--ink-muted)] border-[var(--polar-frost)] opacity-50 cursor-not-allowed'
-                          : 'bg-[var(--card)] text-[var(--ink-muted)] border-[var(--polar-frost)] hover:text-[var(--ink-dark)] hover:bg-[var(--polar-ice)]'
-                      }`}
+                      className="preset-option preset-option--text"
                     >
                       {label}
                     </button>
