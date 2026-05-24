@@ -246,6 +246,12 @@ export const VideoEditorView = forwardRef<VideoEditorViewRef, VideoEditorViewPro
   // onResize callback doesn't echo the clamped value back into storage and
   // erode the user's preferred pixel width.
   const isProgrammaticResizeRef = useRef(false);
+  // Track whether the user is currently dragging the handle so we only
+  // persist the width on drag-end. Saving every intermediate size during a
+  // drag means the default load isn't the min even when the user briefly
+  // crossed wider widths mid-drag.
+  const isResizingSidebarRef = useRef(false);
+  const pendingSidebarPctRef = useRef<number | null>(null);
   // react-resizable-panels takes minSize as a percentage, but we want a 380px
   // floor regardless of window width — recompute on resize.
   const [sidebarMinPct, setSidebarMinPct] = useState(SIDEBAR_MIN_FLOOR_PCT);
@@ -308,6 +314,25 @@ export const VideoEditorView = forwardRef<VideoEditorViewRef, VideoEditorViewPro
       isProgrammaticResizeRef.current = false;
       return;
     }
+    // While the user is actively dragging, just remember the latest size —
+    // we persist it once on drag-end so transient mid-drag widths don't
+    // leak into storage.
+    if (isResizingSidebarRef.current) {
+      pendingSidebarPctRef.current = size;
+      return;
+    }
+  }, []);
+
+  const handleSidebarDragging = useCallback((isDragging: boolean) => {
+    if (isDragging) {
+      isResizingSidebarRef.current = true;
+      pendingSidebarPctRef.current = null;
+      return;
+    }
+    isResizingSidebarRef.current = false;
+    const size = pendingSidebarPctRef.current;
+    pendingSidebarPctRef.current = null;
+    if (size === null) return;
     const width = containerWidthRef.current;
     if (width <= 0) return;
     const px = Math.round((size / 100) * width);
@@ -811,7 +836,7 @@ export const VideoEditorView = forwardRef<VideoEditorViewRef, VideoEditorViewPro
           </div>
         </ResizablePanel>
 
-        <ResizableHandle className="video-editor-resize-handle">
+        <ResizableHandle className="video-editor-resize-handle" onDragging={handleSidebarDragging}>
           <span className="sidebar-toggle-handle__chip" aria-hidden="true">
             <ChevronRight className="w-3 h-3" />
           </span>
