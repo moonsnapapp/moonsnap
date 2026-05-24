@@ -2436,16 +2436,54 @@ body.floating-toolbar-window #root {
 
 .video-sidebar-tabs {
   position: relative;
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(72px, 1fr));
-  gap: 6px;
-  padding: 12px 12px 10px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.028) 0%, transparent 100%);
+  display: flex;
+  align-items: stretch;
+  gap: 4px;
+  padding: 0 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
 }
 
-.editor-choice-pill,
 .video-sidebar-tab {
+  position: relative;
+  display: inline-flex;
+  flex: 1 1 0;
+  min-height: 38px;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--ink-muted);
+  letter-spacing: 0;
+  transition:
+    color var(--duration-fast) var(--ease-smooth);
+}
+
+.video-sidebar-tab::after {
+  content: '';
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: -1px;
+  height: 2px;
+  border-radius: 2px 2px 0 0;
+  background: transparent;
+  transition: background-color var(--duration-fast) var(--ease-smooth);
+}
+
+.video-sidebar-tab:hover {
+  color: var(--ink-dark);
+}
+
+.video-sidebar-tab--active {
+  color: var(--ink-black);
+}
+
+.video-sidebar-tab--active::after {
+  background: var(--ink-black);
+}
+
+.editor-choice-pill {
   position: relative;
   display: inline-flex;
   min-height: 34px;
@@ -2466,15 +2504,13 @@ body.floating-toolbar-window #root {
   border-radius: var(--editor-pill-radius, 10px);
 }
 
-.editor-choice-pill:hover,
-.video-sidebar-tab:hover {
+.editor-choice-pill:hover {
   background: rgba(255, 255, 255, 0.05);
   border-color: rgba(255, 255, 255, 0.05);
   color: var(--ink-dark);
 }
 
-.editor-choice-pill--active,
-.video-sidebar-tab--active {
+.editor-choice-pill--active {
   border-color: rgba(255, 255, 255, 0.08);
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.085) 0%, rgba(255, 255, 255, 0.03) 100%);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.035), inset 0 -1px 0 rgba(0, 0, 0, 0.22); /* tauri-shadow-allow */
@@ -3288,18 +3324,20 @@ body.floating-toolbar-window #root {
 }
 
 .light .video-sidebar-tabs {
-  border-bottom-color: rgba(15, 23, 42, 0.08);
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.58) 0%, transparent 100%);
+  border-bottom-color: rgba(15, 23, 42, 0.1);
+  background: transparent;
 }
 
-.light .editor-choice-pill:hover,
-.light .video-sidebar-tab:hover {
+.light .video-sidebar-tab--active::after {
+  background: var(--ink-black);
+}
+
+.light .editor-choice-pill:hover {
   background: rgba(255, 255, 255, 0.7);
   border-color: rgba(15, 23, 42, 0.06);
 }
 
-.light .editor-choice-pill--active,
-.light .video-sidebar-tab--active {
+.light .editor-choice-pill--active {
   border-color: rgba(15, 23, 42, 0.08);
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.92) 0%, rgba(241, 245, 249, 0.8) 100%);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.96), inset 0 -1px 0 rgba(15, 23, 42, 0.05); /* tauri-shadow-allow */

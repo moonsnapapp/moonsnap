@@ -24,10 +24,8 @@ export function SidebarTabBar({ activeTab, onTabChange }: SidebarTabBarProps) {
   ];
 
   const getTabClassName = (isActive: boolean) =>
-    `video-sidebar-tab min-w-0 px-2 py-2 text-[11px] font-medium transition-colors ${
-      isActive
-        ? 'video-sidebar-tab--active text-[var(--ink-black)]'
-        : 'text-[var(--ink-muted)] hover:text-[var(--ink-dark)]'
+    `video-sidebar-tab min-w-0 px-2 text-[12px] font-medium ${
+      isActive ? 'video-sidebar-tab--active' : ''
     }`;
 
   return (
