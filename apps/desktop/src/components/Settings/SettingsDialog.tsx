@@ -161,7 +161,7 @@ export const SettingsDialog: React.FC = () => {
                 <button
                   key={item.id}
                   onClick={() => setActiveTab(item.id)}
-                  className={`editor-choice-pill flex items-center gap-3 px-3 py-2 text-sm w-full text-left ${
+                  className={`editor-choice-pill !justify-start flex items-center gap-3 px-3 py-2 text-sm w-full text-left ${
                     activeTab === item.id ? 'editor-choice-pill--active' : ''
                   }`}
                 >
