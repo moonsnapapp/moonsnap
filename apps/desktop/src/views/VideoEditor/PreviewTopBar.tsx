@@ -4,8 +4,13 @@
  * Always shows the Output Canvas size selector. When crop edit mode is on,
  * adds aspect-ratio presets, lock A/R toggle, Fill, Reset, and a Done button.
  */
-import { Crop, Lock, Unlock, Maximize2, RotateCcw, Check } from 'lucide-react';
+import { Crop, Lock, Unlock, Maximize2, RotateCcw, Check, Info } from 'lucide-react';
 import { Button } from '../../components/ui/button';
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '../../components/ui/popover';
 import {
   Select,
   SelectContent,
@@ -14,7 +19,30 @@ import {
   SelectValue,
 } from '../../components/ui/select';
 import { ToggleGroup, ToggleGroupItem } from '../../components/ui/toggle-group';
+import { calculateCompositionOutputSize } from '@/utils/compositionBounds';
+import { hasVideoBackgroundFrameStyling } from '@/utils/backgroundFrameStyling';
+import { getContentDimensionsFromCrop } from '@/utils/videoContentDimensions';
+import { ProjectInfoPanel } from './panels/ProjectInfoPanel';
 import type { CropConfig, VideoProject, ExportConfig } from '../../types';
+
+function ProjectInfoButton({ project }: { project: VideoProject }) {
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          aria-label="Project info"
+          className="flex h-7 w-7 items-center justify-center rounded-md text-[var(--ink-muted)] hover:text-[var(--ink-dark)] hover:bg-[rgba(255,255,255,0.05)] transition-colors"
+        >
+          <Info className="h-3.5 w-3.5" />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent align="end" sideOffset={6} className="w-64">
+        <ProjectInfoPanel project={project} />
+      </PopoverContent>
+    </Popover>
+  );
+}
 
 interface PreviewTopBarProps {
   project: VideoProject;
@@ -62,6 +90,22 @@ export function PreviewTopBar({
     compositionMode === 'manual' && compositionWidth && compositionHeight
       ? `${compositionWidth}x${compositionHeight}`
       : 'auto';
+
+  // Resolve the actual export canvas size so users can see what "Match Source"
+  // produces given the current crop + background-padding combination.
+  const bg = project.export.background;
+  const { width: contentW, height: contentH } = getContentDimensionsFromCrop(
+    project.export.crop,
+    videoWidth,
+    videoHeight
+  );
+  const padding = hasVideoBackgroundFrameStyling(bg) ? (bg?.padding ?? 0) : 0;
+  const resolvedOutput = calculateCompositionOutputSize(
+    contentW,
+    contentH,
+    padding,
+    project.export.composition
+  );
 
   const handleOutputCanvas = (value: string) => {
     if (value === 'auto') {
@@ -288,13 +332,14 @@ export function PreviewTopBar({
               <Check className="h-3 w-3" />
               Done
             </Button>
+            <ProjectInfoButton project={project} />
           </div>
         </>
       ) : (
         <>
           <span className="text-[11px] text-[var(--ink-muted)]">Output</span>
           <Select value={outputCanvasValue} onValueChange={handleOutputCanvas}>
-            <SelectTrigger className="h-7 w-[200px] border-[var(--glass-border)] bg-[var(--polar-mist)] px-2 text-xs text-[var(--ink-dark)]">
+            <SelectTrigger className="h-7 w-[160px] border-[var(--glass-border)] bg-[var(--polar-mist)] px-2 text-xs text-[var(--ink-dark)]">
               <SelectValue />
             </SelectTrigger>
             <SelectContent className="border-[var(--glass-border)] bg-[var(--glass-surface-dark)] text-[var(--ink-dark)]">
@@ -306,6 +351,9 @@ export function PreviewTopBar({
               <SelectItem value="1080x1080">Square (1080×1080)</SelectItem>
             </SelectContent>
           </Select>
+          <span className="font-mono text-[11px] text-[var(--ink-muted)] tabular-nums">
+            {resolvedOutput.width}×{resolvedOutput.height}
+          </span>
 
           <div className="mx-1 h-5 w-px bg-[var(--glass-border)]" aria-hidden="true" />
 
@@ -331,6 +379,10 @@ export function PreviewTopBar({
               Clear
             </Button>
           )}
+
+          <div className="ml-auto">
+            <ProjectInfoButton project={project} />
+          </div>
         </>
       )}
     </div>

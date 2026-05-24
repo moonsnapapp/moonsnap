@@ -13,8 +13,10 @@ import {
   forwardRef,
   useImperativeHandle,
   useEffect,
+  useLayoutEffect,
   useRef,
 } from 'react';
+import type { ImperativePanelHandle } from 'react-resizable-panels';
 import { toast } from 'sonner';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
@@ -125,6 +127,11 @@ export interface VideoEditorViewProps {
 const SKIP_AMOUNT_MS = 5000;
 const SAVE_WAIT_TIMEOUT_MS = 5000;
 const SAVE_WAIT_POLL_MS = 50;
+const VIDEO_EDITOR_LAYOUT_ID = 'moonsnap-video-editor-layout';
+const VIDEO_EDITOR_LAYOUT_STORAGE_KEY = `react-resizable-panels:${VIDEO_EDITOR_LAYOUT_ID}`;
+const DEFAULT_SIDEBAR_WIDTH_PX = 380;
+const SIDEBAR_MIN_PCT = 18;
+const SIDEBAR_MAX_PCT = 45;
 type ExportTarget = 'video' | 'gif';
 
 function withFileExtension(filename: string, extension: 'mp4' | 'webm' | 'gif'): string {
@@ -222,6 +229,24 @@ export const VideoEditorView = forwardRef<VideoEditorViewRef, VideoEditorViewPro
 
   const lastUserActivityAtRef = useRef(Date.now());
   const handleExportRef = useRef<(target?: ExportTarget) => void>(() => {});
+  const workspaceRef = useRef<HTMLDivElement>(null);
+  const sidebarPanelRef = useRef<ImperativePanelHandle>(null);
+
+  // Seed the sidebar at ~380px on first ever load. After that the library's
+  // autoSaveId persists any user resize, so we skip when a saved layout exists.
+  useLayoutEffect(() => {
+    if (localStorage.getItem(VIDEO_EDITOR_LAYOUT_STORAGE_KEY)) return;
+    const container = workspaceRef.current;
+    const panel = sidebarPanelRef.current;
+    if (!container || !panel) return;
+    const width = container.clientWidth;
+    if (width <= 0) return;
+    const pct = Math.min(
+      SIDEBAR_MAX_PCT,
+      Math.max(SIDEBAR_MIN_PCT, (DEFAULT_SIDEBAR_WIDTH_PX / width) * 100)
+    );
+    panel.resize(pct);
+  }, []);
 
   // Diagnostic: log when VideoEditorView renders
   useEffect(() => {
@@ -658,10 +683,10 @@ export const VideoEditorView = forwardRef<VideoEditorViewRef, VideoEditorViewPro
   }), [togglePlayback, handleSeekToStart, handleSeekToEnd, handleExport]);
 
   return (
-    <div className="editor-workspace video-editor-workspace flex-1 flex min-h-0">
+    <div ref={workspaceRef} className="editor-workspace video-editor-workspace flex-1 flex min-h-0">
       <ResizablePanelGroup
         direction="horizontal"
-        autoSaveId="moonsnap-video-editor-layout"
+        autoSaveId={VIDEO_EDITOR_LAYOUT_ID}
         className="flex-1 min-h-0"
       >
         <ResizablePanel defaultSize={74} minSize={50} className="min-w-0">
@@ -708,7 +733,13 @@ export const VideoEditorView = forwardRef<VideoEditorViewRef, VideoEditorViewPro
           </span>
         </ResizableHandle>
 
-        <ResizablePanel defaultSize={26} minSize={18} maxSize={45} className="min-w-0">
+        <ResizablePanel
+          ref={sidebarPanelRef}
+          defaultSize={26}
+          minSize={SIDEBAR_MIN_PCT}
+          maxSize={SIDEBAR_MAX_PCT}
+          className="min-w-0"
+        >
           {/* Right sidebar with tabbed properties panel */}
           <VideoEditorSidebar project={project} />
         </ResizablePanel>
