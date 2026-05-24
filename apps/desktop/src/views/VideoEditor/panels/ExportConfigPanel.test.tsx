@@ -163,7 +163,6 @@ describe('ExportConfigPanel', () => {
         project={createTestProject()}
         onUpdateExportConfig={onUpdateExportConfig}
         onUpdateAudioConfig={vi.fn()}
-        onOpenCropDialog={vi.fn()}
       />
     );
 
@@ -190,7 +189,6 @@ describe('ExportConfigPanel', () => {
         }}
         onUpdateExportConfig={vi.fn()}
         onUpdateAudioConfig={vi.fn()}
-        onOpenCropDialog={vi.fn()}
       />
     );
 

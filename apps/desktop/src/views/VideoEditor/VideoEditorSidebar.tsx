@@ -59,7 +59,6 @@ import type { SceneMode, VideoProject } from '../../types';
 
 export interface VideoEditorSidebarProps {
   project: VideoProject | null;
-  onOpenCropDialog: () => void;
 }
 
 interface SidebarSettingsSectionProps {
@@ -111,7 +110,7 @@ function SidebarSettingsSection({
   );
 }
 
-export function VideoEditorSidebar({ project, onOpenCropDialog }: VideoEditorSidebarProps) {
+export function VideoEditorSidebar({ project }: VideoEditorSidebarProps) {
   const updateWebcamConfig = useVideoEditorStore(selectUpdateWebcamConfig);
   const updateExportConfig = useVideoEditorStore(selectUpdateExportConfig);
   const updateCursorConfig = useVideoEditorStore(selectUpdateCursorConfig);
@@ -384,7 +383,6 @@ export function VideoEditorSidebar({ project, onOpenCropDialog }: VideoEditorSid
                 project={project}
                 onUpdateExportConfig={updateExportConfig}
                 onUpdateAudioConfig={updateAudioConfig}
-                onOpenCropDialog={onOpenCropDialog}
               />
             </div>
           )}

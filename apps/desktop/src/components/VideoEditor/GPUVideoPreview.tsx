@@ -13,6 +13,8 @@ import {
   selectAudioConfig,
   selectScreenVideoPath,
   selectTogglePlayback,
+  selectIsCropEditing,
+  selectUpdateExportConfig,
 } from '../../stores/videoEditor/selectors';
 import { videoEditorLogger } from '../../utils/logger';
 import { computeDPRCappedFitScale } from '../../utils/compositionBounds';
@@ -31,6 +33,7 @@ import { TextOverlay } from './TextOverlay';
 import { AnnotationOverlay } from './AnnotationOverlay';
 
 import { UnifiedCaptionOverlay } from './UnifiedCaptionOverlay';
+import { InlineCropOverlay } from './InlineCropOverlay';
 import {
   WebCodecsCanvasNoZoom,
   VideoNoZoom,
@@ -805,6 +808,8 @@ export function GPUVideoPreview({ isActive = true }: GPUVideoPreviewProps) {
   const cursorRecording = useVideoEditorStore(selectCursorRecording);
   const audioConfig = useVideoEditorStore(selectAudioConfig);
   const togglePlayback = useVideoEditorStore(selectTogglePlayback);
+  const isCropEditing = useVideoEditorStore(selectIsCropEditing);
+  const updateExportConfig = useVideoEditorStore(selectUpdateExportConfig);
   const effectiveIsPlaying = isPlaying && isActive;
   const handleVideoError = useCallback((msg: string) => setVideoError(msg || null), []);
 
@@ -917,18 +922,20 @@ export function GPUVideoPreview({ isActive = true }: GPUVideoPreviewProps) {
       : 16 / 9;
   }, [project?.sources.originalWidth, project?.sources.originalHeight]);
 
-  // Calculate crop aspect ratio
+  // Calculate crop aspect ratio. Suppressed while crop edit mode is active so
+  // the preview shows the full uncropped frame for the drag overlay.
   const cropAspectRatio = useMemo(() => {
+    if (isCropEditing) return null;
     const crop = project?.export?.crop;
     if (hasEnabledCrop(crop)) {
       return crop.width / crop.height;
     }
     return null;
-  }, [project?.export?.crop]);
+  }, [project?.export?.crop, isCropEditing]);
 
   // Get config values
   const backgroundConfig = project?.export?.background;
-  const cropConfig = project?.export?.crop;
+  const cropConfig = isCropEditing ? undefined : project?.export?.crop;
   const originalWidth = project?.sources.originalWidth ?? 1920;
   const originalHeight = project?.sources.originalHeight ?? 1080;
 
@@ -1169,6 +1176,27 @@ export function GPUVideoPreview({ isActive = true }: GPUVideoPreviewProps) {
                 {videoSrc}
               </span>
             </div>
+          )}
+
+          {isCropEditing && project && frameDisplaySize.width > 0 && frameDisplaySize.height > 0 && (
+            <InlineCropOverlay
+              crop={
+                project.export.crop ?? {
+                  enabled: true,
+                  x: 0,
+                  y: 0,
+                  width: originalWidth,
+                  height: originalHeight,
+                  lockAspectRatio: false,
+                  aspectRatio: null,
+                }
+              }
+              videoWidth={originalWidth}
+              videoHeight={originalHeight}
+              displayWidth={frameDisplaySize.width}
+              displayHeight={frameDisplaySize.height}
+              onCropChange={(next) => updateExportConfig({ crop: next })}
+            />
           )}
 
         </div>

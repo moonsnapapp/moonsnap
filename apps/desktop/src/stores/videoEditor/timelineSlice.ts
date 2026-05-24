@@ -62,6 +62,7 @@ export interface TimelineSlice {
   previewTimeMs: number | null;
   hoveredTrack: HoveredTrack;
   splitMode: boolean;
+  isCropEditing: boolean;
 
   // View state
   trackVisibility: TrackVisibility;
@@ -89,6 +90,9 @@ export interface TimelineSlice {
   // Split mode actions
   setSplitMode: (enabled: boolean) => void;
 
+  // Crop edit mode actions
+  setIsCropEditing: (enabled: boolean) => void;
+
   // IO markers for export range
   exportInPointMs: number | null;
   exportOutPointMs: number | null;
@@ -113,6 +117,7 @@ export const createTimelineSlice: SliceCreator<TimelineSlice> = (set, get) => ({
   previewTimeMs: null,
   hoveredTrack: null,
   splitMode: false,
+  isCropEditing: false,
   timelineZoom: DEFAULT_TIMELINE_ZOOM,
   timelineScrollLeft: 0,
   timelineContainerWidth: 0,
@@ -196,6 +201,9 @@ export const createTimelineSlice: SliceCreator<TimelineSlice> = (set, get) => ({
 
   // Split mode actions
   setSplitMode: (enabled) => set({ splitMode: enabled }),
+
+  // Crop edit mode actions
+  setIsCropEditing: (enabled) => set({ isCropEditing: enabled }),
 
   // IO markers for export range
   exportInPointMs: null,

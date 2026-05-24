@@ -13,9 +13,6 @@ import {
   forwardRef,
   useImperativeHandle,
   useEffect,
-  useState,
-  lazy,
-  Suspense,
   useRef,
 } from 'react';
 import { toast } from 'sonner';
@@ -40,6 +37,7 @@ import {
   selectExportProgress,
   selectExportVideo,
   selectActiveUndoDomain,
+  selectIsCropEditing,
   selectIsExporting,
   selectIsSaving,
   selectProject,
@@ -64,6 +62,7 @@ import {
   selectSelectedZoomRegionId,
   selectSetExportInPoint,
   selectSetExportOutPoint,
+  selectSetIsCropEditing,
   selectSetIsPlaying,
   selectSetPreviewTime,
   selectSetSplitMode,
@@ -81,6 +80,7 @@ import { VideoEditorToolbar } from './VideoEditorToolbar';
 import { VideoEditorSidebar } from './VideoEditorSidebar';
 import { VideoEditorPreview } from './VideoEditorPreview';
 import { VideoEditorTimeline } from './VideoEditorTimeline';
+import { PreviewTopBar } from './PreviewTopBar';
 import { ExportProgressOverlay } from './components/ExportProgressOverlay';
 import { ChevronRight } from 'lucide-react';
 import {
@@ -88,7 +88,7 @@ import {
   ResizablePanel,
   ResizablePanelGroup,
 } from '../../components/ui/resizable';
-import type { ExportProgress, CropConfig } from '../../types';
+import type { ExportProgress } from '../../types';
 import { TIMING } from '../../constants';
 import { videoEditorLogger } from '../../utils/logger';
 import {
@@ -100,9 +100,6 @@ import {
 } from '../../utils/videoExportMode';
 import { getDeleteSelectionAction } from './deleteSelection';
 import type { CaptureNavigationControls } from '../../components/Editor/CanvasCaptureNavigation';
-
-// Lazy load CropDialog - only needed when crop tool is opened (861 lines)
-const CropDialog = lazy(() => import('../../components/VideoEditor/CropDialog').then(m => ({ default: m.CropDialog })));
 
 /**
  * Imperative API exposed by VideoEditorView
@@ -183,6 +180,8 @@ export const VideoEditorView = forwardRef<VideoEditorViewRef, VideoEditorViewPro
   const setExportProgress = useVideoEditorStore(selectSetExportProgress);
   const cancelExport = useVideoEditorStore(selectCancelExport);
   const updateExportConfig = useVideoEditorStore(selectUpdateExportConfig);
+  const isCropEditing = useVideoEditorStore(selectIsCropEditing);
+  const setIsCropEditing = useVideoEditorStore(selectSetIsCropEditing);
   const selectZoomRegion = useVideoEditorStore(selectSelectZoomRegion);
   const timelineZoom = useVideoEditorStore(selectTimelineZoom);
   const setTimelineZoom = useVideoEditorStore(selectSetTimelineZoom);
@@ -221,8 +220,6 @@ export const VideoEditorView = forwardRef<VideoEditorViewRef, VideoEditorViewPro
   const setExportOutPoint = useVideoEditorStore(selectSetExportOutPoint);
   const clearExportRange = useVideoEditorStore(selectClearExportRange);
 
-  // Crop dialog state
-  const [isCropDialogOpen, setIsCropDialogOpen] = useState(false);
   const lastUserActivityAtRef = useRef(Date.now());
   const handleExportRef = useRef<(target?: ExportTarget) => void>(() => {});
 
@@ -640,12 +637,6 @@ export const VideoEditorView = forwardRef<VideoEditorViewRef, VideoEditorViewPro
     onSetOutPoint: handleSetOutPoint,
   });
 
-  // Handle crop apply
-  const handleCropApply = useCallback((crop: CropConfig) => {
-    updateExportConfig({ crop });
-    toast.success(crop.enabled ? 'Crop applied' : 'Crop removed');
-  }, [updateExportConfig]);
-
   // Seek to start
   const handleSeekToStart = useCallback(() => {
     requestSeek(0);
@@ -683,6 +674,15 @@ export const VideoEditorView = forwardRef<VideoEditorViewRef, VideoEditorViewPro
                   <VideoEditorToolbar project={project} onBack={handleBack} />
                 )}
 
+                {project && (
+                  <PreviewTopBar
+                    project={project}
+                    isCropEditing={isCropEditing}
+                    onSetIsCropEditing={setIsCropEditing}
+                    onUpdateExportConfig={updateExportConfig}
+                  />
+                )}
+
                 {/* Video Preview */}
                 <VideoEditorPreview
                   isActive={isActive}
@@ -710,27 +710,9 @@ export const VideoEditorView = forwardRef<VideoEditorViewRef, VideoEditorViewPro
 
         <ResizablePanel defaultSize={26} minSize={18} maxSize={45} className="min-w-0">
           {/* Right sidebar with tabbed properties panel */}
-          <VideoEditorSidebar
-            project={project}
-            onOpenCropDialog={() => setIsCropDialogOpen(true)}
-          />
+          <VideoEditorSidebar project={project} />
         </ResizablePanel>
       </ResizablePanelGroup>
-
-      {/* Crop Dialog - lazy loaded, crops video content before composition */}
-      {project && isCropDialogOpen && (
-        <Suspense fallback={null}>
-          <CropDialog
-            open={isCropDialogOpen}
-            onClose={() => setIsCropDialogOpen(false)}
-            onApply={handleCropApply}
-            videoWidth={project.sources.originalWidth}
-            videoHeight={project.sources.originalHeight}
-            initialCrop={project.export.crop}
-            videoPath={project.sources.screenVideo}
-          />
-        </Suspense>
-      )}
 
       {/* Export Progress Overlay */}
       <ExportProgressOverlay

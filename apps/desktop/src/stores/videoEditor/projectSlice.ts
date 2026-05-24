@@ -335,6 +335,7 @@ export const createProjectSlice: SliceCreator<ProjectSlice> = (set, get) => ({
       previewTimeMs: null,
       hoveredTrack: null,
       splitMode: false,
+      isCropEditing: false,
       timelineZoom: DEFAULT_TIMELINE_ZOOM,
       timelineScrollLeft: 0,
       timelineContainerWidth: 0,

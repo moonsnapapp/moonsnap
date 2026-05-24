@@ -21,6 +21,8 @@ export const selectHoveredTrack = (state: VideoEditorState) => state.hoveredTrac
 export const selectSetHoveredTrack = (state: VideoEditorState) => state.setHoveredTrack;
 export const selectSplitMode = (state: VideoEditorState) => state.splitMode;
 export const selectSetSplitMode = (state: VideoEditorState) => state.setSplitMode;
+export const selectIsCropEditing = (state: VideoEditorState) => state.isCropEditing;
+export const selectSetIsCropEditing = (state: VideoEditorState) => state.setIsCropEditing;
 export const selectTrackVisibility = (state: VideoEditorState) => state.trackVisibility;
 export const selectToggleTrackVisibility = (state: VideoEditorState) => state.toggleTrackVisibility;
 export const selectHasWebcam = (state: VideoEditorState) => !!state.project?.sources.webcamVideo;
