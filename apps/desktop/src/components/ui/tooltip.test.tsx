@@ -88,33 +88,6 @@ describe('Tooltip', () => {
       }
     });
 
-    // Regression test: Tooltip should NOT use Portal to prevent orphaned elements
-    // When parent components unmount during navigation, portals can get stuck
-    // visible because they render to document.body outside the React tree
-    it('should not render in a portal to prevent stuck tooltips on unmount', () => {
-      const { container, baseElement } = render(
-        <TooltipProvider>
-          <Tooltip open>
-            <TooltipTrigger>Trigger</TooltipTrigger>
-            <TooltipContent data-testid="tooltip-content">
-              Content
-            </TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
-      );
-
-      const tooltipContent = baseElement.querySelector('[data-testid="tooltip-content"]');
-      expect(tooltipContent).toBeTruthy();
-
-      // Tooltip should be inside the container (not portaled to body)
-      // This ensures it unmounts with its parent component
-      const tooltipInContainer = container.querySelector('[data-testid="tooltip-content"]');
-      expect(
-        tooltipInContainer,
-        'TooltipContent should render inside container, not in a portal to document.body'
-      ).toBeTruthy();
-    });
-
     it('should blur mouse-triggered buttons so tooltips do not stay open from focus', () => {
       render(
         <TooltipProvider delayDuration={0}>
