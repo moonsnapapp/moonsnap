@@ -3,7 +3,7 @@
  * Contains Project, Style, Captions, and Export tabs.
  */
 import { useId, useState, type ReactNode } from 'react';
-import { ChevronDown, MousePointer2, Video, Volume2 } from 'lucide-react';
+import { ChevronDown, MousePointer2, Video } from 'lucide-react';
 import { useVideoEditorStore } from '../../stores/videoEditorStore';
 import {
   selectAddAnnotationShape,
@@ -141,8 +141,6 @@ export function VideoEditorSidebar({ project }: VideoEditorSidebarProps) {
   const updateTextSegment = useVideoEditorStore(selectUpdateTextSegment);
   const deleteTextSegment = useVideoEditorStore(selectDeleteTextSegment);
 
-  // Properties panel tab state — Style is always available now (it always shows
-  // at least the Audio Controls section).
   const [activeTab, setActiveTab] = useState<PropertiesTab>('style');
 
   // Clicking a sidebar tab dismisses any open segment properties overlay
@@ -359,19 +357,17 @@ export function VideoEditorSidebar({ project }: VideoEditorSidebarProps) {
                     />
                   </SidebarSettingsSection>
                 )}
-
-                <SidebarSettingsSection
-                  title="Audio"
-                  icon={<Volume2 className="h-3.5 w-3.5" />}
-                  defaultOpen={!project.sources.cursorData && !project.sources.webcamVideo}
-                  variant="flat"
-                >
-                  <AudioControlsPanel
-                    project={project}
-                    onUpdateAudioConfig={updateAudioConfig}
-                  />
-                </SidebarSettingsSection>
               </div>
+            </div>
+          )}
+
+          {/* Audio Tab */}
+          {activeTab === 'audio' && project && (
+            <div className="min-w-0 p-4">
+              <AudioControlsPanel
+                project={project}
+                onUpdateAudioConfig={updateAudioConfig}
+              />
             </div>
           )}
 

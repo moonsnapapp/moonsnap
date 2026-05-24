@@ -2,7 +2,7 @@
  * SidebarTabBar - Tab navigation for the video editor sidebar.
  */
 
-export type PropertiesTab = 'style' | 'background' | 'captions';
+export type PropertiesTab = 'style' | 'audio' | 'background' | 'captions';
 
 export interface SidebarTabBarProps {
   activeTab: PropertiesTab;
@@ -16,6 +16,7 @@ interface TabConfig {
 
 const TABS: readonly TabConfig[] = [
   { id: 'style', label: 'Style' },
+  { id: 'audio', label: 'Audio' },
   { id: 'background', label: 'Background' },
   { id: 'captions', label: 'Captions' },
 ];

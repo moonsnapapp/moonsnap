@@ -129,8 +129,10 @@ export interface VideoEditorViewProps {
 const SKIP_AMOUNT_MS = 5000;
 const SAVE_WAIT_TIMEOUT_MS = 5000;
 const SAVE_WAIT_POLL_MS = 50;
-const VIDEO_EDITOR_LAYOUT_ID = 'moonsnap-video-editor-layout';
-const VIDEO_EDITOR_LAYOUT_STORAGE_KEY = `react-resizable-panels:${VIDEO_EDITOR_LAYOUT_ID}`;
+// Persist the sidebar's pixel width ourselves rather than relying on
+// react-resizable-panels' percentage-based autoSaveId — that restore
+// doesn't fire reliably under HMR, so the panel falls back to defaultSize.
+const SIDEBAR_WIDTH_STORAGE_KEY = 'moonsnap-video-editor-sidebar-px';
 const DEFAULT_SIDEBAR_WIDTH_PX = 380;
 // Hard pixel floor for the sidebar — translated to a percentage at runtime
 // against the current workspace width (see `sidebarMinPct` below).
@@ -239,26 +241,36 @@ export const VideoEditorView = forwardRef<VideoEditorViewRef, VideoEditorViewPro
   const [exportDialogTarget, setExportDialogTarget] = useState<ExportTarget | null>(null);
   const workspaceRef = useRef<HTMLDivElement>(null);
   const sidebarPanelRef = useRef<ImperativePanelHandle>(null);
+  const containerWidthRef = useRef(0);
+  // Set true right before a programmatic panel.resize() so the matching
+  // onResize callback doesn't echo the clamped value back into storage and
+  // erode the user's preferred pixel width.
+  const isProgrammaticResizeRef = useRef(false);
   // react-resizable-panels takes minSize as a percentage, but we want a 380px
   // floor regardless of window width — recompute on resize.
   const [sidebarMinPct, setSidebarMinPct] = useState(SIDEBAR_MIN_FLOOR_PCT);
 
   // Single observer that:
   //   1) updates `sidebarMinPct` so the 380px floor stays accurate,
-  //   2) seeds the sidebar to ~380px on first mount when no saved layout exists,
+  //   2) snaps the sidebar to the persisted pixel width on every mount
+  //      (including HMR remounts), defaulting to 380px,
   //   3) on window resize, reflows the panel so its *pixel* width stays
-  //      constant (react-resizable-panels stores percentages, so without this
-  //      a wider window would proportionally widen the sidebar).
+  //      constant (react-resizable-panels stores percentages, so without
+  //      this a wider window would proportionally widen the sidebar).
   useLayoutEffect(() => {
     const container = workspaceRef.current;
     if (!container) return;
 
-    const hasSavedLayout = !!localStorage.getItem(VIDEO_EDITOR_LAYOUT_STORAGE_KEY);
-    let prevWidth = 0; // sentinel for "first observation"
+    const readSavedPx = () => {
+      const raw = localStorage.getItem(SIDEBAR_WIDTH_STORAGE_KEY);
+      const parsed = raw != null ? Number(raw) : NaN;
+      return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_SIDEBAR_WIDTH_PX;
+    };
 
     const update = () => {
       const width = container.clientWidth;
       if (width <= 0) return;
+      containerWidthRef.current = width;
 
       const minPct = Math.min(
         SIDEBAR_MAX_PCT,
@@ -267,38 +279,40 @@ export const VideoEditorView = forwardRef<VideoEditorViewRef, VideoEditorViewPro
       setSidebarMinPct(minPct);
 
       const panel = sidebarPanelRef.current;
-      if (panel) {
-        if (prevWidth === 0) {
-          if (!hasSavedLayout) {
-            const seedPct = Math.min(
-              SIDEBAR_MAX_PCT,
-              Math.max(minPct, (DEFAULT_SIDEBAR_WIDTH_PX / width) * 100)
-            );
-            panel.resize(seedPct);
-          }
-        } else if (width !== prevWidth) {
-          // Convert the current percentage to pixels using the *previous*
-          // width, then back to a percentage using the new width — that
-          // keeps the visible sidebar size in pixels stable.
-          const currentPct = panel.getSize();
-          const sidebarPx = (currentPct / 100) * prevWidth;
-          const targetPct = Math.min(
-            SIDEBAR_MAX_PCT,
-            Math.max(minPct, (sidebarPx / width) * 100)
-          );
-          if (Math.abs(targetPct - currentPct) > 0.01) {
-            panel.resize(targetPct);
-          }
-        }
-      }
+      if (!panel) return;
 
-      prevWidth = width;
+      const desiredPx = Math.max(SIDEBAR_MIN_PX, readSavedPx());
+      const desiredPct = Math.min(
+        SIDEBAR_MAX_PCT,
+        Math.max(minPct, (desiredPx / width) * 100)
+      );
+
+      const currentPct = panel.getSize();
+      if (Math.abs(currentPct - desiredPct) > 0.01) {
+        isProgrammaticResizeRef.current = true;
+        panel.resize(desiredPct);
+      }
     };
 
     update();
     const observer = new ResizeObserver(update);
     observer.observe(container);
     return () => observer.disconnect();
+  }, []);
+
+  const handleSidebarResize = useCallback((size: number) => {
+    // Skip persisting echoes from our own programmatic resize so the saved
+    // pixel width isn't overwritten with a clamped value (e.g. after the
+    // window shrinks and forces us to apply maxSize).
+    if (isProgrammaticResizeRef.current) {
+      isProgrammaticResizeRef.current = false;
+      return;
+    }
+    const width = containerWidthRef.current;
+    if (width <= 0) return;
+    const px = Math.round((size / 100) * width);
+    if (px <= 0) return;
+    localStorage.setItem(SIDEBAR_WIDTH_STORAGE_KEY, String(px));
   }, []);
 
   // Diagnostic: log when VideoEditorView renders
@@ -757,7 +771,6 @@ export const VideoEditorView = forwardRef<VideoEditorViewRef, VideoEditorViewPro
     <div ref={workspaceRef} className="editor-workspace video-editor-workspace flex-1 flex min-h-0">
       <ResizablePanelGroup
         direction="horizontal"
-        autoSaveId={VIDEO_EDITOR_LAYOUT_ID}
         className="flex-1 min-h-0"
       >
         <ResizablePanel defaultSize={74} minSize={50} className="min-w-0">
@@ -809,6 +822,7 @@ export const VideoEditorView = forwardRef<VideoEditorViewRef, VideoEditorViewPro
           defaultSize={26}
           minSize={sidebarMinPct}
           maxSize={SIDEBAR_MAX_PCT}
+          onResize={handleSidebarResize}
           className="min-w-0"
         >
           {/* Right sidebar with tabbed properties panel */}
