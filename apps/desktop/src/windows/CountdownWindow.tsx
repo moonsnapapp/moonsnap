@@ -106,8 +106,8 @@ const CountdownWindow: React.FC = () => {
             background: 'rgba(0, 0, 0, 0.85)',
             backdropFilter: 'blur(16px)',
             WebkitBackdropFilter: 'blur(16px)',
-            border: '4px solid rgba(249, 112, 102, 0.6)',
-            boxShadow: '0 0 80px rgba(249, 112, 102, 0.4), 0 0 160px rgba(249, 112, 102, 0.2)',
+            border: '4px solid rgba(156, 163, 175, 0.6)',
+            boxShadow: '0 0 80px rgba(156, 163, 175, 0.4), 0 0 160px rgba(156, 163, 175, 0.2)',
             animation: 'countdown-pop 0.4s cubic-bezier(0.34, 1.56, 0.64, 1)',
           }}
         >
@@ -116,7 +116,7 @@ const CountdownWindow: React.FC = () => {
             style={{
               fontSize: 'min(5rem, 20vw, 20vh)',
               color: '#fff',
-              textShadow: '0 0 30px rgba(249, 112, 102, 0.8)',
+              textShadow: '0 0 30px rgba(156, 163, 175, 0.8)',
             }}
           >
             {count}

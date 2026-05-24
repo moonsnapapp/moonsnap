@@ -26,15 +26,15 @@
   --ink-faint: #65615D;
 
   /* Coral Accent - Vibrant warmth on dark */
-  --coral-50: rgba(249, 112, 102, 0.08);
-  --coral-100: rgba(249, 112, 102, 0.12);
-  --coral-200: rgba(249, 112, 102, 0.18);
-  --coral-300: #FDA4A0;
-  --coral-400: #F97066;
-  --coral-500: #F04438;
-  --coral-600: #D92D20;
-  --coral-glow: rgba(249, 112, 102, 0.2);
-  --coral-subtle: rgba(249, 112, 102, 0.1);
+  --coral-50: rgba(156, 163, 175, 0.08);
+  --coral-100: rgba(156, 163, 175, 0.12);
+  --coral-200: rgba(156, 163, 175, 0.18);
+  --coral-300: #C8CCD3;
+  --coral-400: #9CA3AF;
+  --coral-500: #6B7280;
+  --coral-600: #4B5563;
+  --coral-glow: rgba(156, 163, 175, 0.2);
+  --coral-subtle: rgba(156, 163, 175, 0.1);
 
   /* Teal Secondary - Cool complement */
   --teal-400: #2DD4BF;
@@ -63,8 +63,8 @@
   --glass-backdrop: blur(24px) saturate(200%);
   --glass-inset-top: inset 0 1px 0 rgba(255, 255, 255, 0.06);
   --glass-inset-bottom: inset 0 -1px 0 rgba(0, 0, 0, 0.24);
-  --glass-glow-coral: 0 0 40px -15px rgba(249, 112, 102, 0.15);
-  --glass-accent-line: linear-gradient(90deg, transparent 0%, rgba(249, 112, 102, 0.4) 50%, transparent 100%);
+  --glass-glow-coral: 0 0 40px -15px rgba(156, 163, 175, 0.15);
+  --glass-accent-line: linear-gradient(90deg, transparent 0%, rgba(180, 186, 196, 0.4) 50%, transparent 100%);
 
   /* Shadows - Deep with subtle glow */
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.5);
@@ -75,7 +75,7 @@
   --shadow-card: 0 4px 16px rgba(0, 0, 0, 0.4), 0 0 0 1px var(--glass-border);
   --shadow-card-hover: 0 8px 32px rgba(0, 0, 0, 0.5), 0 0 0 1px var(--glass-border-light);
   --shadow-float: 0 12px 40px rgba(0, 0, 0, 0.6), 0 0 0 1px var(--glass-border);
-  --shadow-glow-coral: 0 0 20px rgba(249, 112, 102, 0.3);
+  --shadow-glow-coral: 0 0 20px rgba(156, 163, 175, 0.3);
 
   /* Drop Shadow Filters - Use instead of box-shadow to avoid clipping in Tauri */
   --drop-shadow: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.5)) drop-shadow(0 2px 4px rgba(0, 0, 0, 0.3));
@@ -171,8 +171,8 @@ html.light,
   --glass-surface-light: rgba(255, 255, 255, 0.95);
   --glass-inset-top: inset 0 1px 0 rgba(255, 255, 255, 1);
   --glass-inset-bottom: inset 0 -1px 0 rgba(0, 0, 0, 0.08);
-  --glass-glow-coral: 0 4px 20px rgba(249, 112, 102, 0.15);
-  --glass-accent-line: linear-gradient(90deg, transparent 0%, rgba(249, 112, 102, 0.6) 50%, transparent 100%);
+  --glass-glow-coral: 0 4px 20px rgba(107, 114, 128, 0.15);
+  --glass-accent-line: linear-gradient(90deg, transparent 0%, rgba(75, 85, 99, 0.55) 50%, transparent 100%);
 
   --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.1);
   --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.1);
@@ -382,7 +382,7 @@ textarea,
   position: absolute;
   inset: 0;
   background:
-    radial-gradient(ellipse 80% 100% at 20% 0%, rgba(249, 112, 102, 0.04) 0%, transparent 50%),
+    radial-gradient(ellipse 80% 100% at 20% 0%, rgba(156, 163, 175, 0.04) 0%, transparent 50%),
     radial-gradient(ellipse 60% 100% at 50% 0%, rgba(255, 255, 255, 0.04) 0%, transparent 70%);
   pointer-events: none;
 }
@@ -422,7 +422,7 @@ textarea,
   align-items: center;
   justify-content: center;
   color: white;
-  box-shadow: 0 2px 8px rgba(249, 112, 102, 0.4), inset 0 1px 0 rgba(255,255,255,0.2);
+  box-shadow: 0 2px 8px rgba(156, 163, 175, 0.4), inset 0 1px 0 rgba(255,255,255,0.2);
 }
 
 .titlebar-title {
@@ -454,9 +454,9 @@ textarea,
 }
 
 .titlebar-badge-pro {
-  background: rgba(82, 29, 36, 0.92);
-  border-color: rgba(133, 56, 70, 0.9);
-  color: #f5b2bc;
+  background: rgba(42, 46, 52, 0.92);
+  border-color: rgba(82, 88, 96, 0.9);
+  color: #cfd3da;
 }
 
 .titlebar-badge-trial {
@@ -542,7 +542,7 @@ textarea,
 .titlebar--hud::before {
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.035) 0%, rgba(255, 255, 255, 0.012) 24%, transparent 58%),
-    radial-gradient(90% 120% at 50% 0%, rgba(249, 112, 102, 0.045) 0%, transparent 46%);
+    radial-gradient(90% 120% at 50% 0%, rgba(156, 163, 175, 0.045) 0%, transparent 46%);
 }
 
 .titlebar--hud::after {
@@ -552,7 +552,7 @@ textarea,
     90deg,
     transparent 0%,
     rgba(255, 255, 255, 0.05) 12%,
-    rgba(249, 112, 102, 0.22) 50%,
+    rgba(156, 163, 175, 0.22) 50%,
     rgba(255, 255, 255, 0.05) 88%,
     transparent 100%
   );
@@ -705,7 +705,7 @@ textarea,
   display: flex;
   flex-direction: column;
   background:
-    radial-gradient(110% 80% at 50% 0%, rgba(249, 112, 102, 0.16) 0%, transparent 32%),
+    radial-gradient(110% 80% at 50% 0%, rgba(156, 163, 175, 0.16) 0%, transparent 32%),
     linear-gradient(180deg, #19191c 0%, #101012 100%);
   isolation: isolate;
 }
@@ -741,7 +741,7 @@ textarea,
   inset: 0;
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.028) 0%, transparent 24%),
-    radial-gradient(90% 60% at 50% 0%, rgba(249, 112, 102, 0.06) 0%, transparent 55%);
+    radial-gradient(90% 60% at 50% 0%, rgba(156, 163, 175, 0.06) 0%, transparent 55%);
   pointer-events: none;
 }
 
@@ -758,7 +758,7 @@ textarea,
   display: flex;
   flex-direction: column;
   background:
-    radial-gradient(120% 88% at 50% 0%, rgba(249, 112, 102, 0.18) 0%, transparent 30%),
+    radial-gradient(120% 88% at 50% 0%, rgba(156, 163, 175, 0.18) 0%, transparent 30%),
     radial-gradient(85% 110% at 12% 0%, rgba(113, 134, 164, 0.14) 0%, transparent 34%),
     linear-gradient(180deg, #18191c 0%, #0d0e11 100%);
   isolation: isolate;
@@ -804,7 +804,7 @@ textarea,
   position: absolute;
   inset: 0;
   background:
-    radial-gradient(90% 60% at 50% 0%, rgba(249, 112, 102, 0.07) 0%, transparent 58%),
+    radial-gradient(90% 60% at 50% 0%, rgba(156, 163, 175, 0.07) 0%, transparent 58%),
     linear-gradient(180deg, rgba(255, 255, 255, 0.024) 0%, transparent 24%);
   pointer-events: none;
 }
@@ -819,7 +819,7 @@ textarea,
   position: absolute;
   inset: 0;
   background:
-    radial-gradient(90% 55% at 50% 0%, rgba(249, 112, 102, 0.055) 0%, transparent 52%),
+    radial-gradient(90% 55% at 50% 0%, rgba(156, 163, 175, 0.055) 0%, transparent 52%),
     linear-gradient(180deg, rgba(255, 255, 255, 0.02) 0%, transparent 18%);
   pointer-events: none;
 }
@@ -860,7 +860,7 @@ textarea,
   inset: 0;
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.022) 0%, transparent 18%),
-    radial-gradient(100% 75% at 50% 0%, rgba(249, 112, 102, 0.032) 0%, transparent 52%);
+    radial-gradient(100% 75% at 50% 0%, rgba(156, 163, 175, 0.032) 0%, transparent 52%);
   pointer-events: none;
 }
 
@@ -1022,7 +1022,7 @@ textarea,
 }
 
 /* Resize handle straddles the seam with negative margins on both sides so
-   it takes zero layout space — it sits on top of the library/canvas
+   it takes zero layout space â€” it sits on top of the library/canvas
    boundary instead of carving out its own column for the chevron. */
 .image-editor-layout__resize-handle {
   position: relative;
@@ -1059,7 +1059,7 @@ textarea,
 }
 
 /* Transparent overlay over the resize handle for our own click-with-tolerance
-   detection. Doesn't block the library's drag — that uses document-level
+   detection. Doesn't block the library's drag â€” that uses document-level
    pointer events that bubble through. */
 .sidebar-toggle-handle__hit {
   position: absolute;
@@ -1067,7 +1067,7 @@ textarea,
   z-index: 1;
 }
 
-/* Inline collapse chevron — sits centered in the 12px handle, which
+/* Inline collapse chevron â€” sits centered in the 12px handle, which
    itself straddles the seam via negative margins. */
 .sidebar-toggle-handle__chip {
   position: relative;
@@ -1100,7 +1100,7 @@ textarea,
 
 .library-panel--sidebar {
   background:
-    radial-gradient(120% 72% at 50% 0%, rgba(249, 112, 102, 0.065) 0%, transparent 40%),
+    radial-gradient(120% 72% at 50% 0%, rgba(156, 163, 175, 0.065) 0%, transparent 40%),
     linear-gradient(180deg, rgba(15, 15, 18, 0.98) 0%, rgba(10, 10, 12, 0.995) 100%);
 }
 
@@ -1109,7 +1109,7 @@ textarea,
 }
 
 /* In the embedded image-editor layout the library sits flush against the
-   canvas — drop the right padding so cards reach the seam instead of
+   canvas â€” drop the right padding so cards reach the seam instead of
    leaving a visible "column" behind for the collapse chevron. */
 .image-editor-workspace .library-panel--sidebar .library-stage,
 .image-editor-layout .library-panel--sidebar .library-stage {
@@ -1474,7 +1474,7 @@ body.resizing * {
 .library-panel {
   position: relative;
   background:
-    radial-gradient(140% 100% at 50% 0%, rgba(249, 112, 102, 0.08) 0%, transparent 34%),
+    radial-gradient(140% 100% at 50% 0%, rgba(156, 163, 175, 0.08) 0%, transparent 34%),
     linear-gradient(180deg, rgba(16, 16, 19, 0.96) 0%, rgba(11, 11, 13, 0.99) 100%);
 }
 
@@ -1500,7 +1500,7 @@ body.resizing * {
   position: relative;
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.012) 0%, transparent 14%),
-    radial-gradient(90% 40% at 50% 0%, rgba(249, 112, 102, 0.04) 0%, transparent 70%);
+    radial-gradient(90% 40% at 50% 0%, rgba(156, 163, 175, 0.04) 0%, transparent 70%);
 }
 
 .library-stage::before {
@@ -1517,7 +1517,7 @@ body.resizing * {
   position: relative;
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.014) 0%, transparent 20%),
-    radial-gradient(120% 60% at 50% 0%, rgba(249, 112, 102, 0.05) 0%, transparent 62%);
+    radial-gradient(120% 60% at 50% 0%, rgba(156, 163, 175, 0.05) 0%, transparent 62%);
 }
 
 .capture-grid {
@@ -1559,7 +1559,7 @@ body.resizing * {
   inset: 0;
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.028) 0%, transparent 26%),
-    radial-gradient(ellipse 120% 48% at 50% -12%, rgba(249, 112, 102, 0.055) 0%, transparent 52%);
+    radial-gradient(ellipse 120% 48% at 50% -12%, rgba(156, 163, 175, 0.055) 0%, transparent 52%);
   pointer-events: none;
   z-index: 1;
   border-radius: inherit;
@@ -1577,8 +1577,8 @@ body.resizing * {
 .capture-card.selected {
   border-color: var(--coral-400);
   box-shadow: /* tauri-shadow-allow */
-    0 0 0 1px rgba(249, 112, 102, 0.32),
-    0 0 0 4px rgba(249, 112, 102, 0.12),
+    0 0 0 1px rgba(156, 163, 175, 0.32),
+    0 0 0 4px rgba(156, 163, 175, 0.12),
     0 18px 38px rgba(0, 0, 0, 0.36);
 }
 
@@ -1774,13 +1774,13 @@ body.resizing * {
   color: white;
   font-weight: 600;
   border: 1px solid rgba(255, 255, 255, 0.15);
-  box-shadow: 0 4px 12px rgba(249, 112, 102, 0.35), inset 0 1px 0 rgba(255,255,255,0.2);
+  box-shadow: 0 4px 12px rgba(156, 163, 175, 0.35), inset 0 1px 0 rgba(255,255,255,0.2);
   transition: all var(--duration-fast) var(--ease-smooth);
 }
 
 .btn-coral:hover {
   background: linear-gradient(135deg, var(--coral-500) 0%, var(--coral-600) 100%);
-  box-shadow: 0 6px 20px rgba(249, 112, 102, 0.45), inset 0 1px 0 rgba(255,255,255,0.25);
+  box-shadow: 0 6px 20px rgba(156, 163, 175, 0.45), inset 0 1px 0 rgba(255,255,255,0.25);
   transform: translateY(-1px);
 }
 
@@ -1804,7 +1804,7 @@ body.resizing * {
 .btn-ghost.active {
   background: var(--coral-subtle);
   color: var(--coral-400);
-  border-color: rgba(249, 112, 102, 0.25);
+  border-color: rgba(156, 163, 175, 0.25);
 }
 
 .btn-outline {
@@ -1831,7 +1831,7 @@ body.resizing * {
   gap: 4px;
   padding: 7px 10px;
   background:
-    radial-gradient(90% 110% at 50% 0%, rgba(249, 112, 102, 0.08) 0%, transparent 54%),
+    radial-gradient(90% 110% at 50% 0%, rgba(156, 163, 175, 0.08) 0%, transparent 54%),
     linear-gradient(180deg, rgba(31, 32, 36, 0.97) 0%, rgba(16, 17, 20, 0.99) 100%);
   backdrop-filter: var(--glass-backdrop);
   -webkit-backdrop-filter: var(--glass-backdrop);
@@ -1852,7 +1852,7 @@ body.resizing * {
   inset: 0;
   border-radius: inherit;
   background:
-    radial-gradient(ellipse 100% 60% at 50% -20%, rgba(249, 112, 102, 0.12) 0%, transparent 50%),
+    radial-gradient(ellipse 100% 60% at 50% -20%, rgba(156, 163, 175, 0.12) 0%, transparent 50%),
     linear-gradient(180deg, rgba(255, 255, 255, 0.045) 0%, transparent 48%);
   pointer-events: none;
 }
@@ -1932,7 +1932,7 @@ body.resizing * {
   color: white;
   box-shadow: /* tauri-shadow-allow */
     inset 0 1px 0 rgba(255, 255, 255, 0.22),
-    0 2px 12px rgba(249, 112, 102, 0.4);
+    0 2px 12px rgba(156, 163, 175, 0.4);
 }
 
 /* ========================================
@@ -1999,7 +1999,7 @@ body.resizing * {
 .pill-coral {
   background: var(--coral-subtle);
   color: var(--coral-400);
-  border-color: rgba(249, 112, 102, 0.2);
+  border-color: rgba(156, 163, 175, 0.2);
 }
 
 /* ========================================
@@ -2193,7 +2193,7 @@ body.resizing * {
 .checkbox-custom.checked {
   background: linear-gradient(135deg, var(--coral-400) 0%, var(--coral-500) 100%);
   border-color: transparent;
-  box-shadow: 0 2px 8px rgba(249, 112, 102, 0.4);
+  box-shadow: 0 2px 8px rgba(156, 163, 175, 0.4);
 }
 
 .checkbox-custom.checked svg {
@@ -2259,11 +2259,11 @@ body.resizing * {
 .capture-row.selected {
   background: linear-gradient(
     135deg,
-    rgba(249, 112, 102, 0.16) 0%,
+    rgba(156, 163, 175, 0.16) 0%,
     rgba(217, 45, 32, 0.1) 100%
   );
-  border-color: rgba(249, 112, 102, 0.34);
-  box-shadow: 0 0 0 1px rgba(249, 112, 102, 0.18), var(--shadow-glow-coral); /* tauri-shadow-allow */
+  border-color: rgba(156, 163, 175, 0.34);
+  box-shadow: 0 0 0 1px rgba(156, 163, 175, 0.18), var(--shadow-glow-coral); /* tauri-shadow-allow */
 }
 
 .capture-row .row-thumbnail {
@@ -2390,7 +2390,7 @@ body.floating-toolbar-window #root {
 
 .compositor-sidebar {
   background:
-    radial-gradient(110% 90% at 100% 0%, rgba(249, 112, 102, 0.045) 0%, transparent 38%),
+    radial-gradient(110% 90% at 100% 0%, rgba(156, 163, 175, 0.045) 0%, transparent 38%),
     linear-gradient(180deg, rgba(24, 25, 29, 0.94) 0%, rgba(15, 16, 19, 0.965) 100%);
   backdrop-filter: var(--glass-backdrop);
   -webkit-backdrop-filter: var(--glass-backdrop);
@@ -2416,7 +2416,7 @@ body.floating-toolbar-window #root {
 
 /* Flat preset chip used in the properties panel's Quick Styles / Size
    rows. Replaces the old bordered-card look with a subtle hover/active
-   background tint — no border, minimal rounding. */
+   background tint â€” no border, minimal rounding. */
 .preset-option {
   flex: 1;
   height: 48px;
@@ -2448,7 +2448,7 @@ body.floating-toolbar-window #root {
 
 .preset-option--active,
 .preset-option--active:hover:not(:disabled) {
-  background: rgba(249, 112, 102, 0.12);
+  background: rgba(156, 163, 175, 0.12);
   color: var(--coral-300);
 }
 
@@ -2470,7 +2470,7 @@ body.floating-toolbar-window #root {
 
 .light .preset-option--active,
 .light .preset-option--active:hover:not(:disabled) {
-  background: rgba(249, 112, 102, 0.14);
+  background: rgba(156, 163, 175, 0.14);
   color: var(--coral-500);
 }
 
@@ -2500,7 +2500,7 @@ body.floating-toolbar-window #root {
   border: 1px solid rgba(255, 255, 255, 0.06);
   border-radius: var(--editor-panel-radius);
   background:
-    radial-gradient(110% 130% at 50% 0%, rgba(249, 112, 102, 0.08) 0%, transparent 52%),
+    radial-gradient(110% 130% at 50% 0%, rgba(156, 163, 175, 0.08) 0%, transparent 52%),
     linear-gradient(180deg, rgba(29, 30, 34, 0.97) 0%, rgba(17, 18, 21, 0.99) 100%);
   overflow: hidden;
   filter:
@@ -2514,7 +2514,7 @@ body.floating-toolbar-window #root {
   inset: 0;
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.04) 0%, transparent 44%),
-    radial-gradient(90% 100% at 50% 0%, rgba(249, 112, 102, 0.045) 0%, transparent 70%);
+    radial-gradient(90% 100% at 50% 0%, rgba(156, 163, 175, 0.045) 0%, transparent 70%);
   pointer-events: none;
 }
 
@@ -2628,7 +2628,7 @@ body.floating-toolbar-window #root {
   align-items: center;
   justify-content: center;
   border-radius: 8px;
-  background: rgba(249, 112, 102, 0.12);
+  background: rgba(156, 163, 175, 0.12);
   color: var(--coral-400);
 }
 
@@ -2758,7 +2758,7 @@ body.floating-toolbar-window #root {
 .slider-thumb {
   background: var(--polar-mist);
   border: 2px solid var(--coral-400);
-  box-shadow: 0 2px 8px rgba(0,0,0,0.4), 0 0 8px rgba(249, 112, 102, 0.3);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.4), 0 0 8px rgba(156, 163, 175, 0.3);
 }
 
 /* ========================================
@@ -2767,7 +2767,7 @@ body.floating-toolbar-window #root {
 
 .switch-root[data-state="checked"] {
   background: linear-gradient(90deg, var(--coral-400) 0%, var(--coral-500) 100%);
-  box-shadow: 0 0 12px rgba(249, 112, 102, 0.3);
+  box-shadow: 0 0 12px rgba(156, 163, 175, 0.3);
 }
 
 .switch-root[data-state="unchecked"] {
@@ -2807,7 +2807,7 @@ body.floating-toolbar-window #root {
 
 .light .library-window {
   background:
-    radial-gradient(110% 80% at 50% 0%, rgba(249, 112, 102, 0.12) 0%, transparent 32%),
+    radial-gradient(110% 80% at 50% 0%, rgba(156, 163, 175, 0.12) 0%, transparent 32%),
     linear-gradient(180deg, #f5f7fb 0%, #edf2f7 100%);
 }
 
@@ -2822,12 +2822,12 @@ body.floating-toolbar-window #root {
 .light .library-window__content::before {
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.5) 0%, transparent 24%),
-    radial-gradient(90% 60% at 50% 0%, rgba(249, 112, 102, 0.08) 0%, transparent 55%);
+    radial-gradient(90% 60% at 50% 0%, rgba(156, 163, 175, 0.08) 0%, transparent 55%);
 }
 
 .light .editor-window {
   background:
-    radial-gradient(120% 88% at 50% 0%, rgba(249, 112, 102, 0.12) 0%, transparent 30%),
+    radial-gradient(120% 88% at 50% 0%, rgba(156, 163, 175, 0.12) 0%, transparent 30%),
     radial-gradient(85% 110% at 12% 0%, rgba(96, 165, 250, 0.12) 0%, transparent 34%),
     linear-gradient(180deg, #f6f8fb 0%, #ecf1f7 100%);
 }
@@ -2845,7 +2845,7 @@ body.floating-toolbar-window #root {
 .light .editor-workspace::before {
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.52) 0%, transparent 24%),
-    radial-gradient(90% 60% at 50% 0%, rgba(249, 112, 102, 0.07) 0%, transparent 58%);
+    radial-gradient(90% 60% at 50% 0%, rgba(156, 163, 175, 0.07) 0%, transparent 58%);
 }
 
 .light .editor-stage-shell,
@@ -2914,7 +2914,7 @@ body.floating-toolbar-window #root {
 
 .light .library-panel {
   background:
-    radial-gradient(140% 100% at 50% 0%, rgba(249, 112, 102, 0.07) 0%, transparent 34%),
+    radial-gradient(140% 100% at 50% 0%, rgba(156, 163, 175, 0.07) 0%, transparent 34%),
     linear-gradient(180deg, rgba(255, 255, 255, 0.92) 0%, rgba(248, 250, 252, 0.98) 100%);
 }
 
@@ -2925,7 +2925,7 @@ body.floating-toolbar-window #root {
 .light .library-stage {
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.42) 0%, transparent 14%),
-    radial-gradient(90% 40% at 50% 0%, rgba(249, 112, 102, 0.05) 0%, transparent 70%);
+    radial-gradient(90% 40% at 50% 0%, rgba(156, 163, 175, 0.05) 0%, transparent 70%);
 }
 
 .light .library-stage::before {
@@ -2936,7 +2936,7 @@ body.floating-toolbar-window #root {
 .light .library-state-pane {
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.42) 0%, transparent 20%),
-    radial-gradient(120% 60% at 50% 0%, rgba(249, 112, 102, 0.05) 0%, transparent 62%);
+    radial-gradient(120% 60% at 50% 0%, rgba(156, 163, 175, 0.05) 0%, transparent 62%);
 }
 
 .light .capture-card {
@@ -2955,8 +2955,8 @@ body.floating-toolbar-window #root {
 
 .light .capture-card.selected {
   box-shadow: /* tauri-shadow-allow */
-    0 0 0 1px rgba(249, 112, 102, 0.26),
-    0 0 0 4px rgba(249, 112, 102, 0.1),
+    0 0 0 1px rgba(156, 163, 175, 0.26),
+    0 0 0 4px rgba(156, 163, 175, 0.1),
     0 12px 24px rgba(15, 23, 42, 0.1);
 }
 
@@ -2966,7 +2966,7 @@ body.floating-toolbar-window #root {
 
 .light .image-editor-layout__library {
   background:
-    radial-gradient(115% 70% at 50% 0%, rgba(249, 112, 102, 0.055) 0%, transparent 42%),
+    radial-gradient(115% 70% at 50% 0%, rgba(156, 163, 175, 0.055) 0%, transparent 42%),
     linear-gradient(180deg, rgba(255, 255, 255, 0.96) 0%, rgba(248, 250, 252, 0.985) 100%);
 }
 
@@ -2995,14 +2995,14 @@ body.floating-toolbar-window #root {
 
 .light .library-panel--sidebar {
   background:
-    radial-gradient(120% 72% at 50% 0%, rgba(249, 112, 102, 0.05) 0%, transparent 40%),
+    radial-gradient(120% 72% at 50% 0%, rgba(156, 163, 175, 0.05) 0%, transparent 40%),
     linear-gradient(180deg, rgba(255, 255, 255, 0.96) 0%, rgba(248, 250, 252, 0.985) 100%);
 }
 
 .light .library-panel--sidebar .library-stage {
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.5) 0%, transparent 16%),
-    radial-gradient(90% 40% at 50% 0%, rgba(249, 112, 102, 0.045) 0%, transparent 70%);
+    radial-gradient(90% 40% at 50% 0%, rgba(156, 163, 175, 0.045) 0%, transparent 70%);
 }
 
 .light .library-density-control {
@@ -3113,7 +3113,7 @@ body.floating-toolbar-window #root {
 .light .titlebar--hud::before {
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.55) 0%, rgba(255, 255, 255, 0.14) 26%, transparent 58%),
-    radial-gradient(90% 120% at 50% 0%, rgba(249, 112, 102, 0.12) 0%, transparent 48%);
+    radial-gradient(90% 120% at 50% 0%, rgba(156, 163, 175, 0.12) 0%, transparent 48%);
 }
 
 .light .titlebar--hud::after {
@@ -3121,7 +3121,7 @@ body.floating-toolbar-window #root {
     90deg,
     transparent 0%,
     rgba(15, 23, 42, 0.04) 12%,
-    rgba(249, 112, 102, 0.32) 50%,
+    rgba(156, 163, 175, 0.32) 50%,
     rgba(15, 23, 42, 0.04) 88%,
     transparent 100%
   );
@@ -3306,7 +3306,7 @@ body.floating-toolbar-window #root {
 .light .tool-button.active {
   background: linear-gradient(135deg, var(--coral-400) 0%, var(--coral-500) 100%);
   color: white;
-  box-shadow: 0 2px 8px rgba(249, 112, 102, 0.35);
+  box-shadow: 0 2px 8px rgba(156, 163, 175, 0.35);
 }
 
 .light .toolbar-divider {
@@ -3352,7 +3352,7 @@ body.floating-toolbar-window #root {
 
 .light .glass-capture-btn-circle {
   background: linear-gradient(135deg, var(--coral-400) 0%, var(--coral-500) 100%);
-  box-shadow: 0 4px 16px rgba(249, 112, 102, 0.4);
+  box-shadow: 0 4px 16px rgba(156, 163, 175, 0.4);
 }
 
 .light .tooltip-content {
@@ -3410,7 +3410,7 @@ body.floating-toolbar-window #root {
 }
 
 .light .video-sidebar-section__icon {
-  background: rgba(249, 112, 102, 0.13);
+  background: rgba(156, 163, 175, 0.13);
 }
 
 .light .video-sidebar-section--flat .video-sidebar-section__icon {
@@ -4302,9 +4302,9 @@ body.floating-toolbar-window #root {
 
 /* Focus/active state with coral glow */
 .glass-toolbar--focused {
-  border-color: rgba(249, 112, 102, 0.5);
+  border-color: rgba(156, 163, 175, 0.5);
   box-shadow:
-    0 0 0 1px rgba(249, 112, 102, 0.3),
+    0 0 0 1px rgba(156, 163, 175, 0.3),
     inset 0 1px 0 rgba(255, 255, 255, 0.05),
     inset 0 -1px 0 rgba(0, 0, 0, 0.2);
 }
@@ -4365,7 +4365,7 @@ body.floating-toolbar-window #root {
   background: linear-gradient(135deg, var(--coral-400) 0%, var(--coral-500) 100%);
   border-color: rgba(255, 255, 255, 0.22);
   color: #ffffff;
-  box-shadow: 0 2px 10px rgba(249, 112, 102, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.18);
+  box-shadow: 0 2px 10px rgba(156, 163, 175, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.18);
 }
 
 .timeline-cut-toggle--active:hover {
@@ -4415,7 +4415,7 @@ body.floating-toolbar-window #root {
 .timeline-clip-cut-target {
   overflow: hidden;
   animation: timeline-cut-segment-glow 950ms ease-in-out infinite;
-  filter: drop-shadow(0 0 3px rgba(249, 112, 102, 0.22));
+  filter: drop-shadow(0 0 3px rgba(156, 163, 175, 0.22));
 }
 
 .timeline-clip-cut-target::after {
@@ -4431,10 +4431,10 @@ body.floating-toolbar-window #root {
     linear-gradient(90deg, rgba(255, 255, 255, 0.42) 50%, transparent 0) bottom / 14px 1px repeat-x,
     linear-gradient(0deg, rgba(255, 255, 255, 0.42) 50%, transparent 0) left / 1px 14px repeat-y,
     linear-gradient(0deg, rgba(255, 255, 255, 0.42) 50%, transparent 0) right / 1px 14px repeat-y,
-    linear-gradient(90deg, rgba(249, 112, 102, 0.5) 50%, transparent 0) top / 14px 1px repeat-x,
-    linear-gradient(90deg, rgba(249, 112, 102, 0.5) 50%, transparent 0) bottom / 14px 1px repeat-x,
-    linear-gradient(0deg, rgba(249, 112, 102, 0.5) 50%, transparent 0) left / 1px 14px repeat-y,
-    linear-gradient(0deg, rgba(249, 112, 102, 0.5) 50%, transparent 0) right / 1px 14px repeat-y;
+    linear-gradient(90deg, rgba(156, 163, 175, 0.5) 50%, transparent 0) top / 14px 1px repeat-x,
+    linear-gradient(90deg, rgba(156, 163, 175, 0.5) 50%, transparent 0) bottom / 14px 1px repeat-x,
+    linear-gradient(0deg, rgba(156, 163, 175, 0.5) 50%, transparent 0) left / 1px 14px repeat-y,
+    linear-gradient(0deg, rgba(156, 163, 175, 0.5) 50%, transparent 0) right / 1px 14px repeat-y;
   background-position:
     0 0,
     7px 100%,
@@ -4464,8 +4464,8 @@ body.floating-toolbar-window #root {
 @keyframes timeline-cut-segment-glow {
   50% {
     filter:
-      drop-shadow(0 0 5px rgba(249, 112, 102, 0.42))
-      drop-shadow(0 0 10px rgba(249, 112, 102, 0.24));
+      drop-shadow(0 0 5px rgba(156, 163, 175, 0.42))
+      drop-shadow(0 0 10px rgba(156, 163, 175, 0.24));
   }
 }
 
@@ -4520,22 +4520,22 @@ body.floating-toolbar-window #root {
 .glass-btn--coral {
   background: linear-gradient(
     135deg,
-    rgba(249, 112, 102, 0.2) 0%,
+    rgba(156, 163, 175, 0.2) 0%,
     rgba(217, 45, 32, 0.15) 100%
   );
-  border-color: rgba(249, 112, 102, 0.3);
-  color: #F97066;
+  border-color: rgba(156, 163, 175, 0.3);
+  color: #9CA3AF;
 }
 
 .glass-btn--coral:hover {
   background: linear-gradient(
     135deg,
-    rgba(249, 112, 102, 0.3) 0%,
+    rgba(156, 163, 175, 0.3) 0%,
     rgba(217, 45, 32, 0.25) 100%
   );
-  border-color: rgba(249, 112, 102, 0.5);
-  color: #FDA4A0;
-  box-shadow: 0 0 16px rgba(249, 112, 102, 0.2);
+  border-color: rgba(156, 163, 175, 0.5);
+  color: #C8CCD3;
+  box-shadow: 0 0 16px rgba(156, 163, 175, 0.2);
 }
 
 /* Danger/cancel button */
@@ -5129,7 +5129,7 @@ body.floating-toolbar-window #root {
   inset: 0;
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.035) 0%, rgba(255, 255, 255, 0.012) 24%, transparent 60%),
-    radial-gradient(100% 80% at 50% 0%, rgba(249, 112, 102, 0.045) 0%, transparent 60%);
+    radial-gradient(100% 80% at 50% 0%, rgba(156, 163, 175, 0.045) 0%, transparent 60%);
   pointer-events: none;
 }
 
@@ -5144,7 +5144,7 @@ body.floating-toolbar-window #root {
     90deg,
     transparent 0%,
     rgba(255, 255, 255, 0.05) 10%,
-    rgba(249, 112, 102, 0.2) 50%,
+    rgba(156, 163, 175, 0.2) 50%,
     rgba(255, 255, 255, 0.05) 90%,
     transparent 100%
   );
@@ -5232,28 +5232,28 @@ body.floating-toolbar-window #root {
 
 .cloud-btn--coral {
   background: linear-gradient(135deg, var(--coral-400) 0%, var(--coral-500) 100%);
-  border-color: rgba(249, 112, 102, 0.45);
+  border-color: rgba(156, 163, 175, 0.45);
   color: white;
   box-shadow: /* tauri-shadow-allow */
     inset 0 1px 0 rgba(255, 255, 255, 0.18),
-    0 10px 22px rgba(249, 112, 102, 0.3);
+    0 10px 22px rgba(156, 163, 175, 0.3);
 }
 
 .cloud-btn--coral:hover {
   color: white;
   box-shadow: /* tauri-shadow-allow */
     inset 0 1px 0 rgba(255, 255, 255, 0.18),
-    0 14px 24px rgba(249, 112, 102, 0.36);
+    0 14px 24px rgba(156, 163, 175, 0.36);
 }
 
 .cloud-btn--active {
   color: var(--coral-300);
-  background: linear-gradient(180deg, rgba(249, 112, 102, 0.18) 0%, rgba(249, 112, 102, 0.1) 100%);
-  border-color: rgba(249, 112, 102, 0.2);
+  background: linear-gradient(180deg, rgba(156, 163, 175, 0.18) 0%, rgba(156, 163, 175, 0.1) 100%);
+  border-color: rgba(156, 163, 175, 0.2);
   box-shadow: /* tauri-shadow-allow */
     inset 0 1px 0 rgba(255, 255, 255, 0.04),
     inset 0 -1px 0 rgba(0, 0, 0, 0.22),
-    0 0 0 1px rgba(249, 112, 102, 0.06);
+    0 0 0 1px rgba(156, 163, 175, 0.06);
 }
 
 .cloud-btn--active svg {
@@ -5347,8 +5347,8 @@ body.floating-toolbar-window #root {
   height: 26px;
   padding: 0 8px;
   border-radius: 999px;
-  border: 1px solid rgba(249, 112, 102, 0.16);
-  background: rgba(249, 112, 102, 0.1);
+  border: 1px solid rgba(156, 163, 175, 0.16);
+  background: rgba(156, 163, 175, 0.1);
   color: var(--coral-300);
   font-size: 11px;
   font-weight: 700;
@@ -5384,7 +5384,7 @@ body.floating-toolbar-window #root {
 .light .cloud-toolbar__glass::before {
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.55) 0%, rgba(255, 255, 255, 0.16) 26%, transparent 60%),
-    radial-gradient(100% 80% at 50% 0%, rgba(249, 112, 102, 0.1) 0%, transparent 62%);
+    radial-gradient(100% 80% at 50% 0%, rgba(156, 163, 175, 0.1) 0%, transparent 62%);
 }
 
 .light .cloud-btn {
@@ -5406,15 +5406,15 @@ body.floating-toolbar-window #root {
 
 .light .cloud-btn--active {
   color: var(--coral-500);
-  background: linear-gradient(180deg, rgba(249, 112, 102, 0.16) 0%, rgba(249, 112, 102, 0.08) 100%);
-  border-color: rgba(249, 112, 102, 0.18);
+  background: linear-gradient(180deg, rgba(156, 163, 175, 0.16) 0%, rgba(156, 163, 175, 0.08) 100%);
+  border-color: rgba(156, 163, 175, 0.18);
 }
 
 .light .cloud-btn--coral {
   color: white;
   box-shadow: /* tauri-shadow-allow */
     inset 0 1px 0 rgba(255, 255, 255, 0.22),
-    0 12px 20px rgba(249, 112, 102, 0.24);
+    0 12px 20px rgba(156, 163, 175, 0.24);
 }
 
 .light .cloud-divider {
@@ -5443,8 +5443,8 @@ body.floating-toolbar-window #root {
 }
 
 .light .cloud-selection__count {
-  background: rgba(249, 112, 102, 0.12);
-  border-color: rgba(249, 112, 102, 0.18);
+  background: rgba(156, 163, 175, 0.12);
+  border-color: rgba(156, 163, 175, 0.18);
   color: var(--coral-500);
 }
 

@@ -165,7 +165,7 @@ export const AudioTrack = memo(function AudioTrack({
     // Create gradient for waveform using coral/orange theme (MoonSnap brand colors)
     const gradient = ctx.createLinearGradient(0, 0, 0, height);
     gradient.addColorStop(0, 'rgba(251, 146, 60, 0.9)'); // orange-400
-    gradient.addColorStop(0.6, 'rgba(249, 112, 102, 0.7)'); // coral-400
+    gradient.addColorStop(0.6, 'rgba(156, 163, 175, 0.7)'); // coral-400
     gradient.addColorStop(1, 'rgba(240, 68, 56, 0.3)'); // coral-500
 
     ctx.fillStyle = gradient;
@@ -183,7 +183,7 @@ export const AudioTrack = memo(function AudioTrack({
     ctx.fill();
 
     // Draw a subtle floor line to anchor the half-waveform.
-    ctx.strokeStyle = 'rgba(249, 112, 102, 0.28)';
+    ctx.strokeStyle = 'rgba(156, 163, 175, 0.28)';
     ctx.lineWidth = 1;
     ctx.beginPath();
     ctx.moveTo(0, baselineY + 0.5);

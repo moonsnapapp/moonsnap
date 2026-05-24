@@ -83,15 +83,15 @@ function quantizeTimeMs(timeMs: number, stepMs: number): number {
   return Math.round(timeMs / stepMs) * stepMs;
 }
 
-const IO_MARKER_LINE_COLOR = 'var(--coral-300, #FDA4A0)';
+const IO_MARKER_LINE_COLOR = 'var(--coral-300, #C8CCD3)';
 const IO_MARKER_HANDLE_BG = 'linear-gradient(135deg, var(--coral-400) 0%, var(--coral-500) 100%)';
 const IO_MARKER_TOOLTIP_BG = 'var(--glass-bg-solid)';
-const IO_MARKER_TOOLTIP_BORDER = 'var(--coral-400, #F97066)';
-const IO_MARKER_TOOLTIP_TEXT = 'var(--coral-300, #FDA4A0)';
+const IO_MARKER_TOOLTIP_BORDER = 'var(--coral-400, #9CA3AF)';
+const IO_MARKER_TOOLTIP_TEXT = 'var(--coral-300, #C8CCD3)';
 const PLAYHEAD_COLOR = 'var(--warning, #F59E0B)';
 const PLAYHEAD_GLOW = 'rgba(245, 158, 11, 0.35)';
 const PLAYHEAD_BORDER = 'rgba(245, 158, 11, 0.55)';
-const CUT_SCRUBBER_COLOR = 'var(--coral-500, #F04438)';
+const CUT_SCRUBBER_COLOR = 'var(--coral-500, #6B7280)';
 const HOVER_PREVIEW_MIN_POINTER_DELTA_PX = 2;
 const HOVER_PREVIEW_RESUME_AFTER_RESIZE_MS = TIMING.RESIZE_DEBOUNCE_MS * 2;
 const TIMELINE_MARKER_LINE_WIDTH_PX = 2;
@@ -413,7 +413,7 @@ const IORangeBar = memo(function IORangeBar({
         width: `${width}px`,
         height: `${IO_RANGE_BAR_HEIGHT_PX}px`,
         background: 'linear-gradient(90deg, var(--coral-400) 0%, var(--coral-500) 100%)',
-        filter: 'drop-shadow(0 0 3px rgba(249, 112, 102, 0.35))',
+        filter: 'drop-shadow(0 0 3px rgba(156, 163, 175, 0.35))',
       }}
     />
   );
@@ -1275,7 +1275,7 @@ export function VideoTimeline({ onExport, onResetTrimSegments, onSetInPoint, onS
                 <TooltipContent side="bottom">
                   <div className="flex items-center gap-2">
                     <span className="text-xs">Skip Back 1s</span>
-                    <kbd className="kbd text-[10px] px-1.5 py-0.5">←</kbd>
+                    <kbd className="kbd text-[10px] px-1.5 py-0.5">â†</kbd>
                   </div>
                 </TooltipContent>
               </Tooltip>
@@ -1329,7 +1329,7 @@ export function VideoTimeline({ onExport, onResetTrimSegments, onSetInPoint, onS
                 <TooltipContent side="bottom">
                   <div className="flex items-center gap-2">
                     <span className="text-xs">Skip Forward 1s</span>
-                    <kbd className="kbd text-[10px] px-1.5 py-0.5">→</kbd>
+                    <kbd className="kbd text-[10px] px-1.5 py-0.5">â†’</kbd>
                   </div>
                 </TooltipContent>
               </Tooltip>

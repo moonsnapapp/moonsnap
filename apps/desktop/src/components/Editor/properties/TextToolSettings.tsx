@@ -36,7 +36,7 @@ import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, Command
 
 // Color presets for quick selection
 const COLOR_PRESETS = [
-  '#EF4444', '#F97316', '#F97066', '#22C55E',
+  '#EF4444', '#F97316', '#9CA3AF', '#22C55E',
   '#3B82F6', '#8B5CF6', '#EC4899', '#FFFFFF', '#1A1A1A',
 ];
 

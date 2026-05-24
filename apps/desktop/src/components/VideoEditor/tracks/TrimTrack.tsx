@@ -167,7 +167,7 @@ function drawSegmentWaveform({
   const samplesPerPixel = segmentSamples.length / width;
   const gradient = ctx.createLinearGradient(0, 0, 0, height);
   gradient.addColorStop(0, 'rgba(251, 146, 60, 0.55)');
-  gradient.addColorStop(0.65, 'rgba(249, 112, 102, 0.4)');
+  gradient.addColorStop(0.65, 'rgba(156, 163, 175, 0.4)');
   gradient.addColorStop(1, 'rgba(240, 68, 56, 0.18)');
 
   ctx.fillStyle = gradient;
@@ -186,7 +186,7 @@ function drawSegmentWaveform({
   ctx.closePath();
   ctx.fill();
 
-  ctx.strokeStyle = 'rgba(249, 112, 102, 0.2)';
+  ctx.strokeStyle = 'rgba(156, 163, 175, 0.2)';
   ctx.lineWidth = 1;
   ctx.beginPath();
   ctx.moveTo(0, baselineY + 0.5);

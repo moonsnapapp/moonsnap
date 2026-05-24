@@ -216,7 +216,7 @@ export const CropOverlay: React.FC<CropOverlayProps> = ({
             <Line
               key={`snap-v-${index}`}
               points={[guide.position, -lineExtent, guide.position, lineExtent]}
-              stroke="#F97066"
+              stroke="#9CA3AF"
               strokeWidth={strokeWidth}
               dash={[dashSize, dashSize]}
               listening={false}
@@ -227,7 +227,7 @@ export const CropOverlay: React.FC<CropOverlayProps> = ({
             <Line
               key={`snap-h-${index}`}
               points={[-lineExtent, guide.position, lineExtent, guide.position]}
-              stroke="#F97066"
+              stroke="#9CA3AF"
               strokeWidth={strokeWidth}
               dash={[dashSize, dashSize]}
               listening={false}
