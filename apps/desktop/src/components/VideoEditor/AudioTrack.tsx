@@ -162,11 +162,11 @@ export const AudioTrack = memo(function AudioTrack({
     const sampleWidth = totalWidth / samplesCount;
     const maxAmplitude = Math.max(1, height - WAVEFORM_TOP_PADDING_PX - WAVEFORM_BOTTOM_PADDING_PX);
 
-    // Create gradient for waveform using coral/orange theme (MoonSnap brand colors)
+    // Monochrome graphite waveform fill
     const gradient = ctx.createLinearGradient(0, 0, 0, height);
-    gradient.addColorStop(0, 'rgba(251, 146, 60, 0.9)'); // orange-400
-    gradient.addColorStop(0.6, 'rgba(156, 163, 175, 0.7)'); // coral-400
-    gradient.addColorStop(1, 'rgba(240, 68, 56, 0.3)'); // coral-500
+    gradient.addColorStop(0, 'rgba(200, 204, 211, 0.85)');
+    gradient.addColorStop(0.6, 'rgba(156, 163, 175, 0.6)');
+    gradient.addColorStop(1, 'rgba(107, 114, 128, 0.25)');
 
     ctx.fillStyle = gradient;
     ctx.beginPath();

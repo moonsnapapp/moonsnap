@@ -384,7 +384,6 @@ export const CaptureToolbar: React.FC<CaptureToolbarProps> = ({
 
           <div className="glass-toolbar-brand" aria-hidden="true">
             <span className="glass-toolbar-brand-wordmark">MoonSnap</span>
-            <span className="glass-toolbar-brand-badge">PRO</span>
           </div>
 
           <div className="glass-toolbar-window-controls">

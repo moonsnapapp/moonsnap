@@ -166,9 +166,9 @@ function drawSegmentWaveform({
   const maxAmplitude = Math.max(1, height - SEGMENT_WAVEFORM_TOP_PADDING_PX - SEGMENT_WAVEFORM_BOTTOM_PADDING_PX);
   const samplesPerPixel = segmentSamples.length / width;
   const gradient = ctx.createLinearGradient(0, 0, 0, height);
-  gradient.addColorStop(0, 'rgba(251, 146, 60, 0.55)');
-  gradient.addColorStop(0.65, 'rgba(156, 163, 175, 0.4)');
-  gradient.addColorStop(1, 'rgba(240, 68, 56, 0.18)');
+  gradient.addColorStop(0, 'rgba(200, 204, 211, 0.55)');
+  gradient.addColorStop(0.65, 'rgba(156, 163, 175, 0.35)');
+  gradient.addColorStop(1, 'rgba(107, 114, 128, 0.15)');
 
   ctx.fillStyle = gradient;
   ctx.beginPath();

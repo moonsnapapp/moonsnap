@@ -326,7 +326,7 @@ describe('CaptureToolbar selection HUD', () => {
     });
 
     expect(container.querySelector('.glass-toolbar-brand-wordmark')?.textContent).toBe('MoonSnap');
-    expect(container.querySelector('.glass-toolbar-brand-badge')?.textContent).toBe('PRO');
+    expect(container.querySelector('.glass-toolbar-brand-badge')).toBeNull();
     expect(screen.getByTitle('Open library')).toBeInTheDocument();
     expect(screen.getByTitle('Minimize capture toolbar')).toBeInTheDocument();
     expect(screen.getByTitle('Close capture toolbar')).toBeInTheDocument();
