@@ -3,7 +3,7 @@
  * Contains Project, Style, Captions, and Export tabs.
  */
 import { useId, useState, type ReactNode } from 'react';
-import { ChevronDown, MousePointer2, Palette, Video } from 'lucide-react';
+import { ChevronDown, MousePointer2, Video } from 'lucide-react';
 import { useVideoEditorStore } from '../../stores/videoEditorStore';
 import {
   selectAddAnnotationShape,
@@ -50,7 +50,6 @@ import { MaskSegmentConfig } from './MaskSegmentConfig';
 import { TextSegmentConfig } from './TextSegmentConfig';
 import { CaptionPanel } from './CaptionPanel';
 import { SidebarTabBar, type PropertiesTab } from './components/SidebarTabBar';
-import { ProjectInfoPanel } from './panels/ProjectInfoPanel';
 import { CursorConfigPanel } from './panels/CursorConfigPanel';
 import { WebcamConfigPanel } from './panels/WebcamConfigPanel';
 import { ExportConfigPanel } from './panels/ExportConfigPanel';
@@ -145,7 +144,8 @@ export function VideoEditorSidebar({ project, onOpenCropDialog }: VideoEditorSid
   const deleteTextSegment = useVideoEditorStore(selectDeleteTextSegment);
 
   // Properties panel tab state
-  const [activeTab, setActiveTab] = useState<PropertiesTab>('project');
+  const hasStyleTab = Boolean(project?.sources.cursorData || project?.sources.webcamVideo);
+  const [activeTab, setActiveTab] = useState<PropertiesTab>(hasStyleTab ? 'style' : 'background');
 
   // Clicking a sidebar tab dismisses any open segment properties overlay
   const handleTabChange = (tab: PropertiesTab) => {
@@ -178,6 +178,7 @@ export function VideoEditorSidebar({ project, onOpenCropDialog }: VideoEditorSid
       <SidebarTabBar
         activeTab={activeTab}
         onTabChange={handleTabChange}
+        showStyleTab={hasStyleTab}
       />
 
       {/* Tab Content */}
@@ -330,13 +331,6 @@ export function VideoEditorSidebar({ project, onOpenCropDialog }: VideoEditorSid
         )}
 
         <div className="video-sidebar-scroll-area h-full min-w-0 overflow-y-auto">
-          {/* Project Tab */}
-          {activeTab === 'project' && (
-            <div className="p-4 space-y-4">
-              <ProjectInfoPanel project={project} />
-            </div>
-          )}
-
           {/* Captions Tab */}
           {activeTab === 'captions' && (
             <div className="p-4">
@@ -345,7 +339,7 @@ export function VideoEditorSidebar({ project, onOpenCropDialog }: VideoEditorSid
           )}
 
           {/* Style Tab */}
-          {activeTab === 'background' && project && (
+          {activeTab === 'style' && project && (
             <div className="min-w-0 p-4">
               <div className="video-sidebar-section-stack">
                 {project.sources.cursorData && (
@@ -375,21 +369,19 @@ export function VideoEditorSidebar({ project, onOpenCropDialog }: VideoEditorSid
                     />
                   </SidebarSettingsSection>
                 )}
-
-                <SidebarSettingsSection
-                  title="Background"
-                  icon={<Palette className="h-3.5 w-3.5" />}
-                  defaultOpen={!project.sources.cursorData && !project.sources.webcamVideo}
-                  variant="flat"
-                >
-                  <BackgroundSettings
-                    background={project.export.background}
-                    onUpdate={(updates) => updateExportConfig({
-                      background: { ...project.export.background, ...updates }
-                    })}
-                  />
-                </SidebarSettingsSection>
               </div>
+            </div>
+          )}
+
+          {/* Background Tab */}
+          {activeTab === 'background' && project && (
+            <div className="min-w-0 p-4">
+              <BackgroundSettings
+                background={project.export.background}
+                onUpdate={(updates) => updateExportConfig({
+                  background: { ...project.export.background, ...updates }
+                })}
+              />
             </div>
           )}
 

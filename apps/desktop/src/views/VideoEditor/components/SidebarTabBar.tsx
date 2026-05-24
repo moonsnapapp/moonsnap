@@ -2,11 +2,12 @@
  * SidebarTabBar - Tab navigation for the video editor sidebar.
  */
 
-export type PropertiesTab = 'project' | 'background' | 'captions' | 'export';
+export type PropertiesTab = 'style' | 'background' | 'captions' | 'export';
 
 export interface SidebarTabBarProps {
   activeTab: PropertiesTab;
   onTabChange: (tab: PropertiesTab) => void;
+  showStyleTab?: boolean;
 }
 
 interface TabConfig {
@@ -15,10 +16,10 @@ interface TabConfig {
   condition?: boolean;
 }
 
-export function SidebarTabBar({ activeTab, onTabChange }: SidebarTabBarProps) {
+export function SidebarTabBar({ activeTab, onTabChange, showStyleTab = true }: SidebarTabBarProps) {
   const tabs: TabConfig[] = [
-    { id: 'project', label: 'Project' },
-    { id: 'background', label: 'Style' },
+    { id: 'style', label: 'Style', condition: showStyleTab },
+    { id: 'background', label: 'Background' },
     { id: 'captions', label: 'Captions' },
     { id: 'export', label: 'Export' },
   ];
