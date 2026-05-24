@@ -203,7 +203,7 @@ export const ColorPicker: React.FC<ColorPickerProps> = ({
           onClick={() => setIsOpen(!isOpen)}
           className={cn(
             'h-10 w-10 flex-shrink-0 cursor-pointer rounded-lg border-2 transition-all',
-            isOpen ? 'border-[var(--coral-400)] ring-2 ring-[var(--coral-glow)]' : 'border-[var(--polar-frost)]'
+            isOpen ? 'border-[var(--accent-400)] ring-2 ring-[var(--accent-glow)]' : 'border-[var(--polar-frost)]'
           )}
           style={{
             background: isTransparent(value)
@@ -218,7 +218,7 @@ export const ColorPicker: React.FC<ColorPickerProps> = ({
             type="text"
             value={isDragging ? displayColor : value}
             onChange={handleInputChange}
-            className="h-10 min-w-0 flex-1 rounded-lg border border-[var(--polar-frost)] bg-[var(--card)] px-3 font-mono text-sm text-[var(--ink-black)] focus:border-[var(--coral-400)] focus:outline-none focus:ring-2 focus:ring-[var(--coral-glow)]"
+            className="h-10 min-w-0 flex-1 rounded-lg border border-[var(--polar-frost)] bg-[var(--card)] px-3 font-mono text-sm text-[var(--ink-black)] focus:border-[var(--accent-400)] focus:outline-none focus:ring-2 focus:ring-[var(--accent-glow)]"
             placeholder="#000000"
           />
         )}

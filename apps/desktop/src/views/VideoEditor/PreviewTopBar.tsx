@@ -73,7 +73,7 @@ function ExportButton({ onExport }: { onExport: (target?: 'video' | 'gif') => vo
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button className="btn-coral h-7 px-2.5 rounded-md flex items-center gap-1.5">
+        <Button className="btn-accent h-7 px-2.5 rounded-md flex items-center gap-1.5">
           <Download className="w-3 h-3" />
           <span className="text-[11px] font-medium">Export</span>
           <ChevronDown className="w-3 h-3" />
@@ -305,7 +305,7 @@ export function PreviewTopBar({
     <div className="flex h-10 items-center gap-2 border-b border-[var(--glass-border)] bg-[var(--polar-mist)] px-3">
       {isCropEditing ? (
         <>
-          <Crop className="h-3.5 w-3.5 text-[var(--coral-500)]" />
+          <Crop className="h-3.5 w-3.5 text-[var(--accent-500)]" />
           <span className="text-xs font-medium text-[var(--ink-dark)]">Crop</span>
 
           <div className="mx-1 h-5 w-px bg-[var(--glass-border)]" aria-hidden="true" />
@@ -335,7 +335,7 @@ export function PreviewTopBar({
             onClick={handleToggleLock}
             className={`h-7 gap-1 px-2 text-[11px] ${
               crop.lockAspectRatio
-                ? 'bg-[var(--coral-100)] text-[var(--coral-500)] border-[var(--coral-300)] hover:bg-[var(--coral-200)]'
+                ? 'bg-[var(--accent-100)] text-[var(--accent-500)] border-[var(--accent-300)] hover:bg-[var(--accent-200)]'
                 : ''
             }`}
             title={crop.lockAspectRatio ? 'Aspect ratio locked' : 'Aspect ratio unlocked'}
@@ -406,7 +406,7 @@ export function PreviewTopBar({
             size="sm"
             onClick={handleStartCrop}
             className={`h-7 gap-1.5 px-2 text-[11px] ${
-              cropEnabled ? 'border-[var(--coral-300)] text-[var(--coral-500)]' : ''
+              cropEnabled ? 'border-[var(--accent-300)] text-[var(--accent-500)]' : ''
             }`}
           >
             <Crop className="h-3 w-3" />

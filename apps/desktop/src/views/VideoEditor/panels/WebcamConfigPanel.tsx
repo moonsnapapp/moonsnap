@@ -21,7 +21,7 @@ export function WebcamConfigPanel({ project, onUpdateWebcamConfig }: WebcamConfi
         <button
           onClick={() => onUpdateWebcamConfig({ enabled: !project.webcam.enabled })}
           className={`relative w-10 h-5 rounded-full transition-colors ${
-            project.webcam.enabled ? 'bg-[var(--coral-400)]' : 'bg-[var(--polar-frost)]'
+            project.webcam.enabled ? 'bg-[var(--accent-400)]' : 'bg-[var(--polar-frost)]'
           }`}
         >
           <span

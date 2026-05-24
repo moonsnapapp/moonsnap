@@ -170,7 +170,7 @@ export const CaptureCard: React.FC<CaptureCardProps> = memo(
                     {capture.capture_type}
                   </div>
                   {isQuickVideo && (
-                    <div className="px-2 py-1 rounded-md bg-[var(--coral-400)]/90 text-white text-[10px] font-medium">
+                    <div className="px-2 py-1 rounded-md bg-[var(--accent-400)]/90 text-white text-[10px] font-medium">
                       Quick Capture
                     </div>
                   )}
@@ -201,12 +201,12 @@ export const CaptureCard: React.FC<CaptureCardProps> = memo(
                 aria-label={capture.favorite ? 'Remove from favorites' : 'Add to favorites'}
                 className={`absolute top-3 right-3 z-10 w-[26px] h-[26px] rounded-lg flex items-center justify-center border shadow-sm transition-all duration-200 hover:scale-110 ${
                   capture.favorite
-                    ? 'bg-[var(--card)] border-[var(--coral-200)] opacity-100'
+                    ? 'bg-[var(--card)] border-[var(--accent-200)] opacity-100'
                     : 'bg-[var(--card)]/80 border-transparent opacity-0 group-hover:opacity-100'
                 }`}
               >
                 <Star
-                  className="w-3.5 h-3.5 text-[var(--coral-400)] transition-colors"
+                  className="w-3.5 h-3.5 text-[var(--accent-400)] transition-colors"
                   fill={capture.favorite ? 'currentColor' : 'none'}
                 />
               </button>
@@ -231,7 +231,7 @@ export const CaptureCard: React.FC<CaptureCardProps> = memo(
               {/* Loading Overlay - shown when opening this capture */}
               {isLoading && (
                 <div className="absolute inset-0 bg-[var(--polar-snow)]/95 flex items-center justify-center z-10 animate-fade-in">
-                  <Loader2 className="w-6 h-6 text-[var(--coral-400)] animate-spin" />
+                  <Loader2 className="w-6 h-6 text-[var(--accent-400)] animate-spin" />
                 </div>
               )}
             </div>
@@ -304,7 +304,7 @@ export const CaptureCard: React.FC<CaptureCardProps> = memo(
                         <Tag
                           className="w-3.5 h-3.5 transition-colors"
                           style={{
-                            color: capture.tags.length > 0 ? 'var(--coral-400)' : 'var(--ink-subtle)',
+                            color: capture.tags.length > 0 ? 'var(--accent-400)' : 'var(--ink-subtle)',
                           }}
                         />
                       </button>

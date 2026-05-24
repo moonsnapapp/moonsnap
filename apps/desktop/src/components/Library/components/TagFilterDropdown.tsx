@@ -48,7 +48,7 @@ export const TagFilterDropdown: React.FC<TagFilterDropdownProps> = ({
             >
               <Tag className="w-[15px] h-[15px]" />
               {hasActiveFilter && (
-                <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-[var(--coral-400)] text-white text-[9px] font-bold flex items-center justify-center">
+                <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-[var(--accent-400)] text-white text-[9px] font-bold flex items-center justify-center">
                   {selectedTags.length}
                 </span>
               )}
@@ -96,13 +96,13 @@ export const TagFilterDropdown: React.FC<TagFilterDropdownProps> = ({
                     className={`
                       w-full px-3 py-1.5 text-left text-sm flex items-center gap-2
                       transition-colors hover:bg-[var(--polar-mist)]
-                      ${isSelected ? 'text-[var(--coral-400)]' : 'text-[var(--ink-base)]'}
+                      ${isSelected ? 'text-[var(--accent-400)]' : 'text-[var(--ink-base)]'}
                     `}
                   >
                     <div className={`
                       w-4 h-4 rounded border flex items-center justify-center flex-shrink-0
                       ${isSelected
-                        ? 'bg-[var(--coral-400)] border-[var(--coral-400)]'
+                        ? 'bg-[var(--accent-400)] border-[var(--accent-400)]'
                         : 'border-[var(--polar-frost)]'
                       }
                     `}>

@@ -519,7 +519,7 @@ export const EditorCanvas = React.memo(forwardRef<EditorCanvasRef, EditorCanvasP
       {isImageLoading && (
         <div className="absolute inset-0 flex items-center justify-center z-50 bg-[var(--polar-mist)]">
           <div className="flex flex-col items-center gap-3">
-            <Loader2 className="w-8 h-8 text-[var(--coral-400)] animate-spin" />
+            <Loader2 className="w-8 h-8 text-[var(--accent-400)] animate-spin" />
             <span className="text-sm text-[var(--ink-subtle)]">Loading image...</span>
           </div>
         </div>

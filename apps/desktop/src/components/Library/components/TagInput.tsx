@@ -173,8 +173,8 @@ export const TagInput: React.FC<TagInputProps> = ({
               className={`
                 px-3 py-1.5 text-sm cursor-pointer transition-colors flex items-center gap-2
                 ${highlightedIndex === suggestions.length
-                  ? 'bg-[var(--coral-subtle)] text-[var(--coral-400)]'
-                  : 'text-[var(--coral-400)] hover:bg-[var(--coral-subtle)]'
+                  ? 'bg-[var(--accent-subtle)] text-[var(--accent-400)]'
+                  : 'text-[var(--accent-400)] hover:bg-[var(--accent-subtle)]'
                 }
               `}
             >

@@ -22,7 +22,7 @@ export function CursorConfigPanel({ project, onUpdateCursorConfig }: CursorConfi
         <button
           onClick={() => onUpdateCursorConfig({ visible: !project.cursor.visible })}
           className={`relative w-10 h-5 rounded-full transition-colors ${
-            project.cursor.visible ? 'bg-[var(--coral-400)]' : 'bg-[var(--polar-frost)]'
+            project.cursor.visible ? 'bg-[var(--accent-400)]' : 'bg-[var(--polar-frost)]'
           }`}
         >
           <span
@@ -118,7 +118,7 @@ export function CursorConfigPanel({ project, onUpdateCursorConfig }: CursorConfi
         <button
           onClick={() => onUpdateCursorConfig({ hideWhenIdle: !hideWhenIdle })}
           className={`relative w-10 h-5 rounded-full transition-colors ${
-            hideWhenIdle ? 'bg-[var(--coral-400)]' : 'bg-[var(--polar-frost)]'
+            hideWhenIdle ? 'bg-[var(--accent-400)]' : 'bg-[var(--polar-frost)]'
           }`}
         >
           <span
@@ -138,7 +138,7 @@ export function CursorConfigPanel({ project, onUpdateCursorConfig }: CursorConfi
               clickHighlight: { ...project.cursor.clickHighlight, enabled: !project.cursor.clickHighlight.enabled }
             })}
             className={`relative w-10 h-5 rounded-full transition-colors ${
-              project.cursor.clickHighlight.enabled ? 'bg-[var(--coral-400)]' : 'bg-[var(--polar-frost)]'
+              project.cursor.clickHighlight.enabled ? 'bg-[var(--accent-400)]' : 'bg-[var(--polar-frost)]'
             }`}
           >
             <span

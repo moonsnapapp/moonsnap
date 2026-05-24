@@ -186,7 +186,7 @@ export const SettingsDialog: React.FC = () => {
               <div className="flex items-center gap-2">
                 <div className="flex-1 h-1.5 bg-(--polar-mist) rounded-full overflow-hidden">
                   <div
-                    className="h-full bg-(--coral-400) transition-[width] duration-300 ease-out"
+                    className="h-full bg-(--accent-400) transition-[width] duration-300 ease-out"
                     style={{ width: `${downloadPercent}%` }}
                   />
                 </div>

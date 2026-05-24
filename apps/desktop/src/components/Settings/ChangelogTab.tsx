@@ -32,7 +32,7 @@ export const ChangelogTab: React.FC = () => {
   return (
     <div className="space-y-6">
       <section>
-        <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--coral-400)] mb-3">
+        <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--accent-400)] mb-3">
           Release Notes
         </h3>
       </section>

@@ -103,7 +103,7 @@ export function ZoomRegionConfig({ region, videoSrc, canUseAuto, onUpdate, onDel
         <div className="flex items-center gap-2">
           <button
             onClick={onDone}
-            className="h-7 px-2.5 bg-[var(--coral-100)] hover:bg-[var(--coral-200)] text-[var(--coral-400)] text-xs font-medium rounded-md transition-colors"
+            className="h-7 px-2.5 bg-[var(--accent-100)] hover:bg-[var(--accent-200)] text-[var(--accent-400)] text-xs font-medium rounded-md transition-colors"
           >
             Done
           </button>

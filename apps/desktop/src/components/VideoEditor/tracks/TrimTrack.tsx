@@ -100,12 +100,12 @@ function useWaveform(audioPath: string | undefined) {
 
 // CSS variable names for trim track styling
 const TRIM_COLORS = {
-  bg: 'var(--coral-100)',
-  bgSelected: 'var(--coral-200)',
-  border: 'var(--coral-200)',
-  borderSelected: 'var(--coral-400)',
-  hover: 'var(--coral-300)',
-  text: 'var(--coral-400)',
+  bg: 'var(--accent-100)',
+  bgSelected: 'var(--accent-200)',
+  border: 'var(--accent-200)',
+  borderSelected: 'var(--accent-400)',
+  hover: 'var(--accent-300)',
+  text: 'var(--accent-400)',
 };
 const SEGMENT_WAVEFORM_BOTTOM_PADDING_PX = 2;
 const SEGMENT_WAVEFORM_TOP_PADDING_PX = 3;
@@ -382,7 +382,7 @@ const TrimSegmentItem = memo(function TrimSegmentItem({
 
       {/* Left resize handle */}
       <div
-        className="absolute left-0 top-0 bottom-0 w-2 cursor-ew-resize rounded-l-md touch-none z-10 bg-[var(--coral-300)]/35 hover:bg-[var(--coral-300)]/75 transition-colors"
+        className="absolute left-0 top-0 bottom-0 w-2 cursor-ew-resize rounded-l-md touch-none z-10 bg-[var(--accent-300)]/35 hover:bg-[var(--accent-300)]/75 transition-colors"
         onPointerDown={(e) => handlePointerDown(e, 'start')}
       />
 
@@ -400,7 +400,7 @@ const TrimSegmentItem = memo(function TrimSegmentItem({
               {formatTimeSimple(segmentDuration)}
             </span>
             {segmentSpeed > 1.001 && (
-              <span className="ml-1 rounded-sm bg-[var(--coral-300)]/25 px-1 text-[9px] font-semibold tabular-nums">
+              <span className="ml-1 rounded-sm bg-[var(--accent-300)]/25 px-1 text-[9px] font-semibold tabular-nums">
                 {segmentSpeed.toFixed(segmentSpeed % 1 === 0 ? 0 : 2)}x
               </span>
             )}
@@ -410,7 +410,7 @@ const TrimSegmentItem = memo(function TrimSegmentItem({
 
       {/* Right resize handle */}
       <div
-        className="absolute right-0 top-0 bottom-0 w-2 cursor-ew-resize rounded-r-md touch-none z-10 bg-[var(--coral-300)]/35 hover:bg-[var(--coral-300)]/75 transition-colors"
+        className="absolute right-0 top-0 bottom-0 w-2 cursor-ew-resize rounded-r-md touch-none z-10 bg-[var(--accent-300)]/35 hover:bg-[var(--accent-300)]/75 transition-colors"
         onPointerDown={(e) => handlePointerDown(e, 'end')}
       />
 

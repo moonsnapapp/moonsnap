@@ -29,7 +29,7 @@ export const ScreenshotsTab: React.FC = () => {
     <div className="space-y-6">
       {/* Image Format Section */}
       <section>
-        <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--coral-400)] mb-3">
+        <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--accent-400)] mb-3">
           Image Format
         </h3>
         <div className="p-4 rounded-lg bg-[var(--polar-ice)] border border-[var(--polar-frost)] space-y-4">
@@ -84,7 +84,7 @@ export const ScreenshotsTab: React.FC = () => {
 
       {/* Behavior Section */}
       <section>
-        <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--coral-400)] mb-3">
+        <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--accent-400)] mb-3">
           Behavior
         </h3>
         <div className="p-4 rounded-lg bg-[var(--polar-ice)] border border-[var(--polar-frost)] space-y-4">

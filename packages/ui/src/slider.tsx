@@ -74,9 +74,9 @@ const Slider = React.forwardRef<HTMLDivElement, SliderProps>(
         className={cn('relative flex w-full touch-none select-none items-center h-5', className)}
       >
         <SliderPrimitive.Track className="relative h-1.5 w-full grow overflow-hidden rounded-full bg-[var(--polar-mist)]">
-          <SliderPrimitive.Range className="absolute h-full bg-[var(--coral-400)]" />
+          <SliderPrimitive.Range className="absolute h-full bg-[var(--accent-400)]" />
         </SliderPrimitive.Track>
-        <SliderPrimitive.Thumb className="block h-4 w-4 rounded-full border-2 border-[var(--coral-400)] bg-white shadow-md ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--coral-glow)] focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 cursor-pointer hover:scale-110" />
+        <SliderPrimitive.Thumb className="block h-4 w-4 rounded-full border-2 border-[var(--accent-400)] bg-white shadow-md ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-glow)] focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 cursor-pointer hover:scale-110" />
       </SliderPrimitive.Root>
     );
   }

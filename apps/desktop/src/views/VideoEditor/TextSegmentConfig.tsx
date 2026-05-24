@@ -91,7 +91,7 @@ function ToggleSwitch({ enabled, onToggle }: ToggleSwitchProps) {
       onClick={onToggle}
       className={`relative w-10 h-5 rounded-full transition-colors ${
         enabled
-          ? 'bg-[var(--coral-400)]'
+          ? 'bg-[var(--accent-400)]'
           : 'bg-[var(--polar-frost)]'
       }`}
     >
@@ -190,7 +190,7 @@ export function TextSegmentConfig({ segment, onUpdate, onDelete, onDone }: TextS
         <div className="flex items-center gap-2">
           <button
             onClick={onDone}
-            className="h-7 px-2.5 bg-[var(--coral-100)] hover:bg-[var(--coral-200)] text-[var(--coral-400)] text-xs font-medium rounded-md transition-colors"
+            className="h-7 px-2.5 bg-[var(--accent-100)] hover:bg-[var(--accent-200)] text-[var(--accent-400)] text-xs font-medium rounded-md transition-colors"
           >
             Done
           </button>
@@ -313,7 +313,7 @@ export function TextSegmentConfig({ segment, onUpdate, onDelete, onDone }: TextS
             onClick={() => onUpdate({ italic: !segment.italic })}
             className={`h-8 w-8 flex items-center justify-center rounded-md border transition-colors ${
               segment.italic
-                ? 'bg-[var(--coral-100)] border-[var(--coral-300)] text-[var(--coral-500)]'
+                ? 'bg-[var(--accent-100)] border-[var(--accent-300)] text-[var(--accent-500)]'
                 : 'bg-[var(--polar-mist)] border-[var(--glass-border)] text-[var(--ink-muted)]'
             }`}
             aria-label="Toggle italic"

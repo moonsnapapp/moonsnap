@@ -123,7 +123,7 @@ export const FeedbackTab: React.FC = () => {
     <div className="space-y-6">
       {/* Feedback Section */}
       <section>
-        <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--coral-400)] mb-3">
+        <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--accent-400)] mb-3">
           Send Feedback
         </h3>
         <div className="p-4 rounded-lg bg-[var(--polar-ice)] border border-[var(--polar-frost)] space-y-4">
@@ -191,7 +191,7 @@ export const FeedbackTab: React.FC = () => {
 
       {/* System Information Section */}
       <section>
-        <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--coral-400)] mb-3">
+        <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--accent-400)] mb-3">
           System Information
         </h3>
         <div className="p-4 rounded-lg bg-[var(--polar-ice)] border border-[var(--polar-frost)]">

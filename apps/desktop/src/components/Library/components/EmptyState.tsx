@@ -39,12 +39,12 @@ export const EmptyState: React.FC<EmptyStateProps> = ({ onNewCapture }) => {
   <div className="flex flex-col items-center justify-center py-16 animate-fade-in">
     {/* Illustration */}
     <div className="relative mb-6">
-      <div className="w-24 h-24 rounded-2xl bg-gradient-to-br from-[var(--coral-50)] to-[var(--polar-ice)] flex items-center justify-center">
+      <div className="w-24 h-24 rounded-2xl bg-gradient-to-br from-[var(--accent-50)] to-[var(--polar-ice)] flex items-center justify-center">
         <div className="w-16 h-16 rounded-xl bg-[var(--card)] shadow-lg flex items-center justify-center border border-[var(--polar-frost)]">
-          <Aperture className="w-8 h-8 text-[var(--coral-400)]" />
+          <Aperture className="w-8 h-8 text-[var(--accent-400)]" />
         </div>
       </div>
-      <div className="absolute -right-2 -top-2 w-6 h-6 rounded-full bg-[var(--coral-400)] flex items-center justify-center shadow-md">
+      <div className="absolute -right-2 -top-2 w-6 h-6 rounded-full bg-[var(--accent-400)] flex items-center justify-center shadow-md">
         <Plus className="w-4 h-4 text-white" />
       </div>
     </div>
@@ -56,7 +56,7 @@ export const EmptyState: React.FC<EmptyStateProps> = ({ onNewCapture }) => {
 
     <Button
       onClick={onNewCapture}
-      className="btn-coral gap-2 px-5 h-10 rounded-xl text-sm font-medium shadow-md hover:shadow-lg transition-shadow"
+      className="btn-accent gap-2 px-5 h-10 rounded-xl text-sm font-medium shadow-md hover:shadow-lg transition-shadow"
     >
       <Aperture className="w-4 h-4" />
       Take Screenshot

@@ -37,7 +37,7 @@ const ShortcutItem: React.FC<ShortcutItemProps> = ({ config }) => {
   return (
     <div className="rounded-lg border border-[var(--polar-frost)] bg-[var(--polar-ice)] p-3">
       <div className="flex items-start gap-2.5">
-        <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg border border-[var(--polar-frost)] bg-[var(--card)] text-[var(--coral-400)] shadow-sm">
+        <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg border border-[var(--polar-frost)] bg-[var(--card)] text-[var(--accent-400)] shadow-sm">
           {SHORTCUT_ICONS[config.id] || <Scan className="w-5 h-5" />}
         </div>
 

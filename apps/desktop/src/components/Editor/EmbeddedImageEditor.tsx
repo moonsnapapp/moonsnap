@@ -204,7 +204,7 @@ const EmbeddedImageEditorBody: React.FC<EmbeddedImageEditorBodyProps> = ({ store
       <div className="editor-window flex-1 flex flex-col min-h-0">
         <div className="editor-window__state flex-1 flex items-center justify-center">
           <div className="flex flex-col items-center gap-4">
-            <Loader2 className="w-8 h-8 animate-spin text-(--coral-400)" />
+            <Loader2 className="w-8 h-8 animate-spin text-(--accent-400)" />
             <p className="text-sm text-(--ink-muted)">Loading image...</p>
           </div>
         </div>

@@ -75,7 +75,7 @@ export function PositionGrid({ position, customX, customY, onChange }: PositionG
                 onClick={() => onChange(pos.position, pos.customX, pos.customY)}
                 className={`w-6 h-6 rounded transition-colors ${
                   activeIndex === index
-                    ? 'bg-[var(--coral-400)]'
+                    ? 'bg-[var(--accent-400)]'
                     : 'bg-[var(--polar-frost)] hover:bg-[var(--polar-steel)]'
                 }`}
               />

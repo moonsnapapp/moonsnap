@@ -198,8 +198,8 @@ export const ShortcutInput: React.FC<ShortcutInputProps> = ({
     // When editing, show pending state
     if (hasPendingChanges) {
       if (conflictStatus === 'internal_conflict') return 'border-red-500/70';
-      if (conflictStatus === 'checking') return 'border-[var(--coral-400)]/50';
-      return 'border-[var(--coral-400)]/70';
+      if (conflictStatus === 'checking') return 'border-[var(--accent-400)]/50';
+      return 'border-[var(--accent-400)]/70';
     }
 
     if (status === 'registered') return 'border-emerald-500/50';
@@ -227,8 +227,8 @@ export const ShortcutInput: React.FC<ShortcutInputProps> = ({
             className={cn(
               'h-4 w-4 rounded border cursor-pointer appearance-none',
               'border-[var(--polar-frost)] bg-[var(--polar-ice)]',
-              'checked:bg-[var(--coral-400)] checked:border-[var(--coral-400)]',
-              'focus:ring-2 focus:ring-[var(--coral-400)]/30 focus:ring-offset-0',
+              'checked:bg-[var(--accent-400)] checked:border-[var(--accent-400)]',
+              'focus:ring-2 focus:ring-[var(--accent-400)]/30 focus:ring-offset-0',
               'relative',
               'checked:after:content-["✓"] checked:after:absolute checked:after:inset-0',
               'checked:after:flex checked:after:items-center checked:after:justify-center',
@@ -250,8 +250,8 @@ export const ShortcutInput: React.FC<ShortcutInputProps> = ({
             className={cn(
               'h-4 w-4 rounded border cursor-pointer appearance-none',
               'border-[var(--polar-frost)] bg-[var(--polar-ice)]',
-              'checked:bg-[var(--coral-400)] checked:border-[var(--coral-400)]',
-              'focus:ring-2 focus:ring-[var(--coral-400)]/30 focus:ring-offset-0',
+              'checked:bg-[var(--accent-400)] checked:border-[var(--accent-400)]',
+              'focus:ring-2 focus:ring-[var(--accent-400)]/30 focus:ring-offset-0',
               'relative',
               'checked:after:content-["✓"] checked:after:absolute checked:after:inset-0',
               'checked:after:flex checked:after:items-center checked:after:justify-center',
@@ -273,8 +273,8 @@ export const ShortcutInput: React.FC<ShortcutInputProps> = ({
             className={cn(
               'h-4 w-4 rounded border cursor-pointer appearance-none',
               'border-[var(--polar-frost)] bg-[var(--polar-ice)]',
-              'checked:bg-[var(--coral-400)] checked:border-[var(--coral-400)]',
-              'focus:ring-2 focus:ring-[var(--coral-400)]/30 focus:ring-offset-0',
+              'checked:bg-[var(--accent-400)] checked:border-[var(--accent-400)]',
+              'focus:ring-2 focus:ring-[var(--accent-400)]/30 focus:ring-offset-0',
               'relative',
               'checked:after:content-["✓"] checked:after:absolute checked:after:inset-0',
               'checked:after:flex checked:after:items-center checked:after:justify-center',
@@ -295,7 +295,7 @@ export const ShortcutInput: React.FC<ShortcutInputProps> = ({
                 'rounded-lg border text-xs',
                 'bg-[var(--polar-ice)] border-[var(--polar-frost)]',
                 'hover:bg-[var(--polar-mist)] hover:border-[var(--ink-subtle)]',
-                'focus:outline-none focus:ring-2 focus:ring-[var(--coral-400)]/30',
+                'focus:outline-none focus:ring-2 focus:ring-[var(--accent-400)]/30',
                 disabled && 'pointer-events-none opacity-50'
               )}
             >
@@ -316,7 +316,7 @@ export const ShortcutInput: React.FC<ShortcutInputProps> = ({
 
                   <DropdownMenuSeparator />
 
-                  <DropdownMenuLabel className="text-xs text-[var(--coral-400)]">Special</DropdownMenuLabel>
+                  <DropdownMenuLabel className="text-xs text-[var(--accent-400)]">Special</DropdownMenuLabel>
                   {KEY_GROUPS.special.map(opt => (
                     <DropdownMenuRadioItem key={opt.value} value={opt.value} className="text-xs">
                       {opt.label}
@@ -325,7 +325,7 @@ export const ShortcutInput: React.FC<ShortcutInputProps> = ({
 
                   <DropdownMenuSeparator />
 
-                  <DropdownMenuLabel className="text-xs text-[var(--coral-400)]">Letters</DropdownMenuLabel>
+                  <DropdownMenuLabel className="text-xs text-[var(--accent-400)]">Letters</DropdownMenuLabel>
                   {KEY_GROUPS.letters.map(opt => (
                     <DropdownMenuRadioItem key={opt.value} value={opt.value} className="text-xs">
                       {opt.label}
@@ -334,7 +334,7 @@ export const ShortcutInput: React.FC<ShortcutInputProps> = ({
 
                   <DropdownMenuSeparator />
 
-                  <DropdownMenuLabel className="text-xs text-[var(--coral-400)]">Numbers</DropdownMenuLabel>
+                  <DropdownMenuLabel className="text-xs text-[var(--accent-400)]">Numbers</DropdownMenuLabel>
                   {KEY_GROUPS.numbers.map(opt => (
                     <DropdownMenuRadioItem key={opt.value} value={opt.value} className="text-xs">
                       {opt.label}
@@ -343,7 +343,7 @@ export const ShortcutInput: React.FC<ShortcutInputProps> = ({
 
                   <DropdownMenuSeparator />
 
-                  <DropdownMenuLabel className="text-xs text-[var(--coral-400)]">Function Keys</DropdownMenuLabel>
+                  <DropdownMenuLabel className="text-xs text-[var(--accent-400)]">Function Keys</DropdownMenuLabel>
                   {KEY_GROUPS.functionKeys.map(opt => (
                     <DropdownMenuRadioItem key={opt.value} value={opt.value} className="text-xs">
                       {opt.label}
@@ -352,7 +352,7 @@ export const ShortcutInput: React.FC<ShortcutInputProps> = ({
 
                   <DropdownMenuSeparator />
 
-                  <DropdownMenuLabel className="text-xs text-[var(--coral-400)]">Navigation</DropdownMenuLabel>
+                  <DropdownMenuLabel className="text-xs text-[var(--accent-400)]">Navigation</DropdownMenuLabel>
                   {KEY_GROUPS.navigation.map(opt => (
                     <DropdownMenuRadioItem key={opt.value} value={opt.value} className="text-xs">
                       {opt.label}
@@ -361,7 +361,7 @@ export const ShortcutInput: React.FC<ShortcutInputProps> = ({
 
                   <DropdownMenuSeparator />
 
-                  <DropdownMenuLabel className="text-xs text-[var(--coral-400)]">Arrows</DropdownMenuLabel>
+                  <DropdownMenuLabel className="text-xs text-[var(--accent-400)]">Arrows</DropdownMenuLabel>
                   {KEY_GROUPS.arrows.map(opt => (
                     <DropdownMenuRadioItem key={opt.value} value={opt.value} className="text-xs">
                       {opt.label}
@@ -375,7 +375,7 @@ export const ShortcutInput: React.FC<ShortcutInputProps> = ({
         
         {/* Conflict status indicator */}
         {conflictStatus === 'checking' && (
-          <Loader2 className="ml-1 h-4 w-4 animate-spin text-[var(--coral-400)]" />
+          <Loader2 className="ml-1 h-4 w-4 animate-spin text-[var(--accent-400)]" />
         )}
         {conflictStatus === 'available' && hasPendingChanges && (
           <Check className="ml-1 h-4 w-4 text-emerald-500" />
@@ -390,7 +390,7 @@ export const ShortcutInput: React.FC<ShortcutInputProps> = ({
             size="sm"
             onClick={handleApply}
             disabled={disabled || !isValid}
-            className="ml-1 h-7 px-2 text-xs bg-[var(--coral-400)] text-white hover:bg-[var(--coral-500)]"
+            className="ml-1 h-7 px-2 text-xs bg-[var(--accent-400)] text-white hover:bg-[var(--accent-500)]"
             title="Apply shortcut"
           >
             <Check className="mr-1 h-3 w-3" />

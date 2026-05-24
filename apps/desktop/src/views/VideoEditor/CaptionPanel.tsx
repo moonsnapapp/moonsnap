@@ -1270,7 +1270,7 @@ export function CaptionPanel({ videoPath }: CaptionPanelProps) {
           onClick={() => setCaptionsEnabled(!captionSettings.enabled)}
           className={`relative w-10 h-5 rounded-full transition-colors ${
             captionSettings.enabled
-              ? 'bg-[var(--coral-400)]'
+              ? 'bg-[var(--accent-400)]'
               : 'bg-[var(--polar-frost)]'
           }`}
         >

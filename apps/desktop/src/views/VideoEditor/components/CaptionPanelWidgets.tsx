@@ -137,7 +137,7 @@ export function CaptionPlaybackTransport({
           })}
         </div>
         <div
-          className="absolute top-0 bottom-0 w-px bg-[var(--coral-400)]"
+          className="absolute top-0 bottom-0 w-px bg-[var(--accent-400)]"
           style={{ left: `${playbackPositionPercent}%` }}
         />
       </div>
@@ -230,18 +230,18 @@ export function WordTimingEditor({
           className="relative h-8 rounded border border-[var(--glass-border)] bg-[var(--glass-surface-dark)]/70 overflow-hidden cursor-ew-resize"
         >
           <div
-            className="absolute top-1 bottom-1 rounded-sm border border-[var(--coral-300)]/60 bg-[var(--coral-100)]/30"
+            className="absolute top-1 bottom-1 rounded-sm border border-[var(--accent-300)]/60 bg-[var(--accent-100)]/30"
             style={{
               left: `${wordCompressionRange[0]}%`,
               width: `${Math.max(wordCompressionRange[1] - wordCompressionRange[0], 0.75)}%`,
             }}
           />
           <div
-            className="absolute top-0 bottom-0 w-px bg-[var(--coral-400)]"
+            className="absolute top-0 bottom-0 w-px bg-[var(--accent-400)]"
             style={{ left: `${wordCompressionRange[0]}%` }}
           />
           <div
-            className="absolute top-0 bottom-0 w-px bg-[var(--coral-400)]"
+            className="absolute top-0 bottom-0 w-px bg-[var(--accent-400)]"
             style={{ left: `${wordCompressionRange[1]}%` }}
           />
           <div
@@ -309,7 +309,7 @@ export function WordTimingEditor({
               key={`timeline-${index}-${word.text}`}
               className={`absolute top-1 bottom-1 rounded-md border transition-colors ${
                 isDragging
-                  ? 'border-[var(--coral-400)] bg-[var(--coral-100)]/80'
+                  ? 'border-[var(--accent-400)] bg-[var(--accent-100)]/80'
                   : 'border-[var(--glass-border)] bg-[var(--card)]/85'
               } cursor-grab active:cursor-grabbing`}
               style={{ left: `${left}%`, width: `${width}%` }}
@@ -322,11 +322,11 @@ export function WordTimingEditor({
                 </span>
               </div>
               <div
-                className="absolute left-0 top-0 bottom-0 w-1.5 cursor-ew-resize bg-[var(--coral-300)]/60 hover:bg-[var(--coral-300)]"
+                className="absolute left-0 top-0 bottom-0 w-1.5 cursor-ew-resize bg-[var(--accent-300)]/60 hover:bg-[var(--accent-300)]"
                 onMouseDown={(event) => startWordDrag(event, index, 'start')}
               />
               <div
-                className="absolute right-0 top-0 bottom-0 w-1.5 cursor-ew-resize bg-[var(--coral-300)]/60 hover:bg-[var(--coral-300)]"
+                className="absolute right-0 top-0 bottom-0 w-1.5 cursor-ew-resize bg-[var(--accent-300)]/60 hover:bg-[var(--accent-300)]"
                 onMouseDown={(event) => startWordDrag(event, index, 'end')}
               />
             </div>

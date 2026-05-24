@@ -255,7 +255,7 @@ export const GeneralTab: React.FC = () => {
     <div className="space-y-6">
       {/* Appearance Section */}
       <section>
-        <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--coral-400)] mb-3">
+        <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--accent-400)] mb-3">
           Appearance
         </h3>
         <div className="p-4 rounded-lg bg-[var(--polar-ice)] border border-[var(--polar-frost)]">
@@ -301,7 +301,7 @@ export const GeneralTab: React.FC = () => {
 
       {/* Startup Section */}
       <section>
-        <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--coral-400)] mb-3">
+        <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--accent-400)] mb-3">
           Startup
         </h3>
         <div className="p-4 rounded-lg bg-[var(--polar-ice)] border border-[var(--polar-frost)] space-y-4">
@@ -343,7 +343,7 @@ export const GeneralTab: React.FC = () => {
 
       {/* Save Options Section */}
       <section>
-        <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--coral-400)] mb-3">
+        <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--accent-400)] mb-3">
           Save Options
         </h3>
         <div className="p-4 rounded-lg bg-[var(--polar-ice)] border border-[var(--polar-frost)] space-y-4">
@@ -440,7 +440,7 @@ export const GeneralTab: React.FC = () => {
                 <Button
                   onClick={handleAcceptMove}
                   disabled={isChecking}
-                  className="bg-[var(--coral-400)] text-white hover:bg-[var(--coral-500)]"
+                  className="bg-[var(--accent-400)] text-white hover:bg-[var(--accent-500)]"
                 >
                   {isChecking ? 'Checking...' : 'Yes, Move Files'}
                 </Button>
@@ -478,7 +478,7 @@ export const GeneralTab: React.FC = () => {
                 <Button
                   onClick={handleRetryMoveCheck}
                   disabled={isChecking}
-                  className="bg-[var(--coral-400)] text-white hover:bg-[var(--coral-500)]"
+                  className="bg-[var(--accent-400)] text-white hover:bg-[var(--accent-500)]"
                 >
                   {isChecking ? 'Checking...' : 'Retry'}
                 </Button>
@@ -519,7 +519,7 @@ export const GeneralTab: React.FC = () => {
                 </Button>
                 <Button
                   onClick={handleMoveConfirm}
-                  className="bg-[var(--coral-400)] text-white hover:bg-[var(--coral-500)]"
+                  className="bg-[var(--accent-400)] text-white hover:bg-[var(--accent-500)]"
                 >
                   Move Files
                 </Button>
@@ -539,7 +539,7 @@ export const GeneralTab: React.FC = () => {
               <div className="space-y-3">
                 <div className="h-2 bg-[var(--polar-mist)] rounded-full overflow-hidden">
                   <div
-                    className="h-full bg-[var(--coral-400)] transition-all duration-300"
+                    className="h-full bg-[var(--accent-400)] transition-all duration-300"
                     style={{ width: `${moveProgressPercent}%` }}
                   />
                 </div>
@@ -573,7 +573,7 @@ export const GeneralTab: React.FC = () => {
 
       {/* Updates Section */}
       <section>
-        <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--coral-400)] mb-3">
+        <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--accent-400)] mb-3">
           Updates
         </h3>
         <div className="p-4 rounded-lg bg-[var(--polar-ice)] border border-[var(--polar-frost)]">
@@ -603,7 +603,7 @@ export const GeneralTab: React.FC = () => {
 
       {/* Advanced Section */}
       <section>
-        <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--coral-400)] mb-3">
+        <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--accent-400)] mb-3">
           Advanced
         </h3>
         <div className="p-4 rounded-lg bg-[var(--polar-ice)] border border-[var(--polar-frost)]">

@@ -30,7 +30,7 @@ export function VideoEditorToolbar({ project, onBack }: VideoEditorToolbarProps)
         {project && (
           <>
             {isQuickCapture && (
-              <span className="editor-meta-pill px-2 py-0.5 bg-[var(--coral-400)]/12 text-[10px] font-medium text-[var(--coral-500)] whitespace-nowrap">
+              <span className="editor-meta-pill px-2 py-0.5 bg-[var(--accent-400)]/12 text-[10px] font-medium text-[var(--accent-500)] whitespace-nowrap">
                 Quick Capture
               </span>
             )}

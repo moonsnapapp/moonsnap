@@ -42,7 +42,7 @@ export function ImageBackgroundSection({
           </button>
         </div>
       ) : uploader.mode === 'file-input' ? (
-        <label className="flex flex-col items-center justify-center h-24 rounded-lg border-2 border-dashed border-[var(--glass-border)] bg-[var(--polar-mist)] cursor-pointer hover:border-[var(--coral-300)] hover:bg-[var(--coral-50)] transition-colors">
+        <label className="flex flex-col items-center justify-center h-24 rounded-lg border-2 border-dashed border-[var(--glass-border)] bg-[var(--polar-mist)] cursor-pointer hover:border-[var(--accent-300)] hover:bg-[var(--accent-50)] transition-colors">
           <Upload className="w-5 h-5 text-[var(--ink-muted)] mb-1" />
           <span className="text-xs text-[var(--ink-muted)]">{uploader.emptyLabel}</span>
           <input
@@ -63,7 +63,7 @@ export function ImageBackgroundSection({
           onClick={() => {
             void uploader.onPick();
           }}
-          className="w-full flex flex-col items-center justify-center h-24 rounded-lg border-2 border-dashed border-[var(--glass-border)] bg-[var(--polar-mist)] hover:border-[var(--coral-300)] hover:bg-[var(--coral-50)] transition-colors"
+          className="w-full flex flex-col items-center justify-center h-24 rounded-lg border-2 border-dashed border-[var(--glass-border)] bg-[var(--polar-mist)] hover:border-[var(--accent-300)] hover:bg-[var(--accent-50)] transition-colors"
         >
           <Upload className="w-5 h-5 text-[var(--ink-muted)] mb-1" />
           <span className="text-xs text-[var(--ink-muted)]">{uploader.emptyLabel}</span>

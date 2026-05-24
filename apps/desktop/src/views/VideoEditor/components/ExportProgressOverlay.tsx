@@ -32,7 +32,7 @@ export function ExportProgressOverlay({ isExporting, exportProgress, onCancel }:
         {/* Progress bar */}
         <div className="h-2 bg-[var(--polar-mist)] rounded-full overflow-hidden mb-2">
           <div
-            className="h-full bg-[var(--coral-400)] transition-all duration-300"
+            className="h-full bg-[var(--accent-400)] transition-all duration-300"
             style={{ width: `${(exportProgress?.progress ?? 0) * 100}%` }}
           />
         </div>

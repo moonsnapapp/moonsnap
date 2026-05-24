@@ -219,7 +219,7 @@ export const ImageEditorContent: React.FC<{
       <React.Suspense
         fallback={
           <div className="flex-1 flex items-center justify-center">
-            <Loader2 className="w-8 h-8 animate-spin text-(--coral-400)" />
+            <Loader2 className="w-8 h-8 animate-spin text-(--accent-400)" />
           </div>
         }
       >
@@ -764,7 +764,7 @@ const ImageEditorWindow: React.FC = () => {
         />
         <div className="editor-window__state flex-1 flex items-center justify-center">
           <div className="flex flex-col items-center gap-4">
-            <Loader2 className="w-8 h-8 animate-spin text-(--coral-400)" />
+            <Loader2 className="w-8 h-8 animate-spin text-(--accent-400)" />
             <p className="text-sm text-(--ink-muted)">Loading image...</p>
           </div>
         </div>

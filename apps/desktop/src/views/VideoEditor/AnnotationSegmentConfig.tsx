@@ -141,9 +141,9 @@ function LayerCard({
       style={style}
       className={`group relative flex min-h-10 w-full min-w-0 cursor-grab touch-none items-center gap-2 rounded-md border px-2.5 py-2 text-left transition-[background-color,border-color,box-shadow,opacity] active:cursor-grabbing ${
         isSelected
-          ? 'border-[var(--coral-300)] bg-[var(--coral-50)] text-[var(--ink-dark)]'
+          ? 'border-[var(--accent-300)] bg-[var(--accent-50)] text-[var(--ink-dark)]'
           : 'border-[var(--glass-border)] bg-[var(--polar-mist)] text-[var(--ink-dark)] hover:bg-[var(--glass-highlight)]'
-      } ${isOverlay ? 'border-[var(--coral-300)] bg-[var(--coral-50)] opacity-100' : ''} ${
+      } ${isOverlay ? 'border-[var(--accent-300)] bg-[var(--accent-50)] opacity-100' : ''} ${
         isDragging ? 'scale-[0.985] opacity-40' : ''
       }`}
       {...dragAttributes}
@@ -152,15 +152,15 @@ function LayerCard({
       {dropIndicator && (
         <span
           aria-hidden="true"
-          className={`pointer-events-none absolute left-1 right-1 z-20 h-0.5 rounded-full bg-[var(--coral-400)] ${
+          className={`pointer-events-none absolute left-1 right-1 z-20 h-0.5 rounded-full bg-[var(--accent-400)] ${
             dropIndicator === 'before' ? '-top-1' : '-bottom-1'
           }`}
           style={{
             filter: 'drop-shadow(0 0 4px rgba(249, 115, 22, 0.55))',
           }}
         >
-          <span className="absolute left-0 top-1/2 h-1.5 w-1.5 -translate-y-1/2 rounded-full bg-[var(--coral-400)]" />
-          <span className="absolute right-0 top-1/2 h-1.5 w-1.5 -translate-y-1/2 rounded-full bg-[var(--coral-400)]" />
+          <span className="absolute left-0 top-1/2 h-1.5 w-1.5 -translate-y-1/2 rounded-full bg-[var(--accent-400)]" />
+          <span className="absolute right-0 top-1/2 h-1.5 w-1.5 -translate-y-1/2 rounded-full bg-[var(--accent-400)]" />
         </span>
       )}
       <button
@@ -173,7 +173,7 @@ function LayerCard({
         <span
           className={`flex h-5 w-5 shrink-0 items-center justify-center ${
             isSelected
-              ? 'text-[var(--coral-400)]'
+              ? 'text-[var(--accent-400)]'
               : 'text-[var(--ink-muted)]'
           }`}
           aria-hidden="true"
@@ -343,7 +343,7 @@ export function AnnotationSegmentConfig({
         <div className="flex items-center justify-between gap-3">
           <button
             onClick={onDone}
-            className="h-7 shrink-0 rounded-md bg-[var(--coral-100)] px-2.5 text-xs font-medium text-[var(--coral-400)] transition-colors hover:bg-[var(--coral-200)]"
+            className="h-7 shrink-0 rounded-md bg-[var(--accent-100)] px-2.5 text-xs font-medium text-[var(--accent-400)] transition-colors hover:bg-[var(--accent-200)]"
           >
             Done
           </button>

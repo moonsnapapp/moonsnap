@@ -14,7 +14,7 @@ export function ToggleSwitch({ enabled, onToggle }: ToggleButtonProps) {
     <button
       onClick={onToggle}
       className={`relative w-10 h-5 rounded-full transition-colors ${
-        enabled ? 'bg-[var(--coral-400)]' : 'bg-[var(--polar-frost)]'
+        enabled ? 'bg-[var(--accent-400)]' : 'bg-[var(--polar-frost)]'
       }`}
     >
       <span

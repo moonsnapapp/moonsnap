@@ -184,7 +184,7 @@ export function WallpaperSelector({
                 }}
                 className={`relative min-w-0 overflow-hidden rounded-lg border-2 aspect-video transition-all hover:scale-[1.02] ${
                   selected
-                    ? 'border-[var(--coral-400)] ring-2 ring-[var(--coral-200)]'
+                    ? 'border-[var(--accent-400)] ring-2 ring-[var(--accent-200)]'
                     : 'border-transparent hover:border-[var(--glass-border)]'
                 }`}
               >
@@ -197,7 +197,7 @@ export function WallpaperSelector({
                   style={{ contentVisibility: 'auto' }}
                 />
                 {selected && (
-                  <div className="absolute top-1 right-1 w-4 h-4 rounded-full bg-[var(--coral-400)] flex items-center justify-center">
+                  <div className="absolute top-1 right-1 w-4 h-4 rounded-full bg-[var(--accent-400)] flex items-center justify-center">
                     <Check className="w-2.5 h-2.5 text-white" />
                   </div>
                 )}

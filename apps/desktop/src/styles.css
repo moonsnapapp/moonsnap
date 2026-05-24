@@ -7,7 +7,7 @@
 
 /* ========================================
    OBSIDIAN GLASS - Dark Glassmorphism Theme
-   Deep charcoal, glass transparency, coral accents
+   Deep charcoal, glass transparency, graphite accents
    ======================================== */
 
 :root {
@@ -25,16 +25,16 @@
   --ink-subtle: #888580;
   --ink-faint: #65615D;
 
-  /* Coral Accent - Vibrant warmth on dark */
-  --coral-50: rgba(156, 163, 175, 0.08);
-  --coral-100: rgba(156, 163, 175, 0.12);
-  --coral-200: rgba(156, 163, 175, 0.18);
-  --coral-300: #C8CCD3;
-  --coral-400: #9CA3AF;
-  --coral-500: #6B7280;
-  --coral-600: #4B5563;
-  --coral-glow: rgba(156, 163, 175, 0.2);
-  --coral-subtle: rgba(156, 163, 175, 0.1);
+  /* Accent palette - Graphite scale on dark */
+  --accent-50: rgba(156, 163, 175, 0.08);
+  --accent-100: rgba(156, 163, 175, 0.12);
+  --accent-200: rgba(156, 163, 175, 0.18);
+  --accent-300: #C8CCD3;
+  --accent-400: #9CA3AF;
+  --accent-500: #6B7280;
+  --accent-600: #4B5563;
+  --accent-glow: rgba(156, 163, 175, 0.2);
+  --accent-subtle: rgba(156, 163, 175, 0.1);
 
   /* Teal Secondary - Cool complement */
   --teal-400: #2DD4BF;
@@ -63,7 +63,7 @@
   --glass-backdrop: blur(24px) saturate(200%);
   --glass-inset-top: inset 0 1px 0 rgba(255, 255, 255, 0.06);
   --glass-inset-bottom: inset 0 -1px 0 rgba(0, 0, 0, 0.24);
-  --glass-glow-coral: 0 0 40px -15px rgba(156, 163, 175, 0.15);
+  --glass-glow-accent: 0 0 40px -15px rgba(156, 163, 175, 0.15);
   --glass-accent-line: linear-gradient(90deg, transparent 0%, rgba(180, 186, 196, 0.4) 50%, transparent 100%);
 
   /* Shadows - Deep with subtle glow */
@@ -75,7 +75,7 @@
   --shadow-card: 0 4px 16px rgba(0, 0, 0, 0.4), 0 0 0 1px var(--glass-border);
   --shadow-card-hover: 0 8px 32px rgba(0, 0, 0, 0.5), 0 0 0 1px var(--glass-border-light);
   --shadow-float: 0 12px 40px rgba(0, 0, 0, 0.6), 0 0 0 1px var(--glass-border);
-  --shadow-glow-coral: 0 0 20px rgba(156, 163, 175, 0.3);
+  --shadow-glow-accent: 0 0 20px rgba(156, 163, 175, 0.3);
 
   /* Drop Shadow Filters - Use instead of box-shadow to avoid clipping in Tauri */
   --drop-shadow: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.5)) drop-shadow(0 2px 4px rgba(0, 0, 0, 0.3));
@@ -97,18 +97,18 @@
   --card-foreground: var(--ink-black);
   --popover: rgba(30, 29, 28, 0.98);
   --popover-foreground: var(--ink-black);
-  --primary: var(--coral-400);
+  --primary: var(--accent-400);
   --primary-foreground: #FFFFFF;
   --secondary: var(--polar-mist);
   --secondary-foreground: var(--ink-dark);
   --muted: var(--polar-ice);
   --muted-foreground: var(--ink-muted);
-  --accent: var(--coral-100);
-  --accent-foreground: var(--coral-400);
+  --accent: var(--accent-100);
+  --accent-foreground: var(--accent-400);
   --destructive: var(--error);
   --border: var(--glass-border);
   --input: var(--polar-frost);
-  --ring: var(--coral-400);
+  --ring: var(--accent-400);
 
   /* Timeline Track Colors - Dark Mode */
   --track-zoom-bg: rgba(59, 130, 246, 0.25);
@@ -171,7 +171,7 @@ html.light,
   --glass-surface-light: rgba(255, 255, 255, 0.95);
   --glass-inset-top: inset 0 1px 0 rgba(255, 255, 255, 1);
   --glass-inset-bottom: inset 0 -1px 0 rgba(0, 0, 0, 0.08);
-  --glass-glow-coral: 0 4px 20px rgba(107, 114, 128, 0.15);
+  --glass-glow-accent: 0 4px 20px rgba(107, 114, 128, 0.15);
   --glass-accent-line: linear-gradient(90deg, transparent 0%, rgba(75, 85, 99, 0.55) 50%, transparent 100%);
 
   --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.1);
@@ -286,8 +286,8 @@ textarea,
    ======================================== */
 
 ::selection {
-  background: var(--coral-100);
-  color: var(--coral-600);
+  background: var(--accent-100);
+  color: var(--accent-600);
 }
 
 /* ========================================
@@ -319,7 +319,7 @@ textarea,
 }
 
 .dark ::selection {
-  background: var(--coral-600);
+  background: var(--accent-600);
   color: white;
 }
 
@@ -417,7 +417,7 @@ textarea,
   min-width: 26px;
   min-height: 26px;
   border-radius: 8px;
-  background: linear-gradient(180deg, var(--coral-300) 0%, var(--coral-500) 100%);
+  background: linear-gradient(180deg, var(--accent-300) 0%, var(--accent-500) 100%);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -972,7 +972,7 @@ textarea,
 }
 
 .canvas-capture-nav__button:focus-visible {
-  outline: 2px solid var(--coral-400);
+  outline: 2px solid var(--accent-400);
   outline-offset: 2px;
   opacity: 1;
 }
@@ -1144,7 +1144,7 @@ textarea,
 }
 
 .library-panel--sidebar .capture-card .pill,
-.library-panel--sidebar .capture-card .pill-coral {
+.library-panel--sidebar .capture-card .pill-accent {
   max-width: 100%;
 }
 
@@ -1499,7 +1499,7 @@ body.resizing * {
 }
 
 .capture-card.selected {
-  border-color: var(--coral-400);
+  border-color: var(--accent-400);
   box-shadow: /* tauri-shadow-allow */
     0 0 0 1px rgba(156, 163, 175, 0.32),
     0 0 0 4px rgba(156, 163, 175, 0.12),
@@ -1507,7 +1507,7 @@ body.resizing * {
 }
 
 .capture-card.is-active-media {
-  border-color: var(--coral-400);
+  border-color: var(--accent-400);
 }
 
 .capture-card .thumbnail {
@@ -1612,10 +1612,10 @@ body.resizing * {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border: 1px solid var(--coral-200);
+  border: 1px solid var(--accent-200);
   border-radius: 9px;
   color: var(--primary-foreground);
-  background: linear-gradient(135deg, var(--coral-500) 0%, var(--coral-600) 100%);
+  background: linear-gradient(135deg, var(--accent-500) 0%, var(--accent-600) 100%);
   animation: capture-active-eye-pulse 950ms var(--ease-smooth) infinite;
   will-change: transform, opacity;
 }
@@ -1693,8 +1693,8 @@ body.resizing * {
    BUTTON VARIANTS - Glassmorphism
    ======================================== */
 
-.btn-coral {
-  background: var(--coral-500);
+.btn-accent {
+  background: var(--accent-500);
   color: white;
   font-weight: 600;
   border: 1px solid rgba(255, 255, 255, 0.15);
@@ -1702,13 +1702,13 @@ body.resizing * {
   transition: all var(--duration-fast) var(--ease-smooth);
 }
 
-.btn-coral:hover {
-  background: var(--coral-400);
+.btn-accent:hover {
+  background: var(--accent-400);
   box-shadow: 0 6px 20px rgba(156, 163, 175, 0.45), inset 0 1px 0 rgba(255,255,255,0.25);
   transform: translateY(-1px);
 }
 
-.btn-coral:active {
+.btn-accent:active {
   transform: translateY(0) scale(0.98);
 }
 
@@ -1726,8 +1726,8 @@ body.resizing * {
 }
 
 .btn-ghost.active {
-  background: var(--coral-subtle);
-  color: var(--coral-400);
+  background: var(--accent-subtle);
+  color: var(--accent-400);
   border-color: rgba(156, 163, 175, 0.25);
 }
 
@@ -1781,7 +1781,7 @@ body.resizing * {
   pointer-events: none;
 }
 
-/* Subtle coral accent line at bottom */
+/* Subtle accent line at bottom */
 .floating-toolbar::after {
   content: '';
   position: absolute;
@@ -1851,7 +1851,7 @@ body.resizing * {
 }
 
 .tool-button.active {
-  background: var(--coral-400);
+  background: var(--accent-400);
   border-color: rgba(255, 255, 255, 0.15);
   color: white;
   box-shadow: /* tauri-shadow-allow */
@@ -1886,8 +1886,8 @@ body.resizing * {
 }
 
 .search-input:focus {
-  border-color: var(--coral-400);
-  box-shadow: 0 0 0 3px var(--coral-glow);
+  border-color: var(--accent-400);
+  box-shadow: 0 0 0 3px var(--accent-glow);
   background: rgba(255, 255, 255, 0.08);
 }
 
@@ -1920,9 +1920,9 @@ body.resizing * {
   white-space: nowrap;
 }
 
-.pill-coral {
-  background: var(--coral-subtle);
-  color: var(--coral-400);
+.pill-accent {
+  background: var(--accent-subtle);
+  color: var(--accent-400);
   border-color: rgba(156, 163, 175, 0.2);
 }
 
@@ -2041,9 +2041,9 @@ body.resizing * {
   100% { background-position: 200% 0; }
 }
 
-@keyframes pulse-coral {
+@keyframes pulse-accent {
   0%, 100% {
-    box-shadow: 0 0 0 0 var(--coral-glow);
+    box-shadow: 0 0 0 0 var(--accent-glow);
   }
   50% {
     box-shadow: 0 0 0 8px transparent;
@@ -2115,7 +2115,7 @@ body.resizing * {
 }
 
 .checkbox-custom.checked {
-  background: linear-gradient(135deg, var(--coral-400) 0%, var(--coral-500) 100%);
+  background: linear-gradient(135deg, var(--accent-400) 0%, var(--accent-500) 100%);
   border-color: transparent;
   box-shadow: 0 2px 8px rgba(156, 163, 175, 0.4);
 }
@@ -2187,7 +2187,7 @@ body.resizing * {
     rgba(217, 45, 32, 0.1) 100%
   );
   border-color: rgba(156, 163, 175, 0.34);
-  box-shadow: 0 0 0 1px rgba(156, 163, 175, 0.18), var(--shadow-glow-coral); /* tauri-shadow-allow */
+  box-shadow: 0 0 0 1px rgba(156, 163, 175, 0.18), var(--shadow-glow-accent); /* tauri-shadow-allow */
 }
 
 .capture-row .row-thumbnail {
@@ -2233,7 +2233,7 @@ body.resizing * {
 
 .color-swatch.active {
   border-color: var(--ink-black);
-  box-shadow: 0 0 0 2px var(--polar-snow), 0 0 0 4px var(--coral-400);
+  box-shadow: 0 0 0 2px var(--polar-snow), 0 0 0 4px var(--accent-400);
 }
 
 /* ========================================
@@ -2373,7 +2373,7 @@ body.floating-toolbar-window #root {
 .preset-option--active,
 .preset-option--active:hover:not(:disabled) {
   background: rgba(156, 163, 175, 0.12);
-  color: var(--coral-300);
+  color: var(--accent-300);
 }
 
 .preset-option:disabled {
@@ -2395,7 +2395,7 @@ body.floating-toolbar-window #root {
 .light .preset-option--active,
 .light .preset-option--active:hover:not(:disabled) {
   background: rgba(156, 163, 175, 0.14);
-  color: var(--coral-500);
+  color: var(--accent-500);
 }
 
 /* Properties panel header with glass effect */
@@ -2588,7 +2588,7 @@ body.floating-toolbar-window #root {
   justify-content: center;
   border-radius: 8px;
   background: rgba(156, 163, 175, 0.12);
-  color: var(--coral-400);
+  color: var(--accent-400);
 }
 
 .video-sidebar-section--flat .video-sidebar-section__icon {
@@ -2710,12 +2710,12 @@ body.floating-toolbar-window #root {
 }
 
 .slider-range {
-  background: linear-gradient(90deg, var(--coral-400) 0%, var(--coral-500) 100%);
+  background: linear-gradient(90deg, var(--accent-400) 0%, var(--accent-500) 100%);
 }
 
 .slider-thumb {
   background: var(--polar-mist);
-  border: 2px solid var(--coral-400);
+  border: 2px solid var(--accent-400);
   box-shadow: 0 2px 8px rgba(0,0,0,0.4), 0 0 8px rgba(156, 163, 175, 0.3);
 }
 
@@ -2724,7 +2724,7 @@ body.floating-toolbar-window #root {
    ======================================== */
 
 .switch-root[data-state="checked"] {
-  background: linear-gradient(90deg, var(--coral-400) 0%, var(--coral-500) 100%);
+  background: linear-gradient(90deg, var(--accent-400) 0%, var(--accent-500) 100%);
   box-shadow: 0 0 12px rgba(156, 163, 175, 0.3);
 }
 
@@ -3267,7 +3267,7 @@ body.floating-toolbar-window #root {
 }
 
 .light .tool-button.active {
-  background: var(--coral-400);
+  background: var(--accent-400);
   color: white;
   box-shadow: 0 2px 8px rgba(156, 163, 175, 0.35);
 }
@@ -3314,7 +3314,7 @@ body.floating-toolbar-window #root {
 }
 
 .light .glass-capture-btn-circle {
-  background: var(--coral-400);
+  background: var(--accent-400);
   box-shadow: 0 4px 16px rgba(156, 163, 175, 0.4);
 }
 
@@ -3541,8 +3541,8 @@ body.floating-toolbar-window #root {
 
 [role="option"][aria-selected="true"],
 [role="option"][data-selected="true"] {
-  background: var(--coral-subtle);
-  color: var(--coral-400);
+  background: var(--accent-subtle);
+  color: var(--accent-400);
 }
 
 /* ========================================
@@ -3621,7 +3621,7 @@ body.floating-toolbar-window #root {
 
 /* ========================================
    GLASSMORPHISM CAPTURE TOOLBAR
-   Dark premium glass aesthetic with coral accents
+   Dark premium glass aesthetic with graphite accents
    ======================================== */
 
 /* Base glass panel - primary container */
@@ -4247,7 +4247,7 @@ body.floating-toolbar-window #root {
   pointer-events: none;
 }
 
-/* Focus/active state with coral glow */
+/* Focus/active state with accent glow */
 .glass-toolbar--focused {
   border-color: rgba(156, 163, 175, 0.5);
   box-shadow:
@@ -4305,14 +4305,14 @@ body.floating-toolbar-window #root {
 }
 
 .timeline-cut-toggle--active {
-  background: linear-gradient(135deg, var(--coral-400) 0%, var(--coral-500) 100%);
+  background: linear-gradient(135deg, var(--accent-400) 0%, var(--accent-500) 100%);
   border-color: rgba(255, 255, 255, 0.22);
   color: #ffffff;
   box-shadow: 0 2px 10px rgba(156, 163, 175, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.18);
 }
 
 .timeline-cut-toggle--active:hover {
-  background: linear-gradient(135deg, var(--coral-400) 0%, var(--coral-500) 100%);
+  background: linear-gradient(135deg, var(--accent-400) 0%, var(--accent-500) 100%);
   border-color: rgba(255, 255, 255, 0.28);
   color: #ffffff;
 }
@@ -4325,20 +4325,20 @@ body.floating-toolbar-window #root {
 .glass-btn.timeline-io-loop-toggle--active,
 .glass-btn[data-io-loop-active="true"],
 .light .glass-btn[data-io-loop-active="true"] {
-  background: var(--coral-500) !important;
+  background: var(--accent-500) !important;
   border-color: var(--glass-border-light) !important;
   color: var(--primary-foreground) !important;
   box-shadow:
     var(--glass-inset-top),
     var(--glass-inset-bottom),
-    0 0 0 1px var(--coral-200),
-    var(--shadow-glow-coral);
+    0 0 0 1px var(--accent-200),
+    var(--shadow-glow-accent);
 }
 
 .glass-btn.timeline-io-loop-toggle--active:hover,
 .glass-btn[data-io-loop-active="true"]:hover,
 .light .glass-btn[data-io-loop-active="true"]:hover {
-  background: var(--coral-500) !important;
+  background: var(--accent-500) !important;
   border-color: var(--glass-border-light) !important;
   color: var(--primary-foreground) !important;
 }
@@ -4420,7 +4420,7 @@ body.floating-toolbar-window #root {
 }
 
 .timeline-speed-slider {
-  accent-color: var(--coral-400);
+  accent-color: var(--accent-400);
 }
 
 @keyframes timeline-speed-popover-in {
@@ -4459,14 +4459,14 @@ body.floating-toolbar-window #root {
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12); /* tauri-shadow-allow */
 }
 
-/* Coral accent button */
-.glass-btn--coral {
+/* Accent button */
+.glass-btn--accent {
   background: rgba(156, 163, 175, 0.2);
   border-color: rgba(156, 163, 175, 0.3);
   color: #9CA3AF;
 }
 
-.glass-btn--coral:hover {
+.glass-btn--accent:hover {
   background: rgba(156, 163, 175, 0.3);
   border-color: rgba(156, 163, 175, 0.5);
   color: #C8CCD3;
@@ -4571,7 +4571,7 @@ body.floating-toolbar-window #root {
 
 /* Mode-specific colors when active */
 .glass-mode-toggle--video {
-  color: var(--coral-400);
+  color: var(--accent-400);
 }
 
 .glass-mode-toggle--gif {
@@ -5165,8 +5165,8 @@ body.floating-toolbar-window #root {
   height: 50px;
 }
 
-.cloud-btn--coral {
-  background: var(--coral-400);
+.cloud-btn--accent {
+  background: var(--accent-400);
   border-color: rgba(156, 163, 175, 0.45);
   color: white;
   box-shadow: /* tauri-shadow-allow */
@@ -5174,7 +5174,7 @@ body.floating-toolbar-window #root {
     0 10px 22px rgba(156, 163, 175, 0.3);
 }
 
-.cloud-btn--coral:hover {
+.cloud-btn--accent:hover {
   color: white;
   box-shadow: /* tauri-shadow-allow */
     inset 0 1px 0 rgba(255, 255, 255, 0.18),
@@ -5182,7 +5182,7 @@ body.floating-toolbar-window #root {
 }
 
 .cloud-btn--active {
-  color: var(--coral-300);
+  color: var(--accent-300);
   background: rgba(156, 163, 175, 0.18);
   border-color: rgba(156, 163, 175, 0.2);
   box-shadow: /* tauri-shadow-allow */
@@ -5284,7 +5284,7 @@ body.floating-toolbar-window #root {
   border-radius: 999px;
   border: 1px solid rgba(156, 163, 175, 0.16);
   background: rgba(156, 163, 175, 0.1);
-  color: var(--coral-300);
+  color: var(--accent-300);
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.04em;
@@ -5340,12 +5340,12 @@ body.floating-toolbar-window #root {
 }
 
 .light .cloud-btn--active {
-  color: var(--coral-500);
+  color: var(--accent-500);
   background: rgba(156, 163, 175, 0.16);
   border-color: rgba(156, 163, 175, 0.18);
 }
 
-.light .cloud-btn--coral {
+.light .cloud-btn--accent {
   color: white;
   box-shadow: /* tauri-shadow-allow */
     inset 0 1px 0 rgba(255, 255, 255, 0.22),
@@ -5385,7 +5385,7 @@ body.floating-toolbar-window #root {
 .light .cloud-selection__count {
   background: rgba(156, 163, 175, 0.12);
   border-color: rgba(156, 163, 175, 0.18);
-  color: var(--coral-500);
+  color: var(--accent-500);
 }
 
 .light .cloud-btn--danger:hover {

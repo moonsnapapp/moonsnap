@@ -26,7 +26,7 @@ export const TagChip: React.FC<TagChipProps> = ({
         inline-flex items-center rounded-md font-medium transition-colors
         ${sizeClasses}
         ${selected
-          ? 'bg-[var(--coral-subtle)] text-[var(--coral-400)] border border-[var(--coral-200)]'
+          ? 'bg-[var(--accent-subtle)] text-[var(--accent-400)] border border-[var(--accent-200)]'
           : 'bg-[var(--polar-mist)] text-[var(--ink-subtle)] border border-[var(--polar-frost)]'
         }
         ${onClick ? 'cursor-pointer hover:bg-[var(--polar-frost)]' : ''}

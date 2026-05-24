@@ -158,7 +158,7 @@ export const GlassBlobToolbar: React.FC<GlassBlobToolbarProps> = ({
                     className="cloud-btn cloud-btn--small cloud-btn--active relative"
                   >
                     <X className="w-[15px] h-[15px]" />
-                    <span className="absolute -top-1 -right-1 min-w-[14px] h-[14px] rounded-full bg-[var(--coral-500)] text-white text-[9px] font-bold flex items-center justify-center leading-none px-0.5">
+                    <span className="absolute -top-1 -right-1 min-w-[14px] h-[14px] rounded-full bg-[var(--accent-500)] text-white text-[9px] font-bold flex items-center justify-center leading-none px-0.5">
                       {activeFilterCount}
                     </span>
                   </button>

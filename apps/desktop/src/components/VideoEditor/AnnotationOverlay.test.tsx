@@ -48,8 +48,8 @@ describe('AnnotationOverlay', () => {
     );
 
     expect(container.querySelector('path[stroke-dasharray="6 4"]')).toBeNull();
-    expect(container.querySelector('[stroke="var(--coral-400)"]')).toBeNull();
-    expect(container.querySelectorAll('circle[fill="var(--coral-400)"]')).toHaveLength(2);
+    expect(container.querySelector('[stroke="var(--accent-400)"]')).toBeNull();
+    expect(container.querySelectorAll('circle[fill="var(--accent-400)"]')).toHaveLength(2);
   });
 
   it('renders arrow shafts as a single filled shape to avoid opacity seams', () => {

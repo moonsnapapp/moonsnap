@@ -26,7 +26,7 @@ export function AudioControlsPanel({ project, onUpdateAudioConfig }: AudioContro
           }}
           className={`relative w-10 h-5 rounded-full transition-colors ${
             allMuted
-              ? 'bg-[var(--coral-400)]'
+              ? 'bg-[var(--accent-400)]'
               : 'bg-[var(--polar-frost)]'
           }`}
         >

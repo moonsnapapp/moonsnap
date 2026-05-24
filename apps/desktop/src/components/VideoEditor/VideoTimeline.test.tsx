@@ -1169,7 +1169,7 @@ describe('VideoTimeline', () => {
         container = result.container;
       });
 
-      // Find the playhead (coral colored vertical line with cursor-grab)
+      // Find the playhead (amber vertical line with cursor-grab)
       const playhead = container!.querySelector('.cursor-grab');
       expect(playhead).toBeInTheDocument();
 

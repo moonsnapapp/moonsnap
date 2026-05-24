@@ -119,7 +119,7 @@ export function ExportDialog({
       <DialogContent className="max-w-md">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <TargetIcon className="h-4 w-4 text-[var(--coral-400)]" />
+            <TargetIcon className="h-4 w-4 text-[var(--accent-400)]" />
             {title}
           </DialogTitle>
           <DialogDescription>{description}</DialogDescription>
@@ -193,7 +193,7 @@ export function ExportDialog({
           <button
             type="button"
             onClick={onConfirm}
-            className="btn-coral h-auto px-4 py-2 rounded-md text-sm flex items-center gap-1.5"
+            className="btn-accent h-auto px-4 py-2 rounded-md text-sm flex items-center gap-1.5"
           >
             <TargetIcon className="h-3.5 w-3.5" />
             {isGif ? 'Save GIF…' : 'Save Video…'}

@@ -74,15 +74,15 @@ function quantizeTimeMs(timeMs: number, stepMs: number): number {
   return Math.round(timeMs / stepMs) * stepMs;
 }
 
-const IO_MARKER_LINE_COLOR = 'var(--coral-300, #C8CCD3)';
-const IO_MARKER_HANDLE_BG = 'linear-gradient(135deg, var(--coral-400) 0%, var(--coral-500) 100%)';
+const IO_MARKER_LINE_COLOR = 'var(--accent-300, #C8CCD3)';
+const IO_MARKER_HANDLE_BG = 'linear-gradient(135deg, var(--accent-400) 0%, var(--accent-500) 100%)';
 const IO_MARKER_TOOLTIP_BG = 'var(--glass-bg-solid)';
-const IO_MARKER_TOOLTIP_BORDER = 'var(--coral-400, #9CA3AF)';
-const IO_MARKER_TOOLTIP_TEXT = 'var(--coral-300, #C8CCD3)';
+const IO_MARKER_TOOLTIP_BORDER = 'var(--accent-400, #9CA3AF)';
+const IO_MARKER_TOOLTIP_TEXT = 'var(--accent-300, #C8CCD3)';
 const PLAYHEAD_COLOR = 'var(--warning, #F59E0B)';
 const PLAYHEAD_GLOW = 'rgba(245, 158, 11, 0.35)';
 const PLAYHEAD_BORDER = 'rgba(245, 158, 11, 0.55)';
-const CUT_SCRUBBER_COLOR = 'var(--coral-500, #6B7280)';
+const CUT_SCRUBBER_COLOR = 'var(--accent-500, #6B7280)';
 const HOVER_PREVIEW_MIN_POINTER_DELTA_PX = 2;
 const HOVER_PREVIEW_RESUME_AFTER_RESIZE_MS = TIMING.RESIZE_DEBOUNCE_MS * 2;
 const TIMELINE_MARKER_LINE_WIDTH_PX = 2;
@@ -402,7 +402,7 @@ const IORangeBar = memo(function IORangeBar({
         left: `${inPosition}px`,
         width: `${width}px`,
         height: `${IO_RANGE_BAR_HEIGHT_PX}px`,
-        background: 'linear-gradient(90deg, var(--coral-400) 0%, var(--coral-500) 100%)',
+        background: 'linear-gradient(90deg, var(--accent-400) 0%, var(--accent-500) 100%)',
         filter: 'drop-shadow(0 0 3px rgba(156, 163, 175, 0.35))',
       }}
     />
@@ -1124,7 +1124,7 @@ export function VideoTimeline({ onResetTrimSegments, onSetInPoint, onSetOutPoint
                 >
                   <div className="mb-2 flex items-center justify-between">
                     <span className="font-medium">Speed</span>
-                    <span className="font-mono text-[var(--coral-400)]">
+                    <span className="font-mono text-[var(--accent-400)]">
                       {selectedTrimSegmentSpeed.toFixed(0)}x
                     </span>
                   </div>
@@ -1175,7 +1175,7 @@ export function VideoTimeline({ onResetTrimSegments, onSetInPoint, onSetOutPoint
                         style={exportInPointMs !== null
                           ? {
                               color: IO_MARKER_TOOLTIP_TEXT,
-                              backgroundColor: 'var(--coral-subtle)',
+                              backgroundColor: 'var(--accent-subtle)',
                               borderColor: IO_MARKER_TOOLTIP_BORDER,
                             }
                           : undefined}
@@ -1202,7 +1202,7 @@ export function VideoTimeline({ onResetTrimSegments, onSetInPoint, onSetOutPoint
                         style={exportOutPointMs !== null
                           ? {
                               color: IO_MARKER_TOOLTIP_TEXT,
-                              backgroundColor: 'var(--coral-subtle)',
+                              backgroundColor: 'var(--accent-subtle)',
                               borderColor: IO_MARKER_TOOLTIP_BORDER,
                             }
                           : undefined}

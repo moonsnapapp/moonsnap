@@ -139,7 +139,7 @@ export const CaptureRow: React.FC<CaptureCardProps> = memo(
               {/* Loading Overlay */}
               {isLoading && (
                 <div className="absolute inset-0 bg-[var(--card)]/95 flex items-center justify-center rounded animate-fade-in">
-                  <Loader2 className="w-4 h-4 text-[var(--coral-400)] animate-spin" />
+                  <Loader2 className="w-4 h-4 text-[var(--accent-400)] animate-spin" />
                 </div>
               )}
             </div>
@@ -154,10 +154,10 @@ export const CaptureRow: React.FC<CaptureCardProps> = memo(
                   <Badge className="bg-amber-100 text-amber-700 text-[10px] px-2 py-0.5">Missing</Badge>
                 )}
                 {isQuickVideo && !isMissing && (
-                  <Badge className="pill-coral text-[10px] px-2 py-0.5">Quick Capture</Badge>
+                  <Badge className="pill-accent text-[10px] px-2 py-0.5">Quick Capture</Badge>
                 )}
                 {capture.has_annotations && !isMissing && (
-                  <Badge className="pill-coral text-[10px] px-2 py-0.5">Edited</Badge>
+                  <Badge className="pill-accent text-[10px] px-2 py-0.5">Edited</Badge>
                 )}
                 {/* Display up to 4 tags in list view */}
                 {capture.tags.slice(0, 4).map(tag => (
@@ -178,7 +178,7 @@ export const CaptureRow: React.FC<CaptureCardProps> = memo(
                 {isQuickVideo && (
                   <>
                     <span className="mx-2 text-[var(--polar-frost)]">Â·</span>
-                    <span className="text-[var(--coral-400)]">Ready to share</span>
+                    <span className="text-[var(--accent-400)]">Ready to share</span>
                   </>
                 )}
               </div>
@@ -203,7 +203,7 @@ export const CaptureRow: React.FC<CaptureCardProps> = memo(
                         <Tag
                           className="w-4 h-4"
                           style={{
-                            color: capture.tags.length > 0 ? 'var(--coral-400)' : 'var(--ink-subtle)',
+                            color: capture.tags.length > 0 ? 'var(--accent-400)' : 'var(--ink-subtle)',
                           }}
                         />
                       </button>
@@ -228,7 +228,7 @@ export const CaptureRow: React.FC<CaptureCardProps> = memo(
                       className="w-4 h-4"
                       fill={capture.favorite ? 'currentColor' : 'none'}
                       style={{
-                        color: capture.favorite ? 'var(--coral-400)' : 'var(--ink-subtle)',
+                        color: capture.favorite ? 'var(--accent-400)' : 'var(--ink-subtle)',
                       }}
                     />
                   </button>

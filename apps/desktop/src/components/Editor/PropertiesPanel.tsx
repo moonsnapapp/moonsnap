@@ -658,7 +658,7 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
       {/* Header */}
       <div className="properties-panel-header">
         <div className="flex items-center gap-2">
-          <HeaderIcon className="w-4 h-4 text-[var(--coral-400)]" />
+          <HeaderIcon className="w-4 h-4 text-[var(--accent-400)]" />
           <span className="text-sm font-medium text-[var(--ink-black)]">{toolInfo.label}</span>
         </div>
       </div>

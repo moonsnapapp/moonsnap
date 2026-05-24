@@ -799,7 +799,7 @@ export const CaptureLibrary: React.FC<CaptureLibraryProps> = ({
         {/* Content - use virtualization for large libraries, regular rendering for small ones */}
         {loading || !initialized ? (
           <div className="library-state-pane flex-1 flex items-center justify-center">
-            <Loader2 className="w-12 h-12 text-[var(--coral-400)] animate-spin" />
+            <Loader2 className="w-12 h-12 text-[var(--accent-400)] animate-spin" />
           </div>
         ) : captures.length === 0 && hasActiveFilters && totalCaptureCount > 0 ? (
           <div className="library-state-pane flex-1 flex flex-col items-center justify-center gap-4 p-8">
@@ -860,7 +860,7 @@ export const CaptureLibrary: React.FC<CaptureLibraryProps> = ({
             {/* Marquee Selection Rectangle */}
             {isSelecting && (
               <div
-                className="absolute pointer-events-none z-50 border-2 border-[var(--coral-400)] bg-[var(--coral-glow)] rounded-sm"
+                className="absolute pointer-events-none z-50 border-2 border-[var(--accent-400)] bg-[var(--accent-glow)] rounded-sm"
                 style={{
                   left: selectionRect.left,
                   top: selectionRect.top,

@@ -120,7 +120,7 @@ export const KeyboardShortcutsModal: React.FC<KeyboardShortcutsModalProps> = ({
           <div className="space-y-6">
             {sections.map((section) => (
               <div key={section.title}>
-                <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--coral-400)] mb-3">
+                <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--accent-400)] mb-3">
                   {section.title}
                 </h3>
                 <div className="space-y-2">

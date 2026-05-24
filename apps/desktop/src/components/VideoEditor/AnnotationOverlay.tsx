@@ -187,7 +187,7 @@ function AnnotationShapeNode({
                   cx={handle.cx}
                   cy={handle.cy}
                   r={ARROW_HANDLE_SIZE_PX / 2}
-                  fill="var(--coral-400)"
+                  fill="var(--accent-400)"
                   stroke="#fff"
                   strokeWidth={1.5}
                   onPointerDown={(event) => onHandlePointerDown(event, segmentId, shape, handle.mode)}
@@ -202,7 +202,7 @@ function AnnotationShapeNode({
                 width={box.width}
                 height={box.height}
                 fill="none"
-                stroke="var(--coral-400)"
+                stroke="var(--accent-400)"
                 strokeWidth={1.5}
                 strokeDasharray="6 4"
                 pointerEvents="none"
@@ -218,7 +218,7 @@ function AnnotationShapeNode({
                   cx={handle.cx}
                   cy={handle.cy}
                   r={HANDLE_SIZE_PX / 2}
-                  fill="var(--coral-400)"
+                  fill="var(--accent-400)"
                   stroke="#fff"
                   strokeWidth={1.5}
                   onPointerDown={(event) => onHandlePointerDown(event, segmentId, shape, handle.mode as DragMode)}

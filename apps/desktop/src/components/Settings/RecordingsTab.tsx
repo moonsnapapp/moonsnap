@@ -89,7 +89,7 @@ const SavedAreaCard: React.FC<SavedAreaCardProps> = ({
         size="icon"
         onClick={() => onDelete(savedArea.id)}
         title={`Delete ${savedArea.name}`}
-        className="h-8 w-8 shrink-0 text-[var(--ink-muted)] hover:text-[var(--coral-400)]"
+        className="h-8 w-8 shrink-0 text-[var(--ink-muted)] hover:text-[var(--accent-400)]"
       >
         <Trash2 className="h-3.5 w-3.5" />
       </Button>
@@ -115,7 +115,7 @@ export const RecordingsTab: React.FC = () => {
   return (
     <div className="space-y-6">
       <section>
-        <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--coral-400)] mb-3">
+        <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--accent-400)] mb-3">
           Behavior
         </h3>
         <div className="p-4 rounded-lg bg-[var(--polar-ice)] border border-[var(--polar-frost)] space-y-4">
@@ -154,7 +154,7 @@ export const RecordingsTab: React.FC = () => {
       </section>
 
       <section>
-        <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--coral-400)] mb-3">
+        <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--accent-400)] mb-3">
           Saved Areas
         </h3>
         <div className="p-4 rounded-lg bg-[var(--polar-ice)] border border-[var(--polar-frost)] space-y-4">
@@ -208,7 +208,7 @@ export const RecordingsTab: React.FC = () => {
       </section>
 
       <section>
-        <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--coral-400)] mb-3">
+        <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--accent-400)] mb-3">
           Video (MP4)
         </h3>
         <div className="p-4 rounded-lg bg-[var(--polar-ice)] border border-[var(--polar-frost)] space-y-4">
@@ -284,7 +284,7 @@ export const RecordingsTab: React.FC = () => {
       </section>
 
       <section>
-        <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--coral-400)] mb-3">
+        <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--accent-400)] mb-3">
           GIF
         </h3>
         <div className="p-4 rounded-lg bg-[var(--polar-ice)] border border-[var(--polar-frost)] space-y-4">

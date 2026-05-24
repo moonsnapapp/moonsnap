@@ -397,7 +397,7 @@ export function VirtualizedGrid({
     >
       {isSelecting && selectionRect && (
         <div
-          className="absolute pointer-events-none z-50 border-2 border-[var(--coral-400)] bg-[var(--coral-glow)] rounded-sm"
+          className="absolute pointer-events-none z-50 border-2 border-[var(--accent-400)] bg-[var(--accent-glow)] rounded-sm"
           style={{
             left: selectionRect.left,
             top: selectionRect.top,
