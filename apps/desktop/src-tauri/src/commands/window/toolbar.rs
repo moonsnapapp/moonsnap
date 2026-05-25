@@ -5,7 +5,8 @@ use parking_lot::Mutex;
 
 use serde::{Deserialize, Serialize};
 use tauri::{
-    command, AppHandle, Emitter, Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder,
+    command, image::Image, AppHandle, Emitter, Manager, WebviewUrl, WebviewWindow,
+    WebviewWindowBuilder,
 };
 
 use super::{
@@ -18,6 +19,19 @@ const STARTUP_TOOLBAR_HEIGHT: u32 = 147;
 const CAPTURE_TOOLBAR_DEFAULT_WIDTH: u32 = 1280;
 const CAPTURE_TOOLBAR_DEFAULT_HEIGHT: u32 = 144;
 const STARTUP_TOOLBAR_CONTEXT_APPLY_DELAY_MS: u64 = 50;
+
+/// Apply the same crisp 32x32 taskbar icon the library window uses, so the
+/// capture/startup toolbar doesn't fall back to a rescaled .ico variant.
+fn apply_taskbar_icon(window: &WebviewWindow) {
+    match Image::from_bytes(include_bytes!("../../../icons/32x32.png")) {
+        Ok(icon) => {
+            if let Err(e) = window.set_icon(icon) {
+                log::warn!("Failed to set capture toolbar icon: {}", e);
+            }
+        },
+        Err(e) => log::warn!("Failed to load capture toolbar icon bytes: {}", e),
+    }
+}
 
 fn bring_startup_window_to_front_without_sticking(
     window: &WebviewWindow,
@@ -285,6 +299,8 @@ pub async fn show_capture_toolbar(
             return Err(format!("Failed to create capture toolbar window: {}", e).into());
         },
     };
+
+    apply_taskbar_icon(&window);
 
     // Fixed initial window size before frontend measures actual content.
     let toolbar_width = CAPTURE_TOOLBAR_DEFAULT_WIDTH;
@@ -694,6 +710,8 @@ pub async fn show_startup_toolbar(
             return Err(format!("Failed to create startup toolbar window: {}", e).into());
         },
     };
+
+    apply_taskbar_icon(&window);
 
     // Set position/size using physical coordinates
     set_physical_bounds(&window, x, y, initial_width, initial_height)?;
