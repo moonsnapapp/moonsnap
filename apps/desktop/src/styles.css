@@ -5407,16 +5407,21 @@ body.floating-toolbar-window #root {
   background-color: #ffffff;
   color: var(--ink-dark);
   border: 1px solid rgba(15, 23, 42, 0.1);
-  box-shadow:
-    0 4px 12px rgba(15, 23, 42, 0.08),
-    0 1px 2px rgba(15, 23, 42, 0.06);
+  /* Cancel Tailwind shadow-lg from the className so the lighter
+     light-theme shadow shows through; use filter: drop-shadow so the
+     external shadow renders correctly under Tauri's transparent window. */
+  box-shadow: none; /* tauri-shadow-allow */
+  filter:
+    drop-shadow(0 4px 12px rgba(15, 23, 42, 0.08))
+    drop-shadow(0 1px 2px rgba(15, 23, 42, 0.06));
 }
 
 .light .app-tooltip .kbd {
   background: rgba(15, 23, 42, 0.04);
   border-color: rgba(15, 23, 42, 0.1);
   color: var(--ink-muted);
-  box-shadow: 0 1px 0 rgba(15, 23, 42, 0.08);
+  /* Internal 1px bottom edge on an opaque chip — not an external shadow. */
+  box-shadow: 0 1px 0 rgba(15, 23, 42, 0.08); /* tauri-shadow-allow */
 }
 
 /* ========================================
