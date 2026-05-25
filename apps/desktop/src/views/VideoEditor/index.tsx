@@ -141,7 +141,6 @@ const SIDEBAR_MIN_PX = 380;
 // exceed the sidebar's max, so the panel keeps a feasible [min, max] range.
 const SIDEBAR_MIN_FLOOR_PCT = 18;
 const SIDEBAR_MAX_PCT = 45;
-type ExportTarget = 'video' | 'gif';
 
 function withFileExtension(filename: string, extension: 'mp4' | 'webm' | 'gif'): string {
   const withoutExtension = filename.replace(/\.[^./\\]+$/, '');
@@ -237,8 +236,8 @@ export const VideoEditorView = forwardRef<VideoEditorViewRef, VideoEditorViewPro
   const clearExportRange = useVideoEditorStore(selectClearExportRange);
 
   const lastUserActivityAtRef = useRef(Date.now());
-  const handleExportRef = useRef<(target?: ExportTarget) => void>(() => {});
-  const [exportDialogTarget, setExportDialogTarget] = useState<ExportTarget | null>(null);
+  const handleExportRef = useRef<() => void>(() => {});
+  const [isExportDialogOpen, setIsExportDialogOpen] = useState(false);
   const workspaceRef = useRef<HTMLDivElement>(null);
   const sidebarPanelRef = useRef<ImperativePanelHandle>(null);
   const containerWidthRef = useRef(0);
@@ -644,16 +643,18 @@ export const VideoEditorView = forwardRef<VideoEditorViewRef, VideoEditorViewPro
   // Run the actual export (file picker + render). Assumes the user has already
   // confirmed their format/fps choices via the ExportDialog (or there are none
   // to make — see `handleExport` below for the 'original' bypass).
-  const runExport = useCallback(async (target: ExportTarget) => {
+  const runExport = useCallback(async () => {
     if (!project) return;
 
+    const format = project.export.format;
+    const isGif = format === 'gif';
     const exportActionLabel = getVideoPrimaryActionLabel(project);
-    const exportDialogTitle = target === 'gif' ? 'Export GIF' : getVideoExportDialogTitle(project);
-    const videoExtension = project.export.format === 'webm' ? 'webm' : 'mp4';
-    const editedDefaultFilename =
-      target === 'gif'
-        ? withFileExtension(getVideoEditedDefaultFilename(project), 'gif')
-        : withFileExtension(getVideoEditedDefaultFilename(project), videoExtension);
+    const exportDialogTitle = isGif ? 'Export GIF' : getVideoExportDialogTitle(project);
+    const extension = isGif ? 'gif' : format === 'webm' ? 'webm' : 'mp4';
+    const editedDefaultFilename = withFileExtension(
+      getVideoEditedDefaultFilename(project),
+      extension
+    );
 
     if (project.export.fps !== project.sources.fps) {
       toast.info(`Export uses source frame rate (${project.sources.fps} fps)`, {
@@ -669,7 +670,7 @@ export const VideoEditorView = forwardRef<VideoEditorViewRef, VideoEditorViewPro
       const outputPath = await save({
         title: exportDialogTitle,
         defaultPath: editedDefaultFilename,
-        filters: target === 'gif'
+        filters: isGif
           ? [{ name: 'GIF Animation', extensions: ['gif'] }]
           : [
               { name: 'MP4 Video', extensions: ['mp4'] },
@@ -687,7 +688,7 @@ export const VideoEditorView = forwardRef<VideoEditorViewRef, VideoEditorViewPro
 
       // Show success toast with file info
       const sizeMB = (result.fileSizeBytes / (1024 * 1024)).toFixed(1);
-      toast.success(target === 'gif' ? 'GIF exported' : exportActionLabel, {
+      toast.success(isGif ? 'GIF exported' : exportActionLabel, {
         description: `${sizeMB} MB - ${result.format.toUpperCase()}`,
       });
     } catch (error) {
@@ -699,11 +700,12 @@ export const VideoEditorView = forwardRef<VideoEditorViewRef, VideoEditorViewPro
 
   // Entry point for the Export button / shortcut. Opens the ExportDialog so
   // the user can pick format/fps/encoder first, except for the 'original'
-  // bypass (no edits → just copy the source).
-  const handleExport = useCallback(async (target: ExportTarget = 'video') => {
+  // bypass (no edits → just copy the source). GIF always needs a render.
+  const handleExport = useCallback(async () => {
     if (!project) return;
 
-    const outputMode = target === 'gif' ? 'render' : getVideoOutputMode(project);
+    const outputMode =
+      project.export.format === 'gif' ? 'render' : getVideoOutputMode(project);
 
     if (outputMode === 'original') {
       const exportDialogTitle = getVideoExportDialogTitle(project);
@@ -733,19 +735,17 @@ export const VideoEditorView = forwardRef<VideoEditorViewRef, VideoEditorViewPro
       return;
     }
 
-    setExportDialogTarget(target);
+    setIsExportDialogOpen(true);
   }, [project]);
 
   const handleExportDialogConfirm = useCallback(() => {
-    const target = exportDialogTarget;
-    if (!target) return;
-    setExportDialogTarget(null);
-    void runExport(target);
-  }, [exportDialogTarget, runExport]);
+    setIsExportDialogOpen(false);
+    void runExport();
+  }, [runExport]);
 
   useEffect(() => {
-    handleExportRef.current = (target) => {
-      void handleExport(target);
+    handleExportRef.current = () => {
+      void handleExport();
     };
   }, [handleExport]);
 
@@ -863,14 +863,11 @@ export const VideoEditorView = forwardRef<VideoEditorViewRef, VideoEditorViewPro
       />
 
       {/* Export configuration dialog (format / fps / encoder) */}
-      {project && exportDialogTarget && (
+      {project && isExportDialogOpen && (
         <ExportDialog
           open
-          target={exportDialogTarget}
           project={project}
-          onOpenChange={(open) => {
-            if (!open) setExportDialogTarget(null);
-          }}
+          onOpenChange={setIsExportDialogOpen}
           onUpdateExportConfig={updateExportConfig}
           onConfirm={handleExportDialogConfirm}
         />

@@ -161,7 +161,6 @@ describe('ExportDialog', () => {
     render(
       <ExportDialog
         open
-        target="video"
         project={createTestProject()}
         onOpenChange={vi.fn()}
         onUpdateExportConfig={onUpdateExportConfig}
@@ -184,7 +183,6 @@ describe('ExportDialog', () => {
     render(
       <ExportDialog
         open
-        target="video"
         project={{
           ...project,
           export: { ...project.export, format: 'webm' },
@@ -198,22 +196,26 @@ describe('ExportDialog', () => {
     expect(screen.queryByRole('switch', { name: /prefer hardware encoding/i })).not.toBeInTheDocument();
   });
 
-  it('hides format and hardware-encoding controls when target is gif', () => {
+  it('shows the GIF-specific title and save label when format is gif', () => {
+    const project = createTestProject();
+
     render(
       <ExportDialog
         open
-        target="gif"
-        project={createTestProject()}
+        project={{
+          ...project,
+          export: { ...project.export, format: 'gif' },
+        }}
         onOpenChange={vi.fn()}
         onUpdateExportConfig={vi.fn()}
         onConfirm={vi.fn()}
       />
     );
 
-    expect(screen.queryByText(/^Format$/)).not.toBeInTheDocument();
     expect(screen.queryByRole('switch', { name: /prefer hardware encoding/i })).not.toBeInTheDocument();
-    // Frame rate label is still rendered for GIF
+    expect(screen.getByText(/^Format$/)).toBeInTheDocument();
     expect(screen.getByText(/^Frame Rate$/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /save gif/i })).toBeInTheDocument();
   });
 
   it('fires onConfirm when the save button is clicked', () => {
@@ -222,7 +224,6 @@ describe('ExportDialog', () => {
     render(
       <ExportDialog
         open
-        target="video"
         project={createTestProject()}
         onOpenChange={vi.fn()}
         onUpdateExportConfig={vi.fn()}

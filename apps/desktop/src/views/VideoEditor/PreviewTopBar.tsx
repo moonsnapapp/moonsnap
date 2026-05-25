@@ -13,16 +13,8 @@ import {
   Check,
   Info,
   Download,
-  ChevronDown,
-  Film,
 } from 'lucide-react';
 import { Button } from '../../components/ui/button';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '../../components/ui/dropdown-menu';
 import {
   Popover,
   PopoverContent,
@@ -66,30 +58,18 @@ interface PreviewTopBarProps {
   isCropEditing: boolean;
   onSetIsCropEditing: (enabled: boolean) => void;
   onUpdateExportConfig: (updates: Partial<ExportConfig>) => void;
-  onExport: (target?: 'video' | 'gif') => void;
+  onExport: () => void;
 }
 
-function ExportButton({ onExport }: { onExport: (target?: 'video' | 'gif') => void }) {
+function ExportButton({ onExport }: { onExport: () => void }) {
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button className="btn-accent h-7 px-2.5 rounded-md flex items-center gap-1.5">
-          <Download className="w-3 h-3" />
-          <span className="text-[11px] font-medium">Export</span>
-          <ChevronDown className="w-3 h-3" />
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" sideOffset={6}>
-        <DropdownMenuItem onClick={() => onExport('video')}>
-          <Download className="mr-2 h-3.5 w-3.5" />
-          <span>Export Video</span>
-        </DropdownMenuItem>
-        <DropdownMenuItem onClick={() => onExport('gif')}>
-          <Film className="mr-2 h-3.5 w-3.5" />
-          <span>Export GIF</span>
-        </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
+    <Button
+      onClick={onExport}
+      className="btn-accent h-7 px-2.5 rounded-md flex items-center gap-1.5"
+    >
+      <Download className="w-3 h-3" />
+      <span className="text-[11px] font-medium">Export</span>
+    </Button>
   );
 }
 

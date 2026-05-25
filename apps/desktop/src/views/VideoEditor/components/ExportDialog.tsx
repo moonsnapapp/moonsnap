@@ -23,11 +23,8 @@ import {
 import { Switch } from '../../../components/ui/switch';
 import type { ExportConfig, ExportFormat, VideoProject } from '../../../types';
 
-export type ExportTarget = 'video' | 'gif';
-
 export interface ExportDialogProps {
   open: boolean;
-  target: ExportTarget;
   project: VideoProject;
   onOpenChange: (open: boolean) => void;
   onUpdateExportConfig: (updates: Partial<ExportConfig>) => void;
@@ -38,13 +35,13 @@ const FPS_DOWNSAMPLE_PRESETS = [60, 50, 30, 25, 24, 15] as const;
 
 export function ExportDialog({
   open,
-  target,
   project,
   onOpenChange,
   onUpdateExportConfig,
   onConfirm,
 }: ExportDialogProps) {
-  const isGif = target === 'gif';
+  const format = project.export.format;
+  const isGif = format === 'gif';
   const sourceFps = project.sources.fps;
   const preferHardwareEncoding = project.export.preferHardwareEncoding ?? false;
 
@@ -68,7 +65,7 @@ export function ExportDialog({
   useEffect(() => {
     let isCancelled = false;
 
-    if (!open || isGif || project.export.format !== 'mp4') {
+    if (!open || format !== 'mp4') {
       setIsCheckingNvenc(false);
       return () => {
         isCancelled = true;
@@ -92,7 +89,7 @@ export function ExportDialog({
     return () => {
       isCancelled = true;
     };
-  }, [open, isGif, project.export.format]);
+  }, [open, format]);
 
   let hardwareEncodingCopy =
     'Use x264 for smaller files. Turn this on to prefer NVIDIA NVENC for faster MP4 exports.';
@@ -113,6 +110,7 @@ export function ExportDialog({
   const description = isGif
     ? 'Pick a frame rate, then choose where to save your GIF.'
     : 'Pick a format and frame rate, then choose where to save your video.';
+  const confirmLabel = isGif ? 'Save GIF…' : 'Save Video…';
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -126,27 +124,26 @@ export function ExportDialog({
         </DialogHeader>
 
         <div className="space-y-4">
-          {!isGif && (
-            <div>
-              <span className="text-xs text-[var(--ink-muted)] block mb-2">Format</span>
-              <Select
-                value={project.export.format}
-                onValueChange={(value) =>
-                  onUpdateExportConfig({ format: value as ExportFormat })
-                }
-              >
-                <SelectTrigger className="h-8 min-w-0 w-full border-[var(--glass-border)] bg-[var(--polar-mist)] px-2 text-sm text-[var(--ink-dark)]">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent className="border-[var(--glass-border)] bg-[var(--glass-surface-dark)] text-[var(--ink-dark)]">
-                  <SelectItem value="mp4">MP4</SelectItem>
-                  <SelectItem value="webm">WebM</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          )}
+          <div>
+            <span className="text-xs text-[var(--ink-muted)] block mb-2">Format</span>
+            <Select
+              value={format}
+              onValueChange={(value) =>
+                onUpdateExportConfig({ format: value as ExportFormat })
+              }
+            >
+              <SelectTrigger className="h-8 min-w-0 w-full border-[var(--glass-border)] bg-[var(--polar-mist)] px-2 text-sm text-[var(--ink-dark)]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent className="border-[var(--glass-border)] bg-[var(--glass-surface-dark)] text-[var(--ink-dark)]">
+                <SelectItem value="mp4">MP4</SelectItem>
+                <SelectItem value="webm">WebM</SelectItem>
+                <SelectItem value="gif">GIF</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
 
-          {!isGif && project.export.format === 'mp4' && (
+          {format === 'mp4' && (
             <div className="flex min-w-0 items-center justify-between gap-3 rounded-md border border-[var(--glass-border)] bg-[var(--polar-mist)] px-3 py-2.5">
               <div className="min-w-0">
                 <span className="text-xs text-[var(--ink-muted)] block">Prefer Hardware Encoding</span>
@@ -196,7 +193,7 @@ export function ExportDialog({
             className="btn-accent h-auto px-4 py-2 rounded-md text-sm flex items-center gap-1.5"
           >
             <TargetIcon className="h-3.5 w-3.5" />
-            {isGif ? 'Save GIF…' : 'Save Video…'}
+            {confirmLabel}
           </button>
         </DialogFooter>
       </DialogContent>
