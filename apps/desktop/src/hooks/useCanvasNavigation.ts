@@ -11,6 +11,24 @@ const VIEW_PADDING = 48;
 const ZOOM_MOMENTUM_FRICTION = 0.6; // Decay per frame (lower = stops faster)
 const ZOOM_MOMENTUM_MIN = 0.002; // Velocity threshold to stop animation
 
+function getAvailableViewSize(containerSize: { width: number; height: number }) {
+  return {
+    width: Math.max(1, containerSize.width - VIEW_PADDING * 2),
+    height: Math.max(1, containerSize.height - VIEW_PADDING * 2),
+  };
+}
+
+function getFitOrActualZoom(
+  contentSize: { width: number; height: number },
+  containerSize: { width: number; height: number }
+) {
+  const available = getAvailableViewSize(containerSize);
+  const scaleX = available.width / contentSize.width;
+  const scaleY = available.height / contentSize.height;
+
+  return Math.min(scaleX, scaleY, 1);
+}
+
 interface UseCanvasNavigationProps {
   image: HTMLImageElement | undefined;
   imageData: string;
@@ -238,9 +256,8 @@ export const useCanvasNavigation = ({
     if (width === 0 || height === 0 || containerSize.width === 0 || containerSize.height === 0) {
       return MIN_ZOOM_FLOOR;
     }
-    const availableWidth = containerSize.width - VIEW_PADDING * 2;
-    const availableHeight = containerSize.height - VIEW_PADDING * 2;
-    const fitZoom = Math.min(availableWidth / width, availableHeight / height) * 0.5;
+    const available = getAvailableViewSize(containerSize);
+    const fitZoom = Math.min(available.width / width, available.height / height) * 0.5;
     return Math.max(MIN_ZOOM_FLOOR, Math.min(fitZoom, 1));
   })();
 
@@ -315,13 +332,8 @@ export const useCanvasNavigation = ({
     const { width, height, cropX, cropY } = mode === 'visiblePixels'
       ? getVisiblePixelDimensions()
       : getContentDimensions();
-    const availableWidth = containerSize.width - VIEW_PADDING * 2;
-    const availableHeight = containerSize.height - VIEW_PADDING * 2;
-
     const compositionSize = getCompositionSize(width, height);
-    const scaleX = availableWidth / compositionSize.width;
-    const scaleY = availableHeight / compositionSize.height;
-    const fitZoom = Math.min(scaleX, scaleY, 1) * 0.9;
+    const fitZoom = getFitOrActualZoom(compositionSize, containerSize);
 
     const x = (containerSize.width - width * fitZoom) / 2 - cropX * fitZoom;
     const y = (containerSize.height - height * fitZoom) / 2 - cropY * fitZoom;
@@ -331,13 +343,8 @@ export const useCanvasNavigation = ({
 
   // Compute fit for an explicit rect (bypasses closure staleness)
   const calculateFitForRect = useCallback((rect: { x: number; y: number; width: number; height: number }) => {
-    const availableWidth = containerSize.width - VIEW_PADDING * 2;
-    const availableHeight = containerSize.height - VIEW_PADDING * 2;
-
     const compositionSize = getCompositionSize(rect.width, rect.height);
-    const scaleX = availableWidth / compositionSize.width;
-    const scaleY = availableHeight / compositionSize.height;
-    const fitZoom = Math.min(scaleX, scaleY, 1) * 0.9;
+    const fitZoom = getFitOrActualZoom(compositionSize, containerSize);
 
     const x = (containerSize.width - rect.width * fitZoom) / 2 - rect.x * fitZoom;
     const y = (containerSize.height - rect.height * fitZoom) / 2 - rect.y * fitZoom;

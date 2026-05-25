@@ -296,6 +296,38 @@ describe('useCanvasNavigation', () => {
 
       expect(result.current.zoom).toBe(1);
     });
+
+    it('should fit small images at actual size when there is room', () => {
+      const image = createMockImage(200, 100);
+      const props = createMockProps({ image });
+      const { result } = renderHook(() => useCanvasNavigation(props));
+
+      act(() => {
+        result.current.setZoom(0.5);
+      });
+
+      act(() => {
+        result.current.handleFitToSize();
+        flushRAF();
+      });
+
+      expect(result.current.zoom).toBe(1);
+      expect(result.current.position).toEqual({ x: 300, y: 250 });
+    });
+
+    it('should scale oversized images down to fit the viewer', () => {
+      const image = createMockImage(1000, 800);
+      const props = createMockProps({ image });
+      const { result } = renderHook(() => useCanvasNavigation(props));
+
+      act(() => {
+        result.current.handleFitToSize();
+        flushRAF();
+      });
+
+      expect(result.current.zoom).toBeCloseTo(0.63);
+      expect(result.current.position).toEqual({ x: 85, y: 48 });
+    });
   });
 
   describe('setZoom and setPosition', () => {
