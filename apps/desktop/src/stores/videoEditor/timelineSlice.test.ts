@@ -85,6 +85,8 @@ const getInitialTimelineState = () => ({
   draggedZoomEdge: null,
   isDraggingSceneSegment: false,
   draggedSceneEdge: null,
+  isDraggingAnnotationSegment: false,
+  draggedAnnotationEdge: null,
   isDraggingMaskSegment: false,
   draggedMaskEdge: null,
   isDraggingTextSegment: false,
@@ -92,12 +94,14 @@ const getInitialTimelineState = () => ({
   previewTimeMs: null,
   hoveredTrack: null,
   splitMode: false,
+  isCropEditing: false,
   timelineZoom: DEFAULT_TIMELINE_ZOOM,
   timelineScrollLeft: 0,
   timelineContainerWidth: 0,
   trackVisibility: {
     video: true,
     text: true,
+    annotation: true,
     mask: true,
     zoom: true,
     scene: true,
@@ -543,6 +547,16 @@ describe('timelineSlice', () => {
       useVideoEditorStore.getState().setSplitMode(true);
       useVideoEditorStore.getState().setSplitMode(false);
       expect(useVideoEditorStore.getState().splitMode).toBe(false);
+    });
+  });
+
+  describe('crop edit mode', () => {
+    it('should toggle crop editing mode', () => {
+      useVideoEditorStore.getState().setIsCropEditing(true);
+      expect(useVideoEditorStore.getState().isCropEditing).toBe(true);
+
+      useVideoEditorStore.getState().setIsCropEditing(false);
+      expect(useVideoEditorStore.getState().isCropEditing).toBe(false);
     });
   });
 
