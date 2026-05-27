@@ -301,6 +301,18 @@ export const GifEditor: React.FC<GifEditorProps> = ({
   } | null>(null);
 
   /**
+   * State for the "Drop Frames" dialog. Open with a mode + N value; OK
+   * mutates `rows` to remove the matching frames. `keepPlaybackSpeed`
+   * folds the dropped frames' delays into the kept neighbours so the
+   * total duration stays constant.
+   */
+  const [dropDialog, setDropDialog] = useState<{
+    mode: 'none' | 'even' | 'odd' | 'every-n';
+    nValue: number;
+    keepPlaybackSpeed: boolean;
+  } | null>(null);
+
+  /**
    * State for the export-preview dialog. Holds the snapshot of rows to export
    * (so subsequent UI edits don't change what was previewed) plus a label
    * describing the scope (whole GIF vs selection).
@@ -507,21 +519,42 @@ export const GifEditor: React.FC<GifEditorProps> = ({
 
   const applyCrop = useCallback(() => {
     cropEditingPrevRef.current = null;
+    setUi((p) => {
+      if (!p.crop) return p;
+      // Re-baseline the output size to the crop so the W/H inputs, scale
+      // slider, and "explicit size" check don't accidentally upscale the
+      // crop back to source dimensions.
+      return { ...p, outputWidth: p.crop.w, outputHeight: p.crop.h };
+    });
     setCropEditing(false);
   }, []);
 
   const cancelCropEditing = useCallback(() => {
     const previous = cropEditingPrevRef.current;
     cropEditingPrevRef.current = null;
-    setUi((p) => ({ ...p, crop: previous }));
+    setUi((p) => {
+      const next = { ...p, crop: previous };
+      if (gifData) {
+        const baselineW = previous?.w ?? gifData.width;
+        const baselineH = previous?.h ?? gifData.height;
+        next.outputWidth = baselineW;
+        next.outputHeight = baselineH;
+      }
+      return next;
+    });
     setCropEditing(false);
-  }, []);
+  }, [gifData]);
 
   const removeCrop = useCallback(() => {
     cropEditingPrevRef.current = null;
-    setUi((p) => ({ ...p, crop: null }));
+    setUi((p) => ({
+      ...p,
+      crop: null,
+      outputWidth: gifData?.width ?? p.outputWidth,
+      outputHeight: gifData?.height ?? p.outputHeight,
+    }));
     setCropEditing(false);
-  }, []);
+  }, [gifData]);
   const fileSize = info ? info.fileSizeBytes : 0;
 
   const firstSelectedRow = useMemo(() => {
@@ -563,7 +596,13 @@ export const GifEditor: React.FC<GifEditorProps> = ({
   //     rotation + flip transforms — the user sees the same image the
   //     exporter will produce.
   //   - No crop: render full source with rotation + flip.
+  //
+  // The two branches are split into separate effects so that dragging the
+  // crop gizmo (which mutates ui.crop on every pointermove) does NOT trigger
+  // an expensive `renderFrameTo` pass — the cropEditing branch doesn't use
+  // ui.crop / rotation / flip at all.
   useEffect(() => {
+    if (!cropEditing) return;
     if (!gifData || rows.length === 0) return;
     const row = rows[currentFrameIndex];
     if (!row) return;
@@ -572,12 +611,20 @@ export const GifEditor: React.FC<GifEditorProps> = ({
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    if (cropEditing) {
-      if (canvas.width !== gifData.width) canvas.width = gifData.width;
-      if (canvas.height !== gifData.height) canvas.height = gifData.height;
-      renderFrameTo(ctx, gifData, row.sourceIndex);
-      return;
-    }
+    if (canvas.width !== gifData.width) canvas.width = gifData.width;
+    if (canvas.height !== gifData.height) canvas.height = gifData.height;
+    renderFrameTo(ctx, gifData, row.sourceIndex);
+  }, [gifData, rows, currentFrameIndex, cropEditing]);
+
+  useEffect(() => {
+    if (cropEditing) return;
+    if (!gifData || rows.length === 0) return;
+    const row = rows[currentFrameIndex];
+    if (!row) return;
+    const canvas = previewCanvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
 
     const swap = ui.rotation === 90 || ui.rotation === 270;
     const cropW = ui.crop?.w ?? gifData.width;
@@ -738,8 +785,13 @@ export const GifEditor: React.FC<GifEditorProps> = ({
       if (ui.limitFps) {
         manifest = applyFpsLimit(manifest, ui.fpsCap);
       }
+      // Baseline = crop dims if cropped, else source dims. Only send
+      // explicit output dims when the user has actually scaled away from
+      // that baseline — otherwise FFmpeg would rescale the crop output.
+      const baselineW = ui.crop?.w ?? gifData.width;
+      const baselineH = ui.crop?.h ?? gifData.height;
       const usingExplicitSize =
-        ui.outputWidth !== gifData.width || ui.outputHeight !== gifData.height;
+        ui.outputWidth !== baselineW || ui.outputHeight !== baselineH;
       const options: GifFrameEncodeOptions = {
         frames: manifest,
         scalePct: 100,
@@ -1054,6 +1106,91 @@ export const GifEditor: React.FC<GifEditorProps> = ({
     setRows((prev) => prev.slice().reverse());
   }, []);
 
+  /**
+   * Decide which 0-indexed rows survive a Drop Frames pass. Frame numbering
+   * in the UI is 1-based — "Even frames (2, 4, 6...)" means drop the 2nd,
+   * 4th, 6th visible row.
+   */
+  const computeDropKeepMask = useCallback(
+    (
+      total: number,
+      mode: 'none' | 'even' | 'odd' | 'every-n',
+      nValue: number,
+    ): boolean[] => {
+      const keep = new Array(total).fill(true);
+      if (mode === 'none' || total === 0) return keep;
+      for (let i = 0; i < total; i += 1) {
+        const oneBased = i + 1;
+        if (mode === 'even') keep[i] = oneBased % 2 !== 0;
+        else if (mode === 'odd') keep[i] = oneBased % 2 === 0;
+        else if (mode === 'every-n')
+          keep[i] = nValue > 1 ? oneBased % nValue !== 0 : false;
+      }
+      return keep;
+    },
+    [],
+  );
+
+  /**
+   * Live preview stats for the Drop Frames dialog — recomputed from the
+   * dialog config so the user can see "341 → 171" before clicking OK.
+   */
+  const dropDialogStats = useMemo(() => {
+    if (!dropDialog) return null;
+    const keep = computeDropKeepMask(rows.length, dropDialog.mode, dropDialog.nValue);
+    const keptCount = keep.reduce((acc, k) => acc + (k ? 1 : 0), 0);
+    const sourceDuration = rows.reduce((acc, r) => acc + r.delayMs, 0);
+    const outDuration = dropDialog.keepPlaybackSpeed
+      ? sourceDuration
+      : keep.reduce((acc, k, i) => acc + (k ? rows[i].delayMs : 0), 0);
+    return { keptCount, total: rows.length, sourceDuration, outDuration };
+  }, [dropDialog, rows, computeDropKeepMask]);
+
+  const applyDropFrames = useCallback(() => {
+    if (!dropDialog) return;
+    const { mode, nValue, keepPlaybackSpeed } = dropDialog;
+    setRows((prev) => {
+      const keep = computeDropKeepMask(prev.length, mode, nValue);
+      if (keep.every(Boolean)) return prev;
+      if (keep.every((k) => !k)) {
+        toast.error('That would drop every frame');
+        return prev;
+      }
+      if (!keepPlaybackSpeed) {
+        return prev.filter((_, i) => keep[i]);
+      }
+      // Fold each dropped frame's delay into the next kept frame, so the
+      // total playback duration stays constant.
+      const out: FrameRow[] = [];
+      let carry = 0;
+      for (let i = 0; i < prev.length; i += 1) {
+        if (keep[i]) {
+          out.push({ ...prev[i], delayMs: prev[i].delayMs + carry });
+          carry = 0;
+        } else {
+          carry += prev[i].delayMs;
+        }
+      }
+      if (carry > 0 && out.length > 0) {
+        out[out.length - 1] = {
+          ...out[out.length - 1],
+          delayMs: out[out.length - 1].delayMs + carry,
+        };
+      }
+      return out;
+    });
+    setDropDialog(null);
+  }, [dropDialog, computeDropKeepMask]);
+
+  const openDropDialog = useCallback(() => {
+    setIsPlaying(false);
+    setDropDialog({
+      mode: 'none',
+      nValue: 3,
+      keepPlaybackSpeed: true,
+    });
+  }, []);
+
   const hasFrameEdits = useMemo(() => {
     if (!info) return false;
     if (rows.length !== info.frameCount) return true;
@@ -1133,9 +1270,11 @@ export const GifEditor: React.FC<GifEditorProps> = ({
 
       setIsExporting(true);
 
+      const baselineW = ui.crop?.w ?? gifData?.width ?? 0;
+      const baselineH = ui.crop?.h ?? gifData?.height ?? 0;
       const usingExplicitSize =
         !!gifData &&
-        (ui.outputWidth !== gifData.width || ui.outputHeight !== gifData.height);
+        (ui.outputWidth !== baselineW || ui.outputHeight !== baselineH);
       const outputWidth = usingExplicitSize
         ? Math.max(1, Math.round(ui.outputWidth))
         : null;
@@ -1462,6 +1601,17 @@ export const GifEditor: React.FC<GifEditorProps> = ({
               </Button>
             </div>
 
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={openDropDialog}
+              disabled={rows.length === 0}
+              title="Drop frames in a pattern (even, odd, every Nth)"
+              className="text-xs"
+            >
+              Drop frames…
+            </Button>
+
             <div className="flex flex-col gap-1">
               <Label className="text-xs text-(--ink-muted)">Delay (ms)</Label>
               <Input
@@ -1663,124 +1813,132 @@ export const GifEditor: React.FC<GifEditorProps> = ({
               </div>
 
               {gifData && (
-                <div className="flex flex-col gap-2">
-                  <Label className="text-sm">Size</Label>
-                  <div className="flex items-center gap-2">
-                    <div className="flex flex-col gap-1 flex-1 min-w-0">
-                      <span className="text-[10px] uppercase text-(--ink-muted)">W</span>
-                      <Input
-                        type="number"
-                        min={1}
-                        max={4096}
-                        value={ui.outputWidth || ''}
-                        onChange={(e) => {
-                          const w = Math.max(1, Math.round(Number(e.target.value) || 0));
-                          setUi((p) => {
-                            if (!gifData) return { ...p, outputWidth: w };
-                            if (p.keepAspect) {
-                              const ratio = gifData.height / gifData.width;
-                              return {
-                                ...p,
-                                outputWidth: w,
-                                outputHeight: Math.max(1, Math.round(w * ratio)),
-                              };
-                            }
-                            return { ...p, outputWidth: w };
-                          });
-                        }}
-                        className="h-8 text-sm"
-                      />
+                (() => {
+                  // Size controls operate relative to the *current* baseline:
+                  // the crop dims when a crop is applied, else the source
+                  // dims. That way scaling never accidentally upsizes a
+                  // cropped frame back to source dimensions on export.
+                  const baselineW = ui.crop?.w ?? gifData.width;
+                  const baselineH = ui.crop?.h ?? gifData.height;
+                  const pct =
+                    baselineW > 0
+                      ? Math.round((ui.outputWidth / baselineW) * 100)
+                      : 100;
+                  return (
+                    <div className="flex flex-col gap-2">
+                      <Label className="text-sm">Size</Label>
+                      <div className="flex items-center gap-2">
+                        <div className="flex flex-col gap-1 flex-1 min-w-0">
+                          <span className="text-[10px] uppercase text-(--ink-muted)">W</span>
+                          <Input
+                            type="number"
+                            min={1}
+                            max={4096}
+                            value={ui.outputWidth || ''}
+                            onChange={(e) => {
+                              const w = Math.max(1, Math.round(Number(e.target.value) || 0));
+                              setUi((p) => {
+                                if (p.keepAspect) {
+                                  const ratio = baselineH / baselineW;
+                                  return {
+                                    ...p,
+                                    outputWidth: w,
+                                    outputHeight: Math.max(1, Math.round(w * ratio)),
+                                  };
+                                }
+                                return { ...p, outputWidth: w };
+                              });
+                            }}
+                            className="h-8 text-sm"
+                          />
+                        </div>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 mt-4"
+                          onClick={() =>
+                            setUi((p) => ({ ...p, keepAspect: !p.keepAspect }))
+                          }
+                          title={
+                            ui.keepAspect
+                              ? 'Aspect ratio locked'
+                              : 'Aspect ratio unlocked'
+                          }
+                          aria-label="Toggle aspect ratio lock"
+                        >
+                          {ui.keepAspect ? (
+                            <LinkIcon className="w-4 h-4" />
+                          ) : (
+                            <Unlink className="w-4 h-4" />
+                          )}
+                        </Button>
+                        <div className="flex flex-col gap-1 flex-1 min-w-0">
+                          <span className="text-[10px] uppercase text-(--ink-muted)">H</span>
+                          <Input
+                            type="number"
+                            min={1}
+                            max={4096}
+                            value={ui.outputHeight || ''}
+                            onChange={(e) => {
+                              const h = Math.max(1, Math.round(Number(e.target.value) || 0));
+                              setUi((p) => {
+                                if (p.keepAspect) {
+                                  const ratio = baselineW / baselineH;
+                                  return {
+                                    ...p,
+                                    outputHeight: h,
+                                    outputWidth: Math.max(1, Math.round(h * ratio)),
+                                  };
+                                }
+                                return { ...p, outputHeight: h };
+                              });
+                            }}
+                            className="h-8 text-sm"
+                          />
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Slider
+                          className="flex-1"
+                          value={[pct]}
+                          min={10}
+                          max={300}
+                          step={1}
+                          onValueChange={(v) => {
+                            const newPct = v[0];
+                            setUi((p) => ({
+                              ...p,
+                              outputWidth: Math.max(
+                                1,
+                                Math.round((baselineW * newPct) / 100),
+                              ),
+                              outputHeight: Math.max(
+                                1,
+                                Math.round((baselineH * newPct) / 100),
+                              ),
+                            }));
+                          }}
+                        />
+                        <span className="text-xs text-(--ink-muted) min-w-[44px] text-right tabular-nums">
+                          {pct}%
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        className="text-xs text-(--ink-muted) hover:text-(--accent-400) text-left"
+                        onClick={() =>
+                          setUi((p) => ({
+                            ...p,
+                            outputWidth: baselineW,
+                            outputHeight: baselineH,
+                          }))
+                        }
+                      >
+                        Reset to {baselineW} × {baselineH}
+                      </button>
                     </div>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-8 w-8 mt-4"
-                      onClick={() =>
-                        setUi((p) => ({ ...p, keepAspect: !p.keepAspect }))
-                      }
-                      title={
-                        ui.keepAspect
-                          ? 'Aspect ratio locked'
-                          : 'Aspect ratio unlocked'
-                      }
-                      aria-label="Toggle aspect ratio lock"
-                    >
-                      {ui.keepAspect ? (
-                        <LinkIcon className="w-4 h-4" />
-                      ) : (
-                        <Unlink className="w-4 h-4" />
-                      )}
-                    </Button>
-                    <div className="flex flex-col gap-1 flex-1 min-w-0">
-                      <span className="text-[10px] uppercase text-(--ink-muted)">H</span>
-                      <Input
-                        type="number"
-                        min={1}
-                        max={4096}
-                        value={ui.outputHeight || ''}
-                        onChange={(e) => {
-                          const h = Math.max(1, Math.round(Number(e.target.value) || 0));
-                          setUi((p) => {
-                            if (!gifData) return { ...p, outputHeight: h };
-                            if (p.keepAspect) {
-                              const ratio = gifData.width / gifData.height;
-                              return {
-                                ...p,
-                                outputHeight: h,
-                                outputWidth: Math.max(1, Math.round(h * ratio)),
-                              };
-                            }
-                            return { ...p, outputHeight: h };
-                          });
-                        }}
-                        className="h-8 text-sm"
-                      />
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Slider
-                      className="flex-1"
-                      value={[
-                        gifData.width > 0
-                          ? Math.round((ui.outputWidth / gifData.width) * 100)
-                          : 100,
-                      ]}
-                      min={10}
-                      max={300}
-                      step={1}
-                      onValueChange={(v) => {
-                        const pct = v[0];
-                        setUi((p) => ({
-                          ...p,
-                          outputWidth: Math.max(1, Math.round((gifData.width * pct) / 100)),
-                          outputHeight: Math.max(
-                            1,
-                            Math.round((gifData.height * pct) / 100),
-                          ),
-                        }));
-                      }}
-                    />
-                    <span className="text-xs text-(--ink-muted) min-w-[44px] text-right tabular-nums">
-                      {gifData.width > 0
-                        ? Math.round((ui.outputWidth / gifData.width) * 100)
-                        : 100}
-                      %
-                    </span>
-                  </div>
-                  <button
-                    type="button"
-                    className="text-xs text-(--ink-muted) hover:text-(--accent-400) text-left"
-                    onClick={() =>
-                      setUi((p) => ({
-                        ...p,
-                        outputWidth: gifData.width,
-                        outputHeight: gifData.height,
-                      }))
-                    }
-                  >
-                    Reset to {gifData.width} × {gifData.height}
-                  </button>
-                </div>
+                  );
+                })()
               )}
 
               <div className="flex flex-col gap-2">
@@ -2037,6 +2195,113 @@ export const GifEditor: React.FC<GifEditorProps> = ({
       </Dialog>
 
       <Dialog
+        open={!!dropDialog}
+        onOpenChange={(next) => {
+          if (!next) setDropDialog(null);
+        }}
+      >
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Drop frames</DialogTitle>
+            <DialogDescription>
+              Pick a pattern. Stats update live.
+            </DialogDescription>
+          </DialogHeader>
+
+          {dropDialog && dropDialogStats && (
+            <div className="flex flex-col gap-3 text-sm">
+              <div className="grid grid-cols-2 gap-y-1">
+                <span className="text-(--ink-muted) text-xs">Frames</span>
+                <span className="tabular-nums">
+                  {dropDialogStats.total} → {dropDialogStats.keptCount}
+                </span>
+                <span className="text-(--ink-muted) text-xs">Duration</span>
+                <span className="tabular-nums">
+                  {formatDuration(dropDialogStats.sourceDuration)} →{' '}
+                  {formatDuration(dropDialogStats.outDuration)}
+                </span>
+              </div>
+
+              <div className="flex flex-col gap-1">
+                {(
+                  [
+                    { v: 'none', label: 'Show original' },
+                    { v: 'even', label: 'Even frames (2, 4, 6…)' },
+                    { v: 'odd', label: 'Odd frames (1, 3, 5…)' },
+                    { v: 'every-n', label: 'Delete every N-th frame' },
+                  ] as const
+                ).map((opt) => (
+                  <label
+                    key={opt.v}
+                    className="flex items-center gap-2 text-sm cursor-pointer"
+                  >
+                    <input
+                      type="radio"
+                      name="drop-mode"
+                      checked={dropDialog.mode === opt.v}
+                      onChange={() =>
+                        setDropDialog({ ...dropDialog, mode: opt.v })
+                      }
+                    />
+                    {opt.label}
+                  </label>
+                ))}
+              </div>
+
+              {dropDialog.mode === 'every-n' && (
+                <div className="pl-5 flex items-center gap-3">
+                  <Slider
+                    className="flex-1"
+                    value={[dropDialog.nValue]}
+                    min={2}
+                    max={20}
+                    step={1}
+                    onValueChange={(v) =>
+                      setDropDialog({ ...dropDialog, nValue: v[0] })
+                    }
+                  />
+                  <span className="text-xs text-(--ink-muted) tabular-nums w-6 text-right">
+                    {dropDialog.nValue}
+                  </span>
+                </div>
+              )}
+
+              <label className="flex items-center gap-2 text-sm cursor-pointer pt-1 border-t border-(--polar-mist)">
+                <input
+                  type="checkbox"
+                  checked={dropDialog.keepPlaybackSpeed}
+                  onChange={(e) =>
+                    setDropDialog({
+                      ...dropDialog,
+                      keepPlaybackSpeed: e.target.checked,
+                    })
+                  }
+                />
+                Keep the playback speed
+              </label>
+              <p className="text-[10px] text-(--ink-muted) leading-snug -mt-1 pl-5">
+                {dropDialog.keepPlaybackSpeed
+                  ? 'Dropped frames’ delays fold into the kept frames so total time stays the same.'
+                  : 'Each kept frame keeps its original delay — total time shrinks.'}
+              </p>
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDropDialog(null)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={applyDropFrames}
+              disabled={!dropDialog || dropDialog.mode === 'none'}
+            >
+              OK
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
         open={!!exportPreview}
         onOpenChange={(next) => {
           if (!next && !isExporting) setExportPreview(null);
@@ -2060,7 +2325,7 @@ export const GifEditor: React.FC<GifEditorProps> = ({
             const cropW = ui.crop?.w ?? gifData.width;
             const cropH = ui.crop?.h ?? gifData.height;
             const usingExplicit =
-              ui.outputWidth !== gifData.width || ui.outputHeight !== gifData.height;
+              ui.outputWidth !== cropW || ui.outputHeight !== cropH;
             const baseW = usingExplicit ? ui.outputWidth : cropW;
             const baseH = usingExplicit ? ui.outputHeight : cropH;
             const outW = Math.max(1, Math.round(swap ? baseH : baseW));
