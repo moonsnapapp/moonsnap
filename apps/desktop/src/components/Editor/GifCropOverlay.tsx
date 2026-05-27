@@ -280,7 +280,7 @@ export const GifCropOverlay: React.FC<Props> = ({
           width: display.width,
           height: display.height,
           border: '2px solid var(--accent-400)',
-          boxShadow: '0 0 0 1px rgba(0, 0, 0, 0.4)',
+          outline: '1px solid rgba(0, 0, 0, 0.4)',
           cursor: 'move',
           pointerEvents: 'auto',
         }}
