@@ -5,6 +5,7 @@
 use tauri::{Manager, Window, WindowEvent};
 
 use crate::commands::video_recording::audio_monitor;
+use crate::commands::window::gif_editor;
 use crate::commands::window::image_editor;
 use crate::commands::window::toolbar::CaptureToolbarWindowState;
 use crate::commands::window::video_editor;
@@ -67,6 +68,11 @@ pub fn handle_window_event(window: &Window, event: &WindowEvent) {
             // Clean up image editor window tracking
             if image_editor::is_image_editor_window(label) {
                 image_editor::on_image_editor_closed(label);
+            }
+
+            // Clean up gif editor window tracking
+            if gif_editor::is_gif_editor_window(label) {
+                gif_editor::on_gif_editor_closed(label);
             }
             // Otherwise let the window close normally
         },

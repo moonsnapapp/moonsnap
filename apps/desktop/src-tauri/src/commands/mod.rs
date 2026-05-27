@@ -27,6 +27,7 @@ pub mod captions;
 pub mod capture;
 pub mod capture_overlay;
 pub mod fonts;
+pub mod gif_editing;
 pub mod image;
 pub mod keyboard_hook;
 pub mod logging;

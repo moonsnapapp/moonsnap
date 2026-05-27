@@ -10,6 +10,7 @@ import { CaptureLibrary } from './components/Library/CaptureLibrary';
 import { SidebarToggleHandle } from './components/Library/SidebarToggleHandle';
 import { EmbeddedImageEditor } from './components/Editor/EmbeddedImageEditor';
 import { EmbeddedVideoEditor } from './components/Editor/EmbeddedVideoEditor';
+import { EmbeddedGifEditor } from './components/Editor/EmbeddedGifEditor';
 import { ExperimentalCaptureToolbarDialog } from './components/CaptureToolbar/ExperimentalCaptureToolbarDialog';
 import { ResizablePanel, ResizablePanelGroup } from './components/ui/resizable';
 import { LibraryErrorBoundary } from './components/ErrorBoundary';
@@ -67,6 +68,7 @@ function App() {
     captures,
     loadProject,
     loadVideoProjectInWorkspace,
+    loadGifInWorkspace,
     clearCurrentProject,
     saveNewCaptureFromFile,
     loadCaptures,
@@ -74,8 +76,12 @@ function App() {
   const isLibraryWorkspaceActive = view === 'library';
   const isImageEditorActive = view === 'editor';
   const isVideoEditorActive = view === 'videoEditor';
+  const isGifEditorActive = view === 'gifEditor';
   const isWorkspaceActive =
-    isLibraryWorkspaceActive || isImageEditorActive || isVideoEditorActive;
+    isLibraryWorkspaceActive ||
+    isImageEditorActive ||
+    isVideoEditorActive ||
+    isGifEditorActive;
 
   // Initialize theme (applies theme class to document root)
   useTheme();
@@ -167,7 +173,16 @@ function App() {
           const action = useCaptureSettingsStore.getState().afterRecordingAction;
           const isGif = isGifRecordingPath(data.outputPath);
 
-          if (action === 'editor' && !isGif) {
+          if (action === 'editor' && isGif) {
+            invoke('show_gif_editor_window', { capturePath: data.outputPath }).catch((error) => {
+              logger.error('Failed to open GIF editor:', error);
+              invoke('show_recording_preview', {
+                outputPath: data.outputPath,
+                durationSecs: data.durationSecs,
+                fileSizeBytes: data.fileSizeBytes,
+              }).catch(() => {});
+            });
+          } else if (action === 'editor' && !isGif) {
             // Open editor directly
             const hasExtension = /\.\w+$/.test(data.outputPath);
             const videoPath = hasExtension ? data.outputPath : `${data.outputPath}/screen.mp4`;
@@ -308,6 +323,12 @@ function App() {
     }
   }, [loadVideoProjectInWorkspace]);
 
+  const handleEditGifInWorkspace = useCallback(async (capture: CaptureListItem) => {
+    setLastOpenedCaptureId(capture.id);
+    localStorage.setItem(STORAGE.LAST_OPENED_CAPTURE_ID_KEY, capture.id);
+    loadGifInWorkspace(capture.image_path);
+  }, [loadGifInWorkspace]);
+
   const handleOpenLastMedia = useCallback(async () => {
     if (!lastOpenedCapture) {
       return;
@@ -335,6 +356,10 @@ function App() {
   }, [clearCurrentProject]);
 
   const handleCloseVideoEditor = useCallback(() => {
+    clearCurrentProject();
+  }, [clearCurrentProject]);
+
+  const handleCloseGifEditor = useCallback(() => {
     clearCurrentProject();
   }, [clearCurrentProject]);
 
@@ -456,7 +481,9 @@ function App() {
             ? 'Image Editor'
             : isVideoEditorActive
               ? 'Video Editor'
-              : 'Library'
+              : isGifEditorActive
+                ? 'GIF Editor'
+                : 'Library'
         }
         onCapture={handleShowCaptureToolbar}
         onOpenSettings={handleOpenSettings}
@@ -499,6 +526,7 @@ function App() {
                     onFocusCaptureHandled={handleFocusedLibraryCaptureHandled}
                     onEditImage={handleEditImageInWorkspace}
                     onEditVideo={handleEditVideoInWorkspace}
+                    onEditGif={handleEditGifInWorkspace}
                   />
                 </LibraryErrorBoundary>
               )}
@@ -518,6 +546,8 @@ function App() {
                 <EmbeddedImageEditor onClose={handleCloseImageEditor} />
               ) : isVideoEditorActive ? (
                 <EmbeddedVideoEditor onClose={handleCloseVideoEditor} />
+              ) : isGifEditorActive ? (
+                <EmbeddedGifEditor onClose={handleCloseGifEditor} />
               ) : (
                 <div className="image-editor-empty editor-window__state flex-1 flex items-center justify-center">
                   <div className="image-editor-empty__panel">

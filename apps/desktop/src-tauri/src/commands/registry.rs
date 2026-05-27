@@ -59,6 +59,16 @@ macro_rules! tauri_command_handler {
             crate::commands::window::image_editor::show_image_editor_window,
             crate::commands::window::image_editor::close_image_editor_window,
             crate::commands::window::image_editor::get_image_editor_capture_path,
+            // Window commands - gif editor
+            crate::commands::window::gif_editor::show_gif_editor_window,
+            crate::commands::window::gif_editor::close_gif_editor_window,
+            crate::commands::window::gif_editor::get_gif_editor_capture_path,
+            // GIF editing commands
+            crate::commands::gif_editing::get_gif_info,
+            crate::commands::gif_editing::extract_gif_frames,
+            crate::commands::gif_editing::process_gif,
+            crate::commands::gif_editing::encode_gif_from_frames,
+            crate::commands::gif_editing::estimate_gif_size_from_frames,
             // Window commands - screenshot preview
             crate::commands::window::screenshot_preview::show_screenshot_preview,
             crate::commands::window::screenshot_preview::close_screenshot_preview,

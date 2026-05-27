@@ -126,6 +126,7 @@ interface CaptureLibraryProps {
   onFocusCaptureHandled?: () => void;
   onEditImage?: (capture: CaptureListItem) => void | Promise<void>;
   onEditVideo?: (capture: CaptureListItem) => void | Promise<void>;
+  onEditGif?: (capture: CaptureListItem) => void | Promise<void>;
 }
 
 interface DateGroup {
@@ -185,6 +186,7 @@ export const CaptureLibrary: React.FC<CaptureLibraryProps> = ({
   onFocusCaptureHandled,
   onEditImage,
   onEditVideo,
+  onEditGif,
 }) => {
   const {
     loading,
@@ -365,6 +367,20 @@ export const CaptureLibrary: React.FC<CaptureLibraryProps> = ({
   }, [onEditVideo]);
 
   // Open project in editor window
+  const handleEditGif = useCallback(async (capture: CaptureListItem) => {
+    if (onEditGif) {
+      await onEditGif(capture);
+      return;
+    }
+
+    try {
+      await invoke('show_gif_editor_window', { capturePath: capture.image_path });
+    } catch (error) {
+      reportError(error, { operation: 'gif editor open' });
+      toast.error('Failed to open GIF editor');
+    }
+  }, [onEditGif]);
+
   const handleOpenProject = useCallback(async (id: string) => {
     const capture = captures.find(c => c.id === id);
     if (!capture || capture.is_missing) return;
@@ -374,10 +390,13 @@ export const CaptureLibrary: React.FC<CaptureLibraryProps> = ({
       return;
     }
 
-    if (capture.capture_type !== 'gif') {
-      await handleEditImage(capture);
+    if (capture.capture_type === 'gif') {
+      await handleEditGif(capture);
+      return;
     }
-  }, [captures, handleEditImage, handleEditVideo]);
+
+    await handleEditImage(capture);
+  }, [captures, handleEditImage, handleEditVideo, handleEditGif]);
 
   const getPostDeleteTarget = useCallback((deletedIds: Set<string>) => {
     if (!activeCaptureId || !deletedIds.has(activeCaptureId)) {

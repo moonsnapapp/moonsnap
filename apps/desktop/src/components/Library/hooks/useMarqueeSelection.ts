@@ -321,16 +321,6 @@ export function useMarqueeSelection({
       const capture = captures.find((c) => c.id === id);
       if (!capture || capture.is_missing) return; // Don't open missing captures
       
-      // GIFs always open in system default player.
-      if (capture.capture_type === 'gif') {
-        try {
-          await invoke('open_file_with_default_app', { path: capture.image_path });
-        } catch (error) {
-          libraryLogger.error('Failed to open file:', error);
-        }
-        return;
-      }
-
       // Video projects open in editor, quick video recordings open in system player.
       if (capture.capture_type === 'video' && !isProjectVideoPath(capture.image_path)) {
         try {

@@ -19,12 +19,13 @@ interface LibraryCache {
 }
 
 // Session persistence types
-type ViewType = 'library' | 'editor' | 'videoEditor';
+type ViewType = 'library' | 'editor' | 'videoEditor' | 'gifEditor';
 
 interface EditorSession {
   view: ViewType;
   projectId?: string;
   videoProjectPath?: string;
+  gifPath?: string;
 }
 
 // Save editor session to sessionStorage (survives F5 refresh)
@@ -204,12 +205,14 @@ interface CaptureState {
   librarySidebarItemSize: number;
 
   // View state
-  view: 'library' | 'editor' | 'videoEditor';
+  view: ViewType;
+  currentGifPath: string | null;
 
   // Actions
   loadCaptures: () => Promise<void>;
   loadProject: (id: string) => Promise<void>;
   loadVideoProjectInWorkspace: (videoPath: string) => Promise<void>;
+  loadGifInWorkspace: (gifPath: string) => void;
   saveNewCapture: (
     imageData: string,
     captureType: string,
@@ -245,7 +248,7 @@ interface CaptureState {
   setSkipStagger: (value: boolean) => void;
   clearCurrentProject: () => void;
   setHasUnsavedChanges: (value: boolean) => void;
-  setView: (view: 'library' | 'editor' | 'videoEditor') => void;
+  setView: (view: ViewType) => void;
   setCurrentImageData: (data: string | null) => void;
   setCurrentProject: (project: CaptureProject | null) => void;
   
@@ -340,6 +343,7 @@ export const useCaptureStore = create<CaptureState>()(
   libraryItemScale: loadLibraryItemScale(),
   librarySidebarItemSize: loadLibrarySidebarItemSize(),
   view: 'library',
+  currentGifPath: null,
 
   loadCaptures: async () => {
     const hasExistingCaptures = get().captures.length > 0;
@@ -446,10 +450,11 @@ export const useCaptureStore = create<CaptureState>()(
 
   loadVideoProjectInWorkspace: async (videoPath: string) => {
     if (isGifPath(videoPath)) {
-      throw new Error('GIF editing is not available in the video editor yet.');
+      get().loadGifInWorkspace(videoPath);
+      return;
     }
 
-    set({ error: null, view: 'videoEditor' });
+    set({ error: null, view: 'videoEditor', currentGifPath: null });
     try {
       const { useVideoEditorStore } = await import('./videoEditorStore');
       const project = await invoke('load_video_project', { videoPath });
@@ -462,6 +467,11 @@ export const useCaptureStore = create<CaptureState>()(
       set({ error: String(error), view: 'library' });
       throw error;
     }
+  },
+
+  loadGifInWorkspace: (gifPath: string) => {
+    set({ error: null, view: 'gifEditor', currentGifPath: gifPath });
+    saveEditorSession({ view: 'gifEditor', gifPath });
   },
 
   saveNewCapture: async (
@@ -748,12 +758,13 @@ export const useCaptureStore = create<CaptureState>()(
     set({
       currentProject: null,
       currentImageData: null,
+      currentGifPath: null,
       hasUnsavedChanges: false,
       view: 'library',
     });
   },
   setHasUnsavedChanges: (value: boolean) => set({ hasUnsavedChanges: value }),
-  setView: (view: 'library' | 'editor' | 'videoEditor') => {
+  setView: (view: ViewType) => {
     set({ view });
     // Persist view change to session storage
     if (view === 'library') {
@@ -793,8 +804,8 @@ export const useCaptureStore = create<CaptureState>()(
     } else if (session.view === 'videoEditor' && session.videoProjectPath) {
       try {
         if (isGifPath(session.videoProjectPath)) {
-          clearEditorSession();
-          return false;
+          get().loadGifInWorkspace(session.videoProjectPath);
+          return true;
         }
 
         // Load video project and set it in video editor store
@@ -808,6 +819,9 @@ export const useCaptureStore = create<CaptureState>()(
         clearEditorSession();
         return false;
       }
+    } else if (session.view === 'gifEditor' && session.gifPath) {
+      get().loadGifInWorkspace(session.gifPath);
+      return true;
     }
 
     return false;

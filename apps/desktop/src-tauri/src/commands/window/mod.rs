@@ -12,6 +12,7 @@
 
 pub mod capture;
 pub(crate) mod editor_windows;
+pub mod gif_editor;
 pub mod image_editor;
 pub mod recording;
 pub mod recording_preview;
