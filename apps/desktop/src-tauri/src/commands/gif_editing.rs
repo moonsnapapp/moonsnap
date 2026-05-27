@@ -68,6 +68,17 @@ pub struct GifFrameInfo {
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export, export_to = "../../src/types/generated/")]
 #[serde(rename_all = "camelCase")]
+pub struct GifCrop {
+    /// Crop rectangle origin in source pixel coordinates.
+    pub x: u32,
+    pub y: u32,
+    pub width: u32,
+    pub height: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "../../src/types/generated/")]
+#[serde(rename_all = "camelCase")]
 pub struct GifFrameSpec {
     /// Index of the frame in the source GIF (0-based).
     pub source_index: u32,
@@ -81,6 +92,9 @@ pub struct GifFrameSpec {
 pub struct GifFrameEncodeOptions {
     pub frames: Vec<GifFrameSpec>,
     pub scale_pct: u32,
+    /// Optional crop rectangle in source pixel coordinates. Applied before
+    /// scale/rotate/flip.
+    pub crop: Option<GifCrop>,
     /// Optional explicit output dimensions. When both are set they override
     /// `scale_pct`.
     pub output_width: Option<u32>,
@@ -116,6 +130,9 @@ pub struct GifEditOptions {
     pub loop_forever: bool,
     /// Optional output FPS override. None = keep source.
     pub fps: Option<u32>,
+    /// Optional crop rectangle in source pixel coordinates. Applied before
+    /// scale/rotate/flip.
+    pub crop: Option<GifCrop>,
     /// Optional explicit output dimensions. When both are set they override
     /// `scale_pct`.
     pub output_width: Option<u32>,
@@ -361,9 +378,11 @@ fn numeric_quality_clauses(value: u32) -> (u32, String) {
     (max_colors, dither)
 }
 
-/// Build the comma-separated filter clauses that resize, rotate and flip the
-/// stream. The result is empty when no transform is requested.
+/// Build the comma-separated filter clauses that crop, resize, rotate and
+/// flip the stream. The result is empty when no transform is requested.
+/// Order is: crop → scale → rotate → flip.
 fn build_transform_clauses(
+    crop: Option<&GifCrop>,
     scale_pct: u32,
     output_width: Option<u32>,
     output_height: Option<u32>,
@@ -372,6 +391,12 @@ fn build_transform_clauses(
     flip_v: bool,
 ) -> String {
     let mut parts: Vec<String> = Vec::new();
+
+    if let Some(c) = crop {
+        if c.width > 0 && c.height > 0 {
+            parts.push(format!("crop={}:{}:{}:{}", c.width, c.height, c.x, c.y));
+        }
+    }
 
     match (output_width, output_height) {
         (Some(w), Some(h)) if w > 0 && h > 0 => {
@@ -442,6 +467,7 @@ fn run_ffmpeg_gif_edit(
         chain.push_str(",reverse");
     }
     let transform = build_transform_clauses(
+        options.crop.as_ref(),
         options.scale_pct,
         options.output_width,
         options.output_height,
@@ -579,6 +605,7 @@ fn encode_from_manifest_with_progress(
 
     let mut filter = String::new();
     let transform = build_transform_clauses(
+        options.crop.as_ref(),
         options.scale_pct,
         options.output_width,
         options.output_height,

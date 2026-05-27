@@ -24,6 +24,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Copy,
+  Crop,
   Download,
   FlipHorizontal,
   FlipVertical,
@@ -61,6 +62,7 @@ import {
   ContextMenuTrigger,
 } from '@/components/ui/context-menu';
 import { useTheme } from '@/hooks/useTheme';
+import { GifCropOverlay } from '@/components/Editor/GifCropOverlay';
 import { reportError } from '@/utils/errorReporting';
 import { editorLogger } from '@/utils/logger';
 import { cn } from '@/lib/utils';
@@ -69,6 +71,7 @@ import type { GifEditOptions } from '@/types/generated/GifEditOptions';
 import type { GifFrameEncodeOptions } from '@/types/generated/GifFrameEncodeOptions';
 import type { GifFrameSpec } from '@/types/generated/GifFrameSpec';
 import type { GifEstimateProgress } from '@/types/generated/GifEstimateProgress';
+import type { GifCrop } from '@/types/generated/GifCrop';
 
 type QualityPreset = 'fast' | 'balanced' | 'high';
 
@@ -77,10 +80,11 @@ interface UiState {
   outputWidth: number;
   outputHeight: number;
   keepAspect: boolean;
+  /** Crop rectangle in source pixel coordinates, or null when crop is off. */
+  crop: { x: number; y: number; w: number; h: number } | null;
   rotation: 0 | 90 | 180 | 270;
   flipH: boolean;
   flipV: boolean;
-  reverse: boolean;
   loopForever: boolean;
   /** 0..=100, mapped to FFmpeg palette colors + dither on the backend. */
   qualityValue: number;
@@ -274,6 +278,16 @@ export const GifEditor: React.FC<GifEditorProps> = ({
   const [isPlaying, setIsPlaying] = useState(true);
   const [isExporting, setIsExporting] = useState(false);
   const [delayInput, setDelayInput] = useState<string>('');
+  /**
+   * Whether the user is currently editing the crop (overlay visible, preview
+   * shows full source). When false, the preview shows the cropped result.
+   */
+  const [cropEditing, setCropEditing] = useState(false);
+  /**
+   * Snapshot of `ui.crop` taken when crop editing starts, used to restore
+   * the prior crop if the user clicks Cancel.
+   */
+  const cropEditingPrevRef = useRef<UiState['crop']>(null);
 
   /**
    * State for the "Set Frame Delay" dialog (opened by double-clicking a frame).
@@ -305,10 +319,10 @@ export const GifEditor: React.FC<GifEditorProps> = ({
     outputWidth: 0,
     outputHeight: 0,
     keepAspect: true,
+    crop: null,
     rotation: 0,
     flipH: false,
     flipV: false,
-    reverse: false,
     loopForever: true,
     qualityValue: 70,
     limitFps: false,
@@ -475,6 +489,39 @@ export const GifEditor: React.FC<GifEditorProps> = ({
     [rows],
   );
   const sourceDurationMs = info ? info.durationMs : 0;
+
+  const enterCropEditing = useCallback(() => {
+    if (!gifData) return;
+    setUi((p) => {
+      cropEditingPrevRef.current = p.crop;
+      if (p.crop) return p;
+      // Default crop: centered 80% of source.
+      const w = Math.max(16, Math.round(gifData.width * 0.8));
+      const h = Math.max(16, Math.round(gifData.height * 0.8));
+      const x = Math.round((gifData.width - w) / 2);
+      const y = Math.round((gifData.height - h) / 2);
+      return { ...p, crop: { x, y, w, h } };
+    });
+    setCropEditing(true);
+  }, [gifData]);
+
+  const applyCrop = useCallback(() => {
+    cropEditingPrevRef.current = null;
+    setCropEditing(false);
+  }, []);
+
+  const cancelCropEditing = useCallback(() => {
+    const previous = cropEditingPrevRef.current;
+    cropEditingPrevRef.current = null;
+    setUi((p) => ({ ...p, crop: previous }));
+    setCropEditing(false);
+  }, []);
+
+  const removeCrop = useCallback(() => {
+    cropEditingPrevRef.current = null;
+    setUi((p) => ({ ...p, crop: null }));
+    setCropEditing(false);
+  }, []);
   const fileSize = info ? info.fileSizeBytes : 0;
 
   const firstSelectedRow = useMemo(() => {
@@ -509,7 +556,13 @@ export const GifEditor: React.FC<GifEditorProps> = ({
     setCurrentFrameIndex((i) => Math.min(i, rows.length - 1));
   }, [rows.length]);
 
-  // Paint the current frame to the preview canvas, applying rotation/flip.
+  // Paint the current frame to the preview canvas.
+  //   - While cropEditing: render full source at 1:1 (no rotation/flip), so
+  //     the overlay's pointer events map cleanly to source pixels.
+  //   - When a crop is applied: render only the cropped region with full
+  //     rotation + flip transforms — the user sees the same image the
+  //     exporter will produce.
+  //   - No crop: render full source with rotation + flip.
   useEffect(() => {
     if (!gifData || rows.length === 0) return;
     const row = rows[currentFrameIndex];
@@ -519,14 +572,23 @@ export const GifEditor: React.FC<GifEditorProps> = ({
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
+    if (cropEditing) {
+      if (canvas.width !== gifData.width) canvas.width = gifData.width;
+      if (canvas.height !== gifData.height) canvas.height = gifData.height;
+      renderFrameTo(ctx, gifData, row.sourceIndex);
+      return;
+    }
+
     const swap = ui.rotation === 90 || ui.rotation === 270;
-    const dstW = swap ? gifData.height : gifData.width;
-    const dstH = swap ? gifData.width : gifData.height;
+    const cropW = ui.crop?.w ?? gifData.width;
+    const cropH = ui.crop?.h ?? gifData.height;
+    const cropX = ui.crop?.x ?? 0;
+    const cropY = ui.crop?.y ?? 0;
+    const dstW = swap ? cropH : cropW;
+    const dstH = swap ? cropW : cropH;
     if (canvas.width !== dstW) canvas.width = dstW;
     if (canvas.height !== dstH) canvas.height = dstH;
 
-    // Render the source frame onto an offscreen canvas, then re-draw onto the
-    // visible canvas with rotation + flip transforms applied.
     const off = document.createElement('canvas');
     off.width = gifData.width;
     off.height = gifData.height;
@@ -539,9 +601,28 @@ export const GifEditor: React.FC<GifEditorProps> = ({
     ctx.translate(dstW / 2, dstH / 2);
     ctx.rotate((ui.rotation * Math.PI) / 180);
     ctx.scale(ui.flipH ? -1 : 1, ui.flipV ? -1 : 1);
-    ctx.drawImage(off, -gifData.width / 2, -gifData.height / 2);
+    ctx.drawImage(
+      off,
+      cropX,
+      cropY,
+      cropW,
+      cropH,
+      -cropW / 2,
+      -cropH / 2,
+      cropW,
+      cropH,
+    );
     ctx.restore();
-  }, [gifData, rows, currentFrameIndex, ui.rotation, ui.flipH, ui.flipV]);
+  }, [
+    gifData,
+    rows,
+    currentFrameIndex,
+    ui.rotation,
+    ui.flipH,
+    ui.flipV,
+    ui.crop,
+    cropEditing,
+  ]);
 
   // Render the current preview-dialog frame to the dialog's canvas (with the
   // same rotation/flip transforms the export will apply).
@@ -555,16 +636,18 @@ export const GifEditor: React.FC<GifEditorProps> = ({
     if (!ctx) return;
 
     const swap = ui.rotation === 90 || ui.rotation === 270;
-    const baseW = gifData.width;
-    const baseH = gifData.height;
-    const dstW = swap ? baseH : baseW;
-    const dstH = swap ? baseW : baseH;
+    const cropW = ui.crop ? ui.crop.w : gifData.width;
+    const cropH = ui.crop ? ui.crop.h : gifData.height;
+    const dstW = swap ? cropH : cropW;
+    const dstH = swap ? cropW : cropH;
     if (canvas.width !== dstW) canvas.width = dstW;
     if (canvas.height !== dstH) canvas.height = dstH;
 
+    // Render the full source frame to an offscreen, then draw only the
+    // cropped region with rotation + flip applied on the dialog canvas.
     const off = document.createElement('canvas');
-    off.width = baseW;
-    off.height = baseH;
+    off.width = gifData.width;
+    off.height = gifData.height;
     const offCtx = off.getContext('2d');
     if (!offCtx) return;
     renderFrameTo(offCtx, gifData, row.sourceIndex);
@@ -574,9 +657,19 @@ export const GifEditor: React.FC<GifEditorProps> = ({
     ctx.translate(dstW / 2, dstH / 2);
     ctx.rotate((ui.rotation * Math.PI) / 180);
     ctx.scale(ui.flipH ? -1 : 1, ui.flipV ? -1 : 1);
-    ctx.drawImage(off, -baseW / 2, -baseH / 2);
+    const sx = ui.crop ? ui.crop.x : 0;
+    const sy = ui.crop ? ui.crop.y : 0;
+    ctx.drawImage(off, sx, sy, cropW, cropH, -cropW / 2, -cropH / 2, cropW, cropH);
     ctx.restore();
-  }, [exportPreview, previewFrameIdx, gifData, ui.rotation, ui.flipH, ui.flipV]);
+  }, [
+    exportPreview,
+    previewFrameIdx,
+    gifData,
+    ui.rotation,
+    ui.flipH,
+    ui.flipV,
+    ui.crop,
+  ]);
 
   // Auto-loop the preview dialog playback using the rows' own delays + speed.
   useEffect(() => {
@@ -631,13 +724,11 @@ export const GifEditor: React.FC<GifEditorProps> = ({
       setEstimating(true);
       setEstimatedBytes(null);
       const speed = ui.speed > 0 ? ui.speed : 1;
-      let manifest: GifFrameSpec[] = exportPreview.rows.map((r) => ({
+      const manifestBase: GifFrameSpec[] = exportPreview.rows.map((r) => ({
         sourceIndex: r.sourceIndex,
         delayMs: Math.max(1, Math.round(r.delayMs / speed)),
       }));
-      if (exportPreview.scope === 'all' && ui.reverse) {
-        manifest = manifest.slice().reverse();
-      }
+      let manifest = manifestBase;
       if (ui.capFrameTime) {
         manifest = applyMaxFrameTime(
           manifest,
@@ -652,6 +743,14 @@ export const GifEditor: React.FC<GifEditorProps> = ({
       const options: GifFrameEncodeOptions = {
         frames: manifest,
         scalePct: 100,
+        crop: ui.crop
+          ? {
+              x: Math.max(0, Math.round(ui.crop.x)),
+              y: Math.max(0, Math.round(ui.crop.y)),
+              width: Math.max(1, Math.round(ui.crop.w)),
+              height: Math.max(1, Math.round(ui.crop.h)),
+            }
+          : null,
         outputWidth: usingExplicitSize
           ? Math.max(1, Math.round(ui.outputWidth))
           : null,
@@ -687,7 +786,6 @@ export const GifEditor: React.FC<GifEditorProps> = ({
     capturePath,
     gifData,
     ui.speed,
-    ui.reverse,
     ui.rotation,
     ui.flipH,
     ui.flipV,
@@ -699,6 +797,7 @@ export const GifEditor: React.FC<GifEditorProps> = ({
     ui.fpsCap,
     ui.capFrameTime,
     ui.maxFrameTimeSec,
+    ui.crop,
   ]);
 
   // Frame-by-frame playback loop driven by each row's delay.
@@ -951,6 +1050,10 @@ export const GifEditor: React.FC<GifEditorProps> = ({
     setRows((prev) => prev.map((r) => ({ ...r, delayMs: r.originalDelayMs })));
   }, []);
 
+  const reverseFrames = useCallback(() => {
+    setRows((prev) => prev.slice().reverse());
+  }, []);
+
   const hasFrameEdits = useMemo(() => {
     if (!info) return false;
     if (rows.length !== info.frameCount) return true;
@@ -1051,15 +1154,25 @@ export const GifEditor: React.FC<GifEditorProps> = ({
 
       const qualityPreset = qualityNumericToPreset(ui.qualityValue);
 
+      const cropPayload: GifCrop | null = ui.crop
+        ? {
+            x: Math.max(0, Math.round(ui.crop.x)),
+            y: Math.max(0, Math.round(ui.crop.y)),
+            width: Math.max(1, Math.round(ui.crop.w)),
+            height: Math.max(1, Math.round(ui.crop.h)),
+          }
+        : null;
+
       if (fullScopeNoFrameEdits) {
         const options: GifEditOptions = {
           trimStartMs: 0,
           trimEndMs: Math.max(1, sourceDurationMs),
           speed: ui.speed,
           scalePct: 100,
-          reverse: ui.reverse,
+          reverse: false,
           loopForever: ui.loopForever,
           fps: null,
+          crop: cropPayload,
           outputWidth,
           outputHeight,
           rotationDegrees: ui.rotation,
@@ -1079,11 +1192,6 @@ export const GifEditor: React.FC<GifEditorProps> = ({
           sourceIndex: r.sourceIndex,
           delayMs: Math.max(1, Math.round(r.delayMs / speed)),
         }));
-        // Reverse applies to full-scope exports only; selection order is
-        // already explicit.
-        if (exportPreview.scope === 'all' && ui.reverse) {
-          manifest = manifest.slice().reverse();
-        }
         if (ui.capFrameTime) {
           manifest = applyMaxFrameTime(
             manifest,
@@ -1097,6 +1205,7 @@ export const GifEditor: React.FC<GifEditorProps> = ({
         const options: GifFrameEncodeOptions = {
           frames: manifest,
           scalePct: 100,
+          crop: cropPayload,
           outputWidth,
           outputHeight,
           rotationDegrees: ui.rotation,
@@ -1206,9 +1315,9 @@ export const GifEditor: React.FC<GifEditorProps> = ({
     <div className={outerClasses}>
       {renderTitlebar(filename)}
 
-      <div className="flex-1 flex min-h-0 bg-(--surface)">
+      <div className="flex-1 flex min-h-0 bg-[var(--background)]">
         {/* Left: frame list */}
-        <aside className="w-[240px] shrink-0 border-r border-(--polar-mist) flex flex-col bg-(--surface-elevated)">
+        <aside className="w-[240px] shrink-0 border-r border-(--polar-mist) flex flex-col bg-[var(--card)]">
           <div className="px-3 py-2 border-b border-(--polar-mist) flex items-center justify-between text-xs text-(--ink-muted)">
             <span>Frames {rows.length > 0 ? `(${rows.length})` : ''}</span>
           </div>
@@ -1219,11 +1328,15 @@ export const GifEditor: React.FC<GifEditorProps> = ({
                 className="flex-1 min-h-0 overflow-y-auto"
                 tabIndex={0}
               >
-                <table className="w-full text-sm">
-                  <thead className="sticky top-0 bg-(--surface-elevated) text-xs text-(--ink-muted)">
+                <table className="w-full text-sm border-collapse">
+                  <thead className="text-xs text-(--ink-muted)">
                     <tr>
-                      <th className="text-left px-3 py-1 font-medium w-12">No.</th>
-                      <th className="text-left px-3 py-1 font-medium">Delay</th>
+                      <th className="sticky top-0 z-10 bg-[var(--card)] text-left px-3 py-1 font-medium w-12 border-b border-(--polar-mist)">
+                        No.
+                      </th>
+                      <th className="sticky top-0 z-10 bg-[var(--card)] text-left px-3 py-1 font-medium border-b border-(--polar-mist)">
+                        Delay
+                      </th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1392,11 +1505,22 @@ export const GifEditor: React.FC<GifEditorProps> = ({
         <div className="flex-1 flex flex-col min-w-0">
           <div className="flex-1 flex items-center justify-center overflow-hidden p-6">
             {gifData && (
-              <canvas
-                ref={previewCanvasRef}
-                className="max-w-full max-h-full object-contain shadow-lg"
-                style={{ imageRendering: 'pixelated' }}
-              />
+              <>
+                <canvas
+                  ref={previewCanvasRef}
+                  className="max-w-full max-h-full object-contain shadow-lg"
+                  style={{ imageRendering: 'pixelated' }}
+                />
+                {cropEditing && ui.crop && (
+                  <GifCropOverlay
+                    canvasEl={previewCanvasRef.current}
+                    sourceWidth={gifData.width}
+                    sourceHeight={gifData.height}
+                    crop={ui.crop}
+                    onChange={(next) => setUi((p) => ({ ...p, crop: next }))}
+                  />
+                )}
+              </>
             )}
           </div>
 
@@ -1503,7 +1627,7 @@ export const GifEditor: React.FC<GifEditorProps> = ({
         </div>
 
         {/* Right: source info + global edits + export */}
-        <aside className="w-[320px] shrink-0 border-l border-(--polar-mist) flex flex-col bg-(--surface-elevated)">
+        <aside className="w-[320px] shrink-0 border-l border-(--polar-mist) flex flex-col bg-[var(--card)]">
           <div className="p-5 flex flex-col gap-5 overflow-y-auto">
             <section className="flex flex-col gap-2">
               <h3 className="text-xs uppercase tracking-wide text-(--ink-muted)">Source</h3>
@@ -1660,6 +1784,72 @@ export const GifEditor: React.FC<GifEditorProps> = ({
               )}
 
               <div className="flex flex-col gap-2">
+                <div className="flex items-center justify-between">
+                  <Label className="text-sm">Crop</Label>
+                  {ui.crop && (
+                    <span className="text-xs text-(--ink-muted) tabular-nums">
+                      {ui.crop.w} × {ui.crop.h}
+                    </span>
+                  )}
+                </div>
+                {!cropEditing && !ui.crop && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="text-xs"
+                    onClick={enterCropEditing}
+                  >
+                    <Crop className="w-3.5 h-3.5 mr-1" /> Crop
+                  </Button>
+                )}
+                {cropEditing && (
+                  <>
+                    <div className="flex gap-1">
+                      <Button
+                        size="sm"
+                        className="flex-1 text-xs"
+                        onClick={applyCrop}
+                      >
+                        Apply
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="flex-1 text-xs"
+                        onClick={cancelCropEditing}
+                      >
+                        Cancel
+                      </Button>
+                    </div>
+                    <p className="text-[10px] text-(--ink-muted) leading-snug">
+                      Drag the rectangle on the preview, then click Apply.
+                    </p>
+                  </>
+                )}
+                {!cropEditing && ui.crop && (
+                  <div className="flex gap-1">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="flex-1 text-xs"
+                      onClick={enterCropEditing}
+                    >
+                      <Crop className="w-3.5 h-3.5 mr-1" /> Edit
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="text-xs"
+                      onClick={removeCrop}
+                      title="Remove crop"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </Button>
+                  </div>
+                )}
+              </div>
+
+              <div className="flex flex-col gap-2">
                 <Label className="text-sm">Rotation</Label>
                 <div className="flex gap-1">
                   {([
@@ -1710,12 +1900,16 @@ export const GifEditor: React.FC<GifEditorProps> = ({
               </div>
 
               <div className="flex items-center justify-between">
-                <Label htmlFor="reverse-switch" className="text-sm">Reverse</Label>
-                <Switch
-                  id="reverse-switch"
-                  checked={ui.reverse}
-                  onCheckedChange={(v) => setUi((p) => ({ ...p, reverse: v }))}
-                />
+                <Label className="text-sm">Reverse frames</Label>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="text-xs"
+                  onClick={reverseFrames}
+                  disabled={rows.length === 0}
+                >
+                  <RotateCcw className="w-3.5 h-3.5 mr-1" /> Reverse
+                </Button>
               </div>
 
               <div className="flex items-center justify-between">
@@ -1724,24 +1918,6 @@ export const GifEditor: React.FC<GifEditorProps> = ({
                   id="loop-switch"
                   checked={ui.loopForever}
                   onCheckedChange={(v) => setUi((p) => ({ ...p, loopForever: v }))}
-                />
-              </div>
-
-              <div className="flex flex-col gap-2">
-                <div className="flex justify-between items-center">
-                  <Label className="text-sm">Quality</Label>
-                  <span className="text-xs text-(--ink-muted) tabular-nums">
-                    {Math.round(ui.qualityValue)} · {qualityLabel(ui.qualityValue)}
-                  </span>
-                </div>
-                <Slider
-                  value={[ui.qualityValue]}
-                  min={1}
-                  max={100}
-                  step={1}
-                  onValueChange={(v) =>
-                    setUi((p) => ({ ...p, qualityValue: v[0] }))
-                  }
                 />
               </div>
             </section>
@@ -1881,8 +2057,12 @@ export const GifEditor: React.FC<GifEditorProps> = ({
 
           {exportPreview && gifData && (() => {
             const swap = ui.rotation === 90 || ui.rotation === 270;
-            const baseW = ui.outputWidth || gifData.width;
-            const baseH = ui.outputHeight || gifData.height;
+            const cropW = ui.crop?.w ?? gifData.width;
+            const cropH = ui.crop?.h ?? gifData.height;
+            const usingExplicit =
+              ui.outputWidth !== gifData.width || ui.outputHeight !== gifData.height;
+            const baseW = usingExplicit ? ui.outputWidth : cropW;
+            const baseH = usingExplicit ? ui.outputHeight : cropH;
             const outW = Math.max(1, Math.round(swap ? baseH : baseW));
             const outH = Math.max(1, Math.round(swap ? baseW : baseH));
             const speed = Math.max(0.05, ui.speed);
