@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { setInvokeResponse } from '@/test/mocks/tauri';
+import { clearInvokeResponses, setInvokeResponse } from '@/test/mocks/tauri';
 import { useVideoEditorStore } from './index';
 import { DEFAULT_CAPTION_SETTINGS } from './captionSlice';
 import type { TextSegment, VideoProject } from '@/types';
@@ -177,8 +177,10 @@ function createTestProject(textSegments: TextSegment[]): VideoProject {
 
 describe('exportSlice', () => {
   beforeEach(() => {
+    clearInvokeResponses();
     useVideoEditorStore.getState().clearEditor();
     vi.clearAllMocks();
+    setInvokeResponse('cancel_export', null);
   });
 
   it('updateExportConfig merges partial config into project', () => {

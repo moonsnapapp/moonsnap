@@ -1,6 +1,6 @@
 //! Shared webcam overlay domain types.
 
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use ts_rs::TS;
 
 /// Position of the webcam overlay on the recording.
@@ -43,7 +43,7 @@ impl WebcamSize {
 }
 
 /// Shape of the webcam overlay.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, TS, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, Serialize, TS, PartialEq, Eq, Default)]
 #[serde(rename_all = "camelCase")]
 #[ts(export, export_to = "../../../../src/types/generated/")]
 pub enum WebcamShape {
@@ -51,11 +51,26 @@ pub enum WebcamShape {
     Circle,
     /// Squircle overlay.
     ///
-    /// Backward compatibility: accepts legacy `"rectangle"` values when deserializing.
     #[default]
-    #[serde(alias = "rectangle")]
     #[ts(rename = "squircle")]
     Squircle,
+}
+
+impl<'de> Deserialize<'de> for WebcamShape {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let shape = String::deserialize(deserializer)?;
+        match shape.as_str() {
+            "circle" => Ok(Self::Circle),
+            "squircle" | "rectangle" => Ok(Self::Squircle),
+            _ => Err(serde::de::Error::unknown_variant(
+                &shape,
+                &["circle", "squircle", "rectangle"],
+            )),
+        }
+    }
 }
 
 /// Settings for webcam overlay during recording.

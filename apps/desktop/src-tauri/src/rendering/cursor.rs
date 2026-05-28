@@ -1478,8 +1478,10 @@ mod tests {
     #[test]
     fn test_cursor_idle_fade_can_be_disabled() {
         let recording = test_recording();
-        let mut cursor_config = CursorConfig::default();
-        cursor_config.hide_when_idle = false;
+        let cursor_config = CursorConfig {
+            hide_when_idle: false,
+            ..Default::default()
+        };
 
         let interp = CursorInterpolator::new(&recording, &cursor_config);
         let cursor = interp.get_cursor_at(10_000, 1.0);
@@ -1563,8 +1565,10 @@ mod tests {
             cursor_images: HashMap::new(),
         };
 
-        let mut cursor_config = CursorConfig::default();
-        cursor_config.dampening = 1.0;
+        let cursor_config = CursorConfig {
+            dampening: 1.0,
+            ..Default::default()
+        };
 
         let interp = CursorInterpolator::new(&recording, &cursor_config);
         let cursor = interp.get_cursor_at(1010, 4.0);

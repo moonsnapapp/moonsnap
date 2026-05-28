@@ -1,8 +1,8 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_CAPTION_SETTINGS } from '../../../stores/videoEditor/captionSlice';
 import type { VideoProject } from '../../../types';
-import { setInvokeResponse } from '../../../test/mocks/tauri';
+import { clearInvokeResponses, setInvokeResponse } from '../../../test/mocks/tauri';
 import { ExportDialog } from './ExportDialog';
 
 function createTestProject(overrides: Partial<VideoProject> = {}): VideoProject {
@@ -154,8 +154,12 @@ function createTestProject(overrides: Partial<VideoProject> = {}): VideoProject 
 }
 
 describe('ExportDialog', () => {
-  it('shows the MP4 hardware-encoding toggle and updates export config', async () => {
+  beforeEach(() => {
+    clearInvokeResponses();
     setInvokeResponse('check_nvenc_available', true);
+  });
+
+  it('shows the MP4 hardware-encoding toggle and updates export config', async () => {
     const onUpdateExportConfig = vi.fn();
 
     render(
@@ -220,11 +224,15 @@ describe('ExportDialog', () => {
 
   it('fires onConfirm when the save button is clicked', () => {
     const onConfirm = vi.fn();
+    const project = createTestProject();
 
     render(
       <ExportDialog
         open
-        project={createTestProject()}
+        project={{
+          ...project,
+          export: { ...project.export, format: 'webm' },
+        }}
         onOpenChange={vi.fn()}
         onUpdateExportConfig={vi.fn()}
         onConfirm={onConfirm}

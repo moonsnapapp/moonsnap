@@ -79,7 +79,7 @@ mod tests {
 
             // Prepare caption
             let prepared = prepare_captions(
-                &[segment.clone()],
+                std::slice::from_ref(&segment),
                 &settings,
                 0.25, // Time when "Hello" is highlighted
                 width as f32,

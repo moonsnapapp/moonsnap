@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { setInvokeResponse, setInvokeError } from '@/test/mocks/tauri';
+import { clearInvokeResponses, setInvokeResponse, setInvokeError } from '@/test/mocks/tauri';
 import { useVideoEditorStore } from '@/stores/videoEditor';
 import type { VideoProject, ExportResult, ExportProgress, AutoZoomConfig } from '@/stores/videoEditor/types';
 
@@ -150,8 +150,10 @@ function resetStore() {
 
 describe('Video Export Flow Integration', () => {
   beforeEach(() => {
+    clearInvokeResponses();
     resetStore();
     vi.clearAllMocks();
+    setInvokeResponse('cancel_export', null);
   });
 
   describe('Export Video', () => {
@@ -649,8 +651,10 @@ describe('Video Export Flow Integration', () => {
 
 describe('Video Export with Timeline Trim', () => {
   beforeEach(() => {
+    clearInvokeResponses();
     resetStore();
     vi.clearAllMocks();
+    setInvokeResponse('cancel_export', null);
   });
 
   it('should export only the trimmed portion of the video', async () => {
@@ -682,8 +686,10 @@ describe('Video Export with Timeline Trim', () => {
 
 describe('Video Export with Zoom Regions', () => {
   beforeEach(() => {
+    clearInvokeResponses();
     resetStore();
     vi.clearAllMocks();
+    setInvokeResponse('cancel_export', null);
   });
 
   it('should export video with zoom regions applied', async () => {

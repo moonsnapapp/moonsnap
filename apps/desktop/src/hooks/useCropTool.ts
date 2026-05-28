@@ -312,7 +312,7 @@ export const useCropTool = ({
     setCropLockedAxis(null);
     setActiveHandle('center');
     takeSnapshot();
-  }, []);
+  }, [takeSnapshot]);
 
   const handleCenterDragMove = useCallback(
     (newX: number, newY: number) => {
@@ -378,7 +378,7 @@ export const useCropTool = ({
       setActiveHandle(null);
       commitSnapshot();
     },
-    [isShiftHeld, cropDragStart, cropLockedAxis, getBaseBounds, commitBounds]
+    [isShiftHeld, cropDragStart, cropLockedAxis, getBaseBounds, commitBounds, commitSnapshot]
   );
 
   // Edge drag handlers
@@ -386,7 +386,7 @@ export const useCropTool = ({
     dragStartBoundsRef.current = getDisplayBounds();
     setActiveHandle(handleId);
     takeSnapshot();
-  }, [getDisplayBounds]);
+  }, [getDisplayBounds, takeSnapshot]);
 
   const handleEdgeDragMove = useCallback(
     (handleId: string, nodeX: number, nodeY: number) => {
@@ -405,7 +405,7 @@ export const useCropTool = ({
       setActiveHandle(null);
       commitSnapshot();
     },
-    [calcPreviewFromDrag, commitBounds]
+    [calcPreviewFromDrag, commitBounds, commitSnapshot]
   );
 
   // Corner drag handlers
@@ -413,7 +413,7 @@ export const useCropTool = ({
     dragStartBoundsRef.current = getDisplayBounds();
     setActiveHandle(handleId);
     takeSnapshot();
-  }, [getDisplayBounds]);
+  }, [getDisplayBounds, takeSnapshot]);
 
   const handleCornerDragMove = useCallback(
     (handleId: string, nodeX: number, nodeY: number) => {
@@ -432,7 +432,7 @@ export const useCropTool = ({
       setActiveHandle(null);
       commitSnapshot();
     },
-    [calcPreviewFromDrag, commitBounds]
+    [calcPreviewFromDrag, commitBounds, commitSnapshot]
   );
 
   // Calculate active snap guides based on crop bounds alignment with background bounds

@@ -120,13 +120,19 @@ export function useWebCodecsPreview(videoPath: string | null): WebCodecsPreviewR
 
   // Clean up frame cache when video changes or on unmount
   useEffect(() => {
+    const currentFrameCache = frameCache.current;
+    const currentPendingRequestsById = pendingRequestsById.current;
+    const currentPendingTimestamps = pendingTimestamps.current;
+
     return () => {
-      for (const bitmap of Object.values(frameCache.current)) {
+      for (const bitmap of Object.values(currentFrameCache)) {
         bitmap.close();
       }
-      frameCache.current = {};
-      pendingRequestsById.current.clear();
-      pendingTimestamps.current.clear();
+      if (frameCache.current === currentFrameCache) {
+        frameCache.current = {};
+      }
+      currentPendingRequestsById.clear();
+      currentPendingTimestamps.clear();
     };
   }, [videoUrl]);
 

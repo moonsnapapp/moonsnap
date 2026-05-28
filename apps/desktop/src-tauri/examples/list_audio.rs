@@ -8,8 +8,8 @@ fn main() {
     if let Ok(devices) = host.input_devices() {
         for (i, device) in devices.enumerate() {
             println!("Device {}:", i);
-            if let Ok(name) = device.name() {
-                println!("  cpal name: {}", name);
+            if let Ok(description) = device.description() {
+                println!("  cpal name: {}", description.name());
             }
             println!();
         }

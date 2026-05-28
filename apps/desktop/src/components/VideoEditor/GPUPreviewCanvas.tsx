@@ -171,7 +171,7 @@ export const GPUPreviewCanvas = memo(function GPUPreviewCanvas({
         shutdown();
       }
     };
-  }, [enabled]); // Only depend on enabled, not doInit/shutdown
+  }, [enabled, doInit, shutdown]);
 
   // Compute a version string for text content to detect changes
   const textVersion = project?.text?.segments

@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components */
 import { memo, useCallback, useRef, type ReactNode, type RefObject, type JSX } from 'react';
 import { GripVertical } from 'lucide-react';
 import { formatTimeSimple } from '../../../stores/videoEditorStore';

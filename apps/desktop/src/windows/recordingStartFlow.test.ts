@@ -3,10 +3,18 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { startRecordingCaptureFlow } from './recordingStartFlow';
 import { useCaptureSettingsStore } from '@/stores/captureSettingsStore';
 import { useWebcamSettingsStore } from '@/stores/webcamSettingsStore';
-import { mockInvoke, mockOnce } from '@/test/mocks/tauri';
+import { clearInvokeResponses, mockInvoke, mockOnce, setInvokeResponse } from '@/test/mocks/tauri';
 
 describe('startRecordingCaptureFlow', () => {
   beforeEach(() => {
+    clearInvokeResponses();
+    setInvokeResponse('set_hide_desktop_icons', null);
+    setInvokeResponse('set_webcam_enabled', null);
+    setInvokeResponse('capture_overlay_confirm', null);
+    setInvokeResponse('show_recording_controls', null);
+    setInvokeResponse('show_recording_border', null);
+    setInvokeResponse('start_recording', null);
+
     useCaptureSettingsStore.setState({
       settings: {
         screenshot: {

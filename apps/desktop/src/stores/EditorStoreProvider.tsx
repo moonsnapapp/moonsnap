@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components */
 /**
  * EditorStoreProvider - React context provider for window-based editor stores.
  *

@@ -115,7 +115,7 @@ const WebcamPreviewWindow: React.FC = () => {
             setImageSrc(`data:image/jpeg;base64,${frame}`);
           }
           lastFrameTime = now;
-        } catch (e) {
+        } catch {
           // Ignore errors during polling
         }
       }

@@ -798,9 +798,11 @@ mod tests {
 
     #[test]
     fn test_drag_state_selection_rect() {
-        let mut state = DragState::default();
-        state.start = Point::new(10, 10);
-        state.current = Point::new(110, 60);
+        let state = DragState {
+            start: Point::new(10, 10),
+            current: Point::new(110, 60),
+            ..Default::default()
+        };
 
         let r = state.selection_rect();
         assert_eq!(r.left, 10);
@@ -811,9 +813,11 @@ mod tests {
 
     #[test]
     fn test_drag_state_inverted() {
-        let mut state = DragState::default();
-        state.start = Point::new(100, 100);
-        state.current = Point::new(10, 10);
+        let state = DragState {
+            start: Point::new(100, 100),
+            current: Point::new(10, 10),
+            ..Default::default()
+        };
 
         let r = state.selection_rect();
         assert_eq!(r.left, 10);
@@ -824,10 +828,12 @@ mod tests {
 
     #[test]
     fn test_drag_state_square_constraint() {
-        let mut state = DragState::default();
-        state.start = Point::new(0, 0);
-        state.current = Point::new(100, 50);
-        state.shift_held = true;
+        let state = DragState {
+            start: Point::new(0, 0),
+            current: Point::new(100, 50),
+            shift_held: true,
+            ..Default::default()
+        };
 
         let r = state.selection_rect();
         assert_eq!(r.width(), r.height());
@@ -836,8 +842,10 @@ mod tests {
 
     #[test]
     fn test_adjustment_apply_delta_interior() {
-        let mut state = AdjustmentState::default();
-        state.bounds = Rect::new(100, 100, 200, 200);
+        let mut state = AdjustmentState {
+            bounds: Rect::new(100, 100, 200, 200),
+            ..Default::default()
+        };
         state.start_drag(HandlePosition::Interior, Point::new(150, 150));
         state.apply_delta(10, 20, false);
 
@@ -849,8 +857,10 @@ mod tests {
 
     #[test]
     fn test_adjustment_apply_delta_corner() {
-        let mut state = AdjustmentState::default();
-        state.bounds = Rect::new(100, 100, 200, 200);
+        let mut state = AdjustmentState {
+            bounds: Rect::new(100, 100, 200, 200),
+            ..Default::default()
+        };
         state.start_drag(HandlePosition::BottomRight, Point::new(200, 200));
         state.apply_delta(50, 30, false);
 
@@ -862,8 +872,10 @@ mod tests {
 
     #[test]
     fn test_adjustment_min_size() {
-        let mut state = AdjustmentState::default();
-        state.bounds = Rect::new(100, 100, 150, 150);
+        let mut state = AdjustmentState {
+            bounds: Rect::new(100, 100, 150, 150),
+            ..Default::default()
+        };
         state.start_drag(HandlePosition::Right, Point::new(150, 125));
         state.apply_delta(-100, 0, false); // Try to make width negative
 
@@ -872,8 +884,10 @@ mod tests {
 
     #[test]
     fn test_adjustment_apply_delta_corner_with_aspect_constraint() {
-        let mut state = AdjustmentState::default();
-        state.bounds = Rect::new(100, 100, 300, 200);
+        let mut state = AdjustmentState {
+            bounds: Rect::new(100, 100, 300, 200),
+            ..Default::default()
+        };
         state.start_drag(HandlePosition::BottomRight, Point::new(300, 200));
         state.apply_delta(50, 10, true);
 
@@ -885,8 +899,10 @@ mod tests {
 
     #[test]
     fn test_adjustment_apply_delta_edge_with_aspect_constraint() {
-        let mut state = AdjustmentState::default();
-        state.bounds = Rect::new(100, 100, 300, 200);
+        let mut state = AdjustmentState {
+            bounds: Rect::new(100, 100, 300, 200),
+            ..Default::default()
+        };
         state.start_drag(HandlePosition::Right, Point::new(300, 150));
         state.apply_delta(50, 0, true);
 

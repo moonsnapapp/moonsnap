@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import type { CompositorSettings, CanvasBounds } from '@/types';
 import { DEFAULT_COMPOSITOR_SETTINGS } from '@/types';
 
@@ -13,8 +13,6 @@ describe('Export Pipeline', () => {
   describe('getContentBounds logic', () => {
     it('should use cropRegion when provided', () => {
       const cropRegion = { x: 10, y: 20, width: 500, height: 400 };
-      const canvasBounds: CanvasBounds = { width: 1920, height: 1080, imageOffsetX: 0, imageOffsetY: 0 };
-
       // cropRegion takes priority (mirrors getContentBounds behavior)
       const bounds = {
         x: cropRegion.x,

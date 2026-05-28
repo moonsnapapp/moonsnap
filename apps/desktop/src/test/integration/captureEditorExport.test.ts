@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { setInvokeResponse, setInvokeError, clearInvokeResponses } from '@/test/mocks/tauri';
 import { useCaptureStore } from '@/stores/captureStore';
 import { createEditorStore } from '@/stores/editorStore';
@@ -138,6 +138,7 @@ describe('Capture → Editor → Annotations Integration', () => {
     it('should revert to library on load error', async () => {
       // loadProject catches errors internally and doesn't re-throw
       setInvokeError('get_project', 'Project not found');
+      setInvokeError('get_project_image', 'Project image not found');
 
       await useCaptureStore.getState().loadProject('bad-id');
 

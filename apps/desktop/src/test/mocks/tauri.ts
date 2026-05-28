@@ -41,6 +41,7 @@ export const mockWebviewWindow = {
 
 // Mock responses storage for invoke
 const invokeResponses = new Map<string, unknown>();
+const defaultVoidCommands = new Set(['write_logs']);
 
 // Helper to set mock response for a command
 export function setInvokeResponse(command: string, response: unknown) {
@@ -66,9 +67,11 @@ mockInvoke.mockImplementation((command: string, args?: unknown) => {
     }
     return Promise.resolve(response);
   }
-  // Default: return undefined for unknown commands
-  console.warn(`[Tauri Mock] Unhandled invoke: ${command}`, args);
-  return Promise.resolve(undefined);
+  if (defaultVoidCommands.has(command)) {
+    return Promise.resolve(undefined);
+  }
+
+  return Promise.reject(new Error(`[Tauri Mock] Unhandled invoke: ${command} ${JSON.stringify(args)}`));
 });
 
 // Event listeners storage

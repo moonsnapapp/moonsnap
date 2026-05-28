@@ -104,7 +104,7 @@ export const LineShape: React.FC<LineShapeProps> = React.memo(({
     }
     onEndpointDragEnd(endpointIndex, newPoints);
     commitSnapshot();
-  }, [points, onEndpointDragEnd]);
+  }, [points, onEndpointDragEnd, commitSnapshot]);
 
   const hitStrokeWidth = Math.max((shape.strokeWidth || 2) * 3, 12);
 

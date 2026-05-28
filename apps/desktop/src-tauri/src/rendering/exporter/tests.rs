@@ -1,7 +1,5 @@
 //! Tests for the exporter module.
 
-#![cfg(test)]
-
 use moonsnap_domain::captions::{CaptionSegment, CaptionSettings};
 use moonsnap_domain::video_project::{
     AnnotationConfig, AudioTrackSettings, CornerStyle, CursorConfig, ExportConfig, MaskConfig,

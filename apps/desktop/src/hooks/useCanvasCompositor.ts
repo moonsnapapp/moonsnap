@@ -142,7 +142,7 @@ export function useCanvasCompositor({
     if (imageHasAlpha) return true;
 
     return false;
-  }, [visibleBounds, cropRegion, canvasBounds, backgroundShape, imageHasAlpha]);
+  }, [visibleBounds, cropRegion, canvasBounds, backgroundShape, image?.width, image?.height, imageHasAlpha]);
 
   // Composition box dimensions (for CSS preview background)
   // Simple calculation: content size + padding on each side, scaled by zoom

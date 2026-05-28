@@ -753,7 +753,7 @@ fn extract_gif_frames_blocking(source: &Path) -> Result<Vec<GifFrameInfo>, Strin
         .map_err(|e| format!("Failed to create frame cache dir: {}", e))?;
 
     let total = frames.len();
-    let stride = (total + MAX_FRAMES - 1) / MAX_FRAMES;
+    let stride = total.div_ceil(MAX_FRAMES);
     let stride = stride.max(1);
 
     let mut out: Vec<GifFrameInfo> = Vec::with_capacity(total.min(MAX_FRAMES));

@@ -1092,72 +1092,6 @@ fn draw_size_indicator(
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn chooser_metrics_scale_all_hit_targets_from_shell_width() {
-        let shell = Rect::new(100, 80, 776, 330);
-        let metrics = RecordingModeChooserMetrics::from_shell(shell);
-
-        assert!((metrics.scale - OVERLAY_CONTROL_MAX_SCALE).abs() < f32::EPSILON);
-        assert_eq!(
-            recording_mode_chooser_back_rect(shell),
-            Rect::new(116, 96, 160, 140)
-        );
-        assert_eq!(
-            recording_mode_chooser_quick_rect(shell),
-            Rect::new(123, 158, 426, 252)
-        );
-        assert_eq!(
-            recording_mode_chooser_studio_rect(shell),
-            Rect::new(450, 158, 753, 252)
-        );
-        assert_eq!(
-            recording_mode_chooser_remember_rect(shell),
-            Rect::new(123, 270, 753, 309)
-        );
-    }
-
-    #[test]
-    fn selection_hud_metrics_scale_all_button_rects_from_shell_width() {
-        let shell = Rect::new(100, 80, 958, 150);
-        let metrics = SelectionHudMetrics::from_shell(shell);
-        let rects = selection_hud_button_rects(shell);
-
-        assert!((metrics.scale - OVERLAY_CONTROL_MAX_SCALE).abs() < f32::EPSILON);
-        assert_eq!(rects.back, Rect::new(113, 93, 188, 137));
-        assert_eq!(rects.preset, Rect::new(198, 93, 292, 137));
-        assert_eq!(rects.width, Rect::new(302, 93, 458, 137));
-        assert_eq!(rects.height, Rect::new(468, 93, 624, 137));
-        assert_eq!(rects.save, Rect::new(634, 93, 712, 137));
-        assert_eq!(rects.capture, Rect::new(727, 93, 841, 137));
-        assert_eq!(rects.cancel, Rect::new(851, 93, 945, 137));
-    }
-
-    #[test]
-    fn overlay_control_scale_keeps_4k_size() {
-        let scale = overlay_control_scale_for_metrics(1.5, 2.0, 2160.0);
-
-        assert!((scale - OVERLAY_CONTROL_MAX_SCALE).abs() < f32::EPSILON);
-    }
-
-    #[test]
-    fn overlay_control_scale_caps_2k_size() {
-        let scale = overlay_control_scale_for_metrics(1.5, 1440.0 / 1080.0, 1440.0);
-
-        assert!((scale - OVERLAY_CONTROL_COMPACT_MAX_SCALE).abs() < f32::EPSILON);
-    }
-
-    #[test]
-    fn overlay_control_scale_interpolates_between_2k_and_4k() {
-        let scale = overlay_control_scale_for_metrics(1.5, 1800.0 / 1080.0, 1800.0);
-
-        assert!((scale - 1.21).abs() < 0.001);
-    }
-}
-
 /// Draw the 8 resize handles.
 fn draw_resize_handles(context: &ID2D1DeviceContext, brushes: &Brushes, rect: D2D_RECT_F) {
     let hh = HANDLE_HALF as f32;
@@ -1993,5 +1927,71 @@ fn draw_window_name_indicator(
             D2D1_DRAW_TEXT_OPTIONS_NONE,
             DWRITE_MEASURING_MODE_NATURAL,
         );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn chooser_metrics_scale_all_hit_targets_from_shell_width() {
+        let shell = Rect::new(100, 80, 776, 330);
+        let metrics = RecordingModeChooserMetrics::from_shell(shell);
+
+        assert!((metrics.scale - OVERLAY_CONTROL_MAX_SCALE).abs() < f32::EPSILON);
+        assert_eq!(
+            recording_mode_chooser_back_rect(shell),
+            Rect::new(116, 96, 160, 140)
+        );
+        assert_eq!(
+            recording_mode_chooser_quick_rect(shell),
+            Rect::new(123, 158, 426, 252)
+        );
+        assert_eq!(
+            recording_mode_chooser_studio_rect(shell),
+            Rect::new(450, 158, 753, 252)
+        );
+        assert_eq!(
+            recording_mode_chooser_remember_rect(shell),
+            Rect::new(123, 270, 753, 309)
+        );
+    }
+
+    #[test]
+    fn selection_hud_metrics_scale_all_button_rects_from_shell_width() {
+        let shell = Rect::new(100, 80, 958, 150);
+        let metrics = SelectionHudMetrics::from_shell(shell);
+        let rects = selection_hud_button_rects(shell);
+
+        assert!((metrics.scale - OVERLAY_CONTROL_MAX_SCALE).abs() < f32::EPSILON);
+        assert_eq!(rects.back, Rect::new(113, 93, 188, 137));
+        assert_eq!(rects.preset, Rect::new(198, 93, 292, 137));
+        assert_eq!(rects.width, Rect::new(302, 93, 458, 137));
+        assert_eq!(rects.height, Rect::new(468, 93, 624, 137));
+        assert_eq!(rects.save, Rect::new(634, 93, 712, 137));
+        assert_eq!(rects.capture, Rect::new(727, 93, 841, 137));
+        assert_eq!(rects.cancel, Rect::new(851, 93, 945, 137));
+    }
+
+    #[test]
+    fn overlay_control_scale_keeps_4k_size() {
+        let scale = overlay_control_scale_for_metrics(1.5, 2.0, 2160.0);
+
+        assert!((scale - OVERLAY_CONTROL_MAX_SCALE).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn overlay_control_scale_caps_2k_size() {
+        let scale = overlay_control_scale_for_metrics(1.5, 1440.0 / 1080.0, 1440.0);
+
+        assert!((scale - OVERLAY_CONTROL_COMPACT_MAX_SCALE).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn overlay_control_scale_interpolates_between_2k_and_4k() {
+        let scale = overlay_control_scale_for_metrics(1.5, 1800.0 / 1080.0, 1800.0);
+
+        assert!((scale - 1.21).abs() < 0.001);
     }
 }
