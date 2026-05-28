@@ -101,7 +101,13 @@ impl StagingTexturePool {
         width: u32,
         height: u32,
     ) -> windows::core::Result<ID3D11Texture2D> {
-        let mut textures = self.textures.lock().unwrap();
+        // The pool is a reusable-texture cache, not a correctness-critical
+        // invariant. If a prior holder panicked and poisoned the lock, recover
+        // the guard instead of cascading the panic to every subsequent frame.
+        let mut textures = self
+            .textures
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
 
         let index = self.next_index.fetch_add(1, Ordering::Relaxed) % STAGING_POOL_SIZE;
 

@@ -1136,7 +1136,12 @@ fn wait_for_event(
         .find_map(|e| match e.variant() {
             Some(v) if v == variant => Some(Ok(e)),
             Some(CaptureEngineEventVariant::Error) => {
-                Some(Err(unsafe { e.0.GetStatus() }.unwrap()))
+                // The event signals failure; surface its status HRESULT. If the
+                // GetStatus call itself fails, fall back to that call's error
+                // code rather than panicking the capture-event wait loop.
+                Some(Err(
+                    unsafe { e.0.GetStatus() }.unwrap_or_else(|err| err.code())
+                ))
             },
             _ => None,
         })
