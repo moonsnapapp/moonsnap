@@ -85,5 +85,13 @@ export function useGifKeyboardShortcuts({
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, []);
+  }, [
+    closeRef,
+    exportSelectedRef,
+    deleteSelectedRef,
+    seekToFrameRef,
+    currentFrameIndexRef,
+    rowsRef,
+    setIsPlaying,
+  ]);
 }

@@ -138,7 +138,13 @@ mod tests {
         println!("\n=== RESOLUTION SCALING TEST ===");
 
         for (width, height) in resolutions {
-            let prepared = prepare_captions(std::slice::from_ref(&segment), &settings, 0.25, width, height);
+            let prepared = prepare_captions(
+                std::slice::from_ref(&segment),
+                &settings,
+                0.25,
+                width,
+                height,
+            );
             let text = &prepared[0];
 
             // Use parity functions for expected values

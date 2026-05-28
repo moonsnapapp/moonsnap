@@ -7,7 +7,9 @@ export default [
   },
   ...base,
   {
-    files: ["src/**/*.{ts,tsx}"],
+    // cwd-agnostic glob: matches both `src/...` (lint from this package) and
+    // `packages/ui/src/...` (lint-staged pre-commit runs from the repo root).
+    files: ["**/src/**/*.{ts,tsx}"],
     rules: {
       // UI components export variants alongside components
       "react-refresh/only-export-components": "off",
