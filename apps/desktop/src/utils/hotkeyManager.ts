@@ -153,11 +153,13 @@ export function parseKeyboardEvent(event: KeyboardEvent): string | null {
     return null;
   }
 
-  // Normalize key
-  if (key.length === 1) {
-    key = key.toUpperCase();
-  } else if (key === ' ') {
+  // Normalize key. Space must be checked before the single-character branch:
+  // ' '.length === 1, so otherwise it would be uppercased to ' ' and never
+  // mapped to the 'Space' token that matchesShortcutEvent expects.
+  if (key === ' ') {
     key = 'Space';
+  } else if (key.length === 1) {
+    key = key.toUpperCase();
   }
 
   // Must have at least one modifier
