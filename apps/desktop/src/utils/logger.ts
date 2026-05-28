@@ -19,6 +19,9 @@ type LogLevel = 'debug' | 'info' | 'warn' | 'error';
 // Track if dev mode logging is enabled
 let devModeEnabled = false;
 let eventUnlisteners: UnlistenFn[] = [];
+// Removers for the window-level DOM listeners added in enableDevMode, so
+// disableDevMode can tear them down instead of leaking them for the app's life.
+let domListenerCleanups: Array<() => void> = [];
 
 // Store original console methods
 const originalConsole = {
@@ -340,16 +343,21 @@ export async function enableDevMode(): Promise<void> {
       openLogDirectory().catch(console.error);
     }
   };
-  window.addEventListener('keydown', handleKeyDown);
-
-  // Log uncaught errors
-  window.addEventListener('error', (event) => {
+  const handleWindowError = (event: ErrorEvent) => {
     addLog('error', 'Uncaught', `${event.message} at ${event.filename}:${event.lineno}`);
-  });
-
-  window.addEventListener('unhandledrejection', (event) => {
+  };
+  const handleUnhandledRejection = (event: PromiseRejectionEvent) => {
     addLog('error', 'UnhandledPromise', String(event.reason));
-  });
+  };
+
+  window.addEventListener('keydown', handleKeyDown);
+  window.addEventListener('error', handleWindowError);
+  window.addEventListener('unhandledrejection', handleUnhandledRejection);
+  domListenerCleanups.push(
+    () => window.removeEventListener('keydown', handleKeyDown),
+    () => window.removeEventListener('error', handleWindowError),
+    () => window.removeEventListener('unhandledrejection', handleUnhandledRejection)
+  );
 
   // Only log from main window to avoid duplicate "dev mode enabled" messages
   if (isMainWindow) {
@@ -376,6 +384,12 @@ export function disableDevMode(): void {
     unlisten();
   }
   eventUnlisteners = [];
+
+  // Remove the window-level DOM listeners added in enableDevMode
+  for (const cleanup of domListenerCleanups) {
+    cleanup();
+  }
+  domListenerCleanups = [];
 }
 
 /**

@@ -105,11 +105,21 @@ export function useRecordingEvents(
   // The close-on-complete ref is stable for the window lifetime, so keeping it
   // in the dependency list does not churn listeners during normal recording.
   useEffect(() => {
+    let cancelled = false;
     let unlistenState: UnlistenFn | null = null;
     let unlistenFormat: UnlistenFn | null = null;
     let unlistenClosed: UnlistenFn | null = null;
     let unlistenReselecting: UnlistenFn | null = null;
     let unlistenCountdownTick: UnlistenFn | null = null;
+    let errorRecoveryTimeout: ReturnType<typeof setTimeout> | null = null;
+
+    const unlistenAll = () => {
+      unlistenState?.();
+      unlistenFormat?.();
+      unlistenClosed?.();
+      unlistenReselecting?.();
+      unlistenCountdownTick?.();
+    };
 
     const currentWindow = getCurrentWebviewWindow();
 
@@ -257,7 +267,8 @@ export function useRecordingEvents(
               createErrorHandler({ operation: 'close webcam preview', silent: true })
             );
             // Auto-recover after 3 seconds
-            setTimeout(() => {
+            errorRecoveryTimeout = setTimeout(() => {
+              errorRecoveryTimeout = null;
               setMode('selection');
               setElapsedTime(0);
               setProgress(0);
@@ -301,16 +312,25 @@ export function useRecordingEvents(
         }
         // Don't close toolbar - keep it open for the new selection
       });
+
+      // If the effect was cleaned up while listeners were still registering,
+      // tear down anything that finished resolving after unmount.
+      if (cancelled) {
+        unlistenAll();
+      }
     };
 
-    setupListeners();
+    setupListeners().catch(
+      createErrorHandler({ operation: 'set up recording event listeners' })
+    );
 
     return () => {
-      unlistenState?.();
-      unlistenFormat?.();
-      unlistenClosed?.();
-      unlistenReselecting?.();
-      unlistenCountdownTick?.();
+      cancelled = true;
+      if (errorRecoveryTimeout) {
+        clearTimeout(errorRecoveryTimeout);
+        errorRecoveryTimeout = null;
+      }
+      unlistenAll();
     };
   }, [closeWindowOnCompleteRef, setMode]);
 
