@@ -14,7 +14,7 @@
  */
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { invoke, convertFileSrc } from '@tauri-apps/api/core';
+import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { save as saveFileDialog } from '@tauri-apps/plugin-dialog';
 import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
@@ -38,7 +38,6 @@ import {
   Unlink,
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { parseGIF, decompressFrames, type ParsedFrame } from 'gifuct-js';
 
 import { Titlebar } from '@/components/Titlebar/Titlebar';
 import { Button } from '@/components/ui/button';
@@ -46,14 +45,6 @@ import { Slider } from '@/components/ui/slider';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-} from '@/components/ui/dialog';
 import {
   ContextMenu,
   ContextMenuContent,
@@ -66,180 +57,35 @@ import { GifCropOverlay } from '@/components/Editor/GifCropOverlay';
 import { reportError } from '@/utils/errorReporting';
 import { editorLogger } from '@/utils/logger';
 import { cn } from '@/lib/utils';
-import type { GifInfo } from '@/types/generated/GifInfo';
 import type { GifEditOptions } from '@/types/generated/GifEditOptions';
 import type { GifFrameEncodeOptions } from '@/types/generated/GifFrameEncodeOptions';
 import type { GifFrameSpec } from '@/types/generated/GifFrameSpec';
 import type { GifEstimateProgress } from '@/types/generated/GifEstimateProgress';
 import type { GifCrop } from '@/types/generated/GifCrop';
-
-type QualityPreset = 'fast' | 'balanced' | 'high';
-
-interface UiState {
-  speed: number;
-  outputWidth: number;
-  outputHeight: number;
-  keepAspect: boolean;
-  /** Crop rectangle in source pixel coordinates, or null when crop is off. */
-  crop: { x: number; y: number; w: number; h: number } | null;
-  rotation: 0 | 90 | 180 | 270;
-  flipH: boolean;
-  flipV: boolean;
-  loopForever: boolean;
-  /** 0..=100, mapped to FFmpeg palette colors + dither on the backend. */
-  qualityValue: number;
-  /** Drop frames so output FPS does not exceed this cap. */
-  limitFps: boolean;
-  fpsCap: number;
-  /** Clamp each frame's delay to this many seconds. */
-  capFrameTime: boolean;
-  maxFrameTimeSec: number;
-}
-
-interface FrameRow {
-  /** Stable id, unique even across duplicates. */
-  id: string;
-  /** Original index in the source GIF. */
-  sourceIndex: number;
-  delayMs: number;
-  originalDelayMs: number;
-}
-
-interface GifData {
-  width: number;
-  height: number;
-  frames: ParsedFrame[];
-}
-
-function formatMs(ms: number): string {
-  if (!Number.isFinite(ms) || ms <= 0) return '0ms';
-  if (ms < 1000) return `${Math.round(ms)}ms`;
-  return `${(ms / 1000).toFixed(2)}s`;
-}
-
-function formatDuration(ms: number): string {
-  if (!Number.isFinite(ms) || ms < 0) return '0.00s';
-  const secs = ms / 1000;
-  if (secs < 60) return `${secs.toFixed(2)}s`;
-  const m = Math.floor(secs / 60);
-  const s = secs - m * 60;
-  return `${m}m ${s.toFixed(1)}s`;
-}
-
-function formatFileSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
-
-function deriveDefaultSavePath(sourcePath: string): string {
-  const normalized = sourcePath.replace(/\\/g, '/');
-  const idx = normalized.lastIndexOf('/');
-  const dir = idx >= 0 ? normalized.slice(0, idx) : '';
-  const name = idx >= 0 ? normalized.slice(idx + 1) : normalized;
-  const dot = name.lastIndexOf('.');
-  const base = dot > 0 ? name.slice(0, dot) : name;
-  const ext = dot > 0 ? name.slice(dot) : '.gif';
-  const out = `${base}-edited${ext}`;
-  return dir ? `${dir}/${out}` : out;
-}
-
-let rowCounter = 0;
-function newRowId(sourceIndex: number): string {
-  rowCounter += 1;
-  return `f-${sourceIndex}-${rowCounter}`;
-}
-
-function qualityNumericToPreset(v: number): QualityPreset {
-  if (v < 34) return 'fast';
-  if (v < 67) return 'balanced';
-  return 'high';
-}
-
-function qualityLabel(v: number): string {
-  if (v < 34) return 'Smaller file';
-  if (v < 67) return 'Balanced';
-  return 'Higher quality';
-}
-
-/**
- * Drop frames so the manifest's effective FPS never exceeds `maxFps`. Skipped
- * frames' delays are folded into the next kept frame, preserving total
- * duration. The last frame is always kept so the encode doesn't lose its
- * tail.
- */
-function applyFpsLimit(manifest: GifFrameSpec[], maxFps: number): GifFrameSpec[] {
-  if (manifest.length === 0 || maxFps <= 0) return manifest;
-  const minDelay = Math.max(1, Math.round(1000 / maxFps));
-  const out: GifFrameSpec[] = [];
-  let carry = 0;
-  for (let i = 0; i < manifest.length; i += 1) {
-    const f = manifest[i];
-    const isLast = i === manifest.length - 1;
-    const candidate = f.delayMs + carry;
-    if (isLast) {
-      out.push({ ...f, delayMs: Math.max(1, candidate) });
-      break;
-    }
-    if (candidate >= minDelay) {
-      out.push({ ...f, delayMs: candidate });
-      carry = 0;
-    } else {
-      carry = candidate;
-    }
-  }
-  return out;
-}
-
-/**
- * Clamp each frame's delay to at most `maxMs`. Mostly useful for stripping a
- * long "title-card" hold at the end of a clip without re-timing every frame.
- */
-function applyMaxFrameTime(
-  manifest: GifFrameSpec[],
-  maxMs: number,
-): GifFrameSpec[] {
-  if (maxMs <= 0) return manifest;
-  return manifest.map((f) => ({
-    ...f,
-    delayMs: Math.min(f.delayMs, maxMs),
-  }));
-}
-
-/**
- * Composite the GIF up to `targetIndex` onto a fresh canvas, honoring the
- * minimal disposal rules we care about (keep / restore-to-background).
- */
-function renderFrameTo(
-  ctx: CanvasRenderingContext2D,
-  data: GifData,
-  targetIndex: number,
-): void {
-  ctx.clearRect(0, 0, data.width, data.height);
-
-  for (let i = 0; i <= targetIndex && i < data.frames.length; i += 1) {
-    const frame = data.frames[i];
-    const { width, height, top, left } = frame.dims;
-
-    const imageData = new ImageData(
-      new Uint8ClampedArray(frame.patch),
-      width,
-      height,
-    );
-    // Draw via an offscreen canvas to keep transparency intact when composited.
-    const off = document.createElement('canvas');
-    off.width = width;
-    off.height = height;
-    off.getContext('2d')?.putImageData(imageData, 0, 0);
-    ctx.drawImage(off, left, top);
-
-    // Disposal 2 = restore to background after rendering. We clear the frame's
-    // bbox before drawing the *next* frame.
-    if (frame.disposalType === 2 && i < targetIndex) {
-      ctx.clearRect(left, top, width, height);
-    }
-  }
-}
+import type {
+  UiState,
+  FrameRow,
+  DelayDialogState,
+  DropDialogState,
+  ExportPreviewState,
+} from './gifEditor/types';
+import { DelayDialog } from './gifEditor/DelayDialog';
+import { DropFramesDialog } from './gifEditor/DropFramesDialog';
+import { ExportPreviewDialog } from './gifEditor/ExportPreviewDialog';
+import { useGifKeyboardShortcuts } from './gifEditor/useGifKeyboardShortcuts';
+import { useGifLoader } from './gifEditor/useGifLoader';
+import {
+  applyFpsLimit,
+  applyMaxFrameTime,
+  computeDropKeepMask,
+  deriveDefaultSavePath,
+  formatDuration,
+  formatFileSize,
+  formatMs,
+  newRowId,
+  qualityNumericToPreset,
+} from './gifEditor/frameOps';
+import { renderFrameTo } from './gifEditor/renderFrame';
 
 export interface GifEditorProps {
   /**
@@ -264,11 +110,6 @@ export const GifEditor: React.FC<GifEditorProps> = ({
 }) => {
   useTheme();
 
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [capturePath, setCapturePath] = useState<string | null>(null);
-  const [info, setInfo] = useState<GifInfo | null>(null);
-  const [gifData, setGifData] = useState<GifData | null>(null);
   const [rows, setRows] = useState<FrameRow[]>([]);
 
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -289,38 +130,11 @@ export const GifEditor: React.FC<GifEditorProps> = ({
    */
   const cropEditingPrevRef = useRef<UiState['crop']>(null);
 
-  /**
-   * State for the "Set Frame Delay" dialog (opened by double-clicking a frame).
-   * `rowIds` are the rows that will receive the new delay on OK.
-   */
-  const [delayDialog, setDelayDialog] = useState<{
-    open: boolean;
-    rowIds: string[];
-    mode: 'sec' | 'fps';
-    value: string;
-  } | null>(null);
-
-  /**
-   * State for the "Drop Frames" dialog. Open with a mode + N value; OK
-   * mutates `rows` to remove the matching frames. `keepPlaybackSpeed`
-   * folds the dropped frames' delays into the kept neighbours so the
-   * total duration stays constant.
-   */
-  const [dropDialog, setDropDialog] = useState<{
-    mode: 'none' | 'even' | 'odd' | 'every-n';
-    nValue: number;
-    keepPlaybackSpeed: boolean;
-  } | null>(null);
-
-  /**
-   * State for the export-preview dialog. Holds the snapshot of rows to export
-   * (so subsequent UI edits don't change what was previewed) plus a label
-   * describing the scope (whole GIF vs selection).
-   */
-  const [exportPreview, setExportPreview] = useState<{
-    rows: FrameRow[];
-    scope: 'all' | 'selection';
-  } | null>(null);
+  const [delayDialog, setDelayDialog] = useState<DelayDialogState | null>(null);
+  const [dropDialog, setDropDialog] = useState<DropDialogState | null>(null);
+  const [exportPreview, setExportPreview] = useState<ExportPreviewState | null>(
+    null,
+  );
   const [previewFrameIdx, setPreviewFrameIdx] = useState(0);
   const [estimatedBytes, setEstimatedBytes] = useState<number | null>(null);
   const [estimating, setEstimating] = useState(false);
@@ -343,7 +157,6 @@ export const GifEditor: React.FC<GifEditorProps> = ({
     maxFrameTimeSec: 2,
   });
 
-  const hasLoadedRef = useRef(false);
   const listRef = useRef<HTMLDivElement | null>(null);
   const previewCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const rowsRef = useRef<FrameRow[]>([]);
@@ -364,67 +177,11 @@ export const GifEditor: React.FC<GifEditorProps> = ({
 
   // Load info from prop (embedded) or URL param (window mode), then parse the
   // GIF entirely in the browser.
-  useEffect(() => {
-    if (hasLoadedRef.current) return;
-    let path = pathProp;
-    if (!path) {
-      const urlParams = new URLSearchParams(window.location.search);
-      const encodedPath = urlParams.get('path');
-      if (encodedPath) {
-        path = decodeURIComponent(encodedPath);
-      }
-    }
-    if (!path) {
-      setError('No GIF path provided');
-      setIsLoading(false);
-      return;
-    }
-    hasLoadedRef.current = true;
-    setCapturePath(path);
-
-    (async () => {
-      try {
-        editorLogger.info('Loading GIF:', path);
-
-        // Probe via Rust just for file size (and a sanity check that ffprobe
-        // can read it before the user hits Export).
-        const probed = await invoke<GifInfo>('get_gif_info', { path });
-        setInfo(probed);
-
-        const response = await fetch(convertFileSrc(path));
-        const buf = await response.arrayBuffer();
-        const parsed = parseGIF(buf);
-        const frames = decompressFrames(parsed, true);
-
-        const data: GifData = {
-          width: parsed.lsd.width,
-          height: parsed.lsd.height,
-          frames,
-        };
-        setGifData(data);
-        setUi((prev) => ({
-          ...prev,
-          outputWidth: parsed.lsd.width,
-          outputHeight: parsed.lsd.height,
-        }));
-
-        const initialRows: FrameRow[] = frames.map((f, i) => ({
-          id: newRowId(i),
-          sourceIndex: i,
-          delayMs: f.delay > 0 ? f.delay : 100,
-          originalDelayMs: f.delay > 0 ? f.delay : 100,
-        }));
-        setRows(initialRows);
-        setIsLoading(false);
-      } catch (err) {
-        editorLogger.error('Failed to load GIF:', err);
-        setError(err instanceof Error ? err.message : String(err));
-        setIsLoading(false);
-      }
-    })();
-    // The effect only runs once per mount; EmbeddedGifEditor keys this
-    // component by path, so a path change always remounts and re-fires.
-  }, [pathProp]);
+  const { isLoading, error, capturePath, info, gifData } = useGifLoader({
+    pathProp,
+    setRows,
+    setUi,
+  });
 
   const closeRef = useRef<(() => void) | null>(null);
   useEffect(() => {
@@ -433,68 +190,15 @@ export const GifEditor: React.FC<GifEditorProps> = ({
 
   // Close shortcuts: Esc, Ctrl/Cmd+W (custom titlebar, no native window
   // controls, so we always provide a keyboard exit).
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      const target = e.target as HTMLElement | null;
-      const isEditable =
-        !!target &&
-        (target.tagName === 'INPUT' ||
-          target.tagName === 'TEXTAREA' ||
-          target.isContentEditable);
-
-      if (!isEditable && e.key === 'Escape') {
-        closeRef.current?.();
-        return;
-      }
-      if ((e.ctrlKey || e.metaKey) && (e.key === 'w' || e.key === 'W')) {
-        e.preventDefault();
-        closeRef.current?.();
-        return;
-      }
-      if (
-        (e.ctrlKey || e.metaKey) &&
-        e.shiftKey &&
-        (e.key === 'e' || e.key === 'E')
-      ) {
-        e.preventDefault();
-        exportSelectedRef.current?.();
-        return;
-      }
-      if (isEditable) return;
-      if (e.key === 'Delete' || e.key === 'Backspace') {
-        e.preventDefault();
-        deleteSelectedRef.current?.();
-        return;
-      }
-
-      if (e.key === ' ' || e.code === 'Space') {
-        e.preventDefault();
-        setIsPlaying((p) => !p);
-      } else if (e.key === 'ArrowLeft') {
-        e.preventDefault();
-        setIsPlaying(false);
-        seekToFrameRef.current?.(
-          Math.max(0, currentFrameIndexRef.current - 1),
-        );
-      } else if (e.key === 'ArrowRight') {
-        e.preventDefault();
-        setIsPlaying(false);
-        seekToFrameRef.current?.(
-          Math.min(rowsRef.current.length - 1, currentFrameIndexRef.current + 1),
-        );
-      } else if (e.key === 'Home') {
-        e.preventDefault();
-        setIsPlaying(false);
-        seekToFrameRef.current?.(0);
-      } else if (e.key === 'End') {
-        e.preventDefault();
-        setIsPlaying(false);
-        seekToFrameRef.current?.(Math.max(0, rowsRef.current.length - 1));
-      }
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, []);
+  useGifKeyboardShortcuts({
+    closeRef,
+    exportSelectedRef,
+    deleteSelectedRef,
+    seekToFrameRef,
+    currentFrameIndexRef,
+    rowsRef,
+    setIsPlaying,
+  });
 
   const durationMs = useMemo(
     () => rows.reduce((acc, r) => acc + r.delayMs, 0),
@@ -1027,24 +731,6 @@ export const GifEditor: React.FC<GifEditorProps> = ({
     setDelayDialog(null);
   }, [delayDialog]);
 
-  const handleDelayDialogWheel = useCallback(
-    (e: React.WheelEvent) => {
-      // Ctrl + wheel for fine-tuned adjustment, matching Honeycam's UX.
-      if (!e.ctrlKey || !delayDialog) return;
-      e.preventDefault();
-      const current = Number(delayDialog.value);
-      if (!Number.isFinite(current)) return;
-      const step = delayDialog.mode === 'fps' ? 1 : 0.001;
-      const dir = e.deltaY < 0 ? 1 : -1;
-      const next = Math.max(0.001, current + step * dir);
-      setDelayDialog({
-        ...delayDialog,
-        value: delayDialog.mode === 'fps' ? next.toFixed(0) : next.toFixed(3),
-      });
-    },
-    [delayDialog],
-  );
-
   const handleDeleteSelected = useCallback(() => {
     if (selectedIds.size === 0) return;
     if (rows.length - selectedIds.size < 1) {
@@ -1107,31 +793,6 @@ export const GifEditor: React.FC<GifEditorProps> = ({
   }, []);
 
   /**
-   * Decide which 0-indexed rows survive a Drop Frames pass. Frame numbering
-   * in the UI is 1-based — "Even frames (2, 4, 6...)" means drop the 2nd,
-   * 4th, 6th visible row.
-   */
-  const computeDropKeepMask = useCallback(
-    (
-      total: number,
-      mode: 'none' | 'even' | 'odd' | 'every-n',
-      nValue: number,
-    ): boolean[] => {
-      const keep = new Array(total).fill(true);
-      if (mode === 'none' || total === 0) return keep;
-      for (let i = 0; i < total; i += 1) {
-        const oneBased = i + 1;
-        if (mode === 'even') keep[i] = oneBased % 2 !== 0;
-        else if (mode === 'odd') keep[i] = oneBased % 2 === 0;
-        else if (mode === 'every-n')
-          keep[i] = nValue > 1 ? oneBased % nValue !== 0 : false;
-      }
-      return keep;
-    },
-    [],
-  );
-
-  /**
    * Live preview stats for the Drop Frames dialog — recomputed from the
    * dialog config so the user can see "341 → 171" before clicking OK.
    */
@@ -1144,7 +805,7 @@ export const GifEditor: React.FC<GifEditorProps> = ({
       ? sourceDuration
       : keep.reduce((acc, k, i) => acc + (k ? rows[i].delayMs : 0), 0);
     return { keptCount, total: rows.length, sourceDuration, outDuration };
-  }, [dropDialog, rows, computeDropKeepMask]);
+  }, [dropDialog, rows]);
 
   const applyDropFrames = useCallback(() => {
     if (!dropDialog) return;
@@ -1180,7 +841,7 @@ export const GifEditor: React.FC<GifEditorProps> = ({
       return out;
     });
     setDropDialog(null);
-  }, [dropDialog, computeDropKeepMask]);
+  }, [dropDialog]);
 
   const openDropDialog = useCallback(() => {
     setIsPlaying(false);
@@ -1211,10 +872,14 @@ export const GifEditor: React.FC<GifEditorProps> = ({
     }
     const selectedRows = rows.filter((r) => selectedIds.has(r.id));
     if (selectedRows.length === 0) return;
+    // Commit any in-progress crop so the output baseline matches the crop
+    // dims; otherwise the export would scale the cropped region back up to
+    // the source dimensions and distort the aspect ratio.
+    if (cropEditing) applyCrop();
     setIsPlaying(false);
     setPreviewFrameIdx(0);
     setExportPreview({ rows: selectedRows, scope: 'selection' });
-  }, [rows, selectedIds]);
+  }, [rows, selectedIds, cropEditing, applyCrop]);
 
   useEffect(() => {
     exportSelectedRef.current = () => void handleExportSelectedFrames();
@@ -1234,10 +899,14 @@ export const GifEditor: React.FC<GifEditorProps> = ({
       toast.error('No frames to export');
       return;
     }
+    // Commit any in-progress crop so the output baseline matches the crop
+    // dims; otherwise the export would scale the cropped region back up to
+    // the source dimensions and distort the aspect ratio.
+    if (cropEditing) applyCrop();
     setIsPlaying(false);
     setPreviewFrameIdx(0);
     setExportPreview({ rows, scope: 'all' });
-  }, [capturePath, info, rows]);
+  }, [capturePath, info, rows, cropEditing, applyCrop]);
 
   /**
    * Confirmed export from the preview dialog. Opens the OS save dialog, builds
@@ -2103,435 +1772,33 @@ export const GifEditor: React.FC<GifEditorProps> = ({
         </aside>
       </div>
 
-      <Dialog
-        open={!!delayDialog?.open}
-        onOpenChange={(next) => {
-          if (!next) setDelayDialog(null);
-        }}
-      >
-        <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle>Set frame delay</DialogTitle>
-            <DialogDescription>
-              {delayDialog && delayDialog.rowIds.length > 1
-                ? `Applies to ${delayDialog.rowIds.length} frames.`
-                : 'Applies to the selected frame.'}
-            </DialogDescription>
-          </DialogHeader>
+      <DelayDialog
+        dialog={delayDialog}
+        onChange={setDelayDialog}
+        onCommit={commitDelayDialog}
+        onClose={() => setDelayDialog(null)}
+      />
 
-          {delayDialog && (
-            <div className="flex flex-col gap-3">
-              <div className="flex items-center gap-3">
-                <label className="flex items-center gap-2 text-sm">
-                  <input
-                    type="radio"
-                    name="delay-mode"
-                    checked={delayDialog.mode === 'sec'}
-                    onChange={() => {
-                      const numeric = Number(delayDialog.value);
-                      const newValue = Number.isFinite(numeric) && numeric > 0
-                        ? (delayDialog.mode === 'fps' ? 1 / numeric : numeric).toFixed(3)
-                        : '0.030';
-                      setDelayDialog({ ...delayDialog, mode: 'sec', value: newValue });
-                    }}
-                  />
-                  Seconds
-                </label>
-                <label className="flex items-center gap-2 text-sm">
-                  <input
-                    type="radio"
-                    name="delay-mode"
-                    checked={delayDialog.mode === 'fps'}
-                    onChange={() => {
-                      const numeric = Number(delayDialog.value);
-                      const newValue = Number.isFinite(numeric) && numeric > 0
-                        ? (delayDialog.mode === 'sec' ? 1 / numeric : numeric).toFixed(0)
-                        : '30';
-                      setDelayDialog({ ...delayDialog, mode: 'fps', value: newValue });
-                    }}
-                  />
-                  FPS
-                </label>
-              </div>
+      <DropFramesDialog
+        dialog={dropDialog}
+        stats={dropDialogStats}
+        onChange={setDropDialog}
+        onApply={applyDropFrames}
+        onClose={() => setDropDialog(null)}
+      />
 
-              <div className="flex items-center gap-2">
-                <Input
-                  type="number"
-                  autoFocus
-                  step={delayDialog.mode === 'fps' ? 1 : 0.001}
-                  min={delayDialog.mode === 'fps' ? 1 : 0.001}
-                  max={delayDialog.mode === 'fps' ? 1000 : 60}
-                  value={delayDialog.value}
-                  onChange={(e) =>
-                    setDelayDialog({ ...delayDialog, value: e.target.value })
-                  }
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      e.preventDefault();
-                      commitDelayDialog();
-                    }
-                  }}
-                  onWheel={handleDelayDialogWheel}
-                  className="flex-1"
-                />
-                <span className="text-sm text-(--ink-muted) w-12">
-                  {delayDialog.mode === 'fps' ? 'fps' : 'sec'}
-                </span>
-              </div>
-
-              <p className="text-xs text-(--ink-muted)">
-                Hold Ctrl and use the mouse wheel for fine adjustment.
-              </p>
-            </div>
-          )}
-
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setDelayDialog(null)}>
-              Cancel
-            </Button>
-            <Button onClick={commitDelayDialog}>OK</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog
-        open={!!dropDialog}
-        onOpenChange={(next) => {
-          if (!next) setDropDialog(null);
-        }}
-      >
-        <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle>Drop frames</DialogTitle>
-            <DialogDescription>
-              Pick a pattern. Stats update live.
-            </DialogDescription>
-          </DialogHeader>
-
-          {dropDialog && dropDialogStats && (
-            <div className="flex flex-col gap-3 text-sm">
-              <div className="grid grid-cols-2 gap-y-1">
-                <span className="text-(--ink-muted) text-xs">Frames</span>
-                <span className="tabular-nums">
-                  {dropDialogStats.total} → {dropDialogStats.keptCount}
-                </span>
-                <span className="text-(--ink-muted) text-xs">Duration</span>
-                <span className="tabular-nums">
-                  {formatDuration(dropDialogStats.sourceDuration)} →{' '}
-                  {formatDuration(dropDialogStats.outDuration)}
-                </span>
-              </div>
-
-              <div className="flex flex-col gap-1">
-                {(
-                  [
-                    { v: 'none', label: 'Show original' },
-                    { v: 'even', label: 'Even frames (2, 4, 6…)' },
-                    { v: 'odd', label: 'Odd frames (1, 3, 5…)' },
-                    { v: 'every-n', label: 'Delete every N-th frame' },
-                  ] as const
-                ).map((opt) => (
-                  <label
-                    key={opt.v}
-                    className="flex items-center gap-2 text-sm cursor-pointer"
-                  >
-                    <input
-                      type="radio"
-                      name="drop-mode"
-                      checked={dropDialog.mode === opt.v}
-                      onChange={() =>
-                        setDropDialog({ ...dropDialog, mode: opt.v })
-                      }
-                    />
-                    {opt.label}
-                  </label>
-                ))}
-              </div>
-
-              {dropDialog.mode === 'every-n' && (
-                <div className="pl-5 flex items-center gap-3">
-                  <Slider
-                    className="flex-1"
-                    value={[dropDialog.nValue]}
-                    min={2}
-                    max={20}
-                    step={1}
-                    onValueChange={(v) =>
-                      setDropDialog({ ...dropDialog, nValue: v[0] })
-                    }
-                  />
-                  <span className="text-xs text-(--ink-muted) tabular-nums w-6 text-right">
-                    {dropDialog.nValue}
-                  </span>
-                </div>
-              )}
-
-              <label className="flex items-center gap-2 text-sm cursor-pointer pt-1 border-t border-(--polar-mist)">
-                <input
-                  type="checkbox"
-                  checked={dropDialog.keepPlaybackSpeed}
-                  onChange={(e) =>
-                    setDropDialog({
-                      ...dropDialog,
-                      keepPlaybackSpeed: e.target.checked,
-                    })
-                  }
-                />
-                Keep the playback speed
-              </label>
-              <p className="text-[10px] text-(--ink-muted) leading-snug -mt-1 pl-5">
-                {dropDialog.keepPlaybackSpeed
-                  ? 'Dropped frames’ delays fold into the kept frames so total time stays the same.'
-                  : 'Each kept frame keeps its original delay — total time shrinks.'}
-              </p>
-            </div>
-          )}
-
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setDropDialog(null)}>
-              Cancel
-            </Button>
-            <Button
-              onClick={applyDropFrames}
-              disabled={!dropDialog || dropDialog.mode === 'none'}
-            >
-              OK
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog
-        open={!!exportPreview}
-        onOpenChange={(next) => {
-          if (!next && !isExporting) setExportPreview(null);
-        }}
-      >
-        <DialogContent className="max-w-3xl">
-          <DialogHeader>
-            <DialogTitle>
-              {exportPreview?.scope === 'selection'
-                ? 'Export selected frames'
-                : 'Export GIF'}
-            </DialogTitle>
-            <DialogDescription>
-              Preview the output before saving. Playback loops at the
-              configured speed.
-            </DialogDescription>
-          </DialogHeader>
-
-          {exportPreview && gifData && (() => {
-            const swap = ui.rotation === 90 || ui.rotation === 270;
-            const cropW = ui.crop?.w ?? gifData.width;
-            const cropH = ui.crop?.h ?? gifData.height;
-            const usingExplicit =
-              ui.outputWidth !== cropW || ui.outputHeight !== cropH;
-            const baseW = usingExplicit ? ui.outputWidth : cropW;
-            const baseH = usingExplicit ? ui.outputHeight : cropH;
-            const outW = Math.max(1, Math.round(swap ? baseH : baseW));
-            const outH = Math.max(1, Math.round(swap ? baseW : baseH));
-            const speed = Math.max(0.05, ui.speed);
-            const totalDelayMs = exportPreview.rows.reduce(
-              (acc, r) => acc + Math.max(1, Math.round(r.delayMs / speed)),
-              0,
-            );
-            return (
-              <div className="flex gap-4">
-                <div className="flex-1 min-w-0 flex items-center justify-center bg-(--polar-mist)/40 rounded-md p-3 min-h-[260px]">
-                  <canvas
-                    ref={previewCanvasInDialogRef}
-                    className="max-w-full max-h-[320px] object-contain shadow-md"
-                    style={{ imageRendering: 'pixelated' }}
-                  />
-                </div>
-                <div className="w-56 shrink-0 flex flex-col gap-3 text-sm">
-                  <dl className="grid grid-cols-2 gap-y-1">
-                    <dt className="text-(--ink-muted)">Frames</dt>
-                    <dd className="tabular-nums">{exportPreview.rows.length}</dd>
-                    <dt className="text-(--ink-muted)">Duration</dt>
-                    <dd className="tabular-nums">
-                      {formatDuration(totalDelayMs)}
-                    </dd>
-                    <dt className="text-(--ink-muted)">Dimensions</dt>
-                    <dd className="tabular-nums">
-                      {outW} × {outH}
-                    </dd>
-                    {ui.rotation !== 0 && (
-                      <>
-                        <dt className="text-(--ink-muted)">Rotation</dt>
-                        <dd>{ui.rotation}°</dd>
-                      </>
-                    )}
-                    {(ui.flipH || ui.flipV) && (
-                      <>
-                        <dt className="text-(--ink-muted)">Flip</dt>
-                        <dd>
-                          {[ui.flipH && 'H', ui.flipV && 'V']
-                            .filter(Boolean)
-                            .join(' + ')}
-                        </dd>
-                      </>
-                    )}
-                    {ui.speed !== 1 && (
-                      <>
-                        <dt className="text-(--ink-muted)">Speed</dt>
-                        <dd>{ui.speed.toFixed(2)}×</dd>
-                      </>
-                    )}
-                    <dt className="text-(--ink-muted)">Loop</dt>
-                    <dd>{ui.loopForever ? 'Forever' : 'Once'}</dd>
-                  </dl>
-
-                  <div className="flex flex-col gap-2">
-                    <div className="flex items-center justify-between">
-                      <Label className="text-xs">Quality</Label>
-                      <span className="text-xs text-(--ink-muted) tabular-nums">
-                        {Math.round(ui.qualityValue)}
-                      </span>
-                    </div>
-                    <Slider
-                      value={[ui.qualityValue]}
-                      min={1}
-                      max={100}
-                      step={1}
-                      onValueChange={(v) =>
-                        setUi((p) => ({ ...p, qualityValue: v[0] }))
-                      }
-                    />
-                    <span className="text-[10px] text-(--ink-muted)">
-                      {qualityLabel(ui.qualityValue)}
-                    </span>
-                  </div>
-
-                  <div className="flex flex-col gap-1 mt-1">
-                    <Label className="text-xs">Preview size</Label>
-                    <div className="relative rounded-md border border-(--polar-mist) bg-(--polar-mist)/30 h-7 overflow-hidden">
-                      {estimating && (
-                        <div className="absolute inset-0 bg-(--accent-400)/15 animate-pulse" />
-                      )}
-                      <div className="relative h-full flex items-center justify-center px-2 text-sm tabular-nums">
-                        {estimatedBytes !== null ? (
-                          <span>
-                            {estimating ? 'Calculating… ' : ''}
-                            {formatFileSize(estimatedBytes)}
-                          </span>
-                        ) : estimating ? (
-                          <span className="flex items-center gap-2 text-(--ink-muted) text-xs">
-                            <Loader2 className="w-3 h-3 animate-spin" />
-                            Calculating…
-                          </span>
-                        ) : (
-                          <span className="text-xs text-(--ink-muted)">—</span>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="flex flex-col gap-2 mt-1 pt-3 border-t border-(--polar-mist)">
-                    <span className="text-xs uppercase tracking-wide text-(--ink-muted)">
-                      Make file smaller
-                    </span>
-
-                    <div className="flex flex-col gap-1">
-                      <label className="flex items-center gap-2 text-xs">
-                        <input
-                          type="checkbox"
-                          checked={ui.limitFps}
-                          onChange={(e) =>
-                            setUi((p) => ({ ...p, limitFps: e.target.checked }))
-                          }
-                        />
-                        Limit frames/sec
-                      </label>
-                      <div className="flex items-center gap-2 pl-5">
-                        <Input
-                          type="number"
-                          min={1}
-                          max={60}
-                          step={1}
-                          value={ui.fpsCap}
-                          disabled={!ui.limitFps}
-                          onChange={(e) => {
-                            const n = Number(e.target.value);
-                            if (Number.isFinite(n) && n > 0) {
-                              setUi((p) => ({
-                                ...p,
-                                fpsCap: Math.max(1, Math.min(60, Math.round(n))),
-                              }));
-                            }
-                          }}
-                          className="h-7 text-xs w-20"
-                        />
-                        <span className="text-[10px] text-(--ink-muted)">fps</span>
-                      </div>
-                    </div>
-
-                    <div className="flex flex-col gap-1">
-                      <label className="flex items-center gap-2 text-xs">
-                        <input
-                          type="checkbox"
-                          checked={ui.capFrameTime}
-                          onChange={(e) =>
-                            setUi((p) => ({
-                              ...p,
-                              capFrameTime: e.target.checked,
-                            }))
-                          }
-                        />
-                        Cap frame time
-                      </label>
-                      <div className="flex items-center gap-2 pl-5">
-                        <Input
-                          type="number"
-                          min={0.01}
-                          max={60}
-                          step={0.1}
-                          value={ui.maxFrameTimeSec}
-                          disabled={!ui.capFrameTime}
-                          onChange={(e) => {
-                            const n = Number(e.target.value);
-                            if (Number.isFinite(n) && n > 0) {
-                              setUi((p) => ({
-                                ...p,
-                                maxFrameTimeSec: Math.min(60, n),
-                              }));
-                            }
-                          }}
-                          className="h-7 text-xs w-20"
-                        />
-                        <span className="text-[10px] text-(--ink-muted)">sec</span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            );
-          })()}
-
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setExportPreview(null)}
-              disabled={isExporting}
-            >
-              Cancel
-            </Button>
-            <Button onClick={() => void performExport()} disabled={isExporting}>
-              {isExporting ? (
-                <>
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  Exporting…
-                </>
-              ) : (
-                <>
-                  <Download className="w-4 h-4 mr-2" />
-                  Save…
-                </>
-              )}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <ExportPreviewDialog
+        preview={exportPreview}
+        gifData={gifData}
+        ui={ui}
+        setUi={setUi}
+        isExporting={isExporting}
+        estimatedBytes={estimatedBytes}
+        estimating={estimating}
+        canvasRef={previewCanvasInDialogRef}
+        onSave={() => void performExport()}
+        onClose={() => setExportPreview(null)}
+      />
     </div>
   );
 };
