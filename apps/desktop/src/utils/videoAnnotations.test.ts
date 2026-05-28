@@ -5,13 +5,19 @@ import {
   createDefaultAnnotationSegment,
   createDefaultAnnotationShape,
   drawAnnotationShape,
+  getAnnotationArrowEndpoints,
   getAnnotationArrowRenderGeometry,
+  getAnnotationArrowShapeUpdate,
   getAnnotationBoxSliderBounds,
   getAnnotationCornerRadius,
   getNextAnnotationStepNumber,
   getAnnotationRenderBox,
   getAnnotationStepRenderGeometry,
   getAnnotationStrokeWidth,
+  isEndpointAnnotationShapeType,
+  isLegacyAnnotationShapeType,
+  normalizeAnnotationConfig,
+  normalizeAnnotationSegment,
 } from './videoAnnotations';
 
 describe('getAnnotationBoxSliderBounds', () => {
@@ -228,5 +234,160 @@ describe('drawAnnotationShape', () => {
 
     expect(operations).toContain('bezierCurveTo');
     expect(operations.filter((operation) => operation === `fill:${shape.strokeColor}`)).toHaveLength(2);
+  });
+});
+
+describe('isEndpointAnnotationShapeType / isLegacyAnnotationShapeType', () => {
+  it('classifies arrow and line as endpoint shapes', () => {
+    expect(isEndpointAnnotationShapeType('arrow')).toBe(true);
+    expect(isEndpointAnnotationShapeType('line')).toBe(true);
+    expect(isEndpointAnnotationShapeType('rectangle')).toBe(false);
+    expect(isEndpointAnnotationShapeType('step')).toBe(false);
+    expect(isEndpointAnnotationShapeType('text')).toBe(false);
+  });
+
+  it('classifies line and text as legacy shapes', () => {
+    expect(isLegacyAnnotationShapeType('line')).toBe(true);
+    expect(isLegacyAnnotationShapeType('text')).toBe(true);
+    expect(isLegacyAnnotationShapeType('arrow')).toBe(false);
+    expect(isLegacyAnnotationShapeType('rectangle')).toBe(false);
+  });
+});
+
+describe('getAnnotationArrowEndpoints', () => {
+  it('uses explicit arrow endpoints when present', () => {
+    const shape = createDefaultAnnotationShape('arrow', {
+      arrowStartX: 0.1,
+      arrowStartY: 0.2,
+      arrowEndX: 0.7,
+      arrowEndY: 0.5,
+    });
+    expect(getAnnotationArrowEndpoints(shape)).toEqual({
+      tailX: 0.1,
+      tailY: 0.2,
+      headX: 0.7,
+      headY: 0.5,
+    });
+  });
+
+  it('derives endpoints from the box when explicit ones are absent', () => {
+    // 'rectangle' shapes leave arrowStart/End null; padding factor is 0.18
+    const shape = createDefaultAnnotationShape('rectangle', {
+      x: 0.2,
+      y: 0.2,
+      width: 0.3,
+      height: 0.2,
+    });
+    const endpoints = getAnnotationArrowEndpoints(shape);
+    expect(endpoints.tailX).toBeCloseTo(0.254, 6); // 0.2 + 0.3*0.18
+    expect(endpoints.tailY).toBeCloseTo(0.364, 6); // 0.2 + 0.2*(1-0.18)
+    expect(endpoints.headX).toBeCloseTo(0.446, 6); // 0.2 + 0.3*(1-0.18)
+    expect(endpoints.headY).toBeCloseTo(0.236, 6); // 0.2 + 0.2*0.18
+  });
+
+  it('enforces a minimum length for a too-short arrow without snapping to bounds', () => {
+    const shape = createDefaultAnnotationShape('arrow', {
+      arrowStartX: 0.5,
+      arrowStartY: 0.5,
+      arrowEndX: 0.51,
+      arrowEndY: 0.5,
+    });
+    const endpoints = getAnnotationArrowEndpoints(shape);
+    expect(endpoints.tailX).toBe(0.5);
+    expect(endpoints.headX).toBeCloseTo(0.53, 6); // extended to MIN_NORMALIZED_SIZE (0.03)
+    expect(endpoints.headY).toBeCloseTo(0.5, 6);
+  });
+
+  it('uses a diagonal fallback direction for a zero-length arrow', () => {
+    const shape = createDefaultAnnotationShape('arrow', {
+      arrowStartX: 0.5,
+      arrowStartY: 0.5,
+      arrowEndX: 0.5,
+      arrowEndY: 0.5,
+    });
+    const endpoints = getAnnotationArrowEndpoints(shape);
+    const unit = 0.03 / Math.SQRT2;
+    expect(endpoints.headX).toBeCloseTo(0.5 + unit, 6);
+    expect(endpoints.headY).toBeCloseTo(0.5 - unit, 6);
+  });
+});
+
+describe('getAnnotationArrowShapeUpdate', () => {
+  it('derives the bounding box from the current endpoints', () => {
+    const shape = createDefaultAnnotationShape('arrow', {
+      arrowStartX: 0.2,
+      arrowStartY: 0.7,
+      arrowEndX: 0.6,
+      arrowEndY: 0.3,
+    });
+    expect(getAnnotationArrowShapeUpdate(shape, {})).toEqual({
+      x: 0.2,
+      y: 0.3,
+      width: expect.closeTo(0.4, 6),
+      height: expect.closeTo(0.4, 6),
+      arrowStartX: 0.2,
+      arrowStartY: 0.7,
+      arrowEndX: 0.6,
+      arrowEndY: 0.3,
+    });
+  });
+
+  it('applies endpoint updates and recomputes the box', () => {
+    const shape = createDefaultAnnotationShape('arrow', {
+      arrowStartX: 0.2,
+      arrowStartY: 0.7,
+      arrowEndX: 0.6,
+      arrowEndY: 0.3,
+    });
+    const update = getAnnotationArrowShapeUpdate(shape, { headX: 0.9, headY: 0.1 });
+    expect(update.x).toBeCloseTo(0.2, 6);
+    expect(update.y).toBeCloseTo(0.1, 6);
+    expect(update.width).toBeCloseTo(0.7, 6);
+    expect(update.height).toBeCloseTo(0.6, 6);
+    expect(update.arrowEndX).toBeCloseTo(0.9, 6);
+    expect(update.arrowEndY).toBeCloseTo(0.1, 6);
+  });
+
+  it('floors the collapsed dimension of a horizontal arrow to the minimum size', () => {
+    const shape = createDefaultAnnotationShape('arrow', {
+      arrowStartX: 0.2,
+      arrowStartY: 0.5,
+      arrowEndX: 0.6,
+      arrowEndY: 0.5,
+    });
+    const update = getAnnotationArrowShapeUpdate(shape, {});
+    expect(update.width).toBeCloseTo(0.4, 6);
+    expect(update.height).toBe(0.03); // MIN_NORMALIZED_SIZE
+  });
+});
+
+describe('normalizeAnnotationSegment / normalizeAnnotationConfig', () => {
+  it('fills in defaults for an undefined segment', () => {
+    const segment = normalizeAnnotationSegment(undefined);
+    expect(segment.startMs).toBe(0);
+    expect(segment.endMs).toBe(3000); // DEFAULT_SEGMENT_DURATION_MS
+    expect(segment.enabled).toBe(true);
+    expect(segment.shapes).toHaveLength(1);
+    expect(typeof segment.id).toBe('string');
+  });
+
+  it('clamps an end time that precedes the start time up to the start', () => {
+    const segment = normalizeAnnotationSegment({ startMs: 5000, endMs: 2000 });
+    expect(segment.startMs).toBe(5000);
+    expect(segment.endMs).toBe(5000);
+  });
+
+  it('returns an empty config for null/invalid input', () => {
+    expect(normalizeAnnotationConfig(null)).toEqual({ segments: [] });
+    expect(normalizeAnnotationConfig({})).toEqual({ segments: [] });
+  });
+
+  it('normalizes each segment of a valid config', () => {
+    const config = normalizeAnnotationConfig({
+      segments: [{ startMs: 0, endMs: 1000 }],
+    });
+    expect(config.segments).toHaveLength(1);
+    expect(config.segments[0].endMs).toBe(1000);
+    expect(config.segments[0].shapes).toHaveLength(1);
   });
 });
