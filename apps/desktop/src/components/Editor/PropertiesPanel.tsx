@@ -17,7 +17,6 @@ import { useEditorStore } from '../../stores/editorStore';
 import { useEditorHistory } from '../../hooks/useEditorHistory';
 import { type Tool } from '../../types';
 import { Label } from '@/components/ui/label';
-import { Switch } from '@/components/ui/switch';
 import { Separator } from '@/components/ui/separator';
 import { Slider } from '@/components/ui/slider';
 import { ColorPicker } from '@/components/ui/color-picker';
@@ -626,24 +625,10 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
 
         {/* Background Tool Settings */}
         {effectiveTool === 'background' && (
-          <div className="space-y-5">
-            {/* Enable/Disable Toggle */}
-            <div className="flex items-center justify-between">
-              <Label className="text-xs text-[var(--ink-muted)] uppercase tracking-wide font-medium" title="Shift+G to quick toggle">Enable Background</Label>
-              <Switch
-                checked={compositorSettings.enabled}
-                onCheckedChange={(checked) => setCompositorSettings({ enabled: checked })}
-              />
-            </div>
-
-            {/* Show settings only when enabled */}
-            {compositorSettings.enabled && (
-              <BackgroundSettings
-                settings={compositorSettings}
-                onSettingsChange={setCompositorSettings}
-              />
-            )}
-          </div>
+          <BackgroundSettings
+            settings={compositorSettings}
+            onSettingsChange={setCompositorSettings}
+          />
         )}
       </div>
     );

@@ -101,14 +101,16 @@ pub(crate) fn set_physical_bounds(
 pub(crate) fn bring_window_to_front_without_topmost(window: &tauri::WebviewWindow, focus: bool) {
     use windows::Win32::Foundation::HWND;
     use windows::Win32::UI::WindowsAndMessaging::{
-        BringWindowToTop, SetForegroundWindow, SetWindowPos, ShowWindow, HWND_NOTOPMOST,
+        BringWindowToTop, IsIconic, SetForegroundWindow, SetWindowPos, ShowWindow, HWND_NOTOPMOST,
         HWND_TOPMOST, SWP_NOMOVE, SWP_NOSIZE, SWP_SHOWWINDOW, SW_RESTORE, SW_SHOW,
     };
 
     if let Ok(hwnd) = window.hwnd() {
         unsafe {
             let hwnd = HWND(hwnd.0);
-            let _ = ShowWindow(hwnd, SW_RESTORE);
+            if IsIconic(hwnd).as_bool() {
+                let _ = ShowWindow(hwnd, SW_RESTORE);
+            }
             let _ = ShowWindow(hwnd, SW_SHOW);
             let _ = SetWindowPos(
                 hwnd,
@@ -287,9 +289,7 @@ pub(crate) fn reveal_library_window(
     focus: bool,
 ) -> MoonSnapResult<()> {
     let has_saved_bounds = has_usable_saved_library_window_bounds(window);
-    if let Err(error) =
-        window.restore_state(StateFlags::POSITION | StateFlags::SIZE | StateFlags::MAXIMIZED)
-    {
+    if let Err(error) = window.restore_state(StateFlags::POSITION | StateFlags::SIZE) {
         log::warn!(
             "Failed to restore library window state before reveal: {}",
             error

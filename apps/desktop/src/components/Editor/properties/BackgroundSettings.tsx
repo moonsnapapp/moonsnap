@@ -97,6 +97,11 @@ export const BackgroundSettings: React.FC<BackgroundSettingsProps> = ({
 
   return (
     <BackgroundSettingsPanel
+      enabledToggle={{
+        enabled: settings.enabled,
+        onToggle: () => onSettingsChange({ enabled: !settings.enabled }),
+        label: 'Enable Background',
+      }}
       type={settings.backgroundType}
       onTypeChange={handleTypeChange}
       solidColor={settings.backgroundColor}
