@@ -1,3 +1,10 @@
+// Ratchet: ban bare `.unwrap()` in production code. CI runs clippy with
+// `-D warnings`, so this becomes a hard failure on any new unwrap. Use
+// `.expect("why this can't fail")` instead — it documents the invariant — or
+// propagate the error. Test code is exempted via clippy.toml
+// (allow-unwrap-in-tests). Existing, audited sites carry a local
+// `#[allow(clippy::unwrap_used)]` with a justification.
+#![cfg_attr(not(test), warn(clippy::unwrap_used))]
 // Clippy allows for less critical warnings (style/pedantic issues)
 #![allow(clippy::too_many_arguments)]
 #![allow(clippy::wrong_self_convention)]

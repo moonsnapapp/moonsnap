@@ -381,19 +381,20 @@ fn get_cursor_data() -> Option<CursorData> {
         let mut bits: *mut std::ffi::c_void = std::ptr::null_mut();
         let dib = CreateDIBSection(mem_dc, &bitmap_info, DIB_RGB_COLORS, &mut bits, None, 0);
 
-        if dib.is_err() {
-            let _ = DeleteDC(mem_dc);
-            ReleaseDC(None, screen_dc);
-            if !icon_info.hbmColor.is_invalid() {
-                let _ = DeleteObject(icon_info.hbmColor);
-            }
-            if !icon_info.hbmMask.is_invalid() {
-                let _ = DeleteObject(icon_info.hbmMask);
-            }
-            return None;
-        }
-
-        let dib = dib.unwrap();
+        let dib = match dib {
+            Ok(dib) => dib,
+            Err(_) => {
+                let _ = DeleteDC(mem_dc);
+                ReleaseDC(None, screen_dc);
+                if !icon_info.hbmColor.is_invalid() {
+                    let _ = DeleteObject(icon_info.hbmColor);
+                }
+                if !icon_info.hbmMask.is_invalid() {
+                    let _ = DeleteObject(icon_info.hbmMask);
+                }
+                return None;
+            },
+        };
 
         // Select DIB into DC
         let old_bitmap = SelectObject(mem_dc, dib);

@@ -1,0 +1,5 @@
+# Allow `.unwrap()` / `.expect()` in test code — they make tests terse and a
+# panic in a test is just a failed assertion. The `unwrap_used` ratchet below
+# only targets production code paths.
+allow-unwrap-in-tests = true
+allow-expect-in-tests = true

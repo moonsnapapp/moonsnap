@@ -20,6 +20,7 @@ cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --lib
 - **Never** edit `apps/desktop/src/types/generated/*` (auto-generated from Rust)
 - **Never** use `box-shadow` for external shadows (use `filter: drop-shadow()`)
 - **Never** run `cargo build --release` unless explicitly requested
+- **Never** use bare `.unwrap()` in production Rust (the `moonsnap` crate warns via `clippy::unwrap_used`, and CI clippy runs `-D warnings`). Use `.expect("why this can't fail")` or propagate the error. Tests are exempt (see `src-tauri/clippy.toml`).
 - Uses `bun` for package management
 
 ## Structure (Monorepo)

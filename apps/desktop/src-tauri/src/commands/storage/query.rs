@@ -125,14 +125,17 @@ async fn load_video_project_folder(
                 }
             }
         }
+        // Only auto-recover when exactly one candidate exists (guarded above);
+        // the `if let` always matches but avoids an unwrap.
         if found_mp4s.len() == 1 {
-            let (path, meta) = found_mp4s.into_iter().next().unwrap();
-            log::info!(
-                "[RECOVERY] Found renamed video: {:?} (screen.mp4 missing)",
-                path
-            );
-            screen_mp4 = path;
-            screen_mp4_meta = Some(meta);
+            if let Some((path, meta)) = found_mp4s.into_iter().next() {
+                log::info!(
+                    "[RECOVERY] Found renamed video: {:?} (screen.mp4 missing)",
+                    path
+                );
+                screen_mp4 = path;
+                screen_mp4_meta = Some(meta);
+            }
         }
     }
 
