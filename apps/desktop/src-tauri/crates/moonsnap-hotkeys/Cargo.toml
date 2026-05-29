@@ -13,9 +13,14 @@ categories = ["api-bindings", "os"]
 name = "moonsnap_hotkeys"
 path = "src/lib.rs"
 
+[lints]
+workspace = true
+
 [dependencies]
 bitflags = { version = "2", features = ["serde"] }
-serde = { version = "1", features = ["derive"] }
+serde = { workspace = true }
+# Intentionally on thiserror 2 (workspace baseline is 1) — this crate was
+# ported from handy-keys, which already targeted the 2.x API.
 thiserror = "2"
 
 [target.'cfg(target_os = "macos")'.dependencies]
@@ -27,7 +32,7 @@ objc2-foundation = "0.3"
 block2 = "0.6"
 
 [target.'cfg(target_os = "windows")'.dependencies]
-windows = { version = "0.58", features = [
+windows = { workspace = true, features = [
     "Win32_Foundation",
     "Win32_UI_Input_KeyboardAndMouse",
     "Win32_UI_WindowsAndMessaging",

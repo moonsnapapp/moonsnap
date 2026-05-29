@@ -2,7 +2,7 @@
 
 This policy applies to:
 
-- `moonsnap-core`
+- `moonsnap-error`
 - `moonsnap-domain`
 - `moonsnap-media`
 - `moonsnap-render`
@@ -32,7 +32,7 @@ After stabilizing shared APIs and first external consumers:
 ## Required Checks Before Version Bumps
 
 1. Run crate contract tests:
-   - `cargo test -p moonsnap-core --lib`
+   - `cargo test -p moonsnap-error --lib`
    - `cargo test -p moonsnap-domain --lib`
    - `cargo test -p moonsnap-media --lib`
    - `cargo test -p moonsnap-render --lib`

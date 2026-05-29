@@ -1,7 +1,7 @@
 //! Update operations for project annotations and metadata.
 
 use chrono::Utc;
-use moonsnap_core::error::MoonSnapResult;
+use moonsnap_error::error::MoonSnapResult;
 use std::fs;
 use tauri::command;
 

@@ -1,6 +1,6 @@
 //! Tauri commands for registering pre-rendered text images from the frontend.
 
-use moonsnap_core::error::MoonSnapResult;
+use moonsnap_error::error::MoonSnapResult;
 use moonsnap_render::prerendered_text::{LineMetric, PreRenderedTextImage, PreRenderedTextStore};
 use parking_lot::Mutex;
 use serde::Deserialize;

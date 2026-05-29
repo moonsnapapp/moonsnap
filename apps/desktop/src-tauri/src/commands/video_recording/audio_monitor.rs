@@ -19,7 +19,7 @@
 //! await invoke('stop_audio_monitoring');
 //! ```
 
-use moonsnap_core::error::MoonSnapResult;
+use moonsnap_error::error::MoonSnapResult;
 use std::collections::VecDeque;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;

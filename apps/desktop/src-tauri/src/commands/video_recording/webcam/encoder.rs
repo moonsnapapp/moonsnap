@@ -6,7 +6,7 @@
 // Allow unused encoder variants - keeping for potential future use
 #![allow(dead_code)]
 
-use moonsnap_core::error::MoonSnapResult;
+use moonsnap_error::error::MoonSnapResult;
 use std::io::Write;
 use std::path::PathBuf;
 use std::process::{Child, ChildStdin, Stdio};

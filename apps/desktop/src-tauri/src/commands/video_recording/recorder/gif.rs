@@ -1,7 +1,7 @@
 //! App-layer wrapper for GIF capture.
 //! Canonical capture engine implementation lives in `moonsnap-capture`.
 
-use moonsnap_core::error::MoonSnapResult;
+use moonsnap_error::error::MoonSnapResult;
 use std::path::PathBuf;
 use std::sync::Arc;
 

@@ -7,11 +7,11 @@
 
 pub mod fallback;
 
-use moonsnap_core::error::MoonSnapResult;
 use moonsnap_domain::capture::{
     CaptureResult, FastCaptureResult, MonitorInfo, RegionSelection, ScreenRegionSelection,
     VirtualScreenBounds, WindowInfo,
 };
+use moonsnap_error::error::MoonSnapResult;
 
 use std::io::Write;
 use std::sync::atomic::{AtomicI32, Ordering};

@@ -9,7 +9,7 @@
 mod gif;
 mod video;
 
-use moonsnap_core::error::MoonSnapResult;
+use moonsnap_error::error::MoonSnapResult;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;

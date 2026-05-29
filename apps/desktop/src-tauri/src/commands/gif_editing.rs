@@ -4,7 +4,7 @@
 //! using bundled FFmpeg. Mirrors the quality presets used by the GIF recorder.
 
 use image::{AnimationDecoder, DynamicImage};
-use moonsnap_core::error::MoonSnapResult;
+use moonsnap_error::error::MoonSnapResult;
 use moonsnap_media::ffmpeg::{create_hidden_command, find_ffmpeg, find_ffprobe};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};

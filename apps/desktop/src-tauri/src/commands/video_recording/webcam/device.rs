@@ -1,6 +1,6 @@
 //! Webcam device enumeration using native Windows Media Foundation.
 
-use moonsnap_core::error::MoonSnapResult;
+use moonsnap_error::error::MoonSnapResult;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 

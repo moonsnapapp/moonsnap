@@ -9,7 +9,7 @@
 // Allow unused helpers - keeping for potential future use
 #![allow(dead_code)]
 
-use moonsnap_core::error::MoonSnapResult;
+use moonsnap_error::error::MoonSnapResult;
 use parking_lot::RwLock;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;

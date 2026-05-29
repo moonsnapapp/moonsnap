@@ -3,7 +3,7 @@
 //! Shows recording info in the bottom-right corner with action buttons.
 //! Auto-dismisses after a timeout unless the user interacts with it.
 
-use moonsnap_core::error::MoonSnapResult;
+use moonsnap_error::error::MoonSnapResult;
 use tauri::{command, AppHandle, Manager, WebviewUrl, WebviewWindowBuilder};
 
 /// Recording preview window label

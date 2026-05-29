@@ -5,7 +5,7 @@
 //! toolbar) can request the dialog without having direct access to the
 //! library window's Zustand store.
 
-use moonsnap_core::error::MoonSnapResult;
+use moonsnap_error::error::MoonSnapResult;
 use tauri::{command, AppHandle, Emitter, Manager};
 
 /// Main library window label — the only window that hosts the settings dialog.

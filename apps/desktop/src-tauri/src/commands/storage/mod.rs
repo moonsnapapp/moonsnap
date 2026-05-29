@@ -26,7 +26,7 @@ pub mod save;
 mod tests;
 pub mod update;
 
-use moonsnap_core::error::MoonSnapResult;
+use moonsnap_error::error::MoonSnapResult;
 use rand::Rng;
 use serde::Serialize;
 use std::collections::HashMap;

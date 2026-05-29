@@ -37,7 +37,7 @@ pub mod video_project;
 pub mod webcam;
 
 use lazy_static::lazy_static;
-use moonsnap_core::error::MoonSnapResult;
+use moonsnap_error::error::MoonSnapResult;
 use parking_lot::Mutex;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
@@ -1346,39 +1346,33 @@ pub async fn check_nvenc_available() -> MoonSnapResult<bool> {
 ///   - cursor.json (optional)
 ///   - project.json (video project metadata)
 pub fn generate_output_path(settings: &RecordingSettings) -> MoonSnapResult<PathBuf> {
-    // Get the default save directory from settings
+    use moonsnap_capture::recorder_output_paths::{plan_recording_output, RecordingOutput};
+
+    // Resolve the save directory (app setting, with sensible OS fallbacks).
     let save_dir = crate::commands::settings::get_default_save_dir_sync().unwrap_or_else(|_| {
         dirs::video_dir()
             .or_else(dirs::download_dir)
             .unwrap_or_else(std::env::temp_dir)
     });
-
-    // Ensure save directory exists
     std::fs::create_dir_all(&save_dir)
         .map_err(|e| format!("Failed to create save directory: {}", e))?;
 
-    // Generate name with timestamp
-    let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S");
-
-    match settings.format {
-        RecordingFormat::Mp4 => {
-            if settings.quick_capture {
-                // Quick capture: flat file, skip editor
-                let filename = format!("moonsnap_{}_{}.mp4", timestamp, rand::random::<u16>());
-                Ok(save_dir.join(filename))
-            } else {
-                // Editor flow: create a project folder
-                let folder_name = format!("moonsnap_{}_{}", timestamp, rand::random::<u16>());
-                let folder_path = save_dir.join(&folder_name);
-                std::fs::create_dir_all(&folder_path)
-                    .map_err(|e| format!("Failed to create recording folder: {}", e))?;
-                Ok(folder_path)
-            }
-        },
-        RecordingFormat::Gif => {
-            // For GIF, use flat file (no complex artifacts)
-            let filename = format!("moonsnap_{}_{}.gif", timestamp, rand::random::<u16>());
-            Ok(save_dir.join(filename))
+    // The structural decision (flat file vs project folder) lives in the
+    // testable library; the command only supplies environment values and I/O.
+    let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S").to_string();
+    let suffix = rand::random::<u16>();
+    match plan_recording_output(
+        &save_dir,
+        settings.format,
+        settings.quick_capture,
+        &timestamp,
+        suffix,
+    ) {
+        RecordingOutput::File(path) => Ok(path),
+        RecordingOutput::ProjectFolder(folder) => {
+            std::fs::create_dir_all(&folder)
+                .map_err(|e| format!("Failed to create recording folder: {}", e))?;
+            Ok(folder)
         },
     }
 }

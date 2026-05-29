@@ -2,9 +2,9 @@
 
 use crate::preview::{create_frame_ws, PreviewRenderer, ShutdownSignal, WSFrame};
 use crate::rendering::RendererState;
-use moonsnap_core::error::{MoonSnapError, MoonSnapResult};
 use moonsnap_domain::captions::{CaptionSegment, CaptionSettings};
 use moonsnap_domain::video_project::VideoProject;
+use moonsnap_error::error::{MoonSnapError, MoonSnapResult};
 use parking_lot::Mutex as ParkingMutex;
 use std::collections::HashMap;
 use std::sync::Arc;

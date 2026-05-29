@@ -15,7 +15,7 @@ members = [
     "crates/moonsnap-project-types",
     "crates/scap-direct3d",
     "crates/scap-targets",
-    "crates/moonsnap-core",
+    "crates/moonsnap-error",
     "crates/moonsnap-domain",
     "crates/moonsnap-media",
     "crates/moonsnap-render",
@@ -23,13 +23,88 @@ members = [
 ]
 resolver = "2"
 
+# Centralized dependency versions for every workspace member. Members inherit
+# with `dep = { workspace = true }` (adding crate-specific `features` as needed),
+# which keeps versions aligned and avoids duplicate builds. Only deps shared by
+# two or more members live here; single-consumer deps stay in their own manifest.
+[workspace.dependencies]
+# Serialization / type generation
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+ts-rs = "10"
+
+# Error handling (hotkeys intentionally overrides to "2")
+thiserror = "1"
+
+# Logging / tracing
+log = "0.4"
+tracing = "0.1"
+
+# Date/time
+chrono = { version = "0.4", features = ["serde"] }
+
+# Async runtime (members opt into the feature sets they need)
+tokio = { version = "1" }
+
+# Image processing (default features off; members add the formats they decode)
+image = { version = "0.25", default-features = false }
+
+# GPU / rendering
+wgpu = "25"
+bytemuck = { version = "1", features = ["derive"] }
+glyphon = "0.9"
+bezier_easing = "0.1"
+
+# Concurrency
+parking_lot = "0.12"
+lazy_static = "1.5"
+crossbeam-channel = "0.5"
+
+# Audio
+cpal = "0.17"
+wasapi = "0.22"
+hound = "3.5"
+
+# Media
+ffmpeg-sidecar = "2.4"
+
+# Misc
+rand = "0.8"
+
+# Testing
+proptest = "1.10"
+
+# Windows FFI — 0.58 baseline shared by most crates; camera-windows overrides
+# to 0.60 for newer Media Foundation APIs. Members add their own feature sets.
+windows = { version = "0.58" }
+windows-core = "0.58"
+
+# Lints shared by every workspace member (opt in per crate with
+# `[lints] workspace = true`). Centralizing them here keeps the `unwrap_used`
+# ratchet and the project-wide style allows consistent across all crates,
+# instead of living only in the main crate's `lib.rs`.
+[workspace.lints.clippy]
+# Ratchet: ban bare `.unwrap()` in production code. Test code is exempt via
+# clippy.toml (allow-unwrap-in-tests). CI runs clippy with `-D warnings`, so
+# this is a hard failure on any new production unwrap. Use `.expect("why")` or
+# propagate the error; audited sites carry a local `#[allow(clippy::unwrap_used)]`.
+unwrap_used = "warn"
+# Style/pedantic lints intentionally allowed project-wide.
+too_many_arguments = "allow"
+wrong_self_convention = "allow"
+enum_variant_names = "allow"
+missing_const_for_thread_local = "allow"
+
 [lib]
 name = "moonsnap_lib"
 crate-type = ["rlib"]
 
+[lints]
+workspace = true
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
-ffmpeg-sidecar = "2.4"
+ffmpeg-sidecar = { workspace = true }
 dirs = "5"
 
 [dependencies]
@@ -45,20 +120,20 @@ tauri-plugin-single-instance = "2"
 tauri-plugin-window-state = "2"
 
 # Serialization
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+serde = { workspace = true }
+serde_json = { workspace = true }
 
 # URL encoding
 urlencoding = "2"
 
 # Error handling
-thiserror = "1"
+thiserror = { workspace = true }
 
 # Caching
 lru = "0.16"
 
 # TypeScript type generation (single source of truth for Rust <-> TS types)
-ts-rs = "10"
+ts-rs = { workspace = true }
 
 # Screen capture - xcap for screenshots (reliable, no padding issues)
 xcap = "0.8"
@@ -74,31 +149,31 @@ scap-targets = { path = "crates/scap-targets" }
 moonsnap-camera-windows = { path = "crates/camera-windows" }
 moonsnap-hotkeys = { path = "crates/moonsnap-hotkeys" }
 moonsnap-capture = { path = "crates/moonsnap-capture" }
-moonsnap-core = { path = "crates/moonsnap-core" }
+moonsnap-error = { path = "crates/moonsnap-error" }
 moonsnap-domain = { path = "crates/moonsnap-domain" }
 moonsnap-media = { path = "crates/moonsnap-media" }
 moonsnap-render = { path = "crates/moonsnap-render" }
 moonsnap-export = { path = "crates/moonsnap-export" }
 
 # Image processing
-image = { version = "0.25", default-features = false, features = ["bmp", "gif", "ico", "jpeg", "png", "tiff", "webp"] }
+image = { workspace = true, features = ["bmp", "gif", "ico", "jpeg", "png", "tiff", "webp"] }
 
 # Audio capture
-cpal = "0.17"
-wasapi = "0.22"  # WASAPI loopback for system audio capture
-hound = "3.5"    # WAV file encoding for separate audio tracks
+cpal = { workspace = true }
+wasapi = { workspace = true }  # WASAPI loopback for system audio capture
+hound = { workspace = true }   # WAV file encoding for separate audio tracks
 
 # Native webcam capture via Media Foundation
 nokhwa = { version = "0.10", features = ["input-msmf"] }
 
 # Thread-safe channels for audio/video sync
-crossbeam-channel = "0.5"
+crossbeam-channel = { workspace = true }
 
 # Fast unbounded/bounded channels for webcam frames
 flume = "0.11"
 
 # Lazy static for global state
-lazy_static = "1.5"
+lazy_static = { workspace = true }
 
 # Directory paths
 dirs = "5"
@@ -107,17 +182,17 @@ dirs = "5"
 base64 = "0.22"
 
 # Date/time handling
-chrono = { version = "0.4", features = ["serde"] }
+chrono = { workspace = true }
 
 # Random ID generation
-rand = "0.8"
+rand = { workspace = true }
 
 # Logging
-log = "0.4"
+log = { workspace = true }
 env_logger = "0.11"
 
 # Async runtime
-tokio = { version = "1", features = ["full"] }
+tokio = { workspace = true, features = ["full"] }
 tokio-util = { version = "0.7", features = ["rt"] }
 futures = "0.3"
 
@@ -134,12 +209,12 @@ ffmpeg-sidecar = "2.4"
 ffmpeg-next = "8.1"
 
 # GPU-accelerated rendering for video editor
-wgpu = "25"
+wgpu = { workspace = true }
 pollster = "0.4"        # Block on async for wgpu initialization
-bytemuck = { version = "1", features = ["derive"] }  # Safe buffer casting
+bytemuck = { workspace = true }  # Safe buffer casting
 
 # Easing/animation
-bezier_easing = "0.1"
+bezier_easing = { workspace = true }
 
 # SVG rendering for cursor icons
 resvg = "0.44"
@@ -148,11 +223,11 @@ resvg = "0.44"
 uuid = { version = "1", features = ["v4"] }
 
 # Parking lot for faster mutexes
-parking_lot = "0.12"
+parking_lot = { workspace = true }
 
 # Cross-platform cursor position (like Cap uses)
 device_query = "2.1"
-glyphon = "0.9"
+glyphon = { workspace = true }
 
 # Cross-platform font loading (uses DirectWrite on Windows, CoreText on macOS)
 font-kit = "0.14"
@@ -176,7 +251,7 @@ tauri-plugin-autostart = "2"
 
 [target.'cfg(windows)'.dependencies]
 # Note: We access WebView2 via raw COM pointers to avoid version conflicts
-windows = { version = "0.58", features = [
+windows = { workspace = true, features = [
     "Win32_UI_WindowsAndMessaging",
     "Win32_UI_Controls",
     "Win32_Foundation",
@@ -201,14 +276,14 @@ windows = { version = "0.58", features = [
     "Win32_Media_MediaFoundation",
     "implement",
 ] }
-windows-core = "0.58"
+windows-core = { workspace = true }
 
 
 [profile.dev]
 incremental = true # Compile your binary in smaller steps.
 
 [dev-dependencies]
-proptest = "1.10"      # Property-based testing for math
+proptest = { workspace = true }      # Property-based testing for math
 rstest = "0.18"       # Test fixtures and parameterized tests
 tempfile = "3"        # Temporary directories for cache tests
 

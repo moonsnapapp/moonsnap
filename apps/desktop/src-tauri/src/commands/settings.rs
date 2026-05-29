@@ -1,4 +1,4 @@
-use moonsnap_core::error::MoonSnapResult;
+use moonsnap_error::error::MoonSnapResult;
 use parking_lot::Mutex;
 use tauri::Manager;
 

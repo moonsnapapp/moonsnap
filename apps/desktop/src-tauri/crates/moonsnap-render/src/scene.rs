@@ -95,7 +95,8 @@ impl InterpolatedScene {
     pub fn new(cursor: SceneSegmentsCursor) -> Self {
         let ease_in_out = |t: f32| -> f32 {
             // Approximate bezier(0.42, 0.0, 0.58, 1.0)
-            bezier_easing::bezier_easing(0.42, 0.0, 0.58, 1.0).unwrap()(t)
+            bezier_easing::bezier_easing(0.42, 0.0, 0.58, 1.0)
+                .expect("bezier control points are valid constants")(t)
         };
 
         let (current_mode, next_mode, transition_progress) =

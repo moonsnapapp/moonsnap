@@ -2,7 +2,7 @@
 
 use base64::{engine::general_purpose::STANDARD, Engine};
 use chrono::{DateTime, Utc};
-use moonsnap_core::error::MoonSnapResult;
+use moonsnap_error::error::MoonSnapResult;
 use std::path::{Path, PathBuf};
 use tauri::{command, AppHandle, Emitter};
 use tokio::fs as async_fs;

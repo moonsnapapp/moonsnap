@@ -1,7 +1,7 @@
 //! Capture flow and overlay commands.
 
-use moonsnap_core::error::MoonSnapResult;
 use moonsnap_domain::capture::ScreenRegionSelection;
+use moonsnap_error::error::MoonSnapResult;
 use std::sync::atomic::Ordering;
 use tauri::{command, AppHandle, Emitter, Manager};
 

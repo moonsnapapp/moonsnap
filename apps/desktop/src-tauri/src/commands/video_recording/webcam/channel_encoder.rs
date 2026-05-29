@@ -6,7 +6,7 @@
 //! This encoder runs in its own thread and receives NativeCameraFrame
 //! instances from the capture service.
 
-use moonsnap_core::error::MoonSnapResult;
+use moonsnap_error::error::MoonSnapResult;
 use std::io::Write;
 use std::path::PathBuf;
 use std::process::{Child, ChildStdin, Stdio};

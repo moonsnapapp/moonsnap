@@ -3,7 +3,7 @@
 //! Records webcam to multiple short segments (~3 seconds each) with a manifest
 //! file that enables recovery of completed segments if recording is interrupted.
 
-use moonsnap_core::error::MoonSnapResult;
+use moonsnap_error::error::MoonSnapResult;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, Stdio};

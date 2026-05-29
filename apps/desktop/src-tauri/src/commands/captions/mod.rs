@@ -1,8 +1,8 @@
 //! Caption transcription and management commands.
 
 pub mod audio;
-use moonsnap_core::error::MoonSnapResult;
 use moonsnap_domain::captions::*;
+use moonsnap_error::error::MoonSnapResult;
 
 use futures_util::StreamExt;
 use std::path::PathBuf;

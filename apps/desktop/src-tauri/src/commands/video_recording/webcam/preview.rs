@@ -3,7 +3,7 @@
 //! Subscribes to the camera feed and maintains a JPEG buffer
 //! for the browser preview to poll.
 
-use moonsnap_core::error::MoonSnapResult;
+use moonsnap_error::error::MoonSnapResult;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::thread::JoinHandle;

@@ -1,5 +1,5 @@
 use super::super::NativeCameraFrame;
-use moonsnap_core::error::MoonSnapResult;
+use moonsnap_error::error::MoonSnapResult;
 
 /// Bilinear downscaling for planar data (Y plane).
 /// Samples 4 neighbors and blends based on fractional position.

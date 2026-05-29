@@ -1,15 +1,9 @@
-// Ratchet: ban bare `.unwrap()` in production code. CI runs clippy with
-// `-D warnings`, so this becomes a hard failure on any new unwrap. Use
-// `.expect("why this can't fail")` instead — it documents the invariant — or
-// propagate the error. Test code is exempted via clippy.toml
-// (allow-unwrap-in-tests). Existing, audited sites carry a local
-// `#[allow(clippy::unwrap_used)]` with a justification.
-#![cfg_attr(not(test), warn(clippy::unwrap_used))]
-// Clippy allows for less critical warnings (style/pedantic issues)
-#![allow(clippy::too_many_arguments)]
-#![allow(clippy::wrong_self_convention)]
-#![allow(clippy::enum_variant_names)]
-#![allow(clippy::missing_const_for_thread_local)]
+// Lint policy (the `unwrap_used` ratchet and the project-wide style allows) is
+// defined centrally in `[workspace.lints]` in Cargo.toml and inherited here via
+// `[lints] workspace = true`. Bare `.unwrap()` in production code is a hard CI
+// failure — use `.expect("why this can't fail")` or propagate the error; test
+// code is exempt via clippy.toml, and audited sites carry a local
+// `#[allow(clippy::unwrap_used)]`.
 
 use tauri::{image::Image, Manager};
 

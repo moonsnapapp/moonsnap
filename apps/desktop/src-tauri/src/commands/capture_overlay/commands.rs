@@ -5,7 +5,7 @@
 //!
 //! Communication uses an atomic pending command that the overlay polls.
 
-use moonsnap_core::error::MoonSnapResult;
+use moonsnap_error::error::MoonSnapResult;
 use std::sync::atomic::{AtomicBool, AtomicI32, AtomicIsize, AtomicU32, AtomicU8, Ordering};
 use std::sync::{Mutex, OnceLock};
 

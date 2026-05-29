@@ -5,7 +5,7 @@
 //! manager is owned by one thread and all register/unregister operations are
 //! routed to it over a channel.
 
-use moonsnap_core::error::{MoonSnapError, MoonSnapResult};
+use moonsnap_error::error::{MoonSnapError, MoonSnapResult};
 use parking_lot::Mutex;
 use std::collections::HashMap;
 use std::fs;

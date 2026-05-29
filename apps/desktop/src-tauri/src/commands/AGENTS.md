@@ -43,7 +43,7 @@ commands/
 
 ### Command Signature
 ```rust
-use moonsnap_core::error::{MoonSnapError, MoonSnapResult};
+use moonsnap_error::error::{MoonSnapError, MoonSnapResult};
 
 #[tauri::command]
 pub async fn my_command(
@@ -57,7 +57,7 @@ pub async fn my_command(
 
 ### Error Handling
 ```rust
-use moonsnap_core::error::{MoonSnapError, ResultExt};
+use moonsnap_error::error::{MoonSnapError, ResultExt};
 
 // Convert any error with context
 let data = fs::read(&path)

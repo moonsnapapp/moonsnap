@@ -1,4 +1,4 @@
-use moonsnap_core::error::MoonSnapResult;
+use moonsnap_error::error::MoonSnapResult;
 use std::collections::HashMap;
 use tauri::{AppHandle, Manager};
 

@@ -1,6 +1,6 @@
 //! Video metadata extraction and project loading.
 
-use moonsnap_core::error::MoonSnapResult;
+use moonsnap_error::error::MoonSnapResult;
 use std::path::PathBuf;
 
 use moonsnap_domain::video_project::{VideoProject, VisibilitySegment};

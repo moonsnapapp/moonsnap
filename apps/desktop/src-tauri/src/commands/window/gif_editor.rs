@@ -3,7 +3,7 @@
 //! Each GIF opens in its own dedicated window. Windows are tracked by
 //! capture path to prevent duplicates.
 
-use moonsnap_core::error::MoonSnapResult;
+use moonsnap_error::error::MoonSnapResult;
 use parking_lot::Mutex;
 use std::collections::HashMap;
 use tauri::{command, AppHandle, Manager, WebviewUrl, WebviewWindowBuilder};

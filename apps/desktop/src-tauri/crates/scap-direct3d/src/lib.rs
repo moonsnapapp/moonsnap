@@ -139,7 +139,8 @@ impl StagingTexturePool {
                 .CreateTexture2D(&texture_desc, None, Some(&mut texture))?;
         };
 
-        let texture = texture.unwrap();
+        let texture =
+            texture.expect("CreateTexture2D returned success without populating the out-param");
 
         if index < textures.len() {
             textures[index] = PooledStagingTexture {
@@ -193,11 +194,18 @@ fn create_d3d_device_with_warp_fallback() -> windows::core::Result<(ID3D11Device
     let result = create_d3d_device_with_type(D3D_DRIVER_TYPE_HARDWARE, flags, &mut device);
 
     match result {
-        Ok(()) => Ok((device.unwrap(), false)),
+        Ok(()) => Ok((
+            device.expect("D3D11CreateDevice succeeded without populating the device out-param"),
+            false,
+        )),
         Err(e) if e.code() == DXGI_ERROR_UNSUPPORTED => {
             tracing::info!("Hardware D3D11 device unavailable, attempting WARP fallback");
             create_d3d_device_with_type(D3D_DRIVER_TYPE_WARP, flags, &mut device)?;
-            Ok((device.unwrap(), true))
+            Ok((
+                device
+                    .expect("D3D11CreateDevice (WARP) succeeded without populating the out-param"),
+                true,
+            ))
         },
         Err(e) => Err(e),
     }
@@ -408,7 +416,12 @@ impl Capturer {
                 unsafe { d3d_device.CreateTexture2D(&desc, None, Some(&mut texture)) }
                     .map_err(NewCapturerError::CropTexture)?;
 
-                Ok::<_, NewCapturerError>((texture.unwrap(), crop))
+                Ok::<_, NewCapturerError>((
+                    texture.expect(
+                        "CreateTexture2D returned success without populating the out-param",
+                    ),
+                    crop,
+                ))
             })
             .transpose()?;
 

@@ -3673,8 +3673,8 @@ dependencies = [
  "lru 0.16.3",
  "moonsnap-camera-windows",
  "moonsnap-capture",
- "moonsnap-core",
  "moonsnap-domain",
+ "moonsnap-error",
  "moonsnap-export",
  "moonsnap-hotkeys",
  "moonsnap-media",
@@ -3765,16 +3765,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "moonsnap-core"
-version = "0.1.0"
-dependencies = [
- "image",
- "serde",
- "serde_json",
- "thiserror 1.0.69",
-]
-
-[[package]]
 name = "moonsnap-domain"
 version = "0.1.0"
 dependencies = [
@@ -3784,6 +3774,16 @@ dependencies = [
  "serde",
  "serde_json",
  "ts-rs",
+]
+
+[[package]]
+name = "moonsnap-error"
+version = "0.1.0"
+dependencies = [
+ "image",
+ "serde",
+ "serde_json",
+ "thiserror 1.0.69",
 ]
 
 [[package]]

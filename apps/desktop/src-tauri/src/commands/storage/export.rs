@@ -1,7 +1,7 @@
 //! Export operations for projects.
 
 use base64::{engine::general_purpose::STANDARD, Engine};
-use moonsnap_core::error::MoonSnapResult;
+use moonsnap_error::error::MoonSnapResult;
 use std::fs;
 use std::io::Cursor;
 use tauri::command;

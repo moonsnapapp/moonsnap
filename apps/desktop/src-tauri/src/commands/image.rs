@@ -1,5 +1,5 @@
 use image::GenericImageView;
-use moonsnap_core::error::MoonSnapResult;
+use moonsnap_error::error::MoonSnapResult;
 use tauri::{command, image::Image as TauriImage, AppHandle};
 use tauri_plugin_clipboard_manager::ClipboardExt;
 

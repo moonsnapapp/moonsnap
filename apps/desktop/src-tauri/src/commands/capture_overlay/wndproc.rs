@@ -3,23 +3,22 @@
 //! Handles all window messages including mouse input, keyboard input,
 //! and cursor management.
 
-use crate::commands::capture_overlay::commands::get_saved_area_menu_state;
 use crate::commands::window::recording::reposition_recording_mode_chooser;
 use tauri::{Emitter, Manager};
 use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
 use windows::Win32::Graphics::Gdi::{BeginPaint, EndPaint, PAINTSTRUCT};
 use windows::Win32::UI::Input::KeyboardAndMouse::{ReleaseCapture, SetCapture, VK_SHIFT};
 use windows::Win32::UI::WindowsAndMessaging::{
-    AppendMenuW, CreatePopupMenu, DefWindowProcW, DestroyMenu, GetCursorPos, GetWindowLongPtrW,
-    GetWindowRect, IsWindowVisible, LoadCursorW, SetCursor, SetWindowPos, TrackPopupMenu,
-    GWLP_USERDATA, HTCLIENT, HTTRANSPARENT, HWND_TOPMOST, IDC_ARROW, IDC_CROSS, IDC_SIZEALL,
-    MF_GRAYED, MF_SEPARATOR, MF_STRING, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, TPM_LEFTALIGN,
-    TPM_RETURNCMD, TPM_TOPALIGN, WM_CHAR, WM_CREATE, WM_DESTROY, WM_KEYDOWN, WM_KEYUP,
-    WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WM_NCHITTEST, WM_PAINT, WM_RBUTTONDOWN,
-    WM_SETCURSOR,
+    DefWindowProcW, GetCursorPos, GetWindowLongPtrW, GetWindowRect, IsWindowVisible, LoadCursorW,
+    SetCursor, SetWindowPos, GWLP_USERDATA, HTCLIENT, HTTRANSPARENT, HWND_TOPMOST, IDC_ARROW,
+    IDC_CROSS, IDC_SIZEALL, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, WM_CHAR, WM_CREATE, WM_DESTROY,
+    WM_KEYDOWN, WM_KEYUP, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WM_NCHITTEST, WM_PAINT,
+    WM_RBUTTONDOWN, WM_SETCURSOR,
 };
 
 use super::input::{get_area_target_at_point, get_window_at_point, hit_test_handle};
+use super::overlay_events::*;
+use super::overlay_menus::*;
 use super::render;
 use super::state::{MonitorInfo, OverlayState};
 use super::types::*;
@@ -28,18 +27,6 @@ use super::types::*;
 const VK_ESCAPE: u32 = 0x1B;
 const VK_RETURN: u32 = 0x0D;
 const VK_BACK: u32 = 0x08;
-const DIMENSION_PRESETS: [(&str, u32, u32); 6] = [
-    ("1080p", 1920, 1080),
-    ("720p", 1280, 720),
-    ("480p", 854, 480),
-    ("4:3", 640, 480),
-    ("Square", 1080, 1080),
-    ("Story", 1080, 1920),
-];
-const SAVED_AREA_MENU_SAVE_CURRENT: usize = 2001;
-const SAVED_AREA_MENU_USE_LAST: usize = 2002;
-const SAVED_AREA_MENU_SAVED_BASE: usize = 2100;
-const SAVED_AREA_MENU_DELETE_BASE: usize = 2200;
 
 /// Window procedure for the overlay.
 ///
@@ -567,7 +554,7 @@ fn handle_selection_hud_click(state: &mut OverlayState, target: SelectionHudHitT
     }
 }
 
-fn clear_dimension_edit(state: &mut OverlayState) {
+pub(super) fn clear_dimension_edit(state: &mut OverlayState) {
     if let Some(hud) = state.selection_hud.as_mut() {
         hud.clear_dimension_edit();
     }
@@ -584,7 +571,7 @@ fn adjust_selection_dimensions(state: &mut OverlayState, width_delta: i32, heigh
     set_adjustment_dimensions(state, new_width, new_height);
 }
 
-fn set_adjustment_dimensions(state: &mut OverlayState, new_width: u32, new_height: u32) {
+pub(super) fn set_adjustment_dimensions(state: &mut OverlayState, new_width: u32, new_height: u32) {
     let current = state.adjustment.bounds;
     let (cx, cy) = current.center();
     let half_w = new_width as i32 / 2;
@@ -596,299 +583,6 @@ fn set_adjustment_dimensions(state: &mut OverlayState, new_width: u32, new_heigh
         cy - half_h + new_height as i32,
     );
     emit_dimensions_update(state);
-}
-
-fn show_dimension_preset_menu(state: &mut OverlayState) {
-    clear_dimension_edit(state);
-
-    let Some(rect) = render::selection_hud_rect(state) else {
-        return;
-    };
-    let screen_position = state.monitor.local_to_screen(Point::new(
-        rect.left + SELECTION_HUD_BACK_WIDTH,
-        rect.bottom,
-    ));
-
-    unsafe {
-        let Ok(menu) = CreatePopupMenu() else {
-            return;
-        };
-
-        for (index, (label, width, height)) in DIMENSION_PRESETS.iter().enumerate() {
-            let text = format!("{label}  ({width}x{height})");
-            let wide: Vec<u16> = text.encode_utf16().chain(std::iter::once(0)).collect();
-            let _ = AppendMenuW(
-                menu,
-                MF_STRING,
-                1000 + index,
-                windows::core::PCWSTR(wide.as_ptr()),
-            );
-        }
-
-        let selected = TrackPopupMenu(
-            menu,
-            TPM_LEFTALIGN | TPM_TOPALIGN | TPM_RETURNCMD,
-            screen_position.x,
-            screen_position.y,
-            0,
-            state.hwnd,
-            None,
-        );
-        let _ = DestroyMenu(menu);
-
-        if selected.0 >= 1000 {
-            let index = (selected.0 - 1000) as usize;
-            if let Some((_, width, height)) = DIMENSION_PRESETS.get(index) {
-                set_adjustment_dimensions(state, *width, *height);
-            }
-        }
-    }
-}
-
-fn show_saved_area_menu(state: &mut OverlayState) {
-    clear_dimension_edit(state);
-    sync_saved_area_menu_state(state);
-
-    let Some(rect) = render::selection_hud_area_button_rect(state) else {
-        return;
-    };
-    let screen_position = state
-        .monitor
-        .local_to_screen(Point::new(rect.left, rect.bottom + 4));
-    let menu_state = state
-        .selection_hud
-        .as_ref()
-        .map(|hud| hud.saved_areas.clone())
-        .unwrap_or_default();
-
-    unsafe {
-        let Ok(menu) = CreatePopupMenu() else {
-            return;
-        };
-
-        append_menu_item(menu, 0, "Area Options", false);
-        let _ = AppendMenuW(menu, MF_SEPARATOR, 0, windows::core::PCWSTR::null());
-        append_menu_item(
-            menu,
-            SAVED_AREA_MENU_USE_LAST,
-            &menu_state
-                .last_area
-                .map(|area| format!("Use Last Area ({})", format_area_label(area.to_rect())))
-                .unwrap_or_else(|| "Use Last Area".to_string()),
-            menu_state.last_area.is_some(),
-        );
-        append_menu_item(
-            menu,
-            SAVED_AREA_MENU_SAVE_CURRENT,
-            "Save Current Area",
-            menu_state.can_save_current,
-        );
-
-        if !menu_state.saved_areas.is_empty() {
-            let _ = AppendMenuW(menu, MF_SEPARATOR, 0, windows::core::PCWSTR::null());
-            for (index, saved_area) in menu_state.saved_areas.iter().enumerate() {
-                append_menu_item(
-                    menu,
-                    SAVED_AREA_MENU_SAVED_BASE + index,
-                    &format!(
-                        "{} ({})",
-                        saved_area.name,
-                        format_area_label(saved_area.bounds.to_rect())
-                    ),
-                    true,
-                );
-            }
-
-            let _ = AppendMenuW(menu, MF_SEPARATOR, 0, windows::core::PCWSTR::null());
-            for (index, saved_area) in menu_state.saved_areas.iter().enumerate() {
-                append_menu_item(
-                    menu,
-                    SAVED_AREA_MENU_DELETE_BASE + index,
-                    &format!("Delete {}", saved_area.name),
-                    true,
-                );
-            }
-        }
-
-        let selected = TrackPopupMenu(
-            menu,
-            TPM_LEFTALIGN | TPM_TOPALIGN | TPM_RETURNCMD,
-            screen_position.x,
-            screen_position.y,
-            0,
-            state.hwnd,
-            None,
-        );
-        let _ = DestroyMenu(menu);
-
-        match selected.0 {
-            value if value == SAVED_AREA_MENU_SAVE_CURRENT as i32 => {
-                emit_native_selection_hud_save_area(state);
-            },
-            value if value == SAVED_AREA_MENU_USE_LAST as i32 => {
-                if let Some(area) = menu_state.last_area {
-                    set_adjustment_screen_rect(state, area.to_rect());
-                }
-            },
-            value
-                if value >= SAVED_AREA_MENU_SAVED_BASE as i32
-                    && value < SAVED_AREA_MENU_DELETE_BASE as i32 =>
-            {
-                let index = (value as usize).saturating_sub(SAVED_AREA_MENU_SAVED_BASE);
-                if let Some(area) = menu_state.saved_areas.get(index) {
-                    set_adjustment_screen_rect(state, area.bounds.to_rect());
-                }
-            },
-            value if value >= SAVED_AREA_MENU_DELETE_BASE as i32 => {
-                let index = (value as usize).saturating_sub(SAVED_AREA_MENU_DELETE_BASE);
-                if let Some(area) = menu_state.saved_areas.get(index) {
-                    emit_native_selection_hud_delete_saved_area(state, &area.id);
-                }
-            },
-            _ => {},
-        }
-    }
-}
-
-fn sync_saved_area_menu_state(state: &mut OverlayState) {
-    if let Some(hud) = state.selection_hud.as_mut() {
-        hud.saved_areas = get_saved_area_menu_state();
-    }
-}
-
-unsafe fn append_menu_item(
-    menu: windows::Win32::UI::WindowsAndMessaging::HMENU,
-    id: usize,
-    text: &str,
-    enabled: bool,
-) {
-    let wide: Vec<u16> = text.encode_utf16().chain(std::iter::once(0)).collect();
-    let flags = if enabled {
-        MF_STRING
-    } else {
-        MF_STRING | MF_GRAYED
-    };
-    let _ = AppendMenuW(menu, flags, id, windows::core::PCWSTR(wide.as_ptr()));
-}
-
-fn format_area_label(area: Rect) -> String {
-    format!(
-        "{}x{} at {}, {}",
-        area.width(),
-        area.height(),
-        area.left,
-        area.top
-    )
-}
-
-fn set_adjustment_screen_rect(state: &mut OverlayState, screen_rect: Rect) {
-    if state.adjustment.is_locked {
-        return;
-    }
-
-    state.adjustment.bounds = state.monitor.screen_rect_to_local(screen_rect);
-    emit_dimensions_update(state);
-}
-
-fn emit_native_selection_hud_save_area(state: &OverlayState) {
-    let Some(hud) = &state.selection_hud else {
-        return;
-    };
-    let Some(selection) = state.get_screen_selection() else {
-        return;
-    };
-
-    let _ = state.app_handle.emit(
-        "native-selection-hud-save-area",
-        serde_json::json!({
-            "owner": hud.owner,
-            "x": selection.left,
-            "y": selection.top,
-            "width": selection.width(),
-            "height": selection.height(),
-        }),
-    );
-}
-
-fn emit_native_selection_hud_delete_saved_area(state: &OverlayState, id: &str) {
-    let Some(hud) = &state.selection_hud else {
-        return;
-    };
-
-    let _ = state.app_handle.emit(
-        "native-selection-hud-delete-saved-area",
-        serde_json::json!({
-            "owner": hud.owner,
-            "id": id,
-        }),
-    );
-}
-
-fn emit_native_selection_hud_capture(state: &OverlayState) {
-    let Some(hud) = &state.selection_hud else {
-        return;
-    };
-    let Some(selection) = state.get_screen_selection() else {
-        return;
-    };
-
-    let _ = state.app_handle.emit(
-        "native-selection-hud-capture",
-        serde_json::json!({
-            "owner": hud.owner,
-            "x": selection.left,
-            "y": selection.top,
-            "width": selection.width(),
-            "height": selection.height(),
-            "captureType": state.capture_type.as_str(),
-            "sourceType": "area",
-            "sourceMode": "area"
-        }),
-    );
-}
-
-fn emit_recording_mode_selected(state: &OverlayState, action: &str) {
-    let Some(chooser) = &state.recording_mode_chooser else {
-        return;
-    };
-    let Some(rect) = render::recording_mode_chooser_rect(state) else {
-        return;
-    };
-    let screen_position = state
-        .monitor
-        .local_to_screen(Point::new(rect.left, rect.top));
-
-    let _ = state.app_handle.emit(
-        "recording-mode-selected",
-        serde_json::json!({
-            "x": screen_position.x,
-            "y": screen_position.y,
-            "action": action,
-            "remember": chooser.remember,
-            "owner": chooser.owner,
-        }),
-    );
-}
-
-fn emit_recording_mode_chooser_back(state: &OverlayState) {
-    let Some(chooser) = &state.recording_mode_chooser else {
-        return;
-    };
-    let Some(rect) = render::recording_mode_chooser_rect(state) else {
-        return;
-    };
-    let screen_position = state
-        .monitor
-        .local_to_screen(Point::new(rect.left, rect.top));
-
-    let _ = state.app_handle.emit(
-        "recording-mode-chooser-back",
-        serde_json::json!({
-            "x": screen_position.x,
-            "y": screen_position.y,
-            "owner": chooser.owner,
-        }),
-    );
 }
 
 /// Handle region selection completion.
@@ -1324,49 +1018,6 @@ fn sync_recording_mode_chooser_to_selection(state: &OverlayState) {
     );
 }
 
-/// Emit adjustment ready event to show the toolbar
-fn emit_adjustment_ready(state: &OverlayState, bounds: Rect) {
-    let event = SelectionEvent::from(bounds);
-    let _ = state
-        .app_handle
-        .emit("capture-overlay-adjustment-ready", event);
-}
-
-/// Emit dimensions update during adjustment drag
-fn emit_dimensions_update(state: &OverlayState) {
-    let screen_bounds = state.monitor.local_rect_to_screen(state.adjustment.bounds);
-
-    emit_selection_update(state, screen_bounds);
-}
-
-/// Emit final selection when adjustment drag ends
-fn emit_final_selection(state: &OverlayState) {
-    let screen_bounds = state.monitor.local_rect_to_screen(state.adjustment.bounds);
-
-    emit_selection_update(state, screen_bounds);
-}
-
-fn emit_selection_update(state: &OverlayState, screen_bounds: Rect) {
-    let payload = serde_json::json!({
-        "x": screen_bounds.left,
-        "y": screen_bounds.top,
-        "width": screen_bounds.width(),
-        "height": screen_bounds.height()
-    });
-
-    if let Some(owner) = &state.toolbar_owner {
-        let _ = state
-            .app_handle
-            .emit_to(owner, "selection-updated", payload.clone());
-    } else {
-        let _ = state.app_handle.emit("selection-updated", payload.clone());
-    }
-
-    let _ = state
-        .app_handle
-        .emit_to("webcam-preview", "selection-updated", payload);
-}
-
 /// Emit event to create capture toolbar window from frontend
 /// Frontend has full control over sizing/positioning without hardcoded dimensions
 /// Source type for recording mode selection
@@ -1374,20 +1025,6 @@ enum SourceType {
     Area,
     Window { id: isize, title: String },
     Display { index: usize, name: Option<String> },
-}
-
-fn emit_area_selection_confirmed(state: &OverlayState, screen_bounds: Rect) {
-    let _ = state.app_handle.emit(
-        "area-selection-confirmed",
-        serde_json::json!({
-            "x": screen_bounds.left,
-            "y": screen_bounds.top,
-            "width": screen_bounds.width(),
-            "height": screen_bounds.height(),
-            "captureType": state.capture_type.as_str(),
-            "sourceType": "area",
-        }),
-    );
 }
 
 fn show_toolbar(state: &mut OverlayState, screen_bounds: Rect, source: SourceType) {

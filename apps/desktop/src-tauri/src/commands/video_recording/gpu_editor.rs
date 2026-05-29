@@ -2,7 +2,7 @@
 //!
 //! These commands manage EditorInstance lifecycle and playback control.
 
-use moonsnap_core::error::MoonSnapResult;
+use moonsnap_error::error::MoonSnapResult;
 use parking_lot::Mutex;
 use std::collections::HashMap;
 use std::sync::Arc;

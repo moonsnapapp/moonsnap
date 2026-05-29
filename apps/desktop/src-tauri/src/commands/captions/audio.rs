@@ -2,7 +2,7 @@
 //!
 //! Uses the bundled ffmpeg binary to extract and resample audio to 16kHz mono PCM.
 
-use moonsnap_core::error::MoonSnapResult;
+use moonsnap_error::error::MoonSnapResult;
 use std::path::Path;
 use std::process::Stdio;
 

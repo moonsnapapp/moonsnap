@@ -47,7 +47,7 @@ pub use preview_manager::{
     show_camera_preview_async, update_preview_settings,
 };
 
-use moonsnap_core::error::{MoonSnapError, MoonSnapResult};
+use moonsnap_error::error::{MoonSnapError, MoonSnapResult};
 use std::time::Instant;
 
 /// Webcam frame data ready for compositing.

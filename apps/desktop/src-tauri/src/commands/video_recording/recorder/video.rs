@@ -3,7 +3,7 @@
 //! Uses Scap for frame capture (with SystemTime-based timestamps)
 //! and VideoEncoder for hardware-accelerated MP4 encoding.
 
-use moonsnap_core::error::MoonSnapResult;
+use moonsnap_error::error::MoonSnapResult;
 use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;

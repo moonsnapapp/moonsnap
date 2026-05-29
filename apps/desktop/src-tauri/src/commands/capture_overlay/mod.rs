@@ -30,6 +30,10 @@
 pub mod commands;
 mod graphics;
 mod input;
+mod overlay_draw;
+mod overlay_events;
+mod overlay_geometry;
+mod overlay_menus;
 mod render;
 mod state;
 pub mod types;
@@ -41,8 +45,8 @@ mod tests;
 // Re-exports for public API
 pub use types::{CaptureType, OverlayAction, OverlayMode, OverlayResult, SelectionEvent};
 
-use moonsnap_core::error::MoonSnapResult;
 use moonsnap_domain::capture::ScreenRegionSelection;
+use moonsnap_error::error::MoonSnapResult;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Instant;
 

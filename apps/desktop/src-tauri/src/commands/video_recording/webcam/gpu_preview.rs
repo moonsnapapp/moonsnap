@@ -9,7 +9,7 @@
 //! - WGSL shader handles shape masking and mirroring
 //! - Render loop runs in dedicated thread
 
-use moonsnap_core::error::MoonSnapResult;
+use moonsnap_error::error::MoonSnapResult;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread::JoinHandle;

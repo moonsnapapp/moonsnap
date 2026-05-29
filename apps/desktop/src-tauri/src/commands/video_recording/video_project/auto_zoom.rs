@@ -1,10 +1,10 @@
 //! Auto-zoom generation from cursor recording data.
 
 use crate::commands::video_recording::cursor::{load_cursor_recording, CursorEventType};
-use moonsnap_core::error::MoonSnapResult;
 use moonsnap_domain::video_project::{
     AutoZoomConfig, VideoProject, ZoomRegion, ZoomRegionMode, ZoomTransition,
 };
+use moonsnap_error::error::MoonSnapResult;
 
 // ============================================================================
 // Auto-Zoom Configuration

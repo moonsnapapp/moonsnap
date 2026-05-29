@@ -25,7 +25,7 @@ pub mod video_editor;
 pub use capture::{trigger_capture, trigger_capture_with_options};
 pub use toolbar::show_startup_toolbar;
 
-use moonsnap_core::error::MoonSnapResult;
+use moonsnap_error::error::MoonSnapResult;
 use serde_json::Value;
 use std::sync::atomic::{AtomicBool, Ordering};
 use tauri::Manager;

@@ -1,6 +1,6 @@
 //! Video project file creation after recording.
 
-use moonsnap_core::error::MoonSnapResult;
+use moonsnap_error::error::MoonSnapResult;
 use std::path::Path;
 
 use moonsnap_domain::video_project::VideoProject;

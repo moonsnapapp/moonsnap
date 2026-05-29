@@ -9,7 +9,7 @@
 //! This allows preview and recording to receive the same frames
 //! with the same timestamps, ensuring perfect sync.
 
-use moonsnap_core::error::MoonSnapResult;
+use moonsnap_error::error::MoonSnapResult;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::thread::JoinHandle;

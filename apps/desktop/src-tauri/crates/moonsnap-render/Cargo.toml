@@ -4,17 +4,20 @@ version = "0.1.0"
 edition = "2021"
 license = "MIT"
 
+[lints]
+workspace = true
+
 [dependencies]
-bezier_easing = "0.1"
-bytemuck = { version = "1", features = ["derive"] }
-glyphon = "0.9"
-image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp"] }
-log = "0.4"
-serde = { version = "1", features = ["derive"] }
+bezier_easing = { workspace = true }
+bytemuck = { workspace = true }
+glyphon = { workspace = true }
+image = { workspace = true, features = ["jpeg", "png", "webp"] }
+log = { workspace = true }
+serde = { workspace = true }
 moonsnap-project-types = { path = "../moonsnap-project-types" }
-tokio = { version = "1", features = ["sync"] }
-ts-rs = "10"
-wgpu = "25"
+tokio = { workspace = true, features = ["sync"] }
+ts-rs = { workspace = true }
+wgpu = { workspace = true }
 
 [dev-dependencies]
-proptest = "1.10"
+proptest = { workspace = true }

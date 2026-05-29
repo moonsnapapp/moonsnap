@@ -3,8 +3,15 @@ name = "scap-direct3d"
 version = "0.1.0"
 edition = "2021"
 
+[lints]
+workspace = true
+
+[dependencies]
+thiserror = { workspace = true }
+tracing = { workspace = true }
+
 [target.'cfg(windows)'.dependencies]
-windows = { version = "0.58", features = [
+windows = { workspace = true, features = [
     "System",
     "Graphics_Capture",
     "Graphics_DirectX_Direct3D11",
@@ -23,5 +30,3 @@ windows = { version = "0.58", features = [
     "Win32_System_SystemInformation",
     "Win32_System_LibraryLoader",
 ] }
-thiserror = "1.0"
-tracing = "0.1"

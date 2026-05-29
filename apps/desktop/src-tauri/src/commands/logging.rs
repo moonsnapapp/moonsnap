@@ -4,7 +4,7 @@
 //! with automatic log rotation and cleanup.
 
 use chrono::Local;
-use moonsnap_core::error::MoonSnapResult;
+use moonsnap_error::error::MoonSnapResult;
 use parking_lot::Mutex;
 use std::fs::{self, File, OpenOptions};
 use std::io::Write;

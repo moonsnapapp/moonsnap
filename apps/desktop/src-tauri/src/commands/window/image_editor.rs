@@ -3,7 +3,7 @@
 //! Each image opens in its own dedicated window for faster switching
 //! between projects. Windows are tracked by capture path to prevent duplicates.
 
-use moonsnap_core::error::MoonSnapResult;
+use moonsnap_error::error::MoonSnapResult;
 use parking_lot::Mutex;
 use std::collections::HashMap;
 use tauri::{command, AppHandle, Manager, WebviewUrl, WebviewWindowBuilder};

@@ -1,6 +1,6 @@
 //! Maintenance and repair operations: stats, ffmpeg, startup cleanup, video migration, repair.
 
-use moonsnap_core::error::MoonSnapResult;
+use moonsnap_error::error::MoonSnapResult;
 use std::fs;
 use std::path::{Path, PathBuf};
 use tauri::command;

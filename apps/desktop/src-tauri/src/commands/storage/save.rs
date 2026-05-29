@@ -3,7 +3,7 @@
 use base64::{engine::general_purpose::STANDARD, Engine};
 use chrono::Utc;
 use image::{DynamicImage, GenericImageView};
-use moonsnap_core::error::MoonSnapResult;
+use moonsnap_error::error::MoonSnapResult;
 use std::fs;
 use std::path::PathBuf;
 use tauri::command;

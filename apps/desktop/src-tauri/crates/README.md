@@ -4,7 +4,7 @@ This folder contains reusable Rust libraries extracted from the Tauri app shell.
 
 ## Current crates
 
-- `moonsnap-core`: shared error/result/context primitives.
+- `moonsnap-error`: application-level error/result/context primitives, consumed by the app shell (library crates define their own narrower error types).
 - `moonsnap-domain`: shared domain models that are not Tauri-specific.
 - `moonsnap-media`: FFmpeg/probe discovery and media helper utilities.
 - `moonsnap-render`: shared rendering math/layout utilities.
@@ -18,8 +18,8 @@ This folder contains reusable Rust libraries extracted from the Tauri app shell.
 
 Keep dependencies one-way:
 
-1. `moonsnap-core`
-2. `moonsnap-domain` and `moonsnap-media` (can depend on `moonsnap-core`)
+1. `moonsnap-error`
+2. `moonsnap-domain` and `moonsnap-media` (can depend on `moonsnap-error`)
 3. runtime/engine crates (`scap-*`, `camera-*`, future rendering/recording crates)
 4. app shell (`moonsnap` crate with Tauri commands, plugins, windows, and IPC wiring)
 
@@ -27,7 +27,7 @@ Keep dependencies one-way:
 
 ## Migration order
 
-1. Move shared primitives into `moonsnap-core`.
+1. Move shared primitives into `moonsnap-error`.
 2. Move reusable DTO/domain types into `moonsnap-domain`.
 3. Move FFmpeg/media helpers into `moonsnap-media`.
 4. Extract rendering and recording engines into dedicated crates.

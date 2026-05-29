@@ -8,7 +8,7 @@
 use font_kit::family_name::FamilyName;
 use font_kit::properties::{Properties, Style, Weight};
 use font_kit::source::SystemSource;
-use moonsnap_core::error::{MoonSnapError, MoonSnapResult};
+use moonsnap_error::error::{MoonSnapError, MoonSnapResult};
 use std::collections::HashSet;
 use std::time::Instant;
 use tokio::sync::OnceCell;

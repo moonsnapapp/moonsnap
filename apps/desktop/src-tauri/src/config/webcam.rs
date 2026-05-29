@@ -4,8 +4,8 @@
 //! Re-exports types from the webcam module for convenience.
 
 use lazy_static::lazy_static;
-use moonsnap_core::error::MoonSnapResult;
 use moonsnap_domain::webcam::{WebcamPosition, WebcamSettings, WebcamShape, WebcamSize};
+use moonsnap_error::error::MoonSnapResult;
 use parking_lot::RwLock;
 
 /// Type alias for webcam config (same as WebcamSettings).

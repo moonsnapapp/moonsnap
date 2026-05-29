@@ -4,12 +4,15 @@ version = "0.1.0"
 edition = "2021"
 license = "MIT"
 
+[lints]
+workspace = true
+
 [dependencies]
-log = "0.4"
+log = { workspace = true }
 moonsnap-project-types = { path = "../moonsnap-project-types" }
 moonsnap-media = { path = "../moonsnap-media" }
 moonsnap-render = { path = "../moonsnap-render" }
-tokio = { version = "1", features = ["rt-multi-thread", "sync"] }
+tokio = { workspace = true, features = ["rt-multi-thread", "sync"] }
 
 [dev-dependencies]
-tokio = { version = "1", features = ["time"] }
+tokio = { workspace = true, features = ["time"] }

@@ -1,6 +1,6 @@
 //! Delete operations for projects and captures.
 
-use moonsnap_core::error::MoonSnapResult;
+use moonsnap_error::error::MoonSnapResult;
 use std::fs;
 use std::path::{Path, PathBuf};
 use tauri::command;

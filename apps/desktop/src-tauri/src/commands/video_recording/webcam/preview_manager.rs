@@ -7,7 +7,7 @@
 //!
 //! Uses simple JPEG polling instead of wgpu for better performance and simplicity.
 
-use moonsnap_core::error::MoonSnapResult;
+use moonsnap_error::error::MoonSnapResult;
 use parking_lot::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;

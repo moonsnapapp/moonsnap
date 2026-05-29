@@ -405,7 +405,12 @@ impl WindowImpl {
     pub fn name(&self) -> Option<String> {
         let len = unsafe { GetWindowTextLengthW(self.0) };
 
-        let mut name = vec![0u16; usize::try_from(len).unwrap() + 1];
+        let mut name = vec![
+            0u16;
+            usize::try_from(len)
+                .expect("GetWindowTextLengthW returns a non-negative length")
+                + 1
+        ];
         if len >= 1 {
             let copied = unsafe { GetWindowTextW(self.0, &mut name) };
             if copied == 0 {
@@ -447,10 +452,15 @@ fn is_window_valid(hwnd: HWND, current_process_id: u32) -> bool {
             let styles = GetWindowLongPtrW(hwnd, GWL_STYLE);
             let ex_styles = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
 
-            if (ex_styles & isize::try_from(WS_EX_TOOLWINDOW.0).unwrap()) != 0 {
+            if (ex_styles
+                & isize::try_from(WS_EX_TOOLWINDOW.0).expect("window style constant fits in isize"))
+                != 0
+            {
                 return false;
             }
-            if (styles & isize::try_from(WS_CHILD.0).unwrap()) != 0 {
+            if (styles & isize::try_from(WS_CHILD.0).expect("window style constant fits in isize"))
+                != 0
+            {
                 return false;
             }
         } else {
