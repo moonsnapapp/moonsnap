@@ -66,7 +66,7 @@ jobs:
 
       - name: Create release
         id: create-release
-        uses: actions/github-script@v8
+        uses: actions/github-script@v9
         env:
           RELEASE_BODY: ${{ steps.release-notes.outputs.body }}
         with:
@@ -86,7 +86,7 @@ jobs:
         run: node scripts/build-changelog-json.cjs
 
       - name: Upload changelog asset
-        uses: actions/github-script@v8
+        uses: actions/github-script@v9
         env:
           RELEASE_ID: ${{ steps.create-release.outputs.result }}
         with:
@@ -237,7 +237,7 @@ jobs:
 
     steps:
       - name: Publish release
-        uses: actions/github-script@v8
+        uses: actions/github-script@v9
         env:
           release_id: ${{ needs.create-release.outputs.release_id }}
         with:
@@ -254,7 +254,7 @@ jobs:
       # so the beta updater channel can find it via /latest/download/latest-beta.json
       - name: Upload beta manifest to stable release
         if: needs.create-release.outputs.is_prerelease == 'true'
-        uses: actions/github-script@v8
+        uses: actions/github-script@v9
         env:
           release_id: ${{ needs.create-release.outputs.release_id }}
         with:
