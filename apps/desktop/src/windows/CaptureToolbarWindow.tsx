@@ -290,6 +290,51 @@ const CaptureToolbarWindow: React.FC = () => {
     isRecordingControlsPending ||
     isRecordingHudActive;
 
+  const bringStartupToolbarToFront = useCallback(async () => {
+    try {
+      await invoke('bring_startup_toolbar_to_front', { focus: true });
+    } catch (error) {
+      toolbarLogger.warn('Failed to bring startup toolbar to front:', error);
+
+      const currentWindow = getCurrentWebviewWindow();
+      await currentWindow.show().catch((showError) => {
+        toolbarLogger.warn('Failed to show startup toolbar fallback:', showError);
+      });
+      await currentWindow.setFocus().catch(() => {});
+    }
+  }, []);
+
+  // The Rust foreground dance (bring_startup_toolbar_to_front) reveals the
+  // window regardless of size, so it must wait until the toolbar has measured
+  // and resized itself to fit its content. Otherwise it flashes the fallback
+  // bounds and clips the toolbar (most visible in dev mode). We defer the
+  // front-bring until `useToolbarPositioning` reports the first content-derived
+  // size, with a safety timeout so a missed measurement can't trap it hidden.
+  const hasSizedToContentRef = useRef(false);
+  const pendingFrontBringRef = useRef(false);
+
+  const handleContentSized = useCallback(() => {
+    hasSizedToContentRef.current = true;
+    if (pendingFrontBringRef.current) {
+      pendingFrontBringRef.current = false;
+      void bringStartupToolbarToFront();
+    }
+  }, [bringStartupToolbarToFront]);
+
+  const requestStartupFrontBring = useCallback(() => {
+    if (hasSizedToContentRef.current) {
+      void bringStartupToolbarToFront();
+      return;
+    }
+    pendingFrontBringRef.current = true;
+    // Safety net: reveal even if a content measurement never arrives.
+    window.setTimeout(() => {
+      if (!pendingFrontBringRef.current) return;
+      pendingFrontBringRef.current = false;
+      void bringStartupToolbarToFront();
+    }, 600);
+  }, [bringStartupToolbarToFront]);
+
   useToolbarPositioning({
     containerRef,
     contentRef,
@@ -303,6 +348,7 @@ const CaptureToolbarWindow: React.FC = () => {
       isModeChooserVisible ||
       isRecordingControlsPending ||
       isRestoringToolbarFromChooser,
+    onContentSized: handleContentSized,
   });
 
   useEffect(() => {
@@ -342,19 +388,6 @@ const CaptureToolbarWindow: React.FC = () => {
     }, 500);
   }, []);
 
-  const bringStartupToolbarToFront = useCallback(async () => {
-    try {
-      await invoke('bring_startup_toolbar_to_front', { focus: true });
-    } catch (error) {
-      toolbarLogger.warn('Failed to bring startup toolbar to front:', error);
-
-      const currentWindow = getCurrentWebviewWindow();
-      await currentWindow.show().catch((showError) => {
-        toolbarLogger.warn('Failed to show startup toolbar fallback:', showError);
-      });
-      await currentWindow.setFocus().catch(() => {});
-    }
-  }, []);
 
   const restoreStartupToolbarWindow = useCallback(async () => {
     suppressStartupEscapeBriefly();
@@ -975,11 +1008,11 @@ const CaptureToolbarWindow: React.FC = () => {
         return;
       }
 
-      window.setTimeout(() => {
-        void bringStartupToolbarToFront();
-      }, STARTUP_RESTORE_STATE_FLUSH_MS);
+      // Wait for the toolbar to size itself to content before revealing it,
+      // instead of a fixed delay that races slow (dev-mode) layout.
+      requestStartupFrontBring();
     },
-    [bringStartupToolbarToFront]
+    [requestStartupFrontBring]
   );
 
   useEffect(() => {
