@@ -617,6 +617,20 @@ const CaptureToolbarWindow: React.FC = () => {
     };
   }, []);
 
+  // Wrapper for the trivial "invoke one command, log on failure" handlers.
+  // Keeps the simple recording/window commands consistent; multi-step handlers
+  // (redo, cancel, capture) keep their own bespoke logic below.
+  const runToolbarCommand = useCallback(
+    async (command: string, failureMessage: string, args?: Record<string, unknown>): Promise<void> => {
+      try {
+        await invoke(command, args);
+      } catch (e) {
+        toolbarLogger.error(failureMessage, e);
+      }
+    },
+    []
+  );
+
   const handleRedo = useCallback(async () => {
     try {
       try {
@@ -662,37 +676,26 @@ const CaptureToolbarWindow: React.FC = () => {
     }
   }, [mode, selectionConfirmed, closeWebcamPreview, restoreStartupToolbarWindow]);
 
-  const handlePause = useCallback(async () => {
-    try {
-      await invoke('pause_recording');
-    } catch (e) {
-      toolbarLogger.error('Failed to pause:', e);
-    }
-  }, []);
+  const handlePause = useCallback(
+    () => runToolbarCommand('pause_recording', 'Failed to pause:'),
+    [runToolbarCommand]
+  );
 
-  const handleResume = useCallback(async () => {
-    try {
-      await invoke('resume_recording');
-    } catch (e) {
-      toolbarLogger.error('Failed to resume:', e);
-    }
-  }, []);
+  const handleResume = useCallback(
+    () => runToolbarCommand('resume_recording', 'Failed to resume:'),
+    [runToolbarCommand]
+  );
 
-  const handleStop = useCallback(async () => {
-    try {
-      await invoke('stop_recording');
-    } catch (e) {
-      toolbarLogger.error('Failed to stop:', e);
-    }
-  }, []);
+  const handleStop = useCallback(
+    () => runToolbarCommand('stop_recording', 'Failed to stop:'),
+    [runToolbarCommand]
+  );
 
-  const handleDimensionChange = useCallback(async (width: number, height: number) => {
-    try {
-      await invoke('capture_overlay_set_dimensions', { width, height });
-    } catch (e) {
-      toolbarLogger.error('Failed to set dimensions:', e);
-    }
-  }, []);
+  const handleDimensionChange = useCallback(
+    (width: number, height: number) =>
+      runToolbarCommand('capture_overlay_set_dimensions', 'Failed to set dimensions:', { width, height }),
+    [runToolbarCommand]
+  );
 
   const handleCaptureSourceChange = useCallback(async (source: CaptureSource) => {
     setCaptureSource(source);
@@ -1211,13 +1214,10 @@ const CaptureToolbarWindow: React.FC = () => {
     });
   }, [mode]);
 
-  const handleOpenLibrary = useCallback(async () => {
-    try {
-      await invoke('show_library_window');
-    } catch (e) {
-      toolbarLogger.error('Failed to open library:', e);
-    }
-  }, []);
+  const handleOpenLibrary = useCallback(
+    () => runToolbarCommand('show_library_window', 'Failed to open library:'),
+    [runToolbarCommand]
+  );
 
   const handleCloseToolbar = useCallback(async () => {
     suppressStartupRestoreRef.current = true;
