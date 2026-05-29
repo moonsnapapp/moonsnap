@@ -78,9 +78,15 @@ export function timelineToSource(timelineMs: number, segments: TrimSegment[]): n
 /**
  * Convert source time to timeline time.
  *
+ * A source time that falls in a deleted region (the gap between two segments)
+ * is clamped to the timeline position of the next included segment; a source
+ * time past the last segment clamps to the effective duration. The `| null`
+ * return is retained for callers that defensively handle it, but in practice
+ * this function always returns a number.
+ *
  * @param sourceMs - Time in the original video
  * @param segments - Array of trim segments (if empty, returns sourceMs unchanged)
- * @returns Timeline time after cuts have been applied, or null if source time is in a deleted region
+ * @returns Timeline time after cuts have been applied (clamped to segment boundaries)
  */
 export function sourceToTimeline(sourceMs: number, segments: TrimSegment[]): number | null {
   if (!segments || segments.length === 0) {
