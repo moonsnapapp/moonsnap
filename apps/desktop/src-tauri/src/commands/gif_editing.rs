@@ -761,7 +761,7 @@ fn extract_gif_frames_blocking(source: &Path) -> Result<Vec<GifFrameInfo>, Strin
 
     for (i, frame) in frames.iter().enumerate() {
         let (num, den) = frame.delay().numer_denom_ms();
-        let delay_ms = if den == 0 { 0 } else { num / den };
+        let delay_ms = num.checked_div(den).unwrap_or(0);
 
         if i % stride == 0 {
             let thumb_path = cache_dir.join(format!("f_{:05}.png", i));

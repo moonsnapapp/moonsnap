@@ -94,7 +94,7 @@ jobs:
       fail-fast: false
       matrix:
         crate:
-          - moonsnap-core
+          - moonsnap-error
           - moonsnap-domain
           - moonsnap-media
           - moonsnap-render
