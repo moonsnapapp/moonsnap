@@ -2,6 +2,46 @@
   "source": "CHANGELOG.md",
   "entries": [
     {
+      "version": "0.5.29",
+      "date": "2026-06-01",
+      "sections": [
+        {
+          "title": "Added",
+          "items": [
+            "New GIF editor with a frame timeline, cropping, a drop-frames dialog, a reverse-frames action, and a dedicated export pipeline.",
+            "Video export now supports frame-rate downsampling and per-region zoom motion blur.",
+            "The video editor's right sidebar is now resizable."
+          ]
+        },
+        {
+          "title": "Changed",
+          "items": [
+            "Refreshed the app with a new graphite color palette and updated app icons.",
+            "All features are now available without a license — the licensing system and Pro upgrade prompts have been removed.",
+            "Flattened and streamlined the editor interface, including buttons, panels, preset chips, and properties controls.",
+            "Sidebar tabs now use flat underline indicators, and audio and background each have their own tab.",
+            "Export controls now live in the preview top bar and an export dialog, with GIF export folded into the format dropdown.",
+            "The video crop editor is now inline in the preview with top-bar controls.",
+            "Project info now appears as the source resolution in the preview overlay.",
+            "Sharper taskbar icon on the capture and startup toolbar."
+          ]
+        },
+        {
+          "title": "Fixed",
+          "items": [
+            "Capture toolbar no longer appears cropped on startup.",
+            "GIF exports now keep the correct crop aspect ratio when a crop hasn't been applied.",
+            "Images now fit to their actual size when they fit within the view.",
+            "Background properties now display regardless of the enabled toggle.",
+            "The play button now resets when video playback stops at the end.",
+            "The Space key is now captured correctly when assigning hotkeys.",
+            "Tooltips now render correctly above overlays and in light theme, and the light-mode search icon has improved contrast.",
+            "Fixed rare crashes during capture caused by status failures."
+          ]
+        }
+      ]
+    },
+    {
       "version": "0.5.28",
       "date": "2026-05-22",
       "sections": [
