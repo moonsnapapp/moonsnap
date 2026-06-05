@@ -19,12 +19,15 @@ import { MicrophonePopover } from './MicrophonePopover';
 import { SystemAudioPopover } from './SystemAudioPopover';
 import { SettingsPopover } from './SettingsPopover';
 import { AudioLevelMeter } from './AudioLevelMeter';
+import { UpdateAvailablePill } from '@/components/Updates/UpdateAvailablePill';
 import {
   useCaptureSettingsStore,
   type AreaSelectionBounds,
   type SavedAreaSelection,
 } from '@/stores/captureSettingsStore';
+import { useSettingsStore } from '@/stores/settingsStore';
 import { useRustAudioLevels } from '@/hooks/useRustAudioLevels';
+import { useUpdater } from '@/hooks/useUpdater';
 
 export type ToolbarMode = 'selection' | 'starting' | 'recording' | 'paused' | 'processing' | 'error';
 
@@ -174,6 +177,8 @@ export const CaptureToolbar: React.FC<CaptureToolbarProps> = ({
   const isVideoMode = captureType === 'video'; // Selection UI: only video supports webcam/audio
   const supportsRecordingAudio = isVideoMode && !isGif;
   const isBusy = isRecording || isStarting || isProcessing; // Disable controls during capture
+  const updateChannel = useSettingsStore((s) => s.settings.general.updateChannel);
+  useUpdater(true, updateChannel);
 
   // Get audio settings for level meters
   const { settings } = useCaptureSettingsStore();
@@ -501,6 +506,8 @@ export const CaptureToolbar: React.FC<CaptureToolbarProps> = ({
           disabled={isBusy}
           onOpenSettings={onOpenSettings}
         />
+
+        <UpdateAvailablePill variant="toolbar" />
 
         {(onOpenLibrary || minimalChrome !== 'floating') && (
           <div className="glass-toolbar-actions">

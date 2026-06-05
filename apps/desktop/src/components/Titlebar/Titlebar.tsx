@@ -3,6 +3,7 @@ import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
 import { Minus, Square, X, Maximize2, Aperture, Sun, Moon, FolderOpen, Camera, Settings } from 'lucide-react';
 import { useFocusedShortcutDispatch } from '@/hooks/useFocusedShortcutDispatch';
 import { useTheme } from '@/hooks/useTheme';
+import { UpdateAvailablePill } from '@/components/Updates/UpdateAvailablePill';
 
 interface TitlebarProps {
   title?: string;
@@ -138,6 +139,7 @@ export const Titlebar: React.FC<TitlebarProps> = ({
 
       {/* Right: Window Controls */}
       <div className={`titlebar-controls ${isHud ? 'titlebar-controls--hud' : ''}`}>
+        {isHud && <UpdateAvailablePill variant="titlebar" />}
         {onCapture && (
           <button
             onClick={onCapture}

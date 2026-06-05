@@ -2,6 +2,24 @@
   "source": "CHANGELOG.md",
   "entries": [
     {
+      "version": "0.5.30",
+      "date": "2026-06-05",
+      "sections": [
+        {
+          "title": "Added",
+          "items": [
+            "Update notifications now appear in the Library titlebar and capture toolbar when a new version is available."
+          ]
+        },
+        {
+          "title": "Fixed",
+          "items": [
+            "Silent screenshot saves no longer replace the current editor project."
+          ]
+        }
+      ]
+    },
+    {
       "version": "0.5.29",
       "date": "2026-06-01",
       "sections": [

@@ -2,6 +2,14 @@
 
 All notable changes to MoonSnap are documented in this file.
 
+## [0.5.30] - 2026-06-05
+
+### Added
+- Update notifications now appear in the Library titlebar and capture toolbar when a new version is available.
+
+### Fixed
+- Silent screenshot saves no longer replace the current editor project.
+
 ## [0.5.29] - 2026-06-01
 
 ### Added
