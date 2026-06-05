@@ -6,6 +6,8 @@
 use chrono::Local;
 use moonsnap_error::error::MoonSnapResult;
 use parking_lot::Mutex;
+use serde::Serialize;
+use std::env;
 use std::fs::{self, File, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -31,6 +33,23 @@ pub enum LogLevel {
     Info,
     Warn,
     Error,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DiagnosticsManifest {
+    generated_at: String,
+    app_version: String,
+    os: String,
+    arch: String,
+    debug_build: bool,
+    bundle_dir: String,
+    log_dir: String,
+    app_data_dir: Option<String>,
+    app_config_dir: Option<String>,
+    app_cache_dir: Option<String>,
+    current_exe: Option<String>,
+    recent_log_lines: usize,
 }
 
 impl std::fmt::Display for LogLevel {
@@ -264,6 +283,102 @@ pub async fn open_log_dir(app: AppHandle) -> MoonSnapResult<()> {
             .arg(log_dir)
             .spawn()
             .map_err(|e| format!("Failed to open file manager: {}", e))?;
+    }
+
+    Ok(())
+}
+
+/// Create a diagnostics folder with app metadata and copied logs.
+#[command]
+pub fn create_diagnostics_bundle(app: AppHandle) -> MoonSnapResult<String> {
+    let generated_at = Local::now();
+    let stamp = generated_at.format("%Y-%m-%d_%H%M%S").to_string();
+
+    let log_dir = app
+        .path()
+        .app_log_dir()
+        .map_err(|e| format!("Failed to get log directory: {}", e))?;
+    fs::create_dir_all(&log_dir).map_err(|e| format!("Failed to create log directory: {}", e))?;
+
+    let diagnostics_root = log_dir.join("diagnostics");
+    let bundle_dir = diagnostics_root.join(format!("moonsnap-diagnostics-{}", stamp));
+    let copied_logs_dir = bundle_dir.join("logs");
+    fs::create_dir_all(&copied_logs_dir)
+        .map_err(|e| format!("Failed to create diagnostics directory: {}", e))?;
+
+    let recent_logs = get_recent_logs(app.clone(), Some(500))?;
+    fs::write(bundle_dir.join("recent.log"), &recent_logs)
+        .map_err(|e| format!("Failed to write recent logs: {}", e))?;
+
+    copy_log_files(&log_dir, &copied_logs_dir)?;
+
+    let manifest = DiagnosticsManifest {
+        generated_at: generated_at.to_rfc3339(),
+        app_version: env!("CARGO_PKG_VERSION").to_string(),
+        os: env::consts::OS.to_string(),
+        arch: env::consts::ARCH.to_string(),
+        debug_build: cfg!(debug_assertions),
+        bundle_dir: bundle_dir.to_string_lossy().into_owned(),
+        log_dir: log_dir.to_string_lossy().into_owned(),
+        app_data_dir: app
+            .path()
+            .app_data_dir()
+            .ok()
+            .map(|path| path.to_string_lossy().into_owned()),
+        app_config_dir: app
+            .path()
+            .app_config_dir()
+            .ok()
+            .map(|path| path.to_string_lossy().into_owned()),
+        app_cache_dir: app
+            .path()
+            .app_cache_dir()
+            .ok()
+            .map(|path| path.to_string_lossy().into_owned()),
+        current_exe: env::current_exe()
+            .ok()
+            .map(|path| path.to_string_lossy().into_owned()),
+        recent_log_lines: recent_logs.lines().count(),
+    };
+
+    let manifest_json = serde_json::to_string_pretty(&manifest)
+        .map_err(|e| format!("Failed to serialize diagnostics manifest: {}", e))?;
+    fs::write(bundle_dir.join("manifest.json"), manifest_json)
+        .map_err(|e| format!("Failed to write diagnostics manifest: {}", e))?;
+
+    log_internal(
+        LogLevel::Info,
+        "Diagnostics",
+        &format!(
+            "Created diagnostics bundle path={} recentLogLines={}",
+            bundle_dir.display(),
+            manifest.recent_log_lines
+        ),
+    );
+
+    Ok(bundle_dir.to_string_lossy().into_owned())
+}
+
+fn copy_log_files(log_dir: &Path, target_dir: &Path) -> MoonSnapResult<()> {
+    let entries = fs::read_dir(log_dir).map_err(|e| format!("Failed to read log directory: {}", e))?;
+
+    for entry in entries.filter_map(Result::ok) {
+        let path = entry.path();
+        if !path.is_file() {
+            continue;
+        }
+
+        let is_log = path.extension().map(|ext| ext == "log").unwrap_or(false);
+        if !is_log {
+            continue;
+        }
+
+        let Some(file_name) = path.file_name() else {
+            continue;
+        };
+
+        fs::copy(&path, target_dir.join(file_name))
+            .map_err(|e| format!("Failed to copy log file {}: {}", path.display(), e))?;
     }
 
     Ok(())

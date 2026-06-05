@@ -234,6 +234,7 @@ macro_rules! tauri_command_handler {
             crate::commands::logging::write_logs,
             crate::commands::logging::get_log_dir,
             crate::commands::logging::open_log_dir,
+            crate::commands::logging::create_diagnostics_bundle,
             crate::commands::logging::get_recent_logs,
             // Capture overlay for video/gif region selection (uses DirectComposition to avoid video blackout)
             crate::commands::capture_overlay::show_capture_overlay,

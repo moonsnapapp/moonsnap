@@ -2592,6 +2592,12 @@ body.floating-toolbar-window #root {
   color: var(--ink-dark);
 }
 
+.editor-choice-pill:focus-visible {
+  outline: none;
+  border-color: rgba(156, 163, 175, 0.42);
+  filter: drop-shadow(0 0 0.35rem rgba(156, 163, 175, 0.18));
+}
+
 .editor-choice-pill--active {
   border-color: rgba(255, 255, 255, 0.08);
   background: rgba(255, 255, 255, 0.06);
@@ -3435,6 +3441,11 @@ body.floating-toolbar-window #root {
 .light .editor-choice-pill:hover {
   background: rgba(255, 255, 255, 0.7);
   border-color: rgba(15, 23, 42, 0.06);
+}
+
+.light .editor-choice-pill:focus-visible {
+  border-color: rgba(15, 23, 42, 0.22);
+  filter: drop-shadow(0 0 0.35rem rgba(15, 23, 42, 0.10));
 }
 
 .light .editor-choice-pill--active {
