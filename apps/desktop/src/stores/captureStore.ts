@@ -513,11 +513,9 @@ export const useCaptureStore = create<CaptureState>()(
           view: 'editor',
         });
       } else {
-        // Silent mode: only update project metadata, don't touch imageData
-        set({
-          currentProject: result.project,
-          hasUnsavedChanges: false,
-        });
+        // Silent mode is used for background library saves. Do not replace the
+        // active editor project without also replacing its image data.
+        set({ hasUnsavedChanges: false });
       }
 
       return result.id;
@@ -571,10 +569,9 @@ export const useCaptureStore = create<CaptureState>()(
           view: 'editor',
         });
       } else {
-        set({
-          currentProject: result.project,
-          hasUnsavedChanges: false,
-        });
+        // Silent mode is used for background library saves. Do not replace the
+        // active editor project without also replacing its image data.
+        set({ hasUnsavedChanges: false });
       }
 
       return { id: result.id, imagePath: result.image_path };

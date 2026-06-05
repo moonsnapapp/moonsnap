@@ -288,6 +288,64 @@ describe('captureStore', () => {
       expect(parsedCache.some((c: CaptureListItem) => c.id === 'new1')).toBe(true);
     });
 
+    it('should not replace active editor project during silent base64 save', async () => {
+      const activeProject = {
+        id: 'active',
+        annotations: [],
+      } as unknown as CaptureProject;
+      const newCapture = createTestCapture({ id: 'new1' });
+
+      useCaptureStore.setState({
+        currentProject: activeProject,
+        currentImageData: 'active-image-data',
+        view: 'editor',
+      });
+      mockInvoke.mockResolvedValue(createSaveResponse(newCapture));
+
+      await useCaptureStore.getState().saveNewCapture(
+        'new-image-data',
+        'screenshot',
+        { monitor: 0 },
+        { silent: true }
+      );
+
+      const state = useCaptureStore.getState();
+      expect(state.currentProject).toBe(activeProject);
+      expect(state.currentImageData).toBe('active-image-data');
+      expect(state.view).toBe('editor');
+      expect(state.captures.some((capture) => capture.id === 'new1')).toBe(true);
+    });
+
+    it('should not replace active editor project during silent file save', async () => {
+      const activeProject = {
+        id: 'active',
+        annotations: [],
+      } as unknown as CaptureProject;
+      const newCapture = createTestCapture({ id: 'new1' });
+
+      useCaptureStore.setState({
+        currentProject: activeProject,
+        currentImageData: 'active-image-data',
+        view: 'editor',
+      });
+      mockInvoke.mockResolvedValue(createSaveResponse(newCapture));
+
+      await useCaptureStore.getState().saveNewCaptureFromFile(
+        'C:\\Temp\\new-capture.rgba',
+        1920,
+        1080,
+        'region',
+        { monitor: 0 },
+        { silent: true }
+      );
+
+      const state = useCaptureStore.getState();
+      expect(state.currentProject).toBe(activeProject);
+      expect(state.currentImageData).toBe('active-image-data');
+      expect(state.view).toBe('editor');
+      expect(state.captures.some((capture) => capture.id === 'new1')).toBe(true);
+    });
+
     it('should update cache after toggle favorite', async () => {
       const capture = createTestCapture({ id: 'cap1', favorite: false });
       useCaptureStore.setState({ captures: [capture] });
