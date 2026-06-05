@@ -101,8 +101,8 @@ describe('Capture → Editor → Annotations Integration', () => {
 
       const state = useCaptureStore.getState();
       expect(state.view).toBe('library');
-      // Silent mode still sets currentProject but not view or imageData
-      expect(state.currentProject).toEqual(response.project);
+      // Silent mode is a background library save and must not replace the active editor project.
+      expect(state.currentProject).toBeNull();
       expect(state.currentImageData).toBeNull();
       expect(state.captures).toHaveLength(1);
     });
