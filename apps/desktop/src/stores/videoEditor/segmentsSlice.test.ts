@@ -633,6 +633,137 @@ describe('segment delete undo history', () => {
   });
 });
 
+describe('selected timeline item keyboard actions', () => {
+  beforeEach(() => {
+    useVideoEditorStore.setState({
+      project: null,
+      selectedZoomRegionId: null,
+      selectedTextSegmentId: null,
+      selectedAnnotationSegmentId: null,
+      selectedAnnotationShapeId: null,
+      annotationDeleteMode: null,
+      selectedMaskSegmentId: null,
+      selectedSceneSegmentId: null,
+      selectedWebcamSegmentIndex: null,
+      activeUndoDomain: null,
+      trimHistory: [],
+      trimHistoryIndex: -1,
+      annotationHistory: [],
+      annotationHistoryIndex: -1,
+    });
+  });
+
+  it('deletes the selected zoom region', () => {
+    const project = createTestProject({
+      zoom: {
+        regions: [
+          {
+            id: 'zoom-1',
+            startMs: 1000,
+            endMs: 2000,
+            scale: 2,
+            targetX: 0.5,
+            targetY: 0.5,
+            mode: 'manual',
+            isAuto: false,
+            transition: { durationInMs: 250, durationOutMs: 250, easing: 'easeInOut' },
+            motionBlur: 0,
+          },
+        ],
+        autoZoom: null,
+      },
+    });
+
+    useVideoEditorStore.setState({
+      project,
+      selectedZoomRegionId: 'zoom-1',
+    });
+
+    useVideoEditorStore.getState().deleteSelectedTimelineItem();
+
+    expect(useVideoEditorStore.getState().project?.zoom.regions).toHaveLength(0);
+    expect(useVideoEditorStore.getState().selectedZoomRegionId).toBeNull();
+  });
+
+  it('nudges the selected mask segment and clamps at the timeline start', () => {
+    const project = createTestProject({
+      mask: {
+        segments: [
+          {
+            id: 'mask-1',
+            startMs: 50,
+            endMs: 550,
+            x: 0.1,
+            y: 0.1,
+            width: 0.2,
+            height: 0.2,
+            maskType: 'blur',
+            intensity: 60,
+            feather: 0,
+            color: '#000000',
+          },
+        ],
+      },
+    });
+
+    useVideoEditorStore.setState({
+      project,
+      selectedMaskSegmentId: 'mask-1',
+    });
+
+    useVideoEditorStore.getState().nudgeSelectedTimelineItem(-100);
+
+    expect(useVideoEditorStore.getState().project?.mask.segments[0]).toMatchObject({
+      startMs: 0,
+      endMs: 500,
+    });
+  });
+
+  it('nudges the selected text segment and preserves its duration', () => {
+    const textSegmentId = createTextSegmentId(1, 0);
+    const project = createTestProject({
+      text: {
+        segments: [
+          {
+            start: 1,
+            end: 2,
+            enabled: true,
+            content: 'Hello',
+            center: { x: 0.5, y: 0.5 },
+            size: { x: 0.2, y: 0.1 },
+            fontFamily: 'Arial',
+            fontSize: 48,
+            fontWeight: 700,
+            italic: false,
+            color: '#ffffff',
+            backgroundColor: null,
+            backgroundStrokeColor: null,
+            backgroundStrokeWidth: 0,
+            strokeColor: null,
+            strokeWidth: 0,
+            fadeDuration: 0.2,
+            animation: 'none',
+            typewriterCharsPerSecond: 30,
+            typewriterSoundEnabled: false,
+          },
+        ],
+      },
+    });
+
+    useVideoEditorStore.setState({
+      project,
+      selectedTextSegmentId: textSegmentId,
+    });
+
+    useVideoEditorStore.getState().nudgeSelectedTimelineItem(250);
+
+    expect(useVideoEditorStore.getState().project?.text.segments[0]).toMatchObject({
+      start: 1.25,
+      end: 2.25,
+    });
+  });
+});
+
 describe('annotation segment move undo history', () => {
   beforeEach(() => {
     useVideoEditorStore.setState({

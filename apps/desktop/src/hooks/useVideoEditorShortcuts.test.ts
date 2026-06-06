@@ -92,4 +92,24 @@ describe('useVideoEditorShortcuts', () => {
 
     expect(handlers.onToggleCutMode).not.toHaveBeenCalled();
   });
+
+  it('does not skip playback with arrows when timeline segment nudging owns arrows', () => {
+    const handlers = defaultHandlers();
+
+    renderHook(() =>
+      useVideoEditorShortcuts({
+        enabled: true,
+        disablePlaybackArrowShortcuts: true,
+        ...handlers,
+      })
+    );
+
+    act(() => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft' }));
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight' }));
+    });
+
+    expect(handlers.onSkipBack).not.toHaveBeenCalled();
+    expect(handlers.onSkipForward).not.toHaveBeenCalled();
+  });
 });

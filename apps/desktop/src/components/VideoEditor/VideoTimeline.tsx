@@ -39,10 +39,12 @@ import {
 import {
   selectExportInPointMs,
   selectExportOutPointMs,
+  selectDeleteSelectedTimelineItem,
   selectFitTimelineToWindow,
   selectIsDraggingPlayhead,
   selectIsIOLoopEnabled,
   selectIsPlaying,
+  selectNudgeSelectedTimelineItem,
   selectPreviewTimeMs,
   selectProject,
   selectSetIsPlaying,
@@ -91,6 +93,8 @@ const CUT_PREVIEW_LINE_WIDTH_PX = 1;
 const TIMELINE_RULER_HEIGHT_PX = 32;
 const IO_RANGE_BAR_HEIGHT_PX = 3;
 const IO_RANGE_BAR_BOTTOM_OFFSET_PX = 2;
+const TIMELINE_NUDGE_STEP_MS = 100;
+const TIMELINE_NUDGE_LARGE_STEP_MS = 1000;
 
 type TimelineMarkerEdge = 'start' | 'center' | 'end';
 
@@ -122,6 +126,31 @@ function getMarkerAnchorClass(edge: TimelineMarkerEdge): string {
   if (edge === 'start') return 'left-0 translate-x-0';
   if (edge === 'end') return 'right-0 translate-x-0';
   return 'left-1/2 -translate-x-1/2';
+}
+
+function isEditableKeyboardTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+
+  const tagName = target.tagName.toLowerCase();
+  return (
+    target.isContentEditable ||
+    tagName === 'input' ||
+    tagName === 'textarea' ||
+    tagName === 'select' ||
+    target.closest('[contenteditable="true"]') !== null
+  );
+}
+
+function hasSelectedTimelineItem(): boolean {
+  const state = useVideoEditorStore.getState();
+  return Boolean(
+    state.selectedZoomRegionId ||
+    state.selectedTextSegmentId ||
+    state.selectedAnnotationSegmentId ||
+    state.selectedMaskSegmentId ||
+    state.selectedSceneSegmentId ||
+    state.selectedWebcamSegmentIndex !== null
+  );
 }
 
 /** Triangle tip must always align with the line center, even at edges. */
@@ -437,6 +466,8 @@ export function VideoTimeline({ onResetTrimSegments, onSetInPoint, onSetOutPoint
   const fitTimelineToWindow = useVideoEditorStore(selectFitTimelineToWindow);
   const setExportInPoint = useVideoEditorStore(selectSetExportInPoint);
   const setExportOutPoint = useVideoEditorStore(selectSetExportOutPoint);
+  const deleteSelectedTimelineItem = useVideoEditorStore(selectDeleteSelectedTimelineItem);
+  const nudgeSelectedTimelineItem = useVideoEditorStore(selectNudgeSelectedTimelineItem);
   const [draggingIOMarker, setDraggingIOMarker] = useState<'in' | 'out' | null>(null);
   const [isSpeedPopoverOpen, setIsSpeedPopoverOpen] = useState(false);
   const isIOLoopEnabled = useVideoEditorStore(selectIsIOLoopEnabled);
@@ -550,6 +581,31 @@ export function VideoTimeline({ onResetTrimSegments, onSetInPoint, onSetOutPoint
       }
     };
   }, []);
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (isEditableKeyboardTarget(event.target)) return;
+      if (event.altKey || event.ctrlKey || event.metaKey) return;
+      if (!hasSelectedTimelineItem()) return;
+
+      if (event.key === 'Delete' || event.key === 'Backspace') {
+        event.preventDefault();
+        event.stopPropagation();
+        deleteSelectedTimelineItem();
+        return;
+      }
+
+      if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+        event.preventDefault();
+        event.stopPropagation();
+        const stepMs = event.shiftKey ? TIMELINE_NUDGE_LARGE_STEP_MS : TIMELINE_NUDGE_STEP_MS;
+        nudgeSelectedTimelineItem(event.key === 'ArrowLeft' ? -stepMs : stepMs);
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [deleteSelectedTimelineItem, nudgeSelectedTimelineItem]);
 
   // Calculate timeline dimensions - extend to fill container width at minimum
   // sourceDurationMs is the original video duration (needed for TrimTrack segment boundaries)
@@ -1265,7 +1321,7 @@ export function VideoTimeline({ onResetTrimSegments, onSetInPoint, onSetOutPoint
                 <TooltipContent side="bottom">
                   <div className="flex items-center gap-2">
                     <span className="text-xs">Skip Back 1s</span>
-                    <kbd className="kbd text-[10px] px-1.5 py-0.5">â†</kbd>
+                    <kbd className="kbd text-[10px] px-1.5 py-0.5">Left</kbd>
                   </div>
                 </TooltipContent>
               </Tooltip>
@@ -1319,7 +1375,7 @@ export function VideoTimeline({ onResetTrimSegments, onSetInPoint, onSetOutPoint
                 <TooltipContent side="bottom">
                   <div className="flex items-center gap-2">
                     <span className="text-xs">Skip Forward 1s</span>
-                    <kbd className="kbd text-[10px] px-1.5 py-0.5">â†’</kbd>
+                    <kbd className="kbd text-[10px] px-1.5 py-0.5">Right</kbd>
                   </div>
                 </TooltipContent>
               </Tooltip>

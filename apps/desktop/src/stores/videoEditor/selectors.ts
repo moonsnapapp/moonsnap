@@ -123,6 +123,9 @@ export const selectSelectWebcamSegment = (state: VideoEditorState) => state.sele
 export const selectUpdateWebcamSegment = (state: VideoEditorState) => state.updateWebcamSegment;
 export const selectDeleteWebcamSegment = (state: VideoEditorState) => state.deleteWebcamSegment;
 
+export const selectDeleteSelectedTimelineItem = (state: VideoEditorState) => state.deleteSelectedTimelineItem;
+export const selectNudgeSelectedTimelineItem = (state: VideoEditorState) => state.nudgeSelectedTimelineItem;
+
 export const selectSetIsPlaying = (state: VideoEditorState) => state.setIsPlaying;
 export const selectLastSeekToken = (state: VideoEditorState) => state.lastSeekToken;
 

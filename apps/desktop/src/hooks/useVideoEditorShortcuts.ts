@@ -10,6 +10,7 @@ import { isTextInputTarget } from '../utils/keyboard';
  * - End: Seek to end
  * - ArrowLeft: Skip back 5 seconds
  * - ArrowRight: Skip forward 5 seconds
+ *   If a timeline segment is selected, arrows are reserved for segment nudging.
  * - C: Toggle cut mode
  * - V: Select/normal mode
  * - Delete/Backspace: Delete selected item (annotations delete a shape or a whole segment based on current annotation context)
@@ -47,6 +48,7 @@ interface UseVideoEditorShortcutsProps {
   onFitTimeline?: () => void;
   onSetInPoint?: () => void;
   onSetOutPoint?: () => void;
+  disablePlaybackArrowShortcuts?: boolean;
 }
 
 export function useVideoEditorShortcuts({
@@ -69,6 +71,7 @@ export function useVideoEditorShortcuts({
   onFitTimeline,
   onSetInPoint,
   onSetOutPoint,
+  disablePlaybackArrowShortcuts = false,
 }: UseVideoEditorShortcutsProps) {
   useEffect(() => {
     if (!enabled) return;
@@ -130,10 +133,12 @@ export function useVideoEditorShortcuts({
           onSeekToEnd();
           break;
         case 'ArrowLeft':
+          if (disablePlaybackArrowShortcuts) return;
           e.preventDefault();
           onSkipBack();
           break;
         case 'ArrowRight':
+          if (disablePlaybackArrowShortcuts) return;
           e.preventDefault();
           onSkipForward();
           break;
@@ -196,5 +201,6 @@ export function useVideoEditorShortcuts({
     onFitTimeline,
     onSetInPoint,
     onSetOutPoint,
+    disablePlaybackArrowShortcuts,
   ]);
 }

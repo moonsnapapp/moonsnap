@@ -1,6 +1,6 @@
 /* eslint-disable react-refresh/only-export-components */
 import { memo, useCallback, useRef, type ReactNode, type RefObject, type JSX } from 'react';
-import { GripVertical } from 'lucide-react';
+import { GripVertical, X } from 'lucide-react';
 import { formatTimeSimple } from '../../../stores/videoEditorStore';
 
 // ============================================================================
@@ -307,10 +307,12 @@ export const BaseSegmentItem = memo(function BaseSegmentItem<T extends BaseSegme
       {/* Delete button (shown when selected) */}
       {isSelected && (
         <button
+          type="button"
+          aria-label="Delete selected segment"
           className="absolute -top-2 -right-2 w-5 h-5 bg-red-500 hover:bg-red-400 rounded-full flex items-center justify-center text-white text-xs shadow-md"
           onClick={handleDelete}
         >
-          x
+          <X className="h-3 w-3" aria-hidden="true" />
         </button>
       )}
 

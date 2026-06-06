@@ -62,6 +62,7 @@ import {
   selectSelectedSceneSegmentId,
   selectSelectedTextSegmentId,
   selectSelectedTrimSegmentId,
+  selectSelectedWebcamSegmentIndex,
   selectSelectedZoomRegionId,
   selectSetExportInPoint,
   selectSetExportOutPoint,
@@ -221,6 +222,7 @@ export const VideoEditorView = forwardRef<VideoEditorViewRef, VideoEditorViewPro
   const undoAnnotation = useVideoEditorStore(selectUndoAnnotation);
   const redoAnnotation = useVideoEditorStore(selectRedoAnnotation);
   const selectedTrimSegmentId = useVideoEditorStore(selectSelectedTrimSegmentId);
+  const selectedWebcamSegmentIndex = useVideoEditorStore(selectSelectedWebcamSegmentIndex);
   const selectTrimSegment = useVideoEditorStore(selectSelectTrimSegment);
   const deleteTrimSegment = useVideoEditorStore(selectDeleteTrimSegment);
   const activeUndoDomain = useVideoEditorStore(selectActiveUndoDomain);
@@ -743,6 +745,15 @@ export const VideoEditorView = forwardRef<VideoEditorViewRef, VideoEditorViewPro
     void runExport();
   }, [runExport]);
 
+  const hasNudgeableTimelineSelection = Boolean(
+    selectedZoomRegionId ||
+    selectedSceneSegmentId ||
+    selectedMaskSegmentId ||
+    selectedTextSegmentId ||
+    selectedAnnotationSegmentId ||
+    selectedWebcamSegmentIndex !== null
+  );
+
   useEffect(() => {
     handleExportRef.current = () => {
       void handleExport();
@@ -770,6 +781,7 @@ export const VideoEditorView = forwardRef<VideoEditorViewRef, VideoEditorViewPro
     onFitTimeline: fitTimelineToWindow,
     onSetInPoint: handleSetInPoint,
     onSetOutPoint: handleSetOutPoint,
+    disablePlaybackArrowShortcuts: hasNudgeableTimelineSelection,
   });
 
   // Seek to start
