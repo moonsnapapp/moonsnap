@@ -1,4 +1,4 @@
-import { memo, useCallback, useRef, useState, useEffect } from 'react';
+import { createContext, memo, use, useCallback, useRef, useState, useEffect } from 'react';
 import { TIMING } from '@/constants';
 import {
   Film,
@@ -437,6 +437,639 @@ const IORangeBar = memo(function IORangeBar({
     />
   );
 });
+
+type TimelineTrackType = 'video' | 'text' | 'annotation' | 'zoom' | 'scene' | 'mask';
+type TimelineProject = ReturnType<typeof useVideoEditorStore.getState>['project'];
+
+interface TimelineCompositionContextValue {
+  project: TimelineProject;
+  sourceDurationMs: number;
+  effectiveDurationMs: number;
+  timelineZoom: number;
+  timelineWidth: number;
+  zoomPercent: number;
+  isDraggingPlayhead: boolean;
+  isPlaying: boolean;
+  splitMode: boolean;
+  previewTimeMs: number | null;
+  exportInPointMs: number | null;
+  exportOutPointMs: number | null;
+  draggingIOMarker: 'in' | 'out' | null;
+  isSpeedPopoverOpen: boolean;
+  selectedTrimSegmentSpeed: number | null;
+  canSetSelectedTrimSegmentSpeed: boolean;
+  canReplayIO: boolean;
+  isIOLoopEnabled: boolean;
+  hasVideoTrack: boolean;
+  hasTextTrack: boolean;
+  hasAnnotationTrack: boolean;
+  hasZoomTrack: boolean;
+  hasSceneTrack: boolean;
+  hasMaskTrack: boolean;
+  lastVisibleTrack: TimelineTrackType | null;
+  shouldShowPrimaryPlayhead: boolean;
+  speedControlRef: React.RefObject<HTMLDivElement | null>;
+  scrollRef: React.RefObject<HTMLDivElement | null>;
+  onResetTrimSegments?: () => void;
+  onSetInPoint?: () => void;
+  onSetOutPoint?: () => void;
+  onClearExportRange?: () => void;
+  onToggleCutMode: () => void;
+  onToggleSpeedPopover: () => void;
+  onSpeedInput: (event: React.ChangeEvent<HTMLInputElement>) => void;
+  onGoToStart: () => void;
+  onSkipBack: () => void;
+  onTogglePlayback: () => void;
+  onReplayIO: () => void;
+  onSkipForward: () => void;
+  onGoToEnd: () => void;
+  onZoomOut: () => void;
+  onZoomIn: () => void;
+  onFitTimelineToWindow: () => void;
+  onScroll: (event: React.UIEvent<HTMLDivElement>) => void;
+  onTimelineMouseMove: (event: React.MouseEvent<HTMLDivElement>) => void;
+  onTimelineMouseLeave: () => void;
+  onTimelineCutClickCapture: (event: React.MouseEvent<HTMLDivElement>) => void;
+  onTimelineClick: (event: React.MouseEvent<HTMLDivElement>) => void;
+  onRulerMouseDown: (event: React.MouseEvent<HTMLDivElement>) => void;
+  onIOMarkerMouseDown: (marker: 'in' | 'out', event: React.MouseEvent) => void;
+  onPlayheadMouseDown: (event: React.MouseEvent) => void;
+}
+
+const TimelineCompositionContext = createContext<TimelineCompositionContextValue | null>(null);
+
+function useTimelineComposition() {
+  const context = use(TimelineCompositionContext);
+  if (!context) {
+    throw new Error('Timeline composition components must be rendered inside Timeline.Provider');
+  }
+  return context;
+}
+
+function TimelineProvider({
+  value,
+  children,
+}: {
+  value: TimelineCompositionContextValue;
+  children: React.ReactNode;
+}) {
+  return (
+    <TimelineCompositionContext value={value}>
+      {children}
+    </TimelineCompositionContext>
+  );
+}
+
+function TimelineToolbar() {
+  const timeline = useTimelineComposition();
+
+  return (
+    <TooltipProvider delayDuration={200}>
+      <div className="flex items-center h-11 px-3 bg-[var(--glass-surface-dark)] border-b border-[var(--glass-border)]">
+        <div className="flex items-center gap-2">
+          <TrackManager />
+
+          <div className="w-px h-5 bg-[var(--glass-border)]" />
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                data-cut-mode-toggle
+                aria-pressed={timeline.splitMode}
+                aria-label="Toggle cut mode"
+                onClick={timeline.onToggleCutMode}
+                className={`glass-btn h-8 w-8 timeline-cut-toggle ${timeline.splitMode ? 'timeline-cut-toggle--active' : ''}`}
+              >
+                <Scissors className="w-4 h-4" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom">
+              <div className="flex items-center gap-2">
+                <span className="text-xs">Cut Mode</span>
+                <kbd className="kbd text-[10px] px-1.5 py-0.5">C</kbd>
+              </div>
+            </TooltipContent>
+          </Tooltip>
+
+          <div ref={timeline.speedControlRef} className="relative">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  aria-label="Set selected segment speed"
+                  aria-expanded={timeline.isSpeedPopoverOpen}
+                  aria-disabled={!timeline.canSetSelectedTrimSegmentSpeed}
+                  onClick={timeline.onToggleSpeedPopover}
+                  className={`glass-btn h-8 w-8 ${!timeline.canSetSelectedTrimSegmentSpeed ? 'opacity-40 cursor-not-allowed' : ''} ${timeline.isSpeedPopoverOpen ? 'active' : ''}`}
+                >
+                  <Gauge className="w-4 h-4" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">
+                <span className="text-xs">Segment Speed</span>
+              </TooltipContent>
+            </Tooltip>
+
+            {timeline.isSpeedPopoverOpen && timeline.selectedTrimSegmentSpeed !== null && (
+              <div
+                className="timeline-speed-popover absolute left-0 top-10 z-[90] w-56 rounded-md border border-[var(--glass-border)] bg-[var(--glass-bg-solid)] p-3 text-[11px] text-[var(--ink-dark)]"
+                onClick={(event) => event.stopPropagation()}
+              >
+                <div className="mb-2 flex items-center justify-between">
+                  <span className="font-medium">Speed</span>
+                  <span className="font-mono text-[var(--accent-400)]">
+                    {timeline.selectedTrimSegmentSpeed.toFixed(0)}x
+                  </span>
+                </div>
+                <input
+                  aria-label="Segment speed"
+                  className="timeline-speed-slider w-full"
+                  type="range"
+                  min={MIN_TRIM_SEGMENT_SPEED}
+                  max={MAX_TRIM_SEGMENT_SPEED}
+                  step="1"
+                  value={timeline.selectedTrimSegmentSpeed}
+                  onChange={timeline.onSpeedInput}
+                />
+              </div>
+            )}
+          </div>
+
+          {timeline.onResetTrimSegments && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  onClick={timeline.onResetTrimSegments}
+                  aria-label="Reset trim segments"
+                  className="glass-btn h-8 w-8"
+                >
+                  <RotateCcw className="w-4 h-4" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">
+                <span className="text-xs">Reset Trims</span>
+              </TooltipContent>
+            </Tooltip>
+          )}
+
+          {(timeline.onSetInPoint || timeline.onSetOutPoint) && (
+            <>
+              <div className="w-px h-5 bg-[var(--glass-border)]" />
+
+              {timeline.onSetInPoint && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      onClick={timeline.onSetInPoint}
+                      aria-label="Set in point"
+                      className="glass-btn h-8 w-8 flex items-center justify-center text-[11px] font-semibold leading-none"
+                      style={timeline.exportInPointMs !== null
+                        ? {
+                            color: IO_MARKER_TOOLTIP_TEXT,
+                            backgroundColor: 'var(--accent-subtle)',
+                            borderColor: IO_MARKER_TOOLTIP_BORDER,
+                          }
+                        : undefined}
+                    >
+                      I
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs">Set In Point</span>
+                      <kbd className="kbd text-[10px] px-1.5 py-0.5">I</kbd>
+                    </div>
+                  </TooltipContent>
+                </Tooltip>
+              )}
+
+              {timeline.onSetOutPoint && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      onClick={timeline.onSetOutPoint}
+                      aria-label="Set out point"
+                      className="glass-btn h-8 w-8 flex items-center justify-center text-[11px] font-semibold leading-none"
+                      style={timeline.exportOutPointMs !== null
+                        ? {
+                            color: IO_MARKER_TOOLTIP_TEXT,
+                            backgroundColor: 'var(--accent-subtle)',
+                            borderColor: IO_MARKER_TOOLTIP_BORDER,
+                          }
+                        : undefined}
+                    >
+                      O
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs">Set Out Point</span>
+                      <kbd className="kbd text-[10px] px-1.5 py-0.5">O</kbd>
+                    </div>
+                  </TooltipContent>
+                </Tooltip>
+              )}
+
+              {timeline.onClearExportRange && (timeline.exportInPointMs !== null || timeline.exportOutPointMs !== null) && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      onClick={timeline.onClearExportRange}
+                      aria-label="Clear export range"
+                      className="glass-btn h-8 w-8"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom">
+                    <span className="text-xs">Clear IO Range</span>
+                  </TooltipContent>
+                </Tooltip>
+              )}
+            </>
+          )}
+        </div>
+
+        <div className="flex-1 flex items-center justify-center gap-1">
+          <div className="flex items-center gap-0.5">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button onClick={timeline.onGoToStart} aria-label="Go to start" className="glass-btn h-8 w-8">
+                  <SkipBack className="w-3.5 h-3.5" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs">Go to Start</span>
+                  <kbd className="kbd text-[10px] px-1.5 py-0.5">Home</kbd>
+                </div>
+              </TooltipContent>
+            </Tooltip>
+
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button onClick={timeline.onSkipBack} aria-label="Skip back 1 second" className="glass-btn h-8 w-8">
+                  <SkipBack className="w-3 h-3" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs">Skip Back 1s</span>
+                  <kbd className="kbd text-[10px] px-1.5 py-0.5">Left</kbd>
+                </div>
+              </TooltipContent>
+            </Tooltip>
+
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  onClick={timeline.onTogglePlayback}
+                  aria-label={timeline.isPlaying ? 'Pause' : 'Play'}
+                  className="tool-button h-9 w-9 active"
+                >
+                  {timeline.isPlaying ? (
+                    <Pause className="w-4 h-4 relative z-10" />
+                  ) : (
+                    <Play className="w-4 h-4 ml-0.5 relative z-10" />
+                  )}
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs">{timeline.isPlaying ? 'Pause' : 'Play'}</span>
+                  <kbd className="kbd text-[10px] px-1.5 py-0.5">Space</kbd>
+                </div>
+              </TooltipContent>
+            </Tooltip>
+
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  onClick={timeline.onReplayIO}
+                  aria-label={timeline.isIOLoopEnabled ? 'Disable IO loop' : 'Enable IO loop'}
+                  aria-pressed={timeline.isIOLoopEnabled}
+                  aria-disabled={!timeline.canReplayIO}
+                  data-io-loop-active={timeline.isIOLoopEnabled ? 'true' : undefined}
+                  className={`glass-btn h-8 w-8 timeline-io-loop-toggle ${!timeline.canReplayIO ? 'opacity-40 cursor-not-allowed' : ''} ${timeline.isIOLoopEnabled ? 'timeline-io-loop-toggle--active' : ''}`}
+                >
+                  <Repeat2 className="w-3.5 h-3.5" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">
+                <span className="text-xs">{timeline.isIOLoopEnabled ? 'Disable IO Loop' : 'Loop IO Range'}</span>
+              </TooltipContent>
+            </Tooltip>
+
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button onClick={timeline.onSkipForward} aria-label="Skip forward 1 second" className="glass-btn h-8 w-8">
+                  <SkipForward className="w-3 h-3" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs">Skip Forward 1s</span>
+                  <kbd className="kbd text-[10px] px-1.5 py-0.5">Right</kbd>
+                </div>
+              </TooltipContent>
+            </Tooltip>
+
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button onClick={timeline.onGoToEnd} aria-label="Go to end" className="glass-btn h-8 w-8">
+                  <SkipForward className="w-3.5 h-3.5" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs">Go to End</span>
+                  <kbd className="kbd text-[10px] px-1.5 py-0.5">End</kbd>
+                </div>
+              </TooltipContent>
+            </Tooltip>
+          </div>
+
+          <TimeDisplay durationMs={timeline.effectiveDurationMs} />
+        </div>
+
+        <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button onClick={timeline.onZoomOut} aria-label="Zoom out timeline" className="glass-btn h-7 w-7">
+                  <ZoomOut className="w-3.5 h-3.5" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">
+                <p className="text-xs">Zoom Out Timeline</p>
+              </TooltipContent>
+            </Tooltip>
+
+            <span className="text-[10px] text-[var(--ink-subtle)] font-mono w-12 text-center">
+              {timeline.zoomPercent}%
+            </span>
+
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button onClick={timeline.onZoomIn} aria-label="Zoom in timeline" className="glass-btn h-7 w-7">
+                  <ZoomIn className="w-3.5 h-3.5" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">
+                <p className="text-xs">Zoom In Timeline</p>
+              </TooltipContent>
+            </Tooltip>
+
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button onClick={timeline.onFitTimelineToWindow} aria-label="Fit timeline to window" className="glass-btn h-7 w-7">
+                  <Maximize2 className="w-3.5 h-3.5" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs">Fit Timeline to Window</span>
+                  <kbd className="kbd text-[10px] px-1.5 py-0.5">Z</kbd>
+                </div>
+              </TooltipContent>
+            </Tooltip>
+          </div>
+        </div>
+      </div>
+    </TooltipProvider>
+  );
+}
+
+function TrackLabel({
+  icon,
+  label,
+}: {
+  icon: React.ReactNode;
+  label: string;
+}) {
+  return (
+    <div className="h-12 border-b border-[var(--glass-border)] flex items-center justify-center">
+      <div className="flex items-center gap-1.5 text-[var(--ink-dark)]">
+        {icon}
+        <span className="text-[11px] font-medium">{label}</span>
+      </div>
+    </div>
+  );
+}
+
+function TimelineTrackLabels() {
+  const timeline = useTimelineComposition();
+
+  return (
+    <div className="flex-shrink-0 w-20 bg-[var(--polar-mist)] border-r border-[var(--glass-border)] z-20">
+      <div className="h-8 border-b border-[var(--glass-border)]" />
+
+      {timeline.hasVideoTrack && <TrackLabel icon={<Film className="w-3.5 h-3.5" />} label="Video" />}
+      {timeline.hasTextTrack && <TrackLabel icon={<Type className="w-3.5 h-3.5" />} label="Text" />}
+      {timeline.hasAnnotationTrack && <TrackLabel icon={<Highlighter className="w-3.5 h-3.5" />} label="Annotate" />}
+      {timeline.hasZoomTrack && <TrackLabel icon={<ZoomIn className="w-3.5 h-3.5" />} label="Zoom" />}
+      {timeline.hasSceneTrack && <TrackLabel icon={<Video className="w-3.5 h-3.5" />} label="Scene" />}
+      {timeline.hasMaskTrack && <TrackLabel icon={<EyeOff className="w-3.5 h-3.5" />} label="Mask" />}
+    </div>
+  );
+}
+
+function TimelineTracks() {
+  const timeline = useTimelineComposition();
+  const project = timeline.project;
+
+  return (
+    <>
+      <TimelineRuler
+        durationMs={timeline.effectiveDurationMs}
+        timelineZoom={timeline.timelineZoom}
+        width={timeline.timelineWidth}
+        onMouseDown={timeline.onRulerMouseDown}
+      />
+
+      {timeline.hasVideoTrack && project && (
+        <TrimTrackContent
+          segments={project.timeline.segments}
+          durationMs={timeline.sourceDurationMs}
+          timelineZoom={timeline.timelineZoom}
+          width={timeline.timelineWidth}
+          isCutMode={timeline.splitMode}
+          tooltipPlacement={timeline.lastVisibleTrack === 'video' ? 'above' : 'below'}
+          audioPath={
+            project.sources.systemAudio ??
+            project.sources.microphoneAudio ??
+            project.sources.screenVideo ??
+            undefined
+          }
+        />
+      )}
+
+      {timeline.hasTextTrack && project && (
+        <TextTrackContent
+          segments={project.text.segments}
+          durationMs={timeline.effectiveDurationMs}
+          timelineZoom={timeline.timelineZoom}
+          width={timeline.timelineWidth}
+          tooltipPlacement={timeline.lastVisibleTrack === 'text' ? 'above' : 'below'}
+        />
+      )}
+
+      {timeline.hasAnnotationTrack && project && (
+        <AnnotationTrackContent
+          segments={project.annotations?.segments ?? []}
+          durationMs={timeline.effectiveDurationMs}
+          timelineZoom={timeline.timelineZoom}
+          width={timeline.timelineWidth}
+          tooltipPlacement={timeline.lastVisibleTrack === 'annotation' ? 'above' : 'below'}
+        />
+      )}
+
+      {timeline.hasZoomTrack && project && (
+        <ZoomTrackContent
+          regions={project.zoom.regions}
+          durationMs={timeline.effectiveDurationMs}
+          timelineZoom={timeline.timelineZoom}
+          width={timeline.timelineWidth}
+          tooltipPlacement={timeline.lastVisibleTrack === 'zoom' ? 'above' : 'below'}
+        />
+      )}
+
+      {timeline.hasSceneTrack && project && (
+        <SceneTrackContent
+          segments={project.scene.segments}
+          defaultMode={project.scene.defaultMode}
+          durationMs={timeline.effectiveDurationMs}
+          timelineZoom={timeline.timelineZoom}
+          width={timeline.timelineWidth}
+          tooltipPlacement={timeline.lastVisibleTrack === 'scene' ? 'above' : 'below'}
+        />
+      )}
+
+      {timeline.hasMaskTrack && project && (
+        <MaskTrackContent
+          segments={project.mask.segments}
+          durationMs={timeline.effectiveDurationMs}
+          timelineZoom={timeline.timelineZoom}
+          width={timeline.timelineWidth}
+          tooltipPlacement={timeline.lastVisibleTrack === 'mask' ? 'above' : 'below'}
+        />
+      )}
+    </>
+  );
+}
+
+function TimelineMarkers() {
+  const timeline = useTimelineComposition();
+
+  return (
+    <>
+      {(timeline.exportInPointMs !== null || timeline.exportOutPointMs !== null) && (
+        <IORangeBar
+          inPointMs={timeline.exportInPointMs}
+          outPointMs={timeline.exportOutPointMs}
+          effectiveDurationMs={timeline.effectiveDurationMs}
+          timelineZoom={timeline.timelineZoom}
+        />
+      )}
+
+      {timeline.exportInPointMs !== null && (
+        <IOMarker
+          timeMs={timeline.exportInPointMs}
+          label="I"
+          timelineZoom={timeline.timelineZoom}
+          width={timeline.timelineWidth}
+          isDragging={timeline.draggingIOMarker === 'in'}
+          onMouseDown={(event) => timeline.onIOMarkerMouseDown('in', event)}
+        />
+      )}
+      {timeline.exportOutPointMs !== null && (
+        <IOMarker
+          timeMs={timeline.exportOutPointMs}
+          label="O"
+          timelineZoom={timeline.timelineZoom}
+          width={timeline.timelineWidth}
+          isDragging={timeline.draggingIOMarker === 'out'}
+          onMouseDown={(event) => timeline.onIOMarkerMouseDown('out', event)}
+        />
+      )}
+
+      {!timeline.isPlaying && timeline.draggingIOMarker === null && timeline.previewTimeMs !== null && (
+        <PreviewScrubber
+          previewTimeMs={timeline.previewTimeMs}
+          timelineZoom={timeline.timelineZoom}
+          trackLabelWidth={0}
+          isCutMode={timeline.splitMode}
+          width={timeline.timelineWidth}
+        />
+      )}
+
+      <Playhead
+        timelineZoom={timeline.timelineZoom}
+        trackLabelWidth={0}
+        width={timeline.timelineWidth}
+        visible={timeline.shouldShowPrimaryPlayhead}
+        isDragging={timeline.isDraggingPlayhead}
+        onMouseDown={timeline.onPlayheadMouseDown}
+      />
+
+      {!timeline.isPlaying && timeline.draggingIOMarker === null && timeline.previewTimeMs !== null && (
+        <TimelineTimeLabel
+          timeMs={timeline.previewTimeMs}
+          timelineZoom={timeline.timelineZoom}
+          width={timeline.timelineWidth}
+          lineWidthPx={timeline.splitMode ? CUT_PREVIEW_LINE_WIDTH_PX : TIMELINE_MARKER_LINE_WIDTH_PX}
+        />
+      )}
+      {timeline.isDraggingPlayhead && (
+        <PlayheadTimeLabel
+          timelineZoom={timeline.timelineZoom}
+          width={timeline.timelineWidth}
+        />
+      )}
+    </>
+  );
+}
+
+function TimelineContent() {
+  const timeline = useTimelineComposition();
+
+  return (
+    <div
+      ref={timeline.scrollRef}
+      className={`flex-1 min-w-0 overflow-x-auto overflow-y-hidden ${timeline.splitMode ? 'timeline-cut-cursor' : ''}`}
+      onScroll={timeline.onScroll}
+      onMouseMove={timeline.onTimelineMouseMove}
+      onMouseLeave={timeline.onTimelineMouseLeave}
+    >
+      <div
+        className="relative"
+        style={{ width: `${timeline.timelineWidth}px` }}
+        onClickCapture={timeline.onTimelineCutClickCapture}
+        onClick={timeline.onTimelineClick}
+      >
+        <TimelineTracks />
+        <TimelineMarkers />
+      </div>
+    </div>
+  );
+}
+
+function TimelineFrame() {
+  return (
+    <div className="flex-1 flex min-h-0 min-w-0">
+      <Timeline.TrackLabels />
+      <Timeline.Content />
+    </div>
+  );
+}
+
+const Timeline = {
+  Provider: TimelineProvider,
+  Toolbar: TimelineToolbar,
+  Frame: TimelineFrame,
+  TrackLabels: TimelineTrackLabels,
+  Content: TimelineContent,
+  Tracks: TimelineTracks,
+  Markers: TimelineMarkers,
+};
 
 /**
  * VideoTimeline - Main timeline component with ruler, tracks, and playhead.
@@ -1120,568 +1753,70 @@ export function VideoTimeline({ onResetTrimSegments, onSetInPoint, onSetOutPoint
     updateTrimSegmentSpeed(selectedTrimSegmentId, Number(event.target.value));
   }, [selectedTrimSegmentId, updateTrimSegmentSpeed]);
 
+  const timelineComposition: TimelineCompositionContextValue = {
+    project,
+    sourceDurationMs,
+    effectiveDurationMs,
+    timelineZoom,
+    timelineWidth,
+    zoomPercent,
+    isDraggingPlayhead,
+    isPlaying,
+    splitMode,
+    previewTimeMs,
+    exportInPointMs,
+    exportOutPointMs,
+    draggingIOMarker,
+    isSpeedPopoverOpen,
+    selectedTrimSegmentSpeed,
+    canSetSelectedTrimSegmentSpeed,
+    canReplayIO,
+    isIOLoopEnabled,
+    hasVideoTrack,
+    hasTextTrack,
+    hasAnnotationTrack,
+    hasZoomTrack,
+    hasSceneTrack,
+    hasMaskTrack,
+    lastVisibleTrack,
+    shouldShowPrimaryPlayhead,
+    speedControlRef,
+    scrollRef,
+    onResetTrimSegments,
+    onSetInPoint,
+    onSetOutPoint,
+    onClearExportRange,
+    onToggleCutMode: handleToggleCutMode,
+    onToggleSpeedPopover: handleToggleSpeedPopover,
+    onSpeedInput: handleSpeedInput,
+    onGoToStart: handleGoToStart,
+    onSkipBack: handleSkipBack,
+    onTogglePlayback: handleTogglePlayback,
+    onReplayIO: handleReplayIO,
+    onSkipForward: handleSkipForward,
+    onGoToEnd: handleGoToEnd,
+    onZoomOut: handleZoomOut,
+    onZoomIn: handleZoomIn,
+    onFitTimelineToWindow: fitTimelineToWindow,
+    onScroll: handleScroll,
+    onTimelineMouseMove: handleTimelineMouseMove,
+    onTimelineMouseLeave: handleTimelineMouseLeave,
+    onTimelineCutClickCapture: handleTimelineCutClickCapture,
+    onTimelineClick: handleTimelineClick,
+    onRulerMouseDown: handleRulerMouseDown,
+    onIOMarkerMouseDown: handleIOMarkerMouseDown,
+    onPlayheadMouseDown: handlePlayheadMouseDown,
+  };
+
   return (
     <div
       ref={containerRef}
       className="h-full flex flex-col bg-[var(--polar-ice)] border-t border-[var(--glass-border)]/50 select-none"
     >
-      {/* Timeline Header with Controls */}
-      <TooltipProvider delayDuration={200}>
-        <div className="flex items-center h-11 px-3 bg-[var(--glass-surface-dark)] border-b border-[var(--glass-border)]">
-          {/* Left Section */}
-          <div className="flex items-center gap-2">
-            {/* Track Manager */}
-            <TrackManager />
-
-            {/* Scissors button - toggle cut mode */}
-            <div className="w-px h-5 bg-[var(--glass-border)]" />
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <button
-                  data-cut-mode-toggle
-                  aria-pressed={splitMode}
-                  aria-label="Toggle cut mode"
-                  onClick={handleToggleCutMode}
-                  className={`glass-btn h-8 w-8 timeline-cut-toggle ${splitMode ? 'timeline-cut-toggle--active' : ''}`}
-                >
-                  <Scissors className="w-4 h-4" />
-                </button>
-              </TooltipTrigger>
-              <TooltipContent side="bottom">
-                <div className="flex items-center gap-2">
-                  <span className="text-xs">Cut Mode</span>
-                  <kbd className="kbd text-[10px] px-1.5 py-0.5">C</kbd>
-                </div>
-              </TooltipContent>
-            </Tooltip>
-
-            <div ref={speedControlRef} className="relative">
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <button
-                    aria-label="Set selected segment speed"
-                    aria-expanded={isSpeedPopoverOpen}
-                    aria-disabled={!canSetSelectedTrimSegmentSpeed}
-                    onClick={handleToggleSpeedPopover}
-                    className={`glass-btn h-8 w-8 ${!canSetSelectedTrimSegmentSpeed ? 'opacity-40 cursor-not-allowed' : ''} ${isSpeedPopoverOpen ? 'active' : ''}`}
-                  >
-                    <Gauge className="w-4 h-4" />
-                  </button>
-                </TooltipTrigger>
-                <TooltipContent side="bottom">
-                  <span className="text-xs">Segment Speed</span>
-                </TooltipContent>
-              </Tooltip>
-
-              {isSpeedPopoverOpen && selectedTrimSegmentSpeed !== null && (
-                <div
-                  className="timeline-speed-popover absolute left-0 top-10 z-[90] w-56 rounded-md border border-[var(--glass-border)] bg-[var(--glass-bg-solid)] p-3 text-[11px] text-[var(--ink-dark)]"
-                  onClick={(event) => event.stopPropagation()}
-                >
-                  <div className="mb-2 flex items-center justify-between">
-                    <span className="font-medium">Speed</span>
-                    <span className="font-mono text-[var(--accent-400)]">
-                      {selectedTrimSegmentSpeed.toFixed(0)}x
-                    </span>
-                  </div>
-                  <input
-                    aria-label="Segment speed"
-                    className="timeline-speed-slider w-full"
-                    type="range"
-                    min={MIN_TRIM_SEGMENT_SPEED}
-                    max={MAX_TRIM_SEGMENT_SPEED}
-                    step="1"
-                    value={selectedTrimSegmentSpeed}
-                    onChange={handleSpeedInput}
-                  />
-                </div>
-              )}
-            </div>
-
-            {/* Reset button - restore full video */}
-            {onResetTrimSegments && (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <button
-                    onClick={onResetTrimSegments}
-                    aria-label="Reset trim segments"
-                    className="glass-btn h-8 w-8"
-                  >
-                    <RotateCcw className="w-4 h-4" />
-                  </button>
-                </TooltipTrigger>
-                <TooltipContent side="bottom">
-                  <span className="text-xs">Reset Trims</span>
-                </TooltipContent>
-              </Tooltip>
-            )}
-
-            {/* IO marker buttons */}
-            {(onSetInPoint || onSetOutPoint) && (
-              <>
-                <div className="w-px h-5 bg-[var(--glass-border)]" />
-
-                {onSetInPoint && (
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <button
-                        onClick={onSetInPoint}
-                        aria-label="Set in point"
-                        className="glass-btn h-8 w-8 flex items-center justify-center text-[11px] font-semibold leading-none"
-                        style={exportInPointMs !== null
-                          ? {
-                              color: IO_MARKER_TOOLTIP_TEXT,
-                              backgroundColor: 'var(--accent-subtle)',
-                              borderColor: IO_MARKER_TOOLTIP_BORDER,
-                            }
-                          : undefined}
-                      >
-                        I
-                      </button>
-                    </TooltipTrigger>
-                    <TooltipContent side="bottom">
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs">Set In Point</span>
-                        <kbd className="kbd text-[10px] px-1.5 py-0.5">I</kbd>
-                      </div>
-                    </TooltipContent>
-                  </Tooltip>
-                )}
-
-                {onSetOutPoint && (
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <button
-                        onClick={onSetOutPoint}
-                        aria-label="Set out point"
-                        className="glass-btn h-8 w-8 flex items-center justify-center text-[11px] font-semibold leading-none"
-                        style={exportOutPointMs !== null
-                          ? {
-                              color: IO_MARKER_TOOLTIP_TEXT,
-                              backgroundColor: 'var(--accent-subtle)',
-                              borderColor: IO_MARKER_TOOLTIP_BORDER,
-                            }
-                          : undefined}
-                      >
-                        O
-                      </button>
-                    </TooltipTrigger>
-                    <TooltipContent side="bottom">
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs">Set Out Point</span>
-                        <kbd className="kbd text-[10px] px-1.5 py-0.5">O</kbd>
-                      </div>
-                    </TooltipContent>
-                  </Tooltip>
-                )}
-
-                {onClearExportRange && (exportInPointMs !== null || exportOutPointMs !== null) && (
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <button
-                        onClick={onClearExportRange}
-                        aria-label="Clear export range"
-                        className="glass-btn h-8 w-8"
-                      >
-                        <X className="w-3.5 h-3.5" />
-                      </button>
-                    </TooltipTrigger>
-                    <TooltipContent side="bottom">
-                      <span className="text-xs">Clear IO Range</span>
-                    </TooltipContent>
-                  </Tooltip>
-                )}
-              </>
-            )}
-          </div>
-
-          {/* Center Section - Playback Controls */}
-          <div className="flex-1 flex items-center justify-center gap-1">
-            <div className="flex items-center gap-0.5">
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <button onClick={handleGoToStart} aria-label="Go to start" className="glass-btn h-8 w-8">
-                    <SkipBack className="w-3.5 h-3.5" />
-                  </button>
-                </TooltipTrigger>
-                <TooltipContent side="bottom">
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs">Go to Start</span>
-                    <kbd className="kbd text-[10px] px-1.5 py-0.5">Home</kbd>
-                  </div>
-                </TooltipContent>
-              </Tooltip>
-
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <button onClick={handleSkipBack} aria-label="Skip back 1 second" className="glass-btn h-8 w-8">
-                    <SkipBack className="w-3 h-3" />
-                  </button>
-                </TooltipTrigger>
-                <TooltipContent side="bottom">
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs">Skip Back 1s</span>
-                    <kbd className="kbd text-[10px] px-1.5 py-0.5">Left</kbd>
-                  </div>
-                </TooltipContent>
-              </Tooltip>
-
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <button
-                    onClick={handleTogglePlayback}
-                    aria-label={isPlaying ? 'Pause' : 'Play'}
-                    className="tool-button h-9 w-9 active"
-                  >
-                    {isPlaying ? (
-                      <Pause className="w-4 h-4 relative z-10" />
-                    ) : (
-                      <Play className="w-4 h-4 ml-0.5 relative z-10" />
-                    )}
-                  </button>
-                </TooltipTrigger>
-                <TooltipContent side="bottom">
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs">{isPlaying ? 'Pause' : 'Play'}</span>
-                    <kbd className="kbd text-[10px] px-1.5 py-0.5">Space</kbd>
-                  </div>
-                </TooltipContent>
-              </Tooltip>
-
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <button
-                    onClick={handleReplayIO}
-                    aria-label={isIOLoopEnabled ? 'Disable IO loop' : 'Enable IO loop'}
-                    aria-pressed={isIOLoopEnabled}
-                    aria-disabled={!canReplayIO}
-                    data-io-loop-active={isIOLoopEnabled ? 'true' : undefined}
-                    className={`glass-btn h-8 w-8 timeline-io-loop-toggle ${!canReplayIO ? 'opacity-40 cursor-not-allowed' : ''} ${isIOLoopEnabled ? 'timeline-io-loop-toggle--active' : ''}`}
-                  >
-                    <Repeat2 className="w-3.5 h-3.5" />
-                  </button>
-                </TooltipTrigger>
-                <TooltipContent side="bottom">
-                  <span className="text-xs">{isIOLoopEnabled ? 'Disable IO Loop' : 'Loop IO Range'}</span>
-                </TooltipContent>
-              </Tooltip>
-
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <button onClick={handleSkipForward} aria-label="Skip forward 1 second" className="glass-btn h-8 w-8">
-                    <SkipForward className="w-3 h-3" />
-                  </button>
-                </TooltipTrigger>
-                <TooltipContent side="bottom">
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs">Skip Forward 1s</span>
-                    <kbd className="kbd text-[10px] px-1.5 py-0.5">Right</kbd>
-                  </div>
-                </TooltipContent>
-              </Tooltip>
-
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <button onClick={handleGoToEnd} aria-label="Go to end" className="glass-btn h-8 w-8">
-                    <SkipForward className="w-3.5 h-3.5" />
-                  </button>
-                </TooltipTrigger>
-                <TooltipContent side="bottom">
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs">Go to End</span>
-                    <kbd className="kbd text-[10px] px-1.5 py-0.5">End</kbd>
-                  </div>
-                </TooltipContent>
-              </Tooltip>
-            </div>
-
-            <TimeDisplay durationMs={effectiveDurationMs} />
-          </div>
-
-          {/* Right Section */}
-          <div className="flex items-center gap-2">
-            {/* Timeline Zoom Controls */}
-            <div className="flex items-center gap-1">
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <button onClick={handleZoomOut} aria-label="Zoom out timeline" className="glass-btn h-7 w-7">
-                    <ZoomOut className="w-3.5 h-3.5" />
-                  </button>
-                </TooltipTrigger>
-                <TooltipContent side="bottom">
-                  <p className="text-xs">Zoom Out Timeline</p>
-                </TooltipContent>
-              </Tooltip>
-
-              <span className="text-[10px] text-[var(--ink-subtle)] font-mono w-12 text-center">
-                {zoomPercent}%
-              </span>
-
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <button onClick={handleZoomIn} aria-label="Zoom in timeline" className="glass-btn h-7 w-7">
-                    <ZoomIn className="w-3.5 h-3.5" />
-                  </button>
-                </TooltipTrigger>
-                <TooltipContent side="bottom">
-                  <p className="text-xs">Zoom In Timeline</p>
-                </TooltipContent>
-              </Tooltip>
-
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <button onClick={fitTimelineToWindow} aria-label="Fit timeline to window" className="glass-btn h-7 w-7">
-                    <Maximize2 className="w-3.5 h-3.5" />
-                  </button>
-                </TooltipTrigger>
-                <TooltipContent side="bottom">
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs">Fit Timeline to Window</span>
-                    <kbd className="kbd text-[10px] px-1.5 py-0.5">Z</kbd>
-                  </div>
-                </TooltipContent>
-              </Tooltip>
-            </div>
-
-          </div>
-        </div>
-      </TooltipProvider>
-
-      {/* Two-Column Timeline Layout */}
-      <div className="flex-1 flex min-h-0 min-w-0">
-        {/* Fixed Track Labels Column */}
-        <div className="flex-shrink-0 w-20 bg-[var(--polar-mist)] border-r border-[var(--glass-border)] z-20">
-          {/* Ruler spacer */}
-          <div className="h-8 border-b border-[var(--glass-border)]" />
-
-          {/* Video label */}
-          {hasVideoTrack && (
-            <div className="h-12 border-b border-[var(--glass-border)] flex items-center justify-center">
-              <div className="flex items-center gap-1.5 text-[var(--ink-dark)]">
-                <Film className="w-3.5 h-3.5" />
-                <span className="text-[11px] font-medium">Video</span>
-              </div>
-            </div>
-          )}
-
-          {/* Text label */}
-          {hasTextTrack && (
-            <div className="h-12 border-b border-[var(--glass-border)] flex items-center justify-center">
-              <div className="flex items-center gap-1.5 text-[var(--ink-dark)]">
-                <Type className="w-3.5 h-3.5" />
-                <span className="text-[11px] font-medium">Text</span>
-              </div>
-            </div>
-          )}
-
-          {/* Annotation label */}
-          {hasAnnotationTrack && (
-            <div className="h-12 border-b border-[var(--glass-border)] flex items-center justify-center">
-              <div className="flex items-center gap-1.5 text-[var(--ink-dark)]">
-                <Highlighter className="w-3.5 h-3.5" />
-                <span className="text-[11px] font-medium">Annotate</span>
-              </div>
-            </div>
-          )}
-
-          {/* Zoom label */}
-          {hasZoomTrack && (
-            <div className="h-12 border-b border-[var(--glass-border)] flex items-center justify-center">
-              <div className="flex items-center gap-1.5 text-[var(--ink-dark)]">
-                <ZoomIn className="w-3.5 h-3.5" />
-                <span className="text-[11px] font-medium">Zoom</span>
-              </div>
-            </div>
-          )}
-
-          {/* Scene label */}
-          {hasSceneTrack && (
-            <div className="h-12 border-b border-[var(--glass-border)] flex items-center justify-center">
-              <div className="flex items-center gap-1.5 text-[var(--ink-dark)]">
-                <Video className="w-3.5 h-3.5" />
-                <span className="text-[11px] font-medium">Scene</span>
-              </div>
-            </div>
-          )}
-
-          {/* Mask label */}
-          {hasMaskTrack && (
-            <div className="h-12 border-b border-[var(--glass-border)] flex items-center justify-center">
-              <div className="flex items-center gap-1.5 text-[var(--ink-dark)]">
-                <EyeOff className="w-3.5 h-3.5" />
-                <span className="text-[11px] font-medium">Mask</span>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Scrollable Timeline Content */}
-        <div
-          ref={scrollRef}
-          className={`flex-1 min-w-0 overflow-x-auto overflow-y-hidden ${splitMode ? 'timeline-cut-cursor' : ''}`}
-          onScroll={handleScroll}
-          onMouseMove={handleTimelineMouseMove}
-          onMouseLeave={handleTimelineMouseLeave}
-        >
-          <div
-            className="relative"
-            style={{ width: `${timelineWidth}px` }}
-            onClickCapture={handleTimelineCutClickCapture}
-            onClick={handleTimelineClick}
-          >
-            {/* Time Ruler */}
-            <TimelineRuler
-              durationMs={effectiveDurationMs}
-              timelineZoom={timelineZoom}
-              width={timelineWidth}
-              onMouseDown={handleRulerMouseDown}
-            />
-
-            {/* Video Track Content (Trim Segments) */}
-            {hasVideoTrack && project && (
-              <TrimTrackContent
-                segments={project.timeline.segments}
-                durationMs={sourceDurationMs}
-                timelineZoom={timelineZoom}
-                width={timelineWidth}
-                isCutMode={splitMode}
-                tooltipPlacement={lastVisibleTrack === 'video' ? 'above' : 'below'}
-                audioPath={
-                  project.sources.systemAudio ??
-                  project.sources.microphoneAudio ??
-                  project.sources.screenVideo ??
-                  undefined
-                }
-              />
-            )}
-
-            {/* Text Track Content */}
-            {hasTextTrack && project && (
-              <TextTrackContent
-                segments={project.text.segments}
-                durationMs={effectiveDurationMs}
-                timelineZoom={timelineZoom}
-                width={timelineWidth}
-                tooltipPlacement={lastVisibleTrack === 'text' ? 'above' : 'below'}
-              />
-            )}
-
-            {/* Annotation Track Content */}
-            {hasAnnotationTrack && project && (
-              <AnnotationTrackContent
-                segments={project.annotations?.segments ?? []}
-                durationMs={effectiveDurationMs}
-                timelineZoom={timelineZoom}
-                width={timelineWidth}
-                tooltipPlacement={lastVisibleTrack === 'annotation' ? 'above' : 'below'}
-              />
-            )}
-
-            {/* Zoom Track Content */}
-            {hasZoomTrack && project && (
-              <ZoomTrackContent
-                regions={project.zoom.regions}
-                durationMs={effectiveDurationMs}
-                timelineZoom={timelineZoom}
-                width={timelineWidth}
-                tooltipPlacement={lastVisibleTrack === 'zoom' ? 'above' : 'below'}
-              />
-            )}
-
-            {/* Scene Track Content */}
-            {hasSceneTrack && project && (
-              <SceneTrackContent
-                segments={project.scene.segments}
-                defaultMode={project.scene.defaultMode}
-                durationMs={effectiveDurationMs}
-                timelineZoom={timelineZoom}
-                width={timelineWidth}
-                tooltipPlacement={lastVisibleTrack === 'scene' ? 'above' : 'below'}
-              />
-            )}
-
-            {/* Mask Track Content */}
-            {hasMaskTrack && project && (
-              <MaskTrackContent
-                segments={project.mask.segments}
-                durationMs={effectiveDurationMs}
-                timelineZoom={timelineZoom}
-                width={timelineWidth}
-                tooltipPlacement={lastVisibleTrack === 'mask' ? 'above' : 'below'}
-              />
-            )}
-
-            {/* IO range bar - shown just above the ruler bottom edge */}
-            {(exportInPointMs !== null || exportOutPointMs !== null) && (
-              <IORangeBar
-                inPointMs={exportInPointMs}
-                outPointMs={exportOutPointMs}
-                effectiveDurationMs={effectiveDurationMs}
-                timelineZoom={timelineZoom}
-              />
-            )}
-
-            {/* IO Markers */}
-            {exportInPointMs !== null && (
-              <IOMarker
-                timeMs={exportInPointMs}
-                label="I"
-                timelineZoom={timelineZoom}
-                width={timelineWidth}
-                isDragging={draggingIOMarker === 'in'}
-                onMouseDown={(e) => handleIOMarkerMouseDown('in', e)}
-              />
-            )}
-            {exportOutPointMs !== null && (
-              <IOMarker
-                timeMs={exportOutPointMs}
-                label="O"
-                timelineZoom={timelineZoom}
-                width={timelineWidth}
-                isDragging={draggingIOMarker === 'out'}
-                onMouseDown={(e) => handleIOMarkerMouseDown('out', e)}
-              />
-            )}
-
-            {/* Preview Scrubber - only when not playing */}
-            {!isPlaying && draggingIOMarker === null && previewTimeMs !== null && (
-              <PreviewScrubber
-                previewTimeMs={previewTimeMs}
-                timelineZoom={timelineZoom}
-                trackLabelWidth={0}
-                isCutMode={splitMode}
-                width={timelineWidth}
-              />
-            )}
-
-            {/* Playhead */}
-            <Playhead
-              timelineZoom={timelineZoom}
-              trackLabelWidth={0}
-              width={timelineWidth}
-              visible={shouldShowPrimaryPlayhead}
-              isDragging={isDraggingPlayhead}
-              onMouseDown={handlePlayheadMouseDown}
-            />
-
-            {/* Top-level time labels so controls cannot cover them */}
-            {!isPlaying && draggingIOMarker === null && previewTimeMs !== null && (
-              <TimelineTimeLabel
-                timeMs={previewTimeMs}
-                timelineZoom={timelineZoom}
-                width={timelineWidth}
-                lineWidthPx={splitMode ? CUT_PREVIEW_LINE_WIDTH_PX : TIMELINE_MARKER_LINE_WIDTH_PX}
-              />
-            )}
-            {isDraggingPlayhead && (
-              <PlayheadTimeLabel
-                timelineZoom={timelineZoom}
-                width={timelineWidth}
-              />
-            )}
-          </div>
-        </div>
-      </div>
+      <Timeline.Provider value={timelineComposition}>
+        <Timeline.Toolbar />
+        <Timeline.Frame />
+      </Timeline.Provider>
     </div>
   );
 }
