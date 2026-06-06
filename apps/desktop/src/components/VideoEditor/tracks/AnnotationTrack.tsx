@@ -32,12 +32,12 @@ interface AnnotationTrackProps {
 type AnnotationSegmentWithBase = AnnotationSegment & BaseSegment;
 
 const ANNOTATION_COLORS = {
-  bg: 'var(--track-annotation-bg, rgba(249, 115, 22, 0.14))',
-  bgSelected: 'var(--track-annotation-bg-selected, rgba(249, 115, 22, 0.24))',
-  border: 'var(--track-annotation-border, rgba(249, 115, 22, 0.55))',
-  borderSelected: 'var(--track-annotation-border-selected, rgba(249, 115, 22, 0.9))',
-  hover: 'var(--track-annotation-hover, rgba(249, 115, 22, 0.2))',
-  text: 'var(--track-annotation-text, #9A3412)',
+  backgroundColor: 'var(--track-annotation-bg, rgba(249, 115, 22, 0.14))',
+  selectedBackgroundColor: 'var(--track-annotation-bg-selected, rgba(249, 115, 22, 0.24))',
+  borderColor: 'var(--track-annotation-border, rgba(249, 115, 22, 0.55))',
+  selectedBorderColor: 'var(--track-annotation-border-selected, rgba(249, 115, 22, 0.9))',
+  hoverColor: 'var(--track-annotation-hover, rgba(249, 115, 22, 0.2))',
+  textColor: 'var(--track-annotation-text, #9A3412)',
 };
 
 const PreviewSegment = memo(function PreviewSegment({
@@ -58,11 +58,11 @@ const PreviewSegment = memo(function PreviewSegment({
       style={{
         left: `${left}px`,
         width: `${Math.max(width, 40)}px`,
-        backgroundColor: ANNOTATION_COLORS.bg,
-        borderColor: ANNOTATION_COLORS.borderSelected,
+        backgroundColor: ANNOTATION_COLORS.backgroundColor,
+        borderColor: ANNOTATION_COLORS.selectedBorderColor,
       }}
     >
-      <div className="flex h-full items-center justify-center" style={{ color: ANNOTATION_COLORS.text }}>
+      <div className="flex h-full items-center justify-center" style={{ color: ANNOTATION_COLORS.textColor }}>
         <Plus className="h-4 w-4" />
       </div>
     </div>
@@ -167,12 +167,7 @@ export const AnnotationTrackContent = memo(function AnnotationTrackContent({
           onUpdate={updateAnnotationSegment}
           onDelete={deleteAnnotationSegment}
           onDragStart={handleDragStart}
-          bgColor={ANNOTATION_COLORS.bg}
-          bgColorSelected={ANNOTATION_COLORS.bgSelected}
-          borderColor={ANNOTATION_COLORS.border}
-          borderColorSelected={ANNOTATION_COLORS.borderSelected}
-          hoverColor={ANNOTATION_COLORS.hover}
-          textColor={ANNOTATION_COLORS.text}
+          appearance={ANNOTATION_COLORS}
           tooltipPlacement={tooltipPlacement}
         >
           <BaseSegmentLabel icon={<Highlighter className="w-3 h-3" />}>

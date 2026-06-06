@@ -24,6 +24,21 @@ export interface BaseSegment {
   endMs: number;
 }
 
+export interface BaseSegmentAppearance {
+  /** Segment background color */
+  backgroundColor: string;
+  /** Segment background color when selected */
+  selectedBackgroundColor: string;
+  /** Segment border color */
+  borderColor: string;
+  /** Segment border color when selected */
+  selectedBorderColor: string;
+  /** Resize handle hover color */
+  hoverColor: string;
+  /** Segment text/icon color */
+  textColor: string;
+}
+
 /** Props for the BaseSegmentItem component */
 export interface BaseSegmentItemProps<T extends BaseSegment> {
   /** The segment data */
@@ -46,18 +61,8 @@ export interface BaseSegmentItemProps<T extends BaseSegment> {
   onDragStart: (dragging: boolean, edge?: DragEdge) => void;
   /** Composed content rendered inside the center drag handle. */
   children?: ReactNode;
-  /** CSS variable for background color */
-  bgColor: string;
-  /** CSS variable for background color when selected */
-  bgColorSelected: string;
-  /** CSS variable for border color */
-  borderColor: string;
-  /** CSS variable for border color when selected */
-  borderColorSelected: string;
-  /** CSS variable for hover color on resize handles */
-  hoverColor: string;
-  /** CSS variable for text color */
-  textColor: string;
+  /** Appearance tokens for this segment type. */
+  appearance: BaseSegmentAppearance;
   /** Data attribute for the segment element (e.g., 'data-segment', 'data-region') */
   dataAttribute?: string;
   /** Additional className for the segment container */
@@ -226,12 +231,7 @@ export const BaseSegmentItem = memo(function BaseSegmentItem<T extends BaseSegme
   onDelete,
   onDragStart,
   children,
-  bgColor,
-  bgColorSelected,
-  borderColor,
-  borderColorSelected,
-  hoverColor,
-  textColor,
+  appearance,
   dataAttribute = 'data-segment',
   className = '',
   tooltipPlacement = 'below',
@@ -282,8 +282,8 @@ export const BaseSegmentItem = memo(function BaseSegmentItem<T extends BaseSegme
       style={{
         left: `${left}px`,
         width: `${Math.max(segmentWidth, 20)}px`,
-        backgroundColor: isSelected ? bgColorSelected : bgColor,
-        borderColor: isSelected ? borderColorSelected : borderColor,
+        backgroundColor: isSelected ? appearance.selectedBackgroundColor : appearance.backgroundColor,
+        borderColor: isSelected ? appearance.selectedBorderColor : appearance.borderColor,
       }}
       onClick={handleClick}
     >
@@ -291,7 +291,7 @@ export const BaseSegmentItem = memo(function BaseSegmentItem<T extends BaseSegme
       <div
         className="absolute left-0 top-0 bottom-0 w-2 cursor-ew-resize rounded-l-md touch-none"
         onPointerDown={(e) => handlePointerDown(e, 'start')}
-        onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = hoverColor)}
+        onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = appearance.hoverColor)}
         onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
       />
 
@@ -300,7 +300,7 @@ export const BaseSegmentItem = memo(function BaseSegmentItem<T extends BaseSegme
         className="absolute inset-x-2 top-0 bottom-0 cursor-move flex items-center justify-center touch-none"
         onPointerDown={(e) => handlePointerDown(e, 'move')}
       >
-        <BaseSegmentCompositionContext value={{ width: segmentWidth, textColor }}>
+        <BaseSegmentCompositionContext value={{ width: segmentWidth, textColor: appearance.textColor }}>
           {children ?? <BaseSegmentGrip />}
         </BaseSegmentCompositionContext>
       </div>
@@ -309,7 +309,7 @@ export const BaseSegmentItem = memo(function BaseSegmentItem<T extends BaseSegme
       <div
         className="absolute right-0 top-0 bottom-0 w-2 cursor-ew-resize rounded-r-md touch-none"
         onPointerDown={(e) => handlePointerDown(e, 'end')}
-        onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = hoverColor)}
+        onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = appearance.hoverColor)}
         onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
       />
 

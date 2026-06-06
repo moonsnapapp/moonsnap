@@ -33,12 +33,12 @@ const MIN_REGION_DURATION_MS = 500;
 
 // CSS variable names for zoom track styling
 const ZOOM_COLORS = {
-  bg: 'var(--track-zoom-bg)',
-  bgSelected: 'var(--track-zoom-bg-selected)',
-  border: 'var(--track-zoom-border)',
-  borderSelected: 'var(--track-zoom-border-selected)',
-  hover: 'var(--track-zoom-hover)',
-  text: 'var(--track-zoom-text)',
+  backgroundColor: 'var(--track-zoom-bg)',
+  selectedBackgroundColor: 'var(--track-zoom-bg-selected)',
+  borderColor: 'var(--track-zoom-border)',
+  selectedBorderColor: 'var(--track-zoom-border-selected)',
+  hoverColor: 'var(--track-zoom-hover)',
+  textColor: 'var(--track-zoom-text)',
 };
 
 /**
@@ -62,11 +62,11 @@ const PreviewRegion = memo(function PreviewRegion({
       style={{
         left: `${left}px`,
         width: `${Math.max(width, 40)}px`,
-        backgroundColor: ZOOM_COLORS.bg,
-        borderColor: ZOOM_COLORS.borderSelected,
+        backgroundColor: ZOOM_COLORS.backgroundColor,
+        borderColor: ZOOM_COLORS.selectedBorderColor,
       }}
     >
-      <div className="flex items-center justify-center h-full" style={{ color: ZOOM_COLORS.text }}>
+      <div className="flex items-center justify-center h-full" style={{ color: ZOOM_COLORS.textColor }}>
         <Plus className="h-4 w-4" />
       </div>
     </div>
@@ -205,12 +205,7 @@ export const ZoomTrackContent = memo(function ZoomTrackContent({
           onUpdate={updateZoomRegion}
           onDelete={deleteZoomRegion}
           onDragStart={handleDragStart}
-          bgColor={ZOOM_COLORS.bg}
-          bgColorSelected={ZOOM_COLORS.bgSelected}
-          borderColor={ZOOM_COLORS.border}
-          borderColorSelected={ZOOM_COLORS.borderSelected}
-          hoverColor={ZOOM_COLORS.hover}
-          textColor={ZOOM_COLORS.text}
+          appearance={ZOOM_COLORS}
           className={region.isAuto ? 'border-dashed' : ''}
           tooltipPlacement={tooltipPlacement}
         >

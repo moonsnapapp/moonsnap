@@ -35,12 +35,12 @@ const generateMaskId = () => `mask_${Date.now()}_${Math.random().toString(36).su
 
 // CSS variable names for mask track styling
 const MASK_COLORS = {
-  bg: 'var(--track-mask-bg)',
-  bgSelected: 'var(--track-mask-bg-selected)',
-  border: 'var(--track-mask-border)',
-  borderSelected: 'var(--track-mask-border-selected)',
-  hover: 'var(--track-mask-hover)',
-  text: 'var(--track-mask-text)',
+  backgroundColor: 'var(--track-mask-bg)',
+  selectedBackgroundColor: 'var(--track-mask-bg-selected)',
+  borderColor: 'var(--track-mask-border)',
+  selectedBorderColor: 'var(--track-mask-border-selected)',
+  hoverColor: 'var(--track-mask-hover)',
+  textColor: 'var(--track-mask-text)',
 };
 
 /**
@@ -80,11 +80,11 @@ const PreviewSegment = memo(function PreviewSegment({
       style={{
         left: `${left}px`,
         width: `${Math.max(width, 40)}px`,
-        backgroundColor: MASK_COLORS.bg,
-        borderColor: MASK_COLORS.borderSelected,
+        backgroundColor: MASK_COLORS.backgroundColor,
+        borderColor: MASK_COLORS.selectedBorderColor,
       }}
     >
-      <div className="flex items-center justify-center h-full" style={{ color: MASK_COLORS.text }}>
+      <div className="flex items-center justify-center h-full" style={{ color: MASK_COLORS.textColor }}>
         <Plus className="h-4 w-4" />
       </div>
     </div>
@@ -217,12 +217,7 @@ export const MaskTrackContent = memo(function MaskTrackContent({
           onUpdate={updateMaskSegment}
           onDelete={deleteMaskSegment}
           onDragStart={handleDragStart}
-          bgColor={MASK_COLORS.bg}
-          bgColorSelected={MASK_COLORS.bgSelected}
-          borderColor={MASK_COLORS.border}
-          borderColorSelected={MASK_COLORS.borderSelected}
-          hoverColor={MASK_COLORS.hover}
-          textColor={MASK_COLORS.text}
+          appearance={MASK_COLORS}
           tooltipPlacement={tooltipPlacement}
         >
           <BaseSegmentLabel label={getMaskTypeLabel(segment.maskType)} />
