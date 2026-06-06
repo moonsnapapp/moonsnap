@@ -1,7 +1,7 @@
-import { memo, useCallback, useMemo, useRef } from 'react';
-import { Camera, Monitor, Video, Plus, GripVertical } from 'lucide-react';
+import { memo, useCallback, useMemo } from 'react';
+import { Camera, Monitor, Video, Plus } from 'lucide-react';
 import type { SceneSegment, SceneMode } from '../../../types';
-import { useVideoEditorStore, formatTimeSimple } from '../../../stores/videoEditorStore';
+import { useVideoEditorStore } from '../../../stores/videoEditorStore';
 import {
   selectAddSceneSegment,
   selectDeleteSceneSegment,
@@ -15,8 +15,13 @@ import {
   selectSetHoveredTrack,
   selectUpdateSceneSegment,
 } from '../../../stores/videoEditor/selectors';
-import type { DragEdge, SegmentTooltipPlacement } from './BaseTrack';
-import { useSegmentDrag } from './BaseTrack';
+import {
+  BaseSegmentItem,
+  BaseSegmentLabel,
+  BaseSegmentWidthGate,
+  type BaseSegmentAppearance,
+  type SegmentTooltipPlacement,
+} from './BaseTrack';
 
 interface SceneTrackProps {
   segments: SceneSegment[];
@@ -37,21 +42,30 @@ const DEFAULT_SEGMENT_DURATION_MS = 3000;
 const MIN_SEGMENT_DURATION_MS = 500;
 
 // CSS variable keys for different scene modes (theme-aware)
-const SCENE_MODE_VARS: Record<SceneMode, { bg: string; border: string; text: string }> = {
+const SCENE_MODE_APPEARANCE: Record<SceneMode, BaseSegmentAppearance> = {
   default: {
-    bg: 'var(--track-scene-default-bg)',
-    border: 'var(--track-scene-default-border)',
-    text: 'var(--track-scene-default-text)',
+    backgroundColor: 'var(--track-scene-default-bg)',
+    selectedBackgroundColor: 'var(--track-scene-default-bg)',
+    borderColor: 'var(--track-scene-default-border)',
+    selectedBorderColor: 'var(--track-scene-default-border)',
+    hoverColor: 'var(--track-scene-default-bg)',
+    textColor: 'var(--track-scene-default-text)',
   },
   cameraOnly: {
-    bg: 'var(--track-scene-camera-bg)',
-    border: 'var(--track-scene-camera-border)',
-    text: 'var(--track-scene-camera-text)',
+    backgroundColor: 'var(--track-scene-camera-bg)',
+    selectedBackgroundColor: 'var(--track-scene-camera-bg)',
+    borderColor: 'var(--track-scene-camera-border)',
+    selectedBorderColor: 'var(--track-scene-camera-border)',
+    hoverColor: 'var(--track-scene-camera-bg)',
+    textColor: 'var(--track-scene-camera-text)',
   },
   screenOnly: {
-    bg: 'var(--track-scene-default-bg)',
-    border: 'var(--track-scene-default-border)',
-    text: 'var(--track-scene-default-text)',
+    backgroundColor: 'var(--track-scene-default-bg)',
+    selectedBackgroundColor: 'var(--track-scene-default-bg)',
+    borderColor: 'var(--track-scene-default-border)',
+    selectedBorderColor: 'var(--track-scene-default-border)',
+    hoverColor: 'var(--track-scene-default-bg)',
+    textColor: 'var(--track-scene-default-text)',
   },
 };
 
@@ -67,13 +81,6 @@ const SCENE_MODE_LABELS: Record<SceneMode, string | null> = {
   screenOnly: 'Screen Only',
 };
 
-/**
- * SceneSegmentItem component for rendering individual scene segments.
- * Uses refs for intermediate drag state to avoid re-renders during drag.
- *
- * Note: SceneTrack has unique styling per mode, so we use a custom implementation
- * rather than BaseSegmentItem to handle the mode-specific colors.
- */
 const SceneSegmentItem = memo(function SceneSegmentItem({
   segment,
   isSelected,
@@ -92,116 +99,36 @@ const SceneSegmentItem = memo(function SceneSegmentItem({
   onSelect: (id: string) => void;
   onUpdate: (id: string, updates: Partial<SceneSegment>) => void;
   onDelete: (id: string) => void;
-  onDragStart: (dragging: boolean, edge?: DragEdge) => void;
+  onDragStart: (dragging: boolean) => void;
   tooltipPlacement?: SegmentTooltipPlacement;
 }) {
-  const elementRef = useRef<HTMLDivElement>(null);
-  const tooltipRef = useRef<HTMLDivElement>(null);
-
-  const left = segment.startMs * timelineZoom;
-  const segmentWidth = (segment.endMs - segment.startMs) * timelineZoom;
-  const vars = SCENE_MODE_VARS[segment.mode];
   const Icon = SCENE_MODE_ICONS[segment.mode];
   const modeLabel = SCENE_MODE_LABELS[segment.mode];
 
-  const handleClick = useCallback((e: React.MouseEvent) => {
-    e.stopPropagation();
-    onSelect(segment.id);
-  }, [onSelect, segment.id]);
-
-  const { handlePointerDown } = useSegmentDrag({
-    segment,
-    timelineZoom,
-    durationMs,
-    minDurationMs: MIN_SEGMENT_DURATION_MS,
-    elementRef,
-    tooltipRef,
-    onSelect,
-    onUpdate,
-    onDragStart,
-  });
-
-  const handleDelete = useCallback((e: React.MouseEvent) => {
-    e.stopPropagation();
-    onDelete(segment.id);
-  }, [onDelete, segment.id]);
-  const tooltipClassName = tooltipPlacement === 'above'
-    ? 'absolute -top-6 left-1/2 -translate-x-1/2 bg-[var(--glass-bg-solid)] border border-[var(--glass-border)] text-[var(--ink-dark)] text-[10px] px-2 py-0.5 rounded whitespace-nowrap z-20 shadow-sm'
-    : 'absolute -bottom-6 left-1/2 -translate-x-1/2 bg-[var(--glass-bg-solid)] border border-[var(--glass-border)] text-[var(--ink-dark)] text-[10px] px-2 py-0.5 rounded whitespace-nowrap z-20 shadow-sm';
-
   return (
-    <div
-      ref={elementRef}
-      data-segment
-      className={`absolute top-1 bottom-1 rounded-md cursor-pointer
-        ${isSelected ? 'ring-2 border-transparent shadow-lg' : 'border'}
-      `}
-      style={{
-        left: `${left}px`,
-        width: `${Math.max(segmentWidth, 20)}px`,
-        backgroundColor: vars.bg,
-        borderColor: vars.border,
-        '--tw-ring-color': vars.border,
-      } as React.CSSProperties}
-      onClick={handleClick}
+    <BaseSegmentItem<SceneSegment>
+      segment={segment}
+      isSelected={isSelected}
+      timelineZoom={timelineZoom}
+      durationMs={durationMs}
+      minDurationMs={MIN_SEGMENT_DURATION_MS}
+      onSelect={onSelect}
+      onUpdate={onUpdate}
+      onDelete={onDelete}
+      onDragStart={onDragStart}
+      appearance={SCENE_MODE_APPEARANCE[segment.mode]}
+      tooltipPlacement={tooltipPlacement}
     >
-      {/* Left resize handle */}
-      <div
-        className="absolute left-0 top-0 bottom-0 w-2 cursor-ew-resize rounded-l-md touch-none"
-        onPointerDown={(e) => handlePointerDown(e, 'start')}
-        onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = vars.bg)}
-        onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
-      />
-
-      {/* Center drag handle */}
-      <div
-        className="absolute inset-x-2 top-0 bottom-0 cursor-move flex items-center justify-center touch-none"
-        onPointerDown={(e) => handlePointerDown(e, 'move')}
-      >
-        {segmentWidth > 60 && (
-          <div
-            className="flex min-w-0 items-center gap-1 overflow-hidden"
-            style={{ color: vars.text }}
-          >
-            <GripVertical className="w-3 h-3" />
-            <Icon className="w-3 h-3" />
-            {segmentWidth > 100 && modeLabel && (
-              <span className="truncate text-[10px] font-medium leading-none">
-                {modeLabel}
-              </span>
-            )}
-          </div>
+      <BaseSegmentLabel icon={<Icon className="w-3 h-3" />}>
+        {modeLabel && (
+          <BaseSegmentWidthGate minWidth={100}>
+            <span className="truncate text-[10px] font-medium leading-none">
+              {modeLabel}
+            </span>
+          </BaseSegmentWidthGate>
         )}
-      </div>
-
-      {/* Right resize handle */}
-      <div
-        className="absolute right-0 top-0 bottom-0 w-2 cursor-ew-resize rounded-r-md touch-none"
-        onPointerDown={(e) => handlePointerDown(e, 'end')}
-        onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = vars.bg)}
-        onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
-      />
-
-      {/* Delete button (shown when selected) */}
-      {isSelected && (
-        <button
-          className="absolute -top-2 -right-2 w-5 h-5 bg-red-500 hover:bg-red-400 rounded-full flex items-center justify-center text-white text-xs shadow-md"
-          onClick={handleDelete}
-        >
-          x
-        </button>
-      )}
-
-      {/* Tooltip showing time range */}
-      {isSelected && (
-        <div
-          ref={tooltipRef}
-          className={tooltipClassName}
-        >
-          {formatTimeSimple(segment.startMs)} - {formatTimeSimple(segment.endMs)}
-        </div>
-      )}
-    </div>
+      </BaseSegmentLabel>
+    </BaseSegmentItem>
   );
 });
 
@@ -221,7 +148,7 @@ const PreviewSegment = memo(function PreviewSegment({
 }) {
   const left = startMs * timelineZoom;
   const width = (endMs - startMs) * timelineZoom;
-  const vars = SCENE_MODE_VARS[mode];
+  const appearance = SCENE_MODE_APPEARANCE[mode];
 
   return (
     <div
@@ -229,11 +156,11 @@ const PreviewSegment = memo(function PreviewSegment({
       style={{
         left,
         width: Math.max(width, 40),
-        backgroundColor: vars.bg,
-        borderColor: vars.border,
+        backgroundColor: appearance.backgroundColor,
+        borderColor: appearance.borderColor,
       }}
     >
-      <div className="flex items-center justify-center h-full" style={{ color: vars.text }}>
+      <div className="flex items-center justify-center h-full" style={{ color: appearance.textColor }}>
         <Plus className="h-4 w-4" />
       </div>
     </div>
