@@ -1,10 +1,10 @@
 import { ColorPicker } from '@/components/ui/color-picker';
 import { COLOR_PRESETS } from '@/constants/wallpapers';
 import {
-  BorderEffectsSection,
-  type BorderEffectsSectionProps,
-  ShadowEffectsSection,
-  type ShadowEffectsSectionProps,
+  OpacityBorderEffectsSection,
+  ToggleBorderEffectsSection,
+  ToggleShadowEffectsSection,
+  ValueShadowEffectsSection,
   ToggleSwitch,
 } from '@/components/shared/FrameEffectsControls';
 import {
@@ -42,6 +42,50 @@ interface ImageConfig {
   uploader: ImageUploader;
 }
 
+interface ToggleBorderEffectsConfig {
+  kind: 'toggle';
+  enabled: boolean;
+  width: number;
+  color: string;
+  opacity: number;
+  onEnabledChange: (enabled: boolean) => void;
+  onWidthChange: (width: number) => void;
+  onColorChange: (color: string) => void;
+  onOpacityChange: (opacity: number) => void;
+}
+
+interface OpacityBorderEffectsConfig {
+  kind: 'opacity';
+  enabled: boolean;
+  width: number;
+  color: string;
+  opacity: number;
+  onWidthChange: (width: number) => void;
+  onColorChange: (color: string) => void;
+  onOpacityChange: (opacity: number) => void;
+}
+
+type BorderEffectsConfig = ToggleBorderEffectsConfig | OpacityBorderEffectsConfig;
+
+interface ToggleShadowEffectsConfig {
+  kind: 'toggle';
+  enabled: boolean;
+  value: number;
+  onEnabledChange: (enabled: boolean) => void;
+  onValueChange: (value: number) => void;
+  valueLabel?: string;
+}
+
+interface ValueShadowEffectsConfig {
+  kind: 'value';
+  enabled: boolean;
+  value: number;
+  onValueChange: (value: number) => void;
+  valueLabel?: string;
+}
+
+type ShadowEffectsConfig = ToggleShadowEffectsConfig | ValueShadowEffectsConfig;
+
 interface BackgroundSettingsPanelProps<TType extends SharedBackgroundType> {
   enabledToggle?: EnabledToggleConfig;
   type: TType;
@@ -62,8 +106,28 @@ interface BackgroundSettingsPanelProps<TType extends SharedBackgroundType> {
   onPaddingChange: (value: number) => void;
   cornerRadius: number;
   onCornerRadiusChange: (value: number) => void;
-  border: BorderEffectsSectionProps;
-  shadow: ShadowEffectsSectionProps;
+  border: BorderEffectsConfig;
+  shadow: ShadowEffectsConfig;
+}
+
+function BorderEffects({ config }: { config: BorderEffectsConfig }) {
+  if (config.kind === 'toggle') {
+    const { kind: _kind, ...props } = config;
+    return <ToggleBorderEffectsSection {...props} />;
+  }
+
+  const { kind: _kind, ...props } = config;
+  return <OpacityBorderEffectsSection {...props} />;
+}
+
+function ShadowEffects({ config }: { config: ShadowEffectsConfig }) {
+  if (config.kind === 'toggle') {
+    const { kind: _kind, ...props } = config;
+    return <ToggleShadowEffectsSection {...props} />;
+  }
+
+  const { kind: _kind, ...props } = config;
+  return <ValueShadowEffectsSection {...props} />;
 }
 
 export function BackgroundSettingsPanel<TType extends SharedBackgroundType>({
@@ -154,8 +218,8 @@ export function BackgroundSettingsPanel<TType extends SharedBackgroundType>({
         onValueChange={onCornerRadiusChange}
       />
 
-      <BorderEffectsSection {...border} />
-      <ShadowEffectsSection {...shadow} />
+      <BorderEffects config={border} />
+      <ShadowEffects config={shadow} />
     </div>
   );
 }

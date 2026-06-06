@@ -10,7 +10,7 @@ import { listen } from '@tauri-apps/api/event';
 import { invoke } from '@tauri-apps/api/core';
 import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
 import { Loader2 } from 'lucide-react';
-import { Titlebar } from '@/components/Titlebar/Titlebar';
+import { HudTitlebar } from '@/components/Titlebar/Titlebar';
 import { VideoEditorView } from '@/views/VideoEditorView';
 import { useVideoEditorStore } from '@/stores/videoEditorStore';
 import {
@@ -171,12 +171,10 @@ const VideoEditorWindow: React.FC = () => {
   if (isLoading) {
     return (
       <div className="editor-window h-screen w-screen flex flex-col overflow-hidden">
-        <Titlebar
+        <HudTitlebar
           title="MoonSnap"
-          variant="hud"
           contextLabel="Video Editor"
           detailLabel="Loading"
-          showLogo={true}
           showMaximize={true}
         />
         <div className="editor-window__state flex-1 flex items-center justify-center">
@@ -193,12 +191,10 @@ const VideoEditorWindow: React.FC = () => {
   if (error) {
     return (
       <div className="editor-window h-screen w-screen flex flex-col overflow-hidden">
-        <Titlebar
+        <HudTitlebar
           title="MoonSnap"
-          variant="hud"
           contextLabel="Video Editor"
           detailLabel="Error"
-          showLogo={true}
           showMaximize={true}
         />
         <div className="editor-window__state flex-1 flex items-center justify-center">
@@ -218,12 +214,10 @@ const VideoEditorWindow: React.FC = () => {
   if (projectName === null) {
     return (
       <div className="editor-window h-screen w-screen flex flex-col overflow-hidden">
-        <Titlebar
+        <HudTitlebar
           title="MoonSnap"
-          variant="hud"
           contextLabel="Video Editor"
           detailLabel="Waiting for project"
-          showLogo={true}
           showMaximize={true}
         />
         <div className="editor-window__state flex-1 flex items-center justify-center">
@@ -236,12 +230,10 @@ const VideoEditorWindow: React.FC = () => {
   // Main editor UI - reuse VideoEditorView with custom back handler
   return (
     <div className="editor-window h-screen w-screen flex flex-col overflow-hidden">
-      <Titlebar
+      <HudTitlebar
         title="MoonSnap"
-        variant="hud"
         contextLabel="Video Editor"
         detailLabel={projectName || 'Video Editor'}
-        showLogo={true}
         showMaximize={true}
         onClose={handleClose}
       />

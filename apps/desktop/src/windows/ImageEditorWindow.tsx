@@ -10,7 +10,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { emit, listen } from '@tauri-apps/api/event';
 import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
 import { Loader2 } from 'lucide-react';
-import { Titlebar } from '@/components/Titlebar/Titlebar';
+import { HudTitlebar } from '@/components/Titlebar/Titlebar';
 import { EditorStoreProvider, createEditorStore, useEditorStore, type EditorStore } from '@/stores/editorStore';
 import { useTheme } from '@/hooks/useTheme';
 import { editorLogger } from '@/utils/logger';
@@ -754,12 +754,10 @@ const ImageEditorWindow: React.FC = () => {
   if (isLoading) {
     return (
       <div className="editor-window h-screen w-screen flex flex-col overflow-hidden">
-        <Titlebar
+        <HudTitlebar
           title="MoonSnap"
-          variant="hud"
           contextLabel="Image Editor"
           detailLabel="Loading"
-          showLogo={true}
           showMaximize={true}
         />
         <div className="editor-window__state flex-1 flex items-center justify-center">
@@ -776,12 +774,10 @@ const ImageEditorWindow: React.FC = () => {
   if (error) {
     return (
       <div className="editor-window h-screen w-screen flex flex-col overflow-hidden">
-        <Titlebar
+        <HudTitlebar
           title="MoonSnap"
-          variant="hud"
           contextLabel="Image Editor"
           detailLabel="Error"
-          showLogo={true}
           showMaximize={true}
         />
         <div className="editor-window__state flex-1 flex items-center justify-center">
@@ -803,12 +799,10 @@ const ImageEditorWindow: React.FC = () => {
   if (!imageData) {
     return (
       <div className="editor-window h-screen w-screen flex flex-col overflow-hidden">
-        <Titlebar
+        <HudTitlebar
           title="MoonSnap"
-          variant="hud"
           contextLabel="Image Editor"
           detailLabel="No image"
-          showLogo={true}
           showMaximize={true}
         />
         <div className="editor-window__state flex-1 flex items-center justify-center">
@@ -821,12 +815,10 @@ const ImageEditorWindow: React.FC = () => {
   // Main editor UI
   return (
     <div className="editor-window h-screen w-screen flex flex-col overflow-hidden">
-      <Titlebar
+      <HudTitlebar
         title="MoonSnap"
-        variant="hud"
         contextLabel="Image Editor"
         detailLabel={getTitle()}
-        showLogo={true}
         showMaximize={true}
         onClose={handleClose}
       />

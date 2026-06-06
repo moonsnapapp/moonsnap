@@ -1,5 +1,5 @@
 import { memo, useCallback, useMemo } from 'react';
-import { GripVertical, Highlighter, Plus } from 'lucide-react';
+import { Highlighter, Plus } from 'lucide-react';
 import { ANNOTATIONS } from '@/constants';
 import type { AnnotationSegment } from '@/types';
 import { useVideoEditorStore } from '@/stores/videoEditorStore';
@@ -18,7 +18,7 @@ import {
   selectSetHoveredTrack,
   selectUpdateAnnotationSegment,
 } from '@/stores/videoEditor/selectors';
-import { BaseSegmentItem, type BaseSegment, type SegmentTooltipPlacement } from './BaseTrack';
+import { BaseSegmentItem, BaseSegmentLabel, BaseSegmentWidthGate, type BaseSegment, type SegmentTooltipPlacement } from './BaseTrack';
 import { createDefaultAnnotationSegment } from '@/utils/videoAnnotations';
 
 interface AnnotationTrackProps {
@@ -68,21 +68,6 @@ const PreviewSegment = memo(function PreviewSegment({
     </div>
   );
 });
-
-function renderAnnotationContent(segment: AnnotationSegment, width: number) {
-  if (width <= 60) {
-    return null;
-  }
-
-  const shapeCountLabel = segment.shapes.length === 1 ? '1 shape' : `${segment.shapes.length} shapes`;
-  return (
-    <div className="flex items-center gap-1" style={{ color: ANNOTATION_COLORS.text }}>
-      <GripVertical className="w-3 h-3" />
-      <Highlighter className="w-3 h-3" />
-      {width > 100 && <span className="text-[10px] font-mono">{shapeCountLabel}</span>}
-    </div>
-  );
-}
 
 export const AnnotationTrackContent = memo(function AnnotationTrackContent({
   segments,
@@ -182,7 +167,6 @@ export const AnnotationTrackContent = memo(function AnnotationTrackContent({
           onUpdate={updateAnnotationSegment}
           onDelete={deleteAnnotationSegment}
           onDragStart={handleDragStart}
-          renderContent={renderAnnotationContent}
           bgColor={ANNOTATION_COLORS.bg}
           bgColorSelected={ANNOTATION_COLORS.bgSelected}
           borderColor={ANNOTATION_COLORS.border}
@@ -190,7 +174,15 @@ export const AnnotationTrackContent = memo(function AnnotationTrackContent({
           hoverColor={ANNOTATION_COLORS.hover}
           textColor={ANNOTATION_COLORS.text}
           tooltipPlacement={tooltipPlacement}
-        />
+        >
+          <BaseSegmentLabel icon={<Highlighter className="w-3 h-3" />}>
+            <BaseSegmentWidthGate minWidth={100}>
+              <span className="text-[10px] font-mono">
+                {segment.shapes.length === 1 ? '1 shape' : `${segment.shapes.length} shapes`}
+              </span>
+            </BaseSegmentWidthGate>
+          </BaseSegmentLabel>
+        </BaseSegmentItem>
       ))}
 
       {previewSegmentDetails && (

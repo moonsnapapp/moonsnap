@@ -137,7 +137,7 @@ export function BackgroundSettings({ background, onUpdate }: BackgroundSettingsP
       cornerRadius={background.rounding}
       onCornerRadiusChange={(value) => onUpdate({ rounding: value })}
       border={{
-        mode: 'toggle',
+        kind: 'toggle',
         enabled: background.border.enabled,
         width: background.border.width,
         color: background.border.color,
@@ -148,7 +148,7 @@ export function BackgroundSettings({ background, onUpdate }: BackgroundSettingsP
         onOpacityChange: (opacity) => updateBorder({ opacity }),
       }}
       shadow={{
-        mode: 'toggle',
+        kind: 'toggle',
         enabled: background.shadow.enabled,
         value: background.shadow.shadow,
         onEnabledChange: (enabled) => updateShadow({ enabled }),

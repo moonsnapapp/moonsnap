@@ -4,7 +4,6 @@ import { open as openFileDialog, save as saveFileDialog } from '@tauri-apps/plug
 import { toast } from 'sonner';
 import { isToday, isYesterday, isThisWeek, isThisMonth, isThisYear, format, formatDistanceToNow } from 'date-fns';
 import { reportError } from '../../utils/errorReporting';
-import { Loader2 } from 'lucide-react';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { useCaptureStore, useFilteredCaptures, useAllTags } from '../../stores/captureStore';
 import { useSettingsStore } from '../../stores/settingsStore';
@@ -17,14 +16,15 @@ import { LAYOUT, TIMING } from '../../constants';
 import { isTextInputTarget } from '../../utils/keyboard';
 
 import { useMarqueeSelection, useDragDropImport, useMomentumScroll, useResizeTransitionLock, type VirtualLayoutInfo } from './hooks';
-// Direct imports avoid barrel file bundling overhead
-import { DateHeader } from './components/DateHeader';
-import { EmptyState } from './components/EmptyState';
-import { DropZoneOverlay } from './components/DropZoneOverlay';
-import { CaptureCard } from './components/CaptureCard';
-import { GlassBlobToolbar } from './components/GlassBlobToolbar';
-import { DeleteDialog } from './components/DeleteDialog';
-import { VirtualizedGrid, getColumnsForWidth, calculateRowHeight, getCardWidth, getGridGap, getGridWidth } from './VirtualizedGrid';
+import { getColumnsForWidth, calculateRowHeight, getCardWidth, getGridGap, getGridWidth } from './VirtualizedGrid';
+import {
+  Library,
+  type DateGroup,
+  type DeleteDialogState,
+  type LibraryCompositionContextValue,
+  type LibraryGridLayout,
+  type LibraryVariant,
+} from './CaptureLibraryComposition';
 
 // VirtualizedGrid positioning offsets (from `top: virtualRow.start + 32` and `px-8`)
 const CONTENT_OFFSET_Y = 32; // vertical offset from inline positioning style
@@ -119,7 +119,7 @@ function isImageCapture(capture: CaptureListItem): boolean {
 }
 
 interface CaptureLibraryProps {
-  variant?: 'full' | 'sidebar';
+  variant?: LibraryVariant;
   enableKeyboardShortcuts?: boolean;
   focusedCaptureId?: string | null;
   focusRequestKey?: number;
@@ -127,11 +127,6 @@ interface CaptureLibraryProps {
   onEditImage?: (capture: CaptureListItem) => void | Promise<void>;
   onEditVideo?: (capture: CaptureListItem) => void | Promise<void>;
   onEditGif?: (capture: CaptureListItem) => void | Promise<void>;
-}
-
-interface DateGroup {
-  label: string;
-  captures: CaptureListItem[];
 }
 
 // Date label rules in priority order (first match wins)
@@ -330,7 +325,6 @@ export const CaptureLibrary: React.FC<CaptureLibraryProps> = ({
   }, [useVirtualization, containerWidth, dateGroups, libraryItemScale, activeSidebarItemSize, variant]);
 
   // Delete confirmation state - consolidated into single object
-  type DeleteDialogState = { type: 'single'; id: string } | { type: 'bulk' } | null;
   const [deleteDialog, setDeleteDialog] = useState<DeleteDialogState>(null);
 
   // Open image in dedicated editor window
@@ -751,7 +745,7 @@ export const CaptureLibrary: React.FC<CaptureLibraryProps> = ({
     };
   }, [handleLibraryWheel, useVirtualization]);
 
-  const gridLayout = useMemo(() => {
+  const gridLayout = useMemo<LibraryGridLayout>(() => {
     const width = containerWidth || 1200;
     const columns = getColumnsForWidth(width, variant, libraryItemScale, activeSidebarItemSize);
     const gap = getGridGap(variant);
@@ -765,162 +759,74 @@ export const CaptureLibrary: React.FC<CaptureLibraryProps> = ({
     };
   }, [activeSidebarItemSize, containerWidth, libraryItemScale, variant]);
 
-  const renderCaptureGrid = () => (
-    <div className="space-y-0">
-      {dateGroups.map((group, groupIndex) => (
-        <div key={group.label}>
-          <DateHeader label={group.label} count={group.captures.length} isFirst={groupIndex === 0} />
-          <div
-            className="capture-grid"
-            style={{
-              gap: gridLayout.gap,
-              gridTemplateColumns: gridLayout.gridTemplateColumns,
-              maxWidth: gridLayout.maxWidth,
-              justifyContent: gridLayout.justifyContent,
-              marginLeft: variant === 'sidebar' ? 0 : 'auto',
-              marginRight: variant === 'sidebar' ? 0 : 'auto',
-            }}
-          >
-            {group.captures.map((capture) => (
-              <CaptureCard
-                key={capture.id}
-                capture={capture}
-                selected={selectedIds.has(capture.id)}
-                isActive={activeCaptureId === capture.id}
-                isLoading={loadingProjectId === capture.id}
-                allTags={allTags}
-                onSelect={handleSelect}
-                onOpen={handleOpen}
-                onToggleFavorite={() => toggleFavorite(capture.id)}
-                onUpdateTags={(tags) => updateTags(capture.id, tags)}
-                onDelete={() => handleRequestDeleteSingle(capture.id)}
-                onOpenInFolder={() => handleOpenInFolder(capture)}
-                onCopyToClipboard={() => handleCopyToClipboard(capture)}
-                onPlayMedia={() => handlePlayMedia(capture)}
-                onEditVideo={capture.capture_type === 'video' ? () => handleEditVideo(capture) : undefined}
-                onSaveCopy={() => handleSaveCopy(capture)}
-                onRepair={() => handleRepair(capture.id)}
-                formatDate={formatDate}
-              />
-            ))}
-          </div>
-        </div>
-      ))}
-    </div>
-  );
+  const activeFilterCount =
+    (filterFavorites ? 1 : 0) + filterTags.length + filterMediaTypes.length + (searchQuery ? 1 : 0);
+
+  const libraryComposition: LibraryCompositionContextValue = {
+    variant,
+    loading,
+    initialized,
+    captures,
+    dateGroups,
+    hasActiveFilters,
+    totalCaptureCount,
+    useVirtualization,
+    libraryItemScale,
+    activeSidebarItemSize,
+    selectedIds,
+    isSelecting,
+    selectionRect,
+    activeCaptureId,
+    loadingProjectId,
+    allTags,
+    filterFavorites,
+    filterTags,
+    filterMediaTypes,
+    searchQuery,
+    activeFilterCount,
+    deleteDialog,
+    deleteCount: getDeleteCount(),
+    isDragOver,
+    gridLayout,
+    containerRef,
+    onClearAllFilters: clearAllFilters,
+    onNewImage: handleNewImage,
+    onSelect: handleSelect,
+    onOpen: handleOpen,
+    onToggleFavorite: toggleFavorite,
+    onUpdateTags: updateTags,
+    onRequestDeleteSingle: handleRequestDeleteSingle,
+    onRequestDeleteSelected: handleRequestDeleteSelected,
+    onClearSelection: clearSelection,
+    onOpenInFolder: handleOpenInFolder,
+    onCopyToClipboard: handleCopyToClipboard,
+    onPlayMedia: handlePlayMedia,
+    onEditVideo: handleEditVideo,
+    onSaveCopy: handleSaveCopy,
+    onRepair: handleRepair,
+    onFormatDate: formatDate,
+    onMarqueeMouseDown: handleMarqueeMouseDown,
+    onMarqueeMouseMove: handleMarqueeMouseMove,
+    onMarqueeMouseUp: handleMarqueeMouseUp,
+    onDeleteDialogOpenChange: (open) => !open && setDeleteDialog(null),
+    onConfirmDelete: handleConfirmDelete,
+    onCancelDelete: handleCancelDelete,
+    onSearchChange: setSearchQuery,
+    onFilterFavoritesChange: setFilterFavorites,
+    onFilterTagsChange: setFilterTags,
+    onFilterMediaTypesChange: setFilterMediaTypes,
+    onOpenLibraryFolder: handleOpenLibraryFolder,
+  };
 
   return (
     <TooltipProvider delayDuration={300} skipDelayDuration={300}>
       <div className={`library-panel library-panel--${variant} flex flex-col h-full relative`}>
-        {/* Drop Zone Overlay */}
-        {isDragOver && <DropZoneOverlay />}
-
-        {/* Content - use virtualization for large libraries, regular rendering for small ones */}
-        {loading || !initialized ? (
-          <div className="library-state-pane flex-1 flex items-center justify-center">
-            <Loader2 className="w-12 h-12 text-[var(--accent-400)] animate-spin" />
-          </div>
-        ) : captures.length === 0 && hasActiveFilters && totalCaptureCount > 0 ? (
-          <div className="library-state-pane flex-1 flex flex-col items-center justify-center gap-4 p-8">
-            <div className="text-center space-y-2">
-              <p className="text-sm text-[var(--ink-muted)]">No captures match the current filters</p>
-              <p className="text-xs text-[var(--ink-faint)]">{totalCaptureCount} capture{totalCaptureCount !== 1 ? 's' : ''} hidden by filters</p>
-            </div>
-            <button
-              onClick={clearAllFilters}
-              className="editor-choice-pill editor-choice-pill--active px-4 py-2 text-xs font-medium"
-            >
-              Clear All Filters
-            </button>
-          </div>
-        ) : captures.length === 0 ? (
-          <div className="library-stage flex-1 overflow-auto p-8 pb-32">
-            <EmptyState onNewCapture={handleNewImage} />
-          </div>
-        ) : useVirtualization ? (
-          /* Virtualized rendering for large libraries (100+ captures) */
-          <VirtualizedGrid
-            variant={variant}
-            itemScale={libraryItemScale}
-            sidebarItemSize={activeSidebarItemSize}
-            dateGroups={dateGroups}
-            selectedIds={selectedIds}
-            activeCaptureId={activeCaptureId}
-            loadingProjectId={loadingProjectId}
-            allTags={allTags}
-            onSelect={handleSelect}
-            onOpen={handleOpen}
-            onToggleFavorite={toggleFavorite}
-            onUpdateTags={updateTags}
-            onDelete={handleRequestDeleteSingle}
-            onOpenInFolder={handleOpenInFolder}
-            onCopyToClipboard={handleCopyToClipboard}
-            onPlayMedia={handlePlayMedia}
-            onEditVideo={handleEditVideo}
-            onSaveCopy={handleSaveCopy}
-            onRepair={handleRepair}
-            formatDate={formatDate}
-            containerRef={containerRef as React.RefObject<HTMLDivElement>}
-            onMouseDown={handleMarqueeMouseDown}
-            onMouseMove={handleMarqueeMouseMove}
-            onMouseUp={handleMarqueeMouseUp}
-            isSelecting={isSelecting}
-            selectionRect={selectionRect}
-          />
-        ) : (
-          /* Non-virtualized rendering with marquee selection for smaller libraries */
-          <div
-            ref={containerRef}
-            className="library-stage flex-1 overflow-auto p-8 pb-32 relative select-none library-scroll"
-            onMouseDown={handleMarqueeMouseDown}
-            onMouseMove={handleMarqueeMouseMove}
-            onMouseUp={handleMarqueeMouseUp}
-          >
-            {/* Marquee Selection Rectangle */}
-            {isSelecting && (
-              <div
-                className="absolute pointer-events-none z-50 border-2 border-[var(--accent-400)] bg-[var(--accent-glow)] rounded-sm"
-                style={{
-                  left: selectionRect.left,
-                  top: selectionRect.top,
-                  width: selectionRect.width,
-                  height: selectionRect.height,
-                }}
-              />
-            )}
-            {renderCaptureGrid()}
-          </div>
-        )}
-
-        {/* Delete Confirmation Dialog */}
-        <DeleteDialog
-          open={deleteDialog !== null}
-          onOpenChange={(open) => !open && setDeleteDialog(null)}
-          count={getDeleteCount()}
-          onConfirm={handleConfirmDelete}
-          onCancel={handleCancelDelete}
-        />
-
-        {/* Floating Bottom Toolbar */}
-        <GlassBlobToolbar
-          searchQuery={searchQuery}
-          onSearchChange={setSearchQuery}
-          filterFavorites={filterFavorites}
-          onFilterFavoritesChange={setFilterFavorites}
-          filterTags={filterTags}
-          onFilterTagsChange={setFilterTags}
-          allTags={allTags}
-          filterMediaTypes={filterMediaTypes}
-          onFilterMediaTypesChange={setFilterMediaTypes}
-          selectedCount={selectedIds.size}
-          onDeleteSelected={handleRequestDeleteSelected}
-          onClearSelection={clearSelection}
-          onOpenLibraryFolder={handleOpenLibraryFolder}
-          activeFilterCount={
-            (filterFavorites ? 1 : 0) + filterTags.length + filterMediaTypes.length + (searchQuery ? 1 : 0)
-          }
-          onClearAllFilters={clearAllFilters}
-        />
+        <Library.Provider value={libraryComposition}>
+          <Library.DropZone />
+          <Library.Content />
+          <Library.DeleteDialog />
+          <Library.Toolbar />
+        </Library.Provider>
       </div>
     </TooltipProvider>
   );

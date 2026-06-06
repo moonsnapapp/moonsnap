@@ -5,7 +5,7 @@ import { listen } from '@tauri-apps/api/event';
 import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
 import { FolderOpen } from 'lucide-react';
 import type { ImperativePanelHandle } from 'react-resizable-panels';
-import { Titlebar } from './components/Titlebar/Titlebar';
+import { HudTitlebar } from './components/Titlebar/Titlebar';
 import { CaptureLibrary } from './components/Library/CaptureLibrary';
 import { SidebarToggleHandle } from './components/Library/SidebarToggleHandle';
 import { EmbeddedImageEditor } from './components/Editor/EmbeddedImageEditor';
@@ -473,9 +473,8 @@ function App() {
       <SettingsDialog />
 
       {/* Custom Titlebar */}
-      <Titlebar
+      <HudTitlebar
         title="MoonSnap"
-        variant="hud"
         contextLabel={
           isImageEditorActive
             ? 'Image Editor'

@@ -1,5 +1,5 @@
 /* eslint-disable react-refresh/only-export-components */
-import { memo, useCallback, useRef, type ReactNode, type RefObject, type JSX } from 'react';
+import { createContext, memo, use, useCallback, useRef, type ReactNode, type RefObject, type JSX } from 'react';
 import { GripVertical, X } from 'lucide-react';
 import { formatTimeSimple } from '../../../stores/videoEditorStore';
 
@@ -44,8 +44,8 @@ export interface BaseSegmentItemProps<T extends BaseSegment> {
   onDelete: (id: string) => void;
   /** Callback when drag starts/ends */
   onDragStart: (dragging: boolean, edge?: DragEdge) => void;
-  /** Custom content to render in the center of the segment */
-  renderContent?: (segment: T, width: number) => ReactNode;
+  /** Composed content rendered inside the center drag handle. */
+  children?: ReactNode;
   /** CSS variable for background color */
   bgColor: string;
   /** CSS variable for background color when selected */
@@ -64,6 +64,21 @@ export interface BaseSegmentItemProps<T extends BaseSegment> {
   className?: string;
   /** Where to render the selected-segment tooltip */
   tooltipPlacement?: SegmentTooltipPlacement;
+}
+
+interface BaseSegmentCompositionContextValue {
+  width: number;
+  textColor: string;
+}
+
+const BaseSegmentCompositionContext = createContext<BaseSegmentCompositionContextValue | null>(null);
+
+export function useBaseSegmentComposition() {
+  const context = use(BaseSegmentCompositionContext);
+  if (!context) {
+    throw new Error('Base segment composition components must be rendered inside BaseSegmentItem');
+  }
+  return context;
 }
 
 // ============================================================================
@@ -210,7 +225,7 @@ export const BaseSegmentItem = memo(function BaseSegmentItem<T extends BaseSegme
   onUpdate,
   onDelete,
   onDragStart,
-  renderContent,
+  children,
   bgColor,
   bgColorSelected,
   borderColor,
@@ -285,15 +300,9 @@ export const BaseSegmentItem = memo(function BaseSegmentItem<T extends BaseSegme
         className="absolute inset-x-2 top-0 bottom-0 cursor-move flex items-center justify-center touch-none"
         onPointerDown={(e) => handlePointerDown(e, 'move')}
       >
-        {renderContent ? (
-          renderContent(segment, segmentWidth)
-        ) : (
-          segmentWidth > 60 && (
-            <div className="flex items-center gap-1" style={{ color: textColor }}>
-              <GripVertical className="w-3 h-3" />
-            </div>
-          )
-        )}
+        <BaseSegmentCompositionContext value={{ width: segmentWidth, textColor }}>
+          {children ?? <BaseSegmentGrip />}
+        </BaseSegmentCompositionContext>
       </div>
 
       {/* Right resize handle */}
@@ -329,27 +338,65 @@ export const BaseSegmentItem = memo(function BaseSegmentItem<T extends BaseSegme
   );
 }) as <T extends BaseSegment>(props: BaseSegmentItemProps<T>) => JSX.Element;
 
-/**
- * Default content renderer that shows a grip icon and optional label.
- */
-export function DefaultSegmentContent({
-  width,
-  icon,
-  label,
-  textColor,
-}: {
-  width: number;
-  icon?: ReactNode;
-  label?: string;
-  textColor: string;
-}) {
-  if (width <= 60) return null;
+export function BaseSegmentGrip() {
+  const { width, textColor } = useBaseSegmentComposition();
+
+  if (width <= 60) {
+    return null;
+  }
 
   return (
     <div className="flex items-center gap-1" style={{ color: textColor }}>
       <GripVertical className="w-3 h-3" />
-      {icon}
-      {label && <span className="text-[10px] font-mono">{label}</span>}
     </div>
+  );
+}
+
+export function BaseSegmentVisibleContent({ children }: { children: ReactNode }) {
+  const { width } = useBaseSegmentComposition();
+
+  if (width <= 60) {
+    return null;
+  }
+
+  return children;
+}
+
+export function BaseSegmentWidthGate({
+  minWidth,
+  children,
+}: {
+  minWidth: number;
+  children: ReactNode;
+}) {
+  const { width } = useBaseSegmentComposition();
+
+  if (width <= minWidth) {
+    return null;
+  }
+
+  return children;
+}
+
+export function BaseSegmentLabel({
+  icon,
+  label,
+  children,
+}: {
+  icon?: ReactNode;
+  label?: string;
+  children?: ReactNode;
+}) {
+  const { textColor } = useBaseSegmentComposition();
+
+  return (
+    <BaseSegmentVisibleContent>
+      <div className="flex items-center gap-1" style={{ color: textColor }}>
+        <GripVertical className="w-3 h-3" />
+        {icon}
+        {label && <span className="text-[10px] font-mono">{label}</span>}
+        {children}
+      </div>
+    </BaseSegmentVisibleContent>
   );
 }

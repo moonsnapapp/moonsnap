@@ -1,5 +1,5 @@
 import { memo, useCallback, useMemo } from 'react';
-import { GripVertical, Plus } from 'lucide-react';
+import { Plus } from 'lucide-react';
 import type { ZoomRegion, ZoomTransition } from '../../../types';
 import { useVideoEditorStore, generateZoomRegionId } from '../../../stores/videoEditorStore';
 import { VIDEO } from '../../../constants';
@@ -16,7 +16,7 @@ import {
   selectSetHoveredTrack,
   selectUpdateZoomRegion,
 } from '../../../stores/videoEditor/selectors';
-import { BaseSegmentItem, type BaseSegment, type SegmentTooltipPlacement } from './BaseTrack';
+import { BaseSegmentItem, BaseSegmentLabel, type BaseSegment, type SegmentTooltipPlacement } from './BaseTrack';
 
 interface ZoomTrackProps {
   regions: ZoomRegion[];
@@ -72,22 +72,6 @@ const PreviewRegion = memo(function PreviewRegion({
     </div>
   );
 });
-
-/**
- * Render content for zoom region - shows scale factor.
- */
-function renderZoomContent(region: ZoomRegion, width: number) {
-  if (width <= 60) return null;
-
-  return (
-    <div className="flex items-center gap-1" style={{ color: ZOOM_COLORS.text }}>
-      <GripVertical className="w-3 h-3" />
-      <span className="text-[10px] font-mono">
-        {region.scale.toFixed(1)}x
-      </span>
-    </div>
-  );
-}
 
 /**
  * Adapter to convert ZoomRegion to BaseSegment interface.
@@ -221,7 +205,6 @@ export const ZoomTrackContent = memo(function ZoomTrackContent({
           onUpdate={updateZoomRegion}
           onDelete={deleteZoomRegion}
           onDragStart={handleDragStart}
-          renderContent={renderZoomContent}
           bgColor={ZOOM_COLORS.bg}
           bgColorSelected={ZOOM_COLORS.bgSelected}
           borderColor={ZOOM_COLORS.border}
@@ -230,7 +213,9 @@ export const ZoomTrackContent = memo(function ZoomTrackContent({
           textColor={ZOOM_COLORS.text}
           className={region.isAuto ? 'border-dashed' : ''}
           tooltipPlacement={tooltipPlacement}
-        />
+        >
+          <BaseSegmentLabel label={`${region.scale.toFixed(1)}x`} />
+        </BaseSegmentItem>
       ))}
 
       {/* Preview region (ghost) when hovering over empty space */}

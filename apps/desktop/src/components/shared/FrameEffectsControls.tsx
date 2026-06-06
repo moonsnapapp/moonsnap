@@ -1,9 +1,6 @@
 import { Slider } from '@/components/ui/slider';
 import { ColorPicker } from '@/components/ui/color-picker';
 
-type ToggleMode = 'toggle';
-type ValueMode = 'value';
-
 interface ToggleButtonProps {
   enabled: boolean;
   onToggle: () => void;
@@ -26,8 +23,7 @@ export function ToggleSwitch({ enabled, onToggle }: ToggleButtonProps) {
   );
 }
 
-interface ShadowEffectsSectionToggleProps {
-  mode: ToggleMode;
+interface ToggleShadowEffectsSectionProps {
   enabled: boolean;
   value: number;
   onEnabledChange: (enabled: boolean) => void;
@@ -35,73 +31,98 @@ interface ShadowEffectsSectionToggleProps {
   valueLabel?: string;
 }
 
-interface ShadowEffectsSectionValueProps {
-  mode: ValueMode;
+interface ValueShadowEffectsSectionProps {
   enabled: boolean;
   value: number;
   onValueChange: (value: number) => void;
   valueLabel?: string;
 }
 
-export type ShadowEffectsSectionProps =
-  | ShadowEffectsSectionToggleProps
-  | ShadowEffectsSectionValueProps;
+function ShadowDetails({
+  value,
+  valueLabel,
+  showValue,
+  indented,
+  onValueChange,
+}: {
+  value: number;
+  valueLabel: string;
+  showValue: boolean;
+  indented: boolean;
+  onValueChange: (value: number) => void;
+}) {
+  return (
+    <div className={indented ? 'space-y-3 pl-3 border-l border-[var(--glass-border)]' : ''}>
+      <div>
+        <div className="flex items-center justify-between mb-1">
+          <span className="text-[11px] text-[var(--ink-subtle)]">{valueLabel}</span>
+          {showValue && (
+            <span className="text-[11px] text-[var(--ink-faint)]">
+              {Math.round(value)}%
+            </span>
+          )}
+        </div>
+        <Slider
+          value={[value]}
+          onValueChange={([nextValue]) => onValueChange(nextValue)}
+          min={0}
+          max={100}
+          step={1}
+        />
+      </div>
+    </div>
+  );
+}
 
-export function ShadowEffectsSection(props: ShadowEffectsSectionProps) {
+export function ToggleShadowEffectsSection(props: ToggleShadowEffectsSectionProps) {
   const valueLabel = props.valueLabel ?? 'Shadow';
-  const showDetails = props.mode === 'toggle' ? props.enabled : true;
-
   return (
     <div className="pt-3 border-t border-[var(--glass-border)]">
       <div className="flex items-center justify-between mb-2">
         <span className="text-xs text-[var(--ink-muted)]">Shadow</span>
-        {props.mode === 'toggle' ? (
-          <ToggleSwitch
-            enabled={props.enabled}
-            onToggle={() => props.onEnabledChange(!props.enabled)}
-          />
-        ) : (
-          <span className="text-xs text-[var(--ink-dark)] font-mono">
-            {Math.round(props.value)}%
-          </span>
-        )}
+        <ToggleSwitch
+          enabled={props.enabled}
+          onToggle={() => props.onEnabledChange(!props.enabled)}
+        />
       </div>
 
-      {showDetails && (
-        <div
-          className={
-            props.mode === 'toggle'
-              ? 'space-y-3 pl-3 border-l border-[var(--glass-border)]'
-              : ''
-          }
-        >
-          <div>
-            <div className="flex items-center justify-between mb-1">
-              <span className="text-[11px] text-[var(--ink-subtle)]">{valueLabel}</span>
-              {props.mode === 'toggle' && (
-                <span className="text-[11px] text-[var(--ink-faint)]">
-                  {Math.round(props.value)}%
-                </span>
-              )}
-            </div>
-            <Slider
-              value={[props.value]}
-              onValueChange={([value]) => props.onValueChange(value)}
-              min={0}
-              max={100}
-              step={1}
-            />
-          </div>
-        </div>
+      {props.enabled && (
+        <ShadowDetails
+          value={props.value}
+          valueLabel={valueLabel}
+          showValue={true}
+          indented={true}
+          onValueChange={props.onValueChange}
+        />
       )}
     </div>
   );
 }
 
-type BorderOpacityMode = 'opacity';
+export function ValueShadowEffectsSection(props: ValueShadowEffectsSectionProps) {
+  const valueLabel = props.valueLabel ?? 'Shadow';
 
-interface BorderEffectsSectionToggleProps {
-  mode: ToggleMode;
+  return (
+    <div className="pt-3 border-t border-[var(--glass-border)]">
+      <div className="flex items-center justify-between mb-2">
+        <span className="text-xs text-[var(--ink-muted)]">Shadow</span>
+        <span className="text-xs text-[var(--ink-dark)] font-mono">
+          {Math.round(props.value)}%
+        </span>
+      </div>
+
+      <ShadowDetails
+        value={props.value}
+        valueLabel={valueLabel}
+        showValue={false}
+        indented={false}
+        onValueChange={props.onValueChange}
+      />
+    </div>
+  );
+}
+
+interface ToggleBorderEffectsSectionProps {
   enabled: boolean;
   width: number;
   color: string;
@@ -112,8 +133,7 @@ interface BorderEffectsSectionToggleProps {
   onOpacityChange: (opacity: number) => void;
 }
 
-interface BorderEffectsSectionOpacityProps {
-  mode: BorderOpacityMode;
+interface OpacityBorderEffectsSectionProps {
   enabled: boolean;
   width: number;
   color: string;
@@ -122,10 +142,6 @@ interface BorderEffectsSectionOpacityProps {
   onColorChange: (color: string) => void;
   onOpacityChange: (opacity: number) => void;
 }
-
-export type BorderEffectsSectionProps =
-  | BorderEffectsSectionToggleProps
-  | BorderEffectsSectionOpacityProps;
 
 function BorderDetails({
   width,
@@ -182,33 +198,33 @@ function BorderDetails({
   );
 }
 
-export function BorderEffectsSection(props: BorderEffectsSectionProps) {
-  if (props.mode === 'toggle') {
-    return (
-      <div className="pt-3 border-t border-[var(--glass-border)]">
-        <div className="flex items-center justify-between mb-2">
-          <span className="text-xs text-[var(--ink-muted)]">Border</span>
-          <ToggleSwitch
-            enabled={props.enabled}
-            onToggle={() => props.onEnabledChange(!props.enabled)}
-          />
-        </div>
-
-        {props.enabled && (
-          <BorderDetails
-            width={props.width}
-            color={props.color}
-            opacity={props.opacity}
-            onWidthChange={props.onWidthChange}
-            onColorChange={props.onColorChange}
-            onOpacityChange={props.onOpacityChange}
-            showOpacity={true}
-          />
-        )}
+export function ToggleBorderEffectsSection(props: ToggleBorderEffectsSectionProps) {
+  return (
+    <div className="pt-3 border-t border-[var(--glass-border)]">
+      <div className="flex items-center justify-between mb-2">
+        <span className="text-xs text-[var(--ink-muted)]">Border</span>
+        <ToggleSwitch
+          enabled={props.enabled}
+          onToggle={() => props.onEnabledChange(!props.enabled)}
+        />
       </div>
-    );
-  }
 
+      {props.enabled && (
+        <BorderDetails
+          width={props.width}
+          color={props.color}
+          opacity={props.opacity}
+          onWidthChange={props.onWidthChange}
+          onColorChange={props.onColorChange}
+          onOpacityChange={props.onOpacityChange}
+          showOpacity={true}
+        />
+      )}
+    </div>
+  );
+}
+
+export function OpacityBorderEffectsSection(props: OpacityBorderEffectsSectionProps) {
   return (
     <div className="pt-3 border-t border-[var(--glass-border)]">
       <div className="flex items-center justify-between mb-2">

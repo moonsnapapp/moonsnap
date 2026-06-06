@@ -39,7 +39,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 
-import { Titlebar } from '@/components/Titlebar/Titlebar';
+import { HudTitlebar } from '@/components/Titlebar/Titlebar';
 import { Button } from '@/components/ui/button';
 import { Slider } from '@/components/ui/slider';
 import { Switch } from '@/components/ui/switch';
@@ -1074,12 +1074,10 @@ export const GifEditor: React.FC<GifEditorProps> = ({
 
   const renderTitlebar = (detailLabel: string) =>
     embedded ? null : (
-      <Titlebar
+      <HudTitlebar
         title="MoonSnap"
-        variant="hud"
         contextLabel="GIF Editor"
         detailLabel={detailLabel}
-        showLogo
         showMaximize
       />
     );

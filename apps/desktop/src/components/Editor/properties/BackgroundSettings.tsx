@@ -141,7 +141,7 @@ export const BackgroundSettings: React.FC<BackgroundSettingsProps> = ({
         onSettingsChange({ borderRadius: value });
       }}
       border={{
-        mode: 'opacity',
+        kind: 'opacity',
         enabled: localBorderOpacity > 0,
         width: localBorderWidth,
         color: settings.borderColor ?? '#ffffff',
@@ -157,7 +157,7 @@ export const BackgroundSettings: React.FC<BackgroundSettingsProps> = ({
         onColorChange: (color) => onSettingsChange({ borderColor: color }),
       }}
       shadow={{
-        mode: 'value',
+        kind: 'value',
         enabled: localShadowIntensity > 0,
         value: localShadowIntensity * 100,
         onValueChange: (value) => {

@@ -9,7 +9,10 @@ export { TrimTrackContent } from './TrimTrack';
 // Base components and hooks
 export {
   BaseSegmentItem,
-  DefaultSegmentContent,
+  BaseSegmentLabel,
+  BaseSegmentWidthGate,
+  BaseSegmentVisibleContent,
+  useBaseSegmentComposition,
   useSegmentDrag,
   type BaseSegment,
   type BaseSegmentItemProps,

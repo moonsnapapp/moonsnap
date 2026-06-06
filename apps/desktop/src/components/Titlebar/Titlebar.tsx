@@ -5,15 +5,9 @@ import { useFocusedShortcutDispatch } from '@/hooks/useFocusedShortcutDispatch';
 import { useTheme } from '@/hooks/useTheme';
 import { UpdateAvailablePill } from '@/components/Updates/UpdateAvailablePill';
 
-interface TitlebarProps {
+interface TitlebarBaseProps {
   title?: string;
-  showLogo?: boolean;
   showMaximize?: boolean;
-  variant?: 'default' | 'hud';
-  /** Short context label shown on the left in HUD mode. */
-  contextLabel?: string;
-  /** Secondary detail shown next to the context chip in HUD mode. */
-  detailLabel?: string;
   /** Called before window closes. Return false to prevent close. */
   onClose?: () => void | boolean | Promise<void | boolean>;
   /** Called when library button is clicked. Button only shown if provided. */
@@ -24,25 +18,96 @@ interface TitlebarProps {
   onOpenSettings?: () => void;
 }
 
-export const Titlebar: React.FC<TitlebarProps> = ({
-  title = 'MoonSnap',
-  showLogo = true,
-  showMaximize = true,
-  variant = 'default',
+interface DefaultTitlebarProps extends TitlebarBaseProps {
+  showLogo?: boolean;
+}
+
+interface HudTitlebarProps extends TitlebarBaseProps {
+  /** Short context label shown on the left in HUD mode. */
+  contextLabel?: string;
+  /** Secondary detail shown next to the context chip in HUD mode. */
+  detailLabel?: string;
+}
+
+interface TitlebarFrameProps {
+  showMaximize: boolean;
+  isHud: boolean;
+  left: React.ReactNode;
+  center?: React.ReactNode;
+  onClose?: () => void | boolean | Promise<void | boolean>;
+  onOpenLibrary?: () => void;
+  onCapture?: () => void;
+  onOpenSettings?: () => void;
+}
+
+function DefaultTitlebarLeft({ title, showLogo }: { title: string; showLogo: boolean }) {
+  return (
+    <>
+      {showLogo && (
+        <div className="titlebar-logo">
+          <Aperture className="w-3.5 h-3.5" />
+        </div>
+      )}
+      <span className="titlebar-title" data-tauri-drag-region>
+        {title}
+      </span>
+    </>
+  );
+}
+
+function HudTitlebarLeft({
   contextLabel,
   detailLabel,
+}: {
+  contextLabel?: string;
+  detailLabel?: string;
+}) {
+  return (
+    <>
+      <span className="titlebar-hud-context" data-tauri-drag-region>
+        {contextLabel ?? 'Workspace'}
+      </span>
+      {detailLabel && (
+        <span
+          className="titlebar-hud-detail"
+          title={detailLabel}
+          data-tauri-drag-region
+        >
+          <span className="titlebar-hud-detail-label">
+            {detailLabel}
+          </span>
+        </span>
+      )}
+    </>
+  );
+}
+
+function HudTitlebarCenter({ title }: { title: string }) {
+  return (
+    <div className="titlebar-hud-brand" data-tauri-drag-region>
+      <span className="titlebar-hud-brand-wordmark" data-tauri-drag-region>
+        {title}
+      </span>
+    </div>
+  );
+}
+
+function TitlebarFrame({
+  showMaximize,
+  isHud,
+  left,
+  center,
   onClose,
   onOpenLibrary,
   onCapture,
   onOpenSettings,
-}) => {
+}: TitlebarFrameProps) {
   const [isMaximized, setIsMaximized] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const appWindow = getCurrentWebviewWindow();
   const { resolvedTheme, toggleTheme } = useTheme();
   useFocusedShortcutDispatch();
 
-  const isHud = variant === 'hud';
   const buttonClassName = `titlebar-button${isHud ? ' titlebar-button--hud' : ''}`;
 
   useEffect(() => {
@@ -95,46 +160,12 @@ export const Titlebar: React.FC<TitlebarProps> = ({
         className={`titlebar-left ${isHud ? 'titlebar-left--hud' : ''}`}
         data-tauri-drag-region
       >
-        {isHud ? (
-          <>
-            <span className="titlebar-hud-context" data-tauri-drag-region>
-              {contextLabel ?? 'Workspace'}
-            </span>
-            {detailLabel && (
-              <span
-                className="titlebar-hud-detail"
-                title={detailLabel}
-                data-tauri-drag-region
-              >
-                <span className="titlebar-hud-detail-label">
-                  {detailLabel}
-                </span>
-              </span>
-            )}
-          </>
-        ) : (
-          <>
-            {showLogo && (
-              <div className="titlebar-logo">
-                <Aperture className="w-3.5 h-3.5" />
-              </div>
-            )}
-            <span className="titlebar-title" data-tauri-drag-region>
-              {title}
-            </span>
-          </>
-        )}
+        {left}
       </div>
 
       {/* Center: Drag Region / HUD Brand */}
       <div className="titlebar-center" data-tauri-drag-region>
-        {isHud && (
-          <div className="titlebar-hud-brand" data-tauri-drag-region>
-            <span className="titlebar-hud-brand-wordmark" data-tauri-drag-region>
-              {title}
-            </span>
-          </div>
-        )}
+        {center}
       </div>
 
       {/* Right: Window Controls */}
@@ -213,4 +244,50 @@ export const Titlebar: React.FC<TitlebarProps> = ({
       </div>
     </div>
   );
-};
+}
+
+export function DefaultTitlebar({
+  title = 'MoonSnap',
+  showLogo = true,
+  showMaximize = true,
+  onClose,
+  onOpenLibrary,
+  onCapture,
+  onOpenSettings,
+}: DefaultTitlebarProps) {
+  return (
+    <TitlebarFrame
+      showMaximize={showMaximize}
+      isHud={false}
+      left={<DefaultTitlebarLeft title={title} showLogo={showLogo} />}
+      onClose={onClose}
+      onOpenLibrary={onOpenLibrary}
+      onCapture={onCapture}
+      onOpenSettings={onOpenSettings}
+    />
+  );
+}
+
+export function HudTitlebar({
+  title = 'MoonSnap',
+  showMaximize = true,
+  contextLabel,
+  detailLabel,
+  onClose,
+  onOpenLibrary,
+  onCapture,
+  onOpenSettings,
+}: HudTitlebarProps) {
+  return (
+    <TitlebarFrame
+      showMaximize={showMaximize}
+      isHud={true}
+      left={<HudTitlebarLeft contextLabel={contextLabel} detailLabel={detailLabel} />}
+      center={<HudTitlebarCenter title={title} />}
+      onClose={onClose}
+      onOpenLibrary={onOpenLibrary}
+      onCapture={onCapture}
+      onOpenSettings={onOpenSettings}
+    />
+  );
+}

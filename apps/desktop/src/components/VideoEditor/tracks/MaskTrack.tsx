@@ -1,5 +1,5 @@
 import { memo, useCallback, useMemo } from 'react';
-import { GripVertical, Plus } from 'lucide-react';
+import { Plus } from 'lucide-react';
 import type { MaskSegment, MaskType } from '../../../types';
 import { useVideoEditorStore } from '../../../stores/videoEditorStore';
 import {
@@ -15,7 +15,7 @@ import {
   selectSetHoveredTrack,
   selectUpdateMaskSegment,
 } from '../../../stores/videoEditor/selectors';
-import { BaseSegmentItem, type BaseSegment, type SegmentTooltipPlacement } from './BaseTrack';
+import { BaseSegmentItem, BaseSegmentLabel, type BaseSegment, type SegmentTooltipPlacement } from './BaseTrack';
 
 interface MaskTrackProps {
   segments: MaskSegment[];
@@ -90,22 +90,6 @@ const PreviewSegment = memo(function PreviewSegment({
     </div>
   );
 });
-
-/**
- * Render content for mask segment - shows mask type label.
- */
-function renderMaskContent(segment: MaskSegment, width: number) {
-  if (width <= 60) return null;
-
-  return (
-    <div className="flex items-center gap-1" style={{ color: MASK_COLORS.text }}>
-      <GripVertical className="w-3 h-3" />
-      <span className="text-[10px] font-mono">
-        {getMaskTypeLabel(segment.maskType)}
-      </span>
-    </div>
-  );
-}
 
 /**
  * Adapter type - MaskSegment uses 'id' field, so it's compatible with BaseSegment.
@@ -233,7 +217,6 @@ export const MaskTrackContent = memo(function MaskTrackContent({
           onUpdate={updateMaskSegment}
           onDelete={deleteMaskSegment}
           onDragStart={handleDragStart}
-          renderContent={renderMaskContent}
           bgColor={MASK_COLORS.bg}
           bgColorSelected={MASK_COLORS.bgSelected}
           borderColor={MASK_COLORS.border}
@@ -241,7 +224,9 @@ export const MaskTrackContent = memo(function MaskTrackContent({
           hoverColor={MASK_COLORS.hover}
           textColor={MASK_COLORS.text}
           tooltipPlacement={tooltipPlacement}
-        />
+        >
+          <BaseSegmentLabel label={getMaskTypeLabel(segment.maskType)} />
+        </BaseSegmentItem>
       ))}
 
       {/* Preview segment (ghost) when hovering over empty space */}
