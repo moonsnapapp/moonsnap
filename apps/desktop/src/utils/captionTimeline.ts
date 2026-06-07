@@ -85,6 +85,102 @@ function timelineMsToSourceMs(
   return segments[segments.length - 1].sourceEndMs;
 }
 
+interface CaptionSegmentOverlap {
+  segment: TrimSegment;
+  timelineOffsetMs: number;
+  start: number;
+  end: number;
+}
+
+function getTrimSegmentDuration(segment: TrimSegment): number {
+  return segment.sourceEndMs - segment.sourceStartMs;
+}
+
+function getCaptionSegmentOverlap(
+  captionStartMs: number,
+  captionEndMs: number,
+  segment: TrimSegment,
+  timelineOffsetMs: number
+): CaptionSegmentOverlap | null {
+  const overlapStartMs = Math.max(captionStartMs, segment.sourceStartMs);
+  const overlapEndMs = Math.min(captionEndMs, segment.sourceEndMs);
+
+  if (overlapEndMs <= overlapStartMs) {
+    return null;
+  }
+
+  return {
+    segment,
+    timelineOffsetMs,
+    start: (timelineOffsetMs + (overlapStartMs - segment.sourceStartMs)) / 1000,
+    end: (timelineOffsetMs + (overlapEndMs - segment.sourceStartMs)) / 1000,
+  };
+}
+
+function remapWordsIntoOverlap(
+  words: CaptionWord[],
+  overlap: CaptionSegmentOverlap
+): CaptionWord[] {
+  return words.flatMap((word) => {
+    const remappedWord = remapWordIntoSegment(
+      word,
+      overlap.segment,
+      overlap.timelineOffsetMs
+    );
+
+    return remappedWord ? [remappedWord] : [];
+  });
+}
+
+function getCaptionTimelineText(caption: CaptionSegment, words: CaptionWord[]): string {
+  return words.length > 0
+    ? words.map((word) => word.text).join(' ')
+    : caption.text;
+}
+
+function remapCaptionSegmentToTimeline(
+  caption: CaptionSegment,
+  segments: TrimSegment[]
+): CaptionSegment[] {
+  const captionStartMs = caption.start * 1000;
+  const captionEndMs = caption.end * 1000;
+  let timelineOffsetMs = 0;
+  let remappedStart: number | null = null;
+  let remappedEnd: number | null = null;
+  const remappedWords: CaptionWord[] = [];
+
+  for (const segment of segments) {
+    const overlap = getCaptionSegmentOverlap(
+      captionStartMs,
+      captionEndMs,
+      segment,
+      timelineOffsetMs
+    );
+
+    if (overlap) {
+      remappedStart ??= overlap.start;
+      remappedEnd = overlap.end;
+      remappedWords.push(...remapWordsIntoOverlap(caption.words, overlap));
+    }
+
+    timelineOffsetMs += getTrimSegmentDuration(segment);
+  }
+
+  if (remappedStart === null || remappedEnd === null || remappedEnd <= remappedStart) {
+    return [];
+  }
+
+  const mergedWords = mergeAdjacentWordSlices(remappedWords);
+
+  return [{
+    id: caption.id,
+    start: remappedStart,
+    end: remappedEnd,
+    text: getCaptionTimelineText(caption, mergedWords),
+    words: mergedWords,
+  }];
+}
+
 export function remapCaptionSegmentsToTimeline(
   captions: CaptionSegment[],
   segments: TrimSegment[] | undefined
@@ -93,58 +189,7 @@ export function remapCaptionSegmentsToTimeline(
     return captions.map(cloneSegment);
   }
 
-  return captions.flatMap((caption) => {
-    const captionStartMs = caption.start * 1000;
-    const captionEndMs = caption.end * 1000;
-
-    let timelineOffsetMs = 0;
-    let remappedStart: number | null = null;
-    let remappedEnd: number | null = null;
-    const remappedWords: CaptionWord[] = [];
-
-    for (const segment of segments) {
-      const overlapStartMs = Math.max(captionStartMs, segment.sourceStartMs);
-      const overlapEndMs = Math.min(captionEndMs, segment.sourceEndMs);
-
-      if (overlapEndMs > overlapStartMs) {
-        const timelineStart =
-          (timelineOffsetMs + (overlapStartMs - segment.sourceStartMs)) / 1000;
-        const timelineEnd =
-          (timelineOffsetMs + (overlapEndMs - segment.sourceStartMs)) / 1000;
-
-        if (remappedStart === null) {
-          remappedStart = timelineStart;
-        }
-        remappedEnd = timelineEnd;
-
-        for (const word of caption.words) {
-          const remappedWord = remapWordIntoSegment(word, segment, timelineOffsetMs);
-          if (remappedWord) {
-            remappedWords.push(remappedWord);
-          }
-        }
-      }
-
-      timelineOffsetMs += segment.sourceEndMs - segment.sourceStartMs;
-    }
-
-    if (remappedStart === null || remappedEnd === null || remappedEnd <= remappedStart) {
-      return [];
-    }
-
-    const mergedWords = mergeAdjacentWordSlices(remappedWords);
-
-    return [{
-      id: caption.id,
-      start: remappedStart,
-      end: remappedEnd,
-      text:
-        mergedWords.length > 0
-          ? mergedWords.map((word) => word.text).join(' ')
-          : caption.text,
-      words: mergedWords,
-    }];
-  });
+  return captions.flatMap((caption) => remapCaptionSegmentToTimeline(caption, segments));
 }
 
 export function remapCaptionSegmentToSource(

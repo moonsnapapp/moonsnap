@@ -20,6 +20,179 @@ interface LineShapeProps {
   commitSnapshot: () => void;
 }
 
+type EndpointIndex = 0 | 1;
+
+interface LineEndpointHandleProps {
+  circleRef: React.RefObject<Konva.Circle | null>;
+  x: number;
+  y: number;
+  zoom: number;
+  handleSize: number;
+  onDragStart: () => void;
+  onDragMove: (e: Konva.KonvaEventObject<DragEvent>) => void;
+  onDragEnd: (e: Konva.KonvaEventObject<DragEvent>) => void;
+  onMouseEnter: (e: Konva.KonvaEventObject<MouseEvent>) => void;
+  onMouseLeave: (e: Konva.KonvaEventObject<MouseEvent>) => void;
+}
+
+interface SelectedLineEndpointHandlesProps {
+  visible: boolean;
+  startHandleRef: React.RefObject<Konva.Circle | null>;
+  endHandleRef: React.RefObject<Konva.Circle | null>;
+  startEndpoint: { x: number; y: number };
+  endEndpoint: { x: number; y: number };
+  zoom: number;
+  handleSize: number;
+  onDragStart: () => void;
+  onStartDragMove: (e: Konva.KonvaEventObject<DragEvent>) => void;
+  onEndDragMove: (e: Konva.KonvaEventObject<DragEvent>) => void;
+  onStartDragEnd: (e: Konva.KonvaEventObject<DragEvent>) => void;
+  onEndDragEnd: (e: Konva.KonvaEventObject<DragEvent>) => void;
+  onMouseEnter: (e: Konva.KonvaEventObject<MouseEvent>) => void;
+  onMouseLeave: (e: Konva.KonvaEventObject<MouseEvent>) => void;
+}
+
+function animateEndpointHandle(
+  handleRef: React.RefObject<Konva.Circle | null>,
+  isSelected: boolean,
+  handleSize: number,
+  handleStrokeWidth: number,
+) {
+  if (!handleRef.current || !isSelected) {
+    return;
+  }
+
+  handleRef.current.to({ radius: handleSize, strokeWidth: handleStrokeWidth, duration: 0.1 });
+}
+
+function positionEndpointHandle(
+  handleRef: React.RefObject<Konva.Circle | null>,
+  x: number,
+  y: number,
+) {
+  handleRef.current?.position({ x, y });
+}
+
+function getMovedLinePoints(points: number[], dx: number, dy: number) {
+  return [points[0] + dx, points[1] + dy, points[2] + dx, points[3] + dy];
+}
+
+function getEndpointCoordinates(points: number[], endpointIndex: EndpointIndex) {
+  return endpointIndex === 0
+    ? { x: points[0], y: points[1] }
+    : { x: points[2], y: points[3] };
+}
+
+function getDraggedEndpointPoints(
+  points: number[],
+  endpointIndex: EndpointIndex,
+  x: number,
+  y: number,
+) {
+  const newPoints = [...points];
+  const pointOffset = endpointIndex * 2;
+  newPoints[pointOffset] = x;
+  newPoints[pointOffset + 1] = y;
+  return newPoints;
+}
+
+function updateLineEndpointDuringDrag(
+  lineRef: React.RefObject<Konva.Line | null>,
+  points: number[],
+  endpointIndex: EndpointIndex,
+  x: number,
+  y: number,
+) {
+  lineRef.current?.points(getDraggedEndpointPoints(points, endpointIndex, x, y));
+}
+
+function setStageCursor(e: Konva.KonvaEventObject<MouseEvent>, cursor: string) {
+  const container = e.target.getStage()?.container();
+  if (container) container.style.cursor = cursor;
+}
+
+function LineEndpointHandle({
+  circleRef,
+  x,
+  y,
+  zoom,
+  handleSize,
+  onDragStart,
+  onDragMove,
+  onDragEnd,
+  onMouseEnter,
+  onMouseLeave,
+}: LineEndpointHandleProps) {
+  return (
+    <Circle
+      ref={circleRef}
+      name="editor-gizmo"
+      x={x}
+      y={y}
+      radius={handleSize}
+      fill="#fff"
+      stroke="#374151"
+      strokeWidth={1.5 / zoom}
+      draggable
+      onDragStart={onDragStart}
+      onDragMove={onDragMove}
+      onDragEnd={onDragEnd}
+      onMouseEnter={onMouseEnter}
+      onMouseLeave={onMouseLeave}
+    />
+  );
+}
+
+function SelectedLineEndpointHandles({
+  visible,
+  startHandleRef,
+  endHandleRef,
+  startEndpoint,
+  endEndpoint,
+  zoom,
+  handleSize,
+  onDragStart,
+  onStartDragMove,
+  onEndDragMove,
+  onStartDragEnd,
+  onEndDragEnd,
+  onMouseEnter,
+  onMouseLeave,
+}: SelectedLineEndpointHandlesProps) {
+  if (!visible) {
+    return null;
+  }
+
+  return (
+    <>
+      <LineEndpointHandle
+        circleRef={startHandleRef}
+        x={startEndpoint.x}
+        y={startEndpoint.y}
+        zoom={zoom}
+        handleSize={handleSize}
+        onDragStart={onDragStart}
+        onDragMove={onStartDragMove}
+        onDragEnd={onStartDragEnd}
+        onMouseEnter={onMouseEnter}
+        onMouseLeave={onMouseLeave}
+      />
+      <LineEndpointHandle
+        circleRef={endHandleRef}
+        x={endEndpoint.x}
+        y={endEndpoint.y}
+        zoom={zoom}
+        handleSize={handleSize}
+        onDragStart={onDragStart}
+        onDragMove={onEndDragMove}
+        onDragEnd={onEndDragEnd}
+        onMouseEnter={onMouseEnter}
+        onMouseLeave={onMouseLeave}
+      />
+    </>
+  );
+}
+
 export const LineShape: React.FC<LineShapeProps> = React.memo(({
   shape,
   isSelected,
@@ -48,12 +221,8 @@ export const LineShape: React.FC<LineShapeProps> = React.memo(({
   // Smooth handle size transitions on zoom
   const handleStrokeWidth = 1.5 / zoom;
   useEffect(() => {
-    if (startHandleRef.current && isSelected) {
-      startHandleRef.current.to({ radius: handleSize, strokeWidth: handleStrokeWidth, duration: 0.1 });
-    }
-    if (endHandleRef.current && isSelected) {
-      endHandleRef.current.to({ radius: handleSize, strokeWidth: handleStrokeWidth, duration: 0.1 });
-    }
+    animateEndpointHandle(startHandleRef, isSelected, handleSize, handleStrokeWidth);
+    animateEndpointHandle(endHandleRef, isSelected, handleSize, handleStrokeWidth);
   }, [handleSize, handleStrokeWidth, isSelected]);
 
   // Line drag handlers
@@ -65,48 +234,44 @@ export const LineShape: React.FC<LineShapeProps> = React.memo(({
   const handleLineDragMove = useCallback((e: Konva.KonvaEventObject<DragEvent>) => {
     const moveDx = e.target.x();
     const moveDy = e.target.y();
-    if (startHandleRef.current) {
-      startHandleRef.current.position({ x: points[0] + moveDx, y: points[1] + moveDy });
-    }
-    if (endHandleRef.current) {
-      endHandleRef.current.position({ x: points[2] + moveDx, y: points[3] + moveDy });
-    }
+    positionEndpointHandle(startHandleRef, points[0] + moveDx, points[1] + moveDy);
+    positionEndpointHandle(endHandleRef, points[2] + moveDx, points[3] + moveDy);
   }, [points]);
 
   const handleLineDragEnd = useCallback((e: Konva.KonvaEventObject<DragEvent>) => {
     const dx = e.target.x();
     const dy = e.target.y();
     e.target.position({ x: 0, y: 0 });
-    onDragEnd(e, [points[0] + dx, points[1] + dy, points[2] + dx, points[3] + dy]);
+    onDragEnd(e, getMovedLinePoints(points, dx, dy));
   }, [points, onDragEnd]);
 
   // Handle drag - moves 1:1, updates line in real-time
   const handleStartDragMove = useCallback((e: Konva.KonvaEventObject<DragEvent>) => {
-    if (lineRef.current) {
-      lineRef.current.points([e.target.x(), e.target.y(), points[2], points[3]]);
-    }
+    updateLineEndpointDuringDrag(lineRef, points, 0, e.target.x(), e.target.y());
   }, [points]);
 
   const handleEndDragMove = useCallback((e: Konva.KonvaEventObject<DragEvent>) => {
-    if (lineRef.current) {
-      lineRef.current.points([points[0], points[1], e.target.x(), e.target.y()]);
-    }
+    updateLineEndpointDuringDrag(lineRef, points, 1, e.target.x(), e.target.y());
   }, [points]);
 
-  const handleEndpointDragEnd = useCallback((endpointIndex: 0 | 1, e: Konva.KonvaEventObject<DragEvent>) => {
-    const newPoints = [...points];
-    if (endpointIndex === 0) {
-      newPoints[0] = e.target.x();
-      newPoints[1] = e.target.y();
-    } else {
-      newPoints[2] = e.target.x();
-      newPoints[3] = e.target.y();
-    }
+  const handleEndpointDragEnd = useCallback((endpointIndex: EndpointIndex, e: Konva.KonvaEventObject<DragEvent>) => {
+    const newPoints = getDraggedEndpointPoints(points, endpointIndex, e.target.x(), e.target.y());
     onEndpointDragEnd(endpointIndex, newPoints);
     commitSnapshot();
   }, [points, onEndpointDragEnd, commitSnapshot]);
 
+  const handleEndpointMouseEnter = useCallback((e: Konva.KonvaEventObject<MouseEvent>) => {
+    setStageCursor(e, 'crosshair');
+  }, []);
+
+  const handleEndpointMouseLeave = useCallback((e: Konva.KonvaEventObject<MouseEvent>) => {
+    setStageCursor(e, 'default');
+  }, []);
+
   const hitStrokeWidth = Math.max((shape.strokeWidth || 2) * 3, 12);
+  const startEndpoint = getEndpointCoordinates(points, 0);
+  const endEndpoint = getEndpointCoordinates(points, 1);
+  const showEndpointHandles = isSelected && isDraggable;
 
   return (
     <Group id={shape.id}>
@@ -126,54 +291,22 @@ export const LineShape: React.FC<LineShapeProps> = React.memo(({
         onDragEnd={handleLineDragEnd}
         {...cursorHandlers}
       />
-      {isSelected && isDraggable && (
-        <>
-          <Circle
-            ref={startHandleRef}
-            name="editor-gizmo"
-            x={points[0]}
-            y={points[1]}
-            radius={handleSize}
-            fill="#fff"
-            stroke="#374151"
-            strokeWidth={1.5 / zoom}
-            draggable
-            onDragStart={() => takeSnapshot()}
-            onDragMove={handleStartDragMove}
-            onDragEnd={(e) => handleEndpointDragEnd(0, e)}
-            onMouseEnter={(e) => {
-              const container = e.target.getStage()?.container();
-              if (container) container.style.cursor = 'crosshair';
-            }}
-            onMouseLeave={(e) => {
-              const container = e.target.getStage()?.container();
-              if (container) container.style.cursor = 'default';
-            }}
-          />
-          <Circle
-            ref={endHandleRef}
-            name="editor-gizmo"
-            x={points[2]}
-            y={points[3]}
-            radius={handleSize}
-            fill="#fff"
-            stroke="#374151"
-            strokeWidth={1.5 / zoom}
-            draggable
-            onDragStart={() => takeSnapshot()}
-            onDragMove={handleEndDragMove}
-            onDragEnd={(e) => handleEndpointDragEnd(1, e)}
-            onMouseEnter={(e) => {
-              const container = e.target.getStage()?.container();
-              if (container) container.style.cursor = 'crosshair';
-            }}
-            onMouseLeave={(e) => {
-              const container = e.target.getStage()?.container();
-              if (container) container.style.cursor = 'default';
-            }}
-          />
-        </>
-      )}
+      <SelectedLineEndpointHandles
+        visible={showEndpointHandles}
+        startHandleRef={startHandleRef}
+        endHandleRef={endHandleRef}
+        startEndpoint={startEndpoint}
+        endEndpoint={endEndpoint}
+        zoom={zoom}
+        handleSize={handleSize}
+        onDragStart={takeSnapshot}
+        onStartDragMove={handleStartDragMove}
+        onEndDragMove={handleEndDragMove}
+        onStartDragEnd={(e) => handleEndpointDragEnd(0, e)}
+        onEndDragEnd={(e) => handleEndpointDragEnd(1, e)}
+        onMouseEnter={handleEndpointMouseEnter}
+        onMouseLeave={handleEndpointMouseLeave}
+      />
     </Group>
   );
 });

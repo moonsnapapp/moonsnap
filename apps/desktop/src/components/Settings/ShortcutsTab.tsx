@@ -19,10 +19,41 @@ interface ShortcutItemProps {
   config: ShortcutConfig;
 }
 
+function ShortcutIcon({ shortcutId }: { shortcutId: string }) {
+  return (
+    <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg border border-[var(--polar-frost)] bg-[var(--card)] text-[var(--accent-400)] shadow-sm">
+      {SHORTCUT_ICONS[shortcutId] || <Scan className="w-5 h-5" />}
+    </div>
+  );
+}
+
+function ShortcutStatusIcon({ config }: { config: ShortcutConfig }) {
+  if (config.status === 'registered') {
+    return <Check className="w-4 h-4 text-emerald-500" />;
+  }
+
+  if (config.status !== 'conflict') {
+    return null;
+  }
+
+  const message = config.statusMessage ?? 'Shortcut could not be registered';
+  return (
+    <span title={message} aria-label={message}>
+      <AlertTriangle className="w-4 h-4 text-amber-500" />
+    </span>
+  );
+}
+
+function ShortcutStatusMessage({ config }: { config: ShortcutConfig }) {
+  if (config.status !== 'conflict' || !config.statusMessage) {
+    return null;
+  }
+
+  return <p className="mb-2 text-xs text-amber-700">{config.statusMessage}</p>;
+}
+
 const ShortcutItem: React.FC<ShortcutItemProps> = ({ config }) => {
   const { resetShortcut } = useSettingsStore();
-  const showGreen = config.status === 'registered';
-  const showWarning = config.status === 'conflict';
 
   const handleShortcutChange = useCallback(async (newShortcut: string) => {
     if (hasInternalConflict(newShortcut, config.id)) return;
@@ -37,27 +68,15 @@ const ShortcutItem: React.FC<ShortcutItemProps> = ({ config }) => {
   return (
     <div className="rounded-lg border border-[var(--polar-frost)] bg-[var(--polar-ice)] p-3">
       <div className="flex items-start gap-2.5">
-        <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg border border-[var(--polar-frost)] bg-[var(--card)] text-[var(--accent-400)] shadow-sm">
-          {SHORTCUT_ICONS[config.id] || <Scan className="w-5 h-5" />}
-        </div>
+        <ShortcutIcon shortcutId={config.id} />
 
         <div className="flex-1 min-w-0">
           <div className="mb-1 flex items-center gap-2">
             <h4 className="text-sm font-medium text-[var(--ink-black)]">{config.name}</h4>
-            {showGreen && <Check className="w-4 h-4 text-emerald-500" />}
-            {showWarning && (
-              <span
-                title={config.statusMessage ?? 'Shortcut could not be registered'}
-                aria-label={config.statusMessage ?? 'Shortcut could not be registered'}
-              >
-                <AlertTriangle className="w-4 h-4 text-amber-500" />
-              </span>
-            )}
+            <ShortcutStatusIcon config={config} />
           </div>
           <p className="mb-2 text-xs text-[var(--ink-muted)]">{config.description}</p>
-          {showWarning && config.statusMessage && (
-            <p className="mb-2 text-xs text-amber-700">{config.statusMessage}</p>
-          )}
+          <ShortcutStatusMessage config={config} />
 
           <ShortcutInput
             value={config.currentShortcut}

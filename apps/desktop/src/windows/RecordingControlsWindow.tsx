@@ -32,6 +32,117 @@ function getInitialRecordingFormat(): RecordingFormat {
   return window.__MOONSNAP_RECORDING_FORMAT ?? 'mp4';
 }
 
+interface WindowSize {
+  width: number;
+  height: number;
+}
+
+function measureWindowContentSize(element: HTMLElement): WindowSize {
+  const rect = element.getBoundingClientRect();
+  return {
+    width: Math.ceil(rect.width),
+    height: Math.ceil(rect.height),
+  };
+}
+
+function hasMeasurableWindowSize({ width, height }: WindowSize) {
+  return width > 0 && height > 0;
+}
+
+function hasWindowSizeChanged(nextSize: WindowSize, previousSize: WindowSize) {
+  return nextSize.width !== previousSize.width || nextSize.height !== previousSize.height;
+}
+
+function shouldApplyWindowSize({
+  isClosing,
+  nextSize,
+  previousSize,
+}: {
+  isClosing: boolean;
+  nextSize: WindowSize;
+  previousSize: WindowSize;
+}) {
+  if (isClosing || !hasMeasurableWindowSize(nextSize)) {
+    return false;
+  }
+
+  return hasWindowSizeChanged(nextSize, previousSize);
+}
+
+async function applyRecordingControlsWindowSize({ width, height }: WindowSize) {
+  try {
+    const window = getCurrentWindow();
+    await window.setSize(new LogicalSize(width, height));
+  } catch (error) {
+    toolbarLogger.error('Failed to resize recording controls window:', error);
+  }
+}
+
+interface RecordingStateControls {
+  setMode: React.Dispatch<React.SetStateAction<ToolbarMode>>;
+  setElapsedTime: React.Dispatch<React.SetStateAction<number>>;
+  setCountdownSeconds: React.Dispatch<React.SetStateAction<number | undefined>>;
+  isRecordingActiveRef: React.MutableRefObject<boolean>;
+  timerBaseTimeRef: React.MutableRefObject<number>;
+  timerStartedAtRef: React.MutableRefObject<number | null>;
+}
+
+function beginRecordingTimer({
+  isRecordingActiveRef,
+  timerBaseTimeRef,
+  timerStartedAtRef,
+  setElapsedTime,
+}: RecordingStateControls) {
+  if (isRecordingActiveRef.current) return;
+
+  isRecordingActiveRef.current = true;
+  timerBaseTimeRef.current = 0;
+  timerStartedAtRef.current = null;
+  setElapsedTime(0);
+}
+
+function clearRecordingState({
+  isRecordingActiveRef,
+  setCountdownSeconds,
+}: RecordingStateControls) {
+  isRecordingActiveRef.current = false;
+  setCountdownSeconds(undefined);
+}
+
+const RECORDING_STATE_HANDLERS: Record<
+  RecordingState['status'],
+  (controls: RecordingStateControls) => void
+> = {
+  countdown: ({ setMode }) => {
+    setMode('starting');
+  },
+  starting: ({ setMode }) => {
+    setMode('starting');
+  },
+  recording: (controls) => {
+    beginRecordingTimer(controls);
+    controls.setCountdownSeconds(undefined);
+    controls.setMode('recording');
+  },
+  paused: ({ setMode }) => {
+    setMode('paused');
+  },
+  processing: (controls) => {
+    controls.isRecordingActiveRef.current = false;
+    controls.setMode('processing');
+  },
+  idle: clearRecordingState,
+  completed: clearRecordingState,
+  error: clearRecordingState,
+};
+
+function handleRecordingStateChanged(
+  state: RecordingState,
+  controls: RecordingStateControls
+) {
+  RECORDING_STATE_HANDLERS[state.status](controls);
+}
+
 const RecordingControlsWindow: React.FC = () => {
   useTheme();
   useFocusedShortcutDispatch();
@@ -68,30 +179,18 @@ const RecordingControlsWindow: React.FC = () => {
     }
 
     const resizeWindow = async () => {
-      if (isClosingRef.current) {
+      const nextSize = measureWindowContentSize(container);
+
+      if (!shouldApplyWindowSize({
+        isClosing: isClosingRef.current,
+        nextSize,
+        previousSize: lastSizeRef.current,
+      })) {
         return;
       }
 
-      const rect = container.getBoundingClientRect();
-      const width = Math.ceil(rect.width);
-      const height = Math.ceil(rect.height);
-
-      if (
-        width === 0 ||
-        height === 0 ||
-        (width === lastSizeRef.current.width && height === lastSizeRef.current.height)
-      ) {
-        return;
-      }
-
-      lastSizeRef.current = { width, height };
-
-      try {
-        const window = getCurrentWindow();
-        await window.setSize(new LogicalSize(width, height));
-      } catch (error) {
-        toolbarLogger.error('Failed to resize recording controls window:', error);
-      }
+      lastSizeRef.current = nextSize;
+      await applyRecordingControlsWindowSize(nextSize);
     };
 
     void resizeWindow();
@@ -135,39 +234,18 @@ const RecordingControlsWindow: React.FC = () => {
     let unlistenState: UnlistenFn | null = null;
     let unlistenFormat: UnlistenFn | null = null;
     let unlistenCountdown: UnlistenFn | null = null;
+    const recordingStateControls: RecordingStateControls = {
+      setMode,
+      setElapsedTime,
+      setCountdownSeconds,
+      isRecordingActiveRef,
+      timerBaseTimeRef,
+      timerStartedAtRef,
+    };
 
     const setup = async () => {
       unlistenState = await listen<RecordingState>('recording-state-changed', (event) => {
-        const state = event.payload;
-
-        switch (state.status) {
-          case 'countdown':
-            setMode('starting');
-            break;
-          case 'recording':
-            if (!isRecordingActiveRef.current) {
-              isRecordingActiveRef.current = true;
-              timerBaseTimeRef.current = 0;
-              timerStartedAtRef.current = null;
-              setElapsedTime(0);
-            }
-            setCountdownSeconds(undefined);
-            setMode('recording');
-            break;
-          case 'paused':
-            setMode('paused');
-            break;
-          case 'processing':
-            isRecordingActiveRef.current = false;
-            setMode('processing');
-            break;
-          case 'idle':
-          case 'completed':
-          case 'error':
-            isRecordingActiveRef.current = false;
-            setCountdownSeconds(undefined);
-            break;
-        }
+        handleRecordingStateChanged(event.payload, recordingStateControls);
       });
 
       unlistenFormat = await listen<RecordingFormat>('recording-format', (event) => {

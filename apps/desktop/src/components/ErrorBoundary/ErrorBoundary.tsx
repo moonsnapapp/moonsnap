@@ -52,12 +52,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
 
   componentDidUpdate(prevProps: ErrorBoundaryProps) {
     // Reset error state when resetKeys change
-    if (
-      this.state.hasError &&
-      this.props.resetKeys &&
-      prevProps.resetKeys &&
-      !arraysEqual(this.props.resetKeys, prevProps.resetKeys)
-    ) {
+    if (shouldResetErrorBoundary(this.state, this.props, prevProps)) {
       this.reset();
     }
   }
@@ -87,6 +82,19 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
 
     return this.props.children;
   }
+}
+
+function shouldResetErrorBoundary(
+  state: ErrorBoundaryState,
+  props: ErrorBoundaryProps,
+  prevProps: ErrorBoundaryProps
+) {
+  return Boolean(
+    state.hasError &&
+      props.resetKeys &&
+      prevProps.resetKeys &&
+      !arraysEqual(props.resetKeys, prevProps.resetKeys)
+  );
 }
 
 // Helper to compare arrays

@@ -36,7 +36,278 @@ interface UseShapeTransformReturn {
   handleArrowEndpointDragEnd: (shapeId: string, newPoints: number[]) => void;
 }
 
+type NativeDragTarget = Konva.KonvaEventObject<DragEvent>['target'];
+
+interface NativeDragState {
+  draggedShape: CanvasShape;
+  selectedIdsSet: Set<string>;
+  isGroupDrag: boolean;
+  targetX: number;
+  targetY: number;
+  dx: number;
+  dy: number;
+  isPen: boolean;
+}
+
 const DRAG_EPSILON = 0.01;
+
+function hasDrawablePoints(shape: CanvasShape) {
+  return Boolean(shape.points && shape.points.length >= 2);
+}
+
+function hasPenPoints(shape: CanvasShape): shape is CanvasShape & { points: number[] } {
+  return shape.type === 'pen' && hasDrawablePoints(shape);
+}
+
+function hasManualPointDragType(shape: CanvasShape) {
+  return shape.type === 'pen' || shape.type === 'arrow' || shape.type === 'line';
+}
+
+function hasManualDragPoints(shape: CanvasShape): shape is CanvasShape & { points: number[] } {
+  return hasManualPointDragType(shape) && hasDrawablePoints(shape);
+}
+
+function didMove(dx: number, dy: number): boolean {
+  return Math.abs(dx) > DRAG_EPSILON || Math.abs(dy) > DRAG_EPSILON;
+}
+
+function movePoints(points: number[], dx: number, dy: number): number[] {
+  return points.map((val, index) => (index % 2 === 0 ? val + dx : val + dy));
+}
+
+function moveShapePosition(shape: CanvasShape, dx: number, dy: number): CanvasShape {
+  return {
+    ...shape,
+    x: (shape.x ?? 0) + dx,
+    y: (shape.y ?? 0) + dy,
+  };
+}
+
+function applyManualDragToShape(shape: CanvasShape, dx: number, dy: number): CanvasShape {
+  if (hasManualDragPoints(shape)) {
+    return { ...shape, points: movePoints(shape.points, dx, dy) };
+  }
+
+  return moveShapePosition(shape, dx, dy);
+}
+
+function getShapeDragDelta(
+  shape: CanvasShape,
+  targetX: number,
+  targetY: number
+): { dx: number; dy: number; isPen: boolean } {
+  const isPen = hasPenPoints(shape);
+  const origin = getShapeDragOrigin(shape, isPen);
+
+  return {
+    dx: targetX - origin.x,
+    dy: targetY - origin.y,
+    isPen,
+  };
+}
+
+function getShapeDragOrigin(shape: CanvasShape, isPen: boolean) {
+  return {
+    x: getShapeDragOriginX(shape, isPen),
+    y: getShapeDragOriginY(shape, isPen),
+  };
+}
+
+function getShapeDragOriginX(shape: CanvasShape, isPen: boolean) {
+  return isPen ? 0 : (shape.x ?? 0);
+}
+
+function getShapeDragOriginY(shape: CanvasShape, isPen: boolean) {
+  return isPen ? 0 : (shape.y ?? 0);
+}
+
+function getNormalizedStart(origin: number | undefined, size: number | undefined): number {
+  return (origin ?? 0) + Math.min(size ?? 0, 0);
+}
+
+function getBlurDragDelta(
+  shape: CanvasShape,
+  targetX: number,
+  targetY: number
+): { dx: number; dy: number } {
+  return {
+    dx: targetX - getNormalizedStart(shape.x, shape.width),
+    dy: targetY - getNormalizedStart(shape.y, shape.height),
+  };
+}
+
+function getNativeDragDelta(
+  draggedShape: CanvasShape,
+  isGroupDrag: boolean,
+  targetX: number,
+  targetY: number
+) {
+  const dragDelta = getShapeDragDelta(draggedShape, targetX, targetY);
+
+  if (!isGroupDrag && draggedShape.type === 'blur') {
+    return { ...dragDelta, ...getBlurDragDelta(draggedShape, targetX, targetY) };
+  }
+
+  return dragDelta;
+}
+
+function getNativeDragState({
+  draggedShape,
+  selectedIds,
+  id,
+  target,
+}: {
+  draggedShape: CanvasShape;
+  selectedIds: string[];
+  id: string;
+  target: NativeDragTarget;
+}): NativeDragState {
+  const selectedIdsSet = new Set(selectedIds);
+  const isGroupDrag = selectedIds.length > 1 && selectedIdsSet.has(id);
+  const targetX = target.x();
+  const targetY = target.y();
+  const { dx, dy, isPen } = getNativeDragDelta(draggedShape, isGroupDrag, targetX, targetY);
+
+  return {
+    draggedShape,
+    selectedIdsSet,
+    isGroupDrag,
+    targetX,
+    targetY,
+    dx,
+    dy,
+    isPen,
+  };
+}
+
+function applyNativeGroupDrag(
+  shapes: CanvasShape[],
+  selectedIds: Set<string>,
+  dx: number,
+  dy: number
+): CanvasShape[] {
+  return shapes.map((shape) => {
+    if (!selectedIds.has(shape.id)) return shape;
+    return applyNativeGroupDragToShape(shape, dx, dy);
+  });
+}
+
+function applyNativeGroupDragToShape(shape: CanvasShape, dx: number, dy: number) {
+  return hasPenPoints(shape)
+    ? { ...shape, points: movePoints(shape.points, dx, dy) }
+    : moveShapePosition(shape, dx, dy);
+}
+
+function applyNativeSingleDrag(
+  shapes: CanvasShape[],
+  id: string,
+  draggedShape: CanvasShape,
+  targetX: number,
+  targetY: number,
+  dx: number,
+  dy: number
+): CanvasShape[] {
+  if (hasPenPoints(draggedShape)) {
+    const newPoints = movePoints(draggedShape.points, dx, dy);
+    return shapes.map((shape) =>
+      shape.id === id ? { ...shape, points: newPoints } : shape
+    );
+  }
+
+  if (draggedShape.type === 'blur') {
+    return shapes.map((shape) =>
+      shape.id === id
+        ? { ...shape, x: (shape.x ?? 0) + dx, y: (shape.y ?? 0) + dy }
+        : shape
+    );
+  }
+
+  return shapes.map((shape) =>
+    shape.id === id ? { ...shape, x: targetX, y: targetY } : shape
+  );
+}
+
+function applyNativeDrag(
+  shapes: CanvasShape[],
+  id: string,
+  dragState: NativeDragState
+): CanvasShape[] {
+  if (dragState.isGroupDrag) {
+    return applyNativeGroupDrag(shapes, dragState.selectedIdsSet, dragState.dx, dragState.dy);
+  }
+
+  return applyNativeSingleDrag(
+    shapes,
+    id,
+    dragState.draggedShape,
+    dragState.targetX,
+    dragState.targetY,
+    dragState.dx,
+    dragState.dy
+  );
+}
+
+function resetNativeDragTarget(target: NativeDragTarget, dragState: NativeDragState) {
+  if (dragState.isPen) {
+    target.position({ x: 0, y: 0 });
+  }
+}
+
+function shouldIgnoreShapeClick(event: Konva.KonvaEventObject<MouseEvent>) {
+  return event.evt?.button === 1;
+}
+
+function toggleShapeSelection(selectedIds: string[], selectedIdsSet: Set<string>, shapeId: string) {
+  return selectedIdsSet.has(shapeId)
+    ? selectedIds.filter((id) => id !== shapeId)
+    : [...selectedIds, shapeId];
+}
+
+function getShapeClickSelection({
+  shapeId,
+  event,
+  selectedIds,
+}: {
+  shapeId: string;
+  event: Konva.KonvaEventObject<MouseEvent>;
+  selectedIds: string[];
+}): string[] | null {
+  const selectedIdsSet = new Set(selectedIds);
+
+  if (event.evt?.shiftKey) {
+    return toggleShapeSelection(selectedIds, selectedIdsSet, shapeId);
+  }
+
+  return selectedIdsSet.has(shapeId) ? null : [shapeId];
+}
+
+function getExpandedCanvasBoundsAfterTransform({
+  canvasBounds,
+  updatedShapes,
+  originalImageSize,
+  cropUserExpanded,
+}: {
+  canvasBounds: CanvasBounds | null;
+  updatedShapes: CanvasShape[];
+  originalImageSize: { width: number; height: number } | null;
+  cropUserExpanded: boolean;
+}) {
+  if (!canvasBounds || !originalImageSize) return null;
+  return expandBoundsForShapes(canvasBounds, updatedShapes, originalImageSize, cropUserExpanded);
+}
+
+function getExpandedCropRegionAfterTransform({
+  cropRegion,
+  updatedShapes,
+  cropUserExpanded,
+}: {
+  cropRegion: UseShapeTransformProps['cropRegion'];
+  updatedShapes: CanvasShape[];
+  cropUserExpanded: boolean;
+}) {
+  if (!cropRegion) return null;
+  return expandCropRegionForShapes(cropRegion, updatedShapes, cropUserExpanded);
+}
 
 /**
  * Hook for shape transformation operations - drag, resize, rotate
@@ -66,16 +337,23 @@ export const useShapeTransform = ({
   /** Try to expand canvas bounds and crop region to fit all shapes after a drag/transform */
   const maybeExpandBounds = useCallback(
     (updatedShapes: CanvasShape[]) => {
-      if (!canvasBounds || !originalImageSize) return;
-      const expanded = expandBoundsForShapes(canvasBounds, updatedShapes, originalImageSize, cropUserExpanded);
+      const expanded = getExpandedCanvasBoundsAfterTransform({
+        canvasBounds,
+        updatedShapes,
+        originalImageSize,
+        cropUserExpanded,
+      });
       if (expanded) {
         setCanvasBounds(expanded);
       }
-      if (cropRegion) {
-        const expandedCrop = expandCropRegionForShapes(cropRegion, updatedShapes, cropUserExpanded);
-        if (expandedCrop) {
-          setCropRegion(expandedCrop);
-        }
+
+      const expandedCrop = getExpandedCropRegionAfterTransform({
+        cropRegion,
+        updatedShapes,
+        cropUserExpanded,
+      });
+      if (expandedCrop) {
+        setCropRegion(expandedCrop);
       }
     },
     [canvasBounds, originalImageSize, setCanvasBounds, cropRegion, setCropRegion, cropUserExpanded]
@@ -103,31 +381,14 @@ export const useShapeTransform = ({
         return;
       }
 
-      // Calculate delta based on shape type
-      const selectedNow = selectedIdsRef.current;
-      const selectedNowSet = new Set(selectedNow);
-      const isGroupDrag = selectedNow.length > 1 && selectedNowSet.has(id);
-      const isPen = draggedShape.type === 'pen' && draggedShape.points && draggedShape.points.length >= 2;
-      const dx = e.target.x() - (isPen ? 0 : (draggedShape.x ?? 0));
-      const dy = e.target.y() - (isPen ? 0 : (draggedShape.y ?? 0));
-      const movedByDelta = Math.abs(dx) > DRAG_EPSILON || Math.abs(dy) > DRAG_EPSILON;
+      const dragState = getNativeDragState({
+        draggedShape,
+        selectedIds: selectedIdsRef.current,
+        id,
+        target: e.target,
+      });
 
-      let blurDx = 0;
-      let blurDy = 0;
-      if (!isGroupDrag && draggedShape.type === 'blur') {
-        const normalizedX = (draggedShape.width ?? 0) < 0
-          ? (draggedShape.x ?? 0) + (draggedShape.width ?? 0)
-          : (draggedShape.x ?? 0);
-        const normalizedY = (draggedShape.height ?? 0) < 0
-          ? (draggedShape.y ?? 0) + (draggedShape.height ?? 0)
-          : (draggedShape.y ?? 0);
-        blurDx = e.target.x() - normalizedX;
-        blurDy = e.target.y() - normalizedY;
-        const movedBlur = Math.abs(blurDx) > DRAG_EPSILON || Math.abs(blurDy) > DRAG_EPSILON;
-        if (!movedBlur) {
-          return;
-        }
-      } else if (!movedByDelta) {
+      if (!didMove(dragState.dx, dragState.dy)) {
         return;
       }
 
@@ -136,54 +397,8 @@ export const useShapeTransform = ({
       // the true pre-drag state while avoiding drag-start latency.
       takeSnapshot();
 
-      // Reset position for pen strokes (they use points, not x/y)
-      if (isPen) {
-        e.target.position({ x: 0, y: 0 });
-      }
-
-      let updatedShapes: CanvasShape[];
-
-      // Group drag: move all selected shapes by the same delta
-      if (isGroupDrag) {
-        updatedShapes = shapes.map((shape) => {
-          if (!selectedNowSet.has(shape.id)) return shape;
-
-          if (shape.type === 'pen' && shape.points && shape.points.length >= 2) {
-            const newPoints = shape.points.map((val, i) =>
-              i % 2 === 0 ? val + dx : val + dy
-            );
-            return { ...shape, points: newPoints };
-          }
-
-          return {
-            ...shape,
-            x: (shape.x ?? 0) + dx,
-            y: (shape.y ?? 0) + dy,
-          };
-        });
-      } else {
-        // Single shape drag
-        if (isPen) {
-          const newPoints = draggedShape.points!.map((val, i) =>
-            i % 2 === 0 ? val + dx : val + dy
-          );
-          updatedShapes = shapes.map((shape) =>
-            shape.id === id ? { ...shape, points: newPoints } : shape
-          );
-        } else if (draggedShape.type === 'blur') {
-          updatedShapes = shapes.map((shape) =>
-            shape.id === id
-              ? { ...shape, x: (shape.x ?? 0) + blurDx, y: (shape.y ?? 0) + blurDy }
-              : shape
-          );
-        } else {
-          updatedShapes = shapes.map((shape) =>
-            shape.id === id
-              ? { ...shape, x: e.target.x(), y: e.target.y() }
-              : shape
-          );
-        }
-      }
+      resetNativeDragTarget(e.target, dragState);
+      const updatedShapes = applyNativeDrag(shapes, id, dragState);
 
       onShapesChange(updatedShapes);
       maybeExpandBounds(updatedShapes);
@@ -196,7 +411,7 @@ export const useShapeTransform = ({
 
   // Commit a drag delta produced outside Konva's native draggable pipeline.
   const commitManualDragDelta = useCallback((id: string, dx: number, dy: number) => {
-    if (Math.abs(dx) <= DRAG_EPSILON && Math.abs(dy) <= DRAG_EPSILON) {
+    if (!didMove(dx, dy)) {
       return;
     }
 
@@ -209,34 +424,10 @@ export const useShapeTransform = ({
 
     takeSnapshot();
 
-    let updatedShapes: CanvasShape[];
-    if (isGroupDrag) {
-      updatedShapes = shapes.map((shape) => {
-        if (!selectedNowSet.has(shape.id)) return shape;
-
-        if ((shape.type === 'pen' || shape.type === 'arrow' || shape.type === 'line') && shape.points && shape.points.length >= 2) {
-          const newPoints = shape.points.map((val, i) => (i % 2 === 0 ? val + dx : val + dy));
-          return { ...shape, points: newPoints };
-        }
-
-        return {
-          ...shape,
-          x: (shape.x ?? 0) + dx,
-          y: (shape.y ?? 0) + dy,
-        };
-      });
-    } else if ((draggedShape.type === 'pen' || draggedShape.type === 'arrow' || draggedShape.type === 'line') && draggedShape.points && draggedShape.points.length >= 2) {
-      const newPoints = draggedShape.points.map((val, i) => (i % 2 === 0 ? val + dx : val + dy));
-      updatedShapes = shapes.map((shape) =>
-        shape.id === id ? { ...shape, points: newPoints } : shape
-      );
-    } else {
-      updatedShapes = shapes.map((shape) =>
-        shape.id === id
-          ? { ...shape, x: (shape.x ?? 0) + dx, y: (shape.y ?? 0) + dy }
-          : shape
-      );
-    }
+    const updatedShapes = shapes.map((shape) => {
+      const shouldMove = isGroupDrag ? selectedNowSet.has(shape.id) : shape.id === id;
+      return shouldMove ? applyManualDragToShape(shape, dx, dy) : shape;
+    });
 
     onShapesChange(updatedShapes);
     maybeExpandBounds(updatedShapes);
@@ -263,23 +454,14 @@ export const useShapeTransform = ({
   const handleShapeClick = useCallback(
     (shapeId: string, e: Konva.KonvaEventObject<MouseEvent>) => {
       // Ignore middle mouse button (used for panning)
-      if (e.evt?.button === 1) return;
+      if (shouldIgnoreShapeClick(e)) return;
 
-      const selectedNow = selectedIdsRef.current;
-      const selectedNowSet = new Set(selectedNow);
-      if (e.evt?.shiftKey) {
-        // Toggle selection with shift
-        if (selectedNowSet.has(shapeId)) {
-          setSelectedIds(selectedNow.filter(id => id !== shapeId));
-        } else {
-          setSelectedIds([...selectedNow, shapeId]);
-        }
-      } else {
-        // Keep group selection if clicking already-selected shape
-        if (!selectedNowSet.has(shapeId)) {
-          setSelectedIds([shapeId]);
-        }
-      }
+      const nextSelection = getShapeClickSelection({
+        shapeId,
+        event: e,
+        selectedIds: selectedIdsRef.current,
+      });
+      if (nextSelection) setSelectedIds(nextSelection);
     },
     [setSelectedIds]
   );

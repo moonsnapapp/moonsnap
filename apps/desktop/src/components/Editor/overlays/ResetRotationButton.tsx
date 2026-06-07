@@ -10,6 +10,42 @@ interface ResetRotationButtonProps {
 
 interface ButtonPos { x: number; y: number }
 
+function hasRotatedTransformerNodes(nodes: Konva.Node[]) {
+  return nodes.some((node) => Math.abs(node.rotation()) > 0.1);
+}
+
+function shouldShowResetRotationButton(nodes: Konva.Node[]) {
+  return nodes.length > 0 && hasRotatedTransformerNodes(nodes);
+}
+
+function getResetRotationLocalPosition(tr: Konva.Transformer, zoom: number): ButtonPos {
+  const sign = tr.height() >= 0 ? 1 : -1;
+  const gap = 16 / zoom;
+
+  return {
+    x: tr.width() / 2,
+    y: -tr.rotateAnchorOffset() * sign - gap * sign,
+  };
+}
+
+function getResetRotationCanvasPosition(
+  tr: Konva.Transformer,
+  localPosition: ButtonPos
+): ButtonPos | null {
+  const stage = tr.getStage();
+  if (!stage) return null;
+
+  const absolutePosition = tr.getAbsoluteTransform().point(localPosition);
+  return stage.getAbsoluteTransform().copy().invert().point(absolutePosition);
+}
+
+function getResetRotationButtonPosition(tr: Konva.Transformer, zoom: number): ButtonPos | null {
+  const nodes = tr.nodes();
+  return shouldShowResetRotationButton(nodes)
+    ? getResetRotationCanvasPosition(tr, getResetRotationLocalPosition(tr, zoom))
+    : null;
+}
+
 /**
  * Small X button above the Transformer's rotation handle.
  * Tracks position synchronously on every Konva event
@@ -30,29 +66,9 @@ export const ResetRotationButton: React.FC<ResetRotationButtonProps> = ({
     if (!tr) return;
 
     const update = () => {
-      const nodes = tr.nodes();
-      if (nodes.length === 0) { setVisible(false); return; }
-
-      const anyRotated = nodes.some(n => Math.abs(n.rotation()) > 0.1);
-      if (!anyRotated) { setVisible(false); return; }
-
-      const z = zoomRef.current;
-      const trWidth = tr.width();
-      const trHeight = tr.height();
-      const offset = tr.rotateAnchorOffset();
-      const sign = trHeight >= 0 ? 1 : -1;
-      const gap = 16 / z;
-
-      const localX = trWidth / 2;
-      const localY = -offset * sign - gap * sign;
-
-      const absP = tr.getAbsoluteTransform().point({ x: localX, y: localY });
-      const stage = tr.getStage();
-      if (!stage) { setVisible(false); return; }
-
-      const canvasP = stage.getAbsoluteTransform().copy().invert().point(absP);
-      setPos(canvasP);
-      setVisible(true);
+      const nextPos = getResetRotationButtonPosition(tr, zoomRef.current);
+      setPos(nextPos);
+      setVisible(nextPos !== null);
     };
 
     tr.on('transform dragmove', update);

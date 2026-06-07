@@ -40,6 +40,45 @@ interface TitlebarFrameProps {
   onOpenSettings?: () => void;
 }
 
+interface TitlebarControlsProps {
+  showMaximize: boolean;
+  isHud: boolean;
+  isMaximized: boolean;
+  buttonClassName: string;
+  resolvedTheme: 'light' | 'dark';
+  onCapture?: () => void;
+  onOpenLibrary?: () => void;
+  onOpenSettings?: () => void;
+  onToggleTheme: () => void;
+  onMinimize: () => void;
+  onMaximize: () => void;
+  onClose: () => void;
+}
+
+type AppWindow = ReturnType<typeof getCurrentWebviewWindow>;
+
+function getTitlebarButtonClassName(isHud: boolean) {
+  return `titlebar-button${isHud ? ' titlebar-button--hud' : ''}`;
+}
+
+function getTitlebarClassName(isHud: boolean, isDragging: boolean) {
+  return `titlebar ${isHud ? 'titlebar--hud' : ''} ${isDragging ? 'titlebar-dragging' : ''}`;
+}
+
+function getTitlebarLeftClassName(isHud: boolean) {
+  return `titlebar-left ${isHud ? 'titlebar-left--hud' : ''}`;
+}
+
+async function canCloseTitlebar(onClose: TitlebarFrameProps['onClose']) {
+  return onClose ? (await onClose()) !== false : true;
+}
+
+async function closeTitlebarWindow(appWindow: AppWindow, onClose: TitlebarFrameProps['onClose']) {
+  if (await canCloseTitlebar(onClose)) {
+    await appWindow.close();
+  }
+}
+
 function DefaultTitlebarLeft({ title, showLogo }: { title: string; showLogo: boolean }) {
   return (
     <>
@@ -92,32 +131,15 @@ function HudTitlebarCenter({ title }: { title: string }) {
   );
 }
 
-function TitlebarFrame({
-  showMaximize,
-  isHud,
-  left,
-  center,
-  onClose,
-  onOpenLibrary,
-  onCapture,
-  onOpenSettings,
-}: TitlebarFrameProps) {
+function useWindowMaximized(appWindow: ReturnType<typeof getCurrentWebviewWindow>) {
   const [isMaximized, setIsMaximized] = useState(false);
-  const [isDragging, setIsDragging] = useState(false);
-  const appWindow = getCurrentWebviewWindow();
-  const { resolvedTheme, toggleTheme } = useTheme();
-  useFocusedShortcutDispatch();
-
-  const buttonClassName = `titlebar-button${isHud ? ' titlebar-button--hud' : ''}`;
 
   useEffect(() => {
-    // Check initial maximized state
     appWindow.isMaximized().then(setIsMaximized);
 
-    // Listen for window state changes - debounced to avoid excessive IPC during resize
     let debounceTimer: number | null = null;
     let unlistenFn: (() => void) | null = null;
-    
+
     appWindow.onResized(() => {
       if (debounceTimer) clearTimeout(debounceTimer);
       debounceTimer = window.setTimeout(() => {
@@ -133,31 +155,219 @@ function TitlebarFrame({
     };
   }, [appWindow]);
 
+  return isMaximized;
+}
+
+function TitlebarIconButton({
+  className,
+  label,
+  title,
+  onClick,
+  children,
+}: {
+  className: string;
+  label: string;
+  title?: string;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={className}
+      aria-label={label}
+      title={title}
+    >
+      {children}
+    </button>
+  );
+}
+
+function TitlebarAppActionButtons({
+  buttonClassName,
+  onCapture,
+  onOpenLibrary,
+  onOpenSettings,
+}: Pick<TitlebarControlsProps, 'buttonClassName' | 'onCapture' | 'onOpenLibrary' | 'onOpenSettings'>) {
+  return (
+    <>
+      {onCapture && (
+        <TitlebarIconButton
+          className={buttonClassName}
+          label="New Capture"
+          title="New Capture"
+          onClick={onCapture}
+        >
+          <Camera className="w-3.5 h-3.5" />
+        </TitlebarIconButton>
+      )}
+      {onOpenLibrary && (
+        <TitlebarIconButton
+          className={buttonClassName}
+          label="Open Library"
+          title="Open Library"
+          onClick={onOpenLibrary}
+        >
+          <FolderOpen className="w-3.5 h-3.5" />
+        </TitlebarIconButton>
+      )}
+      {onOpenSettings && (
+        <TitlebarIconButton
+          className={buttonClassName}
+          label="Settings"
+          title="Settings"
+          onClick={onOpenSettings}
+        >
+          <Settings className="w-3.5 h-3.5" />
+        </TitlebarIconButton>
+      )}
+    </>
+  );
+}
+
+function TitlebarThemeButton({
+  buttonClassName,
+  resolvedTheme,
+  onToggleTheme,
+}: Pick<TitlebarControlsProps, 'buttonClassName' | 'resolvedTheme' | 'onToggleTheme'>) {
+  const themeLabel = resolvedTheme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode';
+
+  return (
+    <TitlebarIconButton
+      className={buttonClassName}
+      label={themeLabel}
+      title={themeLabel}
+      onClick={onToggleTheme}
+    >
+      {resolvedTheme === 'dark' ? (
+        <Sun className="w-3.5 h-3.5" />
+      ) : (
+        <Moon className="w-3.5 h-3.5" />
+      )}
+    </TitlebarIconButton>
+  );
+}
+
+function TitlebarWindowButtons({
+  showMaximize,
+  isMaximized,
+  buttonClassName,
+  onMinimize,
+  onMaximize,
+  onClose,
+}: Pick<TitlebarControlsProps, 'showMaximize' | 'isMaximized' | 'buttonClassName' | 'onMinimize' | 'onMaximize' | 'onClose'>) {
+  return (
+    <>
+      <TitlebarIconButton
+        className={`${buttonClassName} titlebar-button-minimize`}
+        label="Minimize"
+        onClick={onMinimize}
+      >
+        <Minus className="w-3.5 h-3.5" />
+      </TitlebarIconButton>
+      {showMaximize && (
+        <TitlebarIconButton
+          className={`${buttonClassName} titlebar-button-maximize`}
+          label={isMaximized ? 'Restore' : 'Maximize'}
+          onClick={onMaximize}
+        >
+          {isMaximized ? (
+            <Maximize2 className="w-3 h-3" />
+          ) : (
+            <Square className="w-3 h-3" />
+          )}
+        </TitlebarIconButton>
+      )}
+      <TitlebarIconButton
+        className={`${buttonClassName} titlebar-button-close`}
+        label="Close"
+        onClick={onClose}
+      >
+        <X className="w-4 h-4" />
+      </TitlebarIconButton>
+    </>
+  );
+}
+
+function TitlebarControls({
+  showMaximize,
+  isHud,
+  isMaximized,
+  buttonClassName,
+  resolvedTheme,
+  onCapture,
+  onOpenLibrary,
+  onOpenSettings,
+  onToggleTheme,
+  onMinimize,
+  onMaximize,
+  onClose,
+}: TitlebarControlsProps) {
+  return (
+    <div className={`titlebar-controls ${isHud ? 'titlebar-controls--hud' : ''}`}>
+      {isHud && <UpdateAvailablePill variant="titlebar" />}
+      <TitlebarAppActionButtons
+        buttonClassName={buttonClassName}
+        onCapture={onCapture}
+        onOpenLibrary={onOpenLibrary}
+        onOpenSettings={onOpenSettings}
+      />
+      <TitlebarThemeButton
+        buttonClassName={buttonClassName}
+        resolvedTheme={resolvedTheme}
+        onToggleTheme={onToggleTheme}
+      />
+      <TitlebarWindowButtons
+        showMaximize={showMaximize}
+        isMaximized={isMaximized}
+        buttonClassName={buttonClassName}
+        onMinimize={onMinimize}
+        onMaximize={onMaximize}
+        onClose={onClose}
+      />
+    </div>
+  );
+}
+
+function TitlebarFrame({
+  showMaximize,
+  isHud,
+  left,
+  center,
+  onClose,
+  onOpenLibrary,
+  onCapture,
+  onOpenSettings,
+}: TitlebarFrameProps) {
+  const [isDragging, setIsDragging] = useState(false);
+  const appWindow = getCurrentWebviewWindow();
+  const isMaximized = useWindowMaximized(appWindow);
+  const { resolvedTheme, toggleTheme } = useTheme();
+  useFocusedShortcutDispatch();
+
+  const buttonClassName = getTitlebarButtonClassName(isHud);
+
   // Handle drag state
   const handleMouseDown = () => setIsDragging(true);
   const handleMouseUp = () => setIsDragging(false);
 
   const handleMinimize = () => appWindow.minimize();
   const handleMaximize = () => appWindow.toggleMaximize();
-  const handleClose = async () => {
-    if (onClose) {
-      const result = await onClose();
-      if (result === false) return; // Prevent close if callback returns false
-    }
-    appWindow.close();
+  const handleClose = () => {
+    void closeTitlebarWindow(appWindow, onClose);
   };
 
   return (
     <div
       data-tauri-drag-region
-      className={`titlebar ${isHud ? 'titlebar--hud' : ''} ${isDragging ? 'titlebar-dragging' : ''}`}
+      className={getTitlebarClassName(isHud, isDragging)}
       onMouseDown={handleMouseDown}
       onMouseUp={handleMouseUp}
       onMouseLeave={handleMouseUp}
     >
       {/* Left: Logo & Title */}
       <div
-        className={`titlebar-left ${isHud ? 'titlebar-left--hud' : ''}`}
+        className={getTitlebarLeftClassName(isHud)}
         data-tauri-drag-region
       >
         {left}
@@ -168,80 +378,20 @@ function TitlebarFrame({
         {center}
       </div>
 
-      {/* Right: Window Controls */}
-      <div className={`titlebar-controls ${isHud ? 'titlebar-controls--hud' : ''}`}>
-        {isHud && <UpdateAvailablePill variant="titlebar" />}
-        {onCapture && (
-          <button
-            onClick={onCapture}
-            className={buttonClassName}
-            aria-label="New Capture"
-            title="New Capture"
-          >
-            <Camera className="w-3.5 h-3.5" />
-          </button>
-        )}
-        {onOpenLibrary && (
-          <button
-            onClick={onOpenLibrary}
-            className={buttonClassName}
-            aria-label="Open Library"
-            title="Open Library"
-          >
-            <FolderOpen className="w-3.5 h-3.5" />
-          </button>
-        )}
-        {onOpenSettings && (
-          <button
-            onClick={onOpenSettings}
-            className={buttonClassName}
-            aria-label="Settings"
-            title="Settings"
-          >
-            <Settings className="w-3.5 h-3.5" />
-          </button>
-        )}
-        <button
-          onClick={toggleTheme}
-          className={buttonClassName}
-          aria-label={resolvedTheme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
-          title={resolvedTheme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
-        >
-          {resolvedTheme === 'dark' ? (
-            <Sun className="w-3.5 h-3.5" />
-          ) : (
-            <Moon className="w-3.5 h-3.5" />
-          )}
-        </button>
-
-        <button
-          onClick={handleMinimize}
-          className={`${buttonClassName} titlebar-button-minimize`}
-          aria-label="Minimize"
-        >
-          <Minus className="w-3.5 h-3.5" />
-        </button>
-        {showMaximize && (
-          <button
-            onClick={handleMaximize}
-            className={`${buttonClassName} titlebar-button-maximize`}
-            aria-label={isMaximized ? 'Restore' : 'Maximize'}
-          >
-            {isMaximized ? (
-              <Maximize2 className="w-3 h-3" />
-            ) : (
-              <Square className="w-3 h-3" />
-            )}
-          </button>
-        )}
-        <button
-          onClick={handleClose}
-          className={`${buttonClassName} titlebar-button-close`}
-          aria-label="Close"
-        >
-          <X className="w-4 h-4" />
-        </button>
-      </div>
+      <TitlebarControls
+        showMaximize={showMaximize}
+        isHud={isHud}
+        isMaximized={isMaximized}
+        buttonClassName={buttonClassName}
+        resolvedTheme={resolvedTheme}
+        onCapture={onCapture}
+        onOpenLibrary={onOpenLibrary}
+        onOpenSettings={onOpenSettings}
+        onToggleTheme={toggleTheme}
+        onMinimize={handleMinimize}
+        onMaximize={handleMaximize}
+        onClose={handleClose}
+      />
     </div>
   );
 }

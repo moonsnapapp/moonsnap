@@ -26,65 +26,82 @@ const CIRCLE_SIZES: Record<WebcamSize, number> = {
   large: 200,
 };
 const SQUIRCLE_RADIUS_RATIO = 0.4;
+const DEFAULT_WEBCAM_SETTINGS: WebcamSettings = {
+  enabled: true,
+  deviceIndex: 0,
+  position: { type: 'bottomRight' },
+  size: 'small',
+  shape: 'squircle',
+  mirror: true,
+};
 
-const WebcamPreviewWindow: React.FC = () => {
-  const [imageSrc, setImageSrc] = useState<string | null>(null);
-  const [isRecording, setIsRecording] = useState(false);
-  const [isHovered, setIsHovered] = useState(false);
-  const [settings, setSettings] = useState<WebcamSettings>({
-    enabled: true,
-    deviceIndex: 0,
-    position: { type: 'bottomRight' },
-    size: 'small',
-    shape: 'squircle',
-    mirror: true,
-  });
+interface MutableCurrent<T> {
+  current: T;
+}
 
-  const mountedRef = useRef(true);
-  const frameRequestRef = useRef<number | null>(null);
-  const containerRef = useRef<HTMLDivElement>(null);
+function isRecordingState(type: string) {
+  return type === 'Recording';
+}
+
+function isStoppedRecordingState(type: string) {
+  return type === 'Idle' || type === 'Completed' || type === 'Error';
+}
+
+function useResizeWindowToContainer(containerRef: React.RefObject<HTMLDivElement | null>) {
   const lastSizeRef = useRef({ width: 0, height: 0 });
 
-  // Resize window to fit content
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
 
     const resizeWindow = async () => {
-      const rect = container.getBoundingClientRect();
-      const width = Math.ceil(rect.width);
-      const height = Math.ceil(rect.height);
+      const nextSize = getContainerResizeSize(container);
+      if (!shouldResizeWebcamWindow(nextSize, lastSizeRef.current)) return;
 
-      // Skip if size hasn't changed
-      if (width === lastSizeRef.current.width && height === lastSizeRef.current.height) {
-        return;
-      }
-      if (width === 0 || height === 0) return;
-
-      lastSizeRef.current = { width, height };
+      lastSizeRef.current = nextSize;
 
       try {
-        const win = getCurrentWindow();
-        await win.setSize(new LogicalSize(width, height));
-        webcamLogger.debug(`Resized window to ${width}x${height}`);
+        await resizeCurrentWebcamWindow(nextSize);
       } catch (e) {
         webcamLogger.error('Failed to resize window:', e);
       }
     };
 
-    // Initial resize
     resizeWindow();
 
-    // Watch for size changes
     const observer = new ResizeObserver(() => {
       resizeWindow();
     });
     observer.observe(container);
 
     return () => observer.disconnect();
-  }, []);
+  }, [containerRef]);
+}
 
-  // Load initial settings
+function getContainerResizeSize(container: HTMLDivElement) {
+  const rect = container.getBoundingClientRect();
+  return {
+    width: Math.ceil(rect.width),
+    height: Math.ceil(rect.height),
+  };
+}
+
+function shouldResizeWebcamWindow(
+  nextSize: { width: number; height: number },
+  lastSize: { width: number; height: number }
+) {
+  const hasSize = nextSize.width > 0 && nextSize.height > 0;
+  const changed = nextSize.width !== lastSize.width || nextSize.height !== lastSize.height;
+  return hasSize && changed;
+}
+
+async function resizeCurrentWebcamWindow({ width, height }: { width: number; height: number }) {
+  const win = getCurrentWindow();
+  await win.setSize(new LogicalSize(width, height));
+  webcamLogger.debug(`Resized window to ${width}x${height}`);
+}
+
+function useInitialWebcamSettings(setSettings: React.Dispatch<React.SetStateAction<WebcamSettings>>) {
   useEffect(() => {
     const loadInitialSettings = async () => {
       try {
@@ -95,9 +112,47 @@ const WebcamPreviewWindow: React.FC = () => {
       }
     };
     loadInitialSettings();
-  }, []);
+  }, [setSettings]);
+}
 
-  // Poll for JPEG frames
+function shouldPollWebcamFrame(now: number, lastFrameTime: number, frameInterval: number) {
+  return now - lastFrameTime >= frameInterval;
+}
+
+async function fetchWebcamPreviewFrame() {
+  return invoke<string | null>('get_webcam_preview_frame', { quality: 75 });
+}
+
+function applyWebcamPreviewFrame(
+  frame: string | null,
+  mountedRef: MutableCurrent<boolean>,
+  setImageSrc: React.Dispatch<React.SetStateAction<string | null>>
+) {
+  if (frame && mountedRef.current) {
+    setImageSrc(`data:image/jpeg;base64,${frame}`);
+  }
+}
+
+function scheduleWebcamFramePoll(
+  mountedRef: MutableCurrent<boolean>,
+  frameRequestRef: MutableCurrent<number | null>,
+  pollFrame: () => void
+) {
+  if (mountedRef.current) {
+    frameRequestRef.current = requestAnimationFrame(pollFrame);
+  }
+}
+
+function cancelWebcamFramePoll(frameRequestRef: MutableCurrent<number | null>) {
+  if (frameRequestRef.current) {
+    cancelAnimationFrame(frameRequestRef.current);
+  }
+}
+
+function useWebcamFramePolling(setImageSrc: React.Dispatch<React.SetStateAction<string | null>>) {
+  const mountedRef = useRef(true);
+  const frameRequestRef = useRef<number | null>(null);
+
   useEffect(() => {
     mountedRef.current = true;
     let lastFrameTime = 0;
@@ -108,35 +163,28 @@ const WebcamPreviewWindow: React.FC = () => {
       if (!mountedRef.current) return;
 
       const now = performance.now();
-      if (now - lastFrameTime >= frameInterval) {
+      if (shouldPollWebcamFrame(now, lastFrameTime, frameInterval)) {
         try {
-          const frame = await invoke<string | null>('get_webcam_preview_frame', { quality: 75 });
-          if (frame && mountedRef.current) {
-            setImageSrc(`data:image/jpeg;base64,${frame}`);
-          }
+          applyWebcamPreviewFrame(await fetchWebcamPreviewFrame(), mountedRef, setImageSrc);
           lastFrameTime = now;
         } catch {
-          // Ignore errors during polling
+          // Ignore transient polling errors while the camera stream starts/stops.
         }
       }
 
-      if (mountedRef.current) {
-        frameRequestRef.current = requestAnimationFrame(pollFrame);
-      }
+      scheduleWebcamFramePoll(mountedRef, frameRequestRef, pollFrame);
     };
 
     frameRequestRef.current = requestAnimationFrame(pollFrame);
 
     return () => {
       mountedRef.current = false;
-      if (frameRequestRef.current) {
-        cancelAnimationFrame(frameRequestRef.current);
-      }
+      cancelWebcamFramePoll(frameRequestRef);
     };
-  }, []);
+  }, [setImageSrc]);
+}
 
-  // Listen for settings changes from the toolbar or local controls
-  // ResizeObserver handles window resizing automatically when content changes
+function useWebcamSettingsEvents(setSettings: React.Dispatch<React.SetStateAction<WebcamSettings>>) {
   useEffect(() => {
     const unlisten = listen<WebcamSettings>('webcam-settings-changed', (event) => {
       webcamLogger.debug('Settings changed:', event.payload);
@@ -146,25 +194,24 @@ const WebcamPreviewWindow: React.FC = () => {
     return () => {
       unlisten.then((fn) => fn()).catch(() => {});
     };
-  }, []);
+  }, [setSettings]);
+}
 
-  // Listen for recording state changes (for visual indicator only)
+function useRecordingStateEvents(setIsRecording: React.Dispatch<React.SetStateAction<boolean>>) {
   useEffect(() => {
     const unlistenStart = listen('recording-state-changed', (event) => {
       const state = event.payload as { type: string };
-      if (state.type === 'Recording') {
-        setIsRecording(true);
-      } else if (state.type === 'Idle' || state.type === 'Completed' || state.type === 'Error') {
-        setIsRecording(false);
-      }
+      if (isRecordingState(state.type)) setIsRecording(true);
+      else if (isStoppedRecordingState(state.type)) setIsRecording(false);
     });
 
     return () => {
       unlistenStart.then((fn) => fn()).catch(() => {});
     };
-  }, []);
+  }, [setIsRecording]);
+}
 
-  // Listen for close event
+function useWebcamCloseEvent() {
   useEffect(() => {
     const unlisten = listen('webcam-preview-close', async () => {
       webcamLogger.debug('Received close event');
@@ -180,6 +227,235 @@ const WebcamPreviewWindow: React.FC = () => {
       unlisten.then((fn) => fn()).catch(() => {});
     };
   }, []);
+}
+
+interface WebcamControlsProps {
+  visible: boolean;
+  isCircle: boolean;
+  mirror: boolean;
+  size: WebcamSize;
+  onToggleShape: () => void;
+  onToggleMirror: () => void;
+  onToggleSize: () => void;
+  onClose: () => void;
+}
+
+function WebcamControlButton({
+  title,
+  opacity = 1,
+  onClick,
+  children,
+}: {
+  title: string;
+  opacity?: number;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        padding: '6px',
+        borderRadius: '6px',
+        background: 'transparent',
+        border: 'none',
+        color: 'rgba(255, 255, 255, 0.8)',
+        cursor: 'pointer',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        opacity,
+      }}
+      title={title}
+    >
+      {children}
+    </button>
+  );
+}
+
+function getControlsPanelStyle(visible: boolean): React.CSSProperties {
+  return {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '4px',
+    padding: '6px 10px',
+    background: 'rgba(0, 0, 0, 0.9)',
+    border: '1px solid rgba(255, 255, 255, 0.15)',
+    borderRadius: '8px',
+    opacity: visible ? 1 : 0,
+    transform: visible ? 'translateY(0)' : 'translateY(-8px)',
+    transition: 'opacity 0.2s, transform 0.2s',
+  };
+}
+
+function getShapeControl(isCircle: boolean) {
+  return {
+    title: isCircle ? 'Switch to squircle' : 'Switch to circle',
+    icon: isCircle ? <Square size={16} /> : <Circle size={16} />,
+  };
+}
+
+function getMirrorControl(mirror: boolean) {
+  return {
+    title: mirror ? 'Disable mirror' : 'Enable mirror',
+    opacity: mirror ? 1 : 0.5,
+  };
+}
+
+function getSizeControl(size: WebcamSize) {
+  return {
+    title: size === 'small' ? 'Enlarge' : 'Shrink',
+    icon: size === 'large' ? <Minimize2 size={16} /> : <Maximize2 size={16} />,
+  };
+}
+
+function WebcamControls({
+  visible,
+  isCircle,
+  mirror,
+  size,
+  onToggleShape,
+  onToggleMirror,
+  onToggleSize,
+  onClose,
+}: WebcamControlsProps) {
+  const shapeControl = getShapeControl(isCircle);
+  const mirrorControl = getMirrorControl(mirror);
+  const sizeControl = getSizeControl(size);
+
+  return (
+    <div
+      style={{
+        height: `${CONTROL_BAR_HEIGHT}px`,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+      }}
+    >
+      <div style={getControlsPanelStyle(visible)}>
+        <WebcamControlButton
+          title={shapeControl.title}
+          onClick={onToggleShape}
+        >
+          {shapeControl.icon}
+        </WebcamControlButton>
+        <WebcamControlButton
+          title={mirrorControl.title}
+          opacity={mirrorControl.opacity}
+          onClick={onToggleMirror}
+        >
+          <FlipHorizontal2 size={16} />
+        </WebcamControlButton>
+        <WebcamControlButton
+          title={sizeControl.title}
+          onClick={onToggleSize}
+        >
+          {sizeControl.icon}
+        </WebcamControlButton>
+        <WebcamControlButton title="Close preview" onClick={onClose}>
+          <X size={16} />
+        </WebcamControlButton>
+      </div>
+    </div>
+  );
+}
+
+interface WebcamFeedProps {
+  imageSrc: string | null;
+  isRecording: boolean;
+  mirror: boolean;
+  circleSize: number;
+  borderRadius: string;
+  className: string;
+}
+
+function WebcamFeed({
+  imageSrc,
+  isRecording,
+  mirror,
+  circleSize,
+  borderRadius,
+  className,
+}: WebcamFeedProps) {
+  return (
+    <div
+      className={className}
+      style={{
+        width: `${circleSize}px`,
+        height: `${circleSize}px`,
+        overflow: 'hidden',
+        background: '#000',
+        borderRadius,
+      }}
+    >
+      {imageSrc ? (
+        <img
+          className={className}
+          src={imageSrc}
+          alt="Webcam preview"
+          style={{
+            width: '100%',
+            height: '100%',
+            objectFit: 'cover',
+            borderRadius,
+            transform: mirror ? 'scaleX(-1)' : 'none',
+            pointerEvents: 'none',
+            userSelect: 'none',
+          }}
+          draggable={false}
+        />
+      ) : (
+        <div
+          className={className}
+          style={{
+            width: '100%',
+            height: '100%',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            color: 'rgba(255, 255, 255, 0.5)',
+            fontSize: '12px',
+            borderRadius,
+            pointerEvents: 'none',
+          }}
+        >
+          Loading...
+        </div>
+      )}
+
+      {isRecording && (
+        <div
+          style={{
+            position: 'absolute',
+            top: '8px',
+            right: '8px',
+            width: '12px',
+            height: '12px',
+            borderRadius: '50%',
+            background: '#ef4444',
+            animation: 'pulse 2s infinite',
+            pointerEvents: 'none',
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+const WebcamPreviewWindow: React.FC = () => {
+  const [imageSrc, setImageSrc] = useState<string | null>(null);
+  const [isRecording, setIsRecording] = useState(false);
+  const [isHovered, setIsHovered] = useState(false);
+  const [settings, setSettings] = useState<WebcamSettings>(DEFAULT_WEBCAM_SETTINGS);
+
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useResizeWindowToContainer(containerRef);
+  useInitialWebcamSettings(setSettings);
+  useWebcamFramePolling(setImageSrc);
+  useWebcamSettingsEvents(setSettings);
+  useRecordingStateEvents(setIsRecording);
+  useWebcamCloseEvent();
 
   // Close/hide the preview and disable webcam
   const handleClose = useCallback(async () => {
@@ -267,164 +543,25 @@ const WebcamPreviewWindow: React.FC = () => {
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
     >
-      {/* Controls bar */}
-      <div
-        style={{
-          height: `${CONTROL_BAR_HEIGHT}px`,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-        }}
-      >
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '4px',
-            padding: '6px 10px',
-            background: 'rgba(0, 0, 0, 0.9)',
-            border: '1px solid rgba(255, 255, 255, 0.15)',
-            borderRadius: '8px',
-            opacity: isHovered && !isRecording ? 1 : 0,
-            transform: isHovered && !isRecording ? 'translateY(0)' : 'translateY(-8px)',
-            transition: 'opacity 0.2s, transform 0.2s',
-          }}
-        >
-          <button
-            onClick={handleToggleShape}
-            style={{
-              padding: '6px',
-              borderRadius: '6px',
-              background: 'transparent',
-              border: 'none',
-              color: 'rgba(255, 255, 255, 0.8)',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}
-            title={isCircle ? 'Switch to squircle' : 'Switch to circle'}
-          >
-            {isCircle ? <Square size={16} /> : <Circle size={16} />}
-          </button>
-          <button
-            onClick={handleToggleMirror}
-            style={{
-              padding: '6px',
-              borderRadius: '6px',
-              background: 'transparent',
-              border: 'none',
-              color: 'rgba(255, 255, 255, 0.8)',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              opacity: settings.mirror ? 1 : 0.5,
-            }}
-            title={settings.mirror ? 'Disable mirror' : 'Enable mirror'}
-          >
-            <FlipHorizontal2 size={16} />
-          </button>
-          <button
-            onClick={handleToggleSize}
-            style={{
-              padding: '6px',
-              borderRadius: '6px',
-              background: 'transparent',
-              border: 'none',
-              color: 'rgba(255, 255, 255, 0.8)',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}
-            title={settings.size === 'small' ? 'Enlarge' : 'Shrink'}
-          >
-            {settings.size === 'large' ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
-          </button>
-          <button
-            onClick={handleClose}
-            style={{
-              padding: '6px',
-              borderRadius: '6px',
-              background: 'transparent',
-              border: 'none',
-              color: 'rgba(255, 255, 255, 0.8)',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}
-            title="Close preview"
-          >
-            <X size={16} />
-          </button>
-        </div>
-      </div>
+      <WebcamControls
+        visible={isHovered && !isRecording}
+        isCircle={isCircle}
+        mirror={settings.mirror}
+        size={settings.size}
+        onToggleShape={handleToggleShape}
+        onToggleMirror={handleToggleMirror}
+        onToggleSize={handleToggleSize}
+        onClose={handleClose}
+      />
 
-      {/* Webcam feed - explicit square size */}
-      <div
+      <WebcamFeed
+        imageSrc={imageSrc}
+        isRecording={isRecording}
+        mirror={settings.mirror}
+        circleSize={circleSize}
+        borderRadius={borderRadius}
         className={webcamShapeClassName}
-        style={{
-          width: `${circleSize}px`,
-          height: `${circleSize}px`,
-          overflow: 'hidden',
-          background: '#000',
-          borderRadius,
-        }}
-      >
-        {imageSrc ? (
-          <img
-            className={webcamShapeClassName}
-            src={imageSrc}
-            alt="Webcam preview"
-            style={{
-              width: '100%',
-              height: '100%',
-              objectFit: 'cover',
-              borderRadius,
-              transform: settings.mirror ? 'scaleX(-1)' : 'none',
-              pointerEvents: 'none',
-              userSelect: 'none',
-            }}
-            draggable={false}
-          />
-        ) : (
-          <div
-            className={webcamShapeClassName}
-            style={{
-              width: '100%',
-              height: '100%',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              color: 'rgba(255, 255, 255, 0.5)',
-              fontSize: '12px',
-              borderRadius,
-              pointerEvents: 'none',
-            }}
-          >
-            Loading...
-          </div>
-        )}
-
-        {/* Recording indicator */}
-        {isRecording && (
-          <div
-            style={{
-              position: 'absolute',
-              top: '8px',
-              right: '8px',
-              width: '12px',
-              height: '12px',
-              borderRadius: '50%',
-              background: '#ef4444',
-              animation: 'pulse 2s infinite',
-              pointerEvents: 'none',
-            }}
-          />
-        )}
-      </div>
+      />
     </div>
   );
 };

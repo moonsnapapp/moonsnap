@@ -22,19 +22,29 @@ function shouldSkipDir(name) {
   ].includes(name);
 }
 
+function shouldTraverseDir(entry) {
+  return entry.isDirectory() && !shouldSkipDir(entry.name);
+}
+
+function isPackageJsonFile(entry) {
+  return entry.isFile() && entry.name === 'package.json';
+}
+
+function collectPackageJsonEntry(dir, entry, files) {
+  const fullPath = path.join(dir, entry.name);
+  if (shouldTraverseDir(entry)) {
+    collectPackageJsonFiles(fullPath, files);
+    return;
+  }
+
+  if (isPackageJsonFile(entry)) {
+    files.push(fullPath);
+  }
+}
+
 function collectPackageJsonFiles(dir, files = []) {
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-    const fullPath = path.join(dir, entry.name);
-    if (entry.isDirectory()) {
-      if (!shouldSkipDir(entry.name)) {
-        collectPackageJsonFiles(fullPath, files);
-      }
-      continue;
-    }
-
-    if (entry.isFile() && entry.name === 'package.json') {
-      files.push(fullPath);
-    }
+    collectPackageJsonEntry(dir, entry, files);
   }
 
   return files;

@@ -48,6 +48,87 @@ class PlaybackEngine {
     this.rafId = null;
   }
 
+  private handleExternallyStoppedVideo(sourceDurationMs: number, segments: TrimSegment[] | undefined): boolean {
+    if (!this.videoElement || !this.videoElement.ended && !this.videoElement.paused) {
+      return false;
+    }
+
+    const state = useVideoEditorStore.getState();
+    if (!state.isPlaying) {
+      return false;
+    }
+
+    const endTime = segments && segments.length > 0
+      ? getEffectiveDuration(segments, sourceDurationMs)
+      : sourceDurationMs;
+    state.setCurrentTime(endTime);
+    state.setIsPlaying(false);
+    this.stopSelf();
+    return true;
+  }
+
+  private jumpToNextSegment(sourceTimeMs: number, segments: TrimSegment[], sourceDurationMs: number): boolean {
+    if (!this.videoElement) return false;
+
+    const nextSegment = segments.find((segment) => segment.sourceStartMs > sourceTimeMs);
+    if (nextSegment) {
+      this.videoElement.currentTime = nextSegment.sourceStartMs / 1000;
+      const newTimelineTime = sourceToTimeline(nextSegment.sourceStartMs, segments);
+      if (newTimelineTime !== null) {
+        useVideoEditorStore.getState().requestSeek(newTimelineTime);
+      }
+      return false;
+    }
+
+    const effectiveDuration = getEffectiveDuration(segments, sourceDurationMs);
+    useVideoEditorStore.getState().setCurrentTime(effectiveDuration);
+    useVideoEditorStore.getState().setIsPlaying(false);
+    this.stopSelf();
+    return true;
+  }
+
+  private updateTrimmedPlayback(sourceTimeMs: number, segments: TrimSegment[], sourceDurationMs: number): boolean {
+    if (!this.videoElement) return false;
+
+    setPreviewPlaybackRate(this.videoElement, getSegmentSpeedAtSourceTime(sourceTimeMs, segments));
+
+    const currentSegment = findSegmentAtSourceTime(sourceTimeMs, segments);
+    if (!currentSegment) {
+      return this.jumpToNextSegment(sourceTimeMs, segments, sourceDurationMs);
+    }
+
+    const timelineTimeMs = sourceToTimeline(sourceTimeMs, segments);
+    if (timelineTimeMs !== null) {
+      useVideoEditorStore.getState().setCurrentTime(timelineTimeMs);
+    }
+
+    const effectiveDuration = getEffectiveDuration(segments, sourceDurationMs);
+    const currentTimelineTime = timelineTimeMs ?? 0;
+    if (currentTimelineTime >= effectiveDuration) {
+      useVideoEditorStore.getState().setCurrentTime(effectiveDuration);
+      useVideoEditorStore.getState().setIsPlaying(false);
+      this.stopSelf();
+      return true;
+    }
+
+    return false;
+  }
+
+  private updateUntrimmedPlayback(sourceTimeMs: number, sourceDurationMs: number, speed: number | undefined): boolean {
+    if (!this.videoElement) return false;
+
+    setPreviewPlaybackRate(this.videoElement, Math.max(1, speed ?? 1));
+    if (sourceDurationMs > 0 && sourceTimeMs >= sourceDurationMs) {
+      useVideoEditorStore.getState().setCurrentTime(sourceDurationMs);
+      useVideoEditorStore.getState().setIsPlaying(false);
+      this.stopSelf();
+      return true;
+    }
+
+    useVideoEditorStore.getState().setCurrentTime(sourceTimeMs);
+    return false;
+  }
+
   private rafLoop = () => {
     if (!this.isPlayingInternal) {
       this.rafId = null;
@@ -56,91 +137,20 @@ class PlaybackEngine {
 
     // Update store with current video time
     if (this.videoElement) {
-      // Safety net: if the video element has stopped (ended or paused) while
-      // we still think we're playing, the `ended`/`pause` event may have
-      // failed to flip store.isPlaying (seen on muted video paired with
-      // separate audio in WebView2). Detect it here and snap to end so the
-      // play button resets and a single click restarts from the start.
-      if (this.videoElement.ended || this.videoElement.paused) {
-        const state = useVideoEditorStore.getState();
-        if (state.isPlaying) {
-          const segments = state.project?.timeline.segments;
-          const sourceDurationMs = state.project?.timeline.durationMs ?? 0;
-          const endTime = segments && segments.length > 0
-            ? getEffectiveDuration(segments, sourceDurationMs)
-            : sourceDurationMs;
-          state.setCurrentTime(endTime);
-          state.setIsPlaying(false);
-          this.stopSelf();
-          return;
-        }
-      }
-
       const sourceTimeMs = this.videoElement.currentTime * 1000;
       const state = useVideoEditorStore.getState();
       const segments = state.project?.timeline.segments;
       const sourceDurationMs = state.project?.timeline.durationMs ?? 0;
 
-      if (segments && segments.length > 0) {
-        setPreviewPlaybackRate(this.videoElement, getSegmentSpeedAtSourceTime(sourceTimeMs, segments));
+      if (this.handleExternallyStoppedVideo(sourceDurationMs, segments)) {
+        return;
+      }
 
-        // Check if we're in a deleted region
-        const currentSegment = findSegmentAtSourceTime(sourceTimeMs, segments);
-
-        if (!currentSegment) {
-          // We're in a deleted region - find the next segment to jump to
-          let nextSegment = null;
-          for (const seg of segments) {
-            if (seg.sourceStartMs > sourceTimeMs) {
-              nextSegment = seg;
-              break;
-            }
-          }
-
-          if (nextSegment) {
-            // Jump to the start of the next segment
-            this.videoElement.currentTime = nextSegment.sourceStartMs / 1000;
-            // Update store immediately and trigger audio seek via requestSeek
-            const newTimelineTime = sourceToTimeline(nextSegment.sourceStartMs, segments);
-            if (newTimelineTime !== null) {
-              useVideoEditorStore.getState().requestSeek(newTimelineTime);
-            }
-          } else {
-            // No more segments - we've reached the end
-            const effectiveDuration = getEffectiveDuration(segments, sourceDurationMs);
-            useVideoEditorStore.getState().setCurrentTime(effectiveDuration);
-            useVideoEditorStore.getState().setIsPlaying(false);
-            this.stopSelf();
-            return;
-          }
-        } else {
-          // We're in a valid segment - convert to timeline time
-          const timelineTimeMs = sourceToTimeline(sourceTimeMs, segments);
-          if (timelineTimeMs !== null) {
-            useVideoEditorStore.getState().setCurrentTime(timelineTimeMs);
-          }
-        }
-
-        // Check if we've reached the end of the effective duration
-        const effectiveDuration = getEffectiveDuration(segments, sourceDurationMs);
-        const currentTimelineTime = sourceToTimeline(sourceTimeMs, segments) ?? 0;
-        if (currentTimelineTime >= effectiveDuration) {
-          useVideoEditorStore.getState().setCurrentTime(effectiveDuration);
-          useVideoEditorStore.getState().setIsPlaying(false);
-          this.stopSelf();
-          return;
-        }
-      } else {
-        setPreviewPlaybackRate(this.videoElement, Math.max(1, state.project?.timeline.speed ?? 1));
-
-        // No segments - use source time directly, with duration check
-        if (sourceDurationMs > 0 && sourceTimeMs >= sourceDurationMs) {
-          useVideoEditorStore.getState().setCurrentTime(sourceDurationMs);
-          useVideoEditorStore.getState().setIsPlaying(false);
-          this.stopSelf();
-          return;
-        }
-        useVideoEditorStore.getState().setCurrentTime(sourceTimeMs);
+      const didStop = segments && segments.length > 0
+        ? this.updateTrimmedPlayback(sourceTimeMs, segments, sourceDurationMs)
+        : this.updateUntrimmedPlayback(sourceTimeMs, sourceDurationMs, state.project?.timeline.speed);
+      if (didStop) {
+        return;
       }
     }
 

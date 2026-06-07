@@ -1,23 +1,15 @@
 import React from 'react';
 import { Rect } from 'react-konva';
 import type { BaseShapeProps } from '../../../types';
-import { useShapeCursor } from '../../../hooks/useShapeCursor';
+import { useShapeNodeProps } from './useShapeNodeProps';
 
-export const RectShape: React.FC<BaseShapeProps> = React.memo(({
-  shape,
-  isDraggable,
-  onClick,
-  onSelect,
-  onDragStart,
-  onDragEnd,
-  onTransformStart,
-  onTransformEnd,
-}) => {
-  const cursorHandlers = useShapeCursor(isDraggable);
+export const RectShape: React.FC<BaseShapeProps> = React.memo((props) => {
+  const { shape } = props;
+  const shapeNodeProps = useShapeNodeProps(props);
 
   return (
     <Rect
-      id={shape.id}
+      {...shapeNodeProps}
       x={shape.x}
       y={shape.y}
       width={shape.width}
@@ -26,14 +18,6 @@ export const RectShape: React.FC<BaseShapeProps> = React.memo(({
       strokeWidth={shape.strokeWidth}
       fill={shape.fill}
       rotation={shape.rotation}
-      draggable={isDraggable}
-      onClick={onClick}
-      onTap={onSelect}
-      onDragStart={onDragStart}
-      onDragEnd={onDragEnd}
-      onTransformStart={onTransformStart}
-      onTransformEnd={onTransformEnd}
-      {...cursorHandlers}
     />
   );
 });

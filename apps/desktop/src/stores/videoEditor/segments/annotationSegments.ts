@@ -1,6 +1,11 @@
 import type { SliceCreator, AnnotationSegment, AnnotationShape } from '../types';
 import { clampAnnotationShape, normalizeAnnotationConfig } from '../../../utils/videoAnnotations';
-import { type AnnotationHistoryEntry, pushAnnotationHistory } from './shared';
+import {
+  clampSegmentToDuration,
+  ensureAnnotationHistoryInitialized,
+  type AnnotationHistoryEntry,
+  pushAnnotationHistory,
+} from './shared';
 
 export interface AnnotationSegmentsSlice {
   selectedAnnotationSegmentId: string | null;
@@ -95,23 +100,17 @@ export const createAnnotationSegmentsSlice: SliceCreator<AnnotationSegmentsSlice
     if (!project) return;
     const annotations = normalizeAnnotationConfig(project.annotations);
 
-    // Push initial state on first mutation so undo can restore it
-    if (annotationHistory.length === 0) {
-      const init = pushAnnotationHistory([], -1, {
-        segments: annotations.segments,
-        selectedSegmentId: selectedAnnotationSegmentId,
-        selectedShapeId: selectedAnnotationShapeId,
-        deleteMode: get().annotationDeleteMode,
-      });
-      annotationHistory = init.history;
-      annotationHistoryIndex = init.index;
-    }
+    const seed = ensureAnnotationHistoryInitialized(annotationHistory, annotationHistoryIndex, {
+      segments: annotations.segments,
+      selectedSegmentId: selectedAnnotationSegmentId,
+      selectedShapeId: selectedAnnotationShapeId,
+      deleteMode: get().annotationDeleteMode,
+    });
+    annotationHistory = seed.history;
+    annotationHistoryIndex = seed.index;
 
-    const durationMs = project.timeline.durationMs;
     const clampedSegment = {
-      ...segment,
-      startMs: Math.max(0, Math.min(segment.startMs, durationMs)),
-      endMs: Math.max(0, Math.min(segment.endMs, durationMs)),
+      ...clampSegmentToDuration(segment, project.timeline.durationMs),
       shapes: segment.shapes.map(clampAnnotationShape),
     };
 
@@ -173,16 +172,14 @@ export const createAnnotationSegmentsSlice: SliceCreator<AnnotationSegmentsSlice
     const { selectedAnnotationSegmentId, selectedAnnotationShapeId } = get();
     let { annotationHistory, annotationHistoryIndex } = get();
 
-    if (annotationHistory.length === 0) {
-      const init = pushAnnotationHistory([], -1, {
-        segments: annotations.segments,
-        selectedSegmentId: selectedAnnotationSegmentId,
-        selectedShapeId: selectedAnnotationShapeId,
-        deleteMode: annotationDeleteMode,
-      });
-      annotationHistory = init.history;
-      annotationHistoryIndex = init.index;
-    }
+    const seed = ensureAnnotationHistoryInitialized(annotationHistory, annotationHistoryIndex, {
+      segments: annotations.segments,
+      selectedSegmentId: selectedAnnotationSegmentId,
+      selectedShapeId: selectedAnnotationShapeId,
+      deleteMode: annotationDeleteMode,
+    });
+    annotationHistory = seed.history;
+    annotationHistoryIndex = seed.index;
 
     const { history, index } = pushAnnotationHistory(annotationHistory, annotationHistoryIndex, {
       segments: newSegments,
@@ -208,16 +205,14 @@ export const createAnnotationSegmentsSlice: SliceCreator<AnnotationSegmentsSlice
     if (!project) return;
     const annotations = normalizeAnnotationConfig(project.annotations);
 
-    if (annotationHistory.length === 0) {
-      const init = pushAnnotationHistory([], -1, {
-        segments: annotations.segments,
-        selectedSegmentId: selectedAnnotationSegmentId,
-        selectedShapeId: selectedAnnotationShapeId,
-        deleteMode: annotationDeleteMode,
-      });
-      annotationHistory = init.history;
-      annotationHistoryIndex = init.index;
-    }
+    const seed = ensureAnnotationHistoryInitialized(annotationHistory, annotationHistoryIndex, {
+      segments: annotations.segments,
+      selectedSegmentId: selectedAnnotationSegmentId,
+      selectedShapeId: selectedAnnotationShapeId,
+      deleteMode: annotationDeleteMode,
+    });
+    annotationHistory = seed.history;
+    annotationHistoryIndex = seed.index;
 
     const newSegments = annotations.segments.filter((segment) => segment.id !== id);
     const newSelectedSegmentId = selectedAnnotationSegmentId === id ? null : selectedAnnotationSegmentId;
@@ -250,16 +245,14 @@ export const createAnnotationSegmentsSlice: SliceCreator<AnnotationSegmentsSlice
     if (!project) return;
     const annotations = normalizeAnnotationConfig(project.annotations);
 
-    if (annotationHistory.length === 0) {
-      const init = pushAnnotationHistory([], -1, {
-        segments: annotations.segments,
-        selectedSegmentId: selectedAnnotationSegmentId,
-        selectedShapeId: selectedAnnotationShapeId,
-        deleteMode: annotationDeleteMode,
-      });
-      annotationHistory = init.history;
-      annotationHistoryIndex = init.index;
-    }
+    const seed = ensureAnnotationHistoryInitialized(annotationHistory, annotationHistoryIndex, {
+      segments: annotations.segments,
+      selectedSegmentId: selectedAnnotationSegmentId,
+      selectedShapeId: selectedAnnotationShapeId,
+      deleteMode: annotationDeleteMode,
+    });
+    annotationHistory = seed.history;
+    annotationHistoryIndex = seed.index;
 
     const clampedShape = clampAnnotationShape(shape);
     const newSegments = annotations.segments.map((segment) =>
@@ -318,16 +311,14 @@ export const createAnnotationSegmentsSlice: SliceCreator<AnnotationSegmentsSlice
     const { selectedAnnotationSegmentId, selectedAnnotationShapeId } = get();
     let { annotationHistory, annotationHistoryIndex } = get();
 
-    if (annotationHistory.length === 0) {
-      const init = pushAnnotationHistory([], -1, {
-        segments: annotations.segments,
-        selectedSegmentId: selectedAnnotationSegmentId,
-        selectedShapeId: selectedAnnotationShapeId,
-        deleteMode: annotationDeleteMode,
-      });
-      annotationHistory = init.history;
-      annotationHistoryIndex = init.index;
-    }
+    const seed = ensureAnnotationHistoryInitialized(annotationHistory, annotationHistoryIndex, {
+      segments: annotations.segments,
+      selectedSegmentId: selectedAnnotationSegmentId,
+      selectedShapeId: selectedAnnotationShapeId,
+      deleteMode: annotationDeleteMode,
+    });
+    annotationHistory = seed.history;
+    annotationHistoryIndex = seed.index;
 
     const { history, index } = pushAnnotationHistory(annotationHistory, annotationHistoryIndex, {
       segments: newSegments,
@@ -374,16 +365,14 @@ export const createAnnotationSegmentsSlice: SliceCreator<AnnotationSegmentsSlice
 
     if (!didReorder) return;
 
-    if (annotationHistory.length === 0) {
-      const init = pushAnnotationHistory([], -1, {
-        segments: annotations.segments,
-        selectedSegmentId: selectedAnnotationSegmentId,
-        selectedShapeId: selectedAnnotationShapeId,
-        deleteMode: annotationDeleteMode,
-      });
-      annotationHistory = init.history;
-      annotationHistoryIndex = init.index;
-    }
+    const seed = ensureAnnotationHistoryInitialized(annotationHistory, annotationHistoryIndex, {
+      segments: annotations.segments,
+      selectedSegmentId: selectedAnnotationSegmentId,
+      selectedShapeId: selectedAnnotationShapeId,
+      deleteMode: annotationDeleteMode,
+    });
+    annotationHistory = seed.history;
+    annotationHistoryIndex = seed.index;
 
     const { history, index } = pushAnnotationHistory(annotationHistory, annotationHistoryIndex, {
       segments: newSegments,
@@ -409,16 +398,14 @@ export const createAnnotationSegmentsSlice: SliceCreator<AnnotationSegmentsSlice
     if (!project) return;
     const annotations = normalizeAnnotationConfig(project.annotations);
 
-    if (annotationHistory.length === 0) {
-      const init = pushAnnotationHistory([], -1, {
-        segments: annotations.segments,
-        selectedSegmentId: selectedAnnotationSegmentId,
-        selectedShapeId: selectedAnnotationShapeId,
-        deleteMode: annotationDeleteMode,
-      });
-      annotationHistory = init.history;
-      annotationHistoryIndex = init.index;
-    }
+    const seed = ensureAnnotationHistoryInitialized(annotationHistory, annotationHistoryIndex, {
+      segments: annotations.segments,
+      selectedSegmentId: selectedAnnotationSegmentId,
+      selectedShapeId: selectedAnnotationShapeId,
+      deleteMode: annotationDeleteMode,
+    });
+    annotationHistory = seed.history;
+    annotationHistoryIndex = seed.index;
 
     let nextSelectedShapeId = selectedAnnotationShapeId;
     const newSegments = annotations.segments.map((segment) => {
@@ -524,12 +511,13 @@ export const createAnnotationSegmentsSlice: SliceCreator<AnnotationSegmentsSlice
 
     let { annotationHistory, annotationHistoryIndex } = get();
 
-    // Push pre-drag snapshot as initial state if history is empty
-    if (annotationHistory.length === 0) {
-      const init = pushAnnotationHistory([], -1, _annotationDragSnapshot);
-      annotationHistory = init.history;
-      annotationHistoryIndex = init.index;
-    }
+    const seed = ensureAnnotationHistoryInitialized(
+      annotationHistory,
+      annotationHistoryIndex,
+      _annotationDragSnapshot
+    );
+    annotationHistory = seed.history;
+    annotationHistoryIndex = seed.index;
 
     // Push result state (current state after drag)
     const { history, index } = pushAnnotationHistory(annotationHistory, annotationHistoryIndex, {

@@ -18,7 +18,88 @@ interface WebcamTrackProps {
   enabled: boolean;
 }
 
+interface WebcamSegmentItemProps {
+  segment: VisibilitySegment;
+  index: number;
+  isSelected: boolean;
+  timelineZoom: number;
+  durationMs: number;
+  onSelect: (index: number) => void;
+  onUpdate: (index: number, updates: Partial<VisibilitySegment>) => void;
+  onDelete: (index: number) => void;
+}
+
 const MIN_WEBCAM_SEGMENT_DURATION_MS = 100;
+const MIN_VISIBLE_SEGMENT_WIDTH_PX = 20;
+const SHOW_VISIBILITY_TOGGLE_WIDTH_PX = 40;
+
+function getVisibleSegmentClassName(isSelected: boolean): string {
+  return isSelected
+    ? 'bg-emerald-500/50 border-2 border-emerald-400 shadow-lg shadow-emerald-500/20'
+    : 'bg-emerald-500/30 border border-emerald-500/50 hover:bg-emerald-500/40';
+}
+
+function getHiddenSegmentClassName(isSelected: boolean): string {
+  return isSelected
+    ? 'bg-zinc-600/50 border-2 border-zinc-400'
+    : 'bg-zinc-600/30 border border-zinc-500/50 hover:bg-zinc-600/40';
+}
+
+function getWebcamSegmentClassName(visible: boolean, isSelected: boolean): string {
+  const colorClass = visible
+    ? getVisibleSegmentClassName(isSelected)
+    : getHiddenSegmentClassName(isSelected);
+
+  return `
+    absolute top-1 bottom-1 rounded-md cursor-pointer
+    ${colorClass}
+  `;
+}
+
+function getVisibilityButtonClassName(visible: boolean): string {
+  return `p-1 rounded transition-colors ${
+    visible ? 'text-emerald-300/80 hover:text-emerald-200' : 'text-zinc-400/80 hover:text-zinc-300'
+  }`;
+}
+
+function ResizeHandle({
+  edge,
+  onPointerDown,
+}: {
+  edge: 'start' | 'end';
+  onPointerDown: (e: React.PointerEvent<HTMLDivElement>) => void;
+}) {
+  const edgeClass = edge === 'start' ? 'left-0 rounded-l-md' : 'right-0 rounded-r-md';
+
+  return (
+    <div
+      className={`absolute ${edgeClass} top-0 bottom-0 w-2 cursor-ew-resize hover:bg-emerald-400/50 touch-none`}
+      onPointerDown={onPointerDown}
+    />
+  );
+}
+
+function VisibilityToggle({
+  visible,
+  segmentWidth,
+  onClick,
+}: {
+  visible: boolean;
+  segmentWidth: number;
+  onClick: (e: React.MouseEvent) => void;
+}) {
+  if (segmentWidth <= SHOW_VISIBILITY_TOGGLE_WIDTH_PX) {
+    return null;
+  }
+
+  const Icon = visible ? Eye : EyeOff;
+
+  return (
+    <button className={getVisibilityButtonClassName(visible)} onClick={onClick}>
+      <Icon className="w-3.5 h-3.5" />
+    </button>
+  );
+}
 
 /**
  * Memoized webcam segment component.
@@ -33,16 +114,7 @@ const WebcamSegmentItem = memo(function WebcamSegmentItem({
   onSelect,
   onUpdate,
   onDelete,
-}: {
-  segment: VisibilitySegment;
-  index: number;
-  isSelected: boolean;
-  timelineZoom: number;
-  durationMs: number;
-  onSelect: (index: number) => void;
-  onUpdate: (index: number, updates: Partial<VisibilitySegment>) => void;
-  onDelete: (index: number) => void;
-}) {
+}: WebcamSegmentItemProps) {
   const elementRef = useRef<HTMLDivElement>(null);
   const tooltipRef = useRef<HTMLDivElement>(null);
   const draggableSegment = useMemo(
@@ -86,57 +158,30 @@ const WebcamSegmentItem = memo(function WebcamSegmentItem({
   return (
     <div
       ref={elementRef}
-      className={`
-        absolute top-1 bottom-1 rounded-md cursor-pointer
-        ${segment.visible
-          ? isSelected
-            ? 'bg-emerald-500/50 border-2 border-emerald-400 shadow-lg shadow-emerald-500/20'
-            : 'bg-emerald-500/30 border border-emerald-500/50 hover:bg-emerald-500/40'
-          : isSelected
-            ? 'bg-zinc-600/50 border-2 border-zinc-400'
-            : 'bg-zinc-600/30 border border-zinc-500/50 hover:bg-zinc-600/40'
-        }
-      `}
+      className={getWebcamSegmentClassName(segment.visible, isSelected)}
       style={{
         left: `${left}px`,
-        width: `${Math.max(segmentWidth, 20)}px`,
+        width: `${Math.max(segmentWidth, MIN_VISIBLE_SEGMENT_WIDTH_PX)}px`,
       }}
       onClick={handleClick}
     >
       {/* Left resize handle */}
-      <div
-        className="absolute left-0 top-0 bottom-0 w-2 cursor-ew-resize hover:bg-emerald-400/50 rounded-l-md touch-none"
-        onPointerDown={(e) => handlePointerDown(e, 'start')}
-      />
+      <ResizeHandle edge="start" onPointerDown={(e) => handlePointerDown(e, 'start')} />
 
       {/* Center drag handle */}
       <div
         className="absolute inset-x-2 top-0 bottom-0 cursor-move flex items-center justify-center touch-none"
         onPointerDown={(e) => handlePointerDown(e, 'move')}
       >
-        {segmentWidth > 40 && (
-          <button
-            className={`p-1 rounded transition-colors ${
-              segment.visible
-                ? 'text-emerald-300/80 hover:text-emerald-200'
-                : 'text-zinc-400/80 hover:text-zinc-300'
-            }`}
-            onClick={handleToggleVisibility}
-          >
-            {segment.visible ? (
-              <Eye className="w-3.5 h-3.5" />
-            ) : (
-              <EyeOff className="w-3.5 h-3.5" />
-            )}
-          </button>
-        )}
+        <VisibilityToggle
+          visible={segment.visible}
+          segmentWidth={segmentWidth}
+          onClick={handleToggleVisibility}
+        />
       </div>
 
       {/* Right resize handle */}
-      <div
-        className="absolute right-0 top-0 bottom-0 w-2 cursor-ew-resize hover:bg-emerald-400/50 rounded-r-md touch-none"
-        onPointerDown={(e) => handlePointerDown(e, 'end')}
-      />
+      <ResizeHandle edge="end" onPointerDown={(e) => handlePointerDown(e, 'end')} />
 
       {/* Delete button (shown when selected) */}
       {isSelected && (

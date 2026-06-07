@@ -9,6 +9,147 @@ import { settingsLogger } from '@/utils/logger';
 
 type SubmitStatus = 'idle' | 'submitting' | 'success' | 'error';
 
+interface SubmitFeedbackPayload {
+  feedback: string;
+  attachedLogs: string | null;
+  appVersion: string;
+}
+
+interface LogsAttachmentControlProps {
+  attachedLogs: string | null;
+  isAttachingLogs: boolean;
+  onAttachLogs: () => void;
+  onRemoveLogs: () => void;
+}
+
+async function submitFeedbackRequest({
+  feedback,
+  attachedLogs,
+  appVersion,
+}: SubmitFeedbackPayload) {
+  const response = await fetch(APP.FEEDBACK_API, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      productName: APP.NAME,
+      message: feedback,
+      logs: attachedLogs,
+      systemInfo: {
+        platform: 'Windows',
+        userAgent: navigator.userAgent,
+      },
+      appVersion,
+    }),
+  });
+
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new Error(data.error || `Server responded with ${response.status}`);
+  }
+}
+
+function getSubmitErrorMessage(error: unknown) {
+  return error instanceof Error ? error.message : 'Failed to submit feedback';
+}
+
+function getSubmitButtonContent(submitStatus: SubmitStatus) {
+  switch (submitStatus) {
+    case 'submitting':
+      return (
+        <>
+          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+          Sending...
+        </>
+      );
+    case 'success':
+      return (
+        <>
+          <Check className="w-4 h-4 mr-2" />
+          Sent!
+        </>
+      );
+    case 'error':
+      return (
+        <>
+          <X className="w-4 h-4 mr-2" />
+          Failed
+        </>
+      );
+    default:
+      return (
+        <>
+          <Send className="w-4 h-4 mr-2" />
+          Submit Feedback
+        </>
+      );
+  }
+}
+
+function getSubmitButtonClass(submitStatus: SubmitStatus) {
+  switch (submitStatus) {
+    case 'success':
+      return 'bg-emerald-500 text-white hover:bg-emerald-600';
+    case 'error':
+      return 'bg-red-500 text-white hover:bg-red-600';
+    default:
+      return 'editor-choice-pill editor-choice-pill--active';
+  }
+}
+
+function FeedbackErrorMessage({
+  submitStatus,
+  errorMessage,
+}: {
+  submitStatus: SubmitStatus;
+  errorMessage: string;
+}) {
+  if (submitStatus !== 'error' || !errorMessage) {
+    return null;
+  }
+
+  return <p className="text-sm text-red-500">{errorMessage}</p>;
+}
+
+function LogsAttachmentControl({
+  attachedLogs,
+  isAttachingLogs,
+  onAttachLogs,
+  onRemoveLogs,
+}: LogsAttachmentControlProps) {
+  if (attachedLogs) {
+    return (
+      <div className="flex items-center gap-2 text-sm text-emerald-600">
+        <Check className="w-4 h-4" />
+        <span>Logs attached</span>
+        <button
+          onClick={onRemoveLogs}
+          className="text-[var(--ink-muted)] hover:text-red-500 transition-colors"
+          title="Remove logs"
+        >
+          <X className="w-4 h-4" />
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <Button
+      variant="ghost"
+      size="sm"
+      onClick={onAttachLogs}
+      disabled={isAttachingLogs}
+      className="text-[var(--ink-muted)] hover:text-[var(--ink-black)] h-8 px-2"
+    >
+      {isAttachingLogs ? (
+        <Loader2 className="w-4 h-4 mr-1.5 animate-spin" />
+      ) : (
+        <Upload className="w-4 h-4 mr-1.5" />
+      )}
+      {isAttachingLogs ? 'Attaching...' : 'Attach logs'}
+    </Button>
+  );
+}
+
 export const FeedbackTab: React.FC = () => {
   const [feedback, setFeedback] = useState('');
   const [attachedLogs, setAttachedLogs] = useState<string | null>(null);
@@ -28,33 +169,14 @@ export const FeedbackTab: React.FC = () => {
     setErrorMessage('');
 
     try {
-      const response = await fetch(APP.FEEDBACK_API, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          productName: APP.NAME,
-          message: feedback,
-          logs: attachedLogs,
-          systemInfo: {
-            platform: 'Windows',
-            userAgent: navigator.userAgent,
-          },
-          appVersion,
-        }),
-      });
-
-      if (response.ok) {
-        setSubmitStatus('success');
-        setFeedback('');
-        setAttachedLogs(null);
-        setTimeout(() => setSubmitStatus('idle'), 3000);
-      } else {
-        const data = await response.json().catch(() => ({}));
-        throw new Error(data.error || `Server responded with ${response.status}`);
-      }
+      await submitFeedbackRequest({ feedback, attachedLogs, appVersion });
+      setSubmitStatus('success');
+      setFeedback('');
+      setAttachedLogs(null);
+      setTimeout(() => setSubmitStatus('idle'), 3000);
     } catch (error) {
       setSubmitStatus('error');
-      setErrorMessage(error instanceof Error ? error.message : 'Failed to submit feedback');
+      setErrorMessage(getSubmitErrorMessage(error));
       setTimeout(() => setSubmitStatus('idle'), 5000);
     }
   };
@@ -73,50 +195,6 @@ export const FeedbackTab: React.FC = () => {
 
   const handleRemoveLogs = () => {
     setAttachedLogs(null);
-  };
-
-  const getSubmitButtonContent = () => {
-    switch (submitStatus) {
-      case 'submitting':
-        return (
-          <>
-            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-            Sending...
-          </>
-        );
-      case 'success':
-        return (
-          <>
-            <Check className="w-4 h-4 mr-2" />
-            Sent!
-          </>
-        );
-      case 'error':
-        return (
-          <>
-            <X className="w-4 h-4 mr-2" />
-            Failed
-          </>
-        );
-      default:
-        return (
-          <>
-            <Send className="w-4 h-4 mr-2" />
-            Submit Feedback
-          </>
-        );
-    }
-  };
-
-  const getSubmitButtonClass = () => {
-    switch (submitStatus) {
-      case 'success':
-        return 'bg-emerald-500 text-white hover:bg-emerald-600';
-      case 'error':
-        return 'bg-red-500 text-white hover:bg-red-600';
-      default:
-        return 'editor-choice-pill editor-choice-pill--active';
-    }
   };
 
   return (
@@ -140,50 +218,25 @@ export const FeedbackTab: React.FC = () => {
             />
           </div>
 
-          {/* Error message */}
-          {submitStatus === 'error' && errorMessage && (
-            <p className="text-sm text-red-500">{errorMessage}</p>
-          )}
+          <FeedbackErrorMessage submitStatus={submitStatus} errorMessage={errorMessage} />
 
           <div className="flex items-center justify-between">
             {/* Logs attachment */}
             <div className="flex items-center gap-2">
-              {attachedLogs ? (
-                <div className="flex items-center gap-2 text-sm text-emerald-600">
-                  <Check className="w-4 h-4" />
-                  <span>Logs attached</span>
-                  <button
-                    onClick={handleRemoveLogs}
-                    className="text-[var(--ink-muted)] hover:text-red-500 transition-colors"
-                    title="Remove logs"
-                  >
-                    <X className="w-4 h-4" />
-                  </button>
-                </div>
-              ) : (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={handleAttachLogs}
-                  disabled={isAttachingLogs}
-                  className="text-[var(--ink-muted)] hover:text-[var(--ink-black)] h-8 px-2"
-                >
-                  {isAttachingLogs ? (
-                    <Loader2 className="w-4 h-4 mr-1.5 animate-spin" />
-                  ) : (
-                    <Upload className="w-4 h-4 mr-1.5" />
-                  )}
-                  {isAttachingLogs ? 'Attaching...' : 'Attach logs'}
-                </Button>
-              )}
+              <LogsAttachmentControl
+                attachedLogs={attachedLogs}
+                isAttachingLogs={isAttachingLogs}
+                onAttachLogs={handleAttachLogs}
+                onRemoveLogs={handleRemoveLogs}
+              />
             </div>
 
             <Button
               onClick={handleSubmitFeedback}
               disabled={!feedback.trim() || submitStatus === 'submitting'}
-              className={`${getSubmitButtonClass()} disabled:opacity-50 transition-colors`}
+              className={`${getSubmitButtonClass(submitStatus)} disabled:opacity-50 transition-colors`}
             >
-              {getSubmitButtonContent()}
+              {getSubmitButtonContent(submitStatus)}
             </Button>
           </div>
         </div>

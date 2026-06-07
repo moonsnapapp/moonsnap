@@ -106,6 +106,57 @@ export async function getFontMetrics(
   return metrics;
 }
 
+function hasInvalidCompositionVideoSize(videoWidth: number, videoHeight: number) {
+  return videoWidth === 0 || videoHeight === 0;
+}
+
+function getCompositionBoundsRequest({
+  videoWidth,
+  videoHeight,
+  padding,
+  manualWidth,
+  manualHeight,
+}: {
+  videoWidth: number;
+  videoHeight: number;
+  padding: number;
+  manualWidth?: number;
+  manualHeight?: number;
+}) {
+  return {
+    videoWidth,
+    videoHeight,
+    padding,
+    manualWidth: manualWidth ?? null,
+    manualHeight: manualHeight ?? null,
+  };
+}
+
+async function loadCompositionBounds({
+  videoWidth,
+  videoHeight,
+  padding,
+  manualWidth,
+  manualHeight,
+}: {
+  videoWidth: number;
+  videoHeight: number;
+  padding: number;
+  manualWidth?: number;
+  manualHeight?: number;
+}) {
+  return invoke<CompositionBounds>(
+    'get_composition_bounds',
+    getCompositionBoundsRequest({
+      videoWidth,
+      videoHeight,
+      padding,
+      manualWidth,
+      manualHeight,
+    })
+  );
+}
+
 /**
  * Hook to get composition bounds from Rust.
  * Ensures preview uses identical frame positioning as export.
@@ -120,17 +171,17 @@ export function useCompositionBounds(
   const [bounds, setBounds] = useState<CompositionBounds | null>(null);
 
   useEffect(() => {
-    if (videoWidth === 0 || videoHeight === 0) {
+    if (hasInvalidCompositionVideoSize(videoWidth, videoHeight)) {
       setBounds(null);
       return;
     }
 
-    invoke<CompositionBounds>('get_composition_bounds', {
+    loadCompositionBounds({
       videoWidth,
       videoHeight,
       padding,
-      manualWidth: manualWidth ?? null,
-      manualHeight: manualHeight ?? null,
+      manualWidth,
+      manualHeight,
     }).then(setBounds);
   }, [videoWidth, videoHeight, padding, manualWidth, manualHeight]);
 

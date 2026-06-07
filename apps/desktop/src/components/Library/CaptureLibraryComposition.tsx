@@ -81,7 +81,45 @@ export interface LibraryCompositionContextValue {
   onOpenLibraryFolder: () => void | Promise<void>;
 }
 
+type LibraryContentState = 'loading' | 'filtered-empty' | 'empty' | 'virtualized' | 'static';
+type LibraryContentRule = {
+  state: LibraryContentState;
+  matches: (library: LibraryCompositionContextValue) => boolean;
+};
+
 const LibraryCompositionContext = createContext<LibraryCompositionContextValue | null>(null);
+
+const LIBRARY_CONTENT_RENDERERS: Record<LibraryContentState, () => React.ReactNode> = {
+  loading: () => <Library.LoadingState />,
+  'filtered-empty': () => <Library.FilteredEmptyState />,
+  empty: () => <Library.EmptyState />,
+  virtualized: () => <Library.VirtualizedGridStage />,
+  static: () => <Library.StaticGridStage />,
+};
+
+const LIBRARY_CONTENT_RULES: LibraryContentRule[] = [
+  {
+    state: 'loading',
+    matches: ({ loading, initialized }) => loading || !initialized,
+  },
+  {
+    state: 'filtered-empty',
+    matches: ({ captures, hasActiveFilters, totalCaptureCount }) =>
+      captures.length === 0 && hasActiveFilters && totalCaptureCount > 0,
+  },
+  {
+    state: 'empty',
+    matches: ({ captures }) => captures.length === 0,
+  },
+  {
+    state: 'virtualized',
+    matches: ({ useVirtualization }) => useVirtualization,
+  },
+];
+
+function getLibraryContentState(library: LibraryCompositionContextValue): LibraryContentState {
+  return LIBRARY_CONTENT_RULES.find((rule) => rule.matches(library))?.state ?? 'static';
+}
 
 function useLibraryComposition() {
   const context = use(LibraryCompositionContext);
@@ -271,24 +309,8 @@ function LibraryVirtualizedGridStage() {
 
 function LibraryContent() {
   const library = useLibraryComposition();
-
-  if (library.loading || !library.initialized) {
-    return <Library.LoadingState />;
-  }
-
-  if (library.captures.length === 0 && library.hasActiveFilters && library.totalCaptureCount > 0) {
-    return <Library.FilteredEmptyState />;
-  }
-
-  if (library.captures.length === 0) {
-    return <Library.EmptyState />;
-  }
-
-  if (library.useVirtualization) {
-    return <Library.VirtualizedGridStage />;
-  }
-
-  return <Library.StaticGridStage />;
+  const state = getLibraryContentState(library);
+  return LIBRARY_CONTENT_RENDERERS[state]();
 }
 
 function LibraryDeleteDialog() {

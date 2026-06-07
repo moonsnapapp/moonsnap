@@ -36,6 +36,17 @@ interface MaskItemProps {
   cropConfig?: CropConfig;
 }
 
+type MaskDragType = 'move' | 'resize-tl' | 'resize-tr' | 'resize-bl' | 'resize-br';
+
+interface MaskDragStart {
+  x: number;
+  y: number;
+  segX: number;
+  segY: number;
+  segW: number;
+  segH: number;
+}
+
 /**
  * Generate CSS mask for feathered (soft) edges.
  * Uses multiple linear gradients to create smooth fade on all edges.
@@ -83,6 +94,154 @@ const getMaskStyle = (maskType: MaskType, intensity: number): React.CSSPropertie
   }
 };
 
+function clampUnit(value: number): number {
+  return Math.max(0, Math.min(1, value));
+}
+
+function resizesMaskLeft(type: MaskDragType): boolean {
+  return type === 'resize-tl' || type === 'resize-bl';
+}
+
+function resizesMaskRight(type: MaskDragType): boolean {
+  return type === 'resize-tr' || type === 'resize-br';
+}
+
+function resizesMaskTop(type: MaskDragType): boolean {
+  return type === 'resize-tl' || type === 'resize-tr';
+}
+
+function resizesMaskBottom(type: MaskDragType): boolean {
+  return type === 'resize-bl' || type === 'resize-br';
+}
+
+function getMovedMaskUpdate(
+  start: MaskDragStart,
+  deltaX: number,
+  deltaY: number
+): Partial<MaskSegment> {
+  return {
+    x: Math.max(0, Math.min(1 - start.segW, start.segX + deltaX)),
+    y: Math.max(0, Math.min(1 - start.segH, start.segY + deltaY)),
+  };
+}
+
+function getMaskRightEdge(start: MaskDragStart): number {
+  return start.segX + start.segW;
+}
+
+function getMaskBottomEdge(start: MaskDragStart): number {
+  return start.segY + start.segH;
+}
+
+function clampMaskStartEdge(value: number, oppositeEdge: number, minSize: number): number {
+  return Math.max(0, Math.min(oppositeEdge - minSize, value));
+}
+
+function clampMaskEndEdge(startEdge: number, size: number, delta: number, minSize: number): number {
+  return clampUnit(startEdge + Math.max(minSize, Math.min(1 - startEdge, size + delta)));
+}
+
+function getResizedMaskLeft(type: MaskDragType, start: MaskDragStart, deltaX: number, minSize: number) {
+  return resizesMaskLeft(type)
+    ? clampMaskStartEdge(start.segX + deltaX, getMaskRightEdge(start), minSize)
+    : start.segX;
+}
+
+function getResizedMaskTop(type: MaskDragType, start: MaskDragStart, deltaY: number, minSize: number) {
+  return resizesMaskTop(type)
+    ? clampMaskStartEdge(start.segY + deltaY, getMaskBottomEdge(start), minSize)
+    : start.segY;
+}
+
+function getResizedMaskRight(type: MaskDragType, start: MaskDragStart, deltaX: number, minSize: number) {
+  return resizesMaskRight(type)
+    ? clampMaskEndEdge(start.segX, start.segW, deltaX, minSize)
+    : getMaskRightEdge(start);
+}
+
+function getResizedMaskBottom(type: MaskDragType, start: MaskDragStart, deltaY: number, minSize: number) {
+  return resizesMaskBottom(type)
+    ? clampMaskEndEdge(start.segY, start.segH, deltaY, minSize)
+    : getMaskBottomEdge(start);
+}
+
+function getResizedMaskUpdate(
+  type: MaskDragType,
+  start: MaskDragStart,
+  deltaX: number,
+  deltaY: number
+): Partial<MaskSegment> {
+  const minSize = 0.02;
+  const left = getResizedMaskLeft(type, start, deltaX, minSize);
+  const top = getResizedMaskTop(type, start, deltaY, minSize);
+  const right = getResizedMaskRight(type, start, deltaX, minSize);
+  const bottom = getResizedMaskBottom(type, start, deltaY, minSize);
+
+  return {
+    x: left,
+    y: top,
+    width: right - left,
+    height: bottom - top,
+  };
+}
+
+function getDraggedMaskUpdate(
+  type: MaskDragType,
+  start: MaskDragStart,
+  deltaX: number,
+  deltaY: number
+): Partial<MaskSegment> {
+  return type === 'move'
+    ? getMovedMaskUpdate(start, deltaX, deltaY)
+    : getResizedMaskUpdate(type, start, deltaX, deltaY);
+}
+
+function getFullVideoRegion(videoWidth: number, videoHeight: number) {
+  return { x: 0, y: 0, width: videoWidth, height: videoHeight };
+}
+
+function hasUsableCropConfig(cropConfig: CropConfig | undefined): cropConfig is CropConfig {
+  return Boolean(cropConfig?.enabled && cropConfig.width > 0 && cropConfig.height > 0);
+}
+
+function getHorizontalClipRegion(
+  videoWidth: number,
+  videoHeight: number,
+  cropConfig: CropConfig,
+  cropAspect: number,
+) {
+  const visibleW = videoHeight * cropAspect;
+  const overflowX = videoWidth - visibleW;
+  const overflowXCrop = videoWidth - cropConfig.width;
+  const posXFraction = overflowXCrop > 0 ? cropConfig.x / overflowXCrop : 0.5;
+
+  return {
+    x: overflowX * posXFraction,
+    y: 0,
+    width: visibleW,
+    height: videoHeight,
+  };
+}
+
+function getVerticalClipRegion(
+  videoWidth: number,
+  videoHeight: number,
+  cropConfig: CropConfig,
+  cropAspect: number,
+) {
+  const visibleH = videoWidth / cropAspect;
+  const overflowY = videoHeight - visibleH;
+  const overflowYCrop = videoHeight - cropConfig.height;
+  const posYFraction = overflowYCrop > 0 ? cropConfig.y / overflowYCrop : 0.5;
+
+  return {
+    x: 0,
+    y: overflowY * posYFraction,
+    width: videoWidth,
+    height: visibleH,
+  };
+}
+
 /**
  * Compute the visible video region in source pixels based on CSS object-fit:cover + object-position.
  * Replicates what the browser shows so pixelated content matches the visible video.
@@ -92,46 +251,106 @@ function computeVisibleVideoRegion(
   videoHeight: number,
   cropConfig?: CropConfig,
 ): { x: number; y: number; width: number; height: number } {
-  if (!cropConfig?.enabled || cropConfig.width <= 0 || cropConfig.height <= 0) {
-    return { x: 0, y: 0, width: videoWidth, height: videoHeight };
+  if (!hasUsableCropConfig(cropConfig)) {
+    return getFullVideoRegion(videoWidth, videoHeight);
   }
 
   const cropAspect = cropConfig.width / cropConfig.height;
   const videoAspect = videoWidth / videoHeight;
 
-  let visibleX: number;
-  let visibleY: number;
-  let visibleW: number;
-  let visibleH: number;
-
   if (videoAspect > cropAspect) {
-    // Video wider than crop → scaled by height, horizontal clipping
-    visibleH = videoHeight;
-    visibleW = videoHeight * cropAspect;
-    const overflowX = videoWidth - visibleW;
-    // Replicate object-position calculation from GPUVideoPreview
-    const overflowXCrop = videoWidth - cropConfig.width;
-    const posXFraction = overflowXCrop > 0 ? cropConfig.x / overflowXCrop : 0.5;
-    visibleX = overflowX * posXFraction;
-    visibleY = 0;
-  } else {
-    // Video taller than crop → scaled by width, vertical clipping
-    visibleW = videoWidth;
-    visibleH = videoWidth / cropAspect;
-    const overflowY = videoHeight - visibleH;
-    const overflowYCrop = videoHeight - cropConfig.height;
-    const posYFraction = overflowYCrop > 0 ? cropConfig.y / overflowYCrop : 0.5;
-    visibleX = 0;
-    visibleY = overflowY * posYFraction;
+    return getHorizontalClipRegion(videoWidth, videoHeight, cropConfig, cropAspect);
   }
 
-  return { x: visibleX, y: visibleY, width: visibleW, height: visibleH };
+  return getVerticalClipRegion(videoWidth, videoHeight, cropConfig, cropAspect);
+}
+interface PixelateFrameGeometry {
+  srcX: number;
+  srcY: number;
+  srcW: number;
+  srcH: number;
+  displayW: number;
+  displayH: number;
+  blockSize: number;
 }
 
-/**
- * Canvas-based pixelation component that samples from video
- */
-const PixelateCanvas = memo(function PixelateCanvas({
+function getPixelateFrameGeometry({
+  videoWidth,
+  videoHeight,
+  segmentX,
+  segmentY,
+  segmentWidth,
+  segmentHeight,
+  previewWidth,
+  previewHeight,
+  intensity,
+  cropConfig,
+}: {
+  videoWidth: number;
+  videoHeight: number;
+  segmentX: number;
+  segmentY: number;
+  segmentWidth: number;
+  segmentHeight: number;
+  previewWidth: number;
+  previewHeight: number;
+  intensity: number;
+  cropConfig?: CropConfig;
+}): PixelateFrameGeometry {
+  const visible = computeVisibleVideoRegion(videoWidth, videoHeight, cropConfig);
+
+  return {
+    srcX: Math.round(visible.x + segmentX * visible.width),
+    srcY: Math.round(visible.y + segmentY * visible.height),
+    srcW: Math.round(segmentWidth * visible.width),
+    srcH: Math.round(segmentHeight * visible.height),
+    displayW: Math.round(segmentWidth * previewWidth),
+    displayH: Math.round(segmentHeight * previewHeight),
+    blockSize: Math.max(2, Math.round(intensity / 5)),
+  };
+}
+
+function hasDrawablePixelateFrame({ srcW, srcH, displayW, displayH }: PixelateFrameGeometry) {
+  return srcW > 0 && srcH > 0 && displayW > 0 && displayH > 0;
+}
+
+function resizePixelateCanvas(
+  canvas: HTMLCanvasElement,
+  displayW: number,
+  displayH: number
+) {
+  if (canvas.width !== displayW || canvas.height !== displayH) {
+    canvas.width = displayW;
+    canvas.height = displayH;
+  }
+}
+
+function drawPixelatedVideoRegion(
+  ctx: CanvasRenderingContext2D,
+  canvas: HTMLCanvasElement,
+  videoElement: HTMLVideoElement,
+  geometry: PixelateFrameGeometry
+) {
+  const smallW = Math.max(1, Math.floor(geometry.displayW / geometry.blockSize));
+  const smallH = Math.max(1, Math.floor(geometry.displayH / geometry.blockSize));
+
+  ctx.imageSmoothingEnabled = true;
+  ctx.drawImage(
+    videoElement,
+    geometry.srcX, geometry.srcY, geometry.srcW, geometry.srcH,
+    0, 0, smallW, smallH
+  );
+
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(
+    canvas,
+    0, 0, smallW, smallH,
+    0, 0, geometry.displayW, geometry.displayH
+  );
+}
+
+function drawPixelateFrame({
+  canvas,
   videoElement,
   videoWidth,
   videoHeight,
@@ -142,9 +361,44 @@ const PixelateCanvas = memo(function PixelateCanvas({
   previewWidth,
   previewHeight,
   intensity,
-  feather,
   cropConfig,
 }: {
+  canvas: HTMLCanvasElement;
+  videoElement: HTMLVideoElement;
+  videoWidth: number;
+  videoHeight: number;
+  segmentX: number;
+  segmentY: number;
+  segmentWidth: number;
+  segmentHeight: number;
+  previewWidth: number;
+  previewHeight: number;
+  intensity: number;
+  cropConfig?: CropConfig;
+}): boolean {
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return false;
+
+  const geometry = getPixelateFrameGeometry({
+    videoWidth,
+    videoHeight,
+    segmentX,
+    segmentY,
+    segmentWidth,
+    segmentHeight,
+    previewWidth,
+    previewHeight,
+    intensity,
+    cropConfig,
+  });
+  if (!hasDrawablePixelateFrame(geometry)) return false;
+
+  resizePixelateCanvas(canvas, geometry.displayW, geometry.displayH);
+  drawPixelatedVideoRegion(ctx, canvas, videoElement, geometry);
+  return true;
+}
+
+type PixelateCanvasProps = {
   videoElement: HTMLVideoElement | null;
   videoWidth: number;
   videoHeight: number;
@@ -157,57 +411,77 @@ const PixelateCanvas = memo(function PixelateCanvas({
   intensity: number;
   feather: number;
   cropConfig?: CropConfig;
+};
+
+function hasPositiveVideoDimensions(videoWidth: number, videoHeight: number) {
+  return videoWidth > 0 && videoHeight > 0;
+}
+
+function getPixelateCanvasDrawTarget({
+  canvas,
+  videoElement,
+  videoWidth,
+  videoHeight,
+}: {
+  canvas: HTMLCanvasElement | null;
+  videoElement: HTMLVideoElement | null;
+  videoWidth: number;
+  videoHeight: number;
 }) {
+  if (!canvas || !videoElement || !hasPositiveVideoDimensions(videoWidth, videoHeight)) {
+    return null;
+  }
+
+  return { canvas, videoElement };
+}
+
+function drawPixelateFrameFromProps(
+  canvas: HTMLCanvasElement,
+  props: PixelateCanvasProps & { videoElement: HTMLVideoElement }
+) {
+  drawPixelateFrame({
+    canvas,
+    videoElement: props.videoElement,
+    videoWidth: props.videoWidth,
+    videoHeight: props.videoHeight,
+    segmentX: props.segmentX,
+    segmentY: props.segmentY,
+    segmentWidth: props.segmentWidth,
+    segmentHeight: props.segmentHeight,
+    previewWidth: props.previewWidth,
+    previewHeight: props.previewHeight,
+    intensity: props.intensity,
+    cropConfig: props.cropConfig,
+  });
+}
+
+/**
+ * Canvas-based pixelation component that samples from video
+ */
+const PixelateCanvas = memo(function PixelateCanvas(props: PixelateCanvasProps) {
+  const {
+    videoElement,
+    videoWidth,
+    videoHeight,
+    segmentWidth,
+    segmentHeight,
+    previewWidth,
+    previewHeight,
+    feather,
+  } = props;
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas || !videoElement || videoWidth === 0 || videoHeight === 0) return;
-
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
-    // Calculate source region in video coordinates, accounting for CSS crop
-    const visible = computeVisibleVideoRegion(videoWidth, videoHeight, cropConfig);
-    const srcX = Math.round(visible.x + segmentX * visible.width);
-    const srcY = Math.round(visible.y + segmentY * visible.height);
-    const srcW = Math.round(segmentWidth * visible.width);
-    const srcH = Math.round(segmentHeight * visible.height);
-
-    if (srcW <= 0 || srcH <= 0) return;
-
-    // Canvas size matches display size
-    const displayW = Math.round(segmentWidth * previewWidth);
-    const displayH = Math.round(segmentHeight * previewHeight);
-
-    if (canvas.width !== displayW || canvas.height !== displayH) {
-      canvas.width = displayW;
-      canvas.height = displayH;
-    }
-
-    // Block size based on intensity (higher intensity = larger blocks = more pixelated)
-    const blockSize = Math.max(2, Math.round(intensity / 5));
-
-    // Create small temp canvas for downsampling
-    const smallW = Math.max(1, Math.floor(displayW / blockSize));
-    const smallH = Math.max(1, Math.floor(displayH / blockSize));
-
-    // Draw video region to small size (downsamples)
-    ctx.imageSmoothingEnabled = true;
-    ctx.drawImage(
+    const target = getPixelateCanvasDrawTarget({
+      canvas: canvasRef.current,
       videoElement,
-      srcX, srcY, srcW, srcH,  // Source region
-      0, 0, smallW, smallH     // Small destination
-    );
-
-    // Draw small canvas back to full size with nearest-neighbor (pixelates)
-    ctx.imageSmoothingEnabled = false;
-    ctx.drawImage(
-      canvas,
-      0, 0, smallW, smallH,      // Source (small)
-      0, 0, displayW, displayH   // Destination (full size)
-    );
-  }, [videoElement, videoWidth, videoHeight, segmentX, segmentY, segmentWidth, segmentHeight, previewWidth, previewHeight, intensity, cropConfig]);
+      videoWidth,
+      videoHeight,
+    });
+    if (target) {
+      drawPixelateFrameFromProps(target.canvas, { ...props, videoElement: target.videoElement });
+    }
+  }, [props, videoElement, videoWidth, videoHeight]);
 
   // Continuously update canvas when video plays
   useEffect(() => {
@@ -216,59 +490,22 @@ const PixelateCanvas = memo(function PixelateCanvas({
     let animationId: number;
 
     const updateCanvas = () => {
-      const canvas = canvasRef.current;
-      if (!canvas || videoWidth === 0 || videoHeight === 0) {
-        animationId = requestAnimationFrame(updateCanvas);
-        return;
-      }
-
-      const ctx = canvas.getContext('2d');
-      if (!ctx) {
-        animationId = requestAnimationFrame(updateCanvas);
-        return;
-      }
-
-      // Calculate source region in video coordinates, accounting for CSS crop
-      const visible = computeVisibleVideoRegion(videoWidth, videoHeight, cropConfig);
-      const srcX = Math.round(visible.x + segmentX * visible.width);
-      const srcY = Math.round(visible.y + segmentY * visible.height);
-      const srcW = Math.round(segmentWidth * visible.width);
-      const srcH = Math.round(segmentHeight * visible.height);
-
-      if (srcW <= 0 || srcH <= 0) {
-        animationId = requestAnimationFrame(updateCanvas);
-        return;
-      }
-
-      const displayW = canvas.width;
-      const displayH = canvas.height;
-
-      const blockSize = Math.max(2, Math.round(intensity / 5));
-      const smallW = Math.max(1, Math.floor(displayW / blockSize));
-      const smallH = Math.max(1, Math.floor(displayH / blockSize));
-
-      // Draw video region to small size (downsamples)
-      ctx.imageSmoothingEnabled = true;
-      ctx.drawImage(
+      const target = getPixelateCanvasDrawTarget({
+        canvas: canvasRef.current,
         videoElement,
-        srcX, srcY, srcW, srcH,
-        0, 0, smallW, smallH
-      );
-
-      // Draw small canvas back to full size with nearest-neighbor
-      ctx.imageSmoothingEnabled = false;
-      ctx.drawImage(
-        canvas,
-        0, 0, smallW, smallH,
-        0, 0, displayW, displayH
-      );
+        videoWidth,
+        videoHeight,
+      });
+      if (target) {
+        drawPixelateFrameFromProps(target.canvas, { ...props, videoElement: target.videoElement });
+      }
 
       animationId = requestAnimationFrame(updateCanvas);
     };
 
     animationId = requestAnimationFrame(updateCanvas);
     return () => cancelAnimationFrame(animationId);
-  }, [videoElement, videoWidth, videoHeight, segmentX, segmentY, segmentWidth, segmentHeight, intensity, cropConfig]);
+  }, [props, videoElement, videoWidth, videoHeight]);
 
   // Calculate display dimensions for feather
   const displayW = Math.round(segmentWidth * previewWidth);
@@ -287,6 +524,137 @@ const PixelateCanvas = memo(function PixelateCanvas({
   );
 });
 
+function getMaskTypeLabel(maskType: MaskType): string {
+  if (maskType === 'blur') return 'Blur';
+  if (maskType === 'pixelate') return 'Pixelate';
+  return 'Solid';
+}
+
+function getMaskItemCursor(isDragging: boolean, dragType: MaskDragType | null): string {
+  if (!isDragging) return 'pointer';
+  return dragType === 'move' ? 'grabbing' : 'nwse-resize';
+}
+
+function getMaskItemStyle({
+  segment,
+  previewWidth,
+  previewHeight,
+  isDragging,
+  dragType,
+}: {
+  segment: MaskSegment;
+  previewWidth: number;
+  previewHeight: number;
+  isDragging: boolean;
+  dragType: MaskDragType | null;
+}): React.CSSProperties {
+  return {
+    left: `${segment.x * previewWidth}px`,
+    top: `${segment.y * previewHeight}px`,
+    width: `${segment.width * previewWidth}px`,
+    height: `${segment.height * previewHeight}px`,
+    cursor: getMaskItemCursor(isDragging, dragType),
+  };
+}
+
+function getMaskEffectStyle(
+  segment: MaskSegment,
+  previewWidth: number,
+  previewHeight: number
+): React.CSSProperties {
+  if (segment.maskType === 'pixelate') {
+    return { '--mask-solid-color': segment.color } as React.CSSProperties;
+  }
+
+  return {
+    ...getMaskStyle(segment.maskType, segment.intensity),
+    '--mask-solid-color': segment.color,
+    ...getFeatherMask(
+      segment.feather,
+      segment.width * previewWidth,
+      segment.height * previewHeight
+    ),
+  } as React.CSSProperties;
+}
+
+function MaskEffectLayer({
+  segment,
+  previewWidth,
+  previewHeight,
+  videoElement,
+  videoWidth,
+  videoHeight,
+  cropConfig,
+}: {
+  segment: MaskSegment;
+  previewWidth: number;
+  previewHeight: number;
+  videoElement: HTMLVideoElement | null;
+  videoWidth: number;
+  videoHeight: number;
+  cropConfig?: CropConfig;
+}) {
+  return (
+    <div
+      className="absolute inset-0 overflow-hidden"
+      style={getMaskEffectStyle(segment, previewWidth, previewHeight)}
+    >
+      {segment.maskType === 'pixelate' && (
+        <PixelateCanvas
+          videoElement={videoElement}
+          videoWidth={videoWidth}
+          videoHeight={videoHeight}
+          segmentX={segment.x}
+          segmentY={segment.y}
+          segmentWidth={segment.width}
+          segmentHeight={segment.height}
+          previewWidth={previewWidth}
+          previewHeight={previewHeight}
+          intensity={segment.intensity}
+          feather={segment.feather}
+          cropConfig={cropConfig}
+        />
+      )}
+    </div>
+  );
+}
+
+function MaskSelectionGizmo({
+  segment,
+  onMouseDown,
+}: {
+  segment: MaskSegment;
+  onMouseDown: (event: React.MouseEvent, type: MaskDragType) => void;
+}) {
+  return (
+    <>
+      <div
+        className="absolute inset-0 border-2 border-dashed border-purple-500 pointer-events-none z-10"
+        style={{ borderRadius: 2 }}
+      />
+      <div
+        className="absolute -left-1.5 -top-1.5 w-3 h-3 bg-purple-500 rounded-full cursor-nwse-resize shadow-md hover:scale-125 transition-transform z-20"
+        onMouseDown={(e) => onMouseDown(e, 'resize-tl')}
+      />
+      <div
+        className="absolute -right-1.5 -top-1.5 w-3 h-3 bg-purple-500 rounded-full cursor-nesw-resize shadow-md hover:scale-125 transition-transform z-20"
+        onMouseDown={(e) => onMouseDown(e, 'resize-tr')}
+      />
+      <div
+        className="absolute -left-1.5 -bottom-1.5 w-3 h-3 bg-purple-500 rounded-full cursor-nesw-resize shadow-md hover:scale-125 transition-transform z-20"
+        onMouseDown={(e) => onMouseDown(e, 'resize-bl')}
+      />
+      <div
+        className="absolute -right-1.5 -bottom-1.5 w-3 h-3 bg-purple-500 rounded-full cursor-nwse-resize shadow-md hover:scale-125 transition-transform z-20"
+        onMouseDown={(e) => onMouseDown(e, 'resize-br')}
+      />
+      <div className="absolute -top-6 left-0 bg-purple-600 text-white text-[10px] px-1.5 py-0.5 rounded shadow-sm whitespace-nowrap z-20">
+        {getMaskTypeLabel(segment.maskType)} {segment.intensity}%
+      </div>
+    </>
+  );
+}
+
 /**
  * Individual mask overlay item with drag/resize handles
  */
@@ -303,12 +671,12 @@ const MaskItem = memo(function MaskItem({
   cropConfig,
 }: MaskItemProps) {
   const [isDragging, setIsDragging] = useState(false);
-  const [dragType, setDragType] = useState<'move' | 'resize-tl' | 'resize-tr' | 'resize-bl' | 'resize-br' | null>(null);
-  const dragStartRef = useRef<{ x: number; y: number; segX: number; segY: number; segW: number; segH: number } | null>(null);
+  const [dragType, setDragType] = useState<MaskDragType | null>(null);
+  const dragStartRef = useRef<MaskDragStart | null>(null);
 
   const handleMouseDown = useCallback((
     e: React.MouseEvent,
-    type: 'move' | 'resize-tl' | 'resize-tr' | 'resize-bl' | 'resize-br'
+    type: MaskDragType
   ) => {
     e.preventDefault();
     e.stopPropagation();
@@ -327,50 +695,12 @@ const MaskItem = memo(function MaskItem({
     };
 
     const handleMouseMove = (moveEvent: MouseEvent) => {
-      if (!dragStartRef.current) return;
+      const dragStart = dragStartRef.current;
+      if (!dragStart) return;
 
-      const deltaX = (moveEvent.clientX - dragStartRef.current.x) / previewWidth;
-      const deltaY = (moveEvent.clientY - dragStartRef.current.y) / previewHeight;
-
-      if (type === 'move') {
-        // Move the mask
-        const newX = Math.max(0, Math.min(1 - segment.width, dragStartRef.current.segX + deltaX));
-        const newY = Math.max(0, Math.min(1 - segment.height, dragStartRef.current.segY + deltaY));
-        onUpdate(segment.id, { x: newX, y: newY });
-      } else {
-        // Resize the mask
-        let newX = dragStartRef.current.segX;
-        let newY = dragStartRef.current.segY;
-        let newW = dragStartRef.current.segW;
-        let newH = dragStartRef.current.segH;
-
-        const minSize = 0.02; // Minimum 2% of preview
-
-        switch (type) {
-          case 'resize-tl':
-            newX = Math.max(0, Math.min(dragStartRef.current.segX + dragStartRef.current.segW - minSize, dragStartRef.current.segX + deltaX));
-            newY = Math.max(0, Math.min(dragStartRef.current.segY + dragStartRef.current.segH - minSize, dragStartRef.current.segY + deltaY));
-            newW = dragStartRef.current.segX + dragStartRef.current.segW - newX;
-            newH = dragStartRef.current.segY + dragStartRef.current.segH - newY;
-            break;
-          case 'resize-tr':
-            newY = Math.max(0, Math.min(dragStartRef.current.segY + dragStartRef.current.segH - minSize, dragStartRef.current.segY + deltaY));
-            newW = Math.max(minSize, Math.min(1 - dragStartRef.current.segX, dragStartRef.current.segW + deltaX));
-            newH = dragStartRef.current.segY + dragStartRef.current.segH - newY;
-            break;
-          case 'resize-bl':
-            newX = Math.max(0, Math.min(dragStartRef.current.segX + dragStartRef.current.segW - minSize, dragStartRef.current.segX + deltaX));
-            newW = dragStartRef.current.segX + dragStartRef.current.segW - newX;
-            newH = Math.max(minSize, Math.min(1 - dragStartRef.current.segY, dragStartRef.current.segH + deltaY));
-            break;
-          case 'resize-br':
-            newW = Math.max(minSize, Math.min(1 - dragStartRef.current.segX, dragStartRef.current.segW + deltaX));
-            newH = Math.max(minSize, Math.min(1 - dragStartRef.current.segY, dragStartRef.current.segH + deltaY));
-            break;
-        }
-
-        onUpdate(segment.id, { x: newX, y: newY, width: newW, height: newH });
-      }
+      const deltaX = (moveEvent.clientX - dragStart.x) / previewWidth;
+      const deltaY = (moveEvent.clientY - dragStart.y) / previewHeight;
+      onUpdate(segment.id, getDraggedMaskUpdate(type, dragStart, deltaX, deltaY));
     };
 
     const handleMouseUp = () => {
@@ -390,105 +720,28 @@ const MaskItem = memo(function MaskItem({
     onSelect(segment.id);
   }, [segment.id, onSelect]);
 
-  // Calculate pixel positions
-  const left = segment.x * previewWidth;
-  const top = segment.y * previewHeight;
-  const width = segment.width * previewWidth;
-  const height = segment.height * previewHeight;
-
-  const isPixelate = segment.maskType === 'pixelate';
-
-  // Get feather (soft edge) styling - applies to blur and solid masks
-  // Pixelate handles feather internally via the canvas
-  const featherStyle = !isPixelate ? getFeatherMask(segment.feather, width, height) : {};
-
-  // Show gizmo (outline, handles) only when selected
-  const showGizmo = isSelected;
-
   return (
     <div
       className="absolute transition-shadow"
-      style={{
-        left: `${left}px`,
-        top: `${top}px`,
-        width: `${width}px`,
-        height: `${height}px`,
-        cursor: isDragging ? (dragType === 'move' ? 'grabbing' : 'nwse-resize') : 'pointer',
-      }}
+      style={getMaskItemStyle({ segment, previewWidth, previewHeight, isDragging, dragType })}
       onClick={handleClick}
     >
-      {/* Mask effect layer - separate from gizmo outline for proper feathering */}
-      <div
-        className="absolute inset-0 overflow-hidden"
-        style={{
-          ...(isPixelate ? {} : getMaskStyle(segment.maskType, segment.intensity)),
-          '--mask-solid-color': segment.color,
-          ...featherStyle,
-        } as React.CSSProperties}
-      >
-        {/* Canvas-based pixelation for pixelate type */}
-        {isPixelate && (
-          <PixelateCanvas
-            videoElement={videoElement}
-            videoWidth={videoWidth}
-            videoHeight={videoHeight}
-            segmentX={segment.x}
-            segmentY={segment.y}
-            segmentWidth={segment.width}
-            segmentHeight={segment.height}
-            previewWidth={previewWidth}
-            previewHeight={previewHeight}
-            intensity={segment.intensity}
-            feather={segment.feather}
-            cropConfig={cropConfig}
-          />
-        )}
-      </div>
+      <MaskEffectLayer
+        segment={segment}
+        previewWidth={previewWidth}
+        previewHeight={previewHeight}
+        videoElement={videoElement}
+        videoWidth={videoWidth}
+        videoHeight={videoHeight}
+        cropConfig={cropConfig}
+      />
 
-      {/* Gizmo dashed outline - only when selected */}
-      {showGizmo && (
-        <div
-          className="absolute inset-0 border-2 border-dashed border-purple-500 pointer-events-none z-10"
-          style={{ borderRadius: 2 }}
-        />
-      )}
-
-      {/* Move handle (center) */}
       <div
         className="absolute inset-0 cursor-grab active:cursor-grabbing z-10"
         onMouseDown={(e) => handleMouseDown(e, 'move')}
       />
 
-      {/* Corner resize handles - only when selected */}
-      {showGizmo && (
-        <>
-          {/* Top-left */}
-          <div
-            className="absolute -left-1.5 -top-1.5 w-3 h-3 bg-purple-500 rounded-full cursor-nwse-resize shadow-md hover:scale-125 transition-transform z-20"
-            onMouseDown={(e) => handleMouseDown(e, 'resize-tl')}
-          />
-          {/* Top-right */}
-          <div
-            className="absolute -right-1.5 -top-1.5 w-3 h-3 bg-purple-500 rounded-full cursor-nesw-resize shadow-md hover:scale-125 transition-transform z-20"
-            onMouseDown={(e) => handleMouseDown(e, 'resize-tr')}
-          />
-          {/* Bottom-left */}
-          <div
-            className="absolute -left-1.5 -bottom-1.5 w-3 h-3 bg-purple-500 rounded-full cursor-nesw-resize shadow-md hover:scale-125 transition-transform z-20"
-            onMouseDown={(e) => handleMouseDown(e, 'resize-bl')}
-          />
-          {/* Bottom-right */}
-          <div
-            className="absolute -right-1.5 -bottom-1.5 w-3 h-3 bg-purple-500 rounded-full cursor-nwse-resize shadow-md hover:scale-125 transition-transform z-20"
-            onMouseDown={(e) => handleMouseDown(e, 'resize-br')}
-          />
-
-          {/* Info badge */}
-          <div className="absolute -top-6 left-0 bg-purple-600 text-white text-[10px] px-1.5 py-0.5 rounded shadow-sm whitespace-nowrap z-20">
-            {segment.maskType === 'blur' ? 'Blur' : segment.maskType === 'pixelate' ? 'Pixelate' : 'Solid'} {segment.intensity}%
-          </div>
-        </>
-      )}
+      {isSelected && <MaskSelectionGizmo segment={segment} onMouseDown={handleMouseDown} />}
     </div>
   );
 });

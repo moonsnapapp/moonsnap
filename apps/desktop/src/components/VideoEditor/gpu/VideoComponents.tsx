@@ -15,6 +15,119 @@ import {
 import { usePreviewOrPlaybackTime } from '../../../hooks/usePlaybackEngine';
 import { useTimelineToSourceTime } from '../../../hooks/useTimelineSourceTime';
 import { useWebCodecsPreview } from '../../../hooks/useWebCodecsPreview';
+import { startWebCodecsCanvasPolling } from '../webCodecsCanvasPolling';
+
+function isHoveringPreviewTrack(): boolean {
+  return useVideoEditorStore.getState().hoveredTrack !== null;
+}
+
+function useLazyWebCodecsDecoder(previewTimeMs: number | null): boolean {
+  const [shouldInitDecoder, setShouldInitDecoder] = useState(false);
+
+  useEffect(() => {
+    if (!shouldInitDecoder && previewTimeMs !== null) {
+      setShouldInitDecoder(true);
+    }
+  }, [previewTimeMs, shouldInitDecoder]);
+
+  return shouldInitDecoder;
+}
+
+function shouldUseWebCodecsPreviewFrame({
+  isReady,
+  isPlaying,
+  previewTimeMs,
+}: {
+  isReady: boolean;
+  isPlaying: boolean;
+  previewTimeMs: number | null;
+}) {
+  return isReady && !isPlaying && previewTimeMs !== null && !isHoveringPreviewTrack();
+}
+
+function useWebCodecsFramePrefetch({
+  isReady,
+  isPlaying,
+  previewTimeMs,
+  getSourceTime,
+  prefetchAround,
+}: {
+  isReady: boolean;
+  isPlaying: boolean;
+  previewTimeMs: number | null;
+  getSourceTime: (timelineTimeMs: number) => number;
+  prefetchAround: (timeMs: number) => void;
+}) {
+  useEffect(() => {
+    if (!shouldUseWebCodecsPreviewFrame({ isReady, isPlaying, previewTimeMs })) return;
+    if (previewTimeMs === null) return;
+
+    prefetchAround(getSourceTime(previewTimeMs));
+  }, [isReady, isPlaying, previewTimeMs, prefetchAround, getSourceTime]);
+}
+
+function useWebCodecsCanvasDrawing({
+  canvasRef,
+  rafIdRef,
+  lastDrawnTimeRef,
+  isReady,
+  isPlaying,
+  previewTimeMs,
+  getSourceTime,
+  getFrame,
+  setHasFrame,
+}: {
+  canvasRef: React.RefObject<HTMLCanvasElement | null>;
+  rafIdRef: React.MutableRefObject<number>;
+  lastDrawnTimeRef: React.MutableRefObject<number | null>;
+  isReady: boolean;
+  isPlaying: boolean;
+  previewTimeMs: number | null;
+  getSourceTime: (timelineTimeMs: number) => number;
+  getFrame: ReturnType<typeof useWebCodecsPreview>['getFrame'];
+  setHasFrame: React.Dispatch<React.SetStateAction<boolean>>;
+}) {
+  useEffect(() => {
+    if (!shouldUseWebCodecsPreviewFrame({ isReady, isPlaying, previewTimeMs })) {
+      setHasFrame(false);
+      return;
+    }
+    if (previewTimeMs === null) return;
+
+    return startWebCodecsCanvasPolling({
+      canvasRef,
+      rafIdRef,
+      lastDrawnTimeRef,
+      frameTimeMs: getSourceTime(previewTimeMs),
+      getFrame,
+      setHasFrame,
+    });
+  }, [canvasRef, rafIdRef, lastDrawnTimeRef, isReady, isPlaying, previewTimeMs, getFrame, getSourceTime, setHasFrame]);
+}
+
+function shouldShowWebCodecsCanvas({
+  isPlaying,
+  previewTimeMs,
+  isReady,
+  hasFrame,
+}: {
+  isPlaying: boolean;
+  previewTimeMs: number | null;
+  isReady: boolean;
+  hasFrame: boolean;
+}) {
+  return !isPlaying && previewTimeMs !== null && isReady && hasFrame;
+}
+
+function getWebCodecsCanvasStyle(cropStyle: React.CSSProperties | undefined): React.CSSProperties {
+  const hasCrop = cropStyle?.objectFit === 'cover';
+
+  return {
+    zIndex: 5,
+    objectFit: hasCrop ? 'cover' : 'contain',
+    ...cropStyle,
+  };
+}
 
 /**
  * WebCodecs-accelerated preview canvas for instant scrubbing.
@@ -33,112 +146,71 @@ export const WebCodecsCanvasNoZoom = memo(function WebCodecsCanvasNoZoom({
   const lastDrawnTimeRef = useRef<number | null>(null);
   const rafIdRef = useRef<number>(0);
   const [hasFrame, setHasFrame] = useState(false);
-  const [shouldInitDecoder, setShouldInitDecoder] = useState(false);
 
   const previewTimeMs = useVideoEditorStore(selectPreviewTimeMs);
   const isPlaying = useVideoEditorStore(selectIsPlaying);
   const getSourceTime = useTimelineToSourceTime();
+  const shouldInitDecoder = useLazyWebCodecsDecoder(previewTimeMs);
   const decoderVideoPath = shouldInitDecoder ? videoPath : null;
   const { getFrame, prefetchAround, isReady } = useWebCodecsPreview(decoderVideoPath);
 
-  // Avoid opening a second media pipeline during editor startup.
-  // The decoder is only useful while scrubbing preview frames.
-  useEffect(() => {
-    if (!shouldInitDecoder && previewTimeMs !== null) {
-      setShouldInitDecoder(true);
-    }
-  }, [previewTimeMs, shouldInitDecoder]);
-
   // Prefetch frames when preview position changes (use source time).
   // Skip when hovering tracks — only prefetch for ruler scrubbing.
-  useEffect(() => {
-    if (!isReady || isPlaying || previewTimeMs === null) return;
-    const hoveredTrack = useVideoEditorStore.getState().hoveredTrack;
-    if (hoveredTrack !== null) return;
-    const sourceTimeMs = getSourceTime(previewTimeMs);
-    prefetchAround(sourceTimeMs);
-  }, [isReady, isPlaying, previewTimeMs, prefetchAround, getSourceTime]);
+  useWebCodecsFramePrefetch({
+    isReady,
+    isPlaying,
+    previewTimeMs,
+    getSourceTime,
+    prefetchAround,
+  });
 
   // RAF-based canvas drawing - polls for frames without causing React re-renders.
   // Skip when hovering tracks — only draw for ruler scrubbing.
-  useEffect(() => {
-    if (!isReady || isPlaying || previewTimeMs === null) {
-      setHasFrame(false);
-      return;
-    }
-    const hoveredTrack = useVideoEditorStore.getState().hoveredTrack;
-    if (hoveredTrack !== null) {
-      setHasFrame(false);
-      return;
-    }
+  useWebCodecsCanvasDrawing({
+    canvasRef,
+    rafIdRef,
+    lastDrawnTimeRef,
+    isReady,
+    isPlaying,
+    previewTimeMs,
+    getSourceTime,
+    getFrame,
+    setHasFrame,
+  });
 
-    // Convert timeline time to source time for fetching the correct frame
-    const sourceTimeMs = getSourceTime(previewTimeMs);
-
-    let active = true;
-    let attempts = 0;
-    const maxAttempts = 10;
-
-    const tryDraw = () => {
-      if (!active) return;
-
-      const canvas = canvasRef.current;
-      if (!canvas) return;
-
-      const frame = getFrame(sourceTimeMs);
-
-      if (frame) {
-        if (lastDrawnTimeRef.current !== sourceTimeMs) {
-          const ctx = canvas.getContext('2d');
-          if (ctx) {
-            if (canvas.width !== frame.width || canvas.height !== frame.height) {
-              canvas.width = frame.width;
-              canvas.height = frame.height;
-            }
-            ctx.drawImage(frame, 0, 0);
-            lastDrawnTimeRef.current = sourceTimeMs;
-          }
-        }
-        setHasFrame(true);
-      } else {
-        attempts++;
-        if (attempts < maxAttempts) {
-          rafIdRef.current = requestAnimationFrame(tryDraw);
-        } else {
-          setHasFrame(false);
-        }
-      }
-    };
-
-    tryDraw();
-
-    return () => {
-      active = false;
-      if (rafIdRef.current) {
-        cancelAnimationFrame(rafIdRef.current);
-      }
-    };
-  }, [isReady, isPlaying, previewTimeMs, getFrame, getSourceTime]);
-
-  const showCanvas = !isPlaying && previewTimeMs !== null && isReady && hasFrame;
+  const showCanvas = shouldShowWebCodecsCanvas({ isPlaying, previewTimeMs, isReady, hasFrame });
 
   if (!showCanvas) return null;
-
-  // Check if crop style is applied (object-cover with position)
-  const hasCrop = cropStyle && cropStyle.objectFit === 'cover';
 
   return (
     <canvas
       ref={canvasRef}
       className="absolute inset-0 w-full h-full pointer-events-none"
-      style={{
-        zIndex: 5,
-        objectFit: hasCrop ? 'cover' : 'contain',
-        ...cropStyle,
-      }}
+      style={getWebCodecsCanvasStyle(cropStyle)}
     />
   );
 });
+
+function hasCoverCropStyle(cropStyle?: React.CSSProperties) {
+  return cropStyle?.objectFit === 'cover';
+}
+
+function getVideoNoZoomStyle({
+  hidden,
+  cropStyle,
+}: {
+  hidden?: boolean;
+  cropStyle?: React.CSSProperties;
+}): React.CSSProperties {
+  return {
+    minWidth: 320,
+    minHeight: 180,
+    opacity: hidden ? 0 : 1,
+    pointerEvents: hidden ? 'none' : 'auto',
+    objectFit: hasCoverCropStyle(cropStyle) ? 'cover' : 'contain',
+    ...cropStyle,
+  };
+}
 
 /**
  * Memoized video element without zoom transform.
@@ -160,21 +232,12 @@ export const VideoNoZoom = memo(function VideoNoZoom({
 }) {
   // Video seeking is handled by usePlaybackSync — no duplicate seek here.
   // Default to contain, but crop style can override with cover + position
-  const hasCrop = cropStyle && cropStyle.objectFit === 'cover';
-
   return (
     <video
       ref={videoRef}
       src={videoSrc}
       className="w-full h-full cursor-pointer bg-[var(--polar-ice)]"
-      style={{
-        minWidth: 320,
-        minHeight: 180,
-        opacity: hidden ? 0 : 1,
-        pointerEvents: hidden ? 'none' : 'auto',
-        objectFit: hasCrop ? 'cover' : 'contain',
-        ...cropStyle,
-      }}
+      style={getVideoNoZoomStyle({ hidden, cropStyle })}
       onClick={onVideoClick}
       playsInline
       preload="auto"
@@ -185,6 +248,51 @@ export const VideoNoZoom = memo(function VideoNoZoom({
 /**
  * Fullscreen webcam display for cameraOnly scene mode.
  */
+function playFullscreenWebcam(video: HTMLVideoElement, getSourceTime: (timeMs: number) => number) {
+  const timelineTime = useVideoEditorStore.getState().currentTimeMs;
+  const sourceTime = getSourceTime(timelineTime);
+  video.currentTime = sourceTime / 1000;
+  video.play().catch(() => {});
+}
+
+function shouldPlayFullscreenWebcam(video: HTMLVideoElement, isPlaying: boolean): boolean {
+  return isPlaying && video.paused;
+}
+
+function shouldPauseFullscreenWebcam(video: HTMLVideoElement, isPlaying: boolean): boolean {
+  return !isPlaying && !video.paused;
+}
+
+function syncFullscreenWebcamPlayback(
+  video: HTMLVideoElement | null,
+  isPlaying: boolean,
+  getSourceTime: (timeMs: number) => number
+) {
+  if (!video) return;
+
+  if (shouldPlayFullscreenWebcam(video, isPlaying)) {
+    playFullscreenWebcam(video, getSourceTime);
+    return;
+  }
+
+  if (shouldPauseFullscreenWebcam(video, isPlaying)) {
+    video.pause();
+  }
+}
+
+function seekFullscreenWebcamIfNeeded(
+  video: HTMLVideoElement | null,
+  targetTime: number,
+  isPlaying: boolean
+) {
+  if (!video || isPlaying) return;
+
+  const diff = Math.abs(video.currentTime - targetTime);
+  if (diff > 0.05) {
+    video.currentTime = targetTime;
+  }
+}
+
 export const FullscreenWebcam = memo(function FullscreenWebcam({
   webcamVideoPath,
   mirror,
@@ -203,18 +311,7 @@ export const FullscreenWebcam = memo(function FullscreenWebcam({
 
   // Sync webcam video play/pause state with main playback
   useEffect(() => {
-    const video = videoRef.current;
-    if (!video) return;
-
-    if (isPlaying && video.paused) {
-      // Read current time once from store, don't subscribe to updates
-      const timelineTime = useVideoEditorStore.getState().currentTimeMs;
-      const sourceTime = getSourceTime(timelineTime);
-      video.currentTime = sourceTime / 1000;
-      video.play().catch(() => {});
-    } else if (!isPlaying && !video.paused) {
-      video.pause();
-    }
+    syncFullscreenWebcamPlayback(videoRef.current, isPlaying, getSourceTime);
   }, [isPlaying, getSourceTime]); // Remove currentTimeMs - only respond to play/pause changes
 
   // Seek webcam video when scrubbing (not playing)
@@ -225,12 +322,7 @@ export const FullscreenWebcam = memo(function FullscreenWebcam({
 
     const sourceTimeMs = getSourceTime(currentTimeMs);
     const targetTime = sourceTimeMs / 1000;
-    const diff = Math.abs(video.currentTime - targetTime);
-
-    // Use smaller threshold for more responsive scrubbing
-    if (diff > 0.05) {
-      video.currentTime = targetTime;
-    }
+    seekFullscreenWebcamIfNeeded(video, targetTime, isPlaying);
   }, [currentTimeMs, isPlaying, getSourceTime]);
 
   return (

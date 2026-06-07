@@ -53,6 +53,135 @@ interface DragState {
 const HANDLE_SIZE_PX = 10;
 const ARROW_HANDLE_SIZE_PX = 12;
 
+type AnnotationShapeUpdate = Partial<AnnotationShape>;
+
+function getResizeGeometry(
+  shape: AnnotationShape,
+  mode: DragMode,
+  deltaX: number,
+  deltaY: number
+) {
+  switch (mode) {
+    case 'resize-tl':
+      return {
+        x: shape.x + deltaX,
+        y: shape.y + deltaY,
+        width: shape.width - deltaX,
+        height: shape.height - deltaY,
+      };
+    case 'resize-tr':
+      return {
+        x: shape.x,
+        y: shape.y + deltaY,
+        width: shape.width + deltaX,
+        height: shape.height - deltaY,
+      };
+    case 'resize-bl':
+      return {
+        x: shape.x + deltaX,
+        y: shape.y,
+        width: shape.width - deltaX,
+        height: shape.height + deltaY,
+      };
+    case 'resize-br':
+      return {
+        x: shape.x,
+        y: shape.y,
+        width: shape.width + deltaX,
+        height: shape.height + deltaY,
+      };
+    default:
+      return {
+        x: shape.x,
+        y: shape.y,
+        width: shape.width,
+        height: shape.height,
+      };
+  }
+}
+
+function normalizeStepResizeGeometry(
+  shape: AnnotationShape,
+  mode: DragMode,
+  geometry: { x: number; y: number; width: number; height: number }
+) {
+  if (
+    shape.shapeType !== 'step' ||
+    !['resize-tl', 'resize-tr', 'resize-bl', 'resize-br'].includes(mode)
+  ) {
+    return geometry;
+  }
+
+  const size = Math.max(geometry.width, geometry.height);
+  const initialRight = shape.x + shape.width;
+  const initialBottom = shape.y + shape.height;
+
+  switch (mode) {
+    case 'resize-tl':
+      return { x: initialRight - size, y: initialBottom - size, width: size, height: size };
+    case 'resize-tr':
+      return { x: shape.x, y: initialBottom - size, width: size, height: size };
+    case 'resize-bl':
+      return { x: initialRight - size, y: shape.y, width: size, height: size };
+    default:
+      return { x: shape.x, y: shape.y, width: size, height: size };
+  }
+}
+
+function getAnnotationDragUpdate(
+  dragState: DragState,
+  event: PointerEvent,
+  previewWidth: number,
+  previewHeight: number
+): AnnotationShapeUpdate {
+  const contentZoomScale = Math.max(dragState.zoomScale, 0.001);
+  const deltaX = (event.clientX - dragState.startX) / (previewWidth * contentZoomScale);
+  const deltaY = (event.clientY - dragState.startY) / (previewHeight * contentZoomScale);
+  const shape = dragState.initialShape;
+  const minSize = ANNOTATIONS.MIN_NORMALIZED_SIZE;
+
+  if (dragState.mode === 'move' && isEndpointAnnotationShapeType(shape.shapeType)) {
+    const endpoints = getAnnotationArrowEndpoints(shape);
+    return getAnnotationArrowShapeUpdate(shape, {
+      tailX: endpoints.tailX + deltaX,
+      tailY: endpoints.tailY + deltaY,
+      headX: endpoints.headX + deltaX,
+      headY: endpoints.headY + deltaY,
+    });
+  }
+
+  if (dragState.mode === 'move') {
+    return {
+      x: shape.x + deltaX,
+      y: shape.y + deltaY,
+      width: shape.width,
+      height: shape.height,
+    };
+  }
+
+  if (dragState.mode === 'arrow-start' || dragState.mode === 'arrow-end') {
+    const endpoints = getAnnotationArrowEndpoints(shape);
+    return getAnnotationArrowShapeUpdate(shape, dragState.mode === 'arrow-start'
+      ? {
+          tailX: endpoints.tailX + deltaX,
+          tailY: endpoints.tailY + deltaY,
+        }
+      : {
+          headX: endpoints.headX + deltaX,
+          headY: endpoints.headY + deltaY,
+        });
+  }
+
+  const resized = getResizeGeometry(shape, dragState.mode, deltaX, deltaY);
+  const normalized = normalizeStepResizeGeometry(shape, dragState.mode, {
+    ...resized,
+    width: Math.max(minSize, resized.width),
+    height: Math.max(minSize, resized.height),
+  });
+
+  return normalized;
+}
+
 function AnnotationShapeNode({
   segmentId,
   shape,
@@ -267,108 +396,11 @@ export const AnnotationOverlay = memo(function AnnotationOverlay({
         return;
       }
 
-      const contentZoomScale = Math.max(dragState.zoomScale, 0.001);
-      const deltaX = (event.clientX - dragState.startX) / (previewWidth * contentZoomScale);
-      const deltaY = (event.clientY - dragState.startY) / (previewHeight * contentZoomScale);
-      const minSize = ANNOTATIONS.MIN_NORMALIZED_SIZE;
-
-      let nextX = dragState.initialShape.x;
-      let nextY = dragState.initialShape.y;
-      let nextWidth = dragState.initialShape.width;
-      let nextHeight = dragState.initialShape.height;
-      let arrowUpdates:
-        | ReturnType<typeof getAnnotationArrowShapeUpdate>
-        | null = null;
-
-      if (dragState.mode === 'move') {
-        if (isEndpointAnnotationShapeType(dragState.initialShape.shapeType)) {
-          const endpoints = getAnnotationArrowEndpoints(dragState.initialShape);
-          arrowUpdates = getAnnotationArrowShapeUpdate(dragState.initialShape, {
-            tailX: endpoints.tailX + deltaX,
-            tailY: endpoints.tailY + deltaY,
-            headX: endpoints.headX + deltaX,
-            headY: endpoints.headY + deltaY,
-          });
-          nextX = arrowUpdates.x;
-          nextY = arrowUpdates.y;
-          nextWidth = arrowUpdates.width;
-          nextHeight = arrowUpdates.height;
-        } else {
-          nextX = dragState.initialShape.x + deltaX;
-          nextY = dragState.initialShape.y + deltaY;
-        }
-      } else if (dragState.mode === 'arrow-start' || dragState.mode === 'arrow-end') {
-        const endpoints = getAnnotationArrowEndpoints(dragState.initialShape);
-        arrowUpdates = getAnnotationArrowShapeUpdate(dragState.initialShape, dragState.mode === 'arrow-start'
-          ? {
-              tailX: endpoints.tailX + deltaX,
-              tailY: endpoints.tailY + deltaY,
-            }
-          : {
-              headX: endpoints.headX + deltaX,
-              headY: endpoints.headY + deltaY,
-            });
-        nextX = arrowUpdates.x;
-        nextY = arrowUpdates.y;
-        nextWidth = arrowUpdates.width;
-        nextHeight = arrowUpdates.height;
-      } else if (dragState.mode === 'resize-tl') {
-        nextX = dragState.initialShape.x + deltaX;
-        nextY = dragState.initialShape.y + deltaY;
-        nextWidth = dragState.initialShape.width - deltaX;
-        nextHeight = dragState.initialShape.height - deltaY;
-      } else if (dragState.mode === 'resize-tr') {
-        nextY = dragState.initialShape.y + deltaY;
-        nextWidth = dragState.initialShape.width + deltaX;
-        nextHeight = dragState.initialShape.height - deltaY;
-      } else if (dragState.mode === 'resize-bl') {
-        nextX = dragState.initialShape.x + deltaX;
-        nextWidth = dragState.initialShape.width - deltaX;
-        nextHeight = dragState.initialShape.height + deltaY;
-      } else if (dragState.mode === 'resize-br') {
-        nextWidth = dragState.initialShape.width + deltaX;
-        nextHeight = dragState.initialShape.height + deltaY;
-      }
-
-      nextWidth = Math.max(minSize, nextWidth);
-      nextHeight = Math.max(minSize, nextHeight);
-
-      if (
-        dragState.initialShape.shapeType === 'step' &&
-        (dragState.mode === 'resize-tl' ||
-          dragState.mode === 'resize-tr' ||
-          dragState.mode === 'resize-bl' ||
-          dragState.mode === 'resize-br')
-      ) {
-        const size = Math.max(nextWidth, nextHeight);
-        const initialRight = dragState.initialShape.x + dragState.initialShape.width;
-        const initialBottom = dragState.initialShape.y + dragState.initialShape.height;
-
-        nextWidth = size;
-        nextHeight = size;
-
-        if (dragState.mode === 'resize-tl') {
-          nextX = initialRight - size;
-          nextY = initialBottom - size;
-        } else if (dragState.mode === 'resize-tr') {
-          nextX = dragState.initialShape.x;
-          nextY = initialBottom - size;
-        } else if (dragState.mode === 'resize-bl') {
-          nextX = initialRight - size;
-          nextY = dragState.initialShape.y;
-        } else {
-          nextX = dragState.initialShape.x;
-          nextY = dragState.initialShape.y;
-        }
-      }
-
-      updateAnnotationShape(dragState.segmentId, dragState.shapeId, {
-        x: nextX,
-        y: nextY,
-        width: nextWidth,
-        height: nextHeight,
-        ...(arrowUpdates ?? {}),
-      });
+      updateAnnotationShape(
+        dragState.segmentId,
+        dragState.shapeId,
+        getAnnotationDragUpdate(dragState, event, previewWidth, previewHeight)
+      );
     };
 
     const handlePointerUp = () => {

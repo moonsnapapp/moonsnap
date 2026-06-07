@@ -34,6 +34,242 @@ interface DirCheckResult {
   locked_files: string[];
 }
 
+interface SaveDirMovePrompt {
+  source: string;
+  target: string;
+  itemCount: number;
+}
+
+const INITIAL_MOVE_PROGRESS: MoveProgress = { moved: 0, total: 0, name: '' };
+
+/** If the picked folder is already called "MoonSnap" use it as-is,
+ *  otherwise append a MoonSnap subfolder so captures stay organised. */
+function ensureMoonSnapFolder(dir: string): string {
+  const trimmed = dir.replace(/[\\/]+$/, '');
+  const basename = trimmed.split(/[\\/]/).pop() ?? '';
+  return basename === 'MoonSnap' ? trimmed : `${trimmed}\\MoonSnap`;
+}
+
+async function getSaveDirMovePrompt(
+  currentDir: string | null | undefined,
+  targetDir: string
+): Promise<SaveDirMovePrompt | null> {
+  if (!currentDir) return null;
+
+  const result = await invoke<DirCheckResult>('check_dir_for_move', { path: currentDir });
+  if (result.item_count === 0) return null;
+
+  return {
+    source: currentDir,
+    target: targetDir,
+    itemCount: result.item_count,
+  };
+}
+
+function getMoveProgressPercent(moveProgress: MoveProgress) {
+  return moveProgress.total > 0
+    ? Math.round((moveProgress.moved / moveProgress.total) * 100)
+    : 0;
+}
+
+interface MoveSaveDirDialogProps {
+  open: boolean;
+  moveStage: MoveStage;
+  moveSource: string;
+  moveTarget: string;
+  moveItemCount: number;
+  moveProgress: MoveProgress;
+  moveError: string | null;
+  lockedFiles: string[];
+  isChecking: boolean;
+  onOpenChange: (open: boolean) => void;
+  onSkipMove: () => void;
+  onAcceptMove: () => void;
+  onRetryMoveCheck: () => void;
+  onMoveConfirm: () => void;
+}
+
+function MoveSaveDirDialog({
+  open,
+  moveStage,
+  moveSource,
+  moveTarget,
+  moveItemCount,
+  moveProgress,
+  moveError,
+  lockedFiles,
+  isChecking,
+  onOpenChange,
+  onSkipMove,
+  onAcceptMove,
+  onRetryMoveCheck,
+  onMoveConfirm,
+}: MoveSaveDirDialogProps) {
+  const moveProgressPercent = getMoveProgressPercent(moveProgress);
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent hideCloseButton={moveStage === 'moving'}>
+        {moveStage === 'ask-move' && (
+          <>
+            <DialogHeader>
+              <DialogTitle>Move Existing Files?</DialogTitle>
+              <DialogDescription>
+                Your current save folder has {moveItemCount} {moveItemCount === 1 ? 'item' : 'items'}.
+                Would you like to move them to the new location?
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-2 text-sm">
+              <MovePathSummary label="From" path={moveSource} />
+              <MovePathSummary label="To" path={moveTarget} />
+            </div>
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={onSkipMove}
+                className="bg-[var(--card)] border-[var(--polar-frost)] text-[var(--ink-dark)] hover:bg-[var(--polar-ice)]"
+              >
+                No, Just Change Location
+              </Button>
+              <Button
+                type="button"
+                onClick={onAcceptMove}
+                disabled={isChecking}
+                className="bg-[var(--accent-400)] text-white hover:bg-[var(--accent-500)]"
+              >
+                {isChecking ? 'Checking...' : 'Yes, Move Files'}
+              </Button>
+            </DialogFooter>
+          </>
+        )}
+
+        {moveStage === 'locked' && (
+          <>
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <AlertTriangle className="w-5 h-5 text-amber-500" aria-hidden="true" />
+                Files In Use
+              </DialogTitle>
+              <DialogDescription>
+                Some files are currently in use and cannot be moved. Close any applications using these files, then retry.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="max-h-40 overflow-y-auto rounded bg-[var(--polar-mist)] p-2">
+              {lockedFiles.map((file) => (
+                <p key={file} className="font-mono text-xs text-[var(--ink-dark)] py-0.5 truncate">
+                  {file}
+                </p>
+              ))}
+            </div>
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => onOpenChange(false)}
+                className="bg-[var(--card)] border-[var(--polar-frost)] text-[var(--ink-dark)] hover:bg-[var(--polar-ice)]"
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                onClick={onRetryMoveCheck}
+                disabled={isChecking}
+                className="bg-[var(--accent-400)] text-white hover:bg-[var(--accent-500)]"
+              >
+                {isChecking ? 'Checking...' : 'Retry'}
+              </Button>
+            </DialogFooter>
+          </>
+        )}
+
+        {moveStage === 'confirm' && (
+          <>
+            <DialogHeader>
+              <DialogTitle>Move Save Folder</DialogTitle>
+              <DialogDescription>
+                Move {moveItemCount} {moveItemCount === 1 ? 'item' : 'items'} to the new location.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-2 text-sm">
+              <MovePathSummary label="From" path={moveSource} />
+              <MovePathSummary label="To" path={moveTarget} />
+            </div>
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => onOpenChange(false)}
+                className="bg-[var(--card)] border-[var(--polar-frost)] text-[var(--ink-dark)] hover:bg-[var(--polar-ice)]"
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                onClick={onMoveConfirm}
+                className="bg-[var(--accent-400)] text-white hover:bg-[var(--accent-500)]"
+              >
+                Move Files
+              </Button>
+            </DialogFooter>
+          </>
+        )}
+
+        {moveStage === 'moving' && (
+          <>
+            <DialogHeader>
+              <DialogTitle>Moving Files...</DialogTitle>
+              <DialogDescription>
+                Please wait while your files are being moved.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-3">
+              <div className="h-2 bg-[var(--polar-mist)] rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-[var(--accent-400)] transition-all duration-300"
+                  style={{ width: `${moveProgressPercent}%` }}
+                />
+              </div>
+              <div className="flex items-center justify-between text-xs text-[var(--ink-muted)]">
+                <span className="truncate max-w-[200px]">{moveProgress.name || 'Preparing...'}</span>
+                <span>{moveProgress.moved} / {moveProgress.total}</span>
+              </div>
+              {moveError && (
+                <p className="text-xs text-red-500 mt-2">{moveError}</p>
+              )}
+            </div>
+          </>
+        )}
+
+        {moveStage === 'done' && (
+          <>
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <CheckCircle2 className="w-5 h-5 text-green-500" aria-hidden="true" />
+                Move Complete
+              </DialogTitle>
+              <DialogDescription>
+                All files have been moved to the new location.
+              </DialogDescription>
+            </DialogHeader>
+          </>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function MovePathSummary({ label, path }: { label: string; path: string }) {
+  return (
+    <div>
+      <span className="text-[var(--ink-muted)]">{label}:</span>
+      <p className="font-mono text-xs text-[var(--ink-dark)] bg-[var(--polar-mist)] rounded px-2 py-1 mt-0.5 break-all">
+        {path}
+      </p>
+    </div>
+  );
+}
+
 export const GeneralTab: React.FC = () => {
   const { settings, updateGeneralSettings } = useSettingsStore();
   const { general } = settings;
@@ -48,7 +284,7 @@ export const GeneralTab: React.FC = () => {
   const [moveSource, setMoveSource] = useState('');
   const [moveTarget, setMoveTarget] = useState('');
   const [moveItemCount, setMoveItemCount] = useState(0);
-  const [moveProgress, setMoveProgress] = useState<MoveProgress>({ moved: 0, total: 0, name: '' });
+  const [moveProgress, setMoveProgress] = useState<MoveProgress>(INITIAL_MOVE_PROGRESS);
   const [moveError, setMoveError] = useState<string | null>(null);
   const [lockedFiles, setLockedFiles] = useState<string[]>([]);
   const [isChecking, setIsChecking] = useState(false);
@@ -109,13 +345,28 @@ export const GeneralTab: React.FC = () => {
     }
   }, []);
 
-  /** If the picked folder is already called "MoonSnap" use it as-is,
-   *  otherwise append a MoonSnap subfolder so captures stay organised. */
-  const ensureMoonSnapFolder = (dir: string): string => {
-    const trimmed = dir.replace(/[\\/]+$/, '');
-    const basename = trimmed.split(/[\\/]/).pop() ?? '';
-    return basename === 'MoonSnap' ? trimmed : `${trimmed}\\MoonSnap`;
-  };
+  const openMovePrompt = useCallback((prompt: SaveDirMovePrompt) => {
+    setMoveSource(prompt.source);
+    setMoveTarget(prompt.target);
+    setMoveItemCount(prompt.itemCount);
+    setMoveError(null);
+    setMoveProgress(INITIAL_MOVE_PROGRESS);
+    setLockedFiles([]);
+    setMoveStage('ask-move');
+    setMoveDialogOpen(true);
+  }, []);
+
+  const applySaveDirChange = useCallback(async (saveDir: string) => {
+    if (saveDir === general.defaultSaveDir) return;
+
+    const movePrompt = await getSaveDirMovePrompt(general.defaultSaveDir, saveDir);
+    if (!movePrompt) {
+      updateGeneralSettings({ defaultSaveDir: saveDir });
+      return;
+    }
+
+    openMovePrompt(movePrompt);
+  }, [general.defaultSaveDir, openMovePrompt, updateGeneralSettings]);
 
   /** Open folder picker, then show ask-move dialog if there are existing files. */
   const handleBrowseSaveDir = async () => {
@@ -127,34 +378,7 @@ export const GeneralTab: React.FC = () => {
       });
       if (!selected || typeof selected !== 'string') return;
 
-      const saveDir = ensureMoonSnapFolder(selected);
-
-      if (saveDir === general.defaultSaveDir) return;
-
-      const currentDir = general.defaultSaveDir;
-      if (!currentDir) {
-        // No previous dir — just set it
-        updateGeneralSettings({ defaultSaveDir: saveDir });
-        return;
-      }
-
-      // Check if old dir has any files worth moving
-      const result = await invoke<DirCheckResult>('check_dir_for_move', { path: currentDir });
-      if (result.item_count === 0) {
-        // Nothing to move — just change the setting
-        updateGeneralSettings({ defaultSaveDir: saveDir });
-        return;
-      }
-
-      // Has files — ask the user
-      setMoveSource(currentDir);
-      setMoveTarget(saveDir);
-      setMoveItemCount(result.item_count);
-      setMoveError(null);
-      setMoveProgress({ moved: 0, total: 0, name: '' });
-      setLockedFiles([]);
-      setMoveStage('ask-move');
-      setMoveDialogOpen(true);
+      await applySaveDirChange(ensureMoonSnapFolder(selected));
     } catch (error) {
       settingsLogger.error('Failed to open directory picker:', error);
     }
@@ -163,35 +387,11 @@ export const GeneralTab: React.FC = () => {
   const handleResetSaveDir = async () => {
     try {
       const defaultDir = await invoke<string>('get_default_save_dir');
-      if (defaultDir === general.defaultSaveDir) return;
-
-      const currentDir = general.defaultSaveDir;
-      if (!currentDir) {
-        updateGeneralSettings({ defaultSaveDir: defaultDir });
-        return;
-      }
-
-      // Check if old dir has files
-      const result = await invoke<DirCheckResult>('check_dir_for_move', { path: currentDir });
-      if (result.item_count === 0) {
-        updateGeneralSettings({ defaultSaveDir: defaultDir });
-        return;
-      }
-
-      // Has files — ask the user
-      setMoveSource(currentDir);
-      setMoveTarget(defaultDir);
-      setMoveItemCount(result.item_count);
-      setMoveError(null);
-      setMoveProgress({ moved: 0, total: 0, name: '' });
-      setLockedFiles([]);
-      setMoveStage('ask-move');
-      setMoveDialogOpen(true);
+      await applySaveDirChange(defaultDir);
     } catch (error) {
       settingsLogger.error('Failed to reset save dir:', error);
     }
   };
-
   /** User chose "Yes, move files" from ask-move stage */
   const handleAcceptMove = useCallback(() => {
     runMoveCheck(moveSource);
@@ -263,10 +463,6 @@ export const GeneralTab: React.FC = () => {
   const handleThemeChange = (theme: Theme) => {
     setTheme(theme);
   };
-
-  const moveProgressPercent = moveProgress.total > 0
-    ? Math.round((moveProgress.moved / moveProgress.total) * 100)
-    : 0;
 
   return (
     <div className="space-y-6">
@@ -421,188 +617,26 @@ export const GeneralTab: React.FC = () => {
         </div>
       </section>
 
-      {/* Move / Change Location Dialog */}
-      <Dialog
+      <MoveSaveDirDialog
         open={moveDialogOpen}
+        moveStage={moveStage}
+        moveSource={moveSource}
+        moveTarget={moveTarget}
+        moveItemCount={moveItemCount}
+        moveProgress={moveProgress}
+        moveError={moveError}
+        lockedFiles={lockedFiles}
+        isChecking={isChecking}
         onOpenChange={(open) => {
           if (!open && moveStage !== 'moving') {
             setMoveDialogOpen(false);
           }
         }}
-      >
-        <DialogContent hideCloseButton={moveStage === 'moving'}>
-          {/* Stage 1: Ask whether to move existing files */}
-          {moveStage === 'ask-move' && (
-            <>
-              <DialogHeader>
-                <DialogTitle>Move Existing Files?</DialogTitle>
-                <DialogDescription>
-                  Your current save folder has {moveItemCount} {moveItemCount === 1 ? 'item' : 'items'}.
-                  Would you like to move them to the new location?
-                </DialogDescription>
-              </DialogHeader>
-              <div className="space-y-2 text-sm">
-                <div>
-                  <span className="text-[var(--ink-muted)]">From:</span>
-                  <p className="font-mono text-xs text-[var(--ink-dark)] bg-[var(--polar-mist)] rounded px-2 py-1 mt-0.5 break-all">
-                    {moveSource}
-                  </p>
-                </div>
-                <div>
-                  <span className="text-[var(--ink-muted)]">To:</span>
-                  <p className="font-mono text-xs text-[var(--ink-dark)] bg-[var(--polar-mist)] rounded px-2 py-1 mt-0.5 break-all">
-                    {moveTarget}
-                  </p>
-                </div>
-              </div>
-              <DialogFooter>
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={handleSkipMove}
-                  className="bg-[var(--card)] border-[var(--polar-frost)] text-[var(--ink-dark)] hover:bg-[var(--polar-ice)]"
-                >
-                  No, Just Change Location
-                </Button>
-                <Button
-                  type="button"
-                  onClick={handleAcceptMove}
-                  disabled={isChecking}
-                  className="bg-[var(--accent-400)] text-white hover:bg-[var(--accent-500)]"
-                >
-                  {isChecking ? 'Checking…' : 'Yes, Move Files'}
-                </Button>
-              </DialogFooter>
-            </>
-          )}
-
-          {/* Stage 2 (conditional): Locked files warning */}
-          {moveStage === 'locked' && (
-            <>
-              <DialogHeader>
-                <DialogTitle className="flex items-center gap-2">
-                  <AlertTriangle className="w-5 h-5 text-amber-500" aria-hidden="true" />
-                  Files In Use
-                </DialogTitle>
-                <DialogDescription>
-                  Some files are currently in use and cannot be moved. Close any applications using these files, then retry.
-                </DialogDescription>
-              </DialogHeader>
-              <div className="max-h-40 overflow-y-auto rounded bg-[var(--polar-mist)] p-2">
-                {lockedFiles.map((file) => (
-                  <p key={file} className="font-mono text-xs text-[var(--ink-dark)] py-0.5 truncate">
-                    {file}
-                  </p>
-                ))}
-              </div>
-              <DialogFooter>
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => setMoveDialogOpen(false)}
-                  className="bg-[var(--card)] border-[var(--polar-frost)] text-[var(--ink-dark)] hover:bg-[var(--polar-ice)]"
-                >
-                  Cancel
-                </Button>
-                <Button
-                  type="button"
-                  onClick={handleRetryMoveCheck}
-                  disabled={isChecking}
-                  className="bg-[var(--accent-400)] text-white hover:bg-[var(--accent-500)]"
-                >
-                  {isChecking ? 'Checking…' : 'Retry'}
-                </Button>
-              </DialogFooter>
-            </>
-          )}
-
-          {/* Stage 3: Confirm move */}
-          {moveStage === 'confirm' && (
-            <>
-              <DialogHeader>
-                <DialogTitle>Move Save Folder</DialogTitle>
-                <DialogDescription>
-                  Move {moveItemCount} {moveItemCount === 1 ? 'item' : 'items'} to the new location.
-                </DialogDescription>
-              </DialogHeader>
-              <div className="space-y-2 text-sm">
-                <div>
-                  <span className="text-[var(--ink-muted)]">From:</span>
-                  <p className="font-mono text-xs text-[var(--ink-dark)] bg-[var(--polar-mist)] rounded px-2 py-1 mt-0.5 break-all">
-                    {moveSource}
-                  </p>
-                </div>
-                <div>
-                  <span className="text-[var(--ink-muted)]">To:</span>
-                  <p className="font-mono text-xs text-[var(--ink-dark)] bg-[var(--polar-mist)] rounded px-2 py-1 mt-0.5 break-all">
-                    {moveTarget}
-                  </p>
-                </div>
-              </div>
-              <DialogFooter>
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => setMoveDialogOpen(false)}
-                  className="bg-[var(--card)] border-[var(--polar-frost)] text-[var(--ink-dark)] hover:bg-[var(--polar-ice)]"
-                >
-                  Cancel
-                </Button>
-                <Button
-                  type="button"
-                  onClick={handleMoveConfirm}
-                  className="bg-[var(--accent-400)] text-white hover:bg-[var(--accent-500)]"
-                >
-                  Move Files
-                </Button>
-              </DialogFooter>
-            </>
-          )}
-
-          {/* Stage 4: Moving in progress */}
-          {moveStage === 'moving' && (
-            <>
-              <DialogHeader>
-                <DialogTitle>Moving Files…</DialogTitle>
-                <DialogDescription>
-                  Please wait while your files are being moved.
-                </DialogDescription>
-              </DialogHeader>
-              <div className="space-y-3">
-                <div className="h-2 bg-[var(--polar-mist)] rounded-full overflow-hidden">
-                  <div
-                    className="h-full bg-[var(--accent-400)] transition-all duration-300"
-                    style={{ width: `${moveProgressPercent}%` }}
-                  />
-                </div>
-                <div className="flex items-center justify-between text-xs text-[var(--ink-muted)]">
-                  <span className="truncate max-w-[200px]">{moveProgress.name || 'Preparing…'}</span>
-                  <span>{moveProgress.moved} / {moveProgress.total}</span>
-                </div>
-                {moveError && (
-                  <p className="text-xs text-red-500 mt-2">{moveError}</p>
-                )}
-              </div>
-            </>
-          )}
-
-          {/* Stage 5: Done */}
-          {moveStage === 'done' && (
-            <>
-              <DialogHeader>
-                <DialogTitle className="flex items-center gap-2">
-                  <CheckCircle2 className="w-5 h-5 text-green-500" aria-hidden="true" />
-                  Move Complete
-                </DialogTitle>
-                <DialogDescription>
-                  All files have been moved to the new location.
-                </DialogDescription>
-              </DialogHeader>
-            </>
-          )}
-        </DialogContent>
-      </Dialog>
-
+        onSkipMove={handleSkipMove}
+        onAcceptMove={handleAcceptMove}
+        onRetryMoveCheck={handleRetryMoveCheck}
+        onMoveConfirm={handleMoveConfirm}
+      />
       {/* Updates Section */}
       <section>
         <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--accent-400)] mb-3">

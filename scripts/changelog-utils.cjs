@@ -8,6 +8,99 @@ const SECTION_HEADER_RE = /^###\s+(.+)$/;
 const BULLET_RE = /^-\s+(.+)$/;
 const CONTINUATION_RE = /^\s{2,}(.+)$/;
 
+function createParserState() {
+  return {
+    entries: [],
+    currentEntry: null,
+    currentSection: null,
+  };
+}
+
+function flushSection(state) {
+  if (!state.currentEntry || !state.currentSection) {
+    return;
+  }
+  if (state.currentSection.items.length > 0) {
+    state.currentEntry.sections.push(state.currentSection);
+  }
+  state.currentSection = null;
+}
+
+function flushEntry(state) {
+  flushSection(state);
+  if (state.currentEntry) {
+    state.entries.push(state.currentEntry);
+  }
+  state.currentEntry = null;
+}
+
+function startEntry(state, versionMatch) {
+  flushEntry(state);
+  state.currentEntry = {
+    version: versionMatch[1].trim(),
+    date: versionMatch[2].trim(),
+    sections: [],
+  };
+}
+
+function startSection(state, sectionMatch) {
+  flushSection(state);
+  state.currentSection = {
+    title: sectionMatch[1].trim(),
+    items: [],
+  };
+}
+
+function appendContinuation(section, continuationMatch) {
+  if (section.items.length === 0) {
+    return;
+  }
+
+  const lastIndex = section.items.length - 1;
+  section.items[lastIndex] = `${section.items[lastIndex]} ${continuationMatch[1].trim()}`;
+}
+
+function processSectionLine(section, line) {
+  const bulletMatch = line.match(BULLET_RE);
+  if (bulletMatch) {
+    section.items.push(bulletMatch[1].trim());
+    return;
+  }
+
+  const continuationMatch = line.match(CONTINUATION_RE);
+  if (continuationMatch) {
+    appendContinuation(section, continuationMatch);
+  }
+}
+
+function processEntryLine(state, line) {
+  const sectionMatch = line.match(SECTION_HEADER_RE);
+  if (sectionMatch) {
+    startSection(state, sectionMatch);
+    return;
+  }
+
+  if (!state.currentSection) {
+    return;
+  }
+
+  processSectionLine(state.currentSection, line);
+}
+
+function processChangelogLine(state, line) {
+  const versionMatch = line.match(VERSION_HEADER_RE);
+  if (versionMatch) {
+    startEntry(state, versionMatch);
+    return;
+  }
+
+  if (!state.currentEntry) {
+    return;
+  }
+
+  processEntryLine(state, line);
+}
+
 /**
  * Parse a Keep a Changelog style markdown file.
  * @param {string} markdown
@@ -22,77 +115,17 @@ const CONTINUATION_RE = /^\s{2,}(.+)$/;
  */
 function parseChangelogMarkdown(markdown) {
   const lines = markdown.replace(/\r\n/g, "\n").split("\n");
-  const entries = [];
-
-  let currentEntry = null;
-  let currentSection = null;
-
-  const flushSection = () => {
-    if (!currentEntry || !currentSection) {
-      return;
-    }
-    if (currentSection.items.length > 0) {
-      currentEntry.sections.push(currentSection);
-    }
-    currentSection = null;
-  };
-
-  const flushEntry = () => {
-    flushSection();
-    if (currentEntry) {
-      entries.push(currentEntry);
-    }
-    currentEntry = null;
-  };
+  const state = createParserState();
 
   for (const line of lines) {
-    const versionMatch = line.match(VERSION_HEADER_RE);
-    if (versionMatch) {
-      flushEntry();
-      currentEntry = {
-        version: versionMatch[1].trim(),
-        date: versionMatch[2].trim(),
-        sections: [],
-      };
-      continue;
-    }
-
-    if (!currentEntry) {
-      continue;
-    }
-
-    const sectionMatch = line.match(SECTION_HEADER_RE);
-    if (sectionMatch) {
-      flushSection();
-      currentSection = {
-        title: sectionMatch[1].trim(),
-        items: [],
-      };
-      continue;
-    }
-
-    if (!currentSection) {
-      continue;
-    }
-
-    const bulletMatch = line.match(BULLET_RE);
-    if (bulletMatch) {
-      currentSection.items.push(bulletMatch[1].trim());
-      continue;
-    }
-
-    const continuationMatch = line.match(CONTINUATION_RE);
-    if (continuationMatch && currentSection.items.length > 0) {
-      const lastIndex = currentSection.items.length - 1;
-      currentSection.items[lastIndex] = `${currentSection.items[lastIndex]} ${continuationMatch[1].trim()}`;
-    }
+    processChangelogLine(state, line);
   }
 
-  flushEntry();
+  flushEntry(state);
 
   return {
     source: "CHANGELOG.md",
-    entries,
+    entries: state.entries,
   };
 }
 

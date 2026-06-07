@@ -66,18 +66,17 @@ interface PreviewStylesResult {
   croppedFrameSizeInParent: { width: number; height: number } | null;
 }
 
+function hasPositiveDimensions(...values: number[]) {
+  return values.every((value) => value > 0);
+}
+
 function fitCompositionToArea(
   areaWidth: number,
   areaHeight: number,
   compositionWidth: number,
   compositionHeight: number
 ): { width: number; height: number; scaleX: number; scaleY: number } {
-  if (
-    areaWidth <= 0 ||
-    areaHeight <= 0 ||
-    compositionWidth <= 0 ||
-    compositionHeight <= 0
-  ) {
+  if (!hasPositiveDimensions(areaWidth, areaHeight, compositionWidth, compositionHeight)) {
     return { width: 0, height: 0, scaleX: 1, scaleY: 1 };
   }
 
@@ -98,6 +97,409 @@ function hexToRgba(hex: string, alpha: number): string {
   const g = parseInt(hex.slice(3, 5), 16);
   const b = parseInt(hex.slice(5, 7), 16);
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
+function getPreviewCompositionOutputSize(
+  hasFrameStyling: boolean,
+  contentWidth: number,
+  contentHeight: number,
+  padding: number,
+  compositionConfig: CompositionConfig | undefined,
+) {
+  if (!hasFrameStyling) {
+    return { width: contentWidth, height: contentHeight };
+  }
+
+  return calculateCompositionOutputSize(contentWidth, contentHeight, padding, compositionConfig);
+}
+
+function getPreviewFrameOutputBounds(
+  hasFrameStyling: boolean,
+  contentWidth: number,
+  contentHeight: number,
+  padding: number,
+  compositionOutputSize: { width: number; height: number },
+  compositionConfig: CompositionConfig | undefined,
+) {
+  if (!hasFrameStyling) {
+    return { x: 0, y: 0, width: contentWidth, height: contentHeight };
+  }
+
+  return calculateFrameBoundsInComposition(
+    contentWidth,
+    contentHeight,
+    padding,
+    compositionOutputSize,
+    compositionConfig
+  );
+}
+
+function shouldApplyCropToFrame(
+  cropEnabled: boolean,
+  hasFrameStyling: boolean,
+  backgroundConfig: BackgroundConfig | undefined,
+) {
+  if (!cropEnabled || !hasFrameStyling) {
+    return false;
+  }
+
+  return hasBackgroundPadding(backgroundConfig);
+}
+
+function hasBackgroundPadding(backgroundConfig: BackgroundConfig | undefined) {
+  return (backgroundConfig?.padding ?? 0) > 0;
+}
+
+function getCroppedFrameSizeInParent(
+  applyCropToFrame: boolean,
+  cropConfig: CropConfig | undefined,
+  containerSize: { width: number; height: number },
+) {
+  if (!canCalculateCroppedFrameSize(applyCropToFrame, cropConfig, containerSize)) {
+    return null;
+  }
+
+  return fitAspectRatioInsideContainer(
+    cropConfig.width / cropConfig.height,
+    containerSize
+  );
+}
+
+function canCalculateCroppedFrameSize(
+  applyCropToFrame: boolean,
+  cropConfig: CropConfig | undefined,
+  containerSize: { width: number; height: number },
+): cropConfig is CropConfig {
+  return Boolean(
+    applyCropToFrame &&
+    cropConfig &&
+    containerSize.width > 0 &&
+    containerSize.height > 0
+  );
+}
+
+function fitAspectRatioInsideContainer(
+  cropAspect: number,
+  containerSize: { width: number; height: number },
+) {
+  const containerAspect = containerSize.width / containerSize.height;
+
+  if (containerAspect > cropAspect) {
+    return {
+      width: containerSize.height * cropAspect,
+      height: containerSize.height,
+    };
+  }
+
+  return {
+    width: containerSize.width,
+    height: containerSize.width / cropAspect,
+  };
+}
+
+function getDprCappedFittedComposition(
+  previewAreaSize: { width: number; height: number },
+  compositeWidth: number,
+  compositeHeight: number,
+) {
+  const dpr = window.devicePixelRatio || 1;
+  const maxCSSWidth = Math.ceil(compositeWidth / dpr);
+  const maxCSSHeight = Math.ceil(compositeHeight / dpr);
+  const effectiveWidth = Math.min(previewAreaSize.width, maxCSSWidth);
+  const effectiveHeight = Math.min(previewAreaSize.height, maxCSSHeight);
+
+  return fitCompositionToArea(
+    effectiveWidth,
+    effectiveHeight,
+    compositeWidth,
+    compositeHeight
+  );
+}
+
+function clampPreviewFrameRectValue(value: number, min: number, max: number) {
+  return Math.min(Math.max(value, min), max);
+}
+
+function getFrameRectInPreview(
+  hasFrameStyling: boolean,
+  compositionSize: { width: number; height: number },
+  frameOutputBounds: { x: number; y: number; width: number; height: number },
+  fittedComposition: { scaleX: number; scaleY: number },
+) {
+  if (!hasFrameStyling) {
+    return {
+      x: 0,
+      y: 0,
+      width: compositionSize.width,
+      height: compositionSize.height,
+    };
+  }
+
+  if (compositionSize.width === 0 || compositionSize.height === 0) {
+    return { x: 0, y: 0, width: 0, height: 0 };
+  }
+
+  const left = clampPreviewFrameRectValue(
+    Math.round(frameOutputBounds.x * fittedComposition.scaleX),
+    0,
+    Math.max(0, compositionSize.width - 1),
+  );
+  const top = clampPreviewFrameRectValue(
+    Math.round(frameOutputBounds.y * fittedComposition.scaleY),
+    0,
+    Math.max(0, compositionSize.height - 1),
+  );
+  const right = clampPreviewFrameRectValue(
+    Math.round((frameOutputBounds.x + frameOutputBounds.width) * fittedComposition.scaleX),
+    1,
+    compositionSize.width,
+  );
+  const bottom = clampPreviewFrameRectValue(
+    Math.round((frameOutputBounds.y + frameOutputBounds.height) * fittedComposition.scaleY),
+    1,
+    compositionSize.height,
+  );
+
+  const safeRight = Math.max(right, left + 1);
+  const safeBottom = Math.max(bottom, top + 1);
+
+  return {
+    x: left,
+    y: top,
+    width: Math.max(1, safeRight - left),
+    height: Math.max(1, safeBottom - top),
+  };
+}
+
+function getFrameClipStyle(
+  backgroundConfig: BackgroundConfig | undefined,
+  previewScale: number,
+  frameDisplaySize: { width: number; height: number },
+  isSquircle: boolean,
+): React.CSSProperties {
+  if (!backgroundConfig) return {};
+
+  const style: React.CSSProperties = {};
+  applyFrameRoundingClip(style, backgroundConfig, previewScale, frameDisplaySize, isSquircle);
+  applyFrameBorderClip(style, backgroundConfig, previewScale, isSquircle);
+  return style;
+}
+
+function applyFrameRoundingClip(
+  style: React.CSSProperties,
+  backgroundConfig: BackgroundConfig,
+  previewScale: number,
+  frameDisplaySize: { width: number; height: number },
+  isSquircle: boolean,
+) {
+  const scaledRounding = backgroundConfig.rounding * previewScale;
+  if (!hasVisibleRounding(scaledRounding)) {
+    return;
+  }
+
+  if (canApplySquircleRoundingClip(isSquircle, frameDisplaySize)) {
+    applySquircleRoundingClip(style, scaledRounding, frameDisplaySize);
+    return;
+  }
+
+  applyInsetRoundingClip(style, scaledRounding);
+}
+
+function hasVisibleRounding(scaledRounding: number) {
+  return scaledRounding > 0;
+}
+
+function canApplySquircleRoundingClip(
+  isSquircle: boolean,
+  frameDisplaySize: { width: number; height: number },
+) {
+  return isSquircle && hasPositiveFrameSize(frameDisplaySize);
+}
+
+function applySquircleRoundingClip(
+  style: React.CSSProperties,
+  scaledRounding: number,
+  frameDisplaySize: { width: number; height: number },
+) {
+  style.clipPath = generateSquircleClipPathFromRadius(
+    scaledRounding,
+    frameDisplaySize.width,
+    frameDisplaySize.height
+  );
+}
+
+function applyInsetRoundingClip(style: React.CSSProperties, scaledRounding: number) {
+  style.clipPath = `inset(0 round ${scaledRounding}px)`;
+  style.borderRadius = scaledRounding;
+}
+
+function applyFrameBorderClip(
+  style: React.CSSProperties,
+  backgroundConfig: BackgroundConfig,
+  previewScale: number,
+  isSquircle: boolean,
+) {
+  const borderStyle = getFrameBorderStyle(backgroundConfig, previewScale, isSquircle);
+  if (!borderStyle) return;
+
+  style.border = borderStyle;
+}
+
+function getFrameBorderStyle(
+  backgroundConfig: BackgroundConfig,
+  previewScale: number,
+  isSquircle: boolean,
+) {
+  const border = backgroundConfig.border;
+  if (!canApplyFrameBorderClip(border, previewScale, isSquircle)) return null;
+
+  const scaledBorderWidth = getScaledBorderWidth(border.width, previewScale);
+  const borderOpacity = border.opacity / 100;
+  return `${scaledBorderWidth}px solid ${hexToRgba(border.color, borderOpacity)}`;
+}
+
+function getScaledBorderWidth(borderWidth: number, previewScale: number) {
+  return borderWidth * previewScale;
+}
+
+function canApplyFrameBorderClip(
+  border: BackgroundConfig['border'],
+  previewScale: number,
+  isSquircle: boolean,
+) {
+  if (!hasVisibleFrameBorder(border)) return false;
+  if (isSquircle) return false;
+
+  return getScaledBorderWidth(border.width, previewScale) > 0;
+}
+
+function hasVisibleFrameBorder(
+  border: BackgroundConfig['border'],
+): border is NonNullable<BackgroundConfig['border']> {
+  return Boolean(border?.enabled && border.opacity > 0);
+}
+
+function hasVisibleBackgroundBorder(backgroundConfig: BackgroundConfig | undefined): boolean {
+  return Boolean(
+    backgroundConfig?.border?.enabled &&
+    (backgroundConfig.border.opacity ?? 0) > 0
+  );
+}
+
+function hasPositiveFrameSize(frameDisplaySize: { width: number; height: number }): boolean {
+  return frameDisplaySize.width > 0 && frameDisplaySize.height > 0;
+}
+
+function canRenderSquircleBorderOverlay({
+  isSquircle,
+  backgroundConfig,
+  scaledBorderWidth,
+  frameDisplaySize,
+}: {
+  isSquircle: boolean;
+  backgroundConfig: BackgroundConfig | undefined;
+  scaledBorderWidth: number;
+  frameDisplaySize: { width: number; height: number };
+}) {
+  return Boolean(
+    isSquircle &&
+    hasVisibleBackgroundBorder(backgroundConfig) &&
+    scaledBorderWidth > 0 &&
+    hasPositiveFrameSize(frameDisplaySize)
+  );
+}
+
+function getSquircleBorderOverlayStyle({
+  backgroundConfig,
+  previewScale,
+  frameDisplaySize,
+}: {
+  backgroundConfig: BackgroundConfig;
+  previewScale: number;
+  frameDisplaySize: { width: number; height: number };
+}): React.CSSProperties {
+  const scaledBorderWidth = backgroundConfig.border.width * previewScale;
+  const scaledRounding = backgroundConfig.rounding * previewScale;
+  const borderOpacity = backgroundConfig.border.opacity / 100;
+  const borderColor = hexToRgba(backgroundConfig.border.color, borderOpacity);
+  const overlayWidth = frameDisplaySize.width + 2 * scaledBorderWidth;
+  const overlayHeight = frameDisplaySize.height + 2 * scaledBorderWidth;
+
+  return {
+    position: 'absolute',
+    top: -scaledBorderWidth,
+    left: -scaledBorderWidth,
+    width: overlayWidth,
+    height: overlayHeight,
+    pointerEvents: 'none',
+    zIndex: -1,
+    backgroundColor: borderColor,
+    clipPath: generateSquircleBorderClipPath(
+      scaledRounding + scaledBorderWidth,
+      scaledBorderWidth,
+      overlayWidth,
+      overlayHeight
+    ),
+  };
+}
+
+function getFrameBorderOverlayStyle({
+  isSquircle,
+  backgroundConfig,
+  previewScale,
+  frameDisplaySize,
+}: {
+  isSquircle: boolean;
+  backgroundConfig: BackgroundConfig | undefined;
+  previewScale: number;
+  frameDisplaySize: { width: number; height: number };
+}): React.CSSProperties | null {
+  if (!backgroundConfig) return null;
+
+  const scaledBorderWidth = getScaledBorderWidth(backgroundConfig.border.width, previewScale);
+  if (!canRenderSquircleBorderOverlay({
+    isSquircle,
+    backgroundConfig,
+    scaledBorderWidth,
+    frameDisplaySize,
+  })) {
+    return null;
+  }
+
+  return getSquircleBorderOverlayStyle({
+    backgroundConfig,
+    previewScale,
+    frameDisplaySize,
+  });
+}
+
+function getFrameShadowStyle(
+  backgroundConfig: BackgroundConfig | undefined,
+  frameDisplaySize: { width: number; height: number },
+): React.CSSProperties {
+  if (!canCalculateFrameShadow(backgroundConfig)) return {};
+
+  const metrics = getVideoFrameShadowMetrics(
+    backgroundConfig.shadow.shadow ?? 50,
+    frameDisplaySize.width,
+    frameDisplaySize.height
+  );
+
+  if (!hasVisibleFrameShadow(metrics)) return {};
+
+  return {
+    filter: `drop-shadow(0 0 ${metrics.blurPx}px rgba(0, 0, 0, ${metrics.opacity}))`,
+  };
+}
+
+function hasVisibleFrameShadow(metrics: { blurPx: number; opacity: number }) {
+  return metrics.blurPx > 0 && metrics.opacity > 0;
+}
+
+function canCalculateFrameShadow(
+  backgroundConfig: BackgroundConfig | undefined,
+): backgroundConfig is BackgroundConfig & { shadow: NonNullable<BackgroundConfig['shadow']> } {
+  return Boolean(backgroundConfig?.shadow?.enabled);
 }
 
 /**
@@ -127,18 +529,19 @@ export function usePreviewStyles(options: PreviewStylesOptions): PreviewStylesRe
 
   // Export-equivalent composition dimensions.
   const compositionOutputSize = useMemo(() => {
-    if (!hasFrameStyling) {
-      return { width: contentWidth, height: contentHeight };
-    }
-    return calculateCompositionOutputSize(contentWidth, contentHeight, padding, compositionConfig);
+    return getPreviewCompositionOutputSize(
+      hasFrameStyling,
+      contentWidth,
+      contentHeight,
+      padding,
+      compositionConfig
+    );
   }, [hasFrameStyling, contentWidth, contentHeight, padding, compositionConfig]);
 
   // Export-equivalent video frame bounds inside composition.
   const frameOutputBounds = useMemo(() => {
-    if (!hasFrameStyling) {
-      return { x: 0, y: 0, width: contentWidth, height: contentHeight };
-    }
-    return calculateFrameBoundsInComposition(
+    return getPreviewFrameOutputBounds(
+      hasFrameStyling,
       contentWidth,
       contentHeight,
       padding,
@@ -152,28 +555,11 @@ export function usePreviewStyles(options: PreviewStylesOptions): PreviewStylesRe
   const compositeAspectRatio = compositeWidth / compositeHeight;
 
   // Check if crop is enabled with background
-  const applyCropToFrame = cropEnabled && hasFrameStyling && (backgroundConfig?.padding ?? 0) > 0;
+  const applyCropToFrame = shouldApplyCropToFrame(cropEnabled, hasFrameStyling, backgroundConfig);
 
   // Calculate cropped frame size in parent coordinates
   const croppedFrameSizeInParent = useMemo(() => {
-    if (!applyCropToFrame || !cropConfig || containerSize.width === 0 || containerSize.height === 0) {
-      return null;
-    }
-
-    const cropAspect = cropConfig.width / cropConfig.height;
-    const containerAspect = containerSize.width / containerSize.height;
-
-    if (containerAspect > cropAspect) {
-      return {
-        width: containerSize.height * cropAspect,
-        height: containerSize.height,
-      };
-    } else {
-      return {
-        width: containerSize.width,
-        height: containerSize.width / cropAspect,
-      };
-    }
+    return getCroppedFrameSizeInParent(applyCropToFrame, cropConfig, containerSize);
   }, [applyCropToFrame, cropConfig, containerSize]);
 
   // Calculate best-fit composition size in the preview area.
@@ -184,21 +570,8 @@ export function usePreviewStyles(options: PreviewStylesOptions): PreviewStylesRe
   // DPR cap formula here must stay in sync with computeDPRCappedFitScale
   // in compositionBounds.ts (used by the CSS-transform resize fast path).
   const fittedComposition = useMemo(
-    () => {
-      const dpr = window.devicePixelRatio || 1;
-      const maxCSSWidth = Math.ceil(compositeWidth / dpr);
-      const maxCSSHeight = Math.ceil(compositeHeight / dpr);
-      const effectiveWidth = Math.min(previewAreaSize.width, maxCSSWidth);
-      const effectiveHeight = Math.min(previewAreaSize.height, maxCSSHeight);
-
-      return fitCompositionToArea(
-        effectiveWidth,
-        effectiveHeight,
-        compositeWidth,
-        compositeHeight
-      );
-    },
-    [previewAreaSize.width, previewAreaSize.height, compositeWidth, compositeHeight]
+    () => getDprCappedFittedComposition(previewAreaSize, compositeWidth, compositeHeight),
+    [previewAreaSize, compositeWidth, compositeHeight]
   );
 
   const previewScale = Math.min(fittedComposition.scaleX, fittedComposition.scaleY);
@@ -208,51 +581,17 @@ export function usePreviewStyles(options: PreviewStylesOptions): PreviewStylesRe
   );
 
   const frameRectInPreview = useMemo(() => {
-    if (!hasFrameStyling) {
-      return {
-        x: 0,
-        y: 0,
-        width: compositionSize.width,
-        height: compositionSize.height,
-      };
-    }
-
-    if (compositionSize.width === 0 || compositionSize.height === 0) {
-      return { x: 0, y: 0, width: 0, height: 0 };
-    }
-
-    const clampLeft = (value: number) =>
-      Math.min(Math.max(value, 0), Math.max(0, compositionSize.width - 1));
-    const clampTop = (value: number) =>
-      Math.min(Math.max(value, 0), Math.max(0, compositionSize.height - 1));
-    const clampRight = (value: number) => Math.min(Math.max(value, 1), compositionSize.width);
-    const clampBottom = (value: number) => Math.min(Math.max(value, 1), compositionSize.height);
-
-    const left = clampLeft(Math.round(frameOutputBounds.x * fittedComposition.scaleX));
-    const top = clampTop(Math.round(frameOutputBounds.y * fittedComposition.scaleY));
-    const right = clampRight(
-      Math.round((frameOutputBounds.x + frameOutputBounds.width) * fittedComposition.scaleX)
+    return getFrameRectInPreview(
+      hasFrameStyling,
+      compositionSize,
+      frameOutputBounds,
+      fittedComposition
     );
-    const bottom = clampBottom(
-      Math.round((frameOutputBounds.y + frameOutputBounds.height) * fittedComposition.scaleY)
-    );
-
-    const safeRight = Math.max(right, left + 1);
-    const safeBottom = Math.max(bottom, top + 1);
-    const width = Math.max(1, safeRight - left);
-    const height = Math.max(1, safeBottom - top);
-
-    return { x: left, y: top, width, height };
   }, [
     hasFrameStyling,
-    compositionSize.width,
-    compositionSize.height,
-    frameOutputBounds.x,
-    frameOutputBounds.y,
-    frameOutputBounds.width,
-    frameOutputBounds.height,
-    fittedComposition.scaleX,
-    fittedComposition.scaleY,
+    compositionSize,
+    frameOutputBounds,
+    fittedComposition,
   ]);
 
   const frameDisplaySize = useMemo(() => {
@@ -281,94 +620,26 @@ export function usePreviewStyles(options: PreviewStylesOptions): PreviewStylesRe
 
   // Frame clipping style (rounding, border)
   const frameClipStyle = useMemo((): React.CSSProperties => {
-    if (!backgroundConfig) return {};
-
-    const style: React.CSSProperties = {};
-
-    const scaledRounding = backgroundConfig.rounding * previewScale;
-
-    if (scaledRounding > 0) {
-      if (isSquircle && frameDisplaySize.width > 0 && frameDisplaySize.height > 0) {
-        style.clipPath = generateSquircleClipPathFromRadius(
-          scaledRounding,
-          frameDisplaySize.width,
-          frameDisplaySize.height
-        );
-      } else {
-        // Standard rounded corners, or fallback before layout is measured
-        style.clipPath = `inset(0 round ${scaledRounding}px)`;
-        style.borderRadius = scaledRounding;
-      }
-    }
-
-    if (backgroundConfig.border?.enabled && backgroundConfig.border.opacity > 0 && !isSquircle) {
-      const scaledBorderWidth = backgroundConfig.border.width * previewScale;
-      if (scaledBorderWidth <= 0) return style;
-      const borderOpacity = backgroundConfig.border.opacity / 100;
-      style.border = `${scaledBorderWidth}px solid ${hexToRgba(backgroundConfig.border.color, borderOpacity)}`;
-    }
-
-    return style;
-  }, [backgroundConfig, previewScale, frameDisplaySize.width, frameDisplaySize.height, isSquircle]);
+    return getFrameClipStyle(backgroundConfig, previewScale, frameDisplaySize, isSquircle);
+  }, [backgroundConfig, previewScale, frameDisplaySize, isSquircle]);
 
   // Squircle border overlay — extends OUTWARD from the video frame. Positioned
   // outside the clipped frame div (in the shadow wrapper) so it isn't clipped.
   // Uses a ring-shaped path(evenodd) where the outer edge is a larger squircle
   // and the inner edge matches the frame's squircle boundary.
   const frameBorderOverlayStyle = useMemo((): React.CSSProperties | null => {
-    if (!isSquircle || !backgroundConfig?.border?.enabled || (backgroundConfig.border.opacity ?? 0) <= 0) {
-      return null;
-    }
-    const scaledBorderWidth = backgroundConfig.border.width * previewScale;
-    const scaledRounding = backgroundConfig.rounding * previewScale;
-    if (scaledBorderWidth <= 0 || frameDisplaySize.width <= 0 || frameDisplaySize.height <= 0) return null;
-    const borderOpacity = backgroundConfig.border.opacity / 100;
-    const borderColor = hexToRgba(backgroundConfig.border.color, borderOpacity);
-
-    // The overlay extends beyond the frame by borderWidth on each side
-    const overlayWidth = frameDisplaySize.width + 2 * scaledBorderWidth;
-    const overlayHeight = frameDisplaySize.height + 2 * scaledBorderWidth;
-    const outerRadius = scaledRounding + scaledBorderWidth;
-
-    return {
-      position: 'absolute',
-      top: -scaledBorderWidth,
-      left: -scaledBorderWidth,
-      width: overlayWidth,
-      height: overlayHeight,
-      pointerEvents: 'none',
-      zIndex: -1,
-      backgroundColor: borderColor,
-      clipPath: generateSquircleBorderClipPath(
-        outerRadius,
-        scaledBorderWidth,
-        overlayWidth,
-        overlayHeight
-      ),
-    };
-  }, [isSquircle, backgroundConfig?.border, backgroundConfig?.rounding, previewScale, frameDisplaySize.width, frameDisplaySize.height]);
+    return getFrameBorderOverlayStyle({
+      isSquircle,
+      backgroundConfig,
+      previewScale,
+      frameDisplaySize,
+    });
+  }, [isSquircle, backgroundConfig, previewScale, frameDisplaySize]);
 
   // Frame shadow style (drop-shadow filter)
   const frameShadowStyle = useMemo((): React.CSSProperties => {
-    if (!backgroundConfig?.shadow?.enabled) return {};
-
-    const metrics = getVideoFrameShadowMetrics(
-      backgroundConfig.shadow.shadow ?? 50,
-      frameDisplaySize.width,
-      frameDisplaySize.height
-    );
-
-    if (metrics.blurPx <= 0 || metrics.opacity <= 0) return {};
-
-    return {
-      filter: `drop-shadow(0 0 ${metrics.blurPx}px rgba(0, 0, 0, ${metrics.opacity}))`,
-    };
-  }, [
-    backgroundConfig?.shadow?.enabled,
-    backgroundConfig?.shadow?.shadow,
-    frameDisplaySize.width,
-    frameDisplaySize.height,
-  ]);
+    return getFrameShadowStyle(backgroundConfig, frameDisplaySize);
+  }, [backgroundConfig, frameDisplaySize]);
 
   // Combined frame style for SceneModeRenderer
   const frameStyle = useMemo((): React.CSSProperties => {

@@ -36,20 +36,32 @@ function quoteCmdArg(arg) {
   return `"${String(arg).replace(/"/g, '""')}"`;
 }
 
+function normalizePathEntry(entry) {
+  return entry.replace(/[\\/]+$/, '').toLowerCase();
+}
+
+function getPathEntries(env) {
+  return (env.Path || env.PATH || '').split(path.delimiter).filter(Boolean);
+}
+
+function hasPathEntry(entries, candidate) {
+  const normalizedCandidate = normalizePathEntry(candidate);
+  return entries.some((entry) => normalizePathEntry(entry) === normalizedCandidate);
+}
+
+function setEnvPathEntries(env, entries) {
+  env.Path = entries.join(path.delimiter);
+  env.PATH = env.Path;
+}
+
 function appendPath(env, candidate) {
   if (!candidate || !fs.existsSync(candidate)) {
     return;
   }
 
-  const delimiter = path.delimiter;
-  const entries = (env.Path || env.PATH || '').split(delimiter).filter(Boolean);
-  const alreadyPresent = entries.some((entry) => (
-    entry.replace(/[\\/]+$/, '').toLowerCase() === candidate.replace(/[\\/]+$/, '').toLowerCase()
-  ));
-
-  if (!alreadyPresent) {
-    env.Path = [...entries, candidate].join(delimiter);
-    env.PATH = env.Path;
+  const entries = getPathEntries(env);
+  if (!hasPathEntry(entries, candidate)) {
+    setEnvPathEntries(env, [...entries, candidate]);
   }
 }
 

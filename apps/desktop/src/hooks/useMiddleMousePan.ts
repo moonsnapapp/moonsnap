@@ -22,6 +22,138 @@ interface UseMiddleMousePanReturn {
   handleMiddleMouseUp: () => void;
 }
 
+interface Point {
+  x: number;
+  y: number;
+}
+
+interface CompositorPanSyncRefs {
+  compositorBgRef?: React.RefObject<HTMLDivElement | null>;
+  renderedPositionRef?: React.RefObject<Point>;
+  renderedZoomRef?: React.RefObject<number>;
+  transformCoeffsRef?: React.RefObject<{ kx: number; ky: number }>;
+}
+
+function getPanDelta(e: React.MouseEvent, panStart: Point): Point {
+  return {
+    x: e.clientX - panStart.x,
+    y: e.clientY - panStart.y,
+  };
+}
+
+function getPannedPosition(positionStart: Point, delta: Point): Point {
+  return {
+    x: positionStart.x + delta.x,
+    y: positionStart.y + delta.y,
+  };
+}
+
+function moveStage(stage: Konva.Stage | null, position: Point): void {
+  if (!stage) return;
+
+  stage.position(position);
+  stage.batchDraw();
+}
+
+function canSyncCompositorPan({
+  compositorBgRef,
+  renderedPositionRef,
+  renderedZoomRef,
+  transformCoeffsRef,
+}: CompositorPanSyncRefs): boolean {
+  return hasCurrentRef(compositorBgRef) &&
+    hasRef(renderedPositionRef) &&
+    hasRef(renderedZoomRef) &&
+    hasRef(transformCoeffsRef);
+}
+
+function hasRef<T>(ref: React.RefObject<T> | undefined): ref is React.RefObject<T> {
+  return ref !== undefined;
+}
+
+function hasCurrentRef<T>(ref: React.RefObject<T | null> | undefined): ref is React.RefObject<T> {
+  return ref?.current != null;
+}
+
+function syncCompositorPanWithZoom(
+  refs: Required<CompositorPanSyncRefs>,
+  newPosition: Point,
+  currentZoom: number
+): void {
+  const compositorBg = refs.compositorBgRef.current;
+  if (!compositorBg) return;
+
+  const renderedPos = refs.renderedPositionRef.current;
+  const renderedZoom = refs.renderedZoomRef.current;
+  const { kx, ky } = refs.transformCoeffsRef.current;
+
+  const compositorDx = (newPosition.x - renderedPos.x) + kx * (currentZoom - renderedZoom);
+  const compositorDy = (newPosition.y - renderedPos.y) + ky * (currentZoom - renderedZoom);
+  const scaleRatio = currentZoom / renderedZoom;
+
+  compositorBg.style.transformOrigin = '0 0';
+  compositorBg.style.transform =
+    `translate(${compositorDx}px, ${compositorDy}px) scale(${scaleRatio})`;
+}
+
+function syncCompositorPanFallback(
+  compositorBgRef: React.RefObject<HTMLDivElement | null> | undefined,
+  delta: Point
+): void {
+  if (compositorBgRef?.current) {
+    compositorBgRef.current.style.transform = `translate(${delta.x}px, ${delta.y}px)`;
+  }
+}
+
+function syncCompositorPan(
+  refs: CompositorPanSyncRefs,
+  newPosition: Point,
+  delta: Point,
+  currentZoom: number
+): void {
+  if (canSyncCompositorPan(refs)) {
+    syncCompositorPanWithZoom(refs as Required<CompositorPanSyncRefs>, newPosition, currentZoom);
+    return;
+  }
+
+  syncCompositorPanFallback(refs.compositorBgRef, delta);
+}
+
+function resetCompositorPanTransform(
+  compositorBgRef: React.RefObject<HTMLDivElement | null> | undefined
+): void {
+  if (compositorBgRef?.current) {
+    compositorBgRef.current.style.transform = '';
+  }
+}
+
+function getStagePosition(stage: Konva.Stage | null): Point | null {
+  return stage ? { x: stage.x(), y: stage.y() } : null;
+}
+
+function commitStagePanPosition(
+  stageRef: React.RefObject<Konva.Stage | null>,
+  setPosition: (pos: Point) => void
+): void {
+  const stagePosition = getStagePosition(stageRef.current);
+  if (stagePosition) {
+    setPosition(stagePosition);
+  }
+}
+
+function finishMiddleMousePan({
+  compositorBgRef,
+  stageRef,
+  setPosition,
+}: {
+  compositorBgRef?: React.RefObject<HTMLDivElement | null>;
+  stageRef: React.RefObject<Konva.Stage | null>;
+  setPosition: (pos: Point) => void;
+}) {
+  resetCompositorPanTransform(compositorBgRef);
+  commitStagePanPosition(stageRef, setPosition);
+}
+
 /**
  * Hook for middle mouse button panning in the editor canvas
  * Allows users to pan the canvas view by holding middle mouse button and dragging
@@ -61,50 +193,26 @@ export const useMiddleMousePan = ({
   const handleMiddleMouseMove = useCallback((e: React.MouseEvent) => {
     if (!isPanning) return;
 
-    const dx = e.clientX - panStartRef.current.x;
-    const dy = e.clientY - panStartRef.current.y;
-    const newX = positionStartRef.current.x + dx;
-    const newY = positionStartRef.current.y + dy;
+    const delta = getPanDelta(e, panStartRef.current);
+    const newPosition = getPannedPosition(positionStartRef.current, delta);
 
     // Update Konva Stage directly (no React re-render)
     const stage = stageRef.current;
-    if (stage) {
-      stage.position({ x: newX, y: newY });
-      stage.batchDraw();
-    }
+    moveStage(stage, newPosition);
 
     // Update compositor background div using same baseline as zoom handler
     // This ensures pan + zoom together don't conflict
-    if (compositorBgRef?.current && renderedPositionRef && renderedZoomRef && transformCoeffsRef) {
-      const renderedPos = renderedPositionRef.current;
-      const renderedZoom = renderedZoomRef.current;
-      const currentZoom = stage?.scaleX() ?? 1;
-      const { kx, ky } = transformCoeffsRef.current;
-
-      // Same formula as zoom: delta from rendered position + zoom-dependent offset
-      const compositorDx = (newX - renderedPos.x) + kx * (currentZoom - renderedZoom);
-      const compositorDy = (newY - renderedPos.y) + ky * (currentZoom - renderedZoom);
-      const scaleRatio = currentZoom / renderedZoom;
-
-      compositorBgRef.current.style.transformOrigin = '0 0';
-      compositorBgRef.current.style.transform = `translate(${compositorDx}px, ${compositorDy}px) scale(${scaleRatio})`;
-    } else if (compositorBgRef?.current) {
-      // Fallback: simple translate if refs not provided
-      compositorBgRef.current.style.transform = `translate(${dx}px, ${dy}px)`;
-    }
+    syncCompositorPan(
+      { compositorBgRef, renderedPositionRef, renderedZoomRef, transformCoeffsRef },
+      newPosition,
+      delta,
+      stage?.scaleX() ?? 1
+    );
   }, [isPanning, stageRef, compositorBgRef, renderedPositionRef, renderedZoomRef, transformCoeffsRef]);
 
   const handleMiddleMouseUp = useCallback(() => {
     if (isPanning) {
-      // Reset compositor background transform (React state will update position)
-      if (compositorBgRef?.current) {
-        compositorBgRef.current.style.transform = '';
-      }
-      // Sync final position back to React state
-      const stage = stageRef.current;
-      if (stage) {
-        setPosition({ x: stage.x(), y: stage.y() });
-      }
+      finishMiddleMousePan({ compositorBgRef, stageRef, setPosition });
     }
     setIsPanning(false);
   }, [isPanning, stageRef, compositorBgRef, setPosition]);

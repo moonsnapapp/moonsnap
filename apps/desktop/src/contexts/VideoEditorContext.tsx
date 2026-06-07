@@ -23,6 +23,30 @@ interface VideoEditorProviderProps {
   children: ReactNode;
 }
 
+function destroyProviderGpuEditor(store: StoreApi<VideoEditorState> | null) {
+  if (!store) {
+    return;
+  }
+
+  const state = store.getState();
+  if (state.editorInstanceId) {
+    state.destroyGPUEditor().catch((err) =>
+      videoEditorLogger.warn('Failed to destroy GPU editor:', err)
+    );
+  }
+}
+
+function resetActiveStoreForProvider(store: StoreApi<VideoEditorState> | null) {
+  if (store && getActiveVideoEditorStore() === store) {
+    resetActiveVideoEditorStore();
+  }
+}
+
+function cleanupVideoEditorProviderStore(store: StoreApi<VideoEditorState> | null) {
+  destroyProviderGpuEditor(store);
+  resetActiveStoreForProvider(store);
+}
+
 /**
  * Provider that creates an isolated video editor store for its subtree.
  * Use this in each video editor window to get independent state.
@@ -47,21 +71,7 @@ export function VideoEditorProvider({ children }: VideoEditorProviderProps) {
     setActiveVideoEditorStore(storeRef.current!);
 
     return () => {
-      // Cleanup GPU editor when provider unmounts
-      const store = storeRef.current;
-      if (store) {
-        const state = store.getState();
-        if (state.editorInstanceId) {
-          state.destroyGPUEditor().catch((err) =>
-            videoEditorLogger.warn('Failed to destroy GPU editor:', err)
-          );
-        }
-      }
-
-      // Restore global fallback store when this isolated provider is removed.
-      if (store && getActiveVideoEditorStore() === store) {
-        resetActiveVideoEditorStore();
-      }
+      cleanupVideoEditorProviderStore(storeRef.current);
     };
   }, []);
 
@@ -91,15 +101,7 @@ export function useVideoEditor<T>(selector: (state: VideoEditorState) => T): T {
   return useVideoEditorStoreHook(selector);
 }
 
-/**
- * Hook to access video editor store actions.
- * Returns stable references to current store actions.
- */
-export function useVideoEditorActions() {
-  const contextStore = useContext(VideoEditorStoreContext);
-  const store = contextStore ?? getActiveVideoEditorStore();
-  const state = store.getState();
-
+function getVideoEditorActions(state: VideoEditorState) {
   return {
     setProject: state.setProject,
     loadCursorData: state.loadCursorData,
@@ -158,6 +160,18 @@ export function useVideoEditorActions() {
     setExportProgress: state.setExportProgress,
     cancelExport: state.cancelExport,
   };
+}
+
+/**
+ * Hook to access video editor store actions.
+ * Returns stable references to current store actions.
+ */
+export function useVideoEditorActions() {
+  const contextStore = useContext(VideoEditorStoreContext);
+  const store = contextStore ?? getActiveVideoEditorStore();
+  const state = store.getState();
+
+  return getVideoEditorActions(state);
 }
 
 /**

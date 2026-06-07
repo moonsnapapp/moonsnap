@@ -58,6 +58,322 @@ interface UseCanvasEventHandlersReturn {
   handleShapeDragEnd: (id: string, e: Konva.KonvaEventObject<DragEvent>) => void;
 }
 
+type CanvasPointer = { x: number; y: number };
+
+function getCurrentCanvasPointer({
+  stageRef,
+  getCanvasPosition,
+}: {
+  stageRef: React.RefObject<Konva.Stage | null>;
+  getCanvasPosition: (screenPos: CanvasPointer) => CanvasPointer;
+}): CanvasPointer | null {
+  const stage = stageRef.current;
+  const screenPos = stage?.getPointerPosition();
+  return screenPos ? getCanvasPosition(screenPos) : null;
+}
+
+function shouldIgnoreCanvasMouseDown(
+  event: Konva.KonvaEventObject<MouseEvent>,
+  editingTextId: string | null
+) {
+  return event.evt.button === 1 || Boolean(editingTextId);
+}
+
+function isStageBackgroundClick(event: Konva.KonvaEventObject<MouseEvent>) {
+  return event.target === event.target.getStage();
+}
+
+function isDrawingMoveTool(selectedTool: string) {
+  return selectedTool !== 'select' && selectedTool !== 'crop' && selectedTool !== 'background';
+}
+
+function shouldIgnoreTextMouseDown({
+  event,
+  shapeId,
+  selectedTool,
+  editingTextId,
+  selectedCount,
+}: {
+  event: Konva.KonvaEventObject<MouseEvent>;
+  shapeId: string;
+  selectedTool: string;
+  editingTextId: string | null;
+  selectedCount: number;
+}) {
+  if (shouldIgnoreTextSelectionMouseDown({ event, selectedTool, editingTextId, shapeId })) {
+    return true;
+  }
+
+  return !canStartTextManualDrag({ event, selectedCount });
+}
+
+function isPrimaryMouseDown(event: Konva.KonvaEventObject<MouseEvent>): boolean {
+  return event.evt?.button === 0;
+}
+
+function shouldIgnoreTextSelectionMouseDown({
+  event,
+  selectedTool,
+  editingTextId,
+  shapeId,
+}: {
+  event: Konva.KonvaEventObject<MouseEvent>;
+  selectedTool: string;
+  editingTextId: string | null;
+  shapeId: string;
+}): boolean {
+  return !isPrimaryMouseDown(event) || selectedTool !== 'select' || editingTextId === shapeId;
+}
+
+function canStartTextManualDrag({
+  event,
+  selectedCount,
+}: {
+  event: Konva.KonvaEventObject<MouseEvent>;
+  selectedCount: number;
+}): boolean {
+  return selectedCount <= 1 && event.evt.detail < 2;
+}
+
+function createManualTextDragState({
+  shapeId,
+  dragNode,
+  screenPos,
+  getCanvasPosition,
+}: {
+  shapeId: string;
+  dragNode: Konva.Node | null;
+  screenPos: { x: number; y: number } | null | undefined;
+  getCanvasPosition: (screenPos: { x: number; y: number }) => { x: number; y: number };
+}): ManualTextDragState | null {
+  if (!dragNode || !screenPos) {
+    return null;
+  }
+
+  return {
+    shapeId,
+    node: dragNode,
+    startPointer: getCanvasPosition(screenPos),
+    startPosition: { x: dragNode.x(), y: dragNode.y() },
+    activated: false,
+    drewFirstFrame: false,
+  };
+}
+
+function getManualTextDragDelta(manualTextDrag: ManualTextDragState) {
+  return {
+    dx: manualTextDrag.node.x() - manualTextDrag.startPosition.x,
+    dy: manualTextDrag.node.y() - manualTextDrag.startPosition.y,
+  };
+}
+
+function getManualTextPointerDelta(
+  pointer: CanvasPointer,
+  manualTextDrag: ManualTextDragState
+) {
+  return {
+    dx: pointer.x - manualTextDrag.startPointer.x,
+    dy: pointer.y - manualTextDrag.startPointer.y,
+  };
+}
+
+function didManualTextDragMove(dx: number, dy: number): boolean {
+  return Math.abs(dx) > TEXT_MANUAL_DRAG_EPSILON || Math.abs(dy) > TEXT_MANUAL_DRAG_EPSILON;
+}
+
+function isManualTextDragWithinEpsilon(dx: number, dy: number): boolean {
+  return Math.abs(dx) <= TEXT_MANUAL_DRAG_EPSILON && Math.abs(dy) <= TEXT_MANUAL_DRAG_EPSILON;
+}
+
+function activateManualTextDrag({
+  manualTextDrag,
+  isShapeDraggingRef,
+  transformerRef,
+  preTextDragHideRef,
+}: {
+  manualTextDrag: ManualTextDragState;
+  isShapeDraggingRef: React.MutableRefObject<boolean>;
+  transformerRef: React.RefObject<Konva.Transformer | null>;
+  preTextDragHideRef: React.MutableRefObject<boolean>;
+}) {
+  if (manualTextDrag.activated) return;
+
+  manualTextDrag.activated = true;
+  isShapeDraggingRef.current = true;
+
+  const tr = transformerRef.current;
+  if (tr?.visible()) {
+    tr.visible(false);
+    preTextDragHideRef.current = true;
+  }
+}
+
+function updateManualTextDragNode(
+  manualTextDrag: ManualTextDragState,
+  { dx, dy }: { dx: number; dy: number }
+) {
+  manualTextDrag.node.position({
+    x: manualTextDrag.startPosition.x + dx,
+    y: manualTextDrag.startPosition.y + dy,
+  });
+}
+
+function redrawManualTextDragLayer(manualTextDrag: ManualTextDragState) {
+  const dragLayer = manualTextDrag.node.getLayer();
+  if (!dragLayer) return;
+
+  manualTextDrag.drewFirstFrame = true;
+  dragLayer.batchDraw();
+}
+
+function restoreTransformerOnNextFrame({
+  transformerRef,
+  reattachTransformerToSelection,
+}: {
+  transformerRef: React.RefObject<Konva.Transformer | null>;
+  reattachTransformerToSelection: () => void;
+}) {
+  requestAnimationFrame(() => {
+    const tr = transformerRef.current;
+    if (tr) {
+      tr.visible(true);
+    }
+    reattachTransformerToSelection();
+  });
+}
+
+function restoreTransformerIfHidden(
+  transformerRef: React.RefObject<Konva.Transformer | null>
+) {
+  const tr = transformerRef.current;
+  if (tr) {
+    tr.visible(true);
+  }
+}
+
+function startMarqueeFromCurrentPointer({
+  stageRef,
+  navigation,
+  marquee,
+}: {
+  stageRef: React.RefObject<Konva.Stage | null>;
+  navigation: UseCanvasEventHandlersProps['navigation'];
+  marquee: UseCanvasEventHandlersProps['marquee'];
+}) {
+  const pos = getCurrentCanvasPointer({
+    stageRef,
+    getCanvasPosition: navigation.getCanvasPosition,
+  });
+  if (pos) {
+    marquee.startMarquee(pos);
+  }
+}
+
+function updateCanvasPointerMove({
+  pos,
+  selectedTool,
+  drawing,
+  marquee,
+}: {
+  pos: CanvasPointer;
+  selectedTool: string;
+  drawing: UseCanvasEventHandlersProps['drawing'];
+  marquee: UseCanvasEventHandlersProps['marquee'];
+}) {
+  if (drawing.isDrawing || isDrawingMoveTool(selectedTool)) {
+    drawing.handleDrawingMouseMove(pos);
+    return;
+  }
+
+  if (marquee.isMarqueeSelecting) {
+    marquee.updateMarquee(pos);
+  }
+}
+
+function handleSelectToolMouseDown({
+  event,
+  setSelectedIds,
+  stageRef,
+  navigation,
+  marquee,
+}: {
+  event: Konva.KonvaEventObject<MouseEvent>;
+  setSelectedIds: (ids: string[]) => void;
+  stageRef: React.RefObject<Konva.Stage | null>;
+  navigation: UseCanvasEventHandlersProps['navigation'];
+  marquee: UseCanvasEventHandlersProps['marquee'];
+}): void {
+  if (!isStageBackgroundClick(event)) {
+    return;
+  }
+
+  setSelectedIds([]);
+  startMarqueeFromCurrentPointer({ stageRef, navigation, marquee });
+}
+
+function handleCanvasToolMouseDown({
+  event,
+  selectedTool,
+  setSelectedIds,
+  stageRef,
+  navigation,
+  marquee,
+}: {
+  event: Konva.KonvaEventObject<MouseEvent>;
+  selectedTool: string;
+  setSelectedIds: (ids: string[]) => void;
+  stageRef: React.RefObject<Konva.Stage | null>;
+  navigation: UseCanvasEventHandlersProps['navigation'];
+  marquee: UseCanvasEventHandlersProps['marquee'];
+}) {
+  if (selectedTool === 'crop') {
+    return;
+  }
+
+  if (selectedTool === 'select') {
+    handleSelectToolMouseDown({ event, setSelectedIds, stageRef, navigation, marquee });
+  }
+}
+
+function shouldAttachTransformer({
+  isDrawing,
+  editingTextId,
+  selectedTool,
+}: {
+  isDrawing: boolean;
+  editingTextId: string | null;
+  selectedTool: string;
+}): boolean {
+  return !isDrawing && !editingTextId && selectedTool === 'select';
+}
+
+function canAttachShapeTransformer(
+  shapeId: string,
+  isMultiSelect: boolean,
+  shapeById: Map<string, CanvasShape>
+): boolean {
+  if (isMultiSelect) return true;
+
+  const shape = shapeById.get(shapeId);
+  return Boolean(shape && shape.type !== 'arrow' && shape.type !== 'line');
+}
+
+function getSelectedTransformerNodes({
+  selectedIds,
+  layer,
+  shapeById,
+}: {
+  selectedIds: string[];
+  layer: Konva.Layer;
+  shapeById: Map<string, CanvasShape>;
+}): Konva.Node[] {
+  const isMultiSelect = selectedIds.length > 1;
+  return selectedIds
+    .filter((shapeId) => canAttachShapeTransformer(shapeId, isMultiSelect, shapeById))
+    .map((shapeId) => layer.findOne(`#${shapeId}`))
+    .filter((node): node is Konva.Node => node !== null && node !== undefined);
+}
+
 export function useCanvasEventHandlers({
   stageRef,
   transformerRef,
@@ -86,103 +402,58 @@ export function useCanvasEventHandlers({
     const manualTextDrag = manualTextDragRef.current;
     if (!manualTextDrag) return false;
 
-    const dx = pointer.x - manualTextDrag.startPointer.x;
-    const dy = pointer.y - manualTextDrag.startPointer.y;
-    if (Math.abs(dx) <= TEXT_MANUAL_DRAG_EPSILON && Math.abs(dy) <= TEXT_MANUAL_DRAG_EPSILON) {
+    const delta = getManualTextPointerDelta(pointer, manualTextDrag);
+    if (isManualTextDragWithinEpsilon(delta.dx, delta.dy)) {
       return true;
     }
 
-    if (!manualTextDrag.activated) {
-      manualTextDrag.activated = true;
-      isShapeDraggingRef.current = true;
-
-      // Defer transformer hide to actual movement to keep mousedown path minimal.
-      const tr = transformerRef.current;
-      if (tr?.visible()) {
-        tr.visible(false);
-        preTextDragHideRef.current = true;
-      }
-    }
-
-    manualTextDrag.node.position({
-      x: manualTextDrag.startPosition.x + dx,
-      y: manualTextDrag.startPosition.y + dy,
+    activateManualTextDrag({
+      manualTextDrag,
+      isShapeDraggingRef,
+      transformerRef,
+      preTextDragHideRef,
     });
-
-    const dragLayer = manualTextDrag.node.getLayer();
-    if (dragLayer) {
-      manualTextDrag.drewFirstFrame = true;
-      dragLayer.batchDraw();
-    }
+    updateManualTextDragNode(manualTextDrag, delta);
+    redrawManualTextDragLayer(manualTextDrag);
 
     return true;
   }, [isShapeDraggingRef, transformerRef]);
 
   const handleMouseDown = useCallback(
     (e: Konva.KonvaEventObject<MouseEvent>) => {
-      // Ignore if middle mouse button
-      if (e.evt.button === 1) return;
-
-      // While inline text editing is active, the next canvas click should only
-      // finish editing. Persistent tools can place a new shape on the next click.
-      if (textEditing.editingTextId) {
-        return;
-      }
+      if (shouldIgnoreCanvasMouseDown(e, textEditing.editingTextId)) return;
 
       // Handle drawing tools
       if (drawing.handleDrawingMouseDown(e)) {
         return;
       }
 
-      // Handle crop tool
-      if (selectedTool === 'crop') return;
-
-      // Handle select tool - start marquee or click on stage
-      if (selectedTool === 'select') {
-        // Only the stage itself counts as empty space (background is now a selectable shape)
-        const clickedOnStage = e.target === e.target.getStage();
-
-        if (clickedOnStage) {
-          setSelectedIds([]);
-
-          const stage = stageRef.current;
-          if (stage) {
-            const screenPos = stage.getPointerPosition();
-            if (screenPos) {
-              const pos = navigation.getCanvasPosition(screenPos);
-              marquee.startMarquee(pos);
-            }
-          }
-        }
-      }
+      handleCanvasToolMouseDown({
+        event: e,
+        selectedTool,
+        setSelectedIds,
+        stageRef,
+        navigation,
+        marquee,
+      });
     },
     [drawing, selectedTool, setSelectedIds, marquee, stageRef, navigation, textEditing.editingTextId]
   );
 
   const handleMouseMove = useCallback(
     (_e: Konva.KonvaEventObject<MouseEvent>) => {
-      const stage = stageRef.current;
-      if (!stage) return;
-
-      const screenPos = stage.getPointerPosition();
-      if (!screenPos) return;
-
-      const pos = navigation.getCanvasPosition(screenPos);
+      const pos = getCurrentCanvasPointer({
+        stageRef,
+        getCanvasPosition: navigation.getCanvasPosition,
+      });
+      if (!pos) return;
 
       if (updateManualTextDrag(pos)) {
         return;
       }
 
       // Drawing move (also handles pending → drawing transition on drag threshold)
-      if (drawing.isDrawing || (selectedTool !== 'select' && selectedTool !== 'crop' && selectedTool !== 'background')) {
-        drawing.handleDrawingMouseMove(pos);
-        return;
-      }
-
-      // Marquee move
-      if (marquee.isMarqueeSelecting) {
-        marquee.updateMarquee(pos);
-      }
+      updateCanvasPointerMove({ pos, selectedTool, drawing, marquee });
     },
     [drawing, marquee, navigation, stageRef, selectedTool, updateManualTextDrag]
   );
@@ -194,29 +465,28 @@ export function useCanvasEventHandlers({
   const reattachTransformerToSelection = useCallback(() => {
     const tr = transformerRef.current;
     const layer = layerRef.current;
-    if (!tr || !layer || drawing.isDrawing || textEditing.editingTextId || selectedTool !== 'select') return;
+    if (!tr || !layer || !shouldAttachTransformer({
+      isDrawing: drawing.isDrawing,
+      editingTextId: textEditing.editingTextId,
+      selectedTool,
+    })) return;
 
-    const selectedNow = selectedIds;
-    const isMultiSelect = selectedNow.length > 1;
-    const nodes = selectedNow
-      .filter((shapeId) => {
-        if (isMultiSelect) return true;
-        const shape = shapeById.get(shapeId);
-        return shape && shape.type !== 'arrow' && shape.type !== 'line';
-      })
-      .map((shapeId) => layer.findOne(`#${shapeId}`))
-      .filter((node): node is Konva.Node => node !== null && node !== undefined);
+    const nodes = getSelectedTransformerNodes({ selectedIds, layer, shapeById });
 
     tr.nodes(nodes);
     tr.getLayer()?.batchDraw();
   }, [drawing.isDrawing, selectedIds, selectedTool, shapeById, textEditing.editingTextId, transformerRef, layerRef]);
 
   const handleTextMouseDown = useCallback((shapeId: string, e: Konva.KonvaEventObject<MouseEvent>) => {
-    if (e.evt?.button !== 0 || selectedTool !== 'select') return;
-    if (textEditing.editingTextId === shapeId) return;
-    if (selectedIds.length > 1) return;
-    // Preserve double-click editing path.
-    if (e.evt.detail >= 2) return;
+    if (shouldIgnoreTextMouseDown({
+      event: e,
+      shapeId,
+      selectedTool,
+      editingTextId: textEditing.editingTextId,
+      selectedCount: selectedIds.length,
+    })) {
+      return;
+    }
 
     // Keep stage handlers out of this path and run manual drag for selected text.
     e.cancelBubble = true;
@@ -228,60 +498,51 @@ export function useCanvasEventHandlers({
 
     const dragNode = e.currentTarget as Konva.Node | null;
     const stage = stageRef.current;
-    const screenPos = stage?.getPointerPosition();
-    if (!dragNode || !screenPos) return;
-
-    manualTextDragRef.current = {
+    manualTextDragRef.current = createManualTextDragState({
       shapeId,
-      node: dragNode,
-      startPointer: navigation.getCanvasPosition(screenPos),
-      startPosition: { x: dragNode.x(), y: dragNode.y() },
-      activated: false,
-      drewFirstFrame: false,
-    };
+      dragNode,
+      screenPos: stage?.getPointerPosition(),
+      getCanvasPosition: navigation.getCanvasPosition,
+    });
   }, [navigation, selectedIds.length, selectedSet, selectedTool, setSelectedIds, stageRef, textEditing.editingTextId]);
+
+  const finishManualTextDrag = useCallback((manualTextDrag: ManualTextDragState) => {
+    manualTextDragRef.current = null;
+    const wasDragging = manualTextDrag.activated;
+    isShapeDraggingRef.current = false;
+    preTextDragHideRef.current = false;
+
+    const { dx, dy } = getManualTextDragDelta(manualTextDrag);
+    if (wasDragging && didManualTextDragMove(dx, dy)) {
+      commitManualDragDelta(manualTextDrag.shapeId, dx, dy);
+    }
+
+    if (wasDragging) {
+      restoreTransformerOnNextFrame({ transformerRef, reattachTransformerToSelection });
+    }
+  }, [commitManualDragDelta, isShapeDraggingRef, reattachTransformerToSelection, transformerRef]);
+
+  const finishCanvasMouseUp = useCallback(() => {
+    drawing.handleDrawingMouseUp();
+    if (marquee.isMarqueeSelecting) {
+      marquee.finishMarquee();
+    }
+
+    if (preTextDragHideRef.current && !isShapeDraggingRef.current) {
+      preTextDragHideRef.current = false;
+      restoreTransformerIfHidden(transformerRef);
+    }
+  }, [drawing, marquee, transformerRef, isShapeDraggingRef]);
 
   const handleMouseUp = useCallback(() => {
     const manualTextDrag = manualTextDragRef.current;
     if (manualTextDrag) {
-      manualTextDragRef.current = null;
-      const wasDragging = manualTextDrag.activated;
-      isShapeDraggingRef.current = false;
-      preTextDragHideRef.current = false;
-
-      const dx = manualTextDrag.node.x() - manualTextDrag.startPosition.x;
-      const dy = manualTextDrag.node.y() - manualTextDrag.startPosition.y;
-      if (wasDragging && (Math.abs(dx) > TEXT_MANUAL_DRAG_EPSILON || Math.abs(dy) > TEXT_MANUAL_DRAG_EPSILON)) {
-        commitManualDragDelta(manualTextDrag.shapeId, dx, dy);
-      }
-
-      if (wasDragging) {
-        requestAnimationFrame(() => {
-          const tr = transformerRef.current;
-          if (tr) {
-            tr.visible(true);
-          }
-          reattachTransformerToSelection();
-        });
-      }
+      finishManualTextDrag(manualTextDrag);
       return;
     }
 
-    // Finish drawing or click-to-place (always call - it no-ops when idle)
-    drawing.handleDrawingMouseUp();
-    // Finish marquee
-    if (marquee.isMarqueeSelecting) {
-      marquee.finishMarquee();
-    }
-    // Restore transformer if we hid it for a forced text drag that never started.
-    if (preTextDragHideRef.current && !isShapeDraggingRef.current) {
-      preTextDragHideRef.current = false;
-      const tr = transformerRef.current;
-      if (tr) {
-        tr.visible(true);
-      }
-    }
-  }, [commitManualDragDelta, drawing, marquee, reattachTransformerToSelection, transformerRef, isShapeDraggingRef]);
+    finishCanvasMouseUp();
+  }, [finishCanvasMouseUp, finishManualTextDrag]);
 
   useEffect(() => {
     const handleWindowMouseMove = (evt: MouseEvent) => {

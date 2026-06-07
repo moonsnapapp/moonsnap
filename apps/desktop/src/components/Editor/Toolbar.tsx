@@ -19,7 +19,7 @@ import {
   Save,
   Trash2,
 } from 'lucide-react';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, type ReactNode } from 'react';
 import type { Tool } from '../../types';
 import { useEditorStore } from '../../stores/editorStore';
 import { TIMING } from '../../constants';
@@ -57,23 +57,131 @@ const toolDefs: { id: Tool; Icon: typeof MousePointer2; label: string; shortcut:
   { id: 'background', Icon: Sparkles, label: 'Background', shortcut: 'G' },
 ];
 
-export const Toolbar: React.FC<ToolbarProps> = ({
-  selectedTool,
-  onToolChange,
-  onCopy,
-  onSave,
-  onUndo,
-  onRedo,
-  onDelete,
-  isCopying = false,
-  isSaving = false,
-}) => {
-  const [copied, setCopied] = useState(false);
-  const [isCompact, setIsCompact] = useState(false);
+function ToolbarTooltipContent({
+  label,
+  shortcut,
+}: {
+  label: string;
+  shortcut?: string;
+}) {
+  if (!shortcut) {
+    return <p className="text-xs">{label}</p>;
+  }
 
-  // Get undo/redo state from store
-  const canUndo = useEditorStore((state) => state.canUndo);
-  const canRedo = useEditorStore((state) => state.canRedo);
+  return (
+    <div className="flex items-center gap-2">
+      <span className="text-xs">{label}</span>
+      <kbd className="kbd text-[10px] px-1.5 py-0.5">{shortcut}</kbd>
+    </div>
+  );
+}
+
+function ToolbarIconButton({
+  label,
+  shortcut,
+  className,
+  disabled,
+  onClick,
+  children,
+}: {
+  label: string;
+  shortcut?: string;
+  className: string;
+  disabled?: boolean;
+  onClick: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <button
+          onClick={onClick}
+          disabled={disabled}
+          aria-label={label}
+          className={className}
+        >
+          {children}
+        </button>
+      </TooltipTrigger>
+      <TooltipContent side="top">
+        <ToolbarTooltipContent label={label} shortcut={shortcut} />
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
+function ToolButton({
+  tool,
+  selectedTool,
+  buttonSize,
+  iconSize,
+  onToolChange,
+}: {
+  tool: typeof toolDefs[number];
+  selectedTool: Tool;
+  buttonSize: string;
+  iconSize: string;
+  onToolChange: (tool: Tool) => void;
+}) {
+  return (
+    <ToolbarIconButton
+      label={tool.label}
+      shortcut={tool.shortcut}
+      className={`tool-button ${buttonSize} ${selectedTool === tool.id ? 'active' : ''}`}
+      onClick={() => onToolChange(tool.id)}
+    >
+      <tool.Icon className={`${iconSize} relative z-10`} />
+    </ToolbarIconButton>
+  );
+}
+
+function getCopyButtonLabel(isCopying: boolean, copied: boolean): string {
+  if (isCopying) return 'Copying...';
+  return copied ? 'Copied!' : 'Copy';
+}
+
+function CopyButtonIcon({
+  isCopying,
+  copied,
+  iconSize,
+}: {
+  isCopying: boolean;
+  copied: boolean;
+  iconSize: string;
+}) {
+  if (isCopying) {
+    return <Loader2 className={`${iconSize} animate-spin`} />;
+  }
+
+  if (copied) {
+    return <Check className={`${iconSize} animate-scale-in`} />;
+  }
+
+  return <Copy className={iconSize} />;
+}
+
+function SaveButtonIcon({ isSaving, iconSize }: { isSaving: boolean; iconSize: string }) {
+  if (isSaving) {
+    return <Loader2 className={`${iconSize} animate-spin`} />;
+  }
+
+  return <Save className={iconSize} />;
+}
+
+function getSaveButtonLabel(isSaving: boolean) {
+  return isSaving ? 'Saving...' : 'Save to File';
+}
+
+function getToolbarButtonSize(isCompact: boolean) {
+  return isCompact ? 'h-8 w-8' : 'h-9 w-9';
+}
+
+function getToolbarIconSize(isCompact: boolean) {
+  return isCompact ? 'w-4 h-4' : 'w-[18px] h-[18px]';
+}
+
+function useToolbarCompactMode() {
+  const [isCompact, setIsCompact] = useState(false);
 
   useEffect(() => {
     let debounceTimer: ReturnType<typeof setTimeout> | null = null;
@@ -92,154 +200,111 @@ export const Toolbar: React.FC<ToolbarProps> = ({
     };
   }, []);
 
+  return isCompact;
+}
+
+export const Toolbar: React.FC<ToolbarProps> = ({
+  selectedTool,
+  onToolChange,
+  onCopy,
+  onSave,
+  onUndo,
+  onRedo,
+  onDelete,
+  isCopying = false,
+  isSaving = false,
+}) => {
+  const [copied, setCopied] = useState(false);
+  const isCompact = useToolbarCompactMode();
+
+  // Get undo/redo state from store
+  const canUndo = useEditorStore((state) => state.canUndo);
+  const canRedo = useEditorStore((state) => state.canRedo);
+
   const handleCopy = async () => {
     await onCopy();
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const buttonSize = isCompact ? 'h-8 w-8' : 'h-9 w-9';
-  const iconSize = isCompact ? 'w-4 h-4' : 'w-[18px] h-[18px]';
+  const buttonSize = getToolbarButtonSize(isCompact);
+  const iconSize = getToolbarIconSize(isCompact);
 
   return (
     <TooltipProvider delayDuration={200} skipDelayDuration={300}>
       <div className="editor-toolbar-container">
         <div className="floating-toolbar animate-scale-in">
           {/* Undo/Redo Buttons */}
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button
-                onClick={onUndo}
-                disabled={!canUndo}
-                aria-label="Undo"
-                className={`glass-btn ${buttonSize} disabled:opacity-30 disabled:cursor-not-allowed`}
-              >
-                <Undo2 className={iconSize} />
-              </button>
-            </TooltipTrigger>
-            <TooltipContent side="top">
-              <div className="flex items-center gap-2">
-                <span className="text-xs">Undo</span>
-                <kbd className="kbd text-[10px] px-1.5 py-0.5">Ctrl+Z</kbd>
-              </div>
-            </TooltipContent>
-          </Tooltip>
+          <ToolbarIconButton
+            label="Undo"
+            shortcut="Ctrl+Z"
+            onClick={onUndo}
+            disabled={!canUndo}
+            className={`glass-btn ${buttonSize} disabled:opacity-30 disabled:cursor-not-allowed`}
+          >
+            <Undo2 className={iconSize} />
+          </ToolbarIconButton>
 
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button
-                onClick={onRedo}
-                disabled={!canRedo}
-                aria-label="Redo"
-                className={`glass-btn ${buttonSize} disabled:opacity-30 disabled:cursor-not-allowed`}
-              >
-                <Redo2 className={iconSize} />
-              </button>
-            </TooltipTrigger>
-            <TooltipContent side="top">
-              <div className="flex items-center gap-2">
-                <span className="text-xs">Redo</span>
-                <kbd className="kbd text-[10px] px-1.5 py-0.5">Ctrl+Y</kbd>
-              </div>
-            </TooltipContent>
-          </Tooltip>
+          <ToolbarIconButton
+            label="Redo"
+            shortcut="Ctrl+Y"
+            onClick={onRedo}
+            disabled={!canRedo}
+            className={`glass-btn ${buttonSize} disabled:opacity-30 disabled:cursor-not-allowed`}
+          >
+            <Redo2 className={iconSize} />
+          </ToolbarIconButton>
 
           <div className="toolbar-divider" />
 
           {/* Tool Buttons */}
           <div className="flex items-center gap-0.5">
-            {toolDefs.map((tool) => {
-              return (
-                <Tooltip key={tool.id}>
-                  <TooltipTrigger asChild>
-                    <button
-                      onClick={() => onToolChange(tool.id)}
-                      aria-label={tool.label}
-                      className={`tool-button ${buttonSize} ${selectedTool === tool.id ? 'active' : ''}`}
-                    >
-                      <tool.Icon className={`${iconSize} relative z-10`} />
-                    </button>
-                  </TooltipTrigger>
-                  <TooltipContent side="top">
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs">{tool.label}</span>
-                      <kbd className="kbd text-[10px] px-1.5 py-0.5">{tool.shortcut}</kbd>
-                    </div>
-                  </TooltipContent>
-                </Tooltip>
-              );
-            })}
+            {toolDefs.map((tool) => (
+              <ToolButton
+                key={tool.id}
+                tool={tool}
+                selectedTool={selectedTool}
+                buttonSize={buttonSize}
+                iconSize={iconSize}
+                onToolChange={onToolChange}
+              />
+            ))}
           </div>
 
           <div className="toolbar-divider" />
 
           {/* Quick Copy Button */}
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button
-                onClick={handleCopy}
-                disabled={isCopying}
-                aria-label="Copy to clipboard"
-                className={`glass-btn ${buttonSize} ${
-                  copied ? 'glass-btn--success' : ''
-                } disabled:opacity-50 disabled:cursor-not-allowed`}
-              >
-                {isCopying ? (
-                  <Loader2 className={`${iconSize} animate-spin`} />
-                ) : copied ? (
-                  <Check className={`${iconSize} animate-scale-in`} />
-                ) : (
-                  <Copy className={iconSize} />
-                )}
-              </button>
-            </TooltipTrigger>
-            <TooltipContent side="top">
-              <div className="flex items-center gap-2">
-                <span className="text-xs">{isCopying ? 'Copying...' : copied ? 'Copied!' : 'Copy'}</span>
-                <kbd className="kbd text-[10px] px-1.5 py-0.5">Ctrl+C</kbd>
-              </div>
-            </TooltipContent>
-          </Tooltip>
+          <ToolbarIconButton
+            label={getCopyButtonLabel(isCopying, copied)}
+            shortcut="Ctrl+C"
+            onClick={handleCopy}
+            disabled={isCopying}
+            className={`glass-btn ${buttonSize} ${
+              copied ? 'glass-btn--success' : ''
+            } disabled:opacity-50 disabled:cursor-not-allowed`}
+          >
+            <CopyButtonIcon isCopying={isCopying} copied={copied} iconSize={iconSize} />
+          </ToolbarIconButton>
 
           {/* Save Button */}
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button
-                onClick={onSave}
-                disabled={isSaving}
-                aria-label="Save to File"
-                className={`glass-btn ${buttonSize} disabled:opacity-50`}
-              >
-                {isSaving ? (
-                  <Loader2 className={`${iconSize} animate-spin`} />
-                ) : (
-                  <Save className={iconSize} />
-                )}
-              </button>
-            </TooltipTrigger>
-            <TooltipContent side="top">
-              <div className="flex items-center gap-2">
-                <span className="text-xs">{isSaving ? 'Saving...' : 'Save to File'}</span>
-                <kbd className="kbd text-[10px] px-1.5 py-0.5">Ctrl+E</kbd>
-              </div>
-            </TooltipContent>
-          </Tooltip>
+          <ToolbarIconButton
+            label={getSaveButtonLabel(isSaving)}
+            shortcut="Ctrl+E"
+            onClick={onSave}
+            disabled={isSaving}
+            className={`glass-btn ${buttonSize} disabled:opacity-50`}
+          >
+            <SaveButtonIcon isSaving={isSaving} iconSize={iconSize} />
+          </ToolbarIconButton>
 
           {/* Delete Button */}
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button
-                onClick={onDelete}
-                aria-label="Delete capture"
-                className={`glass-btn glass-btn--danger ${buttonSize}`}
-              >
-                <Trash2 className={iconSize} />
-              </button>
-            </TooltipTrigger>
-            <TooltipContent side="top">
-              <p className="text-xs">Delete Capture</p>
-            </TooltipContent>
-          </Tooltip>
+          <ToolbarIconButton
+            label="Delete Capture"
+            onClick={onDelete}
+            className={`glass-btn glass-btn--danger ${buttonSize}`}
+          >
+            <Trash2 className={iconSize} />
+          </ToolbarIconButton>
         </div>
       </div>
     </TooltipProvider>

@@ -17,10 +17,54 @@ import type { SceneSegment, SceneMode } from '../types';
 const SCENE_TRANSITION_DURATION = 0.3;
 /** Minimum gap to trigger a transition through default mode */
 const MIN_GAP_FOR_TRANSITION = 0.5;
+const BEZIER_SOLVE_EPSILON = 1e-6;
+const BEZIER_NEWTON_ITERATIONS = 8;
+const BEZIER_BISECTION_ITERATIONS = 20;
 
 // ============================================================================
 // Bezier Easing - Proper cubic bezier implementation
 // ============================================================================
+
+type CurveSampler = (t: number) => number;
+
+function solveCurveXWithNewton(
+  x: number,
+  sampleCurveX: CurveSampler,
+  sampleCurveDerivativeX: CurveSampler
+): number | null {
+  let t = x;
+  for (let i = 0; i < BEZIER_NEWTON_ITERATIONS; i++) {
+    const xEstimate = sampleCurveX(t) - x;
+    if (Math.abs(xEstimate) < BEZIER_SOLVE_EPSILON) return t;
+
+    const derivative = sampleCurveDerivativeX(t);
+    if (Math.abs(derivative) < BEZIER_SOLVE_EPSILON) return null;
+
+    t -= xEstimate / derivative;
+  }
+
+  return null;
+}
+
+function solveCurveXWithBisection(x: number, sampleCurveX: CurveSampler): number {
+  let lo = 0;
+  let hi = 1;
+  let t = x;
+
+  for (let i = 0; i < BEZIER_BISECTION_ITERATIONS; i++) {
+    const xEstimate = sampleCurveX(t);
+    if (Math.abs(xEstimate - x) < BEZIER_SOLVE_EPSILON) return t;
+
+    if (x > xEstimate) {
+      lo = t;
+    } else {
+      hi = t;
+    }
+    t = (lo + hi) / 2;
+  }
+
+  return t;
+}
 
 /**
  * Attempt to solve the cubic bezier curve for a given t value.
@@ -38,26 +82,12 @@ function cubicBezier(x1: number, y1: number, x2: number, y2: number) {
   const sampleCurveDerivativeX = (t: number): number => {
     return (3 * (1 - 3 * x2 + 3 * x1) * t + 2 * (3 * x2 - 6 * x1)) * t + 3 * x1;
   };
-  
+   
   const solveCurveX = (x: number): number => {
-    let t = x;
-    for (let i = 0; i < 8; i++) {
-      const xEstimate = sampleCurveX(t) - x;
-      if (Math.abs(xEstimate) < 1e-6) return t;
-      const derivative = sampleCurveDerivativeX(t);
-      if (Math.abs(derivative) < 1e-6) break;
-      t = t - xEstimate / derivative;
-    }
-    let lo = 0, hi = 1;
-    t = x;
-    while (lo < hi) {
-      const xEstimate = sampleCurveX(t);
-      if (Math.abs(xEstimate - x) < 1e-6) return t;
-      if (x > xEstimate) lo = t;
-      else hi = t;
-      t = (lo + hi) / 2;
-    }
-    return t;
+    return (
+      solveCurveXWithNewton(x, sampleCurveX, sampleCurveDerivativeX) ??
+      solveCurveXWithBisection(x, sampleCurveX)
+    );
   };
   
   return (x: number): number => {
@@ -91,24 +121,14 @@ interface SceneSegmentsCursor {
   segments: SceneSegment[];
 }
 
+function areSceneSegmentsSorted(segments: SceneSegment[]): boolean {
+  return segments.every((segment, index) => index === 0 || segments[index - 1].startMs <= segment.startMs);
+}
+
 function sortSceneSegmentsByStart(segments: SceneSegment[]): SceneSegment[] {
-  if (segments.length < 2) {
-    return segments;
-  }
-
-  let alreadySorted = true;
-  for (let i = 1; i < segments.length; i++) {
-    if (segments[i - 1].startMs > segments[i].startMs) {
-      alreadySorted = false;
-      break;
-    }
-  }
-
-  if (alreadySorted) {
-    return segments;
-  }
-
-  return [...segments].sort((a, b) => a.startMs - b.startMs);
+  return segments.length < 2 || areSceneSegmentsSorted(segments)
+    ? segments
+    : [...segments].sort((a, b) => a.startMs - b.startMs);
 }
 
 function findLastSegmentStartingAtOrBefore(segments: SceneSegment[], timeMs: number): number {
@@ -147,15 +167,42 @@ function findFirstSegmentStartingAfter(segments: SceneSegment[], timeMs: number)
   return result;
 }
 
+interface SceneCursorCandidate {
+  idx: number;
+  segment: SceneSegment | null;
+}
+
+function getSceneCursorCandidate(segments: SceneSegment[], timeMs: number): SceneCursorCandidate {
+  const idx = findLastSegmentStartingAtOrBefore(segments, timeMs);
+  return {
+    idx,
+    segment: idx >= 0 ? segments[idx] : null,
+  };
+}
+
+function getPreviousSceneCursorSegment(
+  segments: SceneSegment[],
+  candidate: SceneCursorCandidate
+): SceneSegment | null {
+  return candidate.idx > 0 ? segments[candidate.idx - 1] : null;
+}
+
+function isSceneCursorCandidateActive(
+  candidate: SceneCursorCandidate,
+  timeMs: number
+): candidate is SceneCursorCandidate & { segment: SceneSegment } {
+  return candidate.segment !== null && timeMs < candidate.segment.endMs;
+}
+
 function createSceneCursor(timeS: number, segments: SceneSegment[]): SceneSegmentsCursor {
   const timeMs = timeS * 1000;
+  const candidate = getSceneCursorCandidate(segments, timeMs);
 
-  const candidateIdx = findLastSegmentStartingAtOrBefore(segments, timeMs);
-  if (candidateIdx >= 0 && timeMs < segments[candidateIdx].endMs) {
+  if (isSceneCursorCandidateActive(candidate, timeMs)) {
     return {
       timeS,
-      segment: segments[candidateIdx],
-      prevSegment: candidateIdx > 0 ? segments[candidateIdx - 1] : null,
+      segment: candidate.segment,
+      prevSegment: getPreviousSceneCursorSegment(segments, candidate),
       segments,
     };
   }
@@ -163,7 +210,7 @@ function createSceneCursor(timeS: number, segments: SceneSegment[]): SceneSegmen
   return {
     timeS,
     segment: null,
-    prevSegment: candidateIdx >= 0 ? segments[candidateIdx] : null,
+    prevSegment: candidate.segment,
     segments,
   };
 }
@@ -234,153 +281,272 @@ function isSameMode(a: SceneMode, b: SceneMode): boolean {
   return a === b;
 }
 
-/**
- * Interpolate scene state at the given cursor position.
- */
-function interpolateScene(cursor: SceneSegmentsCursor): InterpolatedScene {
-  const { timeS, segment, prevSegment } = cursor;
+interface SceneTransition {
+  currentMode: SceneMode;
+  nextMode: SceneMode;
+  transitionProgress: number;
+}
 
-  // Determine current mode, next mode, and transition progress
-  let currentMode: SceneMode = 'default';
-  let nextMode: SceneMode = 'default';
-  let transitionProgress = 1;
+function createSceneTransition(
+  currentMode: SceneMode,
+  nextMode: SceneMode,
+  transitionProgress = 1
+): SceneTransition {
+  return { currentMode, nextMode, transitionProgress };
+}
 
-  if (segment) {
-    const transitionStart = segment.startMs / 1000 - SCENE_TRANSITION_DURATION;
-    const transitionEnd = segment.endMs / 1000 - SCENE_TRANSITION_DURATION;
+function easeTransitionProgress(progress: number): number {
+  return easeInOut(Math.min(1, Math.max(0, progress)));
+}
 
-    if (timeS < segment.startMs / 1000 && timeS >= transitionStart) {
-      // Transitioning into segment
-      const prevMode = prevSegment ? (() => {
-        const gap = segment.startMs / 1000 - prevSegment.endMs / 1000;
-        if (gap < MIN_GAP_FOR_TRANSITION && isSameMode(prevSegment.mode, segment.mode)) {
-          return null; // Skip transition for small gaps between same modes
-        }
-        return gap > 0.01 ? 'default' : prevSegment.mode;
-      })() : 'default';
+function getSegmentGapSeconds(startMs: number, endMs: number): number {
+  return startMs / 1000 - endMs / 1000;
+}
 
-      if (prevMode === null) {
-        return fromSingleMode(segment.mode);
-      }
+function shouldHoldModeAcrossGap(
+  currentMode: SceneMode,
+  adjacentMode: SceneMode,
+  gapSeconds: number
+): boolean {
+  return gapSeconds < MIN_GAP_FOR_TRANSITION && isSameMode(currentMode, adjacentMode);
+}
 
-      const progress = (timeS - transitionStart) / SCENE_TRANSITION_DURATION;
-      currentMode = prevMode as SceneMode;
-      nextMode = segment.mode;
-      transitionProgress = easeInOut(Math.min(1, Math.max(0, progress)));
-    } else if (timeS >= transitionEnd && timeS < segment.endMs / 1000) {
-      // Transitioning out of segment
-      const nextSeg = getNextSegment(cursor);
-      if (nextSeg) {
-        const gap = nextSeg.startMs / 1000 - segment.endMs / 1000;
-        if (gap < MIN_GAP_FOR_TRANSITION && isSameMode(segment.mode, nextSeg.mode)) {
-          // Keep current mode
-          currentMode = segment.mode;
-          nextMode = segment.mode;
-          transitionProgress = 1;
-        } else if (gap > 0.01) {
-          // Transition to default
-          const progress = (timeS - transitionEnd) / SCENE_TRANSITION_DURATION;
-          currentMode = segment.mode;
-          nextMode = 'default';
-          transitionProgress = easeInOut(Math.min(1, progress));
-        } else {
-          // Direct transition to next segment
-          const progress = (timeS - transitionEnd) / SCENE_TRANSITION_DURATION;
-          currentMode = segment.mode;
-          nextMode = nextSeg.mode;
-          transitionProgress = easeInOut(Math.min(1, progress));
-        }
-      } else {
-        // No next segment, transition to default
-        const progress = (timeS - transitionEnd) / SCENE_TRANSITION_DURATION;
-        currentMode = segment.mode;
-        nextMode = 'default';
-        transitionProgress = easeInOut(Math.min(1, progress));
-      }
-    } else {
-      // Fully in segment
-      currentMode = segment.mode;
-      nextMode = segment.mode;
-      transitionProgress = 1;
-    }
-  } else {
-    // Not in a segment
-    const nextSeg = getNextSegment(cursor);
-    if (nextSeg) {
-      const transitionStart = nextSeg.startMs / 1000 - SCENE_TRANSITION_DURATION;
+function getModeAcrossGap(adjacentMode: SceneMode, gapSeconds: number): SceneMode {
+  return gapSeconds > 0.01 ? 'default' : adjacentMode;
+}
 
-      if (prevSegment) {
-        const gap = nextSeg.startMs / 1000 - prevSegment.endMs / 1000;
-        if (gap < MIN_GAP_FOR_TRANSITION && isSameMode(prevSegment.mode, nextSeg.mode)) {
-          // Stay in previous mode
-          currentMode = prevSegment.mode;
-          nextMode = prevSegment.mode;
-          transitionProgress = 1;
-        } else if (timeS >= transitionStart) {
-          // Transitioning into next segment
-          const prevMode = gap > 0.01 ? 'default' : prevSegment.mode;
-          const progress = (timeS - transitionStart) / SCENE_TRANSITION_DURATION;
-          currentMode = prevMode as SceneMode;
-          nextMode = nextSeg.mode;
-          transitionProgress = easeInOut(Math.min(1, Math.max(0, progress)));
-        } else {
-          // In gap, at default
-          currentMode = 'default';
-          nextMode = 'default';
-          transitionProgress = 1;
-        }
-      } else if (timeS >= transitionStart) {
-        // No previous segment, transitioning into first segment
-        const progress = (timeS - transitionStart) / SCENE_TRANSITION_DURATION;
-        currentMode = 'default';
-        nextMode = nextSeg.mode;
-        transitionProgress = easeInOut(Math.min(1, Math.max(0, progress)));
-      }
-    }
-    // else: no segments, stay at default
+function getAdjacentTransitionMode(
+  currentMode: SceneMode,
+  adjacentMode: SceneMode | null,
+  gapSeconds: number
+): SceneMode | null {
+  if (adjacentMode === null) {
+    return 'default';
   }
 
-  // Calculate interpolated values
+  return shouldHoldModeAcrossGap(currentMode, adjacentMode, gapSeconds)
+    ? null
+    : getModeAcrossGap(adjacentMode, gapSeconds);
+}
+
+function getPreviousModeForSegmentEntry(
+  segment: SceneSegment,
+  prevSegment: SceneSegment | null
+): SceneMode | null {
+  return getAdjacentTransitionMode(
+    segment.mode,
+    prevSegment?.mode ?? null,
+    prevSegment ? getSegmentGapSeconds(segment.startMs, prevSegment.endMs) : 0
+  );
+}
+
+function isSegmentEntryTransitionActive(
+  segment: SceneSegment | null,
+  timeS: number,
+  transitionStart: number
+): segment is SceneSegment {
+  return segment !== null && timeS < segment.startMs / 1000 && timeS >= transitionStart;
+}
+
+function createNullableFromModeTransition(
+  fromMode: SceneMode | null,
+  toMode: SceneMode,
+  progress: number
+): SceneTransition {
+  return fromMode === null
+    ? createSceneTransition(toMode, toMode)
+    : createSceneTransition(fromMode, toMode, easeTransitionProgress(progress));
+}
+
+function getSegmentEntryTransition(
+  cursor: SceneSegmentsCursor,
+  transitionStart: number
+): SceneTransition | null {
+  const { timeS, segment, prevSegment } = cursor;
+  if (!isSegmentEntryTransitionActive(segment, timeS, transitionStart)) {
+    return null;
+  }
+
+  const prevMode = getPreviousModeForSegmentEntry(segment, prevSegment);
+  const progress = (timeS - transitionStart) / SCENE_TRANSITION_DURATION;
+  return createNullableFromModeTransition(prevMode, segment.mode, progress);
+}
+
+function getNextModeForSegmentExit(
+  segment: SceneSegment,
+  nextSegment: SceneSegment | null
+): SceneMode | null {
+  return getAdjacentTransitionMode(
+    segment.mode,
+    nextSegment?.mode ?? null,
+    nextSegment ? getSegmentGapSeconds(nextSegment.startMs, segment.endMs) : 0
+  );
+}
+
+function isSegmentExitTransitionActive(
+  segment: SceneSegment | null,
+  timeS: number,
+  transitionEnd: number
+): segment is SceneSegment {
+  return segment !== null && timeS >= transitionEnd && timeS < segment.endMs / 1000;
+}
+
+function createNullableToModeTransition(
+  fromMode: SceneMode,
+  toMode: SceneMode | null,
+  progress: number
+): SceneTransition {
+  return toMode === null
+    ? createSceneTransition(fromMode, fromMode)
+    : createSceneTransition(fromMode, toMode, easeTransitionProgress(progress));
+}
+
+function getSegmentExitTransition(
+  cursor: SceneSegmentsCursor,
+  transitionEnd: number
+): SceneTransition | null {
+  const { timeS, segment } = cursor;
+  if (!isSegmentExitTransitionActive(segment, timeS, transitionEnd)) {
+    return null;
+  }
+
+  const nextSeg = getNextSegment(cursor);
+  const nextMode = getNextModeForSegmentExit(segment, nextSeg);
+  const progress = (timeS - transitionEnd) / SCENE_TRANSITION_DURATION;
+  return createNullableToModeTransition(segment.mode, nextMode, progress);
+}
+
+function getActiveSegmentTransition(cursor: SceneSegmentsCursor): SceneTransition {
+  const { segment } = cursor;
+  if (!segment) {
+    return createSceneTransition('default', 'default');
+  }
+
+  const transitionStart = segment.startMs / 1000 - SCENE_TRANSITION_DURATION;
+  const transitionEnd = segment.endMs / 1000 - SCENE_TRANSITION_DURATION;
+
+  return (
+    getSegmentEntryTransition(cursor, transitionStart) ??
+    getSegmentExitTransition(cursor, transitionEnd) ??
+    createSceneTransition(segment.mode, segment.mode)
+  );
+}
+
+function getHoldModeAcrossSmallGap(
+  prevSegment: SceneSegment | null,
+  nextSegment: SceneSegment
+): SceneMode | null {
+  if (!prevSegment) return null;
+
+  const gap = nextSegment.startMs / 1000 - prevSegment.endMs / 1000;
+  return gap < MIN_GAP_FOR_TRANSITION && isSameMode(prevSegment.mode, nextSegment.mode)
+    ? prevSegment.mode
+    : null;
+}
+
+function getGapPreviousMode(
+  prevSegment: SceneSegment | null,
+  nextSegment: SceneSegment
+): SceneMode {
+  if (!prevSegment) return 'default';
+
+  const gap = nextSegment.startMs / 1000 - prevSegment.endMs / 1000;
+  return gap > 0.01 ? 'default' : prevSegment.mode;
+}
+
+function getGapTransitionToNextSegment(
+  cursor: SceneSegmentsCursor,
+  nextSeg: SceneSegment
+): SceneTransition {
+  const { timeS, prevSegment } = cursor;
+  const transitionStart = nextSeg.startMs / 1000 - SCENE_TRANSITION_DURATION;
+  const holdMode = getHoldModeAcrossSmallGap(prevSegment, nextSeg);
+
+  if (holdMode) {
+    return createSceneTransition(holdMode, holdMode);
+  }
+
+  if (timeS < transitionStart) {
+    return createSceneTransition('default', 'default');
+  }
+
+  const prevMode = getGapPreviousMode(prevSegment, nextSeg);
+  const progress = (timeS - transitionStart) / SCENE_TRANSITION_DURATION;
+  return createSceneTransition(prevMode, nextSeg.mode, easeTransitionProgress(progress));
+}
+
+function getGapTransition(cursor: SceneSegmentsCursor): SceneTransition {
+  const nextSeg = getNextSegment(cursor);
+  if (!nextSeg) {
+    return createSceneTransition('default', 'default');
+  }
+
+  return getGapTransitionToNextSegment(cursor, nextSeg);
+}
+
+type CameraOnlyDirection = 'entering' | 'leaving' | 'none';
+
+function getCameraOnlyDirection(currentMode: SceneMode, nextMode: SceneMode): CameraOnlyDirection {
+  const isCurrentCameraOnly = currentMode === 'cameraOnly';
+  const isNextCameraOnly = nextMode === 'cameraOnly';
+
+  if (isCurrentCameraOnly === isNextCameraOnly) {
+    return 'none';
+  }
+
+  return isNextCameraOnly ? 'entering' : 'leaving';
+}
+
+function getScreenBlur(currentMode: SceneMode, nextMode: SceneMode, transitionProgress: number): number {
+  const blurByDirection: Record<CameraOnlyDirection, number> = {
+    entering: transitionProgress,
+    leaving: lerp(1, 0, transitionProgress),
+    none: 0,
+  };
+
+  return blurByDirection[getCameraOnlyDirection(currentMode, nextMode)];
+}
+
+function getCameraOnlyBlur(
+  currentMode: SceneMode,
+  nextMode: SceneMode,
+  transitionProgress: number
+): number {
+  const blurByDirection: Record<CameraOnlyDirection, number> = {
+    entering: lerp(1, 0, transitionProgress),
+    leaving: transitionProgress,
+    none: 0,
+  };
+
+  return blurByDirection[getCameraOnlyDirection(currentMode, nextMode)];
+}
+
+function buildInterpolatedScene(transition: SceneTransition): InterpolatedScene {
+  const { currentMode, nextMode, transitionProgress } = transition;
   const startValues = getSceneValues(currentMode);
   const endValues = getSceneValues(nextMode);
 
-  const cameraOpacity = lerp(startValues.cameraOpacity, endValues.cameraOpacity, transitionProgress);
-  const screenOpacity = lerp(startValues.screenOpacity, endValues.screenOpacity, transitionProgress);
-  const cameraScale = lerp(startValues.cameraScale, endValues.cameraScale, transitionProgress);
-
-  // Screen blur for camera-only transitions
-  let screenBlur = 0;
-  if (currentMode === 'cameraOnly' || nextMode === 'cameraOnly') {
-    if (currentMode === 'cameraOnly' && nextMode !== 'cameraOnly') {
-      screenBlur = lerp(1, 0, transitionProgress);
-    } else if (currentMode !== 'cameraOnly' && nextMode === 'cameraOnly') {
-      screenBlur = transitionProgress;
-    }
-  }
-
-  // Camera zoom during camera-only transition (disabled - just fade)
-  const cameraOnlyZoom = 1;
-
-  // Camera blur during camera-only transition
-  let cameraOnlyBlur = 0;
-  if (nextMode === 'cameraOnly' && currentMode !== 'cameraOnly') {
-    cameraOnlyBlur = lerp(1, 0, transitionProgress);
-  } else if (currentMode === 'cameraOnly' && nextMode !== 'cameraOnly') {
-    cameraOnlyBlur = transitionProgress;
-  }
-
   return {
-    cameraOpacity,
-    screenOpacity,
-    cameraScale,
+    cameraOpacity: lerp(startValues.cameraOpacity, endValues.cameraOpacity, transitionProgress),
+    screenOpacity: lerp(startValues.screenOpacity, endValues.screenOpacity, transitionProgress),
+    cameraScale: lerp(startValues.cameraScale, endValues.cameraScale, transitionProgress),
     sceneMode: transitionProgress > 0.5 ? nextMode : currentMode,
     transitionProgress,
     fromMode: currentMode,
     toMode: nextMode,
-    screenBlur,
-    cameraOnlyZoom,
-    cameraOnlyBlur,
+    screenBlur: getScreenBlur(currentMode, nextMode, transitionProgress),
+    cameraOnlyZoom: 1,
+    cameraOnlyBlur: getCameraOnlyBlur(currentMode, nextMode, transitionProgress),
   };
+}
+
+/**
+ * Interpolate scene state at the given cursor position.
+ */
+function interpolateScene(cursor: SceneSegmentsCursor): InterpolatedScene {
+  return buildInterpolatedScene(
+    cursor.segment ? getActiveSegmentTransition(cursor) : getGapTransition(cursor)
+  );
 }
 
 // ============================================================================
@@ -403,6 +569,28 @@ function getInterpolatedSceneAtSorted(
   const cursor = createSceneCursor(timeS, sortedSegments);
 
   return interpolateScene(cursor);
+}
+
+function isTimestampWithinSegment(timestampMs: number, segment: SceneSegment): boolean {
+  return timestampMs >= segment.startMs && timestampMs <= segment.endMs;
+}
+
+function getActiveSceneSegmentAtSorted(
+  sortedSegments: SceneSegment[],
+  timestampMs: number
+): SceneSegment | undefined {
+  const idx = findLastSegmentStartingAtOrBefore(sortedSegments, timestampMs);
+  const segment = idx >= 0 ? sortedSegments[idx] : undefined;
+
+  return segment && isTimestampWithinSegment(timestampMs, segment) ? segment : undefined;
+}
+
+function getSceneModeAtSorted(
+  sortedSegments: SceneSegment[],
+  defaultMode: SceneMode,
+  timestampMs: number
+): SceneMode {
+  return getActiveSceneSegmentAtSorted(sortedSegments, timestampMs)?.mode ?? defaultMode;
 }
 
 export function getInterpolatedSceneAt(
@@ -433,16 +621,7 @@ export function getSceneModeAt(
     return defaultMode;
   }
 
-  const sortedSegments = sortSceneSegmentsByStart(segments);
-  const idx = findLastSegmentStartingAtOrBefore(sortedSegments, timestampMs);
-  if (idx >= 0) {
-    const segment = sortedSegments[idx];
-    if (timestampMs >= segment.startMs && timestampMs <= segment.endMs) {
-      return segment.mode;
-    }
-  }
-
-  return defaultMode;
+  return getSceneModeAtSorted(sortSceneSegmentsByStart(segments), defaultMode, timestampMs);
 }
 
 /**
@@ -458,20 +637,10 @@ export function useSceneMode(
     [segments]
   );
 
-  return useMemo(() => {
-    const mode = defaultMode ?? 'default';
-    if (sortedSegments.length === 0) {
-      return mode;
-    }
-    const idx = findLastSegmentStartingAtOrBefore(sortedSegments, currentTimeMs);
-    if (idx >= 0) {
-      const segment = sortedSegments[idx];
-      if (currentTimeMs >= segment.startMs && currentTimeMs <= segment.endMs) {
-        return segment.mode;
-      }
-    }
-    return mode;
-  }, [sortedSegments, defaultMode, currentTimeMs]);
+  return useMemo(
+    () => getSceneModeAtSorted(sortedSegments, defaultMode ?? 'default', currentTimeMs),
+    [sortedSegments, defaultMode, currentTimeMs]
+  );
 }
 
 /**
@@ -512,28 +681,53 @@ export function isTransitioningCameraOnly(scene: InterpolatedScene): boolean {
   return scene.fromMode === 'cameraOnly' || scene.toMode === 'cameraOnly';
 }
 
+type CameraOnlyTransitionState = 'leaving' | 'entering' | 'active' | 'none';
+type CameraOnlyTransitionKey = 'camera-camera' | 'camera-other' | 'other-camera' | 'other-other';
+
+const CAMERA_ONLY_TRANSITION_STATES: Record<CameraOnlyTransitionKey, CameraOnlyTransitionState> = {
+  'camera-camera': 'active',
+  'camera-other': 'leaving',
+  'other-camera': 'entering',
+  'other-other': 'none',
+};
+
+function getCameraOnlyTransitionKey(scene: InterpolatedScene): CameraOnlyTransitionKey {
+  const from = scene.fromMode === 'cameraOnly' ? 'camera' : 'other';
+  const to = scene.toMode === 'cameraOnly' ? 'camera' : 'other';
+  return `${from}-${to}` as CameraOnlyTransitionKey;
+}
+
+function getCameraOnlyTransitionState(scene: InterpolatedScene): CameraOnlyTransitionState {
+  return CAMERA_ONLY_TRANSITION_STATES[getCameraOnlyTransitionKey(scene)];
+}
+
+function getFastRegularCameraFade(scene: InterpolatedScene, direction: 'in' | 'out') {
+  const progress = scene.transitionProgress * 1.5;
+  return direction === 'in'
+    ? Math.min(1, progress) * scene.cameraOpacity
+    : Math.max(0, 1 - progress) * scene.cameraOpacity;
+}
+
 export function getCameraOnlyTransitionOpacity(scene: InterpolatedScene): number {
-  if (scene.fromMode === 'cameraOnly' && scene.toMode !== 'cameraOnly') {
-    return 1 - scene.transitionProgress;
-  } else if (scene.fromMode !== 'cameraOnly' && scene.toMode === 'cameraOnly') {
-    return scene.transitionProgress;
-  } else if (scene.fromMode === 'cameraOnly' && scene.toMode === 'cameraOnly') {
-    return 1;
-  }
-  return 0;
+  const opacityByState: Record<CameraOnlyTransitionState, number> = {
+    leaving: 1 - scene.transitionProgress,
+    entering: scene.transitionProgress,
+    active: 1,
+    none: 0,
+  };
+
+  return opacityByState[getCameraOnlyTransitionState(scene)];
 }
 
 export function getRegularCameraTransitionOpacity(scene: InterpolatedScene): number {
-  if (scene.toMode === 'cameraOnly' && scene.fromMode !== 'cameraOnly') {
-    const fastFade = Math.max(0, 1 - scene.transitionProgress * 1.5);
-    return fastFade * scene.cameraOpacity;
-  } else if (scene.fromMode === 'cameraOnly' && scene.toMode !== 'cameraOnly') {
-    const fastFade = Math.min(1, scene.transitionProgress * 1.5);
-    return fastFade * scene.cameraOpacity;
-  } else if (scene.fromMode === 'cameraOnly' && scene.toMode === 'cameraOnly') {
-    return 0;
-  }
-  return scene.cameraOpacity;
+  const opacityByState: Record<CameraOnlyTransitionState, number> = {
+    leaving: getFastRegularCameraFade(scene, 'in'),
+    entering: getFastRegularCameraFade(scene, 'out'),
+    active: 0,
+    none: scene.cameraOpacity,
+  };
+
+  return opacityByState[getCameraOnlyTransitionState(scene)];
 }
 
 /**
@@ -541,18 +735,12 @@ export function getRegularCameraTransitionOpacity(scene: InterpolatedScene): num
  * Returns false when in Camera Only mode (cursor makes no sense without screen content).
  */
 export function shouldRenderCursor(scene: InterpolatedScene): boolean {
-  // Don't render cursor when fully in cameraOnly mode
-  if (scene.fromMode === 'cameraOnly' && scene.toMode === 'cameraOnly') {
-    return false;
-  }
-  // Don't render cursor when transitioning TO cameraOnly (fade out with screen)
-  if (scene.toMode === 'cameraOnly') {
-    return scene.transitionProgress < 0.5;
-  }
-  // Don't render cursor when transitioning FROM cameraOnly until screen is visible
-  if (scene.fromMode === 'cameraOnly') {
-    return scene.transitionProgress > 0.5;
-  }
-  // Otherwise, render cursor when screen is visible
-  return shouldRenderScreen(scene);
+  const shouldRenderByState: Record<CameraOnlyTransitionState, boolean> = {
+    active: false,
+    entering: scene.transitionProgress < 0.5,
+    leaving: scene.transitionProgress > 0.5,
+    none: shouldRenderScreen(scene),
+  };
+
+  return shouldRenderByState[getCameraOnlyTransitionState(scene)];
 }

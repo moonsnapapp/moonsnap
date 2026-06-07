@@ -21,6 +21,100 @@ interface ArrowShapeProps {
   commitSnapshot: () => void;
 }
 
+interface ArrowEndpointHandleProps {
+  handleRef: React.RefObject<Konva.Circle | null>;
+  x: number;
+  y: number;
+  radius: number;
+  strokeWidth: number;
+  onDragStart: () => void;
+  onDragMove: (e: Konva.KonvaEventObject<DragEvent>) => void;
+  onDragEnd: (e: Konva.KonvaEventObject<DragEvent>) => void;
+}
+
+function getArrowAnchors(shape: CanvasShape) {
+  return shape.points || [0, 0, 0, 0];
+}
+
+function getArrowHandleSize(strokeWidth: number, zoom: number) {
+  return Math.min(6, Math.max(4, strokeWidth * 0.2)) / zoom;
+}
+
+function getArrowHitStrokeWidth(strokeWidth: number) {
+  return Math.max(strokeWidth * 3, 12);
+}
+
+function shouldShowArrowEndpointHandles(isSelected: boolean, isDraggable: boolean) {
+  return isSelected && isDraggable;
+}
+
+function setEndpointCursor(e: Konva.KonvaEventObject<MouseEvent>, cursor: string) {
+  const container = e.target.getStage()?.container();
+  if (container) {
+    container.style.cursor = cursor;
+  }
+}
+
+function animateArrowEndpointHandle(
+  handle: Konva.Circle | null,
+  isSelected: boolean,
+  radius: number,
+  strokeWidth: number
+) {
+  if (!handle || !isSelected) {
+    return;
+  }
+
+  handle.to({ radius, strokeWidth, duration: 0.1 });
+}
+
+function animateArrowEndpointHandles({
+  startHandle,
+  endHandle,
+  isSelected,
+  radius,
+  strokeWidth,
+}: {
+  startHandle: Konva.Circle | null;
+  endHandle: Konva.Circle | null;
+  isSelected: boolean;
+  radius: number;
+  strokeWidth: number;
+}) {
+  animateArrowEndpointHandle(startHandle, isSelected, radius, strokeWidth);
+  animateArrowEndpointHandle(endHandle, isSelected, radius, strokeWidth);
+}
+
+function ArrowEndpointHandle({
+  handleRef,
+  x,
+  y,
+  radius,
+  strokeWidth,
+  onDragStart,
+  onDragMove,
+  onDragEnd,
+}: ArrowEndpointHandleProps) {
+  return (
+    <Circle
+      ref={handleRef}
+      name="editor-gizmo"
+      x={x}
+      y={y}
+      radius={radius}
+      fill="#fff"
+      stroke="#374151"
+      strokeWidth={strokeWidth}
+      draggable
+      onDragStart={onDragStart}
+      onDragMove={onDragMove}
+      onDragEnd={onDragEnd}
+      onMouseEnter={(event) => setEndpointCursor(event, 'crosshair')}
+      onMouseLeave={(event) => setEndpointCursor(event, 'default')}
+    />
+  );
+}
+
 export const ArrowShape: React.FC<ArrowShapeProps> = React.memo(({
   shape,
   isSelected,
@@ -37,9 +131,9 @@ export const ArrowShape: React.FC<ArrowShapeProps> = React.memo(({
   const cursorHandlers = useShapeCursor(isDraggable);
   // points[] = anchor positions (where handles sit)
   // Memoize to prevent new array reference on every render when shape.points is undefined
-  const anchors = useMemo(() => shape.points || [0, 0, 0, 0], [shape.points]);
+  const anchors = useMemo(() => getArrowAnchors(shape), [shape]);
   const strokeWidth = shape.strokeWidth || 2;
-  const handleSize = Math.min(6, Math.max(4, strokeWidth * 0.2)) / zoom;
+  const handleSize = getArrowHandleSize(strokeWidth, zoom);
 
   // Compute arrow visual endpoints (offset inward from anchors)
   const arrowPoints = useMemo(() =>
@@ -55,12 +149,13 @@ export const ArrowShape: React.FC<ArrowShapeProps> = React.memo(({
   // Smooth handle size transitions on zoom
   const handleStrokeWidth = 1.5 / zoom;
   useEffect(() => {
-    if (startHandleRef.current && isSelected) {
-      startHandleRef.current.to({ radius: handleSize, strokeWidth: handleStrokeWidth, duration: 0.1 });
-    }
-    if (endHandleRef.current && isSelected) {
-      endHandleRef.current.to({ radius: handleSize, strokeWidth: handleStrokeWidth, duration: 0.1 });
-    }
+    animateArrowEndpointHandles({
+      startHandle: startHandleRef.current,
+      endHandle: endHandleRef.current,
+      isSelected,
+      radius: handleSize,
+      strokeWidth: handleStrokeWidth,
+    });
   }, [handleSize, handleStrokeWidth, isSelected]);
 
   // Arrow drag handlers
@@ -123,7 +218,7 @@ export const ArrowShape: React.FC<ArrowShapeProps> = React.memo(({
     commitSnapshot();
   }, [anchors, commitSnapshot, onEndpointDragEnd]);
 
-  const hitStrokeWidth = Math.max((shape.strokeWidth || 2) * 3, 12);
+  const hitStrokeWidth = getArrowHitStrokeWidth(strokeWidth);
 
   return (
     <Group id={shape.id}>
@@ -144,51 +239,27 @@ export const ArrowShape: React.FC<ArrowShapeProps> = React.memo(({
         onDragEnd={handleArrowDragEnd}
         {...cursorHandlers}
       />
-      {isSelected && isDraggable && (
+      {shouldShowArrowEndpointHandles(isSelected, isDraggable) && (
         <>
-          <Circle
-            ref={startHandleRef}
-            name="editor-gizmo"
+          <ArrowEndpointHandle
+            handleRef={startHandleRef}
             x={anchors[0]}
             y={anchors[1]}
             radius={handleSize}
-            fill="#fff"
-            stroke="#374151"
             strokeWidth={1.5 / zoom}
-            draggable
             onDragStart={() => takeSnapshot()}
             onDragMove={handleStartDragMove}
             onDragEnd={(e) => handleEndpointDragEnd(0, e)}
-            onMouseEnter={(e) => {
-              const container = e.target.getStage()?.container();
-              if (container) container.style.cursor = 'crosshair';
-            }}
-            onMouseLeave={(e) => {
-              const container = e.target.getStage()?.container();
-              if (container) container.style.cursor = 'default';
-            }}
           />
-          <Circle
-            ref={endHandleRef}
-            name="editor-gizmo"
+          <ArrowEndpointHandle
+            handleRef={endHandleRef}
             x={anchors[2]}
             y={anchors[3]}
             radius={handleSize}
-            fill="#fff"
-            stroke="#374151"
             strokeWidth={1.5 / zoom}
-            draggable
             onDragStart={() => takeSnapshot()}
             onDragMove={handleEndDragMove}
             onDragEnd={(e) => handleEndpointDragEnd(1, e)}
-            onMouseEnter={(e) => {
-              const container = e.target.getStage()?.container();
-              if (container) container.style.cursor = 'crosshair';
-            }}
-            onMouseLeave={(e) => {
-              const container = e.target.getStage()?.container();
-              if (container) container.style.cursor = 'default';
-            }}
           />
         </>
       )}

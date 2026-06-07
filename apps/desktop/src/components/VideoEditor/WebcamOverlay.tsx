@@ -10,6 +10,7 @@ import {
 import { useWebCodecsPreview } from '../../hooks/useWebCodecsPreview';
 import { webcamLogger } from '../../utils/logger';
 import { generateSquircleClipPath } from '../../utils/squircle';
+import { startWebCodecsCanvasPolling } from './webCodecsCanvasPolling';
 import type { WebcamConfig, VisibilitySegment, CornerStyle } from '../../types';
 
 interface WebcamOverlayProps {
@@ -257,49 +258,14 @@ export const WebcamOverlay = memo(function WebcamOverlay({
       return;
     }
 
-    let active = true;
-    let attempts = 0;
-    const maxAttempts = 10;
-
-    const tryDraw = () => {
-      if (!active) return;
-
-      const canvas = canvasRef.current;
-      if (!canvas) return;
-
-      const frame = getFrame(previewTimeMs);
-
-      if (frame) {
-        if (lastDrawnTimeRef.current !== previewTimeMs) {
-          const ctx = canvas.getContext('2d');
-          if (ctx) {
-            if (canvas.width !== frame.width || canvas.height !== frame.height) {
-              canvas.width = frame.width;
-              canvas.height = frame.height;
-            }
-            ctx.drawImage(frame, 0, 0);
-            lastDrawnTimeRef.current = previewTimeMs;
-          }
-        }
-        setHasFrame(true);
-      } else {
-        attempts++;
-        if (attempts < maxAttempts) {
-          rafIdRef.current = requestAnimationFrame(tryDraw);
-        } else {
-          setHasFrame(false);
-        }
-      }
-    };
-
-    tryDraw();
-
-    return () => {
-      active = false;
-      if (rafIdRef.current) {
-        cancelAnimationFrame(rafIdRef.current);
-      }
-    };
+    return startWebCodecsCanvasPolling({
+      canvasRef,
+      rafIdRef,
+      lastDrawnTimeRef,
+      frameTimeMs: previewTimeMs,
+      getFrame,
+      setHasFrame,
+    });
   }, [webCodecsReady, isPlaying, previewTimeMs, getFrame]);
 
   // Convert file path to asset URL

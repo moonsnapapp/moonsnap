@@ -13,6 +13,15 @@ import type { EditorHistoryActions } from './useEditorHistory';
 const MIN_SHAPE_SIZE = 5;
 const TEXT_DRAG_EPSILON = 0.01;
 
+type CanvasPoint = { x: number; y: number };
+type LiveTextNodeCache = {
+  shapeId: string;
+  rect: Konva.Rect | null;
+  textNode: Konva.Text | null;
+  hitArea: Konva.Rect | null;
+  background: Konva.Rect | null;
+};
+
 interface UseShapeDrawingProps {
   selectedTool: Tool;
   strokeColor: string;
@@ -39,6 +48,136 @@ interface UseShapeDrawingReturn {
   /** Force-finalize any in-progress drawing and return the current shapes.
    *  Call before saving to ensure no shapes are lost. */
   finalizeAndGetShapes: () => CanvasShape[];
+}
+
+function getDrawNode(node: Konva.Node) {
+  return node.getClassName() === 'Group'
+    ? (node as Konva.Group).getChildren()[0]
+    : node;
+}
+
+function hasTextDragMoved(drawStart: CanvasPoint, pos: CanvasPoint) {
+  return (
+    Math.abs(pos.x - drawStart.x) > TEXT_DRAG_EPSILON ||
+    Math.abs(pos.y - drawStart.y) > TEXT_DRAG_EPSILON
+  );
+}
+
+function updateArrowNode(
+  node: Konva.Node,
+  liveShape: CanvasShape,
+  drawStart: CanvasPoint,
+  pos: CanvasPoint,
+  strokeWidth: number
+) {
+  const arrow = getDrawNode(node) as Konva.Arrow;
+  const newPoints = [drawStart.x, drawStart.y, pos.x, pos.y] as const;
+  arrow.points(getArrowRenderPoints(
+    newPoints[0],
+    newPoints[1],
+    newPoints[2],
+    newPoints[3],
+    liveShape.strokeWidth ?? strokeWidth
+  ));
+  return { ...liveShape, points: [...newPoints] };
+}
+
+function updateLineNode(
+  node: Konva.Node,
+  liveShape: CanvasShape,
+  drawStart: CanvasPoint,
+  pos: CanvasPoint
+) {
+  const line = getDrawNode(node) as Konva.Line;
+  const newPoints = [drawStart.x, drawStart.y, pos.x, pos.y];
+  line.points(newPoints);
+  return { ...liveShape, points: newPoints };
+}
+
+function updateRectNode(
+  node: Konva.Node,
+  liveShape: CanvasShape,
+  drawStart: CanvasPoint,
+  pos: CanvasPoint
+) {
+  const rect = node as Konva.Rect;
+  const width = pos.x - drawStart.x;
+  const height = pos.y - drawStart.y;
+  rect.width(width);
+  rect.height(height);
+  return { ...liveShape, width, height };
+}
+
+function updateCircleNode(
+  node: Konva.Node,
+  liveShape: CanvasShape,
+  drawStart: CanvasPoint,
+  pos: CanvasPoint
+) {
+  const ellipse = node as Konva.Ellipse;
+  const radiusX = Math.abs(pos.x - drawStart.x) / 2;
+  const radiusY = Math.abs(pos.y - drawStart.y) / 2;
+  const centerX = Math.min(drawStart.x, pos.x) + radiusX;
+  const centerY = Math.min(drawStart.y, pos.y) + radiusY;
+  ellipse.x(centerX);
+  ellipse.y(centerY);
+  ellipse.radiusX(radiusX);
+  ellipse.radiusY(radiusY);
+  return { ...liveShape, x: centerX, y: centerY, radiusX, radiusY };
+}
+
+function updatePenNode(node: Konva.Node, liveShape: CanvasShape, pos: CanvasPoint) {
+  const line = node as Konva.Line;
+  const newPoints = [...(liveShape.points || []), pos.x, pos.y];
+  line.points(newPoints);
+  return { ...liveShape, points: newPoints };
+}
+
+function getLiveTextNodeCache(
+  node: Konva.Node,
+  liveShape: CanvasShape,
+  currentCache: LiveTextNodeCache | null
+) {
+  if (currentCache?.shapeId === liveShape.id) return currentCache;
+
+  const group = node as Konva.Group;
+  return {
+    shapeId: liveShape.id,
+    rect: group.findOne('.text-box-border') as Konva.Rect | null,
+    textNode: group.findOne('.text-content') as Konva.Text | null,
+    hitArea: group.findOne('.text-hit-area') as Konva.Rect | null,
+    background: group.findOne('.text-background') as Konva.Rect | null,
+  };
+}
+
+function updateTextNode({
+  node,
+  liveShape,
+  drawStart,
+  pos,
+  fontSize,
+  cache,
+}: {
+  node: Konva.Node;
+  liveShape: CanvasShape;
+  drawStart: CanvasPoint;
+  pos: CanvasPoint;
+  fontSize: number;
+  cache: LiveTextNodeCache;
+}) {
+  const group = node as Konva.Group;
+  const width = Math.max(EDITOR_TEXT.MIN_BOX_WIDTH, Math.abs(pos.x - drawStart.x));
+  const height = Math.max(getEditorTextDragBoxHeight(fontSize), Math.abs(pos.y - drawStart.y));
+  const x = Math.min(drawStart.x, pos.x);
+  const y = Math.min(drawStart.y, pos.y);
+  group.x(x);
+  group.y(y);
+  for (const child of [cache.rect, cache.textNode, cache.hitArea, cache.background]) {
+    if (!child) continue;
+    child.width(width);
+    child.height(height);
+  }
+  return { ...liveShape, x, y, width, height };
 }
 
 /**
@@ -82,13 +221,7 @@ export const useShapeDrawing = ({
   // Refs for live drawing without re-renders
   const liveShapeRef = useRef<CanvasShape | null>(null);
   const shapesBeforeDrawRef = useRef<CanvasShape[]>([]);
-  const liveTextNodesRef = useRef<{
-    shapeId: string;
-    rect: Konva.Rect | null;
-    textNode: Konva.Text | null;
-    hitArea: Konva.Rect | null;
-    background: Konva.Rect | null;
-  } | null>(null);
+  const liveTextNodesRef = useRef<LiveTextNodeCache | null>(null);
   const textDragMovedRef = useRef(false);
 
   // Create a new shape based on tool type
@@ -299,6 +432,89 @@ export const useShapeDrawing = ({
     ]
   );
 
+  const spawnLiveShape = useCallback(
+    (drawStart: CanvasPoint, pos: CanvasPoint) => {
+      const newShape = createShapeAtPosition(drawStart, pos);
+      if (!newShape) return false;
+
+      liveShapeRef.current = newShape;
+      if (newShape.type === 'text') {
+        liveTextNodesRef.current = null;
+      }
+      onShapesChange([...shapesBeforeDrawRef.current, newShape]);
+      if (newShape.type !== 'text') {
+        setSelectedIds([newShape.id]);
+      }
+      shapeSpawnedRef.current = true;
+      return true;
+    },
+    [createShapeAtPosition, onShapesChange, setSelectedIds]
+  );
+
+  const syncPendingTextShape = useCallback(
+    (liveShape: CanvasShape, drawStart: CanvasPoint, pos: CanvasPoint) => {
+      const width = Math.max(EDITOR_TEXT.MIN_BOX_WIDTH, Math.abs(pos.x - drawStart.x));
+      const height = Math.max(getEditorTextDragBoxHeight(fontSize), Math.abs(pos.y - drawStart.y));
+      const x = Math.min(drawStart.x, pos.x);
+      const y = Math.min(drawStart.y, pos.y);
+      const updatedShape = { ...liveShape, x, y, width, height };
+      liveShapeRef.current = updatedShape;
+      onShapesChange([...shapesBeforeDrawRef.current, updatedShape]);
+      if (
+        !textDragMovedRef.current &&
+        (Math.abs(pos.x - drawStart.x) > TEXT_DRAG_EPSILON ||
+          Math.abs(pos.y - drawStart.y) > TEXT_DRAG_EPSILON)
+      ) {
+        textDragMovedRef.current = true;
+      }
+    },
+    [fontSize, onShapesChange]
+  );
+
+  const updateLiveKonvaShape = useCallback(
+    (
+      node: Konva.Node,
+      liveShape: CanvasShape,
+      drawStart: CanvasPoint,
+      pos: CanvasPoint
+    ) => {
+      switch (liveShape.type) {
+        case 'arrow':
+          liveShapeRef.current = updateArrowNode(node, liveShape, drawStart, pos, strokeWidth);
+          break;
+        case 'line':
+          liveShapeRef.current = updateLineNode(node, liveShape, drawStart, pos);
+          break;
+        case 'rect':
+        case 'highlight':
+          liveShapeRef.current = updateRectNode(node, liveShape, drawStart, pos);
+          break;
+        case 'circle':
+          liveShapeRef.current = updateCircleNode(node, liveShape, drawStart, pos);
+          break;
+        case 'pen':
+          liveShapeRef.current = updatePenNode(node, liveShape, pos);
+          break;
+        case 'text': {
+          const cache = getLiveTextNodeCache(node, liveShape, liveTextNodesRef.current);
+          liveTextNodesRef.current = cache;
+          if (!textDragMovedRef.current && hasTextDragMoved(drawStart, pos)) {
+            textDragMovedRef.current = true;
+          }
+          liveShapeRef.current = updateTextNode({
+            node,
+            liveShape,
+            drawStart,
+            pos,
+            fontSize,
+            cache,
+          });
+          break;
+        }
+      }
+    },
+    [fontSize, strokeWidth]
+  );
   // Handle mouse move during drawing - uses Konva directly to avoid React re-renders
   const handleDrawingMouseMove = useCallback(
     (pos: { x: number; y: number }) => {
@@ -318,19 +534,7 @@ export const useShapeDrawing = ({
         shapeSpawnedRef.current = false;
         setIsDrawing(true);
 
-        // Spawn the initial shape immediately
-        const newShape = createShapeAtPosition(drawStart, pos);
-        if (newShape) {
-          liveShapeRef.current = newShape;
-          if (newShape.type === 'text') {
-            liveTextNodesRef.current = null;
-          }
-          onShapesChange([...shapesBeforeDrawRef.current, newShape]);
-          if (newShape.type !== 'text') {
-            setSelectedIds([newShape.id]);
-          }
-          shapeSpawnedRef.current = true;
-        }
+        spawnLiveShape(drawStart, pos);
         return;
       }
 
@@ -346,18 +550,7 @@ export const useShapeDrawing = ({
         );
         if (distance < MIN_SHAPE_SIZE) return;
 
-        const newShape = createShapeAtPosition(drawStart, pos);
-        if (newShape) {
-          liveShapeRef.current = newShape;
-          if (newShape.type === 'text') {
-            liveTextNodesRef.current = null;
-          }
-          onShapesChange([...shapesBeforeDrawRef.current, newShape]);
-          if (newShape.type !== 'text') {
-            setSelectedIds([newShape.id]);
-          }
-          shapeSpawnedRef.current = true;
-        }
+        spawnLiveShape(drawStart, pos);
         return;
       }
 
@@ -382,123 +575,25 @@ export const useShapeDrawing = ({
         // Shape can briefly be missing right after text pre-spawn before React commits.
         // Keep state in sync with the latest pointer so first rendered frame is up-to-date.
         if (liveShape.type === 'text') {
-          const width = Math.max(EDITOR_TEXT.MIN_BOX_WIDTH, Math.abs(pos.x - drawStart.x));
-          const height = Math.max(getEditorTextDragBoxHeight(fontSize), Math.abs(pos.y - drawStart.y));
-          const x = Math.min(drawStart.x, pos.x);
-          const y = Math.min(drawStart.y, pos.y);
-          const updatedShape = { ...liveShape, x, y, width, height };
-          liveShapeRef.current = updatedShape;
-          onShapesChange([...shapesBeforeDrawRef.current, updatedShape]);
-          if (
-            !textDragMovedRef.current &&
-            (Math.abs(pos.x - drawStart.x) > TEXT_DRAG_EPSILON ||
-              Math.abs(pos.y - drawStart.y) > TEXT_DRAG_EPSILON)
-          ) {
-            textDragMovedRef.current = true;
-          }
+          syncPendingTextShape(liveShape, drawStart, pos);
         }
         return;
       }
 
-      // For Group-wrapped shapes (arrow, line), drill into the first child
-      const drawNode = node.getClassName() === 'Group'
-        ? (node as Konva.Group).getChildren()[0]
-        : node;
-
-      switch (liveShape.type) {
-        case 'arrow': {
-          const arrow = drawNode as Konva.Arrow;
-          const newPoints = [drawStart.x, drawStart.y, pos.x, pos.y] as const;
-          arrow.points(getArrowRenderPoints(
-            newPoints[0],
-            newPoints[1],
-            newPoints[2],
-            newPoints[3],
-            liveShape.strokeWidth ?? strokeWidth
-          ));
-          liveShapeRef.current = { ...liveShape, points: [...newPoints] };
-          break;
-        }
-        case 'line': {
-          const line = drawNode as Konva.Line;
-          const newPoints = [drawStart.x, drawStart.y, pos.x, pos.y];
-          line.points(newPoints);
-          liveShapeRef.current = { ...liveShape, points: newPoints };
-          break;
-        }
-        case 'rect':
-        case 'highlight': {
-          const rect = node as Konva.Rect;
-          const width = pos.x - drawStart.x;
-          const height = pos.y - drawStart.y;
-          rect.width(width);
-          rect.height(height);
-          liveShapeRef.current = { ...liveShape, width, height };
-          break;
-        }
-        case 'circle': {
-          const ellipse = node as Konva.Ellipse;
-          const radiusX = Math.abs(pos.x - drawStart.x) / 2;
-          const radiusY = Math.abs(pos.y - drawStart.y) / 2;
-          const centerX = Math.min(drawStart.x, pos.x) + radiusX;
-          const centerY = Math.min(drawStart.y, pos.y) + radiusY;
-          ellipse.x(centerX);
-          ellipse.y(centerY);
-          ellipse.radiusX(radiusX);
-          ellipse.radiusY(radiusY);
-          liveShapeRef.current = { ...liveShape, x: centerX, y: centerY, radiusX, radiusY };
-          break;
-        }
-        case 'pen': {
-          const line = node as Konva.Line;
-          const existingPoints = liveShape.points || [];
-          const newPoints = [...existingPoints, pos.x, pos.y];
-          line.points(newPoints);
-          liveShapeRef.current = { ...liveShape, points: newPoints };
-          break;
-        }
-        case 'text': {
-          // Cache child-node lookups to avoid repeated findOne calls while dragging.
-          const group = node as Konva.Group;
-          let cache = liveTextNodesRef.current;
-          if (!cache || cache.shapeId !== liveShape.id) {
-            cache = {
-              shapeId: liveShape.id,
-              rect: group.findOne('.text-box-border') as Konva.Rect | null,
-              textNode: group.findOne('.text-content') as Konva.Text | null,
-              hitArea: group.findOne('.text-hit-area') as Konva.Rect | null,
-              background: group.findOne('.text-background') as Konva.Rect | null,
-            };
-            liveTextNodesRef.current = cache;
-          }
-          const width = Math.max(EDITOR_TEXT.MIN_BOX_WIDTH, Math.abs(pos.x - drawStart.x));
-          const height = Math.max(getEditorTextDragBoxHeight(fontSize), Math.abs(pos.y - drawStart.y));
-          const x = Math.min(drawStart.x, pos.x);
-          const y = Math.min(drawStart.y, pos.y);
-          if (
-            !textDragMovedRef.current &&
-            (Math.abs(pos.x - drawStart.x) > TEXT_DRAG_EPSILON ||
-              Math.abs(pos.y - drawStart.y) > TEXT_DRAG_EPSILON)
-          ) {
-            textDragMovedRef.current = true;
-          }
-          group.x(x);
-          group.y(y);
-          for (const child of [cache.rect, cache.textNode, cache.hitArea, cache.background]) {
-            if (child) {
-              child.width(width);
-              child.height(height);
-            }
-          }
-          liveShapeRef.current = { ...liveShape, x, y, width, height };
-          break;
-        }
-      }
+      updateLiveKonvaShape(node, liveShape, drawStart, pos);
 
       // Trigger Konva layer redraw (much faster than React re-render)
       node.getLayer()?.batchDraw();
     },
-    [fontSize, createShapeAtPosition, setSelectedIds, stageRef, onShapesChange, strokeWidth, takeSnapshot, setIsDrawing]
+    [
+      stageRef,
+      onShapesChange,
+      takeSnapshot,
+      setIsDrawing,
+      spawnLiveShape,
+      syncPendingTextShape,
+      updateLiveKonvaShape,
+    ]
   );
 
   // Handle mouse up - finalize drawing and sync React state

@@ -7,7 +7,7 @@
 
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { emit, listen } from '@tauri-apps/api/event';
+import { emit } from '@tauri-apps/api/event';
 import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
 import { Loader2 } from 'lucide-react';
 import { HudTitlebar } from '@/components/Titlebar/Titlebar';
@@ -55,6 +55,601 @@ interface SavedCaptureLookup {
 interface ResolvedImageProject {
   projectId: string;
   capturePath: string;
+}
+
+interface ProjectImageRecord {
+  id: string;
+  image_path: string;
+}
+
+interface ImageProjectPayload {
+  annotations?: Annotation[];
+  dimensions?: { width: number; height: number };
+}
+
+interface ProjectCropState {
+  region: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  };
+  userExpanded: boolean;
+}
+
+type ImageEditorState = ReturnType<EditorStore['getState']>;
+type AutosaveTimeout = ReturnType<typeof setTimeout> | null;
+type IdleAnnotationAutosaveAction =
+  | { type: 'skip' }
+  | { type: 'retry' }
+  | { type: 'save' };
+
+interface MutableCurrent<T> {
+  current: T;
+}
+
+interface AutosaveAttemptOptions {
+  isClosingRef: MutableCurrent<boolean>;
+  isInitialLoadRef: MutableCurrent<boolean>;
+  isSavingAnnotationsRef: MutableCurrent<boolean>;
+  lastUserActivityAtRef: MutableCurrent<number>;
+  timeoutRef: MutableCurrent<AutosaveTimeout>;
+  saveAnnotations: () => Promise<void>;
+}
+
+function getShapeAnnotations(annotations: Annotation[]) {
+  return annotations.filter(
+    (ann) => !isCropBoundsAnnotation(ann) && !isCropRegionAnnotation(ann) && !isCompositorSettingsAnnotation(ann)
+  );
+}
+
+function hasSaveableEditorChange(state: ImageEditorState, prevState: ImageEditorState) {
+  return (
+    state.shapes !== prevState.shapes ||
+    state.canvasBounds !== prevState.canvasBounds ||
+    state.cropRegion !== prevState.cropRegion ||
+    state.compositorSettings !== prevState.compositorSettings
+  );
+}
+
+function isShapeClearMutation(state: ImageEditorState, prevState: ImageEditorState) {
+  return state.shapes !== prevState.shapes && state.shapes.length === 0 && prevState.shapes.length > 0;
+}
+
+function hasRecentUserActivity(lastUserActivityAt: number) {
+  return Date.now() - lastUserActivityAt <= TIMING.IMAGE_EDITOR_AUTOSAVE_ACTIVITY_WINDOW_MS;
+}
+
+function waitForImageEditorRetry(): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, TIMING.IMAGE_EDITOR_DELETE_RESOLVE_RETRY_MS);
+  });
+}
+
+function getResolvedImageProject(
+  projectId: string | null,
+  capturePath: string | null
+): ResolvedImageProject | null {
+  if (!projectId) {
+    return null;
+  }
+
+  return {
+    projectId,
+    capturePath: capturePath ?? '',
+  };
+}
+
+async function resolveImageProjectForDelete({
+  projectId,
+  capturePath,
+  resolveProjectForCapturePath,
+}: {
+  projectId: string | null;
+  capturePath: string | null;
+  resolveProjectForCapturePath: () => Promise<ResolvedImageProject | null>;
+}): Promise<ResolvedImageProject | null> {
+  return getResolvedImageProject(projectId, capturePath) ?? resolveProjectForCapturePath();
+}
+
+async function deleteImageProject(projectId: string) {
+  await invoke('delete_project', { projectId });
+  await emit('capture-deleted', { projectId });
+}
+
+async function retrySavedCaptureLookup(
+  capturePath: string,
+  lookupSavedCaptureByTempPath: (path: string) => Promise<SavedCaptureLookup | null>
+): Promise<SavedCaptureLookup | null> {
+  for (let attempt = 0; attempt < TIMING.IMAGE_EDITOR_DELETE_RESOLVE_MAX_ATTEMPTS; attempt += 1) {
+    const lookup = await lookupSavedCaptureByTempPath(capturePath);
+    if (lookup) {
+      return lookup;
+    }
+
+    if (attempt < TIMING.IMAGE_EDITOR_DELETE_RESOLVE_MAX_ATTEMPTS - 1) {
+      await waitForImageEditorRetry();
+    }
+  }
+
+  return null;
+}
+
+function isRgbaCapturePath(capturePath: string | null): capturePath is string {
+  return capturePath?.endsWith('.rgba') === true;
+}
+
+async function resolveTempRgbaCaptureProject({
+  capturePath,
+  lookupSavedCaptureByTempPath,
+  applySavedCaptureLookup,
+}: {
+  capturePath: string;
+  lookupSavedCaptureByTempPath: (path: string) => Promise<SavedCaptureLookup | null>;
+  applySavedCaptureLookup: (lookup: SavedCaptureLookup) => void;
+}): Promise<ResolvedImageProject | null> {
+  const lookup = await retrySavedCaptureLookup(capturePath, lookupSavedCaptureByTempPath);
+  if (!lookup) {
+    return null;
+  }
+
+  applySavedCaptureLookup(lookup);
+  return getResolvedImageProject(lookup.projectId, lookup.imagePath);
+}
+
+async function loadImageProjectByPath({
+  path,
+  loadRgbaProject,
+  loadSavedImageProject,
+}: {
+  path: string;
+  loadRgbaProject: (path: string) => Promise<void>;
+  loadSavedImageProject: (path: string) => Promise<void>;
+}) {
+  if (path.endsWith('.rgba')) {
+    await loadRgbaProject(path);
+    return;
+  }
+
+  await loadSavedImageProject(path);
+}
+
+function getImageProjectLoadErrorMessage(error: unknown) {
+  return error instanceof Error ? error.message : 'Failed to load image project';
+}
+
+function shouldQueueAnnotationAutosave(
+  state: ImageEditorState,
+  prevState: ImageEditorState,
+  lastUserActivityAt: number,
+) {
+  return (
+    hasSaveableEditorChange(state, prevState) &&
+    !isShapeClearMutation(state, prevState) &&
+    hasRecentUserActivity(lastUserActivityAt)
+  );
+}
+
+function getEditorShapeAnnotations(shapes: CanvasShape[]): Annotation[] {
+  return shapes
+    .filter((shape) => !shape.isBackground)
+    .map((shape) => ({ ...shape, id: shape.id, type: shape.type }) as Annotation);
+}
+
+function getCropBoundsSaveAnnotation(
+  canvasBounds: ImageEditorState['canvasBounds']
+): CropBoundsAnnotation | null {
+  if (!canvasBounds) {
+    return null;
+  }
+
+  return {
+    id: '__crop_bounds__',
+    type: '__crop_bounds__',
+    width: canvasBounds.width,
+    height: canvasBounds.height,
+    imageOffsetX: canvasBounds.imageOffsetX,
+    imageOffsetY: canvasBounds.imageOffsetY,
+  };
+}
+
+function getCropRegionSaveAnnotation(
+  state: ImageEditorState
+): CropRegionAnnotation | null {
+  const { cropRegion } = state;
+  if (!cropRegion) {
+    return null;
+  }
+
+  return {
+    id: '__crop_region__',
+    type: '__crop_region__',
+    x: cropRegion.x,
+    y: cropRegion.y,
+    width: cropRegion.width,
+    height: cropRegion.height,
+    cropUserExpanded: state.cropUserExpanded || undefined,
+  };
+}
+
+function getCompositorSettingsSaveAnnotation(
+  state: ImageEditorState
+): CompositorSettingsAnnotation {
+  return {
+    id: '__compositor_settings__',
+    type: '__compositor_settings__',
+    ...state.compositorSettings,
+  };
+}
+
+function createProjectAnnotations(state: ImageEditorState): Annotation[] {
+  return [
+    ...getEditorShapeAnnotations(state.shapes),
+    getCropBoundsSaveAnnotation(state.canvasBounds),
+    getCropRegionSaveAnnotation(state),
+    getCompositorSettingsSaveAnnotation(state),
+  ].filter((annotation): annotation is Annotation => annotation !== null);
+}
+
+function shouldSkipAnnotationSave({
+  force,
+  isClosing,
+  isSaving,
+  projectId,
+}: {
+  force: boolean;
+  isClosing: boolean;
+  isSaving: boolean;
+  projectId: string | null;
+}) {
+  return !projectId || (!force && (isClosing || isSaving));
+}
+
+async function updateProjectAnnotations(projectId: string, state: ImageEditorState) {
+  await invoke('update_project_annotations', {
+    projectId,
+    annotations: createProjectAnnotations(state),
+  });
+}
+
+function clearAnnotationAutosaveTimeout(timeoutRef: MutableCurrent<AutosaveTimeout>) {
+  if (timeoutRef.current) {
+    clearTimeout(timeoutRef.current);
+    timeoutRef.current = null;
+  }
+}
+
+function rescheduleIdleAnnotationAutosave(
+  timeoutRef: MutableCurrent<AutosaveTimeout>,
+  attemptAutoSaveWhenIdle: () => void,
+) {
+  timeoutRef.current = setTimeout(
+    attemptAutoSaveWhenIdle,
+    TIMING.IMAGE_EDITOR_AUTOSAVE_ACTIVITY_CHECK_MS,
+  );
+}
+
+function shouldSkipIdleAnnotationAutosave(isClosing: boolean, isInitialLoad: boolean) {
+  return isClosing || isInitialLoad;
+}
+
+function shouldRetryIdleAnnotationAutosave(
+  isSavingAnnotations: boolean,
+  lastUserActivityAt: number,
+) {
+  const idleMs = Date.now() - lastUserActivityAt;
+  return isSavingAnnotations || idleMs < TIMING.IMAGE_EDITOR_AUTOSAVE_IDLE_MS;
+}
+
+function getIdleAnnotationAutosaveAction({
+  isClosing,
+  isInitialLoad,
+  isSavingAnnotations,
+  lastUserActivityAt,
+}: {
+  isClosing: boolean;
+  isInitialLoad: boolean;
+  isSavingAnnotations: boolean;
+  lastUserActivityAt: number;
+}): IdleAnnotationAutosaveAction {
+  if (shouldSkipIdleAnnotationAutosave(isClosing, isInitialLoad)) {
+    return { type: 'skip' };
+  }
+
+  if (shouldRetryIdleAnnotationAutosave(isSavingAnnotations, lastUserActivityAt)) {
+    return { type: 'retry' };
+  }
+
+  return { type: 'save' };
+}
+
+function createIdleAnnotationAutosaveAttempt({
+  isClosingRef,
+  isInitialLoadRef,
+  isSavingAnnotationsRef,
+  lastUserActivityAtRef,
+  timeoutRef,
+  saveAnnotations,
+}: AutosaveAttemptOptions) {
+  const attemptAutoSaveWhenIdle = () => {
+    const action = getIdleAnnotationAutosaveAction({
+      isClosing: isClosingRef.current,
+      isInitialLoad: isInitialLoadRef.current,
+      isSavingAnnotations: isSavingAnnotationsRef.current,
+      lastUserActivityAt: lastUserActivityAtRef.current,
+    });
+
+    if (action.type === 'skip') {
+      return;
+    }
+
+    if (action.type === 'retry') {
+      rescheduleIdleAnnotationAutosave(timeoutRef, attemptAutoSaveWhenIdle);
+      return;
+    }
+
+    saveAnnotations().catch((error: unknown) => {
+      editorLogger.warn('Auto-save failed:', error);
+    });
+  };
+
+  return attemptAutoSaveWhenIdle;
+}
+
+function queueAnnotationAutosave(
+  timeoutRef: MutableCurrent<AutosaveTimeout>,
+  attemptAutoSaveWhenIdle: () => void,
+) {
+  clearAnnotationAutosaveTimeout(timeoutRef);
+  timeoutRef.current = setTimeout(
+    attemptAutoSaveWhenIdle,
+    TIMING.IMAGE_EDITOR_AUTOSAVE_DEBOUNCE_MS,
+  );
+}
+
+function getProjectCropRegionFromAnnotation(cropRegionAnn: CropRegionAnnotation): ProjectCropState {
+  return {
+    region: {
+      x: cropRegionAnn.x,
+      y: cropRegionAnn.y,
+      width: cropRegionAnn.width,
+      height: cropRegionAnn.height,
+    },
+    userExpanded: Boolean(cropRegionAnn.cropUserExpanded),
+  };
+}
+
+function getProjectCropRegionFromBounds(cropBoundsAnn: CropBoundsAnnotation): ProjectCropState {
+  return {
+    region: {
+      x: -cropBoundsAnn.imageOffsetX,
+      y: -cropBoundsAnn.imageOffsetY,
+      width: cropBoundsAnn.width,
+      height: cropBoundsAnn.height,
+    },
+    userExpanded: false,
+  };
+}
+
+function getProjectCropRegionFromDimensions(
+  dimensions: ImageProjectPayload['dimensions']
+): ProjectCropState | null {
+  if (!dimensions) {
+    return null;
+  }
+
+  return {
+    region: {
+      x: 0,
+      y: 0,
+      width: dimensions.width,
+      height: dimensions.height,
+    },
+    userExpanded: false,
+  };
+}
+
+function getProjectCropState(project: ImageProjectPayload): ProjectCropState | null {
+  const annotations = project.annotations ?? [];
+  const cropRegionAnn = annotations.find(isCropRegionAnnotation);
+  if (cropRegionAnn) {
+    return getProjectCropRegionFromAnnotation(cropRegionAnn);
+  }
+
+  const cropBoundsAnn = annotations.find(isCropBoundsAnnotation);
+  if (cropBoundsAnn) {
+    return getProjectCropRegionFromBounds(cropBoundsAnn);
+  }
+
+  return getProjectCropRegionFromDimensions(project.dimensions);
+}
+
+function applyProjectCropState(store: EditorStore, project: ImageProjectPayload) {
+  const cropState = getProjectCropState(project);
+  if (!cropState) {
+    return;
+  }
+
+  store.getState().setCropRegion(cropState.region);
+  if (cropState.userExpanded) {
+    store.getState().setCropUserExpanded(true);
+  }
+}
+
+function applyProjectCanvasBounds(store: EditorStore, cropBoundsAnn: CropBoundsAnnotation | undefined) {
+  if (cropBoundsAnn) {
+    store.getState().setCanvasBounds({
+      width: cropBoundsAnn.width,
+      height: cropBoundsAnn.height,
+      imageOffsetX: cropBoundsAnn.imageOffsetX,
+      imageOffsetY: cropBoundsAnn.imageOffsetY,
+    });
+  }
+}
+
+function applyProjectCompositorSettings(
+  store: EditorStore,
+  compositorAnn: CompositorSettingsAnnotation | undefined
+) {
+  if (compositorAnn) {
+    store.getState().setCompositorSettings({
+      ...DEFAULT_COMPOSITOR_SETTINGS,
+      ...compositorAnn,
+    });
+  }
+}
+
+function applyProjectOriginalImageSize(
+  store: EditorStore,
+  dimensions: ImageProjectPayload['dimensions']
+) {
+  if (dimensions) {
+    store.getState().setOriginalImageSize({
+      width: dimensions.width,
+      height: dimensions.height,
+    });
+  }
+}
+
+function applyProjectCanvasState(store: EditorStore, project: ImageProjectPayload) {
+  const annotations = project.annotations ?? [];
+
+  applyProjectCanvasBounds(store, annotations.find(isCropBoundsAnnotation));
+  applyProjectCompositorSettings(store, annotations.find(isCompositorSettingsAnnotation));
+  applyProjectOriginalImageSize(store, project.dimensions);
+}
+
+function applyProjectShapes(store: EditorStore, project: ImageProjectPayload) {
+  const projectShapes: CanvasShape[] = getShapeAnnotations(project.annotations ?? []).map((ann) => ({
+    ...ann,
+    id: ann.id,
+    type: ann.type,
+  } as CanvasShape));
+
+  if (project.dimensions) {
+    store.getState().setShapes(
+      ensureBackgroundShape(projectShapes, project.dimensions.width, project.dimensions.height)
+    );
+    return;
+  }
+
+  store.getState().setShapes(projectShapes);
+}
+
+function shouldClearSelectionForToolChange(selectedTool: Tool, newTool: Tool): boolean {
+  return newTool !== selectedTool && selectedTool === 'select';
+}
+
+function getDefaultStrokeColorForTool(tool: Tool): string {
+  return TOOL_DEFAULT_COLORS[tool] ?? DEFAULT_STROKE_COLOR;
+}
+
+function shouldEnableCompositorForTool(tool: Tool, compositorEnabled: boolean): boolean {
+  return tool === 'background' && !compositorEnabled;
+}
+
+function getImageEditorTitle(capturePath: string | null): string {
+  if (!capturePath) {
+    return 'Image Editor';
+  }
+
+  if (capturePath.endsWith('.rgba')) {
+    return 'New Capture';
+  }
+
+  const parts = capturePath.split(/[/\\]/);
+  return parts[parts.length - 1] || 'Image Editor';
+}
+
+function ImageEditorStateShell({
+  detailLabel,
+  children,
+}: {
+  detailLabel: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="editor-window h-screen w-screen flex flex-col overflow-hidden">
+      <HudTitlebar
+        title="MoonSnap"
+        contextLabel="Image Editor"
+        detailLabel={detailLabel}
+        showMaximize={true}
+      />
+      <div className="editor-window__state flex-1 flex items-center justify-center">
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function ImageEditorLoadingState() {
+  return (
+    <ImageEditorStateShell detailLabel="Loading">
+      <div className="flex flex-col items-center gap-4">
+        <Loader2 className="w-8 h-8 animate-spin text-(--accent-400)" />
+        <p className="text-sm text-(--ink-muted)">Loading image...</p>
+      </div>
+    </ImageEditorStateShell>
+  );
+}
+
+function ImageEditorErrorState({
+  error,
+  capturePath,
+}: {
+  error: string;
+  capturePath: string | null;
+}) {
+  return (
+    <ImageEditorStateShell detailLabel="Error">
+      <div className="flex flex-col items-center gap-4 max-w-md text-center">
+        <div className="w-12 h-12 rounded-full bg-(--error-light) flex items-center justify-center">
+          <span className="text-2xl">!</span>
+        </div>
+        <p className="text-sm text-(--error)">{error}</p>
+        {capturePath && !capturePath.endsWith('.rgba') && (
+          <p className="text-xs text-(--ink-muted)">Path: {capturePath}</p>
+        )}
+      </div>
+    </ImageEditorStateShell>
+  );
+}
+
+function ImageEditorNoImageState() {
+  return (
+    <ImageEditorStateShell detailLabel="No image">
+      <p className="text-sm text-(--ink-muted)">No image data loaded</p>
+    </ImageEditorStateShell>
+  );
+}
+
+function applyLoadedImageProject(store: EditorStore, project: ImageProjectPayload) {
+  if (project.annotations && project.annotations.length > 0) {
+    applyProjectCropState(store, project);
+    applyProjectCanvasState(store, project);
+    applyProjectShapes(store, project);
+    return;
+  }
+
+  if (project.dimensions) {
+    store.getState().setOriginalImageSize({
+      width: project.dimensions.width,
+      height: project.dimensions.height,
+    });
+    store.getState().setShapes(
+      ensureBackgroundShape([], project.dimensions.width, project.dimensions.height)
+    );
+  }
+}
+
+async function applyProjectAnnotations(store: EditorStore, projectId: string) {
+  try {
+    const project = await invoke<ImageProjectPayload>('get_project', { projectId });
+    applyLoadedImageProject(store, project);
+  } catch (err) {
+    editorLogger.warn('Failed to load project annotations:', err);
+  }
 }
 
 /**
@@ -123,15 +718,14 @@ export const ImageEditorContent: React.FC<{
 
   // Handle tool change
   const handleToolChange = useCallback((newTool: Tool) => {
-    if (newTool !== selectedTool && selectedTool === 'select') {
+    if (shouldClearSelectionForToolChange(selectedTool, newTool)) {
       setSelectedIds([]);
     }
-    // Set tool's default color when switching tools
-    const defaultColor = TOOL_DEFAULT_COLORS[newTool] ?? DEFAULT_STROKE_COLOR;
-    setStrokeColor(defaultColor);
+
+    setStrokeColor(getDefaultStrokeColorForTool(newTool));
     setSelectedTool(newTool);
-    // Auto-enable compositor when switching to background tool
-    if (newTool === 'background' && !compositorSettings.enabled) {
+
+    if (shouldEnableCompositorForTool(newTool, compositorSettings.enabled)) {
       setCompositorSettings({ enabled: true });
     }
   }, [selectedTool, setSelectedIds, setStrokeColor, compositorSettings.enabled, setCompositorSettings]);
@@ -167,10 +761,11 @@ export const ImageEditorContent: React.FC<{
   }, []);
 
   const handleConfirmDelete = useCallback(async () => {
-    const resolvedProject =
-      projectId
-        ? { projectId, capturePath: capturePath ?? '' }
-        : await resolveProjectForCapturePath();
+    const resolvedProject = await resolveImageProjectForDelete({
+      projectId,
+      capturePath,
+      resolveProjectForCapturePath,
+    });
 
     if (!resolvedProject) {
       toast.error('Capture is still being saved. Try delete again in a moment.');
@@ -178,9 +773,7 @@ export const ImageEditorContent: React.FC<{
     }
 
     try {
-      await invoke('delete_project', { projectId: resolvedProject.projectId });
-      // Notify main window to refresh library
-      await emit('capture-deleted', { projectId: resolvedProject.projectId });
+      await deleteImageProject(resolvedProject.projectId);
       toast.success('Capture deleted');
       onClose();
     } catch (error) {
@@ -322,38 +915,53 @@ const ImageEditorWindow: React.FC = () => {
   }, []);
 
   const resolveProjectForCapturePath = useCallback(async (): Promise<ResolvedImageProject | null> => {
-    if (projectIdRef.current) {
-      return {
-        projectId: projectIdRef.current,
-        capturePath: capturePath ?? '',
-      };
-    }
+    const resolvedProject = getResolvedImageProject(projectIdRef.current, capturePath);
+    if (resolvedProject) return resolvedProject;
 
-    if (!capturePath) {
+    if (!isRgbaCapturePath(capturePath)) {
       return null;
     }
 
-    if (capturePath.endsWith('.rgba')) {
-      for (let attempt = 0; attempt < TIMING.IMAGE_EDITOR_DELETE_RESOLVE_MAX_ATTEMPTS; attempt += 1) {
-        const lookup = await lookupSavedCaptureByTempPath(capturePath);
-        if (lookup) {
-          applySavedCaptureLookup(lookup);
-          return {
-            projectId: lookup.projectId,
-            capturePath: lookup.imagePath,
-          };
-        }
+    return resolveTempRgbaCaptureProject({
+      capturePath,
+      lookupSavedCaptureByTempPath,
+      applySavedCaptureLookup,
+    });
+  }, [capturePath, applySavedCaptureLookup, lookupSavedCaptureByTempPath]);
 
-        if (attempt < TIMING.IMAGE_EDITOR_DELETE_RESOLVE_MAX_ATTEMPTS - 1) {
-          await new Promise((resolve) => {
-            setTimeout(resolve, TIMING.IMAGE_EDITOR_DELETE_RESOLVE_RETRY_MS);
-          });
-        }
-      }
+  const loadRgbaProject = useCallback(async (path: string) => {
+    const savedCapture = await lookupSavedCaptureByTempPath(path);
+    if (savedCapture) {
+      applySavedCaptureLookup(savedCapture);
     }
 
-    return null;
-  }, [capturePath, applySavedCaptureLookup, lookupSavedCaptureByTempPath]);
+    setImageData(path);
+    if (!savedCapture) {
+      setCapturePath(path);
+    }
+    setIsLoading(false);
+    editorLogger.info('RGBA file loaded directly (fast path)');
+  }, [applySavedCaptureLookup, lookupSavedCaptureByTempPath]);
+
+  const loadSavedImageProject = useCallback(async (path: string) => {
+    const captures = await invoke<ProjectImageRecord[]>('get_capture_list');
+    const capture = captures.find((candidate) => candidate.image_path === path);
+    if (!capture) {
+      throw new Error('Could not find project for image path');
+    }
+
+    applySavedCaptureLookup({ projectId: capture.id, imagePath: path });
+
+    const loadedImageData = await invoke<string>('get_project_image', { projectId: capture.id });
+    setImageData(loadedImageData);
+    await applyProjectAnnotations(store, capture.id);
+
+    setCapturePath(path);
+    setIsLoading(false);
+    setTimeout(() => {
+      isInitialLoadRef.current = false;
+    }, 500);
+  }, [applySavedCaptureLookup, store]);
 
   // Load project when path is received
   const loadProject = useCallback(async (path: string) => {
@@ -366,345 +974,76 @@ const ImageEditorWindow: React.FC = () => {
     try {
       editorLogger.info('Loading image project:', path);
 
-      // Fast path: RGBA files can be loaded directly without IPC lookup
-      if (path.endsWith('.rgba')) {
-        const savedCapture = await lookupSavedCaptureByTempPath(path);
-        if (savedCapture) {
-          applySavedCaptureLookup(savedCapture);
-        }
-        setImageData(path);
-        if (!savedCapture) {
-          setCapturePath(path);
-        }
-        setIsLoading(false);
-        editorLogger.info('RGBA file loaded directly (fast path)');
-        return;
-      }
-
-      // For saved images, find the project to get the project ID
-      // This allows us to save annotations back to the correct project
-      const captures = await invoke<Array<{ id: string; image_path: string }>>('get_capture_list');
-      const capture = captures.find((c: { id: string; image_path: string }) => c.image_path === path);
-
-      if (capture) {
-        applySavedCaptureLookup({ projectId: capture.id, imagePath: path });
-
-        // Load the image data (base64 encoded)
-        const loadedImageData = await invoke<string>('get_project_image', { projectId: capture.id });
-        setImageData(loadedImageData);
-
-        // Load project annotations (shapes, crop bounds, compositor settings)
-        try {
-          const project = await invoke<{ annotations?: Annotation[]; dimensions?: { width: number; height: number } }>('get_project', { projectId: capture.id });
-          if (project.annotations && project.annotations.length > 0) {
-            // Separate special annotations from shape annotations
-            const cropBoundsAnn = project.annotations.find(isCropBoundsAnnotation);
-            const cropRegionAnn = project.annotations.find(isCropRegionAnnotation);
-            const compositorAnn = project.annotations.find(isCompositorSettingsAnnotation);
-            const shapeAnnotations = project.annotations.filter(
-              (ann: Annotation) => !isCropBoundsAnnotation(ann) && !isCropRegionAnnotation(ann) && !isCompositorSettingsAnnotation(ann)
-            );
-
-            // Load crop region: prefer new CropRegionAnnotation, fall back to legacy
-            if (cropRegionAnn) {
-              store.getState().setCropRegion({
-                x: cropRegionAnn.x,
-                y: cropRegionAnn.y,
-                width: cropRegionAnn.width,
-                height: cropRegionAnn.height,
-              });
-              if (cropRegionAnn.cropUserExpanded) {
-                store.getState().setCropUserExpanded(true);
-              }
-            } else if (cropBoundsAnn) {
-              store.getState().setCropRegion({
-                x: -cropBoundsAnn.imageOffsetX,
-                y: -cropBoundsAnn.imageOffsetY,
-                width: cropBoundsAnn.width,
-                height: cropBoundsAnn.height,
-              });
-            } else if (project.dimensions) {
-              // Default artboard = full image dimensions
-              store.getState().setCropRegion({
-                x: 0,
-                y: 0,
-                width: project.dimensions.width,
-                height: project.dimensions.height,
-              });
-            }
-
-            // Load crop bounds if present (legacy, for canvas display)
-            if (cropBoundsAnn) {
-              store.getState().setCanvasBounds({
-                width: cropBoundsAnn.width,
-                height: cropBoundsAnn.height,
-                imageOffsetX: cropBoundsAnn.imageOffsetX,
-                imageOffsetY: cropBoundsAnn.imageOffsetY,
-              });
-            }
-
-            // Load compositor settings if present (spread defaults, then saved values)
-            if (compositorAnn) {
-              store.getState().setCompositorSettings({
-                ...DEFAULT_COMPOSITOR_SETTINGS,
-                ...compositorAnn,
-              });
-            }
-
-            // Set original image size for reset functionality
-            if (project.dimensions) {
-              store.getState().setOriginalImageSize({
-                width: project.dimensions.width,
-                height: project.dimensions.height,
-              });
-            }
-
-            // Load shapes and ensure background shape exists
-            const projectShapes: CanvasShape[] = shapeAnnotations.map((ann: Annotation) => ({
-              ...ann,
-              id: ann.id,
-              type: ann.type,
-            } as CanvasShape));
-            const dims = project.dimensions;
-            if (dims) {
-              store.getState().setShapes(ensureBackgroundShape(projectShapes, dims.width, dims.height));
-            } else {
-              store.getState().setShapes(projectShapes);
-            }
-          } else if (project.dimensions) {
-            // No annotations, but we have dimensions — create background shape
-            store.getState().setOriginalImageSize({
-              width: project.dimensions.width,
-              height: project.dimensions.height,
-            });
-            store.getState().setShapes(ensureBackgroundShape([], project.dimensions.width, project.dimensions.height));
-          }
-        } catch (err) {
-          editorLogger.warn('Failed to load project annotations:', err);
-        }
-      } else {
-        throw new Error('Could not find project for image path');
-      }
-
-      setCapturePath(path);
-      setIsLoading(false);
-      // Allow auto-save after initial load is complete (with delay to let store settle)
-      setTimeout(() => {
-        isInitialLoadRef.current = false;
-      }, 500);
+      await loadImageProjectByPath({ path, loadRgbaProject, loadSavedImageProject });
     } catch (err) {
       editorLogger.error('Failed to load image project:', err);
-      setError(err instanceof Error ? err.message : 'Failed to load image project');
+      setError(getImageProjectLoadErrorMessage(err));
       setIsLoading(false);
     }
-  }, [store, applySavedCaptureLookup, lookupSavedCaptureByTempPath]);
+  }, [loadRgbaProject, loadSavedImageProject]);
 
-  // Load project from URL params on mount
   useEffect(() => {
-    const urlParams = new URLSearchParams(window.location.search);
-    const encodedPath = urlParams.get('path');
+    const params = new URLSearchParams(window.location.search);
+    const encodedPath = params.get('path');
     if (encodedPath && !hasLoadedRef.current) {
       const path = decodeURIComponent(encodedPath);
       loadProject(path);
     }
   }, [loadProject]);
 
-  // Listen for capture-saved event to get projectId for fresh captures
-  // This enables delete functionality for captures opened immediately after taking
-  useEffect(() => {
-    if (projectId || !capturePath) return; // Already have projectId or no path yet
-
-    const unlisten = listen<{ originalPath: string; imagePath: string; projectId: string }>('capture-saved', (event: { payload: { originalPath: string; imagePath: string; projectId: string } }) => {
-      const { originalPath, imagePath, projectId: newProjectId } = event.payload;
-      // Check if this event is for our capture (match the path)
-      if (originalPath === capturePath) {
-        editorLogger.info('Received projectId for fresh capture:', newProjectId);
-        applySavedCaptureLookup({ projectId: newProjectId, imagePath });
-      }
-    });
-
-    return () => {
-      unlisten.then((unlistenFn: () => void) => unlistenFn());
-    };
-  }, [projectId, capturePath, applySavedCaptureLookup]);
-
-  // Track user activity so autosave is driven by actual editor interactions.
-  useEffect(() => {
-    const markUserActivity = () => {
-      lastUserActivityAtRef.current = Date.now();
-    };
-
-    window.addEventListener('pointerdown', markUserActivity, { passive: true });
-    window.addEventListener('keydown', markUserActivity);
-    window.addEventListener('wheel', markUserActivity, { passive: true });
-    window.addEventListener('touchstart', markUserActivity, { passive: true });
-
-    return () => {
-      window.removeEventListener('pointerdown', markUserActivity);
-      window.removeEventListener('keydown', markUserActivity);
-      window.removeEventListener('wheel', markUserActivity);
-      window.removeEventListener('touchstart', markUserActivity);
-    };
-  }, []);
-
-  // Save annotations to the project
-  // Uses projectIdRef to avoid dependency on projectId state (prevents race conditions)
   const saveAnnotations = useCallback(async (force = false) => {
-    // Skip if closing (unless forced - used by close handler)
-    if (!force && isClosingRef.current) {
-      return;
-    }
-
     const currentProjectId = projectIdRef.current;
-    if (!currentProjectId) {
+    if (shouldSkipAnnotationSave({
+      force,
+      isClosing: isClosingRef.current,
+      isSaving: isSavingAnnotationsRef.current,
+      projectId: currentProjectId,
+    })) {
       return;
     }
 
-    if (!force && isSavingAnnotationsRef.current) {
-      return;
-    }
+    isSavingAnnotationsRef.current = true;
 
     try {
-      isSavingAnnotationsRef.current = true;
-      const state = store.getState();
-      const { shapes, canvasBounds, cropRegion, compositorSettings } = state;
-
-      // Build annotations array
-      const annotations: Annotation[] = [];
-
-      // Add shape annotations (exclude imageSrc for background shapes — it's loaded from the project image)
-      shapes.forEach((shape: CanvasShape) => {
-        if (shape.isBackground) {
-          const { imageSrc: _unused, ...rest } = shape;
-          void _unused;
-          annotations.push({ ...rest, id: shape.id, type: shape.type });
-        } else {
-          annotations.push({ ...shape, id: shape.id, type: shape.type });
-        }
-      });
-
-      // Add crop bounds annotation if canvas has been modified (legacy compat)
-      if (canvasBounds) {
-        const cropBoundsAnn: CropBoundsAnnotation = {
-          id: '__crop_bounds__',
-          type: '__crop_bounds__',
-          width: canvasBounds.width,
-          height: canvasBounds.height,
-          imageOffsetX: canvasBounds.imageOffsetX,
-          imageOffsetY: canvasBounds.imageOffsetY,
-        };
-        annotations.push(cropBoundsAnn);
-      }
-
-      // Add crop region annotation if set
-      if (cropRegion) {
-        const cropAnn: CropRegionAnnotation = {
-          id: '__crop_region__',
-          type: '__crop_region__',
-          x: cropRegion.x,
-          y: cropRegion.y,
-          width: cropRegion.width,
-          height: cropRegion.height,
-          cropUserExpanded: state.cropUserExpanded || undefined,
-        };
-        annotations.push(cropAnn);
-      }
-
-      // Add compositor settings annotation (always save to preserve state)
-      const compositorAnn: CompositorSettingsAnnotation = {
-        id: '__compositor_settings__',
-        type: '__compositor_settings__',
-        ...compositorSettings,
-      };
-      annotations.push(compositorAnn);
-
-      await invoke('update_project_annotations', { projectId: currentProjectId, annotations });
+      await updateProjectAnnotations(currentProjectId!, store.getState());
     } catch (err) {
       editorLogger.warn('Failed to save annotations:', err);
-      // Don't block window close on save failure
     } finally {
       isSavingAnnotationsRef.current = false;
     }
   }, [store]);
-
   // Auto-save annotations when store state changes (debounced)
   useEffect(() => {
     // Don't auto-save until project is loaded
     if (!projectIdRef.current || isLoading) return;
 
-    let timeoutId: ReturnType<typeof setTimeout> | null = null;
+    const timeoutRef: MutableCurrent<AutosaveTimeout> = { current: null };
+    const attemptAutoSaveWhenIdle = createIdleAnnotationAutosaveAttempt({
+      isClosingRef,
+      isInitialLoadRef,
+      isSavingAnnotationsRef,
+      lastUserActivityAtRef,
+      timeoutRef,
+      saveAnnotations,
+    });
 
     // Subscribe to store changes and debounce saves
-    const unsubscribe = store.subscribe((state: ReturnType<typeof store.getState>, prevState: ReturnType<typeof store.getState>) => {
+    const unsubscribe = store.subscribe((state: ImageEditorState, prevState: ImageEditorState) => {
       // Don't auto-save during initial load or window close (prevents overwriting good data)
       if (isInitialLoadRef.current || isClosingRef.current) {
         return;
       }
 
-      // Check if any saveable state changed
-      const shapesChanged = state.shapes !== prevState.shapes;
-      const boundsChanged = state.canvasBounds !== prevState.canvasBounds;
-      const cropRegionChanged = state.cropRegion !== prevState.cropRegion;
-      const compositorChanged = state.compositorSettings !== prevState.compositorSettings;
-
-      // Don't auto-save if shapes went from some to zero (this is a clear operation, not a user edit)
-      if (shapesChanged && state.shapes.length === 0 && prevState.shapes.length > 0) {
+      if (!shouldQueueAnnotationAutosave(state, prevState, lastUserActivityAtRef.current)) {
         return;
       }
 
-      if (shapesChanged || boundsChanged || cropRegionChanged || compositorChanged) {
-        // Ignore non-user/background mutations to avoid write churn while idle.
-        if (
-          Date.now() - lastUserActivityAtRef.current >
-          TIMING.IMAGE_EDITOR_AUTOSAVE_ACTIVITY_WINDOW_MS
-        ) {
-          return;
-        }
-
-        // Clear previous timeout
-        if (timeoutId) {
-          clearTimeout(timeoutId);
-        }
-
-        const attemptAutoSaveWhenIdle = () => {
-          if (isClosingRef.current || isInitialLoadRef.current) {
-            return;
-          }
-
-          if (isSavingAnnotationsRef.current) {
-            timeoutId = setTimeout(
-              attemptAutoSaveWhenIdle,
-              TIMING.IMAGE_EDITOR_AUTOSAVE_ACTIVITY_CHECK_MS
-            );
-            return;
-          }
-
-          const idleMs = Date.now() - lastUserActivityAtRef.current;
-          if (idleMs < TIMING.IMAGE_EDITOR_AUTOSAVE_IDLE_MS) {
-            timeoutId = setTimeout(
-              attemptAutoSaveWhenIdle,
-              TIMING.IMAGE_EDITOR_AUTOSAVE_ACTIVITY_CHECK_MS
-            );
-            return;
-          }
-
-          saveAnnotations().catch((error: unknown) => {
-            editorLogger.warn('Auto-save failed:', error);
-          });
-        };
-
-        timeoutId = setTimeout(
-          attemptAutoSaveWhenIdle,
-          TIMING.IMAGE_EDITOR_AUTOSAVE_DEBOUNCE_MS
-        );
-      }
+      queueAnnotationAutosave(timeoutRef, attemptAutoSaveWhenIdle);
     });
 
     return () => {
       unsubscribe();
-      if (timeoutId) {
-        clearTimeout(timeoutId);
-      }
+      clearAnnotationAutosaveTimeout(timeoutRef);
     };
   }, [store, isLoading, saveAnnotations]);
 
@@ -737,79 +1076,19 @@ const ImageEditorWindow: React.FC = () => {
     getCurrentWebviewWindow().close();
   }, [saveAnnotations]);
 
-  // Extract filename for title
-  const getTitle = () => {
-    if (capturePath) {
-      // Don't show .rgba temp files - show friendly name until saved
-      if (capturePath.endsWith('.rgba')) {
-        return 'New Capture';
-      }
-      const parts = capturePath.split(/[/\\]/);
-      return parts[parts.length - 1] || 'Image Editor';
-    }
-    return 'Image Editor';
-  };
-
   // Loading state
   if (isLoading) {
-    return (
-      <div className="editor-window h-screen w-screen flex flex-col overflow-hidden">
-        <HudTitlebar
-          title="MoonSnap"
-          contextLabel="Image Editor"
-          detailLabel="Loading"
-          showMaximize={true}
-        />
-        <div className="editor-window__state flex-1 flex items-center justify-center">
-          <div className="flex flex-col items-center gap-4">
-            <Loader2 className="w-8 h-8 animate-spin text-(--accent-400)" />
-            <p className="text-sm text-(--ink-muted)">Loading image...</p>
-          </div>
-        </div>
-      </div>
-    );
+    return <ImageEditorLoadingState />;
   }
 
   // Error state
   if (error) {
-    return (
-      <div className="editor-window h-screen w-screen flex flex-col overflow-hidden">
-        <HudTitlebar
-          title="MoonSnap"
-          contextLabel="Image Editor"
-          detailLabel="Error"
-          showMaximize={true}
-        />
-        <div className="editor-window__state flex-1 flex items-center justify-center">
-          <div className="flex flex-col items-center gap-4 max-w-md text-center">
-            <div className="w-12 h-12 rounded-full bg-(--error-light) flex items-center justify-center">
-              <span className="text-2xl">!</span>
-            </div>
-            <p className="text-sm text-(--error)">{error}</p>
-            {capturePath && !capturePath.endsWith('.rgba') && (
-              <p className="text-xs text-(--ink-muted)">Path: {capturePath}</p>
-            )}
-          </div>
-        </div>
-      </div>
-    );
+    return <ImageEditorErrorState error={error} capturePath={capturePath} />;
   }
 
   // No image data loaded
   if (!imageData) {
-    return (
-      <div className="editor-window h-screen w-screen flex flex-col overflow-hidden">
-        <HudTitlebar
-          title="MoonSnap"
-          contextLabel="Image Editor"
-          detailLabel="No image"
-          showMaximize={true}
-        />
-        <div className="editor-window__state flex-1 flex items-center justify-center">
-          <p className="text-sm text-(--ink-muted)">No image data loaded</p>
-        </div>
-      </div>
-    );
+    return <ImageEditorNoImageState />;
   }
 
   // Main editor UI
@@ -818,7 +1097,7 @@ const ImageEditorWindow: React.FC = () => {
       <HudTitlebar
         title="MoonSnap"
         contextLabel="Image Editor"
-        detailLabel={getTitle()}
+        detailLabel={getImageEditorTitle(capturePath)}
         showMaximize={true}
         onClose={handleClose}
       />

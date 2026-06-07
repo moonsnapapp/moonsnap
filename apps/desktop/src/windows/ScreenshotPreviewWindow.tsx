@@ -17,6 +17,397 @@ const SLIDE_DURATION_MS = 300;
 const CURSOR_SYNC_MS = 100;
 const COPY_FEEDBACK_MS = 1600;
 
+interface RgbaThumbnail {
+  width: number;
+  height: number;
+  data: ImageDataArray;
+}
+
+function getScreenshotPreviewTransform(isVisible: boolean, isExiting: boolean) {
+  if (isExiting) return 'translateX(360px)';
+  return isVisible ? 'translateX(0)' : 'translateX(360px)';
+}
+
+function getScreenshotPreviewOpacity(isVisible: boolean, isExiting: boolean) {
+  if (isExiting) return 0;
+  return isVisible ? 1 : 0;
+}
+
+function isButtonEventTarget(target: EventTarget | null) {
+  const element = target as HTMLElement | null;
+  return element?.tagName === 'BUTTON' || Boolean(element?.closest('button'));
+}
+
+function shouldStartPreviewDrag(
+  start: { x: number; y: number } | null,
+  dragStarted: boolean,
+  event: React.MouseEvent<HTMLDivElement>
+) {
+  return Boolean(start) && !dragStarted && hasMovedPastPreviewDragThreshold(start, event);
+}
+
+function hasMovedPastPreviewDragThreshold(
+  start: { x: number; y: number } | null,
+  event: React.MouseEvent<HTMLDivElement>
+) {
+  if (!start) return false;
+
+  const dx = event.clientX - start.x;
+  const dy = event.clientY - start.y;
+  const DRAG_THRESHOLD_PX = 4;
+  return dx * dx + dy * dy >= DRAG_THRESHOLD_PX * DRAG_THRESHOLD_PX;
+}
+
+function shouldOpenEditorFromPreviewMouseUp(
+  start: { x: number; y: number } | null,
+  dragStarted: boolean,
+  event: React.MouseEvent<HTMLDivElement>
+) {
+  return Boolean(start) && !dragStarted && !isButtonEventTarget(event.target);
+}
+
+function decodeRgbaThumbnail(buffer: ArrayBuffer): RgbaThumbnail {
+  const view = new DataView(buffer);
+  return {
+    width: view.getUint32(0, true),
+    height: view.getUint32(4, true),
+    data: new Uint8ClampedArray(buffer, 8),
+  };
+}
+
+function paintRgbaThumbnail(
+  canvas: HTMLCanvasElement,
+  thumbnail: RgbaThumbnail
+): boolean {
+  canvas.width = thumbnail.width;
+  canvas.height = thumbnail.height;
+
+  const ctx = canvas.getContext('2d');
+  if (!ctx) {
+    return false;
+  }
+
+  const imageData = new ImageData(thumbnail.data, thumbnail.width, thumbnail.height);
+  ctx.putImageData(imageData, 0, 0);
+  return true;
+}
+
+function revealScreenshotPreview(
+  setIsVisible: (visible: boolean) => void,
+  isVisibleRef: React.MutableRefObject<boolean>
+): void {
+  requestAnimationFrame(() => {
+    setIsVisible(true);
+    isVisibleRef.current = true;
+  });
+}
+
+async function paintScreenshotThumbnailFile(
+  filePath: string,
+  canvas: HTMLCanvasElement | null,
+  isCancelled: () => boolean
+): Promise<boolean> {
+  const data = await readFile(filePath);
+  const thumbnail = decodeRgbaThumbnail(data.buffer);
+
+  if (!canvas || isCancelled()) {
+    return false;
+  }
+
+  return paintRgbaThumbnail(canvas, thumbnail) && !isCancelled();
+}
+
+function closeScreenshotPreviewIfActive(
+  isCancelled: () => boolean,
+  closePreview: () => void
+): void {
+  if (!isCancelled()) {
+    closePreview();
+  }
+}
+
+async function loadScreenshotThumbnail({
+  filePath,
+  canvas,
+  isCancelled,
+  setIsVisible,
+  isVisibleRef,
+  closePreview,
+}: {
+  filePath: string;
+  canvas: HTMLCanvasElement | null;
+  isCancelled: () => boolean;
+  setIsVisible: (visible: boolean) => void;
+  isVisibleRef: React.MutableRefObject<boolean>;
+  closePreview: () => void;
+}): Promise<void> {
+  try {
+    const painted = await paintScreenshotThumbnailFile(filePath, canvas, isCancelled);
+    if (!painted) return;
+
+    revealScreenshotPreview(setIsVisible, isVisibleRef);
+  } catch {
+    closeScreenshotPreviewIfActive(isCancelled, closePreview);
+  }
+}
+
+function ScreenshotThumbnail({
+  canvasRef,
+  onDelete,
+  onDismiss,
+}: {
+  canvasRef: React.RefObject<HTMLCanvasElement | null>;
+  onDelete: () => void;
+  onDismiss: () => void;
+}) {
+  return (
+    <div
+      style={{
+        position: 'relative',
+        width: '100%',
+        flex: 1,
+        minHeight: 0,
+        overflow: 'hidden',
+        background: 'var(--polar-snow)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+      }}
+    >
+      <canvas
+        ref={canvasRef}
+        style={{
+          maxWidth: '100%',
+          maxHeight: '100%',
+          objectFit: 'contain',
+          display: 'block',
+          pointerEvents: 'none',
+        }}
+      />
+      <ActionButton
+        onClick={onDelete}
+        title="Delete screenshot"
+        style={{
+          position: 'absolute',
+          top: 6,
+          left: 6,
+          background: 'rgba(0,0,0,0.5)',
+          color: '#fff',
+        }}
+        hoverBackground="rgba(220,38,38,0.8)"
+      >
+        <TrashIcon />
+      </ActionButton>
+      <ActionButton
+        onClick={onDismiss}
+        title="Dismiss"
+        style={{
+          position: 'absolute',
+          top: 6,
+          right: 6,
+          background: 'rgba(0,0,0,0.5)',
+          color: '#fff',
+        }}
+        hoverBackground="rgba(220,38,38,0.8)"
+      >
+        <CloseIcon />
+      </ActionButton>
+    </div>
+  );
+}
+
+function ScreenshotCopyStatus({
+  copied,
+  copyFeedbackKey,
+  prefersReducedMotion,
+}: {
+  copied: boolean;
+  copyFeedbackKey: number;
+  prefersReducedMotion: boolean;
+}) {
+  const capturedStyle = getScreenshotCapturedStatusStyle(copied, prefersReducedMotion);
+
+  return (
+    <div
+      style={{
+        flex: 1,
+        minWidth: 0,
+        position: 'relative',
+        height: 18,
+        overflow: 'hidden',
+      }}
+    >
+      <span
+        style={capturedStyle}
+      >
+        Screenshot captured
+      </span>
+
+      {copied && (
+        <span
+          key={copyFeedbackKey}
+          className="screenshot-preview__copy-feedback"
+          style={{
+            position: 'absolute',
+            inset: 0,
+            display: 'flex',
+            alignItems: 'center',
+            fontSize: 12,
+            color: 'var(--success)',
+            fontWeight: 600,
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          Copied to clipboard
+        </span>
+      )}
+    </div>
+  );
+}
+
+function getScreenshotCapturedStatusStyle(
+  copied: boolean,
+  prefersReducedMotion: boolean
+): React.CSSProperties {
+  return {
+    ...getScreenshotStatusTextBaseStyle(),
+    color: 'var(--ink-black)',
+    opacity: copied ? 0 : 0.6,
+    transform: copied ? 'translateY(-8px)' : 'translateY(0)',
+    transition: getScreenshotCopyTransition(prefersReducedMotion),
+  };
+}
+
+function getScreenshotStatusTextBaseStyle(): React.CSSProperties {
+  return {
+    position: 'absolute',
+    inset: 0,
+    fontSize: 12,
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap',
+  };
+}
+
+function getScreenshotCopyTransition(prefersReducedMotion: boolean) {
+  return prefersReducedMotion
+    ? 'none'
+    : 'transform 180ms cubic-bezier(0.215, 0.61, 0.355, 1), opacity 180ms cubic-bezier(0.215, 0.61, 0.355, 1)';
+}
+
+function ScreenshotActionBar({
+  copied,
+  copyFeedbackKey,
+  prefersReducedMotion,
+  onCopy,
+  onOpenEditor,
+}: {
+  copied: boolean;
+  copyFeedbackKey: number;
+  prefersReducedMotion: boolean;
+  onCopy: () => void;
+  onOpenEditor: () => void;
+}) {
+  return (
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 6,
+        padding: '8px 10px',
+      }}
+    >
+      <ScreenshotCopyStatus
+        copied={copied}
+        copyFeedbackKey={copyFeedbackKey}
+        prefersReducedMotion={prefersReducedMotion}
+      />
+
+      <ActionButton onClick={onCopy} title="Copy to clipboard">
+        {copied ? <CheckIcon /> : <CopyIcon />}
+      </ActionButton>
+
+      <ActionButton onClick={onOpenEditor} title="Open in editor">
+        <EditIcon />
+      </ActionButton>
+    </div>
+  );
+}
+
+function ScreenshotAutoDismissProgress({
+  isVisible,
+  timerPaused,
+}: {
+  isVisible: boolean;
+  timerPaused: boolean;
+}) {
+  return (
+    <div
+      style={{
+        height: 2,
+        background: 'var(--polar-frost)',
+        overflow: 'hidden',
+      }}
+    >
+      {isVisible && !timerPaused && (
+        <div
+          style={{
+            height: '100%',
+            background: 'var(--primary, #6366f1)',
+            animation: `shrink ${AUTO_DISMISS_MS}ms linear forwards`,
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+async function getCursorInsideCurrentWindow() {
+  const currentWindow = getCurrentWindow();
+  const [cursor, position, size] = await Promise.all([
+    cursorPosition(),
+    currentWindow.outerPosition(),
+    currentWindow.outerSize(),
+  ]);
+
+  return (
+    cursor.x >= position.x &&
+    cursor.x < position.x + size.width &&
+    cursor.y >= position.y &&
+    cursor.y < position.y + size.height
+  );
+}
+
+function applyCursorTimerState({
+  isInside,
+  isCursorInsideRef,
+  isVisibleRef,
+  pauseTimer,
+  startTimer,
+}: {
+  isInside: boolean;
+  isCursorInsideRef: React.MutableRefObject<boolean>;
+  isVisibleRef: React.MutableRefObject<boolean>;
+  pauseTimer: () => void;
+  startTimer: () => void;
+}) {
+  if (isInside === isCursorInsideRef.current) {
+    return;
+  }
+
+  isCursorInsideRef.current = isInside;
+  if (isInside) {
+    pauseTimer();
+    return;
+  }
+
+  if (isVisibleRef.current) {
+    startTimer();
+  }
+}
+
 function ScreenshotPreviewWindow() {
   const [isVisible, setIsVisible] = useState(false);
   const [isExiting, setIsExiting] = useState(false);
@@ -79,29 +470,14 @@ function ScreenshotPreviewWindow() {
 
   const syncTimerFromCursor = useCallback(async () => {
     try {
-      const window = getCurrentWindow();
-      const [cursor, position, size] = await Promise.all([
-        cursorPosition(),
-        window.outerPosition(),
-        window.outerSize(),
-      ]);
-
-      const isInside =
-        cursor.x >= position.x &&
-        cursor.x < position.x + size.width &&
-        cursor.y >= position.y &&
-        cursor.y < position.y + size.height;
-
-      if (isInside === isCursorInsideRef.current) {
-        return;
-      }
-
-      isCursorInsideRef.current = isInside;
-      if (isInside) {
-        pauseTimer();
-      } else if (isVisibleRef.current) {
-        startTimer();
-      }
+      const isInside = await getCursorInsideCurrentWindow();
+      applyCursorTimerState({
+        isInside,
+        isCursorInsideRef,
+        isVisibleRef,
+        pauseTimer,
+        startTimer,
+      });
     } catch {
       // Ignore cursor sync failures and preserve current timer state.
     }
@@ -113,43 +489,14 @@ function ScreenshotPreviewWindow() {
 
     let cancelled = false;
 
-    async function loadThumbnail() {
-      try {
-        const data = await readFile(filePath);
-        const buffer = data.buffer;
-        const view = new DataView(buffer);
-
-        const w = view.getUint32(0, true);
-        const h = view.getUint32(4, true);
-        const rgbaData = new Uint8ClampedArray(buffer, 8);
-
-        const canvas = canvasRef.current;
-        if (!canvas || cancelled) return;
-
-        canvas.width = w;
-        canvas.height = h;
-        const ctx = canvas.getContext('2d');
-        if (!ctx) return;
-
-        const imageData = new ImageData(rgbaData, w, h);
-        ctx.putImageData(imageData, 0, 0);
-
-        if (!cancelled) {
-          // Trigger slide-in animation
-          requestAnimationFrame(() => {
-            setIsVisible(true);
-            isVisibleRef.current = true;
-          });
-        }
-      } catch {
-        // If we can't load the thumbnail, just close
-        if (!cancelled) {
-          closePreview();
-        }
-      }
-    }
-
-    loadThumbnail();
+    void loadScreenshotThumbnail({
+      filePath,
+      canvas: canvasRef.current,
+      isCancelled: () => cancelled,
+      setIsVisible,
+      isVisibleRef,
+      closePreview,
+    });
 
     return () => {
       cancelled = true;
@@ -291,12 +638,7 @@ function ScreenshotPreviewWindow() {
 
   const handlePreviewMouseMove = useCallback(async (e: React.MouseEvent<HTMLDivElement>) => {
     const start = dragStartRef.current;
-    if (!start || dragStartedRef.current) return;
-
-    const dx = e.clientX - start.x;
-    const dy = e.clientY - start.y;
-    const DRAG_THRESHOLD_PX = 4;
-    if (dx * dx + dy * dy < DRAG_THRESHOLD_PX * DRAG_THRESHOLD_PX) return;
+    if (!shouldStartPreviewDrag(start, dragStartedRef.current, e)) return;
 
     dragStartedRef.current = true;
     try {
@@ -309,10 +651,7 @@ function ScreenshotPreviewWindow() {
   const handlePreviewMouseUp = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
     const start = dragStartRef.current;
     dragStartRef.current = null;
-    if (!start || dragStartedRef.current) return;
-
-    const target = e.target as HTMLElement;
-    if (target.tagName === 'BUTTON' || target.closest('button')) return;
+    if (!shouldOpenEditorFromPreviewMouseUp(start, dragStartedRef.current, e)) return;
 
     void handleOpenEditor();
   }, [handleOpenEditor]);
@@ -344,170 +683,32 @@ function ScreenshotPreviewWindow() {
           overflow: 'hidden',
           filter: 'drop-shadow(0 8px 32px rgba(0,0,0,0.25))',
           border: '1px solid var(--polar-frost)',
-          transform: isExiting
-            ? 'translateX(360px)'
-            : isVisible
-              ? 'translateX(0)'
-              : 'translateX(360px)',
-          opacity: isExiting ? 0 : isVisible ? 1 : 0,
+          transform: getScreenshotPreviewTransform(isVisible, isExiting),
+          opacity: getScreenshotPreviewOpacity(isVisible, isExiting),
           transition: `transform ${SLIDE_DURATION_MS}ms cubic-bezier(0.16, 1, 0.3, 1), opacity ${SLIDE_DURATION_MS}ms ease`,
           cursor: 'default',
           userSelect: 'none',
           WebkitUserSelect: 'none',
         }}
       >
-        {/* Thumbnail + close button */}
-        <div
-          style={{
-            position: 'relative',
-            width: '100%',
-            flex: 1,
-            minHeight: 0,
-            overflow: 'hidden',
-            background: 'var(--polar-snow)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-          }}
-        >
-          <canvas
-            ref={canvasRef}
-            style={{
-              maxWidth: '100%',
-              maxHeight: '100%',
-              objectFit: 'contain',
-              display: 'block',
-              pointerEvents: 'none',
-            }}
-          />
-          {/* Delete button - top left */}
-          <ActionButton
-            onClick={handleDelete}
-            title="Delete screenshot"
-            style={{
-              position: 'absolute',
-              top: 6,
-              left: 6,
-              background: 'rgba(0,0,0,0.5)',
-              color: '#fff',
-            }}
-            hoverBackground="rgba(220,38,38,0.8)"
-          >
-            <TrashIcon />
-          </ActionButton>
-          {/* Close button - top right */}
-          <ActionButton
-            onClick={handleDismiss}
-            title="Dismiss"
-            style={{
-              position: 'absolute',
-              top: 6,
-              right: 6,
-              background: 'rgba(0,0,0,0.5)',
-              color: '#fff',
-            }}
-            hoverBackground="rgba(220,38,38,0.8)"
-          >
-            <CloseIcon />
-          </ActionButton>
-        </div>
+        <ScreenshotThumbnail
+          canvasRef={canvasRef}
+          onDelete={handleDelete}
+          onDismiss={handleDismiss}
+        />
 
-        {/* Action bar */}
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 6,
-            padding: '8px 10px',
-          }}
-        >
-          <div
-            style={{
-              flex: 1,
-              minWidth: 0,
-              position: 'relative',
-              height: 18,
-              overflow: 'hidden',
-            }}
-          >
-            <span
-              style={{
-                position: 'absolute',
-                inset: 0,
-                fontSize: 12,
-                color: 'var(--ink-black)',
-                opacity: copied ? 0 : 0.6,
-                transform: copied ? 'translateY(-8px)' : 'translateY(0)',
-                transition: prefersReducedMotion
-                  ? 'none'
-                  : 'transform 180ms cubic-bezier(0.215, 0.61, 0.355, 1), opacity 180ms cubic-bezier(0.215, 0.61, 0.355, 1)',
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                whiteSpace: 'nowrap',
-              }}
-            >
-              Screenshot captured
-            </span>
+        <ScreenshotActionBar
+          copied={copied}
+          copyFeedbackKey={copyFeedbackKey}
+          prefersReducedMotion={prefersReducedMotion}
+          onCopy={handleCopy}
+          onOpenEditor={handleOpenEditor}
+        />
 
-            {copied && (
-              <span
-                key={copyFeedbackKey}
-                className="screenshot-preview__copy-feedback"
-                style={{
-                  position: 'absolute',
-                  inset: 0,
-                  display: 'flex',
-                  alignItems: 'center',
-                  fontSize: 12,
-                  color: 'var(--success)',
-                  fontWeight: 600,
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  whiteSpace: 'nowrap',
-                }}
-              >
-                Copied to clipboard
-              </span>
-            )}
-          </div>
-
-          <ActionButton
-            onClick={handleCopy}
-            title="Copy to clipboard"
-          >
-            {copied ? (
-              <CheckIcon />
-            ) : (
-              <CopyIcon />
-            )}
-          </ActionButton>
-
-          <ActionButton
-            onClick={handleOpenEditor}
-            title="Open in editor"
-          >
-            <EditIcon />
-          </ActionButton>
-        </div>
-
-        {/* Auto-dismiss progress bar */}
-        <div
-          style={{
-            height: 2,
-            background: 'var(--polar-frost)',
-            overflow: 'hidden',
-          }}
-        >
-          {isVisible && !timerPaused && (
-            <div
-              style={{
-                height: '100%',
-                background: 'var(--primary, #6366f1)',
-                animation: `shrink ${AUTO_DISMISS_MS}ms linear forwards`,
-              }}
-            />
-          )}
-        </div>
+        <ScreenshotAutoDismissProgress
+          isVisible={isVisible}
+          timerPaused={timerPaused}
+        />
       </div>
 
       <style>{`
@@ -541,23 +742,67 @@ function ScreenshotPreviewWindow() {
   );
 }
 
+interface ActionButtonProps {
+  onClick: () => void;
+  title: string;
+  children: React.ReactNode;
+  style?: React.CSSProperties;
+  hoverBackground?: string;
+}
+
+function getActionButtonStyle({
+  hovered,
+  extraStyle,
+  hoverBackground,
+}: {
+  hovered: boolean;
+  extraStyle?: React.CSSProperties;
+  hoverBackground?: string;
+}): React.CSSProperties {
+  const background = getActionButtonBackground(hovered, extraStyle, hoverBackground);
+
+  return {
+    width: 24,
+    height: 24,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    border: 'none',
+    borderRadius: 6,
+    background,
+    color: 'var(--ink-black)',
+    cursor: 'pointer',
+    transition: 'background 150ms ease',
+    padding: 0,
+    flexShrink: 0,
+    ...extraStyle,
+  };
+}
+
+function getActionButtonBackground(
+  hovered: boolean,
+  extraStyle?: React.CSSProperties,
+  hoverBackground?: string
+) {
+  return hovered ? getActionButtonHoverBackground(hoverBackground) : getActionButtonDefaultBackground(extraStyle);
+}
+
+function getActionButtonHoverBackground(hoverBackground?: string) {
+  return hoverBackground ?? 'var(--polar-frost)';
+}
+
+function getActionButtonDefaultBackground(extraStyle?: React.CSSProperties) {
+  return extraStyle?.background ?? 'transparent';
+}
+
 function ActionButton({
   onClick,
   title,
   children,
   style: extraStyle,
   hoverBackground,
-}: {
-  onClick: () => void;
-  title: string;
-  children: React.ReactNode;
-  style?: React.CSSProperties;
-  hoverBackground?: string;
-}) {
+}: ActionButtonProps) {
   const [hovered, setHovered] = useState(false);
-
-  const defaultBg = extraStyle?.background ?? 'transparent';
-  const hoverBg = hoverBackground ?? 'var(--polar-frost)';
 
   return (
     <button
@@ -565,24 +810,7 @@ function ActionButton({
       title={title}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
-      style={{
-        width: 24,
-        height: 24,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        border: 'none',
-        borderRadius: 6,
-        background: hovered ? hoverBg : defaultBg,
-        color: 'var(--ink-black)',
-        cursor: 'pointer',
-        transition: 'background 150ms ease',
-        padding: 0,
-        flexShrink: 0,
-        ...extraStyle,
-        // Override background after spread so hover logic wins
-        ...(hovered ? { background: hoverBg } : {}),
-      }}
+      style={getActionButtonStyle({ hovered, extraStyle, hoverBackground })}
     >
       {children}
     </button>

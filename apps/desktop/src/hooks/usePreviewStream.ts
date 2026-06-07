@@ -74,6 +74,165 @@ function parseFrameMetadata(buffer: ArrayBuffer): FrameMetadata | null {
   return { stride, height, width, frameNumber, targetTimeNs };
 }
 
+function resizePreviewCanvas(
+  canvas: HTMLCanvasElement,
+  width: number,
+  height: number,
+  ctxRef: React.MutableRefObject<CanvasRenderingContext2D | null>
+) {
+  if (canvas.width === width && canvas.height === height) {
+    return;
+  }
+
+  canvas.width = width;
+  canvas.height = height;
+  ctxRef.current = null;
+}
+
+function getPreviewCanvasContext(
+  canvas: HTMLCanvasElement,
+  ctxRef: React.MutableRefObject<CanvasRenderingContext2D | null>
+) {
+  if (!ctxRef.current) {
+    ctxRef.current = canvas.getContext('2d', { alpha: true });
+  }
+
+  return ctxRef.current;
+}
+
+function drawPreviewFrame(
+  ctx: CanvasRenderingContext2D,
+  buffer: ArrayBuffer,
+  width: number,
+  height: number
+) {
+  const rgbaSize = width * height * 4;
+  const rgbaData = new Uint8ClampedArray(buffer, 0, rgbaSize);
+  ctx.putImageData(new ImageData(rgbaData, width, height), 0, 0);
+}
+
+function getPreviewFrameDrawTarget({
+  canvasRef,
+  ctxRef,
+  width,
+  height,
+}: {
+  canvasRef: React.RefObject<HTMLCanvasElement | null>;
+  ctxRef: React.MutableRefObject<CanvasRenderingContext2D | null>;
+  width: number;
+  height: number;
+}) {
+  const canvas = canvasRef.current;
+  if (!canvas) return null;
+
+  resizePreviewCanvas(canvas, width, height, ctxRef);
+  const ctx = getPreviewCanvasContext(canvas, ctxRef);
+  return ctx ? { ctx } : null;
+}
+
+function notifyPreviewFrameReceived(
+  frameNumber: number,
+  setFrameNumber: React.Dispatch<React.SetStateAction<number>>,
+  onFrameRef: React.MutableRefObject<UsePreviewStreamOptions['onFrame']>
+) {
+  setFrameNumber(frameNumber);
+  onFrameRef.current?.(frameNumber);
+}
+
+function canStartPreviewInitialization(
+  initializingRef: React.MutableRefObject<boolean>,
+  wsRef: React.MutableRefObject<WebSocket | null>
+) {
+  if (initializingRef.current) {
+    videoEditorLogger.debug('Preview stream already initializing');
+    return false;
+  }
+
+  if (hasActivePreviewSocket(wsRef.current)) {
+    videoEditorLogger.debug('Preview stream already initialized or initializing');
+    return false;
+  }
+
+  clearInactivePreviewSocket(wsRef);
+
+  return true;
+}
+
+function hasActivePreviewSocket(socket: WebSocket | null) {
+  return socket?.readyState === WebSocket.OPEN || socket?.readyState === WebSocket.CONNECTING;
+}
+
+function clearInactivePreviewSocket(wsRef: React.MutableRefObject<WebSocket | null>) {
+  if (wsRef.current) {
+    wsRef.current = null;
+  }
+}
+
+async function initializePreviewBackend() {
+  console.time('[EDITOR-INIT] PreviewStream init_preview');
+  const url = await invoke<string>('init_preview');
+  console.timeEnd('[EDITOR-INIT] PreviewStream init_preview');
+  return url;
+}
+
+function clearPreviewCanvas(canvasRef: React.RefObject<HTMLCanvasElement | null>) {
+  const canvas = canvasRef.current;
+  if (!canvas) return;
+
+  const ctx = canvas.getContext('2d', { alpha: true });
+  ctx?.clearRect(0, 0, canvas.width, canvas.height);
+}
+
+function connectPreviewWebSocket({
+  url,
+  wsRef,
+  canvasRef,
+  handleFrame,
+  onErrorRef,
+  setIsConnected,
+  setHasFrame,
+  setFrameNumber,
+}: {
+  url: string;
+  wsRef: React.MutableRefObject<WebSocket | null>;
+  canvasRef: React.RefObject<HTMLCanvasElement | null>;
+  handleFrame: (buffer: ArrayBuffer) => void;
+  onErrorRef: React.MutableRefObject<UsePreviewStreamOptions['onError']>;
+  setIsConnected: React.Dispatch<React.SetStateAction<boolean>>;
+  setHasFrame: React.Dispatch<React.SetStateAction<boolean>>;
+  setFrameNumber: React.Dispatch<React.SetStateAction<number>>;
+}) {
+  const ws = new WebSocket(url);
+  ws.binaryType = 'arraybuffer';
+
+  ws.onopen = () => {
+    videoEditorLogger.debug('Preview stream connected to', url);
+    setIsConnected(true);
+    clearPreviewCanvas(canvasRef);
+  };
+
+  ws.onclose = () => {
+    videoEditorLogger.debug('Preview stream disconnected');
+    if (wsRef.current === ws) {
+      wsRef.current = null;
+    }
+    setIsConnected(false);
+    setHasFrame(false);
+    setFrameNumber(0);
+  };
+
+  ws.onerror = (event) => {
+    videoEditorLogger.error('WebSocket error:', event);
+    onErrorRef.current?.('WebSocket connection error');
+  };
+
+  ws.onmessage = (event) => {
+    handleFrame(event.data as ArrayBuffer);
+  };
+
+  wsRef.current = ws;
+}
+
 /**
  * Hook for streaming GPU-rendered preview frames.
  */
@@ -106,41 +265,12 @@ export function usePreviewStream(options: UsePreviewStreamOptions = {}): UsePrev
     }
 
     const { width, height, frameNumber: fn } = metadata;
-    setFrameNumber(fn);
-    onFrameRef.current?.(fn);
+    notifyPreviewFrameReceived(fn, setFrameNumber, onFrameRef);
 
-    // Get canvas context
-    const canvas = canvasRef.current;
-    if (!canvas) {
-      return;
-    }
+    const target = getPreviewFrameDrawTarget({ canvasRef, ctxRef, width, height });
+    if (!target) return;
 
-    // Resize canvas if needed
-    if (canvas.width !== width || canvas.height !== height) {
-      canvas.width = width;
-      canvas.height = height;
-      ctxRef.current = null; // Reset context on resize
-    }
-
-    // Get or create context (alpha: true for text-only transparent rendering)
-    let ctx = ctxRef.current;
-    if (!ctx) {
-      ctx = canvas.getContext('2d', { alpha: true });
-      ctxRef.current = ctx;
-    }
-
-    if (!ctx) {
-      return;
-    }
-
-    // Extract RGBA data (excluding metadata)
-    const rgbaSize = width * height * 4;
-    const rgbaData = new Uint8ClampedArray(buffer, 0, rgbaSize);
-
-    // Create ImageData and draw to canvas
-    const imageData = new ImageData(rgbaData, width, height);
-    ctx.putImageData(imageData, 0, 0);
-
+    drawPreviewFrame(target.ctx, buffer, width, height);
     // Mark that we've received a valid frame
     setHasFrame(true);
   }, []);
@@ -148,69 +278,26 @@ export function usePreviewStream(options: UsePreviewStreamOptions = {}): UsePrev
   // Initialize the preview system
   const initPreview = useCallback(async () => {
     // Prevent concurrent initialization
-    if (initializingRef.current) {
-      videoEditorLogger.debug('Preview stream already initializing');
-      return;
-    }
-
-    // If we still hold a socket reference, allow reconnect when it is closed.
-    if (wsRef.current) {
-      const readyState = wsRef.current.readyState;
-      if (readyState === WebSocket.OPEN || readyState === WebSocket.CONNECTING) {
-        videoEditorLogger.debug('Preview stream already initialized or initializing');
-        return;
-      }
-      wsRef.current = null;
-    }
+    if (!canStartPreviewInitialization(initializingRef, wsRef)) return;
 
     initializingRef.current = true;
 
     try {
       // Initialize backend preview renderer
-      console.time('[EDITOR-INIT] PreviewStream init_preview');
-      const url = await invoke<string>('init_preview');
-      console.timeEnd('[EDITOR-INIT] PreviewStream init_preview');
+      const url = await initializePreviewBackend();
       setWsUrl(url);
 
       // Connect to WebSocket
-      const ws = new WebSocket(url);
-      ws.binaryType = 'arraybuffer';
-
-      ws.onopen = () => {
-        videoEditorLogger.debug('Preview stream connected to', url);
-        setIsConnected(true);
-
-        // Clear canvas to transparent on connect (prevents showing uninitialized garbage)
-        const canvas = canvasRef.current;
-        if (canvas) {
-          const ctx = canvas.getContext('2d', { alpha: true });
-          if (ctx) {
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-          }
-        }
-      };
-
-      ws.onclose = () => {
-        videoEditorLogger.debug('Preview stream disconnected');
-        if (wsRef.current === ws) {
-          wsRef.current = null;
-        }
-        setIsConnected(false);
-        setHasFrame(false);
-        setFrameNumber(0);
-      };
-
-      ws.onerror = (event) => {
-        videoEditorLogger.error('WebSocket error:', event);
-        onErrorRef.current?.('WebSocket connection error');
-      };
-
-      ws.onmessage = (event) => {
-        const buffer = event.data as ArrayBuffer;
-        handleFrame(buffer);
-      };
-
-      wsRef.current = ws;
+      connectPreviewWebSocket({
+        url,
+        wsRef,
+        canvasRef,
+        handleFrame,
+        onErrorRef,
+        setIsConnected,
+        setHasFrame,
+        setFrameNumber,
+      });
     } catch (error) {
       videoEditorLogger.error('Failed to initialize preview stream:', error);
       onErrorRef.current?.(String(error));
@@ -273,4 +360,3 @@ export function usePreviewStream(options: UsePreviewStreamOptions = {}): UsePrev
 }
 
 export default usePreviewStream;
-

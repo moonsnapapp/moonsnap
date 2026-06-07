@@ -13,6 +13,66 @@ interface TagFilterDropdownProps {
   onSelectionChange: (tags: string[]) => void;
 }
 
+function getFilteredTags(allTags: string[], searchQuery: string): string[] {
+  const normalizedQuery = searchQuery.toLowerCase();
+  return allTags.filter((tag) => tag.toLowerCase().includes(normalizedQuery));
+}
+
+function getNextSelectedTags(selectedTags: string[], tag: string): string[] {
+  return selectedTags.includes(tag)
+    ? selectedTags.filter((selectedTag) => selectedTag !== tag)
+    : [...selectedTags, tag];
+}
+
+function getEmptyTagMessage(allTags: string[]): string {
+  return allTags.length === 0 ? 'No tags yet' : 'No matching tags';
+}
+
+function TagFilterBadge({ count }: { count: number }) {
+  if (count === 0) {
+    return null;
+  }
+
+  return (
+    <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-[var(--accent-400)] text-white text-[9px] font-bold flex items-center justify-center">
+      {count}
+    </span>
+  );
+}
+
+function TagOption({
+  tag,
+  selected,
+  onToggle,
+}: {
+  tag: string;
+  selected: boolean;
+  onToggle: (tag: string) => void;
+}) {
+  return (
+    <button
+      key={tag}
+      onClick={() => onToggle(tag)}
+      className={`
+        w-full px-3 py-1.5 text-left text-sm flex items-center gap-2
+        transition-colors hover:bg-[var(--polar-mist)]
+        ${selected ? 'text-[var(--accent-400)]' : 'text-[var(--ink-base)]'}
+      `}
+    >
+      <div className={`
+        w-4 h-4 rounded border flex items-center justify-center flex-shrink-0
+        ${selected
+          ? 'bg-[var(--accent-400)] border-[var(--accent-400)]'
+          : 'border-[var(--polar-frost)]'
+        }
+      `}>
+        {selected && <Check className="w-3 h-3 text-white" />}
+      </div>
+      <span className="truncate">{tag}</span>
+    </button>
+  );
+}
+
 export const TagFilterDropdown: React.FC<TagFilterDropdownProps> = ({
   allTags,
   selectedTags,
@@ -20,16 +80,10 @@ export const TagFilterDropdown: React.FC<TagFilterDropdownProps> = ({
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
 
-  const filteredTags = allTags.filter(tag =>
-    tag.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const filteredTags = getFilteredTags(allTags, searchQuery);
 
   const toggleTag = (tag: string) => {
-    if (selectedTags.includes(tag)) {
-      onSelectionChange(selectedTags.filter(t => t !== tag));
-    } else {
-      onSelectionChange([...selectedTags, tag]);
-    }
+    onSelectionChange(getNextSelectedTags(selectedTags, tag));
   };
 
   const clearAll = () => {
@@ -43,16 +97,12 @@ export const TagFilterDropdown: React.FC<TagFilterDropdownProps> = ({
       <Tooltip>
         <TooltipTrigger asChild>
           <PopoverTrigger asChild>
-            <button
-              className={`cloud-btn cloud-btn--small relative ${hasActiveFilter ? 'cloud-btn--active' : ''}`}
-            >
-              <Tag className="w-[15px] h-[15px]" />
-              {hasActiveFilter && (
-                <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-[var(--accent-400)] text-white text-[9px] font-bold flex items-center justify-center">
-                  {selectedTags.length}
-                </span>
-              )}
-            </button>
+              <button
+                className={`cloud-btn cloud-btn--small relative ${hasActiveFilter ? 'cloud-btn--active' : ''}`}
+              >
+                <Tag className="w-[15px] h-[15px]" />
+                <TagFilterBadge count={selectedTags.length} />
+              </button>
           </PopoverTrigger>
         </TooltipTrigger>
         <TooltipContent side="top">
@@ -83,35 +133,18 @@ export const TagFilterDropdown: React.FC<TagFilterDropdownProps> = ({
         <div className="max-h-48 overflow-y-auto">
           {filteredTags.length === 0 ? (
             <p className="text-xs text-[var(--ink-muted)] text-center py-4">
-              {allTags.length === 0 ? 'No tags yet' : 'No matching tags'}
+              {getEmptyTagMessage(allTags)}
             </p>
           ) : (
             <div className="py-1">
-              {filteredTags.map(tag => {
-                const isSelected = selectedTags.includes(tag);
-                return (
-                  <button
-                    key={tag}
-                    onClick={() => toggleTag(tag)}
-                    className={`
-                      w-full px-3 py-1.5 text-left text-sm flex items-center gap-2
-                      transition-colors hover:bg-[var(--polar-mist)]
-                      ${isSelected ? 'text-[var(--accent-400)]' : 'text-[var(--ink-base)]'}
-                    `}
-                  >
-                    <div className={`
-                      w-4 h-4 rounded border flex items-center justify-center flex-shrink-0
-                      ${isSelected
-                        ? 'bg-[var(--accent-400)] border-[var(--accent-400)]'
-                        : 'border-[var(--polar-frost)]'
-                      }
-                    `}>
-                      {isSelected && <Check className="w-3 h-3 text-white" />}
-                    </div>
-                    <span className="truncate">{tag}</span>
-                  </button>
-                );
-              })}
+              {filteredTags.map((tag) => (
+                <TagOption
+                  key={tag}
+                  tag={tag}
+                  selected={selectedTags.includes(tag)}
+                  onToggle={toggleTag}
+                />
+              ))}
             </div>
           )}
         </div>

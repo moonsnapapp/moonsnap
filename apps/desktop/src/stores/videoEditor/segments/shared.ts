@@ -36,6 +36,18 @@ export function pushAnnotationHistory(
   return { history: newHistory, index: newHistory.length - 1 };
 }
 
+export function ensureAnnotationHistoryInitialized(
+  history: AnnotationHistoryEntry[],
+  historyIndex: number,
+  initialEntry: AnnotationHistoryEntry
+): { history: AnnotationHistoryEntry[]; index: number } {
+  if (history.length > 0) {
+    return { history, index: historyIndex };
+  }
+
+  return pushAnnotationHistory([], -1, initialEntry);
+}
+
 /**
  * Seed the trim-history stack with the current overlay/timeline state on the
  * first overlay mutation, so the very first undo can restore the pre-edit state.
@@ -57,4 +69,15 @@ export function ensureTrimHistoryInitialized(
     selectedId: selectedTrimSegmentId,
     overlays: snapshotOverlayState(project),
   });
+}
+
+export function clampSegmentToDuration<T extends { startMs: number; endMs: number }>(
+  segment: T,
+  durationMs: number
+): T {
+  return {
+    ...segment,
+    startMs: Math.max(0, Math.min(segment.startMs, durationMs)),
+    endMs: Math.max(0, Math.min(segment.endMs, durationMs)),
+  };
 }

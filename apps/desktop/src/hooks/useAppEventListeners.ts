@@ -9,6 +9,7 @@
 
 import { useEffect } from 'react';
 import { listen } from '@tauri-apps/api/event';
+import { invoke } from '@tauri-apps/api/core';
 import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
 import { useSettingsStore, type SettingsSection } from '../stores/settingsStore';
 import { useCaptureSettingsStore } from '../stores/captureSettingsStore';
@@ -26,6 +27,21 @@ interface RecordingCompleteData {
   fileSizeBytes: number;
 }
 
+interface CreateCaptureToolbarEvent {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  captureType?: CaptureType;
+  autoStartRecording?: boolean;
+  sourceType?: 'area' | 'window' | 'display';
+  windowId?: number | null;
+  sourceTitle?: string | null;
+  monitorIndex?: number | null;
+  monitorName?: string | null;
+  nativeControls?: boolean;
+}
+
 interface AppEventCallbacks {
   /** Called when a recording completes - should refresh the library */
   onRecordingComplete: (data: RecordingCompleteData) => void;
@@ -39,6 +55,84 @@ interface AppEventCallbacks {
   }) => Promise<void>;
   /** Called when a capture is deleted from editor window - refresh library */
   onCaptureDeleted: () => void;
+}
+
+function getCaptureSourceMode(sourceType: CreateCaptureToolbarEvent['sourceType']) {
+  return sourceType ?? 'area';
+}
+
+async function ensureCaptureSettingsLoaded() {
+  const captureSettingsStore = useCaptureSettingsStore.getState();
+  if (!captureSettingsStore.isInitialized) {
+    await captureSettingsStore.loadSettings();
+  }
+}
+
+function shouldCenterExistingToolbar({
+  autoStartRecording,
+  sourceType,
+}: CreateCaptureToolbarEvent) {
+  return (
+    !autoStartRecording &&
+    (sourceType === 'display' || sourceType === 'window')
+  );
+}
+
+async function centerToolbarOnSelection(
+  existing: WebviewWindow,
+  { x, y, width, height }: CreateCaptureToolbarEvent
+) {
+  const outerSize = await existing.outerSize();
+  const toolbarX = Math.floor(x + width / 2 - outerSize.width / 2);
+  const toolbarY = Math.floor(y + (height - outerSize.height) / 2);
+  await invoke('set_capture_toolbar_position', { x: toolbarX, y: toolbarY });
+}
+
+async function showExistingToolbarIfNeeded(
+  existing: WebviewWindow,
+  { autoStartRecording, nativeControls }: CreateCaptureToolbarEvent
+) {
+  if (autoStartRecording || nativeControls) return;
+
+  await existing.show();
+  await existing.setFocus();
+}
+
+async function updateExistingCaptureToolbar(
+  existing: WebviewWindow,
+  payload: CreateCaptureToolbarEvent
+) {
+  await existing.hide();
+
+  if (shouldCenterExistingToolbar(payload)) {
+    await centerToolbarOnSelection(existing, payload);
+  }
+
+  await existing.emit('confirm-selection', {
+    ...payload,
+    sourceMode: getCaptureSourceMode(payload.sourceType),
+  });
+  await showExistingToolbarIfNeeded(existing, payload);
+}
+
+async function createCaptureToolbar(payload: CreateCaptureToolbarEvent) {
+  await invoke('show_capture_toolbar', {
+    ...payload,
+    sourceMode: getCaptureSourceMode(payload.sourceType),
+    snapToolbarToSelection: false,
+  });
+}
+
+async function handleCreateCaptureToolbar(payload: CreateCaptureToolbarEvent) {
+  await ensureCaptureSettingsLoaded();
+
+  const existing = await WebviewWindow.getByLabel('capture-toolbar');
+  if (existing) {
+    await updateExistingCaptureToolbar(existing, payload);
+    return;
+  }
+
+  await createCaptureToolbar(payload);
 }
 
 /**
@@ -115,89 +209,10 @@ export function useAppEventListeners(callbacks: AppEventCallbacks) {
     // Update capture toolbar bounds from D2D overlay
     // If toolbar exists, confirm selection and update; if not, let Rust create it
     unlisteners.push(
-      listen<{
-        x: number;
-        y: number;
-        width: number;
-        height: number;
-        captureType?: CaptureType;
-        autoStartRecording?: boolean;
-        sourceType?: 'area' | 'window' | 'display';
-        windowId?: number | null;
-        sourceTitle?: string | null;
-        monitorIndex?: number | null;
-        monitorName?: string | null;
-        nativeControls?: boolean;
-      }>(
+      listen<CreateCaptureToolbarEvent>(
         'create-capture-toolbar',
         async (event) => {
-          const { x, y, width, height, captureType, autoStartRecording, sourceType, windowId, sourceTitle, monitorIndex, monitorName, nativeControls } = event.payload;
-          const sourceMode = sourceType ?? 'area';
-          const captureSettingsStore = useCaptureSettingsStore.getState();
-          if (!captureSettingsStore.isInitialized) {
-            await captureSettingsStore.loadSettings();
-          }
-          // Check if toolbar already exists
-          const existing = await WebviewWindow.getByLabel('capture-toolbar');
-          if (existing) {
-            // Hide first to avoid flashing at old position
-            await existing.hide();
-
-            // Reposition before showing. Display/window selections keep the
-            // toolbar centered on the selected bounds; area selections keep
-            // the existing window position.
-            if (
-              !autoStartRecording &&
-              (sourceType === 'display' || sourceType === 'window')
-            ) {
-              const { invoke: inv } = await import('@tauri-apps/api/core');
-              const outerSize = await existing.outerSize();
-              const toolbarX = Math.floor(x + width / 2 - outerSize.width / 2);
-              const toolbarY = Math.floor(y + (height - outerSize.height) / 2);
-              await inv('set_capture_toolbar_position', { x: toolbarX, y: toolbarY });
-            }
-
-            // Toolbar exists - emit confirm-selection to mark selection confirmed
-            // This is a NEW selection from overlay, not an adjustment update
-            // Pass through all metadata for proper recording mode
-            await existing.emit('confirm-selection', {
-              x, y, width, height,
-              captureType,
-              autoStartRecording,
-              sourceMode,
-              sourceType,
-              windowId,
-              sourceTitle,
-              monitorIndex,
-              monitorName,
-              nativeControls
-            });
-            if (!autoStartRecording && !nativeControls) {
-              await existing.show();
-              await existing.setFocus();
-            }
-            return;
-          }
-
-          // Toolbar doesn't exist - create it via Rust command
-          // This ensures consistent window creation
-          const { invoke } = await import('@tauri-apps/api/core');
-          await invoke('show_capture_toolbar', {
-            x,
-            y,
-            width,
-            height,
-            captureType,
-            autoStartRecording,
-            sourceMode,
-            sourceType,
-            windowId,
-            sourceTitle,
-            monitorIndex,
-            monitorName,
-            snapToolbarToSelection: false,
-            nativeControls,
-          });
+          await handleCreateCaptureToolbar(event.payload);
         }
       )
     );

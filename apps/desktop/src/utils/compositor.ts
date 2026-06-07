@@ -204,6 +204,81 @@ function cleanupImage(img: HTMLImageElement | null): void {
   img.src = '';
 }
 
+function applyCanvasBounds(
+  sourceCanvas: HTMLCanvasElement,
+  canvasBounds: CanvasBounds | null | undefined
+) {
+  if (!canvasBounds) {
+    return { workingCanvas: sourceCanvas, croppedCanvas: null };
+  }
+
+  const croppedCanvas = document.createElement('canvas');
+  croppedCanvas.width = canvasBounds.width;
+  croppedCanvas.height = canvasBounds.height;
+  const croppedCtx = croppedCanvas.getContext('2d');
+
+  if (croppedCtx) {
+    croppedCtx.clearRect(0, 0, canvasBounds.width, canvasBounds.height);
+    croppedCtx.drawImage(
+      sourceCanvas,
+      canvasBounds.imageOffsetX,
+      canvasBounds.imageOffsetY
+    );
+  }
+
+  return { workingCanvas: croppedCanvas, croppedCanvas };
+}
+
+async function loadCompositorBackground(settings: CompositorSettings) {
+  const backgroundImage = settings.backgroundImage;
+  const usesImageBackground =
+    settings.backgroundType === 'image' || settings.backgroundType === 'wallpaper';
+  if (!usesImageBackground || !backgroundImage) return null;
+  return loadImage(backgroundImage);
+}
+
+function drawCompositedContent({
+  ctx,
+  workingCanvas,
+  settings,
+  backgroundImage,
+  transparentEdges,
+  contentX,
+  contentY,
+}: {
+  ctx: CanvasRenderingContext2D;
+  workingCanvas: HTMLCanvasElement;
+  settings: CompositorSettings;
+  backgroundImage: HTMLImageElement | null;
+  transparentEdges: boolean;
+  contentX: number;
+  contentY: number;
+}) {
+  const sourceWidth = workingCanvas.width;
+  const sourceHeight = workingCanvas.height;
+  const tempCanvas = document.createElement('canvas');
+  tempCanvas.width = sourceWidth;
+  tempCanvas.height = sourceHeight;
+  const tempCtx = tempCanvas.getContext('2d');
+
+  if (!tempCtx) {
+    ctx.drawImage(workingCanvas, contentX, contentY);
+    return tempCanvas;
+  }
+
+  if (settings.borderRadius > 0 && !transparentEdges) {
+    drawRoundedRect(tempCtx, 0, 0, sourceWidth, sourceHeight, settings.borderRadius);
+    tempCtx.clip();
+  }
+  if (!transparentEdges) {
+    drawBackground(tempCtx, settings, sourceWidth, sourceHeight, backgroundImage);
+  }
+
+  tempCtx.drawImage(workingCanvas, 0, 0);
+  ctx.drawImage(tempCanvas, contentX, contentY);
+  return tempCanvas;
+}
+
 /**
  * Composite an image with compositor settings applied
  * Uses shared dimension calculations to match preview exactly
@@ -223,24 +298,9 @@ export async function compositeImage(
 
   try {
     // Apply canvas bounds (crop/expand) if provided
-    let workingCanvas = sourceCanvas;
-
-    if (canvasBounds) {
-      croppedCanvas = document.createElement('canvas');
-      croppedCanvas.width = canvasBounds.width;
-      croppedCanvas.height = canvasBounds.height;
-      const croppedCtx = croppedCanvas.getContext('2d');
-
-      if (croppedCtx) {
-        croppedCtx.clearRect(0, 0, canvasBounds.width, canvasBounds.height);
-        croppedCtx.drawImage(
-          sourceCanvas,
-          canvasBounds.imageOffsetX,
-          canvasBounds.imageOffsetY
-        );
-        workingCanvas = croppedCanvas;
-      }
-    }
+    const boundedSource = applyCanvasBounds(sourceCanvas, canvasBounds);
+    const workingCanvas = boundedSource.workingCanvas;
+    croppedCanvas = boundedSource.croppedCanvas;
 
     // If compositor disabled, return canvas as-is
     if (!settings.enabled) {
@@ -276,9 +336,7 @@ export async function compositeImage(
     }
 
     // Load background image if needed (for both 'image' and 'wallpaper' types)
-    if ((settings.backgroundType === 'image' || settings.backgroundType === 'wallpaper') && settings.backgroundImage) {
-      backgroundImage = await loadImage(settings.backgroundImage);
-    }
+    backgroundImage = await loadCompositorBackground(settings);
 
     // Draw full background
     drawBackground(
@@ -302,33 +360,15 @@ export async function compositeImage(
       );
     }
 
-    // Create temp canvas for content with rounded corners
-    tempCanvas = document.createElement('canvas');
-    tempCanvas.width = sourceWidth;
-    tempCanvas.height = sourceHeight;
-    const tempCtx = tempCanvas.getContext('2d');
-
-    if (tempCtx) {
-      // Apply rounded clip (skip when transparent edges)
-      if (settings.borderRadius > 0 && !transparentEdges) {
-        drawRoundedRect(tempCtx, 0, 0, sourceWidth, sourceHeight, settings.borderRadius);
-        tempCtx.clip();
-      }
-
-      // Fill with background behind content (only when opaque — matches border-radius clip).
-      // When transparent, skip so the composition-wide background shows through seamlessly.
-      if (!transparentEdges) {
-        drawBackground(tempCtx, settings, sourceWidth, sourceHeight, backgroundImage);
-      }
-
-      // Draw source content
-      tempCtx.drawImage(workingCanvas, 0, 0);
-
-      // Draw to output at correct position
-      ctx.drawImage(tempCanvas, dimensions.contentX, dimensions.contentY);
-    } else {
-      ctx.drawImage(workingCanvas, dimensions.contentX, dimensions.contentY);
-    }
+    tempCanvas = drawCompositedContent({
+      ctx,
+      workingCanvas,
+      settings,
+      backgroundImage,
+      transparentEdges,
+      contentX: dimensions.contentX,
+      contentY: dimensions.contentY,
+    });
 
     return outputCanvas;
   } finally {

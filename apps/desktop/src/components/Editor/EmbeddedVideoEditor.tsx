@@ -13,16 +13,175 @@ import {
 } from '@/stores/videoEditor/selectors';
 import type { ExportProgress } from '@/types';
 import { videoEditorLogger } from '@/utils/logger';
+import type { CaptureNavigationControls } from './CanvasCaptureNavigation';
 
 interface EmbeddedVideoEditorProps {
   onClose: () => void;
 }
+
+type CaptureCollection = ReturnType<typeof useCaptureStore.getState>['captures'];
+type NavigableCapture = CaptureCollection[number];
+type VideoProject = ReturnType<typeof useVideoEditorStore.getState>['project'];
 
 const SAVE_WAIT_TIMEOUT_MS = 5000;
 const SAVE_WAIT_POLL_MS = 50;
 
 function normalizeMediaPath(path: string | null | undefined): string {
   return (path ?? '').replace(/\\/g, '/').toLowerCase();
+}
+
+function isNavigableVideoEditorCapture(capture: NavigableCapture) {
+  return capture.capture_type !== 'gif' && !capture.is_missing && !capture.damaged;
+}
+
+function getCurrentVideoCaptureIndex(
+  navigableCaptures: NavigableCapture[],
+  project: VideoProject,
+) {
+  if (!project) {
+    return -1;
+  }
+
+  const screenVideoPath = normalizeMediaPath(project.sources.screenVideo);
+  return navigableCaptures.findIndex((capture) =>
+    capture.id === project.id ||
+    normalizeMediaPath(capture.image_path) === screenVideoPath
+  );
+}
+
+function getVideoCaptureNavigationState(captures: CaptureCollection, project: VideoProject) {
+  const navigableCaptures = captures
+    .filter(isNavigableVideoEditorCapture)
+    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+  const currentCaptureIndex = getCurrentVideoCaptureIndex(navigableCaptures, project);
+  const previousCapture = currentCaptureIndex > 0 ? navigableCaptures[currentCaptureIndex - 1] : null;
+  const nextCapture =
+    currentCaptureIndex >= 0 && currentCaptureIndex < navigableCaptures.length - 1
+      ? navigableCaptures[currentCaptureIndex + 1]
+      : null;
+
+  return { navigableCaptures, previousCapture, nextCapture };
+}
+
+function getVideoCaptureNavigation(
+  previousCapture: NavigableCapture | null,
+  nextCapture: NavigableCapture | null,
+  disabled: boolean,
+  onNavigateCapture: (captureId: string) => void | Promise<void>,
+): CaptureNavigationControls {
+  return {
+    canGoPrevious: canNavigateToCapture(previousCapture, disabled),
+    canGoNext: canNavigateToCapture(nextCapture, disabled),
+    onGoPrevious: getCaptureNavigationHandler(previousCapture, onNavigateCapture),
+    onGoNext: getCaptureNavigationHandler(nextCapture, onNavigateCapture),
+  };
+}
+
+function canNavigateToCapture(capture: NavigableCapture | null, disabled: boolean) {
+  return capture !== null && !disabled;
+}
+
+function getCaptureNavigationHandler(
+  capture: NavigableCapture | null,
+  onNavigateCapture: (captureId: string) => void | Promise<void>,
+) {
+  if (!capture) {
+    return undefined;
+  }
+
+  return () => void onNavigateCapture(capture.id);
+}
+
+function shouldSkipCaptureNavigation(
+  isNavigating: boolean,
+  loadingProjectId: string | null,
+  isExporting: boolean,
+) {
+  return isNavigating || Boolean(loadingProjectId) || isExporting;
+}
+
+function getCaptureNavigationTarget(
+  captureId: string,
+  navigableCaptures: NavigableCapture[],
+  project: VideoProject,
+) {
+  const targetCapture = navigableCaptures.find((capture) => capture.id === captureId);
+  if (!targetCapture || targetCapture.id === project?.id) {
+    return null;
+  }
+
+  return targetCapture;
+}
+
+async function saveCurrentEmbeddedVideoProject({
+  project,
+  waitForSavingToSettle,
+  saveProject,
+}: {
+  project: VideoProject;
+  waitForSavingToSettle: () => Promise<void>;
+  saveProject: () => Promise<void>;
+}) {
+  if (!project) {
+    return;
+  }
+
+  await waitForSavingToSettle();
+  await saveProject();
+  await waitForSavingToSettle();
+}
+
+async function saveEmbeddedVideoProjectBeforeClose({
+  project,
+  isExporting,
+  waitForSavingToSettle,
+  saveProject,
+}: {
+  project: VideoProject;
+  isExporting: boolean;
+  waitForSavingToSettle: () => Promise<void>;
+  saveProject: () => Promise<void>;
+}) {
+  if (!project || isExporting) {
+    return;
+  }
+
+  try {
+    await saveCurrentEmbeddedVideoProject({ project, waitForSavingToSettle, saveProject });
+  } catch (error) {
+    videoEditorLogger.warn('Embedded video editor save-on-close failed:', error);
+  }
+}
+
+async function loadEmbeddedCaptureTarget({
+  targetCapture,
+  clearEditor,
+  loadProject,
+  loadVideoProjectInWorkspace,
+}: {
+  targetCapture: NavigableCapture;
+  clearEditor: () => void;
+  loadProject: (projectId: string) => Promise<void>;
+  loadVideoProjectInWorkspace: (videoPath: string) => Promise<void>;
+}) {
+  if (targetCapture.capture_type === 'video') {
+    await loadVideoProjectInWorkspace(targetCapture.image_path);
+    return;
+  }
+
+  clearEditor();
+  await loadProject(targetCapture.id);
+}
+
+function EmbeddedVideoEditorLoading() {
+  return (
+    <div className="editor-window__state flex-1 flex items-center justify-center">
+      <div className="flex flex-col items-center gap-4">
+        <Loader2 className="w-8 h-8 animate-spin text-(--accent-400)" />
+        <p className="text-sm text-(--ink-muted)">Loading video project...</p>
+      </div>
+    </div>
+  );
 }
 
 export const EmbeddedVideoEditor: React.FC<EmbeddedVideoEditorProps> = ({ onClose }) => {
@@ -46,34 +205,10 @@ export const EmbeddedVideoEditor: React.FC<EmbeddedVideoEditorProps> = ({ onClos
     }
   }, []);
 
-  const navigableCaptures = useMemo(
-    () => captures
-      .filter((capture) =>
-        capture.capture_type !== 'gif' &&
-        !capture.is_missing &&
-        !capture.damaged
-      )
-      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()),
-    [captures]
+  const { navigableCaptures, previousCapture, nextCapture } = useMemo(
+    () => getVideoCaptureNavigationState(captures, project),
+    [captures, project]
   );
-
-  const currentCaptureIndex = useMemo(() => {
-    if (!project) {
-      return -1;
-    }
-
-    const screenVideoPath = normalizeMediaPath(project.sources.screenVideo);
-    return navigableCaptures.findIndex((capture) =>
-      capture.id === project.id ||
-      normalizeMediaPath(capture.image_path) === screenVideoPath
-    );
-  }, [navigableCaptures, project]);
-
-  const previousCapture = currentCaptureIndex > 0 ? navigableCaptures[currentCaptureIndex - 1] : null;
-  const nextCapture =
-    currentCaptureIndex >= 0 && currentCaptureIndex < navigableCaptures.length - 1
-      ? navigableCaptures[currentCaptureIndex + 1]
-      : null;
 
   useEffect(() => {
     const unlisten = listen<ExportProgress>('export-progress', (event) => {
@@ -92,45 +227,36 @@ export const EmbeddedVideoEditor: React.FC<EmbeddedVideoEditorProps> = ({ onClos
     if (isClosingRef.current) return;
     isClosingRef.current = true;
 
-    if (project && !isExporting) {
-      try {
-        await waitForSavingToSettle();
-        await saveProject();
-        await waitForSavingToSettle();
-      } catch (error) {
-        videoEditorLogger.warn('Embedded video editor save-on-close failed:', error);
-      }
-    }
+    await saveEmbeddedVideoProjectBeforeClose({
+      project,
+      isExporting,
+      waitForSavingToSettle,
+      saveProject,
+    });
 
     clearEditor();
     onClose();
   };
 
   const handleNavigateCapture = useCallback(async (captureId: string) => {
-    if (isNavigatingRef.current || loadingProjectId || isExporting) {
+    if (shouldSkipCaptureNavigation(isNavigatingRef.current, loadingProjectId, isExporting)) {
       return;
     }
 
-    const targetCapture = navigableCaptures.find((capture) => capture.id === captureId);
-    if (!targetCapture || targetCapture.id === project?.id) {
+    const targetCapture = getCaptureNavigationTarget(captureId, navigableCaptures, project);
+    if (!targetCapture) {
       return;
     }
 
     try {
       isNavigatingRef.current = true;
-      if (project) {
-        await waitForSavingToSettle();
-        await saveProject();
-        await waitForSavingToSettle();
-      }
-
-      if (targetCapture.capture_type === 'video') {
-        await loadVideoProjectInWorkspace(targetCapture.image_path);
-        return;
-      }
-
-      clearEditor();
-      await loadProject(targetCapture.id);
+      await saveCurrentEmbeddedVideoProject({ project, waitForSavingToSettle, saveProject });
+      await loadEmbeddedCaptureTarget({
+        targetCapture,
+        clearEditor,
+        loadProject,
+        loadVideoProjectInWorkspace,
+      });
     } catch (error) {
       videoEditorLogger.warn('Full-media navigation failed:', error);
     } finally {
@@ -153,15 +279,18 @@ export const EmbeddedVideoEditor: React.FC<EmbeddedVideoEditorProps> = ({ onClos
     isClosingRef.current = false;
   }, [project?.id]);
 
+  const captureNavigation = useMemo(
+    () => getVideoCaptureNavigation(
+      previousCapture,
+      nextCapture,
+      Boolean(loadingProjectId || isExporting),
+      handleNavigateCapture,
+    ),
+    [handleNavigateCapture, isExporting, loadingProjectId, nextCapture, previousCapture]
+  );
+
   if (!project) {
-    return (
-      <div className="editor-window__state flex-1 flex items-center justify-center">
-        <div className="flex flex-col items-center gap-4">
-          <Loader2 className="w-8 h-8 animate-spin text-(--accent-400)" />
-          <p className="text-sm text-(--ink-muted)">Loading video project...</p>
-        </div>
-      </div>
-    );
+    return <EmbeddedVideoEditorLoading />;
   }
 
   return (
@@ -171,12 +300,7 @@ export const EmbeddedVideoEditor: React.FC<EmbeddedVideoEditorProps> = ({ onClos
       }}
       hideTopBar={true}
       isActive={true}
-      captureNavigation={{
-        canGoPrevious: previousCapture !== null && !loadingProjectId && !isExporting,
-        canGoNext: nextCapture !== null && !loadingProjectId && !isExporting,
-        onGoPrevious: previousCapture ? () => void handleNavigateCapture(previousCapture.id) : undefined,
-        onGoNext: nextCapture ? () => void handleNavigateCapture(nextCapture.id) : undefined,
-      }}
+      captureNavigation={captureNavigation}
     />
   );
 };

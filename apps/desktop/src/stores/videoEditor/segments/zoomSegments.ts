@@ -1,7 +1,7 @@
 import type { SliceCreator, ZoomRegion } from '../types';
 import { snapshotOverlayState } from '../overlayAdjustment';
 import { pushTrimHistory } from '../trimSlice';
-import { ensureTrimHistoryInitialized } from './shared';
+import { clampSegmentToDuration, ensureTrimHistoryInitialized } from './shared';
 
 /**
  * Generate a unique zoom region ID
@@ -40,13 +40,7 @@ export const createZoomSegmentsSlice: SliceCreator<ZoomSegmentsSlice> = (set, ge
     const { project } = get();
     if (!project) return;
 
-    // Clamp to video duration
-    const durationMs = project.timeline.durationMs;
-    const clampedRegion = {
-      ...region,
-      startMs: Math.max(0, Math.min(region.startMs, durationMs)),
-      endMs: Math.max(0, Math.min(region.endMs, durationMs)),
-    };
+    const clampedRegion = clampSegmentToDuration(region, project.timeline.durationMs);
 
     set({
       project: {

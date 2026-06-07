@@ -39,6 +39,7 @@ const COLOR_PRESETS = [
   '#EF4444', '#F97316', '#9CA3AF', '#22C55E',
   '#3B82F6', '#8B5CF6', '#EC4899', '#FFFFFF', '#1A1A1A',
 ];
+const TRANSPARENT_COLOR = 'transparent';
 
 interface TextToolSettingsProps {
   textShape: CanvasShape | null;
@@ -48,24 +49,189 @@ interface TextToolSettingsProps {
   onStrokeWidthChange: (width: number) => void;
 }
 
-export const TextToolSettings: React.FC<TextToolSettingsProps> = ({
-  textShape,
-  strokeColor,
-  strokeWidth,
-  onStrokeColorChange,
-  onStrokeWidthChange,
-}) => {
-  const { fontSize, setFontSize, updateShape } = useEditorStore();
-  const { recordAction } = useEditorHistory();
+type UpdateShape = (id: string, updates: Partial<CanvasShape>) => void;
+type RecordEditorAction = (action: () => void) => void;
 
-  // System fonts state
+interface FontFamilyPickerProps {
+  disabled: boolean;
+  currentFontFamily: string;
+  fonts: string[];
+  open: boolean;
+  isLoading: boolean;
+  onOpenChange: (open: boolean) => void;
+  onSelectFont: (font: string) => void;
+}
+
+function FontFamilyPicker({
+  disabled,
+  currentFontFamily,
+  fonts,
+  open,
+  isLoading,
+  onOpenChange,
+  onSelectFont,
+}: FontFamilyPickerProps) {
+  return (
+    <div className="space-y-3">
+      <Label className="text-xs text-[var(--ink-muted)] uppercase tracking-wide font-medium">Font Family</Label>
+      <Popover open={open} onOpenChange={onOpenChange}>
+        <PopoverTrigger asChild>
+          <button
+            disabled={disabled}
+            className="w-full h-9 px-3 pr-8 rounded-md text-xs font-medium bg-transparent hover:bg-white/[0.04] text-[var(--ink-dark)] cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-between text-left relative transition-colors"
+            style={{ fontFamily: currentFontFamily }}
+          >
+            <span className="truncate">{currentFontFamily}</span>
+            <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--ink-muted)]" />
+          </button>
+        </PopoverTrigger>
+        {open && (
+          <PopoverContent className="p-0 w-[var(--radix-popover-trigger-width)]" align="start">
+            <Command>
+              <CommandInput placeholder="Search fonts..." className="h-9" />
+              <CommandList>
+                <CommandEmpty>{isLoading ? 'Loading fonts...' : 'No font found.'}</CommandEmpty>
+                <CommandGroup>
+                  {fonts.map((font) => (
+                    <CommandItem
+                      key={font}
+                      value={font}
+                      onSelect={() => onSelectFont(font)}
+                      style={{ fontFamily: font }}
+                      className="text-sm"
+                    >
+                      <Check
+                        className={`mr-2 h-4 w-4 ${currentFontFamily === font ? 'opacity-100' : 'opacity-0'}`}
+                      />
+                      {font}
+                    </CommandItem>
+                  ))}
+                </CommandGroup>
+              </CommandList>
+            </Command>
+          </PopoverContent>
+        )}
+      </Popover>
+    </div>
+  );
+}
+
+interface IconToggleButtonProps {
+  active: boolean;
+  disabled: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}
+
+function IconToggleButton({
+  active,
+  disabled,
+  onClick,
+  children,
+}: IconToggleButtonProps) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      className={`editor-choice-pill flex-1 flex items-center justify-center px-2 py-2 disabled:opacity-50 disabled:cursor-not-allowed ${
+        active ? 'editor-choice-pill--active' : ''
+      }`}
+    >
+      {children}
+    </button>
+  );
+}
+
+interface TextToggleButtonProps {
+  active: boolean;
+  disabled: boolean;
+  onClick: () => void;
+  label: string;
+}
+
+function TextToggleButton({
+  active,
+  disabled,
+  onClick,
+  label,
+}: TextToggleButtonProps) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      className={`editor-choice-pill flex-1 px-2 py-2 text-xs disabled:opacity-50 disabled:cursor-not-allowed ${
+        active ? 'editor-choice-pill--active' : ''
+      }`}
+    >
+      {label}
+    </button>
+  );
+}
+
+interface ColorSettingProps {
+  label: string;
+  value: string;
+  onChange: (color: string) => void;
+}
+
+function ColorSetting({ label, value, onChange }: ColorSettingProps) {
+  return (
+    <div className="space-y-3">
+      <Label className="text-xs text-[var(--ink-muted)] uppercase tracking-wide font-medium">{label}</Label>
+      <ColorPicker
+        value={value}
+        onChange={onChange}
+        presets={COLOR_PRESETS}
+        showTransparent
+      />
+    </div>
+  );
+}
+
+interface WidthSliderSettingProps {
+  label: string;
+  value: number;
+  min: number;
+  max: number;
+  step: number;
+  disabled?: boolean;
+  onChange: (value: number) => void;
+}
+
+function WidthSliderSetting({
+  label,
+  value,
+  min,
+  max,
+  step,
+  disabled = false,
+  onChange,
+}: WidthSliderSettingProps) {
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <Label className="text-xs text-[var(--ink-muted)] uppercase tracking-wide font-medium">{label}</Label>
+        <span className="text-xs text-[var(--ink-dark)] font-mono">{value}px</span>
+      </div>
+      <Slider
+        value={[value]}
+        onValueChange={([nextValue]) => onChange(nextValue)}
+        min={min}
+        max={max}
+        step={step}
+        className={`w-full ${disabled ? 'opacity-50 pointer-events-none' : ''}`}
+      />
+    </div>
+  );
+}
+
+function useSystemFontOptions() {
   const [systemFonts, setSystemFonts] = useState<string[]>(
     () => getSystemFontsSnapshot() ?? [...DEFAULT_FONT_FAMILIES]
   );
   const [fontComboboxOpen, setFontComboboxOpen] = useState(false);
   const [isLoadingFonts, setIsLoadingFonts] = useState(false);
 
-  // Load system fonts lazily when the font picker is opened.
   useEffect(() => {
     if (!fontComboboxOpen) return;
     const cached = getSystemFontsSnapshot();
@@ -98,107 +264,204 @@ export const TextToolSettings: React.FC<TextToolSettingsProps> = ({
     };
   }, [fontComboboxOpen, systemFonts]);
 
-  const currentFontSize = textShape?.fontSize || fontSize;
-  const currentFontFamily = getEditorTextFontFamily(textShape?.fontFamily);
-  const currentFontStyle = getEditorTextFontStyle(textShape?.fontStyle);
-  const currentTextDecoration = getEditorTextDecoration(textShape?.textDecoration);
-  const currentAlign = normalizeEditorTextAlign(textShape?.align);
-  const currentTextStroke = textShape?.stroke || 'transparent';
-  const currentTextStrokeWidth = textShape?.strokeWidth || 0;
-  const currentVerticalAlign = normalizeEditorTextVerticalAlign(textShape?.verticalAlign);
-  const currentTextBackground = textShape?.textBackground || 'transparent';
-  const currentTextBoxStroke = textShape?.textBoxStroke || 'transparent';
-  const currentTextBoxStrokeWidth = textShape?.textBoxStrokeWidth || 0;
+  return {
+    systemFonts,
+    fontComboboxOpen,
+    setFontComboboxOpen,
+    isLoadingFonts,
+  };
+}
 
-  const isBold = isEditorTextStyleBold(currentFontStyle);
-  const isItalic = isEditorTextStyleItalic(currentFontStyle);
-  const isUnderline = currentTextDecoration === 'underline';
+function getShapeValue<T>(value: T | null | undefined, fallback: T): T {
+  return value || fallback;
+}
+
+function getTextToolStyleValues(textShape: CanvasShape | null) {
+  const fontStyle = getEditorTextFontStyle(textShape?.fontStyle);
+  const textDecoration = getEditorTextDecoration(textShape?.textDecoration);
+
+  return {
+    fontStyle,
+    textDecoration,
+    isBold: isEditorTextStyleBold(fontStyle),
+    isItalic: isEditorTextStyleItalic(fontStyle),
+    isUnderline: textDecoration === 'underline',
+  };
+}
+
+function getTextToolShapeValues(textShape: CanvasShape | null, fallbackFontSize: number) {
+  const {
+    fontSize,
+    fontFamily,
+    align,
+    stroke,
+    strokeWidth,
+    verticalAlign,
+    textBackground,
+    textBoxStroke,
+    textBoxStrokeWidth,
+  } = textShape ?? {};
+
+  return {
+    currentFontSize: getShapeValue(fontSize, fallbackFontSize),
+    currentFontFamily: getEditorTextFontFamily(fontFamily),
+    currentAlign: normalizeEditorTextAlign(align),
+    currentTextStroke: getShapeValue(stroke, TRANSPARENT_COLOR),
+    currentTextStrokeWidth: getShapeValue(strokeWidth, 0),
+    currentVerticalAlign: normalizeEditorTextVerticalAlign(verticalAlign),
+    currentTextBackground: getShapeValue(textBackground, TRANSPARENT_COLOR),
+    currentTextBoxStroke: getShapeValue(textBoxStroke, TRANSPARENT_COLOR),
+    currentTextBoxStrokeWidth: getShapeValue(textBoxStrokeWidth, 0),
+  };
+}
+
+function getTextToolValues(textShape: CanvasShape | null, fallbackFontSize: number) {
+  const { fontStyle, textDecoration, isBold, isItalic, isUnderline } =
+    getTextToolStyleValues(textShape);
+
+  return {
+    ...getTextToolShapeValues(textShape, fallbackFontSize),
+    currentFontStyle: fontStyle,
+    currentTextDecoration: textDecoration,
+    isBold,
+    isItalic,
+    isUnderline,
+  };
+}
+
+function getFontSizeShapeUpdate(textShape: CanvasShape, fontSize: number): Partial<CanvasShape> {
+  const measuredHeight = measureEditorTextBoxHeight(textShape, fontSize);
+  return {
+    fontSize,
+    height: Math.max(textShape.height || 0, measuredHeight),
+  };
+}
+
+function updateSelectedTextShape(
+  textShape: CanvasShape | null,
+  updateShape: UpdateShape,
+  recordAction: RecordEditorAction,
+  updates: Partial<CanvasShape>
+) {
+  if (!textShape) return false;
+  recordAction(() => updateShape(textShape.id, updates));
+  return true;
+}
+
+function updateSelectedTextShapeLive(
+  textShape: CanvasShape | null,
+  updateShape: UpdateShape,
+  updates: Partial<CanvasShape>
+) {
+  if (!textShape) return false;
+  updateShape(textShape.id, updates);
+  return true;
+}
+
+function updateFontSizeValue(
+  textShape: CanvasShape | null,
+  updateShape: UpdateShape,
+  setFontSize: (fontSize: number) => void,
+  value: number
+) {
+  if (!textShape) {
+    setFontSize(value);
+    return;
+  }
+
+  updateShape(textShape.id, getFontSizeShapeUpdate(textShape, value));
+}
+
+function getUnderlineDecoration(isUnderline: boolean) {
+  return isUnderline ? '' : 'underline';
+}
+
+function getOpaqueColorValue(color: string, fallback: string) {
+  return color === 'transparent' ? fallback : color;
+}
+
+function getSelectedOrDefaultValue<T>(textShape: CanvasShape | null, selectedValue: T, defaultValue: T) {
+  return textShape ? selectedValue : defaultValue;
+}
+
+export const TextToolSettings: React.FC<TextToolSettingsProps> = ({
+  textShape,
+  strokeColor,
+  strokeWidth,
+  onStrokeColorChange,
+  onStrokeWidthChange,
+}) => {
+  const { fontSize, setFontSize, updateShape } = useEditorStore();
+  const { recordAction } = useEditorHistory();
+
+  const {
+    systemFonts,
+    fontComboboxOpen,
+    setFontComboboxOpen,
+    isLoadingFonts,
+  } = useSystemFontOptions();
+  const {
+    currentFontSize,
+    currentFontFamily,
+    currentFontStyle,
+    currentAlign,
+    currentTextStroke,
+    currentTextStrokeWidth,
+    currentVerticalAlign,
+    currentTextBackground,
+    currentTextBoxStroke,
+    currentTextBoxStrokeWidth,
+    isBold,
+    isItalic,
+    isUnderline,
+  } = getTextToolValues(textShape, fontSize);
+
+  const handleFontSizeChange = ([value]: number[]) => {
+    updateFontSizeValue(textShape, updateShape, setFontSize, value);
+  };
 
   const toggleBold = () => {
-    if (textShape) {
-      recordAction(() => updateShape(textShape.id, {
-        fontStyle: toggleEditorTextFontStyle(currentFontStyle, 'bold'),
-      }));
-    }
+    updateSelectedTextShape(textShape, updateShape, recordAction, {
+      fontStyle: toggleEditorTextFontStyle(currentFontStyle, 'bold'),
+    });
   };
 
   const toggleItalic = () => {
-    if (textShape) {
-      recordAction(() => updateShape(textShape.id, {
-        fontStyle: toggleEditorTextFontStyle(currentFontStyle, 'italic'),
-      }));
-    }
+    updateSelectedTextShape(textShape, updateShape, recordAction, {
+      fontStyle: toggleEditorTextFontStyle(currentFontStyle, 'italic'),
+    });
   };
 
   const toggleUnderline = () => {
-    const newDecoration = isUnderline ? '' : 'underline';
-    if (textShape) {
-      recordAction(() => updateShape(textShape.id, { textDecoration: newDecoration }));
-    }
+    updateSelectedTextShape(textShape, updateShape, recordAction, {
+      textDecoration: getUnderlineDecoration(isUnderline),
+    });
   };
 
   const setAlignment = (align: EditorTextAlign) => {
-    if (textShape) {
-      recordAction(() => updateShape(textShape.id, { align }));
-    }
+    updateSelectedTextShape(textShape, updateShape, recordAction, { align });
   };
 
   const setVerticalAlignment = (verticalAlign: EditorTextVerticalAlign) => {
-    if (textShape) {
-      recordAction(() => updateShape(textShape.id, { verticalAlign }));
-    }
+    updateSelectedTextShape(textShape, updateShape, recordAction, { verticalAlign });
   };
 
   return (
     <>
       {/* Font Family */}
       <Separator className="bg-[var(--polar-frost)]" />
-      <div className="space-y-3">
-        <Label className="text-xs text-[var(--ink-muted)] uppercase tracking-wide font-medium">Font Family</Label>
-        <Popover open={fontComboboxOpen} onOpenChange={setFontComboboxOpen}>
-          <PopoverTrigger asChild>
-            <button
-              disabled={!textShape}
-              className="w-full h-9 px-3 pr-8 rounded-md text-xs font-medium bg-transparent hover:bg-white/[0.04] text-[var(--ink-dark)] cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-between text-left relative transition-colors"
-              style={{ fontFamily: currentFontFamily }}
-            >
-              <span className="truncate">{currentFontFamily}</span>
-              <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--ink-muted)]" />
-            </button>
-          </PopoverTrigger>
-          {fontComboboxOpen && (
-            <PopoverContent className="p-0 w-[var(--radix-popover-trigger-width)]" align="start">
-              <Command>
-                <CommandInput placeholder="Search fonts..." className="h-9" />
-                <CommandList>
-                  <CommandEmpty>{isLoadingFonts ? 'Loading fonts...' : 'No font found.'}</CommandEmpty>
-                  <CommandGroup>
-                    {systemFonts.map((font) => (
-                      <CommandItem
-                        key={font}
-                        value={font}
-                        onSelect={() => {
-                          if (textShape) {
-                            recordAction(() => updateShape(textShape.id, { fontFamily: font }));
-                          }
-                          setFontComboboxOpen(false);
-                        }}
-                        style={{ fontFamily: font }}
-                        className="text-sm"
-                      >
-                        <Check
-                          className={`mr-2 h-4 w-4 ${currentFontFamily === font ? 'opacity-100' : 'opacity-0'}`}
-                        />
-                        {font}
-                      </CommandItem>
-                    ))}
-                  </CommandGroup>
-                </CommandList>
-              </Command>
-            </PopoverContent>
-          )}
-        </Popover>
-      </div>
+      <FontFamilyPicker
+        disabled={!textShape}
+        currentFontFamily={currentFontFamily}
+        fonts={systemFonts}
+        open={fontComboboxOpen}
+        isLoading={isLoadingFonts}
+        onOpenChange={setFontComboboxOpen}
+        onSelectFont={(font) => {
+          updateSelectedTextShape(textShape, updateShape, recordAction, { fontFamily: font });
+          setFontComboboxOpen(false);
+        }}
+      />
 
       {/* Font Size */}
       <div className="space-y-3">
@@ -208,17 +471,7 @@ export const TextToolSettings: React.FC<TextToolSettingsProps> = ({
         </div>
         <Slider
           value={[currentFontSize]}
-          onValueChange={([value]) => {
-            if (textShape) {
-              const measuredHeight = measureEditorTextBoxHeight(textShape, value);
-              updateShape(textShape.id, {
-                fontSize: value,
-                height: Math.max(textShape.height || 0, measuredHeight),
-              });
-            } else {
-              setFontSize(value);
-            }
-          }}
+          onValueChange={handleFontSizeChange}
           onValueCommit={() => {
             // Commit handled by recordAction on individual changes
           }}
@@ -233,33 +486,15 @@ export const TextToolSettings: React.FC<TextToolSettingsProps> = ({
       <div className="space-y-3">
         <Label className="text-xs text-[var(--ink-muted)] uppercase tracking-wide font-medium">Style</Label>
         <div className="flex gap-1.5">
-          <button
-            onClick={toggleBold}
-            disabled={!textShape}
-            className={`editor-choice-pill flex-1 flex items-center justify-center px-2 py-2 disabled:opacity-50 disabled:cursor-not-allowed ${
-              isBold ? 'editor-choice-pill--active' : ''
-            }`}
-          >
+          <IconToggleButton active={isBold} disabled={!textShape} onClick={toggleBold}>
             <Bold className="w-4 h-4" />
-          </button>
-          <button
-            onClick={toggleItalic}
-            disabled={!textShape}
-            className={`editor-choice-pill flex-1 flex items-center justify-center px-2 py-2 disabled:opacity-50 disabled:cursor-not-allowed ${
-              isItalic ? 'editor-choice-pill--active' : ''
-            }`}
-          >
+          </IconToggleButton>
+          <IconToggleButton active={isItalic} disabled={!textShape} onClick={toggleItalic}>
             <Italic className="w-4 h-4" />
-          </button>
-          <button
-            onClick={toggleUnderline}
-            disabled={!textShape}
-            className={`editor-choice-pill flex-1 flex items-center justify-center px-2 py-2 disabled:opacity-50 disabled:cursor-not-allowed ${
-              isUnderline ? 'editor-choice-pill--active' : ''
-            }`}
-          >
+          </IconToggleButton>
+          <IconToggleButton active={isUnderline} disabled={!textShape} onClick={toggleUnderline}>
             <Underline className="w-4 h-4" />
-          </button>
+          </IconToggleButton>
         </div>
       </div>
 
@@ -267,33 +502,27 @@ export const TextToolSettings: React.FC<TextToolSettingsProps> = ({
       <div className="space-y-3">
         <Label className="text-xs text-[var(--ink-muted)] uppercase tracking-wide font-medium">Horizontal Align</Label>
         <div className="flex gap-1.5">
-          <button
-            onClick={() => setAlignment('left')}
+          <IconToggleButton
+            active={currentAlign === 'left'}
             disabled={!textShape}
-            className={`editor-choice-pill flex-1 flex items-center justify-center px-2 py-2 disabled:opacity-50 disabled:cursor-not-allowed ${
-              currentAlign === 'left' ? 'editor-choice-pill--active' : ''
-            }`}
+            onClick={() => setAlignment('left')}
           >
             <AlignLeft className="w-4 h-4" />
-          </button>
-          <button
-            onClick={() => setAlignment('center')}
+          </IconToggleButton>
+          <IconToggleButton
+            active={currentAlign === 'center'}
             disabled={!textShape}
-            className={`editor-choice-pill flex-1 flex items-center justify-center px-2 py-2 disabled:opacity-50 disabled:cursor-not-allowed ${
-              currentAlign === 'center' ? 'editor-choice-pill--active' : ''
-            }`}
+            onClick={() => setAlignment('center')}
           >
             <AlignCenter className="w-4 h-4" />
-          </button>
-          <button
-            onClick={() => setAlignment('right')}
+          </IconToggleButton>
+          <IconToggleButton
+            active={currentAlign === 'right'}
             disabled={!textShape}
-            className={`editor-choice-pill flex-1 flex items-center justify-center px-2 py-2 disabled:opacity-50 disabled:cursor-not-allowed ${
-              currentAlign === 'right' ? 'editor-choice-pill--active' : ''
-            }`}
+            onClick={() => setAlignment('right')}
           >
             <AlignRight className="w-4 h-4" />
-          </button>
+          </IconToggleButton>
         </div>
       </div>
 
@@ -301,123 +530,79 @@ export const TextToolSettings: React.FC<TextToolSettingsProps> = ({
       <div className="space-y-3">
         <Label className="text-xs text-[var(--ink-muted)] uppercase tracking-wide font-medium">Vertical Align</Label>
         <div className="flex gap-1.5">
-          <button
+          <TextToggleButton
+            active={currentVerticalAlign === 'top'}
+            disabled={!textShape}
             onClick={() => setVerticalAlignment('top')}
+            label="Top"
+          />
+          <TextToggleButton
+            active={currentVerticalAlign === 'middle'}
             disabled={!textShape}
-            className={`editor-choice-pill flex-1 px-2 py-2 text-xs disabled:opacity-50 disabled:cursor-not-allowed ${
-              currentVerticalAlign === 'top' ? 'editor-choice-pill--active' : ''
-            }`}
-          >
-            Top
-          </button>
-          <button
             onClick={() => setVerticalAlignment('middle')}
+            label="Middle"
+          />
+          <TextToggleButton
+            active={currentVerticalAlign === 'bottom'}
             disabled={!textShape}
-            className={`editor-choice-pill flex-1 px-2 py-2 text-xs disabled:opacity-50 disabled:cursor-not-allowed ${
-              currentVerticalAlign === 'middle' ? 'editor-choice-pill--active' : ''
-            }`}
-          >
-            Middle
-          </button>
-          <button
             onClick={() => setVerticalAlignment('bottom')}
-            disabled={!textShape}
-            className={`editor-choice-pill flex-1 px-2 py-2 text-xs disabled:opacity-50 disabled:cursor-not-allowed ${
-              currentVerticalAlign === 'bottom' ? 'editor-choice-pill--active' : ''
-            }`}
-          >
-            Bottom
-          </button>
+            label="Bottom"
+          />
         </div>
       </div>
 
       {/* Text Background Color */}
       <Separator className="bg-[var(--polar-frost)]" />
-      <div className="space-y-3">
-        <Label className="text-xs text-[var(--ink-muted)] uppercase tracking-wide font-medium">Background Color</Label>
-        <ColorPicker
-          value={currentTextBackground === 'transparent' ? '#FFFFFF' : currentTextBackground}
-          onChange={(color) => {
-            if (textShape) {
-              recordAction(() => updateShape(textShape.id, { textBackground: color }));
-            }
-          }}
-          presets={COLOR_PRESETS}
-          showTransparent
-        />
-      </div>
+      <ColorSetting
+        label="Background Color"
+        value={getOpaqueColorValue(currentTextBackground, '#FFFFFF')}
+        onChange={(color) => updateSelectedTextShape(textShape, updateShape, recordAction, { textBackground: color })}
+      />
 
       {/* Text Box Outline */}
-      <div className="space-y-3">
-        <Label className="text-xs text-[var(--ink-muted)] uppercase tracking-wide font-medium">Box Outline</Label>
-        <ColorPicker
-          value={currentTextBoxStroke === 'transparent' ? '#000000' : currentTextBoxStroke}
-          onChange={(color) => {
-            if (textShape) {
-              recordAction(() => updateShape(textShape.id, { textBoxStroke: color }));
-            }
-          }}
-          presets={COLOR_PRESETS}
-          showTransparent
-        />
-      </div>
-      <div className="space-y-3">
-        <div className="flex items-center justify-between">
-          <Label className="text-xs text-[var(--ink-muted)] uppercase tracking-wide font-medium">Outline Width</Label>
-          <span className="text-xs text-[var(--ink-dark)] font-mono">{currentTextBoxStrokeWidth}px</span>
-        </div>
-        <Slider
-          value={[currentTextBoxStrokeWidth]}
-          onValueChange={([value]) => {
-            if (textShape) {
-              updateShape(textShape.id, { textBoxStrokeWidth: value });
-            }
-          }}
-          min={0}
-          max={8}
-          step={1}
-          className={`w-full ${!textShape ? 'opacity-50 pointer-events-none' : ''}`}
-        />
-      </div>
+      <ColorSetting
+        label="Box Outline"
+        value={getOpaqueColorValue(currentTextBoxStroke, '#000000')}
+        onChange={(color) => updateSelectedTextShape(textShape, updateShape, recordAction, { textBoxStroke: color })}
+      />
+      <WidthSliderSetting
+        label="Outline Width"
+        value={currentTextBoxStrokeWidth}
+        min={0}
+        max={8}
+        step={1}
+        disabled={!textShape}
+        onChange={(value) => updateSelectedTextShapeLive(textShape, updateShape, { textBoxStrokeWidth: value })}
+      />
 
       {/* Text Stroke - show for text tool and selected text shapes */}
       <>
         <Separator className="bg-[var(--polar-frost)]" />
-        <div className="space-y-3">
-          <Label className="text-xs text-[var(--ink-muted)] uppercase tracking-wide font-medium">Stroke Color</Label>
-          <ColorPicker
-            value={textShape ? (currentTextStroke === 'transparent' ? '#000000' : currentTextStroke) : strokeColor}
-            onChange={(color) => {
-              if (textShape) {
-                recordAction(() => updateShape(textShape.id, { stroke: color }));
-              } else {
-                onStrokeColorChange(color);
-              }
-            }}
-            presets={COLOR_PRESETS}
-            showTransparent
-          />
-        </div>
-        <div className="space-y-3">
-          <div className="flex items-center justify-between">
-            <Label className="text-xs text-[var(--ink-muted)] uppercase tracking-wide font-medium">Stroke Width</Label>
-            <span className="text-xs text-[var(--ink-dark)] font-mono">{textShape ? currentTextStrokeWidth : strokeWidth}px</span>
-          </div>
-          <Slider
-            value={[textShape ? currentTextStrokeWidth : strokeWidth]}
-            onValueChange={([value]) => {
-              if (textShape) {
-                updateShape(textShape.id, { strokeWidth: value });
-              } else {
-                onStrokeWidthChange(value);
-              }
-            }}
-            min={0}
-            max={4}
-            step={0.5}
-            className="w-full"
-          />
-        </div>
+        <ColorSetting
+          label="Stroke Color"
+          value={getSelectedOrDefaultValue(
+            textShape,
+            getOpaqueColorValue(currentTextStroke, '#000000'),
+            strokeColor
+          )}
+          onChange={(color) => {
+            if (!updateSelectedTextShape(textShape, updateShape, recordAction, { stroke: color })) {
+              onStrokeColorChange(color);
+            }
+          }}
+        />
+        <WidthSliderSetting
+          label="Stroke Width"
+          value={getSelectedOrDefaultValue(textShape, currentTextStrokeWidth, strokeWidth)}
+          min={0}
+          max={4}
+          step={0.5}
+          onChange={(value) => {
+            if (!updateSelectedTextShapeLive(textShape, updateShape, { strokeWidth: value })) {
+              onStrokeWidthChange(value);
+            }
+          }}
+        />
       </>
     </>
   );

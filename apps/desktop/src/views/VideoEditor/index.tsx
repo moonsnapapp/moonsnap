@@ -1,4 +1,4 @@
-/**
+﻿/**
  * VideoEditorView Component
  *
  * Main view for editing video recordings with features like:
@@ -16,6 +16,7 @@ import {
   useLayoutEffect,
   useRef,
   useState,
+  type MutableRefObject,
 } from 'react';
 import type { ImperativePanelHandle } from 'react-resizable-panels';
 import { toast } from 'sonner';
@@ -80,6 +81,7 @@ import {
   selectFitTimelineToWindow,
 } from '../../stores/videoEditor/selectors';
 import { useVideoEditorShortcuts } from '../../hooks/useVideoEditorShortcuts';
+import { useUserActivityTracker } from '@/hooks/useUserActivityTracker';
 import { VideoEditorToolbar } from './VideoEditorToolbar';
 import { VideoEditorSidebar } from './VideoEditorSidebar';
 import { VideoEditorPreview } from './VideoEditorPreview';
@@ -131,11 +133,11 @@ const SKIP_AMOUNT_MS = 5000;
 const SAVE_WAIT_TIMEOUT_MS = 5000;
 const SAVE_WAIT_POLL_MS = 50;
 // Persist the sidebar's pixel width ourselves rather than relying on
-// react-resizable-panels' percentage-based autoSaveId — that restore
+// react-resizable-panels' percentage-based autoSaveId â€” that restore
 // doesn't fire reliably under HMR, so the panel falls back to defaultSize.
 const SIDEBAR_WIDTH_STORAGE_KEY = 'moonsnap-video-editor-sidebar-px';
 const DEFAULT_SIDEBAR_WIDTH_PX = 380;
-// Hard pixel floor for the sidebar — translated to a percentage at runtime
+// Hard pixel floor for the sidebar â€” translated to a percentage at runtime
 // against the current workspace width (see `sidebarMinPct` below).
 const SIDEBAR_MIN_PX = 380;
 // Safety floor used only when the workspace is so narrow that 380px would
@@ -148,14 +150,207 @@ function withFileExtension(filename: string, extension: 'mp4' | 'webm' | 'gif'):
   return `${withoutExtension}.${extension}`;
 }
 
-/**
- * VideoEditorView - Main video editor component with preview, timeline, and controls.
- */
-export const VideoEditorView = forwardRef<VideoEditorViewRef, VideoEditorViewProps>(function VideoEditorView(
-  { onBack, hideTopBar, isActive = true, captureNavigation },
-  ref
-) {
-  // Long-task detector: logs when the main thread is blocked for >50ms
+function readSavedSidebarWidthPx() {
+  const raw = localStorage.getItem(SIDEBAR_WIDTH_STORAGE_KEY);
+  const parsed = raw != null ? Number(raw) : NaN;
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_SIDEBAR_WIDTH_PX;
+}
+
+function getSidebarMinPct(containerWidth: number) {
+  return Math.min(
+    SIDEBAR_MAX_PCT,
+    Math.max(SIDEBAR_MIN_FLOOR_PCT, (SIDEBAR_MIN_PX / containerWidth) * 100)
+  );
+}
+
+function getDesiredSidebarPct(containerWidth: number, minPct: number) {
+  const desiredPx = Math.max(SIDEBAR_MIN_PX, readSavedSidebarWidthPx());
+  return Math.min(
+    SIDEBAR_MAX_PCT,
+    Math.max(minPct, (desiredPx / containerWidth) * 100)
+  );
+}
+
+function useVideoEditorSidebarPersistence() {
+  const workspaceRef = useRef<HTMLDivElement>(null);
+  const sidebarPanelRef = useRef<ImperativePanelHandle>(null);
+  const containerWidthRef = useRef(0);
+  const isProgrammaticResizeRef = useRef(false);
+  const isResizingSidebarRef = useRef(false);
+  const pendingSidebarPctRef = useRef<number | null>(null);
+  const [sidebarMinPct, setSidebarMinPct] = useState(SIDEBAR_MIN_FLOOR_PCT);
+
+  useLayoutEffect(() => {
+    const container = workspaceRef.current;
+    if (!container) return;
+
+    const update = () => {
+      const width = container.clientWidth;
+      if (width <= 0) return;
+      containerWidthRef.current = width;
+
+      const minPct = getSidebarMinPct(width);
+      setSidebarMinPct(minPct);
+
+      const panel = sidebarPanelRef.current;
+      if (!panel) return;
+
+      const desiredPct = getDesiredSidebarPct(width, minPct);
+      const currentPct = panel.getSize();
+      if (Math.abs(currentPct - desiredPct) > 0.01) {
+        isProgrammaticResizeRef.current = true;
+        panel.resize(desiredPct);
+      }
+    };
+
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(container);
+    return () => observer.disconnect();
+  }, []);
+
+  const handleSidebarResize = useCallback((size: number) => {
+    if (isProgrammaticResizeRef.current) {
+      isProgrammaticResizeRef.current = false;
+      return;
+    }
+
+    if (isResizingSidebarRef.current) {
+      pendingSidebarPctRef.current = size;
+    }
+  }, []);
+
+  const handleSidebarDragging = useCallback((isDragging: boolean) => {
+    if (isDragging) {
+      isResizingSidebarRef.current = true;
+      pendingSidebarPctRef.current = null;
+      return;
+    }
+
+    isResizingSidebarRef.current = false;
+    const pendingSize = pendingSidebarPctRef.current;
+    pendingSidebarPctRef.current = null;
+    persistPendingSidebarSize(pendingSize, containerWidthRef.current);
+  }, []);
+
+  return {
+    workspaceRef,
+    sidebarPanelRef,
+    sidebarMinPct,
+    handleSidebarResize,
+    handleSidebarDragging,
+  };
+}
+
+function persistPendingSidebarSize(sizePct: number | null, containerWidth: number) {
+  const sidebarWidthPx = getPendingSidebarWidthPx(sizePct, containerWidth);
+  if (sidebarWidthPx === null) return;
+  localStorage.setItem(SIDEBAR_WIDTH_STORAGE_KEY, String(sidebarWidthPx));
+}
+
+function getPendingSidebarWidthPx(sizePct: number | null, containerWidth: number) {
+  if (sizePct === null || containerWidth <= 0) return null;
+
+  const widthPx = Math.round((sizePct / 100) * containerWidth);
+  return widthPx > 0 ? widthPx : null;
+}
+
+type AutoSaveIdleAction =
+  | { type: 'skip' }
+  | { type: 'retry'; delayMs: number }
+  | { type: 'save' };
+
+function getAutoSaveIdleAction(
+  state: ReturnType<typeof useVideoEditorStore.getState>,
+  lastUserActivityAt: number
+): AutoSaveIdleAction {
+  if (shouldSkipAutoSave(state)) {
+    return { type: 'skip' };
+  }
+
+  if (state.isSaving) {
+    return getAutoSaveRetryAction();
+  }
+
+  if (!hasAutoSaveIdleWindowElapsed(lastUserActivityAt)) {
+    return getAutoSaveRetryAction();
+  }
+
+  return { type: 'save' };
+}
+
+function shouldSkipAutoSave(state: ReturnType<typeof useVideoEditorStore.getState>) {
+  return !state.project || state.isExporting;
+}
+
+function getAutoSaveRetryAction(): AutoSaveIdleAction {
+  return {
+    type: 'retry',
+    delayMs: TIMING.PROJECT_AUTOSAVE_ACTIVITY_CHECK_MS,
+  };
+}
+
+function hasAutoSaveIdleWindowElapsed(lastUserActivityAt: number) {
+  return Date.now() - lastUserActivityAt >= TIMING.PROJECT_AUTOSAVE_IDLE_MS;
+}
+
+function useVideoProjectAutosave({
+  enabled,
+  saveProject,
+  lastUserActivityAtRef,
+}: {
+  enabled: boolean;
+  saveProject: () => Promise<void>;
+  lastUserActivityAtRef: MutableRefObject<number>;
+}) {
+  useEffect(() => {
+    if (!enabled) return;
+    if (
+      Date.now() - lastUserActivityAtRef.current >
+      TIMING.PROJECT_AUTOSAVE_ACTIVITY_WINDOW_MS
+    ) {
+      return;
+    }
+
+    let cancelled = false;
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
+
+    const attemptAutoSaveWhenIdle = () => {
+      if (cancelled) return;
+
+      const action = getAutoSaveIdleAction(
+        useVideoEditorStore.getState(),
+        lastUserActivityAtRef.current
+      );
+      if (action.type === 'skip') {
+        return;
+      }
+
+      if (action.type === 'retry') {
+        timeoutId = setTimeout(attemptAutoSaveWhenIdle, action.delayMs);
+        return;
+      }
+
+      saveProject().catch((error) => {
+        videoEditorLogger.warn('Auto-save failed:', error);
+      });
+    };
+
+    timeoutId = setTimeout(
+      attemptAutoSaveWhenIdle,
+      TIMING.PROJECT_AUTOSAVE_DEBOUNCE_MS
+    );
+
+    return () => {
+      cancelled = true;
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
+    };
+  }, [enabled, lastUserActivityAtRef, saveProject]);
+}
+
+function useVideoEditorDiagnostics(projectId: string | undefined, isActive: boolean) {
   useEffect(() => {
     if (typeof PerformanceObserver === 'undefined') return;
     try {
@@ -171,7 +366,6 @@ export const VideoEditorView = forwardRef<VideoEditorViewRef, VideoEditorViewPro
     }
   }, []);
 
-  // Heartbeat: check if main thread is responsive every 2s for the first 15s
   useEffect(() => {
     let count = 0;
     const id = setInterval(() => {
@@ -182,183 +376,582 @@ export const VideoEditorView = forwardRef<VideoEditorViewRef, VideoEditorViewPro
     return () => clearInterval(id);
   }, []);
 
+  useEffect(() => {
+    videoEditorLogger.info('VideoEditorView mounted, project:', projectId ?? 'null', 'isActive:', isActive);
+  }, [projectId, isActive]);
+}
+
+function useVideoExportProgressListener(setExportProgress: (progress: ExportProgress) => void) {
+  useEffect(() => {
+    const unlisten = listen<ExportProgress>('export-progress', (event) => {
+      setExportProgress(event.payload);
+    });
+
+    return () => {
+      unlisten.then((fn) => fn());
+    };
+  }, [setExportProgress]);
+}
+
+function useSuspendInactiveVideoEditor({
+  isActive,
+  isPlaying,
+  setIsPlaying,
+  setPreviewTime,
+}: {
+  isActive: boolean;
+  isPlaying: boolean;
+  setIsPlaying: (isPlaying: boolean) => void;
+  setPreviewTime: (timeMs: number | null) => void;
+}) {
+  useEffect(() => {
+    if (isActive) return;
+    if (isPlaying) {
+      setIsPlaying(false);
+    }
+    setPreviewTime(null);
+  }, [isActive, isPlaying, setIsPlaying, setPreviewTime]);
+}
+
+type DeleteSelectedVideoEditorItem = ReturnType<typeof getDeleteSelectionAction>;
+type VideoEditorProject = NonNullable<ReturnType<typeof useVideoEditorStore.getState>['project']>;
+type ExportVideoFn = (outputPath: string) => Promise<{ fileSizeBytes: number; format: string }>;
+type DeleteSelectedVideoEditorAction = NonNullable<DeleteSelectedVideoEditorItem>;
+type DeleteSelectionHandlers = {
+  deleteTrimSegment: (id: string) => void;
+  deleteZoomRegion: (id: string) => void;
+  deleteSceneSegment: (id: string) => void;
+  deleteMaskSegment: (id: string) => void;
+  deleteTextSegment: (id: string) => void;
+  deleteAnnotationSegment: (id: string) => void;
+  deleteAnnotationShape: (segmentId: string, shapeId: string) => void;
+};
+type DeleteActionRunnerMap = {
+  [Type in DeleteSelectedVideoEditorAction['type']]: (
+    action: Extract<DeleteSelectedVideoEditorAction, { type: Type }>,
+    handlers: DeleteSelectionHandlers
+  ) => void;
+};
+
+interface RenderedVideoExportOptions {
+  isGif: boolean;
+  exportActionLabel: string;
+  dialogTitle: string;
+  defaultPath: string;
+  filters: Array<{ name: string; extensions: string[] }>;
+}
+
+const DELETE_SELECTION_RUNNERS = {
+  'trim-segment': (action, handlers) => handlers.deleteTrimSegment(action.id),
+  'zoom-region': (action, handlers) => handlers.deleteZoomRegion(action.id),
+  'scene-segment': (action, handlers) => handlers.deleteSceneSegment(action.id),
+  'mask-segment': (action, handlers) => handlers.deleteMaskSegment(action.id),
+  'text-segment': (action, handlers) => handlers.deleteTextSegment(action.id),
+  'annotation-segment': (action, handlers) => handlers.deleteAnnotationSegment(action.id),
+  'annotation-shape': (action, handlers) =>
+    handlers.deleteAnnotationShape(action.segmentId, action.shapeId),
+} satisfies DeleteActionRunnerMap;
+
+function runDeleteSelectionAction(
+  deleteAction: DeleteSelectedVideoEditorItem,
+  handlers: DeleteSelectionHandlers
+) {
+  if (!deleteAction) {
+    return;
+  }
+
+  DELETE_SELECTION_RUNNERS[deleteAction.type](deleteAction as never, handlers);
+}
+
+function runUndoForDomain(
+  activeUndoDomain: string | null,
+  undoAnnotation: () => void,
+  undoTrim: () => void
+) {
+  if (activeUndoDomain === 'annotation') {
+    undoAnnotation();
+    return;
+  }
+
+  undoTrim();
+}
+
+function runRedoForDomain(
+  activeUndoDomain: string | null,
+  redoAnnotation: () => void,
+  redoTrim: () => void
+) {
+  if (activeUndoDomain === 'annotation') {
+    redoAnnotation();
+    return;
+  }
+
+  redoTrim();
+}
+
+function getRenderedVideoExportOptions(project: VideoEditorProject): RenderedVideoExportOptions {
+  const isGif = isGifExport(project);
+  const extension = getRenderedVideoExportExtension(project);
+
+  return {
+    isGif,
+    exportActionLabel: getVideoPrimaryActionLabel(project),
+    dialogTitle: getRenderedVideoExportDialogTitle(project, isGif),
+    defaultPath: withFileExtension(getVideoEditedDefaultFilename(project), extension),
+    filters: getRenderedVideoExportFilters(isGif),
+  };
+}
+
+function isGifExport(project: VideoEditorProject) {
+  return project.export.format === 'gif';
+}
+
+function getRenderedVideoExportExtension(project: VideoEditorProject) {
+  return getVideoExportExtension(project.export.format);
+}
+
+function getVideoExportExtension(format: VideoEditorProject['export']['format']) {
+  return format === 'gif' || format === 'webm' ? format : 'mp4';
+}
+
+function getRenderedVideoExportDialogTitle(project: VideoEditorProject, isGif: boolean) {
+  return isGif ? 'Export GIF' : getVideoExportDialogTitle(project);
+}
+
+function getRenderedVideoExportFilters(isGif: boolean) {
+  return isGif
+    ? [{ name: 'GIF Animation', extensions: ['gif'] }]
+    : [
+        { name: 'MP4 Video', extensions: ['mp4'] },
+        { name: 'WebM Video', extensions: ['webm'] },
+      ];
+}
+
+function showSourceFrameRateNotice(project: VideoEditorProject) {
+  if (project.export.fps === project.sources.fps) {
+    return;
+  }
+
+  toast.info(`Export uses source frame rate (${project.sources.fps} fps)`, {
+    description: 'Frame-rate conversion is not supported yet.',
+  });
+}
+
+function showRenderedExportSuccess(
+  result: Awaited<ReturnType<ExportVideoFn>>,
+  options: RenderedVideoExportOptions
+) {
+  const sizeMB = (result.fileSizeBytes / (1024 * 1024)).toFixed(1);
+  toast.success(options.isGif ? 'GIF exported' : options.exportActionLabel, {
+    description: `${sizeMB} MB - ${result.format.toUpperCase()}`,
+  });
+}
+
+async function runRenderedVideoExport(project: VideoEditorProject, exportVideo: ExportVideoFn) {
+  const exportOptions = getRenderedVideoExportOptions(project);
+  showSourceFrameRateNotice(project);
+
+  useVideoEditorStore.getState().setIsPlaying(false);
+
+  try {
+    const outputPath = await save({
+      title: exportOptions.dialogTitle,
+      defaultPath: exportOptions.defaultPath,
+      filters: exportOptions.filters,
+    });
+
+    if (!outputPath) {
+      return;
+    }
+
+    const result = await exportVideo(outputPath);
+    showRenderedExportSuccess(result, exportOptions);
+  } catch (error) {
+    videoEditorLogger.error('Export failed:', error);
+    const message = error instanceof Error ? error.message : 'Export failed';
+    toast.error(message);
+  }
+}
+
+async function saveOriginalVideoExport(project: VideoEditorProject) {
+  const exportDialogTitle = getVideoExportDialogTitle(project);
+  const sourceFilename = getVideoOriginalFilename(project);
+
+  try {
+    const outputPath = await save({
+      title: exportDialogTitle,
+      defaultPath: sourceFilename,
+      filters: [{ name: 'MP4 Video', extensions: ['mp4'] }],
+    });
+
+    if (!outputPath) return;
+
+    await invoke('save_copy_of_file', {
+      sourcePath: project.sources.screenVideo,
+      destinationPath: outputPath,
+    });
+
+    toast.success('Original video saved', {
+      description: 'Copied without rendering',
+    });
+  } catch (error) {
+    videoEditorLogger.error('Save original failed:', error);
+    const message = error instanceof Error ? error.message : 'Failed to save original video';
+    toast.error(message);
+  }
+}
+
+async function requestVideoExport(
+  project: VideoEditorProject | null,
+  openExportDialog: () => void
+) {
+  if (!project) return;
+
+  const outputMode =
+    project.export.format === 'gif' ? 'render' : getVideoOutputMode(project);
+
+  if (outputMode === 'original') {
+    await saveOriginalVideoExport(project);
+    return;
+  }
+
+  openExportDialog();
+}
+
+function hasNudgeableTimelineSelection({
+  selectedZoomRegionId,
+  selectedSceneSegmentId,
+  selectedMaskSegmentId,
+  selectedTextSegmentId,
+  selectedAnnotationSegmentId,
+  selectedWebcamSegmentIndex,
+}: {
+  selectedZoomRegionId: string | null;
+  selectedSceneSegmentId: string | null;
+  selectedMaskSegmentId: string | null;
+  selectedTextSegmentId: string | null;
+  selectedAnnotationSegmentId: string | null;
+  selectedWebcamSegmentIndex: number | null;
+}) {
+  return [
+    selectedZoomRegionId,
+    selectedSceneSegmentId,
+    selectedMaskSegmentId,
+    selectedTextSegmentId,
+    selectedAnnotationSegmentId,
+    selectedWebcamSegmentIndex !== null,
+  ].some(Boolean);
+}
+
+function useVideoEditorViewStoreBindings() {
+  return {
+    project: useVideoEditorStore(selectProject),
+    isPlaying: useVideoEditorStore(selectIsPlaying),
+    setIsPlaying: useVideoEditorStore(selectSetIsPlaying),
+    setPreviewTime: useVideoEditorStore(selectSetPreviewTime),
+    togglePlayback: useVideoEditorStore(selectTogglePlayback),
+    requestSeek: useVideoEditorStore(selectRequestSeek),
+    clearEditor: useVideoEditorStore(selectClearEditor),
+    isExporting: useVideoEditorStore(selectIsExporting),
+    exportProgress: useVideoEditorStore(selectExportProgress),
+    exportVideo: useVideoEditorStore(selectExportVideo),
+    setExportProgress: useVideoEditorStore(selectSetExportProgress),
+    cancelExport: useVideoEditorStore(selectCancelExport),
+    updateExportConfig: useVideoEditorStore(selectUpdateExportConfig),
+    isCropEditing: useVideoEditorStore(selectIsCropEditing),
+    setIsCropEditing: useVideoEditorStore(selectSetIsCropEditing),
+    selectZoomRegion: useVideoEditorStore(selectSelectZoomRegion),
+    timelineZoom: useVideoEditorStore(selectTimelineZoom),
+    setTimelineZoom: useVideoEditorStore(selectSetTimelineZoom),
+    fitTimelineToWindow: useVideoEditorStore(selectFitTimelineToWindow),
+    selectedZoomRegionId: useVideoEditorStore(selectSelectedZoomRegionId),
+    deleteZoomRegion: useVideoEditorStore(selectDeleteZoomRegion),
+    selectedSceneSegmentId: useVideoEditorStore(selectSelectedSceneSegmentId),
+    selectSceneSegment: useVideoEditorStore(selectSelectSceneSegment),
+    deleteSceneSegment: useVideoEditorStore(selectDeleteSceneSegment),
+    selectedMaskSegmentId: useVideoEditorStore(selectSelectedMaskSegmentId),
+    selectMaskSegment: useVideoEditorStore(selectSelectMaskSegment),
+    deleteMaskSegment: useVideoEditorStore(selectDeleteMaskSegment),
+    selectedTextSegmentId: useVideoEditorStore(selectSelectedTextSegmentId),
+    selectTextSegment: useVideoEditorStore(selectSelectTextSegment),
+    deleteTextSegment: useVideoEditorStore(selectDeleteTextSegment),
+    selectedAnnotationSegmentId: useVideoEditorStore(selectSelectedAnnotationSegmentId),
+    selectedAnnotationShapeId: useVideoEditorStore(selectSelectedAnnotationShapeId),
+    annotationDeleteMode: useVideoEditorStore(selectAnnotationDeleteMode),
+    selectAnnotationSegment: useVideoEditorStore(selectSelectAnnotationSegment),
+    deleteAnnotationSegment: useVideoEditorStore(selectDeleteAnnotationSegment),
+    deleteAnnotationShape: useVideoEditorStore(selectDeleteAnnotationShape),
+    undoAnnotation: useVideoEditorStore(selectUndoAnnotation),
+    redoAnnotation: useVideoEditorStore(selectRedoAnnotation),
+    selectedTrimSegmentId: useVideoEditorStore(selectSelectedTrimSegmentId),
+    selectedWebcamSegmentIndex: useVideoEditorStore(selectSelectedWebcamSegmentIndex),
+    selectTrimSegment: useVideoEditorStore(selectSelectTrimSegment),
+    deleteTrimSegment: useVideoEditorStore(selectDeleteTrimSegment),
+    activeUndoDomain: useVideoEditorStore(selectActiveUndoDomain),
+    splitMode: useVideoEditorStore(selectSplitMode),
+    setSplitMode: useVideoEditorStore(selectSetSplitMode),
+    resetTrimSegments: useVideoEditorStore(selectResetTrimSegments),
+    undoTrim: useVideoEditorStore(selectUndoTrim),
+    redoTrim: useVideoEditorStore(selectRedoTrim),
+    saveProject: useVideoEditorStore(selectSaveProject),
+    isSaving: useVideoEditorStore(selectIsSaving),
+    setExportInPoint: useVideoEditorStore(selectSetExportInPoint),
+    setExportOutPoint: useVideoEditorStore(selectSetExportOutPoint),
+    clearExportRange: useVideoEditorStore(selectClearExportRange),
+  };
+}
+
+function seekSkipBack(requestSeek: (timeMs: number) => void) {
+  const store = useVideoEditorStore.getState();
+  requestSeek(Math.max(0, store.currentTimeMs - SKIP_AMOUNT_MS));
+}
+
+function seekSkipForward(requestSeek: (timeMs: number) => void) {
+  const store = useVideoEditorStore.getState();
+  if (!store.project) return;
+  requestSeek(Math.min(store.project.timeline.durationMs, store.currentTimeMs + SKIP_AMOUNT_MS));
+}
+
+async function saveCurrentVideoProject({
+  project,
+  isSaving,
+  saveProject,
+}: {
+  project: VideoEditorProject | null;
+  isSaving: boolean;
+  saveProject: () => Promise<void>;
+}) {
+  if (!project || isSaving) return;
+
+  try {
+    await saveProject();
+    toast.success('Project saved');
+  } catch {
+    toast.error('Failed to save project');
+  }
+}
+
+function seekToProjectEnd(
+  project: VideoEditorProject | null,
+  requestSeek: (timeMs: number) => void
+) {
+  if (project) {
+    requestSeek(project.timeline.durationMs);
+  }
+}
+
+async function navigateBackFromVideoEditor({
+  flushSaveBeforeClose,
+  onBack,
+  clearEditor,
+  setView,
+}: {
+  flushSaveBeforeClose: () => Promise<void>;
+  onBack?: () => void;
+  clearEditor: () => void;
+  setView: (view: 'library') => void;
+}) {
+  await flushSaveBeforeClose();
+  if (onBack) {
+    onBack();
+    return;
+  }
+
+  clearEditor();
+  setView('library');
+}
+
+function useSaveVideoProjectBeforeUnload() {
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      const state = useVideoEditorStore.getState();
+      if (!state.project || state.isExporting) return;
+      void state.saveProject().catch((error) => {
+        videoEditorLogger.warn('Save on window close failed:', error);
+      });
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
+  }, []);
+}
+
+async function waitForVideoEditorSavingToSettle() {
+  const startedAt = Date.now();
+  while (useVideoEditorStore.getState().isSaving) {
+    if (Date.now() - startedAt > SAVE_WAIT_TIMEOUT_MS) {
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, SAVE_WAIT_POLL_MS));
+  }
+}
+
+function useFlushVideoEditorSaveBeforeClose() {
+  return useCallback(async () => {
+    const state = useVideoEditorStore.getState();
+    if (!state.project || state.isExporting) return;
+
+    try {
+      await waitForVideoEditorSavingToSettle();
+      await useVideoEditorStore.getState().saveProject();
+      await waitForVideoEditorSavingToSettle();
+    } catch (error) {
+      videoEditorLogger.warn('Save on close failed:', error);
+    }
+  }, []);
+}
+
+function OptionalVideoEditorToolbar({
+  hidden,
+  project,
+  onBack,
+}: {
+  hidden: boolean | undefined;
+  project: VideoEditorProject | null;
+  onBack: () => void;
+}) {
+  if (hidden) return null;
+  return <VideoEditorToolbar project={project} onBack={onBack} />;
+}
+
+function PreviewTopBarSection({
+  project,
+  isCropEditing,
+  onSetIsCropEditing,
+  onUpdateExportConfig,
+  onExport,
+}: {
+  project: VideoEditorProject | null;
+  isCropEditing: boolean;
+  onSetIsCropEditing: (editing: boolean) => void;
+  onUpdateExportConfig: ReturnType<typeof useVideoEditorViewStoreBindings>['updateExportConfig'];
+  onExport: () => void;
+}) {
+  if (!project) return null;
+
+  return (
+    <PreviewTopBar
+      project={project}
+      isCropEditing={isCropEditing}
+      onSetIsCropEditing={onSetIsCropEditing}
+      onUpdateExportConfig={onUpdateExportConfig}
+      onExport={onExport}
+    />
+  );
+}
+
+function ExportDialogSection({
+  project,
+  open,
+  onOpenChange,
+  onUpdateExportConfig,
+  onConfirm,
+}: {
+  project: VideoEditorProject | null;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onUpdateExportConfig: ReturnType<typeof useVideoEditorViewStoreBindings>['updateExportConfig'];
+  onConfirm: () => void;
+}) {
+  if (!project || !open) return null;
+
+  return (
+    <ExportDialog
+      open
+      project={project}
+      onOpenChange={onOpenChange}
+      onUpdateExportConfig={onUpdateExportConfig}
+      onConfirm={onConfirm}
+    />
+  );
+}
+
+/**
+ * VideoEditorView - Main video editor component with preview, timeline, and controls.
+ */
+export const VideoEditorView = forwardRef<VideoEditorViewRef, VideoEditorViewProps>(function VideoEditorView(
+  { onBack, hideTopBar, isActive = true, captureNavigation },
+  ref
+) {
   const { setView } = useCaptureStore();
-  const project = useVideoEditorStore(selectProject);
-  const isPlaying = useVideoEditorStore(selectIsPlaying);
-  const setIsPlaying = useVideoEditorStore(selectSetIsPlaying);
-  const setPreviewTime = useVideoEditorStore(selectSetPreviewTime);
-  const togglePlayback = useVideoEditorStore(selectTogglePlayback);
-  const requestSeek = useVideoEditorStore(selectRequestSeek);
-  const clearEditor = useVideoEditorStore(selectClearEditor);
-  const isExporting = useVideoEditorStore(selectIsExporting);
-  const exportProgress = useVideoEditorStore(selectExportProgress);
-  const exportVideo = useVideoEditorStore(selectExportVideo);
-  const setExportProgress = useVideoEditorStore(selectSetExportProgress);
-  const cancelExport = useVideoEditorStore(selectCancelExport);
-  const updateExportConfig = useVideoEditorStore(selectUpdateExportConfig);
-  const isCropEditing = useVideoEditorStore(selectIsCropEditing);
-  const setIsCropEditing = useVideoEditorStore(selectSetIsCropEditing);
-  const selectZoomRegion = useVideoEditorStore(selectSelectZoomRegion);
-  const timelineZoom = useVideoEditorStore(selectTimelineZoom);
-  const setTimelineZoom = useVideoEditorStore(selectSetTimelineZoom);
-  const fitTimelineToWindow = useVideoEditorStore(selectFitTimelineToWindow);
-  const selectedZoomRegionId = useVideoEditorStore(selectSelectedZoomRegionId);
-  const deleteZoomRegion = useVideoEditorStore(selectDeleteZoomRegion);
-  const selectedSceneSegmentId = useVideoEditorStore(selectSelectedSceneSegmentId);
-  const selectSceneSegment = useVideoEditorStore(selectSelectSceneSegment);
-  const deleteSceneSegment = useVideoEditorStore(selectDeleteSceneSegment);
-  const selectedMaskSegmentId = useVideoEditorStore(selectSelectedMaskSegmentId);
-  const selectMaskSegment = useVideoEditorStore(selectSelectMaskSegment);
-  const deleteMaskSegment = useVideoEditorStore(selectDeleteMaskSegment);
-  const selectedTextSegmentId = useVideoEditorStore(selectSelectedTextSegmentId);
-  const selectTextSegment = useVideoEditorStore(selectSelectTextSegment);
-  const deleteTextSegment = useVideoEditorStore(selectDeleteTextSegment);
-  const selectedAnnotationSegmentId = useVideoEditorStore(selectSelectedAnnotationSegmentId);
-  const selectedAnnotationShapeId = useVideoEditorStore(selectSelectedAnnotationShapeId);
-  const annotationDeleteMode = useVideoEditorStore(selectAnnotationDeleteMode);
-  const selectAnnotationSegment = useVideoEditorStore(selectSelectAnnotationSegment);
-  const deleteAnnotationSegment = useVideoEditorStore(selectDeleteAnnotationSegment);
-  const deleteAnnotationShape = useVideoEditorStore(selectDeleteAnnotationShape);
-  const undoAnnotation = useVideoEditorStore(selectUndoAnnotation);
-  const redoAnnotation = useVideoEditorStore(selectRedoAnnotation);
-  const selectedTrimSegmentId = useVideoEditorStore(selectSelectedTrimSegmentId);
-  const selectedWebcamSegmentIndex = useVideoEditorStore(selectSelectedWebcamSegmentIndex);
-  const selectTrimSegment = useVideoEditorStore(selectSelectTrimSegment);
-  const deleteTrimSegment = useVideoEditorStore(selectDeleteTrimSegment);
-  const activeUndoDomain = useVideoEditorStore(selectActiveUndoDomain);
-  const splitMode = useVideoEditorStore(selectSplitMode);
-  const setSplitMode = useVideoEditorStore(selectSetSplitMode);
-  const resetTrimSegments = useVideoEditorStore(selectResetTrimSegments);
-  const undoTrim = useVideoEditorStore(selectUndoTrim);
-  const redoTrim = useVideoEditorStore(selectRedoTrim);
-  const saveProject = useVideoEditorStore(selectSaveProject);
-  const isSaving = useVideoEditorStore(selectIsSaving);
-  const setExportInPoint = useVideoEditorStore(selectSetExportInPoint);
-  const setExportOutPoint = useVideoEditorStore(selectSetExportOutPoint);
-  const clearExportRange = useVideoEditorStore(selectClearExportRange);
+  const {
+    project,
+    isPlaying,
+    setIsPlaying,
+    setPreviewTime,
+    togglePlayback,
+    requestSeek,
+    clearEditor,
+    isExporting,
+    exportProgress,
+    exportVideo,
+    setExportProgress,
+    cancelExport,
+    updateExportConfig,
+    isCropEditing,
+    setIsCropEditing,
+    selectZoomRegion,
+    timelineZoom,
+    setTimelineZoom,
+    fitTimelineToWindow,
+    selectedZoomRegionId,
+    deleteZoomRegion,
+    selectedSceneSegmentId,
+    selectSceneSegment,
+    deleteSceneSegment,
+    selectedMaskSegmentId,
+    selectMaskSegment,
+    deleteMaskSegment,
+    selectedTextSegmentId,
+    selectTextSegment,
+    deleteTextSegment,
+    selectedAnnotationSegmentId,
+    selectedAnnotationShapeId,
+    annotationDeleteMode,
+    selectAnnotationSegment,
+    deleteAnnotationSegment,
+    deleteAnnotationShape,
+    undoAnnotation,
+    redoAnnotation,
+    selectedTrimSegmentId,
+    selectedWebcamSegmentIndex,
+    selectTrimSegment,
+    deleteTrimSegment,
+    activeUndoDomain,
+    splitMode,
+    setSplitMode,
+    resetTrimSegments,
+    undoTrim,
+    redoTrim,
+    saveProject,
+    isSaving,
+    setExportInPoint,
+    setExportOutPoint,
+    clearExportRange,
+  } = useVideoEditorViewStoreBindings();
 
   const lastUserActivityAtRef = useRef(Date.now());
   const handleExportRef = useRef<() => void>(() => {});
   const [isExportDialogOpen, setIsExportDialogOpen] = useState(false);
-  const workspaceRef = useRef<HTMLDivElement>(null);
-  const sidebarPanelRef = useRef<ImperativePanelHandle>(null);
-  const containerWidthRef = useRef(0);
-  // Set true right before a programmatic panel.resize() so the matching
-  // onResize callback doesn't echo the clamped value back into storage and
-  // erode the user's preferred pixel width.
-  const isProgrammaticResizeRef = useRef(false);
-  // Track whether the user is currently dragging the handle so we only
-  // persist the width on drag-end. Saving every intermediate size during a
-  // drag means the default load isn't the min even when the user briefly
-  // crossed wider widths mid-drag.
-  const isResizingSidebarRef = useRef(false);
-  const pendingSidebarPctRef = useRef<number | null>(null);
-  // react-resizable-panels takes minSize as a percentage, but we want a 380px
-  // floor regardless of window width — recompute on resize.
-  const [sidebarMinPct, setSidebarMinPct] = useState(SIDEBAR_MIN_FLOOR_PCT);
-
-  // Single observer that:
-  //   1) updates `sidebarMinPct` so the 380px floor stays accurate,
-  //   2) snaps the sidebar to the persisted pixel width on every mount
-  //      (including HMR remounts), defaulting to 380px,
-  //   3) on window resize, reflows the panel so its *pixel* width stays
-  //      constant (react-resizable-panels stores percentages, so without
-  //      this a wider window would proportionally widen the sidebar).
-  useLayoutEffect(() => {
-    const container = workspaceRef.current;
-    if (!container) return;
-
-    const readSavedPx = () => {
-      const raw = localStorage.getItem(SIDEBAR_WIDTH_STORAGE_KEY);
-      const parsed = raw != null ? Number(raw) : NaN;
-      return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_SIDEBAR_WIDTH_PX;
-    };
-
-    const update = () => {
-      const width = container.clientWidth;
-      if (width <= 0) return;
-      containerWidthRef.current = width;
-
-      const minPct = Math.min(
-        SIDEBAR_MAX_PCT,
-        Math.max(SIDEBAR_MIN_FLOOR_PCT, (SIDEBAR_MIN_PX / width) * 100)
-      );
-      setSidebarMinPct(minPct);
-
-      const panel = sidebarPanelRef.current;
-      if (!panel) return;
-
-      const desiredPx = Math.max(SIDEBAR_MIN_PX, readSavedPx());
-      const desiredPct = Math.min(
-        SIDEBAR_MAX_PCT,
-        Math.max(minPct, (desiredPx / width) * 100)
-      );
-
-      const currentPct = panel.getSize();
-      if (Math.abs(currentPct - desiredPct) > 0.01) {
-        isProgrammaticResizeRef.current = true;
-        panel.resize(desiredPct);
-      }
-    };
-
-    update();
-    const observer = new ResizeObserver(update);
-    observer.observe(container);
-    return () => observer.disconnect();
-  }, []);
-
-  const handleSidebarResize = useCallback((size: number) => {
-    // Skip persisting echoes from our own programmatic resize so the saved
-    // pixel width isn't overwritten with a clamped value (e.g. after the
-    // window shrinks and forces us to apply maxSize).
-    if (isProgrammaticResizeRef.current) {
-      isProgrammaticResizeRef.current = false;
-      return;
-    }
-    // While the user is actively dragging, just remember the latest size —
-    // we persist it once on drag-end so transient mid-drag widths don't
-    // leak into storage.
-    if (isResizingSidebarRef.current) {
-      pendingSidebarPctRef.current = size;
-      return;
-    }
-  }, []);
-
-  const handleSidebarDragging = useCallback((isDragging: boolean) => {
-    if (isDragging) {
-      isResizingSidebarRef.current = true;
-      pendingSidebarPctRef.current = null;
-      return;
-    }
-    isResizingSidebarRef.current = false;
-    const size = pendingSidebarPctRef.current;
-    pendingSidebarPctRef.current = null;
-    if (size === null) return;
-    const width = containerWidthRef.current;
-    if (width <= 0) return;
-    const px = Math.round((size / 100) * width);
-    if (px <= 0) return;
-    localStorage.setItem(SIDEBAR_WIDTH_STORAGE_KEY, String(px));
-  }, []);
-
-  // Diagnostic: log when VideoEditorView renders
-  useEffect(() => {
-    videoEditorLogger.info('VideoEditorView mounted, project:', project?.id ?? 'null', 'isActive:', isActive);
-  }, [project?.id, isActive]);
+  const {
+    workspaceRef,
+    sidebarPanelRef,
+    sidebarMinPct,
+    handleSidebarResize,
+    handleSidebarDragging,
+  } = useVideoEditorSidebarPersistence();
+  useVideoEditorDiagnostics(project?.id, isActive);
 
 
   // Keyboard shortcut handlers
   const handleSkipBack = useCallback(() => {
-    const store = useVideoEditorStore.getState();
-    const newTime = Math.max(0, store.currentTimeMs - SKIP_AMOUNT_MS);
-    requestSeek(newTime);
+    seekSkipBack(requestSeek);
   }, [requestSeek]);
 
   const handleSkipForward = useCallback(() => {
-    const store = useVideoEditorStore.getState();
-    if (!store.project) return;
-    const newTime = Math.min(store.project.timeline.durationMs, store.currentTimeMs + SKIP_AMOUNT_MS);
-    requestSeek(newTime);
+    seekSkipForward(requestSeek);
   }, [requestSeek]);
 
   const handleDeselect = useCallback(() => {
@@ -385,33 +978,15 @@ export const VideoEditorView = forwardRef<VideoEditorViewRef, VideoEditorViewPro
       annotationDeleteMode,
     });
 
-    if (!deleteAction) {
-      return;
-    }
-
-    switch (deleteAction.type) {
-      case 'trim-segment':
-        deleteTrimSegment(deleteAction.id);
-        break;
-      case 'zoom-region':
-        deleteZoomRegion(deleteAction.id);
-        break;
-      case 'scene-segment':
-        deleteSceneSegment(deleteAction.id);
-        break;
-      case 'mask-segment':
-        deleteMaskSegment(deleteAction.id);
-        break;
-      case 'text-segment':
-        deleteTextSegment(deleteAction.id);
-        break;
-      case 'annotation-segment':
-        deleteAnnotationSegment(deleteAction.id);
-        break;
-      case 'annotation-shape':
-        deleteAnnotationShape(deleteAction.segmentId, deleteAction.shapeId);
-        break;
-    }
+    runDeleteSelectionAction(deleteAction, {
+      deleteTrimSegment,
+      deleteZoomRegion,
+      deleteSceneSegment,
+      deleteMaskSegment,
+      deleteTextSegment,
+      deleteAnnotationSegment,
+      deleteAnnotationShape,
+    });
   }, [
     selectedTrimSegmentId,
     selectedZoomRegionId,
@@ -440,13 +1015,7 @@ export const VideoEditorView = forwardRef<VideoEditorViewRef, VideoEditorViewPro
 
   // Save project handler
   const handleSave = useCallback(async () => {
-    if (!project || isSaving) return;
-    try {
-      await saveProject();
-      toast.success('Project saved');
-    } catch {
-      toast.error('Failed to save project');
-    }
+    await saveCurrentVideoProject({ project, isSaving, saveProject });
   }, [project, isSaving, saveProject]);
 
   // Toggle cut mode for click-to-cut on the timeline
@@ -466,19 +1035,11 @@ export const VideoEditorView = forwardRef<VideoEditorViewRef, VideoEditorViewPro
   // Undo/redo handlers follow the last mutated history domain so deletes remain recoverable
   // even after they clear selection.
   const handleUndo = useCallback(() => {
-    if (activeUndoDomain === 'annotation') {
-      undoAnnotation();
-    } else {
-      undoTrim();
-    }
+    runUndoForDomain(activeUndoDomain, undoAnnotation, undoTrim);
   }, [activeUndoDomain, undoAnnotation, undoTrim]);
 
   const handleRedo = useCallback(() => {
-    if (activeUndoDomain === 'annotation') {
-      redoAnnotation();
-    } else {
-      redoTrim();
-    }
+    runRedoForDomain(activeUndoDomain, redoAnnotation, redoTrim);
   }, [activeUndoDomain, redoAnnotation, redoTrim]);
 
   // IO marker handlers
@@ -496,248 +1057,50 @@ export const VideoEditorView = forwardRef<VideoEditorViewRef, VideoEditorViewPro
     clearExportRange();
   }, [clearExportRange]);
 
-  // Listen for export progress events from Rust backend
-  useEffect(() => {
-    const unlisten = listen<ExportProgress>('export-progress', (event) => {
-      setExportProgress(event.payload);
-    });
-
-    return () => {
-      unlisten.then((fn) => fn());
-    };
-  }, [setExportProgress]);
+  useVideoExportProgressListener(setExportProgress);
 
   // Track user activity so autosave only runs for user-driven edits.
-  useEffect(() => {
-    const markUserActivity = () => {
-      lastUserActivityAtRef.current = Date.now();
-    };
+  useUserActivityTracker(lastUserActivityAtRef);
 
-    window.addEventListener('pointerdown', markUserActivity, { passive: true });
-    window.addEventListener('keydown', markUserActivity);
-    window.addEventListener('wheel', markUserActivity, { passive: true });
-    window.addEventListener('touchstart', markUserActivity, { passive: true });
+  useVideoProjectAutosave({
+    enabled: Boolean(project && !isExporting),
+    saveProject,
+    lastUserActivityAtRef,
+  });
 
-    return () => {
-      window.removeEventListener('pointerdown', markUserActivity);
-      window.removeEventListener('keydown', markUserActivity);
-      window.removeEventListener('wheel', markUserActivity);
-      window.removeEventListener('touchstart', markUserActivity);
-    };
-  }, []);
+  useSuspendInactiveVideoEditor({
+    isActive,
+    isPlaying,
+    setIsPlaying,
+    setPreviewTime,
+  });
 
-  // Auto-save project when it changes (debounced)
-  useEffect(() => {
-    if (!project || isExporting) return;
-    if (
-      Date.now() - lastUserActivityAtRef.current >
-      TIMING.PROJECT_AUTOSAVE_ACTIVITY_WINDOW_MS
-    ) {
-      return;
-    }
-
-    let cancelled = false;
-    let timeoutId: ReturnType<typeof setTimeout> | null = null;
-
-    const attemptAutoSaveWhenIdle = () => {
-      if (cancelled) return;
-
-      const state = useVideoEditorStore.getState();
-      if (!state.project || state.isExporting) return;
-
-      if (state.isSaving) {
-        timeoutId = setTimeout(
-          attemptAutoSaveWhenIdle,
-          TIMING.PROJECT_AUTOSAVE_ACTIVITY_CHECK_MS
-        );
-        return;
-      }
-
-      const idleMs = Date.now() - lastUserActivityAtRef.current;
-      if (idleMs < TIMING.PROJECT_AUTOSAVE_IDLE_MS) {
-        timeoutId = setTimeout(
-          attemptAutoSaveWhenIdle,
-          TIMING.PROJECT_AUTOSAVE_ACTIVITY_CHECK_MS
-        );
-        return;
-      }
-
-      saveProject().catch((error) => {
-        // Silent fail for auto-save - user can manually save with Ctrl+S
-        videoEditorLogger.warn('Auto-save failed:', error);
-      });
-    };
-
-    timeoutId = setTimeout(
-      attemptAutoSaveWhenIdle,
-      TIMING.PROJECT_AUTOSAVE_DEBOUNCE_MS
-    );
-
-    return () => {
-      cancelled = true;
-      if (timeoutId) {
-        clearTimeout(timeoutId);
-      }
-    };
-  }, [project, isExporting, saveProject]);
-
-  // Suspend playback/scrub activity when the editor is not active.
-  useEffect(() => {
-    if (isActive) return;
-    if (isPlaying) {
-      setIsPlaying(false);
-    }
-    setPreviewTime(null);
-  }, [isActive, isPlaying, setIsPlaying, setPreviewTime]);
-
-  // Best-effort save when the tab/window is closed before autosave debounce fires.
-  useEffect(() => {
-    const handleBeforeUnload = () => {
-      const state = useVideoEditorStore.getState();
-      if (!state.project || state.isExporting) return;
-      void state.saveProject().catch((error) => {
-        videoEditorLogger.warn('Save on window close failed:', error);
-      });
-    };
-
-    window.addEventListener('beforeunload', handleBeforeUnload);
-    return () => {
-      window.removeEventListener('beforeunload', handleBeforeUnload);
-    };
-  }, []);
-
-  // Navigate back to library
-  const flushSaveBeforeClose = useCallback(async () => {
-    const waitForSavingToSettle = async () => {
-      const startedAt = Date.now();
-      while (useVideoEditorStore.getState().isSaving) {
-        if (Date.now() - startedAt > SAVE_WAIT_TIMEOUT_MS) {
-          return;
-        }
-        await new Promise((resolve) => setTimeout(resolve, SAVE_WAIT_POLL_MS));
-      }
-    };
-
-    const state = useVideoEditorStore.getState();
-    if (!state.project || state.isExporting) return;
-
-    try {
-      // If an autosave is running, wait and then force one final save with latest state.
-      await waitForSavingToSettle();
-      await useVideoEditorStore.getState().saveProject();
-      await waitForSavingToSettle();
-    } catch (error) {
-      videoEditorLogger.warn('Save on close failed:', error);
-    }
-  }, []);
+  useSaveVideoProjectBeforeUnload();
+  const flushSaveBeforeClose = useFlushVideoEditorSaveBeforeClose();
 
   // Navigate back to library
   const handleBack = useCallback(async () => {
-    await flushSaveBeforeClose();
-    if (onBack) {
-      onBack();
-    } else {
-      clearEditor();
-      setView('library');
-    }
+    await navigateBackFromVideoEditor({
+      flushSaveBeforeClose,
+      onBack,
+      clearEditor,
+      setView,
+    });
   }, [clearEditor, flushSaveBeforeClose, setView, onBack]);
 
   // Run the actual export (file picker + render). Assumes the user has already
   // confirmed their format/fps choices via the ExportDialog (or there are none
-  // to make — see `handleExport` below for the 'original' bypass).
+  // to make â€” see `handleExport` below for the 'original' bypass).
   const runExport = useCallback(async () => {
     if (!project) return;
-
-    const format = project.export.format;
-    const isGif = format === 'gif';
-    const exportActionLabel = getVideoPrimaryActionLabel(project);
-    const exportDialogTitle = isGif ? 'Export GIF' : getVideoExportDialogTitle(project);
-    const extension = isGif ? 'gif' : format === 'webm' ? 'webm' : 'mp4';
-    const editedDefaultFilename = withFileExtension(
-      getVideoEditedDefaultFilename(project),
-      extension
-    );
-
-    if (project.export.fps !== project.sources.fps) {
-      toast.info(`Export uses source frame rate (${project.sources.fps} fps)`, {
-        description: 'Frame-rate conversion is not supported yet.',
-      });
-    }
-
-    // Stop playback before exporting
-    useVideoEditorStore.getState().setIsPlaying(false);
-
-    try {
-      // Show save dialog to choose output path
-      const outputPath = await save({
-        title: exportDialogTitle,
-        defaultPath: editedDefaultFilename,
-        filters: isGif
-          ? [{ name: 'GIF Animation', extensions: ['gif'] }]
-          : [
-              { name: 'MP4 Video', extensions: ['mp4'] },
-              { name: 'WebM Video', extensions: ['webm'] },
-            ],
-      });
-
-      if (!outputPath) {
-        // User cancelled
-        return;
-      }
-
-      // Start export (store handles format inference from file extension)
-      const result = await exportVideo(outputPath);
-
-      // Show success toast with file info
-      const sizeMB = (result.fileSizeBytes / (1024 * 1024)).toFixed(1);
-      toast.success(isGif ? 'GIF exported' : exportActionLabel, {
-        description: `${sizeMB} MB - ${result.format.toUpperCase()}`,
-      });
-    } catch (error) {
-      videoEditorLogger.error('Export failed:', error);
-      const message = error instanceof Error ? error.message : 'Export failed';
-      toast.error(message);
-    }
+    await runRenderedVideoExport(project, exportVideo);
   }, [project, exportVideo]);
 
   // Entry point for the Export button / shortcut. Opens the ExportDialog so
   // the user can pick format/fps/encoder first, except for the 'original'
-  // bypass (no edits → just copy the source). GIF always needs a render.
+  // bypass (no edits â†’ just copy the source). GIF always needs a render.
   const handleExport = useCallback(async () => {
-    if (!project) return;
-
-    const outputMode =
-      project.export.format === 'gif' ? 'render' : getVideoOutputMode(project);
-
-    if (outputMode === 'original') {
-      const exportDialogTitle = getVideoExportDialogTitle(project);
-      const sourceFilename = getVideoOriginalFilename(project);
-      try {
-        const outputPath = await save({
-          title: exportDialogTitle,
-          defaultPath: sourceFilename,
-          filters: [{ name: 'MP4 Video', extensions: ['mp4'] }],
-        });
-
-        if (!outputPath) return;
-
-        await invoke('save_copy_of_file', {
-          sourcePath: project.sources.screenVideo,
-          destinationPath: outputPath,
-        });
-
-        toast.success('Original video saved', {
-          description: 'Copied without rendering',
-        });
-      } catch (error) {
-        videoEditorLogger.error('Save original failed:', error);
-        const message = error instanceof Error ? error.message : 'Failed to save original video';
-        toast.error(message);
-      }
-      return;
-    }
-
-    setIsExportDialogOpen(true);
+    await requestVideoExport(project, () => setIsExportDialogOpen(true));
   }, [project]);
 
   const handleExportDialogConfirm = useCallback(() => {
@@ -745,14 +1108,14 @@ export const VideoEditorView = forwardRef<VideoEditorViewRef, VideoEditorViewPro
     void runExport();
   }, [runExport]);
 
-  const hasNudgeableTimelineSelection = Boolean(
-    selectedZoomRegionId ||
-    selectedSceneSegmentId ||
-    selectedMaskSegmentId ||
-    selectedTextSegmentId ||
-    selectedAnnotationSegmentId ||
-    selectedWebcamSegmentIndex !== null
-  );
+  const shouldDisablePlaybackArrowShortcuts = hasNudgeableTimelineSelection({
+    selectedZoomRegionId,
+    selectedSceneSegmentId,
+    selectedMaskSegmentId,
+    selectedTextSegmentId,
+    selectedAnnotationSegmentId,
+    selectedWebcamSegmentIndex,
+  });
 
   useEffect(() => {
     handleExportRef.current = () => {
@@ -765,7 +1128,7 @@ export const VideoEditorView = forwardRef<VideoEditorViewRef, VideoEditorViewPro
     enabled: !!project && !isExporting,
     onTogglePlayback: togglePlayback,
     onSeekToStart: () => requestSeek(0),
-    onSeekToEnd: () => project && requestSeek(project.timeline.durationMs),
+    onSeekToEnd: () => seekToProjectEnd(project, requestSeek),
     onSkipBack: handleSkipBack,
     onSkipForward: handleSkipForward,
     onToggleCutMode: handleToggleCutMode,
@@ -781,7 +1144,7 @@ export const VideoEditorView = forwardRef<VideoEditorViewRef, VideoEditorViewPro
     onFitTimeline: fitTimelineToWindow,
     onSetInPoint: handleSetInPoint,
     onSetOutPoint: handleSetOutPoint,
-    disablePlaybackArrowShortcuts: hasNudgeableTimelineSelection,
+    disablePlaybackArrowShortcuts: shouldDisablePlaybackArrowShortcuts,
   });
 
   // Seek to start
@@ -791,9 +1154,7 @@ export const VideoEditorView = forwardRef<VideoEditorViewRef, VideoEditorViewPro
 
   // Seek to end
   const handleSeekToEnd = useCallback(() => {
-    if (project) {
-      requestSeek(project.timeline.durationMs);
-    }
+    seekToProjectEnd(project, requestSeek);
   }, [project, requestSeek]);
 
   // Expose imperative API
@@ -815,20 +1176,19 @@ export const VideoEditorView = forwardRef<VideoEditorViewRef, VideoEditorViewPro
             {/* Main content area - Preview */}
             <div className="editor-workspace__main flex-1 flex min-h-0">
               <div className="video-editor-main-pane flex-1 flex flex-col min-w-0">
-                {/* Top Bar - hidden when embedded in window with its own titlebar */}
-                {!hideTopBar && (
-                  <VideoEditorToolbar project={project} onBack={handleBack} />
-                )}
+                <OptionalVideoEditorToolbar
+                  hidden={hideTopBar}
+                  project={project}
+                  onBack={handleBack}
+                />
 
-                {project && (
-                  <PreviewTopBar
-                    project={project}
-                    isCropEditing={isCropEditing}
-                    onSetIsCropEditing={setIsCropEditing}
-                    onUpdateExportConfig={updateExportConfig}
-                    onExport={handleExport}
-                  />
-                )}
+                <PreviewTopBarSection
+                  project={project}
+                  isCropEditing={isCropEditing}
+                  onSetIsCropEditing={setIsCropEditing}
+                  onUpdateExportConfig={updateExportConfig}
+                  onExport={handleExport}
+                />
 
                 {/* Video Preview */}
                 <VideoEditorPreview
@@ -874,16 +1234,13 @@ export const VideoEditorView = forwardRef<VideoEditorViewRef, VideoEditorViewPro
         onCancel={cancelExport}
       />
 
-      {/* Export configuration dialog (format / fps / encoder) */}
-      {project && isExportDialogOpen && (
-        <ExportDialog
-          open
-          project={project}
-          onOpenChange={setIsExportDialogOpen}
-          onUpdateExportConfig={updateExportConfig}
-          onConfirm={handleExportDialogConfirm}
-        />
-      )}
+      <ExportDialogSection
+        project={project}
+        open={isExportDialogOpen}
+        onOpenChange={setIsExportDialogOpen}
+        onUpdateExportConfig={updateExportConfig}
+        onConfirm={handleExportDialogConfirm}
+      />
     </div>
   );
 });

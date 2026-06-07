@@ -36,19 +36,28 @@ const forbiddenGeneratedDirs = [
   path.join(repoRoot, 'src', 'types', 'generated'),
 ];
 
+function isRustFileEntry(entry) {
+  return entry.isFile() && entry.name.endsWith('.rs');
+}
+
+function visitRustPath(fullPath, entry, out) {
+  if (entry.isDirectory()) {
+    walkRustFiles(fullPath, out);
+    return;
+  }
+
+  if (isRustFileEntry(entry)) {
+    out.push(fullPath);
+  }
+}
+
 function walkRustFiles(dir, out) {
   if (!fs.existsSync(dir)) {
     return;
   }
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
     const fullPath = path.join(dir, entry.name);
-    if (entry.isDirectory()) {
-      walkRustFiles(fullPath, out);
-      continue;
-    }
-    if (entry.isFile() && entry.name.endsWith('.rs')) {
-      out.push(fullPath);
-    }
+    visitRustPath(fullPath, entry, out);
   }
 }
 
@@ -56,57 +65,79 @@ function relativeToRepo(p) {
   return path.relative(appRoot, p).replace(/\\/g, '/');
 }
 
+function getRustFilesForRule(rule) {
+  const rustFiles = [];
+  walkRustFiles(rule.root, rustFiles);
+  return rustFiles;
+}
+
+function getTsRsExportMatches(rustFile, exportRegex) {
+  const source = fs.readFileSync(rustFile, 'utf8');
+  return [...source.matchAll(exportRegex)];
+}
+
+function getExportPathError(rule, rustFile, configured) {
+  if (configured === rule.expected) {
+    return null;
+  }
+
+  return `[${rule.label}] ${relativeToRepo(rustFile)} has export_to="${configured}", expected "${rule.expected}"`;
+}
+
+function getRustFileExportPathErrors(rule, rustFile, exportRegex) {
+  return getTsRsExportMatches(rustFile, exportRegex)
+    .map((match) => getExportPathError(rule, rustFile, match[1]))
+    .filter(Boolean);
+}
+
 function assertExportPaths() {
   const errors = [];
   const exportRegex = /export_to\s*=\s*"([^"]+)"/g;
 
   for (const rule of rules) {
-    const rustFiles = [];
-    walkRustFiles(rule.root, rustFiles);
-
-    for (const rustFile of rustFiles) {
-      const source = fs.readFileSync(rustFile, 'utf8');
-      const matches = [...source.matchAll(exportRegex)];
-      for (const match of matches) {
-        const configured = match[1];
-        if (configured !== rule.expected) {
-          errors.push(
-            `[${rule.label}] ${relativeToRepo(rustFile)} has export_to="${configured}", expected "${rule.expected}"`
-          );
-        }
-      }
+    for (const rustFile of getRustFilesForRule(rule)) {
+      errors.push(...getRustFileExportPathErrors(rule, rustFile, exportRegex));
     }
   }
 
   return errors;
 }
 
+function countFilesRecursively(dir) {
+  const stack = [dir];
+  let fileCount = 0;
+
+  while (stack.length > 0) {
+    const cur = stack.pop();
+    const entries = fs.readdirSync(cur, { withFileTypes: true });
+    for (const entry of entries) {
+      const fullPath = path.join(cur, entry.name);
+      if (entry.isDirectory()) {
+        stack.push(fullPath);
+      } else {
+        fileCount += 1;
+      }
+    }
+  }
+
+  return fileCount;
+}
+
+function getForbiddenGeneratedDirError(dir) {
+  if (!fs.existsSync(dir)) return null;
+
+  const fileCount = countFilesRecursively(dir);
+  return fileCount > 0
+    ? `${relativeToRepo(dir)} contains generated files (${fileCount}). TS types must be generated under src/types/generated at app root.`
+    : null;
+}
+
 function assertForbiddenGeneratedDirsEmpty() {
   const errors = [];
   for (const dir of forbiddenGeneratedDirs) {
-    if (!fs.existsSync(dir)) {
-      continue;
-    }
-
-    const stack = [dir];
-    let fileCount = 0;
-    while (stack.length > 0) {
-      const cur = stack.pop();
-      const entries = fs.readdirSync(cur, { withFileTypes: true });
-      for (const entry of entries) {
-        const fullPath = path.join(cur, entry.name);
-        if (entry.isDirectory()) {
-          stack.push(fullPath);
-        } else {
-          fileCount += 1;
-        }
-      }
-    }
-
-    if (fileCount > 0) {
-      errors.push(
-        `${relativeToRepo(dir)} contains generated files (${fileCount}). TS types must be generated under src/types/generated at app root.`
-      );
+    const error = getForbiddenGeneratedDirError(dir);
+    if (error) {
+      errors.push(error);
     }
   }
   return errors;

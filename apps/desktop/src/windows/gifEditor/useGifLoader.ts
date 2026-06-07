@@ -21,6 +21,84 @@ interface GifLoaderResult {
   gifData: GifData | null;
 }
 
+interface LoadedGifResult {
+  info: GifInfo;
+  gifData: GifData;
+  rows: FrameRow[];
+}
+
+function getGifPath(pathProp: string | undefined): string | null {
+  return pathProp ?? getGifPathFromQuery();
+}
+
+function getGifPathFromQuery(): string | null {
+  const encodedPath = new URLSearchParams(window.location.search).get('path');
+  return encodedPath ? decodeURIComponent(encodedPath) : null;
+}
+
+async function loadGifData(path: string): Promise<LoadedGifResult> {
+  editorLogger.info('Loading GIF:', path);
+
+  // Probe via Rust just for file size (and a sanity check that ffprobe
+  // can read it before the user hits Export).
+  const info = await invoke<GifInfo>('get_gif_info', { path });
+  const response = await fetch(convertFileSrc(path));
+  const buf = await response.arrayBuffer();
+  const parsed = parseGIF(buf);
+  const frames = decompressFrames(parsed, true);
+  const gifData: GifData = {
+    width: parsed.lsd.width,
+    height: parsed.lsd.height,
+    frames,
+  };
+
+  return {
+    info,
+    gifData,
+    rows: getInitialFrameRows(frames),
+  };
+}
+
+function getInitialFrameRows(frames: GifData['frames']): FrameRow[] {
+  return frames.map((frame, index) => ({
+    id: newRowId(index),
+    sourceIndex: index,
+    delayMs: getFrameDelayMs(frame.delay),
+    originalDelayMs: getFrameDelayMs(frame.delay),
+  }));
+}
+
+function getFrameDelayMs(delay: number) {
+  return delay > 0 ? delay : 100;
+}
+
+function applyLoadedGifResult({
+  result,
+  setInfo,
+  setGifData,
+  setRows,
+  setUi,
+}: {
+  result: LoadedGifResult;
+  setInfo: React.Dispatch<React.SetStateAction<GifInfo | null>>;
+  setGifData: React.Dispatch<React.SetStateAction<GifData | null>>;
+  setRows: React.Dispatch<React.SetStateAction<FrameRow[]>>;
+  setUi: React.Dispatch<React.SetStateAction<UiState>>;
+}) {
+  setInfo(result.info);
+  setGifData(result.gifData);
+  setUi((prev) => ({
+    ...prev,
+    outputWidth: result.gifData.width,
+    outputHeight: result.gifData.height,
+  }));
+  setRows(result.rows);
+}
+
+function getLoadGifErrorMessage(err: unknown) {
+  return err instanceof Error ? err.message : String(err);
+}
+
 /**
  * Resolve the GIF path (prop or `?path=` query param), probe it via Rust for
  * metadata, then parse + decode it entirely in the browser with gifuct-js.
@@ -42,14 +120,7 @@ export function useGifLoader({
 
   useEffect(() => {
     if (hasLoadedRef.current) return;
-    let path = pathProp;
-    if (!path) {
-      const urlParams = new URLSearchParams(window.location.search);
-      const encodedPath = urlParams.get('path');
-      if (encodedPath) {
-        path = decodeURIComponent(encodedPath);
-      }
-    }
+    const path = getGifPath(pathProp);
     if (!path) {
       setError('No GIF path provided');
       setIsLoading(false);
@@ -60,41 +131,12 @@ export function useGifLoader({
 
     (async () => {
       try {
-        editorLogger.info('Loading GIF:', path);
-
-        // Probe via Rust just for file size (and a sanity check that ffprobe
-        // can read it before the user hits Export).
-        const probed = await invoke<GifInfo>('get_gif_info', { path });
-        setInfo(probed);
-
-        const response = await fetch(convertFileSrc(path));
-        const buf = await response.arrayBuffer();
-        const parsed = parseGIF(buf);
-        const frames = decompressFrames(parsed, true);
-
-        const data: GifData = {
-          width: parsed.lsd.width,
-          height: parsed.lsd.height,
-          frames,
-        };
-        setGifData(data);
-        setUi((prev) => ({
-          ...prev,
-          outputWidth: parsed.lsd.width,
-          outputHeight: parsed.lsd.height,
-        }));
-
-        const initialRows: FrameRow[] = frames.map((f, i) => ({
-          id: newRowId(i),
-          sourceIndex: i,
-          delayMs: f.delay > 0 ? f.delay : 100,
-          originalDelayMs: f.delay > 0 ? f.delay : 100,
-        }));
-        setRows(initialRows);
+        const result = await loadGifData(path);
+        applyLoadedGifResult({ result, setInfo, setGifData, setRows, setUi });
         setIsLoading(false);
       } catch (err) {
         editorLogger.error('Failed to load GIF:', err);
-        setError(err instanceof Error ? err.message : String(err));
+        setError(getLoadGifErrorMessage(err));
         setIsLoading(false);
       }
     })();

@@ -8,7 +8,7 @@
  * By drawing raw RGBA directly to a canvas, we skip all image encoding.
  */
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, type MutableRefObject } from 'react';
 import { readFile } from '@tauri-apps/plugin-fs';
 import { invoke } from '@tauri-apps/api/core';
 
@@ -34,6 +34,20 @@ interface FastImageState {
   width: number;
   height: number;
 }
+
+const INITIAL_FAST_IMAGE_STATE: FastImageState = {
+  image: null,
+  status: 'loading',
+  width: 0,
+  height: 0,
+};
+
+const ERROR_FAST_IMAGE_STATE: FastImageState = {
+  image: null,
+  status: 'error',
+  width: 0,
+  height: 0,
+};
 
 /**
  * Load raw RGBA from file and draw directly to canvas - NO PNG encoding!
@@ -69,6 +83,64 @@ async function loadRgbaToCanvas(filePath: string): Promise<{
   return { canvas, width, height };
 }
 
+function getDataImageUrl(source: string) {
+  return source.startsWith('data:') ? source : `data:image/png;base64,${source}`;
+}
+
+async function loadDataImage(source: string): Promise<HTMLImageElement> {
+  const img = new Image();
+  img.src = getDataImageUrl(source);
+
+  await new Promise<void>((resolve, reject) => {
+    img.onload = () => resolve();
+    img.onerror = reject;
+  });
+
+  return img;
+}
+
+async function loadRgbaImageState(source: string): Promise<FastImageState> {
+  const { canvas, width, height } = await loadRgbaToCanvas(source);
+  return { image: canvas, status: 'loaded', width, height };
+}
+
+async function loadDataImageState(source: string): Promise<FastImageState> {
+  const img = await loadDataImage(source);
+  return {
+    image: img,
+    status: 'loaded',
+    width: img.naturalWidth,
+    height: img.naturalHeight,
+  };
+}
+
+function isRgbaSource(source: string) {
+  return source.endsWith('.rgba');
+}
+
+async function loadFastImageState(source: string): Promise<FastImageState> {
+  return isRgbaSource(source)
+    ? loadRgbaImageState(source)
+    : loadDataImageState(source);
+}
+
+function rememberLoadedImageResources(
+  nextState: FastImageState,
+  source: string,
+  canvasRef: MutableRefObject<HTMLCanvasElement | null>,
+  imageRef: MutableRefObject<HTMLImageElement | null>
+) {
+  if (nextState.image instanceof HTMLCanvasElement) {
+    canvasRef.current = nextState.image;
+    cleanupTempFile(source);
+    return;
+  }
+
+  if (nextState.image instanceof HTMLImageElement) {
+    imageRef.current = nextState.image;
+  }
+}
+
 /**
  * Load an image from either a base64 string or a raw RGBA file path.
  * For RGBA files, returns an HTMLCanvasElement (which Konva supports).
@@ -80,12 +152,7 @@ async function loadRgbaToCanvas(filePath: string): Promise<{
 export function useFastImage(
   source: string | null
 ): [ImageSource | null, 'loading' | 'loaded' | 'error'] {
-  const [state, setState] = useState<FastImageState>({
-    image: null,
-    status: 'loading',
-    width: 0,
-    height: 0,
-  });
+  const [state, setState] = useState<FastImageState>(INITIAL_FAST_IMAGE_STATE);
 
   // Track resources for cleanup
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -93,7 +160,7 @@ export function useFastImage(
 
   useEffect(() => {
     if (!source) {
-      setState({ image: null, status: 'loading', width: 0, height: 0 });
+      setState(INITIAL_FAST_IMAGE_STATE);
       return;
     }
 
@@ -101,49 +168,14 @@ export function useFastImage(
 
     const loadImage = async () => {
       try {
-        // Check if this is a raw RGBA file path (ends with .rgba)
-        if (source.endsWith('.rgba')) {
-          // FAST PATH: Load raw RGBA directly to canvas - NO PNG ENCODING!
-          const { canvas, width, height } = await loadRgbaToCanvas(source);
+        const nextState = await loadFastImageState(source);
+        if (!isMounted) return;
 
-          // Store for cleanup
-          canvasRef.current = canvas;
-
-          if (isMounted) {
-            setState({ image: canvas, status: 'loaded', width, height });
-            // Clean up the temp file after successful load
-            // This runs async in background - doesn't block rendering
-            cleanupTempFile(source);
-          }
-        } else {
-          // Standard path: load from base64/data URL
-          const dataUrl = source.startsWith('data:')
-            ? source
-            : `data:image/png;base64,${source}`;
-
-          const img = new Image();
-          img.src = dataUrl;
-
-          await new Promise<void>((resolve, reject) => {
-            img.onload = () => resolve();
-            img.onerror = reject;
-          });
-
-          // Store for cleanup
-          imageRef.current = img;
-
-          if (isMounted) {
-            setState({
-              image: img,
-              status: 'loaded',
-              width: img.naturalWidth,
-              height: img.naturalHeight,
-            });
-          }
-        }
+        rememberLoadedImageResources(nextState, source, canvasRef, imageRef);
+        setState(nextState);
       } catch {
         if (isMounted) {
-          setState({ image: null, status: 'error', width: 0, height: 0 });
+          setState(ERROR_FAST_IMAGE_STATE);
         }
       }
     };

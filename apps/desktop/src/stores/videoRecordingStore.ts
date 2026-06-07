@@ -79,6 +79,39 @@ let unlistenFn: UnlistenFn | null = null;
 // Mutex lock to prevent concurrent start attempts
 let startRecordingLock = false;
 
+function getStartRecordingBlockedReason(
+  recordingState: RecordingState,
+  isStartLocked: boolean
+): string | null {
+  if (recordingState.status !== 'idle') {
+    return 'Cannot start recording: already in progress';
+  }
+
+  if (isStartLocked) {
+    return 'Cannot start recording: start already in progress';
+  }
+
+  return null;
+}
+
+function getRecordingSettings(
+  settings: RecordingSettings,
+  mode: RecordingMode | undefined
+): RecordingSettings {
+  return {
+    ...settings,
+    mode: mode ?? settings.mode,
+  };
+}
+
+function canResetRecordingStateToIdle(recordingState: RecordingState): boolean {
+  return !isProtectedRecordingStatus(recordingState.status);
+}
+
+function isProtectedRecordingStatus(status: RecordingState['status']): boolean {
+  return ['recording', 'countdown', 'paused', 'processing'].includes(status);
+}
+
 export const useVideoRecordingStore = create<VideoRecordingStore>((set, get) => ({
   // Initial state
   recordingState: { status: 'idle' },
@@ -202,15 +235,9 @@ export const useVideoRecordingStore = create<VideoRecordingStore>((set, get) => 
   startRecording: async (mode) => {
     const { settings, recordingState } = get();
 
-    // Guard 1: Don't start if already recording
-    if (recordingState.status !== 'idle') {
-      recordingLogger.warn('Cannot start recording: already in progress');
-      return false;
-    }
-
-    // Guard 2: Prevent concurrent start attempts (race condition)
-    if (startRecordingLock) {
-      recordingLogger.warn('Cannot start recording: start already in progress');
+    const blockedReason = getStartRecordingBlockedReason(recordingState, startRecordingLock);
+    if (blockedReason) {
+      recordingLogger.warn(blockedReason);
       return false;
     }
 
@@ -220,10 +247,7 @@ export const useVideoRecordingStore = create<VideoRecordingStore>((set, get) => 
     // Update UI to show starting state
     set({ recordingState: { status: 'starting' } });
 
-    const recordingSettings: RecordingSettings = {
-      ...settings,
-      mode: mode ?? settings.mode,
-    };
+    const recordingSettings = getRecordingSettings(settings, mode);
 
     try {
       const result = await invoke<StartRecordingResult>('start_recording', {
@@ -337,10 +361,7 @@ export const useVideoRecordingStore = create<VideoRecordingStore>((set, get) => 
   resetToIdle: () => {
     const { recordingState } = get();
     // Only reset if not actively recording
-    if (recordingState.status !== 'recording' && 
-        recordingState.status !== 'countdown' && 
-        recordingState.status !== 'paused' &&
-        recordingState.status !== 'processing') {
+    if (canResetRecordingStateToIdle(recordingState)) {
       set({ recordingState: { status: 'idle' } });
     }
   },

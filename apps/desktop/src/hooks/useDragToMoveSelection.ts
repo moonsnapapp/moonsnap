@@ -20,6 +20,82 @@ interface DragHandlers {
   onPointerCancel: (event: React.PointerEvent<HTMLDivElement>) => void;
 }
 
+function hasPendingDragDelta(dx: number, dy: number) {
+  return dx !== 0 || dy !== 0;
+}
+
+function drainPendingDragDelta(drag: DragState) {
+  const dx = drag.pendingDx;
+  const dy = drag.pendingDy;
+  drag.pendingDx = 0;
+  drag.pendingDy = 0;
+  return { dx, dy };
+}
+
+function finishPendingSelectionMove(drag: DragState, warning: string) {
+  const { dx, dy } = drainPendingDragDelta(drag);
+  if (!hasPendingDragDelta(dx, dy)) {
+    return;
+  }
+
+  invokeSelectionMove(dx, dy, warning);
+}
+
+function cancelDragFrame(drag: DragState) {
+  if (!drag.frameId) return;
+
+  window.cancelAnimationFrame(drag.frameId);
+  drag.frameId = 0;
+}
+
+function releasePointerCapture(event: React.PointerEvent<HTMLDivElement> | undefined) {
+  if (!event) return;
+
+  try {
+    event.currentTarget.releasePointerCapture(event.pointerId);
+  } catch {
+    // Release is best-effort.
+  }
+}
+
+function setPointerCapture(event: React.PointerEvent<HTMLDivElement>) {
+  try {
+    event.currentTarget.setPointerCapture(event.pointerId);
+  } catch {
+    // Pointer capture is best-effort.
+  }
+}
+
+function invokeSelectionMove(dx: number, dy: number, warning: string) {
+  void invoke('capture_overlay_move_selection_by', { dx, dy }).catch((error) => {
+    toolbarLogger.warn(warning, error);
+  });
+}
+
+function shouldStopDrag(drag: DragState, event?: React.PointerEvent<HTMLDivElement>) {
+  return drag.active && (!event || drag.pointerId === event.pointerId);
+}
+
+function isInteractiveDragTarget(target: EventTarget) {
+  return target instanceof HTMLElement && Boolean(target.closest('button, input, label'));
+}
+
+function canStartSelectionDrag(
+  event: React.PointerEvent<HTMLDivElement>,
+  allowDragRef: React.RefObject<boolean>,
+) {
+  return allowDragRef.current && event.button === 0 && !isInteractiveDragTarget(event.target);
+}
+
+function startSelectionDrag(drag: DragState, event: React.PointerEvent<HTMLDivElement>) {
+  drag.active = true;
+  drag.pointerId = event.pointerId;
+  drag.lastScreenX = event.screenX;
+  drag.lastScreenY = event.screenY;
+  drag.pendingDx = 0;
+  drag.pendingDy = 0;
+}
+
 /**
  * Handles pointer-drag gestures on the chooser window, forwarding
  * screen-space deltas to `capture_overlay_move_selection_by` via rAF batching.
@@ -41,18 +117,13 @@ export function useDragToMoveSelection(
     const drag = dragRef.current;
     drag.frameId = 0;
 
-    const dx = drag.pendingDx;
-    const dy = drag.pendingDy;
-    drag.pendingDx = 0;
-    drag.pendingDy = 0;
+    const { dx, dy } = drainPendingDragDelta(drag);
 
-    if (!drag.active || (dx === 0 && dy === 0)) {
+    if (!drag.active || !hasPendingDragDelta(dx, dy)) {
       return;
     }
 
-    void invoke('capture_overlay_move_selection_by', { dx, dy }).catch((error) => {
-      toolbarLogger.warn('Failed to move overlay selection from chooser:', error);
-    });
+    invokeSelectionMove(dx, dy, 'Failed to move overlay selection from chooser:');
   }, []);
 
   const scheduleDragFlush = useCallback(() => {
@@ -65,68 +136,25 @@ export function useDragToMoveSelection(
 
   const stopDrag = useCallback((event?: React.PointerEvent<HTMLDivElement>) => {
     const drag = dragRef.current;
-    if (!drag.active || (event && drag.pointerId !== event.pointerId)) {
+    if (!shouldStopDrag(drag, event)) {
       return;
     }
 
-    if (event) {
-      try {
-        event.currentTarget.releasePointerCapture(event.pointerId);
-      } catch {
-        // Release is best-effort.
-      }
-    }
-
+    releasePointerCapture(event);
     drag.active = false;
     drag.pointerId = -1;
-
-    if (drag.frameId) {
-      window.cancelAnimationFrame(drag.frameId);
-      drag.frameId = 0;
-    }
-
-    const dx = drag.pendingDx;
-    const dy = drag.pendingDy;
-    drag.pendingDx = 0;
-    drag.pendingDy = 0;
-
-    if (dx === 0 && dy === 0) {
-      return;
-    }
-
-    void invoke('capture_overlay_move_selection_by', { dx, dy }).catch((error) => {
-      toolbarLogger.warn('Failed to finish moving overlay selection from chooser:', error);
-    });
+    cancelDragFrame(drag);
+    finishPendingSelectionMove(drag, 'Failed to finish moving overlay selection from chooser:');
   }, []);
 
   const handlePointerDown = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
-    if (!allowDragRef.current) {
-      return;
-    }
-
-    if (event.button !== 0) {
-      return;
-    }
-
-    if ((event.target as HTMLElement).closest('button, input, label')) {
+    if (!canStartSelectionDrag(event, allowDragRef)) {
       return;
     }
 
     event.preventDefault();
-
-    try {
-      event.currentTarget.setPointerCapture(event.pointerId);
-    } catch {
-      // Pointer capture is best-effort.
-    }
-
-    const drag = dragRef.current;
-    drag.active = true;
-    drag.pointerId = event.pointerId;
-    drag.lastScreenX = event.screenX;
-    drag.lastScreenY = event.screenY;
-    drag.pendingDx = 0;
-    drag.pendingDy = 0;
+    setPointerCapture(event);
+    startSelectionDrag(dragRef.current, event);
   }, [allowDragRef]);
 
   const handlePointerMove = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
@@ -140,7 +168,7 @@ export function useDragToMoveSelection(
     drag.lastScreenX = event.screenX;
     drag.lastScreenY = event.screenY;
 
-    if (dx === 0 && dy === 0) {
+    if (!hasPendingDragDelta(dx, dy)) {
       return;
     }
 

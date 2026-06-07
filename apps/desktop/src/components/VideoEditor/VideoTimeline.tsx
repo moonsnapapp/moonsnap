@@ -82,6 +82,73 @@ interface VideoTimelineProps {
   onClearExportRange?: () => void;
 }
 
+type VideoTimelineProject = ReturnType<typeof selectProject>;
+type VideoTimelineTrackVisibility = ReturnType<typeof selectTrackVisibility>;
+type TimelineTrackName = 'video' | 'text' | 'annotation' | 'zoom' | 'scene' | 'mask';
+
+function getTimelineDerivedState({
+  project,
+  selectedTrimSegmentId,
+  splitMode,
+  trackVisibility,
+  effectiveDurationMs,
+  timelineZoom,
+  containerWidth,
+  draggingIOMarker,
+  previewTimeMs,
+  isDraggingPlayhead,
+}: {
+  project: VideoTimelineProject;
+  selectedTrimSegmentId: string | null;
+  splitMode: boolean;
+  trackVisibility: VideoTimelineTrackVisibility;
+  effectiveDurationMs: number;
+  timelineZoom: number;
+  containerWidth: number;
+  draggingIOMarker: 'in' | 'out' | null;
+  previewTimeMs: number | null;
+  isDraggingPlayhead: boolean;
+}) {
+  const segments = project?.timeline.segments;
+  const selectedTrimSegment = segments?.find((segment) => segment.id === selectedTrimSegmentId) ?? null;
+  const isDefaultFullSegmentSelected =
+    selectedTrimSegmentId === DEFAULT_FULL_SEGMENT_ID && (!segments || segments.length === 0);
+  const selectedTrimSegmentSpeed = selectedTrimSegment?.speed ?? (isDefaultFullSegmentSelected ? 1 : null);
+  const contentDurationMs = project ? getTimelineContentDuration(project) : effectiveDurationMs;
+  const durationWidth = contentDurationMs * timelineZoom;
+  const trackFlags = {
+    video: trackVisibility.video,
+    text: !!project && trackVisibility.text,
+    annotation: !!project && trackVisibility.annotation,
+    zoom: !!project && trackVisibility.zoom,
+    scene: !!project && !!project.sources.webcamVideo && trackVisibility.scene,
+    mask: !!project && trackVisibility.mask,
+  };
+  const lastVisibleTrack =
+    (Object.entries(trackFlags)
+      .filter(([, visible]) => visible)
+      .map(([track]) => track)
+      .at(-1) ?? null) as TimelineTrackName | null;
+
+  return {
+    segments,
+    selectedTrimSegmentSpeed,
+    canSetSelectedTrimSegmentSpeed: selectedTrimSegmentSpeed !== null && !splitMode,
+    contentDurationMs,
+    durationWidth,
+    timelineWidth: Math.max(durationWidth, containerWidth - TRACK_LABEL_WIDTH),
+    hasVideoTrack: trackFlags.video,
+    hasTextTrack: trackFlags.text,
+    hasAnnotationTrack: trackFlags.annotation,
+    hasZoomTrack: trackFlags.zoom,
+    hasSceneTrack: trackFlags.scene,
+    hasMaskTrack: trackFlags.mask,
+    lastVisibleTrack,
+    shouldShowPrimaryPlayhead:
+      draggingIOMarker === null && (!splitMode || previewTimeMs === null || isDraggingPlayhead),
+  };
+}
+
 /**
  * VideoTimeline - Main timeline component with ruler, tracks, and playhead.
  * Optimized to prevent re-renders during playback.
@@ -256,30 +323,31 @@ export function VideoTimeline({ onResetTrimSegments, onSetInPoint, onSetOutPoint
   // effectiveDurationMs is the timeline duration after cuts (used for UI constraints)
   const sourceDurationMs = project?.timeline.durationMs ?? 60000;
   const segments = project?.timeline.segments;
-  const selectedTrimSegment = segments?.find((segment) => segment.id === selectedTrimSegmentId) ?? null;
-  const isDefaultFullSegmentSelected = selectedTrimSegmentId === DEFAULT_FULL_SEGMENT_ID && (!segments || segments.length === 0);
-  const selectedTrimSegmentSpeed = selectedTrimSegment?.speed ?? (isDefaultFullSegmentSelected ? 1 : null);
-  const canSetSelectedTrimSegmentSpeed = selectedTrimSegmentSpeed !== null && !splitMode;
   const effectiveDurationMs = getEffectiveDuration(segments ?? [], sourceDurationMs);
-  const contentDurationMs = project ? getTimelineContentDuration(project) : effectiveDurationMs;
-  const durationWidth = contentDurationMs * timelineZoom;
-  const timelineWidth = Math.max(durationWidth, containerWidth - TRACK_LABEL_WIDTH);
-  const hasVideoTrack = trackVisibility.video;
-  const hasTextTrack = !!project && trackVisibility.text;
-  const hasAnnotationTrack = !!project && trackVisibility.annotation;
-  const hasZoomTrack = !!project && trackVisibility.zoom;
-  const hasSceneTrack = !!project && !!project.sources.webcamVideo && trackVisibility.scene;
-  const hasMaskTrack = !!project && trackVisibility.mask;
-  const shouldShowPrimaryPlayhead = draggingIOMarker === null && (!splitMode || previewTimeMs === null || isDraggingPlayhead);
-  const lastVisibleTrack =
-    ([
-      hasVideoTrack ? 'video' : null,
-      hasTextTrack ? 'text' : null,
-      hasAnnotationTrack ? 'annotation' : null,
-      hasZoomTrack ? 'zoom' : null,
-      hasSceneTrack ? 'scene' : null,
-      hasMaskTrack ? 'mask' : null,
-    ].filter(Boolean).at(-1) ?? null) as 'video' | 'text' | 'annotation' | 'zoom' | 'scene' | 'mask' | null;
+  const {
+    selectedTrimSegmentSpeed,
+    canSetSelectedTrimSegmentSpeed,
+    timelineWidth,
+    hasVideoTrack,
+    hasTextTrack,
+    hasAnnotationTrack,
+    hasZoomTrack,
+    hasSceneTrack,
+    hasMaskTrack,
+    lastVisibleTrack,
+    shouldShowPrimaryPlayhead,
+  } = getTimelineDerivedState({
+    project,
+    selectedTrimSegmentId,
+    splitMode,
+    trackVisibility,
+    effectiveDurationMs,
+    timelineZoom,
+    containerWidth,
+    draggingIOMarker,
+    previewTimeMs,
+    isDraggingPlayhead,
+  });
 
   useEffect(() => {
     if (!canSetSelectedTrimSegmentSpeed) {

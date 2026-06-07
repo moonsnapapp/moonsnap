@@ -14,75 +14,115 @@ import { useFocusedShortcutDispatch } from '../hooks/useFocusedShortcutDispatch'
 import { recordingLogger } from '../utils/logger';
 import type { RecordingState } from '../types';
 
-const CountdownWindow: React.FC = () => {
-  useFocusedShortcutDispatch();
-  const isCaptureBlockedPulseActive = useCaptureBlockedPulse();
+type CountdownTimerRef = React.MutableRefObject<ReturnType<typeof setInterval> | null>;
+type SetCountdown = React.Dispatch<React.SetStateAction<number | null>>;
 
+function getCountdownTotalSecs() {
   const params = new URLSearchParams(window.location.search);
-  const totalSecs = parseInt(params.get('secs') || '3', 10);
+  return Number.parseInt(params.get('secs') ?? '3', 10);
+}
 
+function emitCountdownTick(secondsRemaining: number) {
+  emit('countdown-tick', { secondsRemaining }).catch(() => {});
+}
+
+function clearCountdownTimer(timerRef: CountdownTimerRef) {
+  if (timerRef.current) {
+    clearInterval(timerRef.current);
+    timerRef.current = null;
+  }
+}
+
+function getNextCountdownValue(
+  previousCount: number | null,
+  timerRef: CountdownTimerRef
+) {
+  if (previousCount === null || previousCount <= 1) {
+    clearCountdownTimer(timerRef);
+    return 0;
+  }
+
+  const nextCount = previousCount - 1;
+  emitCountdownTick(nextCount);
+  return nextCount;
+}
+
+function useSelfDrivenCountdown(totalSecs: number): [number | null, CountdownTimerRef, SetCountdown] {
   const [count, setCount] = useState<number | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Self-driven countdown timer - starts immediately on mount
-  // Emits countdown ticks so the toolbar stays in sync
   useEffect(() => {
     setCount(totalSecs);
-    emit('countdown-tick', { secondsRemaining: totalSecs }).catch(() => {});
+    emitCountdownTick(totalSecs);
 
     timerRef.current = setInterval(() => {
-      setCount((prev) => {
-        if (prev === null || prev <= 1) {
-          if (timerRef.current) clearInterval(timerRef.current);
-          return 0;
-        }
-        const next = prev - 1;
-        emit('countdown-tick', { secondsRemaining: next }).catch(() => {});
-        return next;
-      });
+      setCount((prev) => getNextCountdownValue(prev, timerRef));
     }, 1000);
 
     return () => {
-      if (timerRef.current) clearInterval(timerRef.current);
+      clearCountdownTimer(timerRef);
     };
   }, [totalSecs]);
 
-  // Listen for recording state changes to close on cancel/error/recording-start
+  return [count, timerRef, setCount];
+}
+
+function isTerminalCountdownRecordingState(state: RecordingState) {
+  return state.status === 'idle' || state.status === 'error';
+}
+
+function closeCountdownWindow() {
+  getCurrentWebviewWindow()
+    .close()
+    .catch((e) => recordingLogger.error('Failed to close countdown window:', e));
+}
+
+function handleCountdownRecordingState(
+  state: RecordingState,
+  timerRef: CountdownTimerRef,
+  setCount: SetCountdown
+) {
+  if (state.status === 'recording') {
+    closeCountdownWindow();
+    return;
+  }
+
+  if (isTerminalCountdownRecordingState(state)) {
+    clearCountdownTimer(timerRef);
+    setCount(0);
+  }
+}
+
+function useCountdownRecordingStateListener(timerRef: CountdownTimerRef, setCount: SetCountdown) {
   useEffect(() => {
     let unlisten: (() => void) | null = null;
-    const currentWindow = getCurrentWebviewWindow();
 
     const setup = async () => {
       unlisten = await listen<RecordingState>('recording-state-changed', (event) => {
-        const state = event.payload;
-
-        if (state.status === 'recording') {
-          // Recording started - close this window immediately.
-          currentWindow.close().catch((e) => recordingLogger.error('Failed to close countdown window:', e));
-          return;
-        }
-
-        if (state.status === 'idle' || state.status === 'error') {
-          // Recording was cancelled or failed. Stop emitting ticks immediately
-          // and let the main capture window own the actual close command.
-          if (timerRef.current) {
-            clearInterval(timerRef.current);
-            timerRef.current = null;
-          }
-          setCount(0);
-        }
+        handleCountdownRecordingState(event.payload, timerRef, setCount);
       });
 
       // Signal that we're ready (listener registered for cancellation detection)
       await emit('countdown-window-ready');
     };
 
-    setup();
+    void setup();
 
     return () => {
       unlisten?.();
     };
-  }, []);
+  }, [setCount, timerRef]);
+}
+
+function getCountdownFeedbackClassName(isCaptureBlockedPulseActive: boolean) {
+  return `relative flex flex-col items-center capture-blocked-feedback capture-blocked-feedback--countdown${isCaptureBlockedPulseActive ? ' capture-blocked-feedback--active' : ''}`;
+}
+
+const CountdownWindow: React.FC = () => {
+  useFocusedShortcutDispatch();
+  const isCaptureBlockedPulseActive = useCaptureBlockedPulse();
+  const [count, timerRef, setCount] = useSelfDrivenCountdown(getCountdownTotalSecs());
+  useCountdownRecordingStateListener(timerRef, setCount);
 
   if (count === null || count <= 0) {
     return null;
@@ -93,7 +133,7 @@ const CountdownWindow: React.FC = () => {
   return (
     <div className="fixed inset-0 flex items-center justify-center pointer-events-none">
       <div
-        className={`relative flex flex-col items-center capture-blocked-feedback capture-blocked-feedback--countdown${isCaptureBlockedPulseActive ? ' capture-blocked-feedback--active' : ''}`}
+        className={getCountdownFeedbackClassName(isCaptureBlockedPulseActive)}
       >
         {/* Countdown container - no backdrop, just the countdown circle */}
         {/* Countdown circle - responsive size using min(vw, vh) */}

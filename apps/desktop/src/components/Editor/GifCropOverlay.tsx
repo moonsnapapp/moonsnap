@@ -25,28 +25,51 @@ interface Props {
 
 const HANDLE_SIZE = 12;
 const MIN_CROP = 16;
+const HANDLE_CURSORS: Record<Handle, string> = {
+  move: 'move',
+  nw: 'nwse-resize',
+  se: 'nwse-resize',
+  ne: 'nesw-resize',
+  sw: 'nesw-resize',
+  n: 'ns-resize',
+  s: 'ns-resize',
+  e: 'ew-resize',
+  w: 'ew-resize',
+};
+const CORNER_OFFSETS: Record<'nw' | 'ne' | 'sw' | 'se', CSSProperties> = {
+  nw: { top: -HANDLE_SIZE / 2, left: -HANDLE_SIZE / 2 },
+  ne: { top: -HANDLE_SIZE / 2, right: -HANDLE_SIZE / 2 },
+  sw: { bottom: -HANDLE_SIZE / 2, left: -HANDLE_SIZE / 2 },
+  se: { bottom: -HANDLE_SIZE / 2, right: -HANDLE_SIZE / 2 },
+};
+const EDGE_OFFSETS: Record<'n' | 's' | 'e' | 'w', CSSProperties> = {
+  n: { top: -HANDLE_SIZE / 2, left: '50%', marginLeft: -HANDLE_SIZE / 2 },
+  s: { bottom: -HANDLE_SIZE / 2, left: '50%', marginLeft: -HANDLE_SIZE / 2 },
+  w: { left: -HANDLE_SIZE / 2, top: '50%', marginTop: -HANDLE_SIZE / 2 },
+  e: { right: -HANDLE_SIZE / 2, top: '50%', marginTop: -HANDLE_SIZE / 2 },
+};
 
 function cursorFor(handle: Handle): string {
-  switch (handle) {
-    case 'move':
-      return 'move';
-    case 'nw':
-    case 'se':
-      return 'nwse-resize';
-    case 'ne':
-    case 'sw':
-      return 'nesw-resize';
-    case 'n':
-    case 's':
-      return 'ns-resize';
-    case 'e':
-    case 'w':
-      return 'ew-resize';
-  }
+  return HANDLE_CURSORS[handle];
 }
 
 function cornerStyle(corner: 'nw' | 'ne' | 'sw' | 'se'): CSSProperties {
-  const half = HANDLE_SIZE / 2;
+  return {
+    ...handleBaseStyle(corner),
+    cursor: cursorFor(corner),
+    ...CORNER_OFFSETS[corner],
+  };
+}
+
+function edgeStyle(edge: 'n' | 's' | 'e' | 'w'): CSSProperties {
+  return {
+    ...handleBaseStyle(edge),
+    cursor: cursorFor(edge),
+    ...EDGE_OFFSETS[edge],
+  };
+}
+
+function handleBaseStyle(handle: Handle): CSSProperties {
   return {
     position: 'absolute',
     width: HANDLE_SIZE,
@@ -55,62 +78,126 @@ function cornerStyle(corner: 'nw' | 'ne' | 'sw' | 'se'): CSSProperties {
     border: '1px solid var(--accent-400)',
     borderRadius: 2,
     pointerEvents: 'auto',
-    cursor: cursorFor(corner),
-    top: corner.startsWith('n') ? -half : undefined,
-    bottom: corner.startsWith('s') ? -half : undefined,
-    left: corner.endsWith('w') ? -half : undefined,
-    right: corner.endsWith('e') ? -half : undefined,
+    cursor: cursorFor(handle),
   };
 }
 
-function edgeStyle(edge: 'n' | 's' | 'e' | 'w'): CSSProperties {
-  const half = HANDLE_SIZE / 2;
-  const base: CSSProperties = {
-    position: 'absolute',
-    background: 'white',
-    border: '1px solid var(--accent-400)',
-    borderRadius: 2,
-    pointerEvents: 'auto',
-    cursor: cursorFor(edge),
+function clamp(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
+}
+
+function roundCropRect(crop: CropRect): CropRect {
+  return {
+    x: Math.round(crop.x),
+    y: Math.round(crop.y),
+    w: Math.round(crop.w),
+    h: Math.round(crop.h),
   };
-  switch (edge) {
-    case 'n':
-      return {
-        ...base,
-        top: -half,
-        left: '50%',
-        marginLeft: -half,
-        width: HANDLE_SIZE,
-        height: HANDLE_SIZE,
-      };
-    case 's':
-      return {
-        ...base,
-        bottom: -half,
-        left: '50%',
-        marginLeft: -half,
-        width: HANDLE_SIZE,
-        height: HANDLE_SIZE,
-      };
-    case 'w':
-      return {
-        ...base,
-        left: -half,
-        top: '50%',
-        marginTop: -half,
-        width: HANDLE_SIZE,
-        height: HANDLE_SIZE,
-      };
-    case 'e':
-      return {
-        ...base,
-        right: -half,
-        top: '50%',
-        marginTop: -half,
-        width: HANDLE_SIZE,
-        height: HANDLE_SIZE,
-      };
+}
+
+function moveCropRect(
+  crop: CropRect,
+  dx: number,
+  dy: number,
+  sourceWidth: number,
+  sourceHeight: number
+): CropRect {
+  return {
+    ...crop,
+    x: clamp(crop.x + dx, 0, sourceWidth - crop.w),
+    y: clamp(crop.y + dy, 0, sourceHeight - crop.h),
+  };
+}
+
+function resizeCropNorth(crop: CropRect, dy: number): CropRect {
+  const y = clamp(crop.y + dy, 0, crop.y + crop.h - MIN_CROP);
+  return {
+    ...crop,
+    y,
+    h: crop.h - (y - crop.y),
+  };
+}
+
+function resizeCropWest(crop: CropRect, dx: number): CropRect {
+  const x = clamp(crop.x + dx, 0, crop.x + crop.w - MIN_CROP);
+  return {
+    ...crop,
+    x,
+    w: crop.w - (x - crop.x),
+  };
+}
+
+function resizeCropSouth(crop: CropRect, dy: number, sourceHeight: number): CropRect {
+  return {
+    ...crop,
+    h: clamp(crop.h + dy, MIN_CROP, sourceHeight - crop.y),
+  };
+}
+
+function resizeCropEast(crop: CropRect, dx: number, sourceWidth: number): CropRect {
+  return {
+    ...crop,
+    w: clamp(crop.w + dx, MIN_CROP, sourceWidth - crop.x),
+  };
+}
+
+type CropResizeOperation = (crop: CropRect) => CropRect;
+type CropResizeDirection = 'n' | 's' | 'w' | 'e';
+type CropResizeOperationFactory = (
+  dx: number,
+  dy: number,
+  sourceWidth: number,
+  sourceHeight: number
+) => CropResizeOperation;
+
+const CROP_RESIZE_OPERATION_FACTORIES: Record<CropResizeDirection, CropResizeOperationFactory> = {
+  n: (_dx, dy) => (crop) => resizeCropNorth(crop, dy),
+  s: (_dx, dy, _sourceWidth, sourceHeight) => (crop) => resizeCropSouth(crop, dy, sourceHeight),
+  w: (dx) => (crop) => resizeCropWest(crop, dx),
+  e: (dx, _dy, sourceWidth) => (crop) => resizeCropEast(crop, dx, sourceWidth),
+};
+
+function getCropResizeOperations(
+  handle: Exclude<Handle, 'move'>,
+  dx: number,
+  dy: number,
+  sourceWidth: number,
+  sourceHeight: number
+): CropResizeOperation[] {
+  return getCropResizeDirections(handle).map((direction) =>
+    CROP_RESIZE_OPERATION_FACTORIES[direction](dx, dy, sourceWidth, sourceHeight)
+  );
+}
+
+function getCropResizeDirections(handle: Exclude<Handle, 'move'>): CropResizeDirection[] {
+  return (['n', 's', 'w', 'e'] as const).filter((direction) => handle.includes(direction));
+}
+
+function resizeCropRect(
+  crop: CropRect,
+  handle: Exclude<Handle, 'move'>,
+  dx: number,
+  dy: number,
+  sourceWidth: number,
+  sourceHeight: number
+): CropRect {
+  return getCropResizeOperations(handle, dx, dy, sourceWidth, sourceHeight)
+    .reduce((next, operation) => operation(next), { ...crop });
+}
+
+function getNextCropRect(
+  crop: CropRect,
+  handle: Handle,
+  dx: number,
+  dy: number,
+  sourceWidth: number,
+  sourceHeight: number
+): CropRect {
+  if (handle === 'move') {
+    return moveCropRect(crop, dx, dy, sourceWidth, sourceHeight);
   }
+
+  return resizeCropRect(crop, handle, dx, dy, sourceWidth, sourceHeight);
 }
 
 export const GifCropOverlay: React.FC<Props> = ({
@@ -151,54 +238,14 @@ export const GifCropOverlay: React.FC<Props> = ({
       const onMove = (ev: PointerEvent) => {
         const dx = (ev.clientX - startX) / sx;
         const dy = (ev.clientY - startY) / sy;
-        const next: CropRect = { ...startCrop };
-
-        if (handle === 'move') {
-          next.x = Math.max(
-            0,
-            Math.min(sourceWidth - startCrop.w, startCrop.x + dx),
-          );
-          next.y = Math.max(
-            0,
-            Math.min(sourceHeight - startCrop.h, startCrop.y + dy),
-          );
-        } else {
-          if (handle.startsWith('n')) {
-            const newY = Math.max(
-              0,
-              Math.min(startCrop.y + startCrop.h - MIN_CROP, startCrop.y + dy),
-            );
-            next.h = startCrop.h - (newY - startCrop.y);
-            next.y = newY;
-          }
-          if (handle.startsWith('s')) {
-            next.h = Math.max(
-              MIN_CROP,
-              Math.min(sourceHeight - startCrop.y, startCrop.h + dy),
-            );
-          }
-          if (handle.endsWith('w')) {
-            const newX = Math.max(
-              0,
-              Math.min(startCrop.x + startCrop.w - MIN_CROP, startCrop.x + dx),
-            );
-            next.w = startCrop.w - (newX - startCrop.x);
-            next.x = newX;
-          }
-          if (handle.endsWith('e')) {
-            next.w = Math.max(
-              MIN_CROP,
-              Math.min(sourceWidth - startCrop.x, startCrop.w + dx),
-            );
-          }
-        }
-
-        onChange({
-          x: Math.round(next.x),
-          y: Math.round(next.y),
-          w: Math.round(next.w),
-          h: Math.round(next.h),
-        });
+        onChange(roundCropRect(getNextCropRect(
+          startCrop,
+          handle,
+          dx,
+          dy,
+          sourceWidth,
+          sourceHeight
+        )));
       };
 
       const onUp = () => {

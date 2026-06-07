@@ -44,6 +44,435 @@ interface UseCanvasTransformerReturn {
   };
 }
 
+type TransformUpdateGetter = (
+  node: Konva.Node,
+  shape: CanvasShape,
+  scaleX: number,
+  scaleY: number
+) => Partial<CanvasShape>;
+
+const POINT_TRANSFORM_SHAPES = new Set<CanvasShape['type']>(['pen', 'arrow', 'line']);
+const DEFAULT_TRANSFORM_SCALE_FIELDS: Array<{
+  key: 'width' | 'height' | 'radiusX' | 'radiusY';
+  scale: 'x' | 'y';
+}> = [
+  { key: 'width', scale: 'x' },
+  { key: 'height', scale: 'y' },
+  { key: 'radiusX', scale: 'x' },
+  { key: 'radiusY', scale: 'y' },
+];
+
+function resetNodeScale(node: Konva.Node) {
+  node.scaleX(1);
+  node.scaleY(1);
+}
+
+function getAxisScale(axis: 'x' | 'y', scaleX: number, scaleY: number): number {
+  return axis === 'x' ? scaleX : scaleY;
+}
+
+function getScaledShapeValue(
+  value: number,
+  axis: 'x' | 'y',
+  scaleX: number,
+  scaleY: number
+): number {
+  return Math.abs(value * getAxisScale(axis, scaleX, scaleY));
+}
+
+function resetTextGroupChildren(
+  node: Konva.Node,
+  width: number,
+  height: number
+) {
+  if (!(node instanceof Konva.Group)) return;
+
+  for (const child of [
+    node.findOne('.text-hit-area'),
+    node.findOne('.text-box-border'),
+    node.findOne('.text-background'),
+    node.findOne('.text-content'),
+  ]) {
+    if (!child) continue;
+    child.x(0);
+    child.y(0);
+    child.width(width);
+    child.height(height);
+    child.scaleX(1);
+    child.scaleY(1);
+  }
+}
+
+function getPointsTransformUpdates(
+  node: Konva.Node,
+  shape: CanvasShape,
+  scaleX: number,
+  scaleY: number
+): Partial<CanvasShape> {
+  const nodeX = node.x();
+  const nodeY = node.y();
+  const newPoints = (shape.points ?? []).map((val, i) =>
+    i % 2 === 0 ? nodeX + val * scaleX : nodeY + val * scaleY
+  );
+  resetNodeScale(node);
+  node.position({ x: 0, y: 0 });
+
+  return { points: newPoints };
+}
+
+function getBlurTransformUpdates(node: Konva.Node): Partial<CanvasShape> {
+  return {
+    x: node.x(),
+    y: node.y(),
+    width: node.width(),
+    height: node.height(),
+  };
+}
+
+function getTextTransformUpdates(
+  node: Konva.Node,
+  scaleX: number,
+  scaleY: number
+): Partial<CanvasShape> {
+  const { width: rawWidth, height: rawHeight } = getEditorTextResizeDimensions(
+    node.width(),
+    node.height(),
+    scaleX,
+    scaleY
+  );
+  let finalX = node.x();
+  let finalY = node.y();
+  const finalWidth = Math.max(EDITOR_TEXT.MIN_BOX_WIDTH, Math.abs(rawWidth));
+  const finalHeight = Math.max(EDITOR_TEXT.MIN_BOX_HEIGHT, Math.abs(rawHeight));
+  if (rawWidth < 0) finalX += rawWidth;
+  if (rawHeight < 0) finalY += rawHeight;
+
+  resetNodeScale(node);
+  resetTextGroupChildren(node, finalWidth, finalHeight);
+  node.x(finalX);
+  node.y(finalY);
+  node.width(finalWidth);
+  node.height(finalHeight);
+
+  return {
+    x: finalX,
+    y: finalY,
+    width: finalWidth,
+    height: finalHeight,
+    rotation: node.rotation(),
+  };
+}
+
+function getStepTransformUpdates(
+  node: Konva.Node,
+  shape: CanvasShape,
+  scaleX: number,
+  scaleY: number
+): Partial<CanvasShape> {
+  const avgScale = (Math.abs(scaleX) + Math.abs(scaleY)) / 2;
+  const currentRadius = shape.radius ?? 15;
+  resetNodeScale(node);
+
+  return {
+    x: node.x(),
+    y: node.y(),
+    radius: Math.max(8, currentRadius * avgScale),
+  };
+}
+
+function getScaledFieldTransformUpdates(
+  shape: CanvasShape,
+  scaleX: number,
+  scaleY: number
+): Partial<CanvasShape> {
+  const updates: Partial<CanvasShape> = {};
+
+  for (const { key, scale } of DEFAULT_TRANSFORM_SCALE_FIELDS) {
+    const value = shape[key];
+    if (value !== undefined) {
+      updates[key] = getScaledShapeValue(value, scale, scaleX, scaleY);
+    }
+  }
+
+  return updates;
+}
+
+function getLegacyRadiusTransformUpdates(
+  shape: CanvasShape,
+  scaleX: number,
+  scaleY: number
+): Partial<CanvasShape> {
+  if (shape.radius === undefined || shape.radiusX !== undefined) {
+    return {};
+  }
+
+  return {
+    radiusX: getScaledShapeValue(shape.radius, 'x', scaleX, scaleY),
+    radiusY: getScaledShapeValue(shape.radius, 'y', scaleX, scaleY),
+    radius: undefined,
+  };
+}
+
+function getDefaultTransformUpdates(
+  node: Konva.Node,
+  shape: CanvasShape,
+  scaleX: number,
+  scaleY: number
+): Partial<CanvasShape> {
+  resetNodeScale(node);
+  const updates: Partial<CanvasShape> = {
+    x: node.x(),
+    y: node.y(),
+    rotation: node.rotation(),
+    ...getScaledFieldTransformUpdates(shape, scaleX, scaleY),
+    ...getLegacyRadiusTransformUpdates(shape, scaleX, scaleY),
+  };
+
+  return updates;
+}
+
+const TRANSFORM_UPDATE_GETTERS: Partial<Record<CanvasShape['type'], TransformUpdateGetter>> = {
+  blur: getBlurTransformUpdates,
+  text: (node, _shape, scaleX, scaleY) => getTextTransformUpdates(node, scaleX, scaleY),
+  step: getStepTransformUpdates,
+};
+
+function isPointTransformShape(shape: CanvasShape) {
+  return POINT_TRANSFORM_SHAPES.has(shape.type) && (shape.points?.length ?? 0) >= 2;
+}
+
+function getTransformedShapeUpdates(
+  node: Konva.Node,
+  shape: CanvasShape
+): Partial<CanvasShape> {
+  const scaleX = node.scaleX();
+  const scaleY = node.scaleY();
+
+  if (isPointTransformShape(shape)) {
+    return getPointsTransformUpdates(node, shape, scaleX, scaleY);
+  }
+
+  const getUpdates = TRANSFORM_UPDATE_GETTERS[shape.type] ?? getDefaultTransformUpdates;
+  return getUpdates(node, shape, scaleX, scaleY);
+}
+
+function getLiveTextTransformChildren(node: Konva.Group): Konva.Node[] {
+  return [
+    node.findOne('.text-content'),
+    node.findOne('.text-background'),
+    node.findOne('.text-hit-area'),
+  ].filter((child): child is Konva.Node => Boolean(child));
+}
+
+function applyLiveTextChildTransform(
+  child: Konva.Node,
+  width: number,
+  height: number,
+  invScaleX: number,
+  invScaleY: number
+) {
+  child.width(width);
+  child.height(height);
+  child.scaleX(invScaleX);
+  child.scaleY(invScaleY);
+  child.x(0);
+  child.y(0);
+}
+
+function applyLiveTextTransform(
+  node: Konva.Node,
+  shape: CanvasShape,
+  scaleX: number,
+  scaleY: number
+) {
+  if (!(node instanceof Konva.Group)) return;
+
+  const { width: liveWidth, height: liveHeight } = getEditorTextResizeDimensions(
+    shape.width,
+    shape.height,
+    scaleX,
+    scaleY
+  );
+  const width = Math.max(EDITOR_TEXT.MIN_BOX_WIDTH, Math.abs(liveWidth));
+  const height = Math.max(EDITOR_TEXT.MIN_BOX_HEIGHT, Math.abs(liveHeight));
+  const invScaleX = scaleX === 0 ? 1 : 1 / scaleX;
+  const invScaleY = scaleY === 0 ? 1 : 1 / scaleY;
+
+  getLiveTextTransformChildren(node).forEach((child) => {
+    applyLiveTextChildTransform(child, width, height, invScaleX, invScaleY);
+  });
+}
+
+function applyLivePointTransform(node: Konva.Node, scaleX: number, scaleY: number) {
+  const line = node.className === 'Group'
+    ? (node as Konva.Group).findOne('Line, Arrow') as Konva.Line | undefined
+    : node as Konva.Line;
+  if (!line) return;
+
+  const points = line.points();
+  line.points(points.map((value, index) => value * (index % 2 === 0 ? scaleX : scaleY)));
+}
+
+function applyLiveCircleTransform(node: Konva.Node, scaleX: number, scaleY: number) {
+  const ellipse = node as unknown as Konva.Ellipse;
+  ellipse.radiusX(ellipse.radiusX() * Math.abs(scaleX));
+  ellipse.radiusY(ellipse.radiusY() * Math.abs(scaleY));
+}
+
+function applyLiveStepTransform(node: Konva.Node, scaleX: number, scaleY: number) {
+  const circle = (node as Konva.Group).findOne('Circle') as Konva.Circle | undefined;
+  if (!circle) return;
+
+  const avgScale = (Math.abs(scaleX) + Math.abs(scaleY)) / 2;
+  circle.radius(circle.radius() * avgScale);
+}
+
+function isPointBasedShape(shape: CanvasShape) {
+  return (shape.type === 'pen' || shape.type === 'arrow' || shape.type === 'line') && shape.points;
+}
+
+function applyLiveBoxTransform(node: Konva.Node, scaleX: number, scaleY: number) {
+  node.width(node.width() * scaleX);
+  node.height(node.height() * scaleY);
+}
+
+function applyLiveScaledGeometry(
+  node: Konva.Node,
+  shape: CanvasShape,
+  scaleX: number,
+  scaleY: number
+) {
+  if (shape.type === 'circle') {
+    applyLiveCircleTransform(node, scaleX, scaleY);
+  } else if (shape.type === 'step') {
+    applyLiveStepTransform(node, scaleX, scaleY);
+  } else if (isPointBasedShape(shape)) {
+    applyLivePointTransform(node, scaleX, scaleY);
+  } else {
+    applyLiveBoxTransform(node, scaleX, scaleY);
+  }
+
+  resetNodeScale(node);
+}
+
+function applyLiveTransformToNode(node: Konva.Node, shape: CanvasShape) {
+  const scaleX = node.scaleX();
+  const scaleY = node.scaleY();
+
+  if (shape.type === 'text') {
+    applyLiveTextTransform(node, shape, scaleX, scaleY);
+    return;
+  }
+
+  if (scaleX !== 1 || scaleY !== 1) {
+    applyLiveScaledGeometry(node, shape, scaleX, scaleY);
+  }
+}
+
+function getShapeUpdatesForNodes(
+  nodes: Konva.Node[],
+  shapeById: Map<string, CanvasShape>
+) {
+  const shapeUpdates = new Map<string, Partial<CanvasShape>>();
+
+  for (const node of nodes) {
+    const shapeId = node.id();
+    const shape = shapeById.get(shapeId);
+    if (shape) {
+      shapeUpdates.set(shapeId, getTransformedShapeUpdates(node, shape));
+    }
+  }
+
+  return shapeUpdates;
+}
+
+function applyShapeUpdates(
+  shapes: CanvasShape[],
+  shapeUpdates: Map<string, Partial<CanvasShape>>
+) {
+  return shapes.map(shape => {
+    const updates = shapeUpdates.get(shape.id);
+    return updates ? { ...shape, ...updates } : shape;
+  });
+}
+
+function shouldHideTransformer({
+  isDrawing,
+  editingTextId,
+  selectedTool,
+  isShapeDragging,
+}: {
+  isDrawing: boolean;
+  editingTextId: string | null;
+  selectedTool: string;
+  isShapeDragging: boolean;
+}) {
+  return isDrawing || Boolean(editingTextId) || selectedTool !== 'select' || isShapeDragging;
+}
+
+function canAttachTransformerToShape(
+  id: string,
+  isMultiSelect: boolean,
+  shapeById: Map<string, CanvasShape>
+) {
+  if (isMultiSelect) return true;
+
+  const shape = shapeById.get(id);
+  return Boolean(shape && shape.type !== 'arrow' && shape.type !== 'line');
+}
+
+function getTransformerNodes({
+  selectedIds,
+  layer,
+  shapeById,
+}: {
+  selectedIds: string[];
+  layer: Konva.Layer;
+  shapeById: Map<string, CanvasShape>;
+}) {
+  const isMultiSelect = selectedIds.length > 1;
+  return selectedIds
+    .filter((id) => canAttachTransformerToShape(id, isMultiSelect, shapeById))
+    .map((id) => layer.findOne(`#${id}`))
+    .filter((node): node is Konva.Node => node !== null && node !== undefined);
+}
+
+function expandCanvasAfterTransform({
+  canvasBounds,
+  originalImageSize,
+  updatedShapes,
+  cropUserExpanded,
+  setCanvasBounds,
+}: {
+  canvasBounds: CanvasBounds | null;
+  originalImageSize: { width: number; height: number } | null;
+  updatedShapes: CanvasShape[];
+  cropUserExpanded: boolean;
+  setCanvasBounds: (bounds: CanvasBounds) => void;
+}) {
+  if (!canvasBounds || !originalImageSize) return;
+
+  const expanded = expandBoundsForShapes(canvasBounds, updatedShapes, originalImageSize, cropUserExpanded);
+  if (expanded) setCanvasBounds(expanded);
+}
+
+function expandCropAfterTransform({
+  cropRegion,
+  updatedShapes,
+  cropUserExpanded,
+  setCropRegion,
+}: {
+  cropRegion: { x: number; y: number; width: number; height: number } | null;
+  updatedShapes: CanvasShape[];
+  cropUserExpanded: boolean;
+  setCropRegion: (region: { x: number; y: number; width: number; height: number } | null) => void;
+}) {
+  if (!cropRegion) return;
+
+  const expandedCrop = expandCropRegionForShapes(cropRegion, updatedShapes, cropUserExpanded);
+  if (expandedCrop) setCropRegion(expandedCrop);
+}
+
 export function useCanvasTransformer({
   shapes,
   selectedIds,
@@ -105,28 +534,25 @@ export function useCanvasTransformer({
 
   // Attach transformer to selected shapes
   useEffect(() => {
-    if (!transformerRef.current || !layerRef.current) return;
+    const transformer = transformerRef.current;
+    const layer = layerRef.current;
+    if (!transformer || !layer) return;
 
-    // Hide transformer while drawing, editing text, or not in select mode
-    if (drawing.isDrawing || textEditing.editingTextId || selectedTool !== 'select' || isShapeDraggingRef.current) {
-      transformerRef.current.nodes([]);
-      transformerRef.current.getLayer()?.batchDraw();
+    if (shouldHideTransformer({
+      isDrawing: drawing.isDrawing,
+      editingTextId: textEditing.editingTextId,
+      selectedTool,
+      isShapeDragging: isShapeDraggingRef.current,
+    })) {
+      transformer.nodes([]);
+      transformer.getLayer()?.batchDraw();
       return;
     }
 
-    // For single selection, exclude arrows/lines so their custom endpoint handles stay usable
-    const isMultiSelect = selectedIds.length > 1;
-    const nodes = selectedIds
-      .filter((id) => {
-        if (isMultiSelect) return true;
-        const shape = shapeById.get(id);
-        return shape && shape.type !== 'arrow' && shape.type !== 'line';
-      })
-      .map((id) => layerRef.current!.findOne(`#${id}`))
-      .filter((node): node is Konva.Node => node !== null && node !== undefined);
+    const nodes = getTransformerNodes({ selectedIds, layer, shapeById });
 
-    transformerRef.current.nodes(nodes);
-    transformerRef.current.getLayer()?.batchDraw();
+    transformer.nodes(nodes);
+    transformer.getLayer()?.batchDraw();
   }, [drawing.isDrawing, selectedIds, selectedTool, shapeById, textEditing.editingTextId, transformerRef, layerRef, isShapeDraggingRef]);
 
   const onTransform = useCallback(() => {
@@ -136,66 +562,7 @@ export function useCanvasTransformer({
       const shape = shapeById.get(node.id());
       if (!shape) return;
 
-      const scaleX = node.scaleX();
-      const scaleY = node.scaleY();
-
-      if (shape.type === 'text') {
-        const group = node as Konva.Group;
-        const { width: liveWidth, height: liveHeight } = getEditorTextResizeDimensions(
-          shape.width,
-          shape.height,
-          scaleX,
-          scaleY
-        );
-        const w = Math.max(EDITOR_TEXT.MIN_BOX_WIDTH, Math.abs(liveWidth));
-        const h = Math.max(EDITOR_TEXT.MIN_BOX_HEIGHT, Math.abs(liveHeight));
-        const invSx = scaleX === 0 ? 1 : 1 / scaleX;
-        const invSy = scaleY === 0 ? 1 : 1 / scaleY;
-
-        // Counter-scale all child rects so they resize without distortion
-        for (const child of [
-          group.findOne('.text-content'),
-          group.findOne('.text-background'),
-          group.findOne('.text-hit-area'),
-        ]) {
-          if (!child) continue;
-          child.width(w);
-          child.height(h);
-          child.scaleX(invSx);
-          child.scaleY(invSy);
-          child.x(0);
-          child.y(0);
-        }
-      } else if (scaleX !== 1 || scaleY !== 1) {
-        // All other shapes: reset scale to 1 and adjust geometry
-        // This prevents stroke width from visually scaling during resize
-        if (shape.type === 'circle') {
-          const ellipse = node as unknown as Konva.Ellipse;
-          ellipse.radiusX(ellipse.radiusX() * Math.abs(scaleX));
-          ellipse.radiusY(ellipse.radiusY() * Math.abs(scaleY));
-        } else if (shape.type === 'step') {
-          const circle = (node as Konva.Group).findOne('Circle') as Konva.Circle | undefined;
-          if (circle) {
-            const avgScale = (Math.abs(scaleX) + Math.abs(scaleY)) / 2;
-            circle.radius(circle.radius() * avgScale);
-          }
-        } else if ((shape.type === 'pen' || shape.type === 'arrow' || shape.type === 'line') && shape.points) {
-          const line = node.className === 'Group'
-            ? (node as Konva.Group).findOne('Line, Arrow') as Konva.Line | undefined
-            : node as Konva.Line;
-          if (line) {
-            const pts = line.points();
-            const scaled = pts.map((v, i) => v * (i % 2 === 0 ? scaleX : scaleY));
-            line.points(scaled);
-          }
-        } else {
-          // rect, highlight, image, blur: width/height based
-          node.width(node.width() * scaleX);
-          node.height(node.height() * scaleY);
-        }
-        node.scaleX(1);
-        node.scaleY(1);
-      }
+      applyLiveTransformToNode(node, shape);
     });
   }, [shapeById, transformerRef]);
 
@@ -207,146 +574,26 @@ export function useCanvasTransformer({
       return;
     }
 
-    // Collect updates for all transformed shapes
-    const shapeUpdates = new Map<string, Partial<CanvasShape>>();
-
-    nodes.forEach(node => {
-      const shapeId = node.id();
-      const shape = shapeById.get(shapeId);
-      if (!shape) return;
-
-      const scaleX = node.scaleX();
-      const scaleY = node.scaleY();
-
-      let updates: Partial<CanvasShape>;
-
-      if ((shape.type === 'pen' || shape.type === 'arrow' || shape.type === 'line') && shape.points && shape.points.length >= 2) {
-        // Points-based shapes: convert scale to points
-        const nodeX = node.x();
-        const nodeY = node.y();
-        const newPoints = shape.points.map((val, i) =>
-          i % 2 === 0 ? nodeX + val * scaleX : nodeY + val * scaleY
-        );
-        node.scaleX(1);
-        node.scaleY(1);
-        node.position({ x: 0, y: 0 });
-        updates = { points: newPoints };
-      } else if (shape.type === 'blur') {
-        // Blur: just use position and dimensions
-        updates = {
-          x: node.x(),
-          y: node.y(),
-          width: node.width(),
-          height: node.height(),
-        };
-      } else if (shape.type === 'text') {
-        // Text: let Konva own the live scale during the gesture, then
-        // normalize the box dimensions once at the end.
-        const { width: rawWidth, height: rawHeight } = getEditorTextResizeDimensions(
-          node.width(),
-          node.height(),
-          scaleX,
-          scaleY
-        );
-        let finalX = node.x();
-        let finalY = node.y();
-        const finalWidth = Math.max(EDITOR_TEXT.MIN_BOX_WIDTH, Math.abs(rawWidth));
-        const finalHeight = Math.max(EDITOR_TEXT.MIN_BOX_HEIGHT, Math.abs(rawHeight));
-        if (rawWidth < 0) finalX += rawWidth;
-        if (rawHeight < 0) finalY += rawHeight;
-
-        node.scaleX(1);
-        node.scaleY(1);
-
-        // Reset all child positions/scales to final dimensions
-        if (node instanceof Konva.Group) {
-          for (const child of [
-            node.findOne('.text-hit-area'),
-            node.findOne('.text-box-border'),
-            node.findOne('.text-background'),
-            node.findOne('.text-content'),
-          ]) {
-            if (!child) continue;
-            child.x(0);
-            child.y(0);
-            child.width(finalWidth);
-            child.height(finalHeight);
-            child.scaleX(1);
-            child.scaleY(1);
-          }
-        }
-        node.x(finalX);
-        node.y(finalY);
-        node.width(finalWidth);
-        node.height(finalHeight);
-
-        updates = {
-          x: finalX,
-          y: finalY,
-          width: finalWidth,
-          height: finalHeight,
-          rotation: node.rotation(),
-        };
-      } else if (shape.type === 'step') {
-        // Step: convert scale to radius
-        const avgScale = (Math.abs(scaleX) + Math.abs(scaleY)) / 2;
-        const currentRadius = shape.radius ?? 15;
-        const newRadius = Math.max(8, currentRadius * avgScale);
-        node.scaleX(1);
-        node.scaleY(1);
-        updates = {
-          x: node.x(),
-          y: node.y(),
-          radius: newRadius,
-        };
-      } else {
-        // Default: convert scale to dimensions
-        node.scaleX(1);
-        node.scaleY(1);
-        updates = {
-          x: node.x(),
-          y: node.y(),
-          rotation: node.rotation(),
-        };
-        if (shape.width !== undefined) {
-          updates.width = Math.abs(shape.width * scaleX);
-        }
-        if (shape.height !== undefined) {
-          updates.height = Math.abs(shape.height * scaleY);
-        }
-        if (shape.radiusX !== undefined) {
-          updates.radiusX = Math.abs(shape.radiusX * scaleX);
-        }
-        if (shape.radiusY !== undefined) {
-          updates.radiusY = Math.abs(shape.radiusY * scaleY);
-        }
-        if (shape.radius !== undefined && shape.radiusX === undefined) {
-          updates.radiusX = Math.abs(shape.radius * scaleX);
-          updates.radiusY = Math.abs(shape.radius * scaleY);
-          updates.radius = undefined;
-        }
-      }
-
-      shapeUpdates.set(shapeId, updates);
-    });
+    const shapeUpdates = getShapeUpdatesForNodes(nodes, shapeById);
 
     // Apply all updates at once
     if (shapeUpdates.size > 0) {
-      const updatedShapes = shapes.map(s => {
-        const updates = shapeUpdates.get(s.id);
-        return updates ? { ...s, ...updates } : s;
-      });
+      const updatedShapes = applyShapeUpdates(shapes, shapeUpdates);
       onShapesChange(updatedShapes);
 
-      // Auto-extend canvas and crop region if shapes moved beyond bounds
-      if (canvasBounds && originalImageSize) {
-        const expanded = expandBoundsForShapes(canvasBounds, updatedShapes, originalImageSize, cropUserExpanded);
-        if (expanded) setCanvasBounds(expanded);
-      }
-      if (cropRegion) {
-        const expandedCrop = expandCropRegionForShapes(cropRegion, updatedShapes, cropUserExpanded);
-        if (expandedCrop) setCropRegion(expandedCrop);
-      }
+      expandCanvasAfterTransform({
+        canvasBounds,
+        originalImageSize,
+        updatedShapes,
+        cropUserExpanded,
+        setCanvasBounds,
+      });
+      expandCropAfterTransform({
+        cropRegion,
+        updatedShapes,
+        cropUserExpanded,
+        setCropRegion,
+      });
     }
 
     history.commitSnapshot();

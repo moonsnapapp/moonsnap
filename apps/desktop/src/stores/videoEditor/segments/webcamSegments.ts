@@ -7,7 +7,7 @@ import type {
 } from '../types';
 import { snapshotOverlayState } from '../overlayAdjustment';
 import { pushTrimHistory } from '../trimSlice';
-import { ensureTrimHistoryInitialized } from './shared';
+import { clampSegmentToDuration, ensureTrimHistoryInitialized } from './shared';
 
 export interface WebcamSegmentsSlice {
   selectedWebcamSegmentIndex: number | null;
@@ -43,13 +43,7 @@ export const createWebcamSegmentsSlice: SliceCreator<WebcamSegmentsSlice> = (set
     const { project } = get();
     if (!project) return;
 
-    // Clamp to video duration
-    const durationMs = project.timeline.durationMs;
-    const clampedSegment = {
-      ...segment,
-      startMs: Math.max(0, Math.min(segment.startMs, durationMs)),
-      endMs: Math.max(0, Math.min(segment.endMs, durationMs)),
-    };
+    const clampedSegment = clampSegmentToDuration(segment, project.timeline.durationMs);
 
     const segments = [...project.webcam.visibilitySegments, clampedSegment];
     // Sort by start time

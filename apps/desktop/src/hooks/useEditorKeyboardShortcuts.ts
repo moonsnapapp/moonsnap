@@ -42,6 +42,174 @@ interface UseEditorKeyboardShortcutsReturn {
   setCommandPaletteOpen: (open: boolean) => void;
 }
 
+type EditorShortcutHandlers = Omit<
+  UseEditorKeyboardShortcutsProps,
+  'view' | 'selectedIds' | 'compositorEnabled'
+>;
+
+function runEditorShortcut(e: KeyboardEvent, action: (() => void) | undefined): boolean {
+  if (!action) return false;
+  e.preventDefault();
+  action();
+  return true;
+}
+
+function hasCommandModifier(e: KeyboardEvent) {
+  return e.ctrlKey || e.metaKey;
+}
+
+function hasToolShortcutModifier(e: KeyboardEvent) {
+  return e.ctrlKey || e.metaKey || e.altKey;
+}
+
+function getModifierShortcutAction(
+  e: KeyboardEvent,
+  handlers: Pick<EditorShortcutHandlers, 'onUndo' | 'onRedo' | 'onSave' | 'onCopy'>
+) {
+  const key = e.key.toLowerCase();
+  const actions: Record<string, () => void> = {
+    z: e.shiftKey ? handlers.onRedo : handlers.onUndo,
+    y: handlers.onRedo,
+    e: handlers.onSave,
+    c: handlers.onCopy,
+  };
+  return actions[key];
+}
+
+function handleModifierShortcut(
+  e: KeyboardEvent,
+  handlers: Pick<EditorShortcutHandlers, 'onUndo' | 'onRedo' | 'onSave' | 'onCopy'>
+) {
+  return hasCommandModifier(e) && runEditorShortcut(e, getModifierShortcutAction(e, handlers));
+}
+
+function getCropShortcutAction(
+  e: KeyboardEvent,
+  handlers: Pick<EditorShortcutHandlers, 'onCropCommit' | 'onCropReset'>
+) {
+  const actions: Record<string, () => void> = {
+    ' ': handlers.onCropCommit,
+    enter: handlers.onCropCommit,
+    r: handlers.onCropReset,
+  };
+  return actions[e.key.toLowerCase()];
+}
+
+function handleCropShortcut(
+  e: KeyboardEvent,
+  selectedTool: Tool,
+  handlers: Pick<EditorShortcutHandlers, 'onCropCommit' | 'onCropReset'>
+) {
+  if (selectedTool !== 'crop') return false;
+  return runEditorShortcut(e, getCropShortcutAction(e, handlers));
+}
+
+function handleBackgroundShortcut(
+  e: KeyboardEvent,
+  selectedTool: Tool,
+  handlers: Pick<EditorShortcutHandlers, 'onToolChange' | 'onToggleCompositor'>
+) {
+  if (e.key.toLowerCase() !== 'g') return false;
+
+  e.preventDefault();
+  if (e.shiftKey) {
+    handlers.onToggleCompositor();
+    return true;
+  }
+
+  if (selectedTool === 'background') {
+    handlers.onToggleCompositor();
+    handlers.onToolChange('select');
+  } else {
+    handlers.onToolChange('background');
+  }
+  return true;
+}
+
+function handleToolShortcut(
+  e: KeyboardEvent,
+  selectedTool: Tool,
+  handlers: Pick<EditorShortcutHandlers, 'onToolChange' | 'onToggleCompositor'>
+) {
+  if (hasToolShortcutModifier(e)) return false;
+
+  const key = e.key.toLowerCase();
+  const tool = TOOL_SHORTCUTS[key];
+  return tool
+    ? runEditorShortcut(e, () => handlers.onToolChange(tool))
+    : handleBackgroundShortcut(e, selectedTool, handlers);
+}
+
+function handleEscapeShortcut(
+  e: KeyboardEvent,
+  selectedTool: Tool,
+  selectedIds: string[],
+  handlers: Pick<EditorShortcutHandlers, 'onDeselect' | 'onToolChange'>
+) {
+  if (e.key !== 'Escape') return false;
+
+  e.preventDefault();
+  if (selectedIds.length > 0) {
+    handlers.onDeselect();
+    return true;
+  }
+
+  if (selectedTool !== 'select') {
+    handlers.onToolChange('select');
+  }
+  return true;
+}
+
+function isHelpShortcut(e: KeyboardEvent) {
+  return e.key === '?' || (e.shiftKey && e.key === '/');
+}
+
+function handleGeneralShortcut(
+  e: KeyboardEvent,
+  selectedTool: Tool,
+  selectedIds: string[],
+  handlers: Pick<
+    EditorShortcutHandlers,
+    'onFitToCenter' | 'onDeselect' | 'onToolChange' | 'onShowShortcuts'
+  >
+) {
+  const key = e.key.toLowerCase();
+  if (key === 'f') {
+    return runEditorShortcut(e, handlers.onFitToCenter);
+  }
+
+  if (handleEscapeShortcut(e, selectedTool, selectedIds, handlers)) {
+    return true;
+  }
+
+  if (isHelpShortcut(e)) {
+    return runEditorShortcut(e, handlers.onShowShortcuts);
+  }
+
+  return false;
+}
+
+function canHandleEditorShortcut(
+  view: UseEditorKeyboardShortcutsProps['view'],
+  target: EventTarget | null
+) {
+  return view === 'editor' && !isTextInputTarget(target);
+}
+
+function handleEditorShortcut(
+  e: KeyboardEvent,
+  props: UseEditorKeyboardShortcutsProps
+) {
+  if (!canHandleEditorShortcut(props.view, e.target)) return;
+
+  [
+    () => handleModifierShortcut(e, props),
+    () => handleCropShortcut(e, props.selectedTool, props),
+    () => handleToolShortcut(e, props.selectedTool, props),
+    () => handleGeneralShortcut(e, props.selectedTool, props.selectedIds, props),
+  ].some((handleShortcut) => handleShortcut());
+}
+
 /**
  * Hook for editor keyboard shortcuts.
  * Consolidates all keyboard handling from App.tsx:
@@ -87,109 +255,23 @@ export const useEditorKeyboardShortcuts = ({
   // Editor-only shortcuts: tools, undo/redo, escape, help
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Only handle in editor view
-      if (view !== 'editor') return;
-
-      // Don't handle shortcuts when typing in an input
-      if (isTextInputTarget(e.target)) return;
-
-      // Undo/Redo
-      if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
-        e.preventDefault();
-        if (e.shiftKey) {
-          onRedo();
-        } else {
-          onUndo();
-        }
-        return;
-      }
-      if ((e.ctrlKey || e.metaKey) && e.key === 'y') {
-        e.preventDefault();
-        onRedo();
-        return;
-      }
-
-      // Save (Ctrl+E) and Copy (Ctrl+C)
-      if ((e.ctrlKey || e.metaKey) && e.key === 'e') {
-        e.preventDefault();
-        onSave();
-        return;
-      }
-      if ((e.ctrlKey || e.metaKey) && e.key === 'c') {
-        e.preventDefault();
-        onCopy();
-        return;
-      }
-
-      // Crop mode shortcuts (before tool shortcuts to override R)
-      if (selectedTool === 'crop') {
-        if (e.key === ' ' || e.key === 'Enter') {
-          e.preventDefault();
-          onCropCommit();
-          return;
-        }
-        if (e.key.toLowerCase() === 'r') {
-          e.preventDefault();
-          onCropReset();
-          return;
-        }
-      }
-
-      // Tool shortcuts (only when no modifier keys)
-      if (e.ctrlKey || e.metaKey || e.altKey) return;
-
-      const tool = TOOL_SHORTCUTS[e.key.toLowerCase()];
-      if (tool) {
-        e.preventDefault();
-        onToolChange(tool);
-        return;
-      }
-
-      // G / Shift+G: Background tool (gated via onToolChange)
-      if (e.key.toLowerCase() === 'g') {
-        e.preventDefault();
-        if (e.shiftKey) {
-          // Shift+G: Quick toggle compositor on/off without switching tool
-          onToggleCompositor();
-        } else if (selectedTool === 'background') {
-          // Already on background tool — toggle off and switch to select
-          onToggleCompositor();
-          onToolChange('select');
-        } else {
-          // Switch to background tool (blocked if not Pro via onToolChange)
-          onToolChange('background');
-        }
-        return;
-      }
-
-      // F: Fit to center
-      if (e.key.toLowerCase() === 'f') {
-        e.preventDefault();
-        onFitToCenter();
-        return;
-      }
-
-      // Escape: deselect shapes first, then switch to select tool
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        // Priority 1: Deselect shapes if any are selected
-        if (selectedIds.length > 0) {
-          onDeselect();
-          return;
-        }
-        // Priority 2: Switch to select tool if on different tool
-        if (selectedTool !== 'select') {
-          onToolChange('select');
-          return;
-        }
-        return;
-      }
-
-      // Show keyboard shortcuts help
-      if (e.key === '?' || (e.shiftKey && e.key === '/')) {
-        e.preventDefault();
-        onShowShortcuts();
-      }
+      handleEditorShortcut(e, {
+        view,
+        selectedTool,
+        selectedIds,
+        compositorEnabled,
+        onToolChange,
+        onUndo,
+        onRedo,
+        onSave,
+        onCopy,
+        onToggleCompositor,
+        onShowShortcuts,
+        onFitToCenter,
+        onDeselect,
+        onCropCommit,
+        onCropReset,
+      });
     };
 
     window.addEventListener('keydown', handleKeyDown);

@@ -33,28 +33,44 @@ function normalizeLine(line) {
   return line.trim().replace(/\s+/g, ' ');
 }
 
+function getRelativeSourcePath(filePath) {
+  return path.relative(ROOT_DIR, filePath).replace(/\\/g, '/');
+}
+
+function hasShadowProperty(line) {
+  return PROPERTY_PATTERNS.some((pattern) => pattern.test(line));
+}
+
+function shouldCountLine(line) {
+  return !line.includes(ALLOW_TOKEN) && hasShadowProperty(line);
+}
+
+function getShadowUsageKey(relativePath, line) {
+  return `${relativePath}::${normalizeLine(line)}`;
+}
+
+function incrementCount(counts, key) {
+  counts[key] = (counts[key] ?? 0) + 1;
+}
+
+function collectFileCounts(counts, filePath) {
+  const relativePath = getRelativeSourcePath(filePath);
+  const content = fs.readFileSync(filePath, 'utf8');
+  const lines = content.split(/\r?\n/);
+
+  for (const line of lines) {
+    if (shouldCountLine(line)) {
+      incrementCount(counts, getShadowUsageKey(relativePath, line));
+    }
+  }
+}
+
 function collectCounts() {
   const counts = {};
   const files = walkFiles(SRC_DIR);
 
   for (const filePath of files) {
-    const relativePath = path.relative(ROOT_DIR, filePath).replace(/\\/g, '/');
-    const content = fs.readFileSync(filePath, 'utf8');
-    const lines = content.split(/\r?\n/);
-
-    for (const line of lines) {
-      if (line.includes(ALLOW_TOKEN)) {
-        continue;
-      }
-
-      const hasShadowProperty = PROPERTY_PATTERNS.some((pattern) => pattern.test(line));
-      if (!hasShadowProperty) {
-        continue;
-      }
-
-      const key = `${relativePath}::${normalizeLine(line)}`;
-      counts[key] = (counts[key] ?? 0) + 1;
-    }
+    collectFileCounts(counts, filePath);
   }
 
   return counts;
@@ -66,15 +82,27 @@ function readBaseline() {
   }
 
   try {
-    const parsed = JSON.parse(fs.readFileSync(BASELINE_PATH, 'utf8'));
-    if (typeof parsed !== 'object' || parsed === null) {
-      throw new Error('Baseline is not a JSON object');
-    }
-    return parsed;
+    return parseBaselineFile(BASELINE_PATH);
   } catch (error) {
-    console.error(`Failed to read ${BASELINE_PATH}:`, error.message);
-    process.exit(1);
+    exitWithBaselineReadError(error);
   }
+}
+
+function parseBaselineFile(filePath) {
+  const parsed = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+  assertBaselineObject(parsed);
+  return parsed;
+}
+
+function assertBaselineObject(parsed) {
+  if (typeof parsed !== 'object' || parsed === null) {
+    throw new Error('Baseline is not a JSON object');
+  }
+}
+
+function exitWithBaselineReadError(error) {
+  console.error(`Failed to read ${BASELINE_PATH}:`, error.message);
+  process.exit(1);
 }
 
 function writeBaseline(counts) {

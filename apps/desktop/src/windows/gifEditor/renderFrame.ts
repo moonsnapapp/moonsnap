@@ -11,26 +11,51 @@ export function renderFrameTo(
 ): void {
   ctx.clearRect(0, 0, data.width, data.height);
 
-  for (let i = 0; i <= targetIndex && i < data.frames.length; i += 1) {
+  for (let i = 0; i <= getLastRenderableFrameIndex(data, targetIndex); i += 1) {
     const frame = data.frames[i];
-    const { width, height, top, left } = frame.dims;
-
-    const imageData = new ImageData(
-      new Uint8ClampedArray(frame.patch),
-      width,
-      height,
-    );
-    // Draw via an offscreen canvas to keep transparency intact when composited.
-    const off = document.createElement('canvas');
-    off.width = width;
-    off.height = height;
-    off.getContext('2d')?.putImageData(imageData, 0, 0);
-    ctx.drawImage(off, left, top);
+    drawGifFrame(ctx, frame);
 
     // Disposal 2 = restore to background after rendering. We clear the frame's
     // bbox before drawing the *next* frame.
-    if (frame.disposalType === 2 && i < targetIndex) {
-      ctx.clearRect(left, top, width, height);
-    }
+    clearDisposedFrame(ctx, frame, i, targetIndex);
   }
+}
+
+function getLastRenderableFrameIndex(data: GifData, targetIndex: number) {
+  return Math.min(targetIndex, data.frames.length - 1);
+}
+
+function drawGifFrame(
+  ctx: CanvasRenderingContext2D,
+  frame: GifData['frames'][number],
+) {
+  const { top, left } = frame.dims;
+  const offscreenCanvas = createFrameCanvas(frame);
+  ctx.drawImage(offscreenCanvas, left, top);
+}
+
+function createFrameCanvas(frame: GifData['frames'][number]) {
+  const { width, height } = frame.dims;
+  const imageData = new ImageData(
+    new Uint8ClampedArray(frame.patch),
+    width,
+    height,
+  );
+  const offscreenCanvas = document.createElement('canvas');
+  offscreenCanvas.width = width;
+  offscreenCanvas.height = height;
+  offscreenCanvas.getContext('2d')?.putImageData(imageData, 0, 0);
+  return offscreenCanvas;
+}
+
+function clearDisposedFrame(
+  ctx: CanvasRenderingContext2D,
+  frame: GifData['frames'][number],
+  frameIndex: number,
+  targetIndex: number,
+) {
+  if (frame.disposalType !== 2 || frameIndex >= targetIndex) return;
+
+  const { width, height, top, left } = frame.dims;
+  ctx.clearRect(left, top, width, height);
 }

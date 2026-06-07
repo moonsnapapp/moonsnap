@@ -46,49 +46,69 @@ const latestJson = {
   }
 };
 
-const server = http.createServer((req, res) => {
-  console.log(`${new Date().toISOString()} - ${req.method} ${req.url}`);
+function sendJson(res, body) {
+  res.writeHead(200, { 'Content-Type': 'application/json' });
+  res.end(JSON.stringify(body, null, 2));
+}
 
-  // CORS headers for local testing
+function sendMockUpdateManifest(res) {
+  sendJson(res, latestJson);
+  console.log(`  -> Served update manifest (v${mockVersion})`);
+}
+
+function sendNoUpdateManifest(res) {
+  sendJson(res, { ...latestJson, version: currentVersion });
+  console.log(`  -> Served no-update manifest (v${currentVersion})`);
+}
+
+function sendMockDownload(res) {
+  res.writeHead(200, {
+    'Content-Type': 'application/octet-stream',
+    'Content-Length': '0'
+  });
+  res.end();
+  console.log('  -> Mock download requested (will fail signature verification - this is expected)');
+}
+
+function sendNotFound(res) {
+  res.writeHead(404);
+  res.end('Not found');
+}
+
+const routeHandlers = {
+  '/latest.json': sendMockUpdateManifest,
+  '/no-update': sendNoUpdateManifest,
+  '/mock-update.nsis.zip': sendMockDownload
+};
+
+function applyCorsHeaders(res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+}
+
+function handleOptionsRequest(res) {
+  res.writeHead(204);
+  res.end();
+}
+
+const server = http.createServer((req, res) => {
+  console.log(`${new Date().toISOString()} - ${req.method} ${req.url}`);
+
+  applyCorsHeaders(res);
 
   if (req.method === 'OPTIONS') {
-    res.writeHead(204);
-    res.end();
+    handleOptionsRequest(res);
     return;
   }
 
-  if (req.url === '/latest.json') {
-    res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify(latestJson, null, 2));
-    console.log(`  → Served update manifest (v${mockVersion})`);
+  const routeHandler = routeHandlers[req.url];
+  if (routeHandler) {
+    routeHandler(res);
     return;
   }
 
-  if (req.url === '/no-update') {
-    // Endpoint that returns current version (no update available)
-    const noUpdate = { ...latestJson, version: currentVersion };
-    res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify(noUpdate, null, 2));
-    console.log(`  → Served no-update manifest (v${currentVersion})`);
-    return;
-  }
-
-  if (req.url === '/mock-update.nsis.zip') {
-    // Note: Actual download will fail signature verification (expected)
-    res.writeHead(200, {
-      'Content-Type': 'application/octet-stream',
-      'Content-Length': '0'
-    });
-    res.end();
-    console.log(`  → Mock download requested (will fail signature verification - this is expected)`);
-    return;
-  }
-
-  res.writeHead(404);
-  res.end('Not found');
+  sendNotFound(res);
 });
 
 server.listen(PORT, () => {

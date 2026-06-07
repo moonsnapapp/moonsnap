@@ -1,7 +1,7 @@
 import type { SliceCreator, MaskSegment } from '../types';
 import { snapshotOverlayState } from '../overlayAdjustment';
 import { pushTrimHistory } from '../trimSlice';
-import { ensureTrimHistoryInitialized } from './shared';
+import { clampSegmentToDuration, ensureTrimHistoryInitialized } from './shared';
 
 export interface MaskSegmentsSlice {
   selectedMaskSegmentId: string | null;
@@ -31,13 +31,7 @@ export const createMaskSegmentsSlice: SliceCreator<MaskSegmentsSlice> = (set, ge
     const { project } = get();
     if (!project) return;
 
-    // Clamp to video duration
-    const durationMs = project.timeline.durationMs;
-    const clampedSegment = {
-      ...segment,
-      startMs: Math.max(0, Math.min(segment.startMs, durationMs)),
-      endMs: Math.max(0, Math.min(segment.endMs, durationMs)),
-    };
+    const clampedSegment = clampSegmentToDuration(segment, project.timeline.durationMs);
 
     const segments = [...project.mask.segments, clampedSegment];
     segments.sort((a, b) => a.startMs - b.startMs);

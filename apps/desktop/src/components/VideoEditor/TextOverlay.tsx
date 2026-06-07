@@ -189,6 +189,310 @@ function calculateTypewriterVisibleCharsApprox(segment: TextSegment, timeSec: nu
   return calculateTypewriterVisibleChars(segment, timeSec, totalChars);
 }
 
+function prepareTextPreviewContext(
+  canvas: HTMLCanvasElement,
+  cached: CachedTextRender,
+  canvasCtxRef: React.MutableRefObject<CanvasRenderingContext2D | null>,
+  safeWidth: number,
+  safeHeight: number,
+) {
+  if (canvas.width !== cached.widthPx || canvas.height !== cached.heightPx) {
+    canvas.width = cached.widthPx;
+    canvas.height = cached.heightPx;
+    canvasCtxRef.current = null;
+  }
+
+  let ctx = canvasCtxRef.current;
+  if (!ctx) {
+    ctx = canvas.getContext('2d', { alpha: true });
+    if (!ctx) return null;
+    canvasCtxRef.current = ctx;
+  }
+
+  ctx.setTransform(cached.dpr, 0, 0, cached.dpr, 0, 0);
+  ctx.clearRect(0, 0, safeWidth, safeHeight);
+  return ctx;
+}
+
+function drawCanvasSlice({
+  ctx,
+  sourceCanvas,
+  dpr,
+  safeWidth,
+  safeHeight,
+  leftPx,
+  topPx,
+  widthSlicePx,
+  heightSlicePx,
+}: {
+  ctx: CanvasRenderingContext2D;
+  sourceCanvas: HTMLCanvasElement;
+  dpr: number;
+  safeWidth: number;
+  safeHeight: number;
+  leftPx: number;
+  topPx: number;
+  widthSlicePx: number;
+  heightSlicePx: number;
+}) {
+  const clampedLeft = clamp(leftPx, 0, safeWidth);
+  const clampedTop = clamp(topPx, 0, safeHeight);
+  const clampedWidth = Math.min(widthSlicePx, safeWidth - clampedLeft);
+  const clampedHeight = Math.min(heightSlicePx, safeHeight - clampedTop);
+  if (clampedWidth <= 0 || clampedHeight <= 0) {
+    return;
+  }
+
+  ctx.drawImage(
+    sourceCanvas,
+    clampedLeft * dpr,
+    clampedTop * dpr,
+    clampedWidth * dpr,
+    clampedHeight * dpr,
+    clampedLeft,
+    clampedTop,
+    clampedWidth,
+    clampedHeight,
+  );
+}
+
+function drawTextClipped({
+  ctx,
+  cached,
+  safeWidth,
+  safeHeight,
+  leftPx,
+  topPx,
+  widthClipPx,
+  heightClipPx,
+}: {
+  ctx: CanvasRenderingContext2D;
+  cached: CachedTextRender;
+  safeWidth: number;
+  safeHeight: number;
+  leftPx: number;
+  topPx: number;
+  widthClipPx: number;
+  heightClipPx: number;
+}) {
+  const clampedLeft = clamp(leftPx, 0, safeWidth);
+  const clampedTop = clamp(topPx, 0, safeHeight);
+  const clampedRight = clamp(leftPx + widthClipPx, 0, safeWidth);
+  const clampedBottom = clamp(topPx + heightClipPx, 0, safeHeight);
+  const clampedWidth = clampedRight - clampedLeft;
+  const clampedHeight = clampedBottom - clampedTop;
+  if (clampedWidth <= 0 || clampedHeight <= 0) {
+    return;
+  }
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(clampedLeft, clampedTop, clampedWidth, clampedHeight);
+  ctx.clip();
+  ctx.drawImage(
+    cached.textCanvas,
+    0,
+    0,
+    cached.widthPx,
+    cached.heightPx,
+    0,
+    0,
+    safeWidth,
+    safeHeight,
+  );
+  ctx.restore();
+}
+
+function drawFullTextPreview(
+  ctx: CanvasRenderingContext2D,
+  cached: CachedTextRender,
+  safeWidth: number,
+  safeHeight: number,
+) {
+  drawCanvasSlice({
+    ctx,
+    sourceCanvas: cached.backgroundCanvas,
+    dpr: cached.dpr,
+    safeWidth,
+    safeHeight,
+    leftPx: 0,
+    topPx: 0,
+    widthSlicePx: safeWidth,
+    heightSlicePx: safeHeight,
+  });
+  drawTextClipped({
+    ctx,
+    cached,
+    safeWidth,
+    safeHeight,
+    leftPx: 0,
+    topPx: 0,
+    widthClipPx: safeWidth,
+    heightClipPx: safeHeight,
+  });
+}
+
+function drawTypewriterTextPreview({
+  ctx,
+  cached,
+  safeWidth,
+  safeHeight,
+  visibleChars,
+  textRevealBleedPx,
+}: {
+  ctx: CanvasRenderingContext2D;
+  cached: CachedTextRender;
+  safeWidth: number;
+  safeHeight: number;
+  visibleChars: number;
+  textRevealBleedPx: number;
+}) {
+  drawCanvasSlice({
+    ctx,
+    sourceCanvas: cached.backgroundCanvas,
+    dpr: cached.dpr,
+    safeWidth,
+    safeHeight,
+    leftPx: 0,
+    topPx: 0,
+    widthSlicePx: safeWidth,
+    heightSlicePx: safeHeight,
+  });
+
+  if (visibleChars <= 0) return;
+  if (visibleChars >= cached.totalRenderedChars) {
+    drawTextClipped({
+      ctx,
+      cached,
+      safeWidth,
+      safeHeight,
+      leftPx: 0,
+      topPx: 0,
+      widthClipPx: safeWidth,
+      heightClipPx: safeHeight,
+    });
+    return;
+  }
+
+  if (cached.lineMetrics.length === 0) {
+    const fallbackRevealWidth = Math.max(
+      1,
+      Math.ceil(safeWidth * (visibleChars / Math.max(cached.totalRenderedChars, 1))),
+    );
+    drawTextClipped({
+      ctx,
+      cached,
+      safeWidth,
+      safeHeight,
+      leftPx: 0,
+      topPx: 0,
+      widthClipPx: fallbackRevealWidth + textRevealBleedPx,
+      heightClipPx: safeHeight,
+    });
+    return;
+  }
+
+  drawTypewriterLines({
+    ctx,
+    cached,
+    safeWidth,
+    safeHeight,
+    visibleChars,
+    textRevealBleedPx,
+  });
+}
+
+function drawTypewriterLines({
+  ctx,
+  cached,
+  safeWidth,
+  safeHeight,
+  visibleChars,
+  textRevealBleedPx,
+}: {
+  ctx: CanvasRenderingContext2D;
+  cached: CachedTextRender;
+  safeWidth: number;
+  safeHeight: number;
+  visibleChars: number;
+  textRevealBleedPx: number;
+}) {
+  let previousCumulative = 0;
+  for (const metric of cached.lineMetrics) {
+    if (visibleChars > metric.cumulativeChars) {
+      drawTextClipped({
+        ctx,
+        cached,
+        safeWidth,
+        safeHeight,
+        leftPx: 0,
+        topPx: metric.topPx - textRevealBleedPx,
+        widthClipPx: safeWidth,
+        heightClipPx: metric.heightPx + textRevealBleedPx * 2,
+      });
+      previousCumulative = metric.cumulativeChars;
+      continue;
+    }
+
+    drawVisibleTypewriterLine({
+      ctx,
+      cached,
+      metric,
+      safeWidth,
+      safeHeight,
+      visibleChars,
+      previousCumulative,
+      textRevealBleedPx,
+    });
+    break;
+  }
+}
+
+function drawVisibleTypewriterLine({
+  ctx,
+  cached,
+  metric,
+  safeWidth,
+  safeHeight,
+  visibleChars,
+  previousCumulative,
+  textRevealBleedPx,
+}: {
+  ctx: CanvasRenderingContext2D;
+  cached: CachedTextRender;
+  metric: TypewriterLineMetric;
+  safeWidth: number;
+  safeHeight: number;
+  visibleChars: number;
+  previousCumulative: number;
+  textRevealBleedPx: number;
+}) {
+  const charsOnLine = Math.max(0, metric.cumulativeChars - previousCumulative);
+  const charsVisibleOnLine = Math.max(0, visibleChars - previousCumulative);
+  if (charsVisibleOnLine <= 0) return;
+
+  const measuredRevealWidth = metric.revealWidthsPx[charsVisibleOnLine - 1];
+  const proportionalRevealWidth = charsOnLine > 0
+    ? (metric.contentWidthPx * charsVisibleOnLine) / charsOnLine
+    : metric.contentWidthPx;
+  const revealContentWidth = Math.min(
+    metric.contentWidthPx,
+    measuredRevealWidth ?? proportionalRevealWidth,
+  );
+  const textLeft = Math.max(0, (safeWidth - metric.contentWidthPx) / 2);
+  const revealWidth = Math.max(1, Math.ceil(textLeft + revealContentWidth + textRevealBleedPx));
+  drawTextClipped({
+    ctx,
+    cached,
+    safeWidth,
+    safeHeight,
+    leftPx: 0,
+    topPx: metric.topPx - textRevealBleedPx,
+    widthClipPx: revealWidth,
+    heightClipPx: metric.heightPx + textRevealBleedPx * 2,
+  });
+}
+
 /**
  * Individual text item bounding box with drag and resize support.
  * Canvas text rendering shares the same code path as export (renderTextOnCanvas)
@@ -319,7 +623,6 @@ const TextItem = memo(function TextItem({
     const cached = ensureCachedRender(safeWidth, safeHeight);
     if (!cached) return;
 
-    const { dpr, widthPx, heightPx } = cached;
     const isTypewriter = normalizeTextAnimation(segment.animation) === 'typeWriter';
     const heightScale = renderSize.height / 1080;
     const textRevealBleedPx = Math.ceil(
@@ -329,147 +632,31 @@ const TextItem = memo(function TextItem({
       ? calculateTypewriterVisibleChars(segment, currentTimeSec, cached.totalRenderedChars)
       : cached.totalRenderedChars;
     const drawState = `${cached.key}|${visibleChars}|${isTypewriter ? 'type' : 'full'}`;
-    if (lastDrawStateRef.current === drawState) {
-      return;
-    }
+    if (lastDrawStateRef.current === drawState) return;
     lastDrawStateRef.current = drawState;
 
-    // Avoid resetting canvas dimensions on every tick (expensive).
-    if (canvas.width !== widthPx || canvas.height !== heightPx) {
-      canvas.width = widthPx;
-      canvas.height = heightPx;
-      canvasCtxRef.current = null;
-    }
+    const ctx = prepareTextPreviewContext(canvas, cached, canvasCtxRef, safeWidth, safeHeight);
+    if (!ctx) return;
 
-    let ctx = canvasCtxRef.current;
-    if (!ctx) {
-      ctx = canvas.getContext('2d', { alpha: true });
-      if (!ctx) return;
-      canvasCtxRef.current = ctx;
-    }
-
-    // Set transform per draw so coordinates stay in CSS pixels.
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.clearRect(0, 0, safeWidth, safeHeight);
-
-    const drawCanvasSlice = (
-      sourceCanvas: HTMLCanvasElement,
-      leftPx: number,
-      topPx: number,
-      widthSlicePx: number,
-      heightSlicePx: number,
-    ) => {
-      const clampedLeft = clamp(leftPx, 0, safeWidth);
-      const clampedTop = clamp(topPx, 0, safeHeight);
-      const clampedWidth = Math.min(widthSlicePx, safeWidth - clampedLeft);
-      const clampedHeight = Math.min(heightSlicePx, safeHeight - clampedTop);
-      if (clampedWidth <= 0 || clampedHeight <= 0) {
-        return;
-      }
-
-      ctx.drawImage(
-        sourceCanvas,
-        clampedLeft * dpr,
-        clampedTop * dpr,
-        clampedWidth * dpr,
-        clampedHeight * dpr,
-        clampedLeft,
-        clampedTop,
-        clampedWidth,
-        clampedHeight,
-      );
-    };
-
-    const drawBackground = () => {
-      drawCanvasSlice(cached.backgroundCanvas, 0, 0, safeWidth, safeHeight);
-    };
-
-    const drawTextClipped = (leftPx: number, topPx: number, widthClipPx: number, heightClipPx: number) => {
-      const clampedLeft = clamp(leftPx, 0, safeWidth);
-      const clampedTop = clamp(topPx, 0, safeHeight);
-      const clampedRight = clamp(leftPx + widthClipPx, 0, safeWidth);
-      const clampedBottom = clamp(topPx + heightClipPx, 0, safeHeight);
-      const clampedWidth = clampedRight - clampedLeft;
-      const clampedHeight = clampedBottom - clampedTop;
-      if (clampedWidth <= 0 || clampedHeight <= 0) {
-        return;
-      }
-
-      ctx.save();
-      ctx.beginPath();
-      ctx.rect(clampedLeft, clampedTop, clampedWidth, clampedHeight);
-      ctx.clip();
-      ctx.drawImage(cached.textCanvas, 0, 0, widthPx, heightPx, 0, 0, safeWidth, safeHeight);
-      ctx.restore();
-    };
-
-    if (!isTypewriter) {
-      drawBackground();
-      drawTextClipped(0, 0, safeWidth, safeHeight);
+    if (isTypewriter) {
+      drawTypewriterTextPreview({
+        ctx,
+        cached,
+        safeWidth,
+        safeHeight,
+        visibleChars,
+        textRevealBleedPx,
+      });
       return;
     }
 
-    drawBackground();
-
-    if (visibleChars <= 0) {
-      return;
-    }
-    if (visibleChars >= cached.totalRenderedChars) {
-      drawTextClipped(0, 0, safeWidth, safeHeight);
-      return;
-    }
-
-    if (cached.lineMetrics.length === 0) {
-      const fallbackRevealWidth = Math.max(
-        1,
-        Math.ceil(safeWidth * (visibleChars / Math.max(cached.totalRenderedChars, 1))),
-      );
-      drawTextClipped(0, 0, fallbackRevealWidth + textRevealBleedPx, safeHeight);
-      return;
-    }
-
-    let previousCumulative = 0;
-    for (const metric of cached.lineMetrics) {
-      if (visibleChars > metric.cumulativeChars) {
-        drawTextClipped(
-          0,
-          metric.topPx - textRevealBleedPx,
-          safeWidth,
-          metric.heightPx + textRevealBleedPx * 2,
-        );
-        previousCumulative = metric.cumulativeChars;
-        continue;
-      }
-
-      const charsOnLine = Math.max(0, metric.cumulativeChars - previousCumulative);
-      const charsVisibleOnLine = Math.max(0, visibleChars - previousCumulative);
-      if (charsVisibleOnLine > 0) {
-        const measuredRevealWidth = metric.revealWidthsPx[charsVisibleOnLine - 1];
-        const proportionalRevealWidth = charsOnLine > 0
-          ? (metric.contentWidthPx * charsVisibleOnLine) / charsOnLine
-          : metric.contentWidthPx;
-        const revealContentWidth = Math.min(
-          metric.contentWidthPx,
-          measuredRevealWidth ?? proportionalRevealWidth,
-        );
-        const textLeft = Math.max(0, (safeWidth - metric.contentWidthPx) / 2);
-        const revealWidth = Math.max(1, Math.ceil(textLeft + revealContentWidth + textRevealBleedPx));
-        drawTextClipped(
-          0,
-          metric.topPx - textRevealBleedPx,
-          revealWidth,
-          metric.heightPx + textRevealBleedPx * 2,
-        );
-      }
-      break;
-    }
+    drawFullTextPreview(ctx, cached, safeWidth, safeHeight);
   }, [
     ensureCachedRender,
     segment,
     currentTimeSec,
     renderSize.height,
   ]);
-
   // Render text on canvas — same code path as export for WYSIWYG
   useEffect(() => {
     drawTextPreview(width, height);

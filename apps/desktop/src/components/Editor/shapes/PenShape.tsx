@@ -1,23 +1,15 @@
 import React from 'react';
 import { Line } from 'react-konva';
 import type { BaseShapeProps } from '../../../types';
-import { useShapeCursor } from '../../../hooks/useShapeCursor';
+import { useShapeNodeProps } from './useShapeNodeProps';
 
-export const PenShape: React.FC<BaseShapeProps> = React.memo(({
-  shape,
-  isDraggable,
-  onClick,
-  onSelect,
-  onDragStart,
-  onDragEnd,
-  onTransformStart,
-  onTransformEnd,
-}) => {
-  const cursorHandlers = useShapeCursor(isDraggable);
+export const PenShape: React.FC<BaseShapeProps> = React.memo((props) => {
+  const { shape } = props;
+  const shapeNodeProps = useShapeNodeProps(props);
 
   return (
     <Line
-      id={shape.id}
+      {...shapeNodeProps}
       points={shape.points || []}
       stroke={shape.stroke}
       strokeWidth={shape.strokeWidth}
@@ -26,14 +18,6 @@ export const PenShape: React.FC<BaseShapeProps> = React.memo(({
       lineCap="round"
       lineJoin="round"
       globalCompositeOperation="source-over"
-      draggable={isDraggable}
-      onClick={onClick}
-      onTap={onSelect}
-      onDragStart={onDragStart}
-      onDragEnd={onDragEnd}
-      onTransformStart={onTransformStart}
-      onTransformEnd={onTransformEnd}
-      {...cursorHandlers}
     />
   );
 });

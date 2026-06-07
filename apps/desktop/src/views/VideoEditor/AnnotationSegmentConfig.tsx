@@ -225,6 +225,237 @@ function SortableLayerCard(props: Omit<LayerCardProps, 'dragAttributes' | 'dragL
   );
 }
 
+interface SelectedShapeControlsProps {
+  selectedShape: AnnotationShape;
+  shapeTypeOptions: AnnotationShapeType[];
+  onUpdateShape: (shapeId: string, updates: Partial<AnnotationShape>) => void;
+}
+
+function ShapeGuidance({ shapeType }: { shapeType: AnnotationShapeType }) {
+  if (shapeType === LEGACY_TEXT_SHAPE_TYPE) {
+    return (
+      <p className="text-xs text-[var(--ink-subtle)]">
+        Text annotations are legacy. Use the Text track for new text overlays.
+      </p>
+    );
+  }
+
+  if (isEndpointAnnotationShapeType(shapeType)) {
+    return (
+      <p className="text-xs text-[var(--ink-subtle)]">
+        Drag the start and end dots in the preview to position this shape.
+      </p>
+    );
+  }
+
+  return (
+    <p className="text-xs text-[var(--ink-subtle)]">
+      Drag the shape in the preview to move it, and use the resize handles to adjust its bounds.
+    </p>
+  );
+}
+
+interface ShapeSliderProps {
+  label: string;
+  value: number;
+  min: number;
+  max: number;
+  step: number;
+  valueLabel: string;
+  onValueChange: (value: number) => void;
+}
+
+function ShapeSlider({
+  label,
+  value,
+  min,
+  max,
+  step,
+  valueLabel,
+  onValueChange,
+}: ShapeSliderProps) {
+  return (
+    <div>
+      <div className="mb-2 flex items-center justify-between">
+        <span className="text-xs text-[var(--ink-muted)]">{label}</span>
+        <span className="font-mono text-xs text-[var(--ink-dark)]">{valueLabel}</span>
+      </div>
+      <Slider
+        value={[value]}
+        min={min}
+        max={max}
+        step={step}
+        onValueChange={(values) => onValueChange(values[0])}
+      />
+    </div>
+  );
+}
+
+function StrokeControls({
+  selectedShape,
+  onUpdateShape,
+}: Pick<SelectedShapeControlsProps, 'selectedShape' | 'onUpdateShape'>) {
+  return (
+    <>
+      <ShapeSlider
+        label="Stroke Width"
+        value={selectedShape.strokeWidth}
+        min={1}
+        max={24}
+        step={1}
+        valueLabel={`${selectedShape.strokeWidth.toFixed(0)}px`}
+        onValueChange={(strokeWidth) => onUpdateShape(selectedShape.id, { strokeWidth })}
+      />
+
+      <div className="space-y-3">
+        <span className="text-xs text-[var(--ink-muted)]">Stroke Color</span>
+        <ColorPicker
+          value={selectedShape.strokeColor}
+          onChange={(strokeColor) => onUpdateShape(selectedShape.id, { strokeColor })}
+          presets={COLOR_PRESETS}
+          showTransparent
+        />
+      </div>
+    </>
+  );
+}
+
+function LegacyTextControls({
+  selectedShape,
+  onUpdateShape,
+}: Pick<SelectedShapeControlsProps, 'selectedShape' | 'onUpdateShape'>) {
+  return (
+    <>
+      <div>
+        <span className="mb-2 block text-xs text-[var(--ink-muted)]">Text</span>
+        <textarea
+          value={selectedShape.text}
+          onChange={(event) => onUpdateShape(selectedShape.id, { text: event.target.value })}
+          className="h-20 w-full resize-none rounded-md border border-[var(--glass-border)] bg-[var(--polar-mist)] px-2 py-1.5 text-sm text-[var(--ink-dark)]"
+        />
+      </div>
+
+      <ShapeSlider
+        label="Font Size"
+        value={selectedShape.fontSize}
+        min={12}
+        max={160}
+        step={2}
+        valueLabel={`${selectedShape.fontSize.toFixed(0)}px`}
+        onValueChange={(fontSize) => onUpdateShape(selectedShape.id, { fontSize })}
+      />
+    </>
+  );
+}
+
+function SelectedShapeControls({
+  selectedShape,
+  shapeTypeOptions,
+  onUpdateShape,
+}: SelectedShapeControlsProps) {
+  const isStepShape = selectedShape.shapeType === 'step';
+  const isLegacyTextShape = selectedShape.shapeType === LEGACY_TEXT_SHAPE_TYPE;
+  const showStrokeControls = !isStepShape;
+  const showFillControls =
+    !isEndpointAnnotationShapeType(selectedShape.shapeType) &&
+    !isLegacyTextShape &&
+    !isStepShape;
+
+  return (
+    <>
+      <div>
+        <span className="mb-2 block text-xs text-[var(--ink-muted)]">Shape Type</span>
+        <Select
+          value={selectedShape.shapeType}
+          onValueChange={(value) =>
+            onUpdateShape(selectedShape.id, { shapeType: value as AnnotationShapeType })
+          }
+        >
+          <SelectTrigger className="h-8 w-full border-[var(--glass-border)] bg-[var(--polar-mist)] px-2 text-sm text-[var(--ink-dark)]">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent className="border-[var(--glass-border)] bg-[var(--glass-surface-dark)] text-[var(--ink-dark)]">
+            {shapeTypeOptions.map((shapeType) => (
+              <SelectItem
+                key={shapeType}
+                value={shapeType}
+                className="text-sm"
+              >
+                {getAnnotationShapeLabel(shapeType)}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
+      <ShapeGuidance shapeType={selectedShape.shapeType} />
+
+      {isStepShape && (
+        <div>
+          <span className="mb-2 block text-xs text-[var(--ink-muted)]">Step Number</span>
+          <input
+            type="number"
+            min={1}
+            max={99}
+            value={selectedShape.number}
+            onChange={(event) => onUpdateShape(selectedShape.id, {
+              number: Math.max(1, Math.round(Number(event.target.value) || 1)),
+            })}
+            className="h-8 w-full rounded-md border border-[var(--glass-border)] bg-[var(--polar-mist)] px-2 text-sm text-[var(--ink-dark)]"
+          />
+        </div>
+      )}
+
+      <ShapeSlider
+        label="Opacity"
+        value={selectedShape.opacity}
+        min={0.1}
+        max={1}
+        step={0.05}
+        valueLabel={selectedShape.opacity.toFixed(2)}
+        onValueChange={(opacity) => onUpdateShape(selectedShape.id, { opacity })}
+      />
+
+      {showStrokeControls && (
+        <StrokeControls
+          selectedShape={selectedShape}
+          onUpdateShape={onUpdateShape}
+        />
+      )}
+
+      {isStepShape && (
+        <div className="space-y-3">
+          <span className="text-xs text-[var(--ink-muted)]">Badge Color</span>
+          <ColorPicker
+            value={selectedShape.fillColor}
+            onChange={(fillColor) => onUpdateShape(selectedShape.id, { fillColor })}
+            presets={COLOR_PRESETS}
+          />
+        </div>
+      )}
+
+      {showFillControls && (
+        <div className="space-y-3">
+          <span className="text-xs text-[var(--ink-muted)]">Fill Color</span>
+          <ColorPicker
+            value={selectedShape.fillColor}
+            onChange={(fillColor) => onUpdateShape(selectedShape.id, { fillColor })}
+            presets={COLOR_PRESETS}
+            showTransparent
+          />
+        </div>
+      )}
+
+      {isLegacyTextShape && (
+        <LegacyTextControls
+          selectedShape={selectedShape}
+          onUpdateShape={onUpdateShape}
+        />
+      )}
+    </>
+  );
+}
+
 export function AnnotationSegmentConfig({
   segment,
   selectedShapeId,
@@ -282,14 +513,6 @@ export function AnnotationSegmentConfig({
   const activeLayer = activeLayerId
     ? layerRows.find((row) => row.shape.id === activeLayerId) ?? null
     : null;
-  const isStepShape = selectedShape?.shapeType === 'step';
-  const isLegacyTextShape = selectedShape?.shapeType === LEGACY_TEXT_SHAPE_TYPE;
-  const showStrokeControls = selectedShape != null && !isStepShape;
-  const showFillControls =
-    selectedShape != null &&
-    !isEndpointAnnotationShapeType(selectedShape.shapeType) &&
-    !isLegacyTextShape &&
-    !isStepShape;
   const handleLayerDragStart = (event: DragStartEvent) => {
     setActiveLayerId(String(event.active.id));
     setActiveLayerWidth(event.active.rect.current.initial?.width ?? null);
@@ -438,159 +661,11 @@ export function AnnotationSegmentConfig({
       </div>
 
       {selectedShape && (
-        <>
-          <div>
-            <span className="mb-2 block text-xs text-[var(--ink-muted)]">Shape Type</span>
-            <Select
-              value={selectedShape.shapeType}
-              onValueChange={(value) =>
-                onUpdateShape(selectedShape.id, { shapeType: value as AnnotationShapeType })
-              }
-            >
-              <SelectTrigger className="h-8 w-full border-[var(--glass-border)] bg-[var(--polar-mist)] px-2 text-sm text-[var(--ink-dark)]">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent className="border-[var(--glass-border)] bg-[var(--glass-surface-dark)] text-[var(--ink-dark)]">
-                {shapeTypeOptions.map((shapeType) => (
-                  <SelectItem
-                    key={shapeType}
-                    value={shapeType}
-                    className="text-sm"
-                  >
-                    {getAnnotationShapeLabel(shapeType)}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          {selectedShape.shapeType === LEGACY_TEXT_SHAPE_TYPE && (
-            <p className="text-xs text-[var(--ink-subtle)]">
-              Text annotations are legacy. Use the Text track for new text overlays.
-            </p>
-          )}
-
-          {isEndpointAnnotationShapeType(selectedShape.shapeType) && (
-            <p className="text-xs text-[var(--ink-subtle)]">
-              Drag the start and end dots in the preview to position this shape.
-            </p>
-          )}
-
-          {!isEndpointAnnotationShapeType(selectedShape.shapeType) && (
-            <p className="text-xs text-[var(--ink-subtle)]">
-              Drag the shape in the preview to move it, and use the resize handles to adjust its bounds.
-            </p>
-          )}
-
-          {isStepShape && (
-            <div>
-              <span className="mb-2 block text-xs text-[var(--ink-muted)]">Step Number</span>
-              <input
-                type="number"
-                min={1}
-                max={99}
-                value={selectedShape.number}
-                onChange={(event) => onUpdateShape(selectedShape.id, {
-                  number: Math.max(1, Math.round(Number(event.target.value) || 1)),
-                })}
-                className="h-8 w-full rounded-md border border-[var(--glass-border)] bg-[var(--polar-mist)] px-2 text-sm text-[var(--ink-dark)]"
-              />
-            </div>
-          )}
-
-          <div>
-            <div className="mb-2 flex items-center justify-between">
-              <span className="text-xs text-[var(--ink-muted)]">Opacity</span>
-              <span className="font-mono text-xs text-[var(--ink-dark)]">{selectedShape.opacity.toFixed(2)}</span>
-            </div>
-            <Slider
-              value={[selectedShape.opacity]}
-              min={0.1}
-              max={1}
-              step={0.05}
-              onValueChange={(values) => onUpdateShape(selectedShape.id, { opacity: values[0] })}
-            />
-          </div>
-
-          {showStrokeControls && (
-            <>
-              <div>
-                <div className="mb-2 flex items-center justify-between">
-                  <span className="text-xs text-[var(--ink-muted)]">Stroke Width</span>
-                  <span className="font-mono text-xs text-[var(--ink-dark)]">{selectedShape.strokeWidth.toFixed(0)}px</span>
-                </div>
-                <Slider
-                  value={[selectedShape.strokeWidth]}
-                  min={1}
-                  max={24}
-                  step={1}
-                  onValueChange={(values) => onUpdateShape(selectedShape.id, { strokeWidth: values[0] })}
-                />
-              </div>
-
-              <div className="space-y-3">
-                <span className="text-xs text-[var(--ink-muted)]">Stroke Color</span>
-                <ColorPicker
-                  value={selectedShape.strokeColor}
-                  onChange={(strokeColor) => onUpdateShape(selectedShape.id, { strokeColor })}
-                  presets={COLOR_PRESETS}
-                  showTransparent
-                />
-              </div>
-            </>
-          )}
-
-          {isStepShape && (
-            <div className="space-y-3">
-              <span className="text-xs text-[var(--ink-muted)]">Badge Color</span>
-              <ColorPicker
-                value={selectedShape.fillColor}
-                onChange={(fillColor) => onUpdateShape(selectedShape.id, { fillColor })}
-                presets={COLOR_PRESETS}
-              />
-            </div>
-          )}
-
-          {showFillControls && (
-            <div className="space-y-3">
-              <span className="text-xs text-[var(--ink-muted)]">Fill Color</span>
-              <ColorPicker
-                value={selectedShape.fillColor}
-                onChange={(fillColor) => onUpdateShape(selectedShape.id, { fillColor })}
-                presets={COLOR_PRESETS}
-                showTransparent
-              />
-            </div>
-          )}
-
-          {selectedShape.shapeType === LEGACY_TEXT_SHAPE_TYPE && (
-            <>
-              <div>
-                <span className="mb-2 block text-xs text-[var(--ink-muted)]">Text</span>
-                <textarea
-                  value={selectedShape.text}
-                  onChange={(event) => onUpdateShape(selectedShape.id, { text: event.target.value })}
-                  className="h-20 w-full resize-none rounded-md border border-[var(--glass-border)] bg-[var(--polar-mist)] px-2 py-1.5 text-sm text-[var(--ink-dark)]"
-                />
-              </div>
-
-              <div>
-                <div className="mb-2 flex items-center justify-between">
-                  <span className="text-xs text-[var(--ink-muted)]">Font Size</span>
-                  <span className="font-mono text-xs text-[var(--ink-dark)]">{selectedShape.fontSize.toFixed(0)}px</span>
-                </div>
-                <Slider
-                  value={[selectedShape.fontSize]}
-                  min={12}
-                  max={160}
-                  step={2}
-                  onValueChange={(values) => onUpdateShape(selectedShape.id, { fontSize: values[0] })}
-                />
-              </div>
-            </>
-          )}
-
-        </>
+        <SelectedShapeControls
+          selectedShape={selectedShape}
+          shapeTypeOptions={shapeTypeOptions}
+          onUpdateShape={onUpdateShape}
+        />
       )}
 
       {!selectedShape && (

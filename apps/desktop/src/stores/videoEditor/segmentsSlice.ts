@@ -1,4 +1,4 @@
-import type { SliceCreator } from './types';
+import type { SliceCreator, VideoEditorState } from './types';
 import { createZoomSegmentsSlice, type ZoomSegmentsSlice } from './segments/zoomSegments';
 import { createTextSegmentsSlice, type TextSegmentsSlice } from './segments/textSegments';
 import {
@@ -39,6 +39,94 @@ function getNudgedRange(startMs: number, endMs: number, deltaMs: number, duratio
     startMs: nextStartMs,
     endMs: nextStartMs + segmentDurationMs,
   };
+}
+
+function nudgeSelectedZoomRegion(
+  state: VideoEditorState,
+  project: NonNullable<VideoEditorState['project']>,
+  deltaMs: number,
+  durationMs: number
+) {
+  if (!state.selectedZoomRegionId) return false;
+  const region = project.zoom.regions.find((item) => item.id === state.selectedZoomRegionId);
+  if (!region) return true;
+  state.updateZoomRegion(region.id, getNudgedRange(region.startMs, region.endMs, deltaMs, durationMs));
+  return true;
+}
+
+function nudgeSelectedTextSegment(
+  state: VideoEditorState,
+  project: NonNullable<VideoEditorState['project']>,
+  deltaMs: number,
+  durationMs: number
+) {
+  if (!state.selectedTextSegmentId) return false;
+  const index = getTextSegmentIndexFromId(state.selectedTextSegmentId);
+  const segment = index === null ? null : project.text.segments[index];
+  if (!segment) return true;
+
+  const next = getNudgedRange(segment.start * 1000, segment.end * 1000, deltaMs, durationMs);
+  state.updateTextSegment(state.selectedTextSegmentId, {
+    start: next.startMs / 1000,
+    end: next.endMs / 1000,
+  });
+  return true;
+}
+
+function nudgeSelectedAnnotationSegment(
+  state: VideoEditorState,
+  project: NonNullable<VideoEditorState['project']>,
+  deltaMs: number,
+  durationMs: number
+) {
+  if (!state.selectedAnnotationSegmentId) return false;
+  const annotations = normalizeAnnotationConfig(project.annotations);
+  const segment = annotations.segments.find((item) => item.id === state.selectedAnnotationSegmentId);
+  if (!segment) return true;
+  state.updateAnnotationSegment(segment.id, getNudgedRange(segment.startMs, segment.endMs, deltaMs, durationMs));
+  return true;
+}
+
+function nudgeSelectedMaskSegment(
+  state: VideoEditorState,
+  project: NonNullable<VideoEditorState['project']>,
+  deltaMs: number,
+  durationMs: number
+) {
+  if (!state.selectedMaskSegmentId) return false;
+  const segment = project.mask.segments.find((item) => item.id === state.selectedMaskSegmentId);
+  if (!segment) return true;
+  state.updateMaskSegment(segment.id, getNudgedRange(segment.startMs, segment.endMs, deltaMs, durationMs));
+  return true;
+}
+
+function nudgeSelectedSceneSegment(
+  state: VideoEditorState,
+  project: NonNullable<VideoEditorState['project']>,
+  deltaMs: number,
+  durationMs: number
+) {
+  if (!state.selectedSceneSegmentId) return false;
+  const segment = project.scene.segments.find((item) => item.id === state.selectedSceneSegmentId);
+  if (!segment) return true;
+  state.updateSceneSegment(segment.id, getNudgedRange(segment.startMs, segment.endMs, deltaMs, durationMs));
+  return true;
+}
+
+function nudgeSelectedWebcamSegment(
+  state: VideoEditorState,
+  project: NonNullable<VideoEditorState['project']>,
+  deltaMs: number,
+  durationMs: number
+) {
+  if (state.selectedWebcamSegmentIndex === null) return false;
+  const segment = project.webcam.visibilitySegments[state.selectedWebcamSegmentIndex];
+  if (!segment) return true;
+  state.updateWebcamSegment(
+    state.selectedWebcamSegmentIndex,
+    getNudgedRange(segment.startMs, segment.endMs, deltaMs, durationMs)
+  );
+  return true;
 }
 
 export const createSegmentsSlice: SliceCreator<SegmentsSlice> = (set, get, store) => ({
@@ -94,58 +182,11 @@ export const createSegmentsSlice: SliceCreator<SegmentsSlice> = (set, get, store
     if (!project) return;
 
     const durationMs = project.timeline.durationMs;
-
-    if (state.selectedZoomRegionId) {
-      const region = project.zoom.regions.find((item) => item.id === state.selectedZoomRegionId);
-      if (!region) return;
-      state.updateZoomRegion(region.id, getNudgedRange(region.startMs, region.endMs, deltaMs, durationMs));
-      return;
-    }
-
-    if (state.selectedTextSegmentId) {
-      const index = getTextSegmentIndexFromId(state.selectedTextSegmentId);
-      const segment = index === null ? null : project.text.segments[index];
-      if (!segment) return;
-
-      const startMs = segment.start * 1000;
-      const endMs = segment.end * 1000;
-      const next = getNudgedRange(startMs, endMs, deltaMs, durationMs);
-      state.updateTextSegment(state.selectedTextSegmentId, {
-        start: next.startMs / 1000,
-        end: next.endMs / 1000,
-      });
-      return;
-    }
-
-    if (state.selectedAnnotationSegmentId) {
-      const annotations = normalizeAnnotationConfig(project.annotations);
-      const segment = annotations.segments.find((item) => item.id === state.selectedAnnotationSegmentId);
-      if (!segment) return;
-      state.updateAnnotationSegment(segment.id, getNudgedRange(segment.startMs, segment.endMs, deltaMs, durationMs));
-      return;
-    }
-
-    if (state.selectedMaskSegmentId) {
-      const segment = project.mask.segments.find((item) => item.id === state.selectedMaskSegmentId);
-      if (!segment) return;
-      state.updateMaskSegment(segment.id, getNudgedRange(segment.startMs, segment.endMs, deltaMs, durationMs));
-      return;
-    }
-
-    if (state.selectedSceneSegmentId) {
-      const segment = project.scene.segments.find((item) => item.id === state.selectedSceneSegmentId);
-      if (!segment) return;
-      state.updateSceneSegment(segment.id, getNudgedRange(segment.startMs, segment.endMs, deltaMs, durationMs));
-      return;
-    }
-
-    if (state.selectedWebcamSegmentIndex !== null) {
-      const segment = project.webcam.visibilitySegments[state.selectedWebcamSegmentIndex];
-      if (!segment) return;
-      state.updateWebcamSegment(
-        state.selectedWebcamSegmentIndex,
-        getNudgedRange(segment.startMs, segment.endMs, deltaMs, durationMs)
-      );
-    }
+    if (nudgeSelectedZoomRegion(state, project, deltaMs, durationMs)) return;
+    if (nudgeSelectedTextSegment(state, project, deltaMs, durationMs)) return;
+    if (nudgeSelectedAnnotationSegment(state, project, deltaMs, durationMs)) return;
+    if (nudgeSelectedMaskSegment(state, project, deltaMs, durationMs)) return;
+    if (nudgeSelectedSceneSegment(state, project, deltaMs, durationMs)) return;
+    nudgeSelectedWebcamSegment(state, project, deltaMs, durationMs);
   },
 });

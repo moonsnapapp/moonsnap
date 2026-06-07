@@ -32,6 +32,11 @@ interface UseBackgroundSettingsControllerOptions<T, TType extends SharedBackgrou
   onPatch: (patch: Partial<T>) => void;
 }
 
+interface FrameDefaultDecision {
+  applyPadding: boolean;
+  applyRounding: boolean;
+}
+
 function buildPatch<T>(
   entries: Array<[keyof T, unknown]>
 ): Partial<T> {
@@ -42,6 +47,47 @@ function buildPatch<T>(
   return patch;
 }
 
+function appendFrameDefaults<T>(
+  entries: Array<[keyof T, unknown]>,
+  keys: Pick<BackgroundKeys<T>, 'padding' | 'rounding'>,
+  defaults: FrameDefaultDecision
+) {
+  if (defaults.applyPadding) {
+    entries.push([keys.padding, BACKGROUND_DEFAULT_PADDING]);
+  }
+  if (defaults.applyRounding) {
+    entries.push([keys.rounding, BACKGROUND_DEFAULT_ROUNDING]);
+  }
+}
+
+function buildTypeChangePatch<T, TType extends SharedBackgroundType>(
+  nextType: TType,
+  typeKey: keyof T,
+  frameKeys: Pick<BackgroundKeys<T>, 'padding' | 'rounding'>,
+  padding: number,
+  rounding: number
+) {
+  const defaults = getTypeSwitchFrameDefaultDecision(nextType, padding, rounding);
+  const entries: Array<[keyof T, unknown]> = [[typeKey, nextType]];
+
+  appendFrameDefaults(entries, frameKeys, defaults);
+  return buildPatch(entries);
+}
+
+function buildToggleEnabledPatch<T>(
+  enabledKey: keyof T,
+  frameKeys: Pick<BackgroundKeys<T>, 'padding' | 'rounding'>,
+  turningOn: boolean,
+  padding: number,
+  rounding: number
+) {
+  const defaults = getEnableFrameDefaultDecision(turningOn, padding, rounding);
+  const entries: Array<[keyof T, unknown]> = [[enabledKey, turningOn]];
+
+  appendFrameDefaults(entries, frameKeys, defaults);
+  return buildPatch(entries);
+}
+
 export function useBackgroundSettingsController<
   T,
   TType extends SharedBackgroundType
@@ -50,17 +96,15 @@ export function useBackgroundSettingsController<
 
   const handleTypeChange = useCallback(
     (nextType: TType) => {
-      const defaults = getTypeSwitchFrameDefaultDecision(nextType, padding, rounding);
-      const entries: Array<[keyof T, unknown]> = [[keys.type, nextType]];
-
-      if (defaults.applyPadding) {
-        entries.push([keys.padding, BACKGROUND_DEFAULT_PADDING]);
-      }
-      if (defaults.applyRounding) {
-        entries.push([keys.rounding, BACKGROUND_DEFAULT_ROUNDING]);
-      }
-
-      onPatch(buildPatch(entries));
+      onPatch(
+        buildTypeChangePatch(
+          nextType,
+          keys.type,
+          { padding: keys.padding, rounding: keys.rounding },
+          padding,
+          rounding
+        )
+      );
     },
     [keys.padding, keys.rounding, keys.type, onPatch, padding, rounding]
   );
@@ -83,17 +127,15 @@ export function useBackgroundSettingsController<
     if (!keys.enabled || enabled === undefined) return;
 
     const turningOn = !enabled;
-    const defaults = getEnableFrameDefaultDecision(turningOn, padding, rounding);
-    const entries: Array<[keyof T, unknown]> = [[keys.enabled, turningOn]];
-
-    if (defaults.applyPadding) {
-      entries.push([keys.padding, BACKGROUND_DEFAULT_PADDING]);
-    }
-    if (defaults.applyRounding) {
-      entries.push([keys.rounding, BACKGROUND_DEFAULT_ROUNDING]);
-    }
-
-    onPatch(buildPatch(entries));
+    onPatch(
+      buildToggleEnabledPatch(
+        keys.enabled,
+        { padding: keys.padding, rounding: keys.rounding },
+        turningOn,
+        padding,
+        rounding
+      )
+    );
   }, [enabled, keys.enabled, keys.padding, keys.rounding, onPatch, padding, rounding]);
 
   return {

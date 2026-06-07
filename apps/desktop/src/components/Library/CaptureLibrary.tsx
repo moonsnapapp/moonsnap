@@ -41,6 +41,11 @@ function isEditableMediaCapture(capture: CaptureListItem): boolean {
 }
 
 type SaveCaptureFormat = 'png' | 'jpg' | 'webp' | 'gif' | 'mp4';
+type VideoProject = ReturnType<typeof useVideoEditorStore.getState>['project'];
+type SingleDeleteDialogState = Extract<NonNullable<DeleteDialogState>, { type: 'single' }>;
+type DeletePlan =
+  | { kind: 'bulk'; ids: string[]; deletedIds: Set<string>; successMessage: string }
+  | { kind: 'single'; id: string; deletedIds: Set<string>; successMessage: string };
 
 const SAVE_CAPTURE_FORMATS: Record<SaveCaptureFormat, {
   ext: SaveCaptureFormat;
@@ -88,34 +93,125 @@ function replaceFileExtension(fileName: string, extension: string): string {
   return `${baseName}.${normalizedExtension}`;
 }
 
+const SAVE_FORMAT_BY_EXTENSION: Partial<Record<string, SaveCaptureFormat>> = {
+  jpg: 'jpg',
+  jpeg: 'jpg',
+  webp: 'webp',
+  gif: 'gif',
+  mp4: 'mp4',
+  png: 'png',
+};
+
+function getFileExtension(filePath: string) {
+  return filePath.replace(/\\/g, '/').split('/').pop()?.split('.').pop()?.toLowerCase();
+}
+
 function getSaveAsFormatFromPath(filePath: string, fallback: SaveCaptureFormat): SaveCaptureFormat {
-  const extension = filePath.replace(/\\/g, '/').split('/').pop()?.split('.').pop()?.toLowerCase();
+  return SAVE_FORMAT_BY_EXTENSION[getFileExtension(filePath) ?? ''] ?? fallback;
+}
 
-  if (extension === 'jpg' || extension === 'jpeg') {
-    return 'jpg';
-  }
+function getDefaultSaveCopyPath(capture: CaptureListItem) {
+  const saveFormat = getCaptureSaveFormat(capture);
+  const originalName = capture.image_path.replace(/\\/g, '/').split('/').pop() || `capture.${saveFormat.ext}`;
+  return replaceFileExtension(originalName, saveFormat.ext);
+}
 
-  if (extension === 'webp') {
-    return 'webp';
-  }
-
-  if (extension === 'gif') {
-    return 'gif';
-  }
-
-  if (extension === 'mp4') {
-    return 'mp4';
-  }
-
-  if (extension === 'png') {
-    return 'png';
-  }
-
-  return fallback;
+async function getSaveCopyDestination(capture: CaptureListItem) {
+  return saveFileDialog({
+    title: 'Save As',
+    defaultPath: getDefaultSaveCopyPath(capture),
+    filters: getSaveAsDialogFilters(capture).map((format) => ({
+      name: format.name,
+      extensions: format.extensions,
+    })),
+  });
 }
 
 function isImageCapture(capture: CaptureListItem): boolean {
   return capture.capture_type !== 'video' && capture.capture_type !== 'gif';
+}
+
+async function saveCaptureCopy(capture: CaptureListItem, destination: string) {
+  if (isImageCapture(capture)) {
+    await invoke('save_image_as_format', {
+      sourcePath: capture.image_path,
+      destinationPath: destination,
+      format: getSaveAsFormatFromPath(destination, 'png'),
+    });
+    return;
+  }
+
+  await invoke('save_copy_of_file', {
+    sourcePath: capture.image_path,
+    destinationPath: destination,
+  });
+}
+
+function getOpenableCapture(captures: CaptureListItem[], id: string): CaptureListItem | null {
+  const capture = captures.find((candidate) => candidate.id === id);
+  if (!capture || capture.is_missing) {
+    return null;
+  }
+
+  return capture;
+}
+
+async function openCaptureInEditor({
+  capture,
+  handleEditImage,
+  handleEditVideo,
+  handleEditGif,
+}: {
+  capture: CaptureListItem;
+  handleEditImage: (capture: CaptureListItem) => Promise<void>;
+  handleEditVideo: (capture: CaptureListItem) => Promise<void>;
+  handleEditGif: (capture: CaptureListItem) => Promise<void>;
+}) {
+  if (capture.capture_type === 'video') {
+    await handleEditVideo(capture);
+    return;
+  }
+
+  if (capture.capture_type === 'gif') {
+    await handleEditGif(capture);
+    return;
+  }
+
+  await handleEditImage(capture);
+}
+
+function getBulkDeletePlan(selectedIds: Set<string>): DeletePlan {
+  const ids = Array.from(selectedIds);
+  return {
+    kind: 'bulk',
+    ids,
+    deletedIds: new Set(ids),
+    successMessage: `Deleted ${ids.length} capture${ids.length > 1 ? 's' : ''}`,
+  };
+}
+
+function getSingleDeletePlan(id: string): DeletePlan {
+  return {
+    kind: 'single',
+    id,
+    deletedIds: new Set([id]),
+    successMessage: 'Capture deleted',
+  };
+}
+
+function getDeletePlan(
+  deleteDialog: DeleteDialogState,
+  selectedIds: Set<string>
+): DeletePlan | null {
+  if (!deleteDialog) {
+    return null;
+  }
+
+  const deletePlanByType = {
+    bulk: () => getBulkDeletePlan(selectedIds),
+    single: () => getSingleDeletePlan((deleteDialog as SingleDeleteDialogState).id),
+  };
+  return deletePlanByType[deleteDialog.type]();
 }
 
 interface CaptureLibraryProps {
@@ -173,6 +269,396 @@ function groupCapturesByDate(captures: CaptureListItem[]): DateGroup[] {
   }));
 }
 
+function getEditorActiveCaptureId(currentProjectId: string | null | undefined) {
+  return currentProjectId ?? null;
+}
+
+function getVideoEditorActiveCaptureId(
+  videoProject: NonNullable<VideoProject>,
+  captures: CaptureListItem[]
+) {
+  const screenVideoPath = normalizeMediaPath(videoProject.sources.screenVideo);
+  return captures.find((capture) =>
+    capture.id === videoProject.id ||
+    normalizeMediaPath(capture.image_path) === screenVideoPath
+  )?.id ?? null;
+}
+
+function getActiveCaptureId({
+  view,
+  currentProjectId,
+  videoProject,
+  captures,
+}: {
+  view: string;
+  currentProjectId: string | null | undefined;
+  videoProject: VideoProject;
+  captures: CaptureListItem[];
+}): string | null {
+  if (view === 'editor') {
+    return getEditorActiveCaptureId(currentProjectId);
+  }
+
+  if (view !== 'videoEditor' || !videoProject) {
+    return null;
+  }
+
+  return getVideoEditorActiveCaptureId(videoProject, captures);
+}
+
+function getVirtualizationThreshold(variant: LibraryVariant): number {
+  return variant === 'sidebar' ? SIDEBAR_VIRTUALIZATION_THRESHOLD : FULL_VIRTUALIZATION_THRESHOLD;
+}
+
+function getActiveSidebarItemSize(variant: LibraryVariant): number | undefined {
+  return variant === 'sidebar' ? LAYOUT.LIBRARY_SIDEBAR_ITEM_SIZE_MIN : undefined;
+}
+
+function shouldUseCaptureVirtualization(captureCount: number, variant: LibraryVariant): boolean {
+  return captureCount > getVirtualizationThreshold(variant);
+}
+
+function hasLibraryActiveFilters({
+  filterFavorites,
+  filterTags,
+  filterMediaTypes,
+  searchQuery,
+}: {
+  filterFavorites: boolean;
+  filterTags: unknown[];
+  filterMediaTypes: unknown[];
+  searchQuery: string;
+}): boolean {
+  return getActiveFilterCount({
+    filterFavorites,
+    filterTags,
+    filterMediaTypes,
+    searchQuery,
+  }) > 0;
+}
+
+function isDeleteSelectionShortcut(event: KeyboardEvent, selectedCount: number) {
+  return selectedCount > 0 && (event.key === 'Delete' || event.key === 'Backspace');
+}
+
+function isClearSelectionShortcut(event: KeyboardEvent, selectedCount: number) {
+  return selectedCount > 0 && event.key === 'Escape';
+}
+
+async function executeDeletePlan({
+  deletePlan,
+  deleteCaptures,
+  deleteCapture,
+  setSelectedIds,
+}: {
+  deletePlan: NonNullable<DeletePlan>;
+  deleteCaptures: (ids: string[]) => Promise<void>;
+  deleteCapture: (id: string) => Promise<void>;
+  setSelectedIds: (ids: Set<string>) => void;
+}) {
+  if (deletePlan.kind === 'bulk') {
+    await deleteCaptures(deletePlan.ids);
+    setSelectedIds(new Set());
+    return;
+  }
+
+  await deleteCapture(deletePlan.id);
+}
+
+async function reopenAfterActiveCaptureDelete({
+  shouldClearActiveEditor,
+  postDeleteTarget,
+  clearActiveEditor,
+  handleOpenProject,
+}: {
+  shouldClearActiveEditor: boolean;
+  postDeleteTarget: CaptureListItem | null;
+  clearActiveEditor: () => void;
+  handleOpenProject: (id: string) => Promise<void>;
+}) {
+  if (!shouldClearActiveEditor) return;
+
+  clearActiveEditor();
+  if (postDeleteTarget) {
+    await handleOpenProject(postDeleteTarget.id);
+  }
+}
+
+function getSortedNavigableCaptures(captures: CaptureListItem[]): CaptureListItem[] {
+  return captures
+    .filter(isEditableMediaCapture)
+    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+}
+
+function findPostDeleteCapture(
+  captures: CaptureListItem[],
+  activeIndex: number,
+  deletedIds: Set<string>
+): CaptureListItem | null {
+  const afterActiveCapture = captures
+    .slice(activeIndex + 1)
+    .find((capture) => !deletedIds.has(capture.id));
+
+  return afterActiveCapture
+    ?? captures.slice(0, activeIndex).reverse().find((capture) => !deletedIds.has(capture.id))
+    ?? null;
+}
+
+function getVirtualLayoutMetrics({
+  containerWidth,
+  libraryItemScale,
+  activeSidebarItemSize,
+  variant,
+}: {
+  containerWidth: number;
+  libraryItemScale: number;
+  activeSidebarItemSize: number | undefined;
+  variant: LibraryVariant;
+}) {
+  const cardsPerRow = getColumnsForWidth(containerWidth, variant, libraryItemScale, activeSidebarItemSize);
+  const cardWidth = getCardWidth(
+    containerWidth,
+    cardsPerRow,
+    variant,
+    libraryItemScale,
+    activeSidebarItemSize
+  );
+  const gridRowHeight = calculateRowHeight(
+    containerWidth,
+    cardsPerRow,
+    variant,
+    libraryItemScale,
+    activeSidebarItemSize
+  );
+  const gridWidth = getGridWidth(
+    containerWidth,
+    cardsPerRow,
+    variant,
+    libraryItemScale,
+    activeSidebarItemSize
+  );
+
+  return { cardsPerRow, cardWidth, gridRowHeight, gridWidth };
+}
+
+function getVirtualContentOffset(variant: LibraryVariant) {
+  return variant === 'sidebar' ? SIDEBAR_CONTENT_OFFSET : CONTENT_OFFSET_Y;
+}
+
+function getVirtualContentOffsetX(variant: LibraryVariant) {
+  return variant === 'sidebar' ? SIDEBAR_CONTENT_OFFSET : CONTENT_OFFSET_X;
+}
+
+function getVirtualContainerWidth(
+  variant: LibraryVariant,
+  gridWidth: number,
+  containerWidth: number
+) {
+  return variant === 'sidebar' ? gridWidth : containerWidth;
+}
+
+function getVirtualLayout({
+  useVirtualization,
+  containerWidth,
+  dateGroups,
+  libraryItemScale,
+  activeSidebarItemSize,
+  variant,
+}: {
+  useVirtualization: boolean;
+  containerWidth: number;
+  dateGroups: DateGroup[];
+  libraryItemScale: number;
+  activeSidebarItemSize: number | undefined;
+  variant: LibraryVariant;
+}): VirtualLayoutInfo | undefined {
+  if (!useVirtualization || containerWidth === 0) return undefined;
+
+  const { cardsPerRow, cardWidth, gridRowHeight, gridWidth } = getVirtualLayoutMetrics({
+    containerWidth,
+    libraryItemScale,
+    variant,
+    activeSidebarItemSize,
+  });
+
+  return {
+    cardsPerRow,
+    gridRowHeight,
+    cardWidth,
+    headerHeight: LAYOUT.HEADER_HEIGHT,
+    gridGap: getGridGap(variant),
+    contentOffsetY: getVirtualContentOffset(variant),
+    contentOffsetX: getVirtualContentOffsetX(variant),
+    gridWidth,
+    containerWidth: getVirtualContainerWidth(variant, gridWidth, containerWidth),
+    dateGroups,
+  };
+}
+
+function getLibraryGridLayout({
+  containerWidth,
+  variant,
+  libraryItemScale,
+  activeSidebarItemSize,
+}: {
+  containerWidth: number;
+  variant: LibraryVariant;
+  libraryItemScale: number;
+  activeSidebarItemSize: number | undefined;
+}): LibraryGridLayout {
+  const width = containerWidth || 1200;
+  const columns = getColumnsForWidth(width, variant, libraryItemScale, activeSidebarItemSize);
+  const gap = getGridGap(variant);
+  const cardWidth = getCardWidth(width, columns, variant, libraryItemScale, activeSidebarItemSize);
+
+  return {
+    gap,
+    maxWidth: getGridWidth(width, columns, variant, libraryItemScale, activeSidebarItemSize),
+    gridTemplateColumns: `repeat(${columns}, minmax(0, ${cardWidth}px))`,
+    justifyContent: variant === 'sidebar' ? 'start' : 'center',
+  };
+}
+
+function getActiveFilterCount({
+  filterFavorites,
+  filterTags,
+  filterMediaTypes,
+  searchQuery,
+}: {
+  filterFavorites: boolean;
+  filterTags: unknown[];
+  filterMediaTypes: unknown[];
+  searchQuery: string;
+}): number {
+  return (
+    (filterFavorites ? 1 : 0) +
+    filterTags.length +
+    filterMediaTypes.length +
+    (searchQuery ? 1 : 0)
+  );
+}
+
+function getDeleteCount(deleteDialog: DeleteDialogState, selectedIds: Set<string>): number {
+  if (!deleteDialog) {
+    return 0;
+  }
+
+  const deleteCountByType = {
+    bulk: selectedIds.size,
+    single: 1,
+  };
+  return deleteCountByType[deleteDialog.type];
+}
+
+function getCaptureCardElement(
+  container: HTMLElement,
+  captureId: string
+): HTMLElement | null {
+  return container.querySelector<HTMLElement>(`[data-capture-id="${CSS.escape(captureId)}"]`);
+}
+
+function scrollCaptureCardIntoView(card: HTMLElement): void {
+  card.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'smooth' });
+}
+
+function scrollVirtualCaptureIntoView({
+  container,
+  rowTop,
+  gridRowHeight,
+}: {
+  container: HTMLElement;
+  rowTop: number;
+  gridRowHeight: number;
+}): void {
+  container.scrollTo({
+    top: Math.max(0, rowTop - (container.clientHeight / 2) + gridRowHeight / 2),
+    behavior: 'smooth',
+  });
+}
+
+function getCaptureRowIndexInGroup(
+  group: DateGroup,
+  captureId: string,
+  cardsPerRow: number
+): number | null {
+  for (let startIndex = 0; startIndex < group.captures.length; startIndex += cardsPerRow) {
+    const rowCaptures = group.captures.slice(startIndex, startIndex + cardsPerRow);
+    if (rowCaptures.some((capture) => capture.id === captureId)) {
+      return startIndex / cardsPerRow;
+    }
+  }
+
+  return null;
+}
+
+function getDateGroupRowsHeight(group: DateGroup, virtualLayout: VirtualLayoutInfo): number {
+  const rowCount = Math.ceil(group.captures.length / virtualLayout.cardsPerRow);
+  return rowCount * virtualLayout.gridRowHeight;
+}
+
+function getVirtualCaptureScrollTop({
+  dateGroups,
+  captureId,
+  virtualLayout,
+}: {
+  dateGroups: DateGroup[];
+  captureId: string;
+  virtualLayout: VirtualLayoutInfo;
+}): number | null {
+  let rowTop = 0;
+
+  for (const group of dateGroups) {
+    rowTop += virtualLayout.headerHeight;
+    const rowIndex = getCaptureRowIndexInGroup(group, captureId, virtualLayout.cardsPerRow);
+    if (rowIndex !== null) {
+      return rowTop + rowIndex * virtualLayout.gridRowHeight;
+    }
+
+    rowTop += getDateGroupRowsHeight(group, virtualLayout);
+  }
+
+  return null;
+}
+
+function getVideoProjectFolderPath(imagePath: string): string {
+  const sep = imagePath.includes('\\') ? '\\' : '/';
+  const parts = imagePath.split(/[/\\]/);
+  return parts.length > 1 ? parts.slice(0, -1).join(sep) : imagePath;
+}
+
+function getRevealPathForCapture(capture: CaptureListItem): string {
+  if (capture.capture_type === 'video' && !capture.quick_capture) {
+    return getVideoProjectFolderPath(capture.image_path);
+  }
+
+  return capture.image_path;
+}
+
+function scrollFocusedCaptureIntoView({
+  container,
+  captureId,
+  getCaptureScrollTop,
+  gridRowHeight,
+}: {
+  container: HTMLElement;
+  captureId: string;
+  getCaptureScrollTop: (captureId: string) => number | null;
+  gridRowHeight: number;
+}): void {
+  const card = getCaptureCardElement(container, captureId);
+  if (card) {
+    scrollCaptureCardIntoView(card);
+    return;
+  }
+
+  const rowTop = getCaptureScrollTop(captureId);
+  if (rowTop === null) {
+    return;
+  }
+
+  scrollVirtualCaptureIntoView({ container, rowTop, gridRowHeight });
+}
+
 export const CaptureLibrary: React.FC<CaptureLibraryProps> = ({
   variant = 'full',
   enableKeyboardShortcuts = true,
@@ -215,22 +701,21 @@ export const CaptureLibrary: React.FC<CaptureLibraryProps> = ({
   const totalCaptureCount = useCaptureStore((state) => state.captures.length);
   const captures = useFilteredCaptures();
   const allTags = useAllTags();
-  const hasActiveFilters = filterFavorites || filterTags.length > 0 || filterMediaTypes.length > 0 || searchQuery.length > 0;
-  const activeCaptureId = useMemo(() => {
-    if (view === 'editor') {
-      return currentProject?.id ?? null;
-    }
-
-    if (view !== 'videoEditor' || !videoProject) {
-      return null;
-    }
-
-    const screenVideoPath = normalizeMediaPath(videoProject.sources.screenVideo);
-    return captures.find((capture) =>
-      capture.id === videoProject.id ||
-      normalizeMediaPath(capture.image_path) === screenVideoPath
-    )?.id ?? null;
-  }, [captures, currentProject?.id, videoProject, view]);
+  const hasActiveFilters = hasLibraryActiveFilters({
+    filterFavorites,
+    filterTags,
+    filterMediaTypes,
+    searchQuery,
+  });
+  const activeCaptureId = useMemo(
+    () => getActiveCaptureId({
+      view,
+      currentProjectId: currentProject?.id,
+      videoProject,
+      captures,
+    }),
+    [captures, currentProject?.id, videoProject, view]
+  );
 
   const clearAllFilters = useCallback(() => {
     setSearchQuery('');
@@ -244,9 +729,7 @@ export const CaptureLibrary: React.FC<CaptureLibraryProps> = ({
   // Use virtualization for large libraries. Sidebar mode uses the same
   // renderer in a compact one-column layout so expand/collapse doesn't remount
   // a long list of capture cards.
-  const virtualizationThreshold =
-    variant === 'sidebar' ? SIDEBAR_VIRTUALIZATION_THRESHOLD : FULL_VIRTUALIZATION_THRESHOLD;
-  const useVirtualization = captures.length > virtualizationThreshold;
+  const useVirtualization = shouldUseCaptureVirtualization(captures.length, variant);
 
   // Track container width for grid and virtual layout calculations (debounced for performance)
   useEffect(() => {
@@ -274,54 +757,17 @@ export const CaptureLibrary: React.FC<CaptureLibraryProps> = ({
   const dateGroups = useMemo(() => groupCapturesByDate(captures), [captures]);
 
   // Sidebar always renders at the smallest item size; the density slider has been removed.
-  const activeSidebarItemSize =
-    variant === 'sidebar' ? LAYOUT.LIBRARY_SIDEBAR_ITEM_SIZE_MIN : undefined;
+  const activeSidebarItemSize = getActiveSidebarItemSize(variant);
 
   const virtualLayout = useMemo<VirtualLayoutInfo | undefined>(() => {
-    if (!useVirtualization || containerWidth === 0) return undefined;
-
-    // Use the same breakpoint-based column calculation as VirtualizedGrid
-    const cardsPerRow = getColumnsForWidth(containerWidth, variant, libraryItemScale, activeSidebarItemSize);
-
-    // Use the same card width calculation as VirtualizedGrid (capped at MAX_CARD_WIDTH)
-    const cardWidth = getCardWidth(
+    return getVirtualLayout({
+      useVirtualization,
       containerWidth,
-      cardsPerRow,
-      variant,
-      libraryItemScale,
-      activeSidebarItemSize
-    );
-
-    // Use dynamic row height calculation matching VirtualizedGrid
-    const gridRowHeight = calculateRowHeight(
-      containerWidth,
-      cardsPerRow,
-      variant,
-      libraryItemScale,
-      activeSidebarItemSize
-    );
-
-    // Calculate grid width for centering calculations
-    const gridWidth = getGridWidth(
-      containerWidth,
-      cardsPerRow,
-      variant,
-      libraryItemScale,
-      activeSidebarItemSize
-    );
-
-    return {
-      cardsPerRow,
-      gridRowHeight,
-      cardWidth,
-      headerHeight: LAYOUT.HEADER_HEIGHT,
-      gridGap: getGridGap(variant),
-      contentOffsetY: variant === 'sidebar' ? SIDEBAR_CONTENT_OFFSET : CONTENT_OFFSET_Y,
-      contentOffsetX: variant === 'sidebar' ? SIDEBAR_CONTENT_OFFSET : CONTENT_OFFSET_X,
-      gridWidth,
-      containerWidth: variant === 'sidebar' ? gridWidth : containerWidth,
       dateGroups,
-    };
+      libraryItemScale,
+      activeSidebarItemSize,
+      variant,
+    });
   }, [useVirtualization, containerWidth, dateGroups, libraryItemScale, activeSidebarItemSize, variant]);
 
   // Delete confirmation state - consolidated into single object
@@ -376,20 +822,17 @@ export const CaptureLibrary: React.FC<CaptureLibraryProps> = ({
   }, [onEditGif]);
 
   const handleOpenProject = useCallback(async (id: string) => {
-    const capture = captures.find(c => c.id === id);
-    if (!capture || capture.is_missing) return;
-
-    if (capture.capture_type === 'video') {
-      await handleEditVideo(capture);
+    const capture = getOpenableCapture(captures, id);
+    if (!capture) {
       return;
     }
 
-    if (capture.capture_type === 'gif') {
-      await handleEditGif(capture);
-      return;
-    }
-
-    await handleEditImage(capture);
+    await openCaptureInEditor({
+      capture,
+      handleEditImage,
+      handleEditVideo,
+      handleEditGif,
+    });
   }, [captures, handleEditImage, handleEditVideo, handleEditGif]);
 
   const getPostDeleteTarget = useCallback((deletedIds: Set<string>) => {
@@ -397,19 +840,13 @@ export const CaptureLibrary: React.FC<CaptureLibraryProps> = ({
       return null;
     }
 
-    const navigableCaptures = captures
-      .filter(isEditableMediaCapture)
-      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+    const navigableCaptures = getSortedNavigableCaptures(captures);
     const activeIndex = navigableCaptures.findIndex((capture) => capture.id === activeCaptureId);
     if (activeIndex === -1) {
       return null;
     }
 
-    return (
-      navigableCaptures.slice(activeIndex + 1).find((capture) => !deletedIds.has(capture.id)) ??
-      navigableCaptures.slice(0, activeIndex).reverse().find((capture) => !deletedIds.has(capture.id)) ??
-      null
-    );
+    return findPostDeleteCapture(navigableCaptures, activeIndex, deletedIds);
   }, [activeCaptureId, captures]);
 
   const clearActiveEditor = useCallback(() => {
@@ -448,19 +885,7 @@ export const CaptureLibrary: React.FC<CaptureLibraryProps> = ({
       return null;
     }
 
-    let rowTop = 0;
-    for (const group of dateGroups) {
-      rowTop += virtualLayout.headerHeight;
-      for (let startIndex = 0; startIndex < group.captures.length; startIndex += virtualLayout.cardsPerRow) {
-        const rowCaptures = group.captures.slice(startIndex, startIndex + virtualLayout.cardsPerRow);
-        if (rowCaptures.some((capture) => capture.id === captureId)) {
-          return rowTop;
-        }
-        rowTop += virtualLayout.gridRowHeight;
-      }
-    }
-
-    return null;
+    return getVirtualCaptureScrollTop({ dateGroups, captureId, virtualLayout });
   }, [dateGroups, virtualLayout]);
 
   useEffect(() => {
@@ -476,20 +901,11 @@ export const CaptureLibrary: React.FC<CaptureLibraryProps> = ({
         return;
       }
 
-      const card = container.querySelector<HTMLElement>(`[data-capture-id="${CSS.escape(focusedCaptureId)}"]`);
-      if (card) {
-        card.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'smooth' });
-        return;
-      }
-
-      const rowTop = getCaptureScrollTop(focusedCaptureId);
-      if (rowTop === null) {
-        return;
-      }
-
-      container.scrollTo({
-        top: Math.max(0, rowTop - (container.clientHeight / 2) + (virtualLayout?.gridRowHeight ?? 0) / 2),
-        behavior: 'smooth',
+      scrollFocusedCaptureIntoView({
+        container,
+        captureId: focusedCaptureId,
+        getCaptureScrollTop,
+        gridRowHeight: virtualLayout?.gridRowHeight ?? 0,
       });
     });
     onFocusCaptureHandled?.();
@@ -543,19 +959,16 @@ export const CaptureLibrary: React.FC<CaptureLibraryProps> = ({
     }
 
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Don't trigger if typing in an input field
       if (isTextInputTarget(e.target)) {
         return;
       }
 
-      // Delete or Backspace to delete selected captures
-      if ((e.key === 'Delete' || e.key === 'Backspace') && selectedIds.size > 0) {
+      if (isDeleteSelectionShortcut(e, selectedIds.size)) {
         e.preventDefault();
         handleRequestDeleteSelected();
       }
 
-      // Escape to clear selection
-      if (e.key === 'Escape' && selectedIds.size > 0) {
+      if (isClearSelectionShortcut(e, selectedIds.size)) {
         e.preventDefault();
         clearSelection();
       }
@@ -566,35 +979,25 @@ export const CaptureLibrary: React.FC<CaptureLibraryProps> = ({
   }, [enableKeyboardShortcuts, selectedIds.size, handleRequestDeleteSelected, clearSelection]);
 
   const handleConfirmDelete = async () => {
+    const deletePlan = getDeletePlan(deleteDialog, selectedIds);
+    if (!deletePlan) {
+      setDeleteDialog(null);
+      return;
+    }
+
     try {
-      if (deleteDialog?.type === 'bulk') {
-        const deletedIds = new Set(selectedIds);
-        const postDeleteTarget = getPostDeleteTarget(deletedIds);
-        const shouldClearActiveEditor = activeCaptureId !== null && deletedIds.has(activeCaptureId);
+      const postDeleteTarget = getPostDeleteTarget(deletePlan.deletedIds);
+      const shouldClearActiveEditor =
+        activeCaptureId !== null && deletePlan.deletedIds.has(activeCaptureId);
 
-        await deleteCaptures(Array.from(deletedIds));
-        setSelectedIds(new Set());
-        if (shouldClearActiveEditor) {
-          clearActiveEditor();
-          if (postDeleteTarget) {
-            await handleOpenProject(postDeleteTarget.id);
-          }
-        }
-        toast.success(`Deleted ${selectedIds.size} capture${selectedIds.size > 1 ? 's' : ''}`);
-      } else if (deleteDialog?.type === 'single') {
-        const deletedIds = new Set([deleteDialog.id]);
-        const postDeleteTarget = getPostDeleteTarget(deletedIds);
-        const shouldClearActiveEditor = activeCaptureId === deleteDialog.id;
-
-        await deleteCapture(deleteDialog.id);
-        if (shouldClearActiveEditor) {
-          clearActiveEditor();
-          if (postDeleteTarget) {
-            await handleOpenProject(postDeleteTarget.id);
-          }
-        }
-        toast.success('Capture deleted');
-      }
+      await executeDeletePlan({ deletePlan, deleteCaptures, deleteCapture, setSelectedIds });
+      await reopenAfterActiveCaptureDelete({
+        shouldClearActiveEditor,
+        postDeleteTarget,
+        clearActiveEditor,
+        handleOpenProject,
+      });
+      toast.success(deletePlan.successMessage);
     } catch (error) {
       reportError(error, { operation: 'delete capture' });
     }
@@ -607,16 +1010,7 @@ export const CaptureLibrary: React.FC<CaptureLibraryProps> = ({
 
   const handleOpenInFolder = useCallback(async (capture: CaptureListItem) => {
     try {
-      let revealPath = capture.image_path;
-      // For video projects, reveal the project folder instead of screen.mp4 inside it
-      if (capture.capture_type === 'video' && !capture.quick_capture) {
-        const sep = capture.image_path.includes('\\') ? '\\' : '/';
-        const parts = capture.image_path.split(/[/\\]/);
-        // Remove the filename (screen.mp4) to get the folder path
-        if (parts.length > 1) {
-          revealPath = parts.slice(0, -1).join(sep);
-        }
-      }
+      const revealPath = getRevealPathForCapture(capture);
       await invoke('reveal_file_in_explorer', { path: revealPath });
     } catch (error) {
       reportError(error, { operation: 'folder open' });
@@ -659,43 +1053,18 @@ export const CaptureLibrary: React.FC<CaptureLibraryProps> = ({
 
   const handleSaveCopy = useCallback(async (capture: CaptureListItem) => {
     try {
-      const saveFormat = getCaptureSaveFormat(capture);
-      const originalName = capture.image_path.replace(/\\/g, '/').split('/').pop() || `capture.${saveFormat.ext}`;
-      const defaultPath = replaceFileExtension(originalName, saveFormat.ext);
-      // Use original filename as default save name
-      const destination = await saveFileDialog({
-        title: 'Save As',
-        defaultPath,
-        filters: getSaveAsDialogFilters(capture).map((format) => ({
-          name: format.name,
-          extensions: format.extensions,
-        })),
-      });
-      if (destination) {
-        if (isImageCapture(capture)) {
-          await invoke('save_image_as_format', {
-            sourcePath: capture.image_path,
-            destinationPath: destination,
-            format: getSaveAsFormatFromPath(destination, 'png'),
-          });
-        } else {
-          await invoke('save_copy_of_file', {
-            sourcePath: capture.image_path,
-            destinationPath: destination,
-          });
-        }
-        toast.success('Capture saved');
+      const destination = await getSaveCopyDestination(capture);
+      if (!destination) {
+        return;
       }
+
+      await saveCaptureCopy(capture, destination);
+      toast.success('Capture saved');
     } catch (error) {
       reportError(error, { operation: 'save as' });
       toast.error('Failed to save capture');
     }
   }, []);
-
-  const getDeleteCount = () => {
-    if (deleteDialog?.type === 'bulk') return selectedIds.size;
-    return deleteDialog?.type === 'single' ? 1 : 0;
-  };
 
   const formatDate = (dateStr: string) => {
     try {
@@ -746,21 +1115,20 @@ export const CaptureLibrary: React.FC<CaptureLibraryProps> = ({
   }, [handleLibraryWheel, useVirtualization]);
 
   const gridLayout = useMemo<LibraryGridLayout>(() => {
-    const width = containerWidth || 1200;
-    const columns = getColumnsForWidth(width, variant, libraryItemScale, activeSidebarItemSize);
-    const gap = getGridGap(variant);
-    const cardWidth = getCardWidth(width, columns, variant, libraryItemScale, activeSidebarItemSize);
-
-    return {
-      gap,
-      maxWidth: getGridWidth(width, columns, variant, libraryItemScale, activeSidebarItemSize),
-      gridTemplateColumns: `repeat(${columns}, minmax(0, ${cardWidth}px))`,
-      justifyContent: variant === 'sidebar' ? 'start' : 'center',
-    };
+    return getLibraryGridLayout({
+      containerWidth,
+      variant,
+      libraryItemScale,
+      activeSidebarItemSize,
+    });
   }, [activeSidebarItemSize, containerWidth, libraryItemScale, variant]);
 
-  const activeFilterCount =
-    (filterFavorites ? 1 : 0) + filterTags.length + filterMediaTypes.length + (searchQuery ? 1 : 0);
+  const activeFilterCount = getActiveFilterCount({
+    filterFavorites,
+    filterTags,
+    filterMediaTypes,
+    searchQuery,
+  });
 
   const libraryComposition: LibraryCompositionContextValue = {
     variant,
@@ -785,7 +1153,7 @@ export const CaptureLibrary: React.FC<CaptureLibraryProps> = ({
     searchQuery,
     activeFilterCount,
     deleteDialog,
-    deleteCount: getDeleteCount(),
+    deleteCount: getDeleteCount(deleteDialog, selectedIds),
     isDragOver,
     gridLayout,
     containerRef,

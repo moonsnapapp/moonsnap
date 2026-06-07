@@ -14,6 +14,49 @@ interface MsSegment {
   endMs: number;
 }
 
+function keepAdjustedSegment<T extends MsSegment>(
+  segment: T,
+  startMs: number,
+  endMs: number,
+  minDurationMs: number
+): T | null {
+  if (endMs - startMs < minDurationMs) return null;
+  return { ...segment, startMs, endMs };
+}
+
+function adjustOverlaySegmentForDeletion<T extends MsSegment>(
+  segment: T,
+  delStartMs: number,
+  delEndMs: number,
+  deletedDuration: number,
+  minDurationMs: number
+): T | null {
+  const { startMs, endMs } = segment;
+
+  if (endMs <= delStartMs) return segment;
+  if (startMs >= delEndMs) {
+    return {
+      ...segment,
+      startMs: startMs - deletedDuration,
+      endMs: endMs - deletedDuration,
+    };
+  }
+  if (startMs >= delStartMs && endMs <= delEndMs) return null;
+  if (startMs < delStartMs && endMs <= delEndMs) {
+    return keepAdjustedSegment(segment, startMs, delStartMs, minDurationMs);
+  }
+  if (startMs >= delStartMs && endMs > delEndMs) {
+    return keepAdjustedSegment(
+      segment,
+      delStartMs,
+      delStartMs + (endMs - delEndMs),
+      minDurationMs
+    );
+  }
+
+  return keepAdjustedSegment(segment, startMs, endMs - deletedDuration, minDurationMs);
+}
+
 /**
  * Adjust overlay segments when a timeline range [delStartMs, delEndMs] is deleted.
  *
@@ -34,63 +77,16 @@ export function adjustOverlaySegmentsForDeletion<T extends MsSegment>(
   const deletedDuration = delEndMs - delStartMs;
   if (deletedDuration <= 0) return segments;
 
-  const result: T[] = [];
-
-  for (const seg of segments) {
-    const { startMs, endMs } = seg;
-
-    // Case 1: Entirely before deletion — no change
-    if (endMs <= delStartMs) {
-      result.push(seg);
-      continue;
-    }
-
-    // Case 2: Entirely after deletion — shift left
-    if (startMs >= delEndMs) {
-      const adjusted = {
-        ...seg,
-        startMs: startMs - deletedDuration,
-        endMs: endMs - deletedDuration,
-      };
-      result.push(adjusted);
-      continue;
-    }
-
-    // Case 3: Entirely within deletion — remove
-    if (startMs >= delStartMs && endMs <= delEndMs) {
-      continue;
-    }
-
-    // Case 4: Overlaps start of deletion (segment starts before, ends within)
-    if (startMs < delStartMs && endMs <= delEndMs) {
-      const newEnd = delStartMs;
-      if (newEnd - startMs >= minDurationMs) {
-        result.push({ ...seg, endMs: newEnd });
-      }
-      continue;
-    }
-
-    // Case 5: Overlaps end of deletion (segment starts within, ends after)
-    if (startMs >= delStartMs && endMs > delEndMs) {
-      const newStart = delStartMs;
-      const newEnd = delStartMs + (endMs - delEndMs);
-      if (newEnd - newStart >= minDurationMs) {
-        result.push({ ...seg, startMs: newStart, endMs: newEnd });
-      }
-      continue;
-    }
-
-    // Case 6: Encloses deletion (segment starts before, ends after)
-    if (startMs < delStartMs && endMs > delEndMs) {
-      const newEnd = endMs - deletedDuration;
-      if (newEnd - startMs >= minDurationMs) {
-        result.push({ ...seg, endMs: newEnd });
-      }
-      continue;
-    }
-  }
-
-  return result;
+  return segments.flatMap((segment) => {
+    const adjusted = adjustOverlaySegmentForDeletion(
+      segment,
+      delStartMs,
+      delEndMs,
+      deletedDuration,
+      minDurationMs
+    );
+    return adjusted ? [adjusted] : [];
+  });
 }
 
 /**

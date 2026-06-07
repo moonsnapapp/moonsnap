@@ -12,6 +12,26 @@ interface SystemAudioToggleProps {
   disabled?: boolean;
 }
 
+function getSystemAudioButtonClassName(isEnabled: boolean) {
+  return [
+    'glass-device-btn glass-device-btn--toggle',
+    isEnabled ? 'glass-device-btn--active' : null,
+  ].filter(Boolean).join(' ');
+}
+
+function getSystemAudioTitle(isEnabled: boolean) {
+  return isEnabled ? 'System audio enabled' : 'System audio disabled';
+}
+
+function getSystemAudioLabel(isEnabled: boolean) {
+  return isEnabled ? 'System Audio' : 'System Muted';
+}
+
+function SystemAudioIcon({ isEnabled }: { isEnabled: boolean }) {
+  const Icon = isEnabled ? Volume2 : VolumeX;
+  return <Icon size={14} strokeWidth={1.5} />;
+}
+
 export const SystemAudioToggle: React.FC<SystemAudioToggleProps> = ({ disabled = false }) => {
   const { settings, updateVideoSettings } = useCaptureSettingsStore();
   const isEnabled = settings.video.captureSystemAudio;
@@ -23,19 +43,14 @@ export const SystemAudioToggle: React.FC<SystemAudioToggleProps> = ({ disabled =
   return (
     <button
       onClick={handleToggle}
-      className={`glass-device-btn glass-device-btn--toggle ${isEnabled ? 'glass-device-btn--active' : ''}`}
+      className={getSystemAudioButtonClassName(isEnabled)}
       disabled={disabled}
-      title={isEnabled ? 'System audio enabled' : 'System audio disabled'}
+      title={getSystemAudioTitle(isEnabled)}
     >
-      {isEnabled ? (
-        <Volume2 size={14} strokeWidth={1.5} />
-      ) : (
-        <VolumeX size={14} strokeWidth={1.5} />
-      )}
+      <SystemAudioIcon isEnabled={isEnabled} />
       <span className="glass-device-label">
-        {isEnabled ? 'System Audio' : 'System Muted'}
+        {getSystemAudioLabel(isEnabled)}
       </span>
     </button>
   );
 };
-

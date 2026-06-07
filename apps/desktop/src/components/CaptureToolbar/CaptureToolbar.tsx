@@ -127,6 +127,527 @@ function formatTime(seconds: number): string {
   return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
 }
 
+interface RecordingToolbarProps {
+  mode: ToolbarMode;
+  minimalChrome: CaptureToolbarProps['minimalChrome'];
+  isRecording: boolean;
+  isStarting: boolean;
+  isProcessing: boolean;
+  isError: boolean;
+  isPaused: boolean;
+  isGif: boolean;
+  format: RecordingFormat;
+  elapsedTime: number;
+  countdownSeconds?: number;
+  errorMessage?: string;
+  onPauseResume: () => void;
+  onStop?: () => void;
+  onCancel: () => void;
+  shouldShowRecordingAudioIndicators: boolean;
+  isMicEnabled: boolean;
+  micActive: boolean;
+  micLevel: number;
+  isSystemAudioEnabled: boolean;
+  systemActive: boolean;
+  systemLevel: number;
+}
+
+function RecordingToolbar({
+  minimalChrome,
+  isRecording,
+  isStarting,
+  isProcessing,
+  isError,
+  isPaused,
+  isGif,
+  format,
+  elapsedTime,
+  countdownSeconds,
+  errorMessage,
+  onPauseResume,
+  onStop,
+  onCancel,
+  shouldShowRecordingAudioIndicators,
+  isMicEnabled,
+  micActive,
+  micLevel,
+  isSystemAudioEnabled,
+  systemActive,
+  systemLevel,
+}: RecordingToolbarProps) {
+  return (
+    <div
+      className={`glass-toolbar glass-toolbar--minimal ${
+        minimalChrome === 'floating' ? 'glass-toolbar--minimal-floating' : ''
+      } pointer-events-auto`}
+    >
+      {isRecording && (
+        <div className="glass-recording-section">
+          <div className={`glass-recording-dot ${isPaused ? 'glass-recording-dot--paused' : ''}`} />
+          <span className="glass-text glass-text--mono text-sm font-medium">
+            {formatTime(elapsedTime)}
+          </span>
+          <div className={`glass-badge glass-recording-format-badge uppercase select-none ${
+            isGif ? 'glass-badge--purple' : 'glass-badge--blue'
+          }`}>
+            {format}
+          </div>
+        </div>
+      )}
+
+      {isStarting && (
+        <div className="glass-countdown-section">
+          {countdownSeconds !== undefined && countdownSeconds > 0 ? (
+            <div className="glass-countdown-large select-none">
+              {countdownSeconds}
+            </div>
+          ) : (
+            <div className="glass-spinner-large" />
+          )}
+        </div>
+      )}
+
+      {isProcessing && (
+        <div className="glass-processing-section">
+          <div className="glass-spinner" />
+          <span className="glass-text--muted text-xs select-none">
+            Saving...
+          </span>
+        </div>
+      )}
+
+      {isError && (
+        <div className="glass-error-section">
+          <div className="w-3 h-3 rounded-full bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.6)]" />
+          <span className="text-red-400 text-[10px] select-none">
+            {errorMessage || 'Failed'}
+          </span>
+        </div>
+      )}
+
+      {shouldShowRecordingAudioIndicators && (
+        <>
+          <div className="glass-divider-vertical" />
+          <div className="glass-recording-audio-section">
+            <RecordingAudioIndicator
+              enabled={isMicEnabled}
+              active={micActive}
+              level={micLevel}
+              disabledTitle="Microphone disabled"
+              activeTitle="Microphone level"
+              idleTitle="Microphone idle"
+              icon={<Mic size={12} strokeWidth={2} />}
+            />
+            <RecordingAudioIndicator
+              enabled={isSystemAudioEnabled}
+              active={systemActive}
+              level={systemLevel}
+              disabledTitle="System audio disabled"
+              activeTitle="System audio level"
+              idleTitle="System audio idle"
+              icon={<Volume2 size={12} strokeWidth={2} />}
+            />
+          </div>
+        </>
+      )}
+
+      <div className="glass-divider-vertical" />
+
+      <div className="glass-controls-section">
+        {isRecording && (
+          <button
+            type="button"
+            onClick={onPauseResume}
+            className="glass-btn glass-btn--md"
+            aria-label={isPaused ? 'Resume recording' : 'Pause recording'}
+            title={isPaused ? 'Resume' : 'Pause'}
+          >
+            {isPaused ? (
+              <Circle size={14} className="text-red-400" fill="currentColor" />
+            ) : (
+              <Pause size={14} className="text-amber-400" fill="currentColor" />
+            )}
+          </button>
+        )}
+
+        {isRecording && (
+          <button
+            type="button"
+            onClick={onStop}
+            className="glass-btn glass-btn--md"
+            aria-label="Stop and save recording"
+            title="Stop and save"
+          >
+            <Square size={14} className="glass-recording-stop-icon" fill="currentColor" />
+          </button>
+        )}
+
+        <button
+          type="button"
+          onClick={onCancel}
+          className="glass-btn glass-btn--md glass-btn--danger"
+          aria-label="Cancel recording"
+          title="Cancel"
+        >
+          <X size={14} strokeWidth={2.5} />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function RecordingAudioIndicator({
+  enabled,
+  active,
+  level,
+  disabledTitle,
+  activeTitle,
+  idleTitle,
+  icon,
+}: {
+  enabled: boolean;
+  active: boolean;
+  level: number;
+  disabledTitle: string;
+  activeTitle: string;
+  idleTitle: string;
+  icon: React.ReactNode;
+}) {
+  return (
+    <div
+      className={`glass-recording-audio-indicator ${
+        !enabled || !active ? 'glass-recording-audio-indicator--inactive' : ''
+      }`}
+      title={!enabled ? disabledTitle : active ? activeTitle : idleTitle}
+    >
+      {icon}
+      <AudioLevelMeter
+        enabled={enabled}
+        level={enabled ? level : 0}
+        className="glass-audio-meter--recording"
+      />
+    </div>
+  );
+}
+
+function FloatingToolbarHeader({
+  onMinimizeToolbar,
+  onCloseToolbar,
+  onCancel,
+}: {
+  onMinimizeToolbar?: () => void;
+  onCloseToolbar?: () => void;
+  onCancel: () => void;
+}) {
+  return (
+    <div className="glass-toolbar-top-strip">
+      <div className="glass-toolbar-top-strip-spacer" aria-hidden="true" />
+
+      <div className="glass-toolbar-brand" aria-hidden="true">
+        <span className="glass-toolbar-brand-wordmark">MoonSnap</span>
+      </div>
+
+      <div className="glass-toolbar-window-controls">
+        {onMinimizeToolbar && (
+          <button
+            type="button"
+            onClick={onMinimizeToolbar}
+            className="glass-btn glass-btn--md glass-toolbar-action-btn glass-toolbar-window-control"
+            aria-label="Minimize capture toolbar"
+            title="Minimize capture toolbar"
+          >
+            <Minus size={14} strokeWidth={2.5} />
+          </button>
+        )}
+
+        <button
+          type="button"
+          onClick={onCloseToolbar ?? onCancel}
+          className="glass-btn glass-btn--md glass-toolbar-action-btn glass-toolbar-action-btn--close glass-toolbar-window-control"
+          aria-label="Close capture toolbar"
+          title="Close capture toolbar"
+        >
+          <X size={14} strokeWidth={2.5} />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function CaptureTargetControl({
+  selectionConfirmed,
+  sourceType,
+  sourceTitle,
+  monitorName,
+  monitorIndex,
+  width,
+  height,
+  captureType,
+  onRedo,
+  onDimensionChange,
+  onSaveAreaSelection,
+  isCurrentAreaSaved,
+  isAreaSaveDisabled,
+  onSelectLastArea,
+  onSelectSavedArea,
+  onDeleteSavedArea,
+  onCaptureComplete,
+  lastAreaSelection,
+  savedAreaSelections,
+  toolbarOwner,
+  disabled,
+  onSourceChange,
+}: {
+  selectionConfirmed: boolean;
+  sourceType?: 'area' | 'window' | 'display';
+  sourceTitle?: string | null;
+  monitorName?: string | null;
+  monitorIndex?: number | null;
+  width: number;
+  height: number;
+  captureType: CaptureType;
+  onRedo: () => void;
+  onDimensionChange?: (width: number, height: number) => void;
+  onSaveAreaSelection?: () => void;
+  isCurrentAreaSaved: boolean;
+  isAreaSaveDisabled: boolean;
+  onSelectLastArea?: () => void;
+  onSelectSavedArea?: (selection: SavedAreaSelection) => void;
+  onDeleteSavedArea?: (id: string) => void;
+  onCaptureComplete?: () => void;
+  lastAreaSelection?: AreaSelectionBounds | null;
+  savedAreaSelections: SavedAreaSelection[];
+  toolbarOwner?: string;
+  disabled: boolean;
+  onSourceChange: (source: CaptureSource) => void;
+}) {
+  if (selectionConfirmed) {
+    if (sourceType === 'window' || sourceType === 'display') {
+      return (
+        <SourceInfoDisplay
+          sourceType={sourceType}
+          sourceTitle={sourceTitle}
+          monitorName={monitorName}
+          monitorIndex={monitorIndex}
+          onBack={onRedo}
+          disabled={disabled}
+        />
+      );
+    }
+
+    return (
+      <DimensionSelect
+        width={width}
+        height={height}
+        onDimensionChange={onDimensionChange}
+        onBack={onRedo}
+        onSaveArea={onSaveAreaSelection}
+        isAreaSaved={isCurrentAreaSaved}
+        isAreaSaveDisabled={isAreaSaveDisabled}
+        saveAreaTitle="Save this area"
+        disabled={disabled}
+      />
+    );
+  }
+
+  return (
+    <SourceSelector
+      onSelectArea={() => onSourceChange('area')}
+      onSelectLastArea={onSelectLastArea}
+      onSelectSavedArea={onSelectSavedArea}
+      onDeleteSavedArea={onDeleteSavedArea}
+      captureType={captureType}
+      onCaptureComplete={onCaptureComplete}
+      lastAreaSelection={lastAreaSelection}
+      savedAreaSelections={savedAreaSelections}
+      toolbarOwner={toolbarOwner}
+      disabled={disabled}
+    />
+  );
+}
+
+function CaptureDeviceControls({
+  isVideoMode,
+  isBusy,
+  isMicEnabled,
+  micLevel,
+  isSystemAudioEnabled,
+  systemLevel,
+}: {
+  isVideoMode: boolean;
+  isBusy: boolean;
+  isMicEnabled: boolean;
+  micLevel: number;
+  isSystemAudioEnabled: boolean;
+  systemLevel: number;
+}) {
+  return (
+    <div className={`glass-devices-section ${!isVideoMode ? 'glass-devices-section--disabled' : ''}`}>
+      <div className="glass-device-column">
+        <DevicePopover disabled={!isVideoMode || isBusy} />
+        <div className="glass-audio-meter--column-spacer" />
+      </div>
+
+      <div className="glass-device-column">
+        <MicrophonePopover disabled={!isVideoMode || isBusy} />
+        <AudioLevelMeter
+          enabled
+          level={isMicEnabled && isVideoMode ? micLevel : 0}
+          className="glass-audio-meter--column"
+        />
+      </div>
+
+      <div className="glass-device-column">
+        <SystemAudioPopover disabled={!isVideoMode || isBusy} />
+        <AudioLevelMeter
+          enabled
+          level={isSystemAudioEnabled && isVideoMode ? systemLevel : 0}
+          className="glass-audio-meter--column"
+        />
+      </div>
+    </div>
+  );
+}
+
+function ToolbarActions({
+  onOpenLibrary,
+  minimalChrome,
+  onMinimizeToolbar,
+  onCloseToolbar,
+  onCancel,
+}: {
+  onOpenLibrary?: () => void;
+  minimalChrome: CaptureToolbarProps['minimalChrome'];
+  onMinimizeToolbar?: () => void;
+  onCloseToolbar?: () => void;
+  onCancel: () => void;
+}) {
+  if (!onOpenLibrary && minimalChrome === 'floating') {
+    return null;
+  }
+
+  return (
+    <div className="glass-toolbar-actions">
+      {onOpenLibrary && (
+        <button
+          type="button"
+          onClick={onOpenLibrary}
+          className="glass-btn glass-btn--md glass-toolbar-action-btn"
+          aria-label="Open library"
+          title="Open library"
+        >
+          <FolderOpen size={14} strokeWidth={2.2} />
+        </button>
+      )}
+
+      {minimalChrome !== 'floating' && onMinimizeToolbar && (
+        <button
+          type="button"
+          onClick={onMinimizeToolbar}
+          className="glass-btn glass-btn--md glass-toolbar-action-btn"
+          aria-label="Minimize capture toolbar"
+          title="Minimize capture toolbar"
+        >
+          <Minus size={14} strokeWidth={2.5} />
+        </button>
+      )}
+
+      {minimalChrome !== 'floating' && (
+        <button
+          type="button"
+          onClick={onCloseToolbar ?? onCancel}
+          className="glass-btn glass-btn--md glass-toolbar-action-btn glass-toolbar-action-btn--close"
+          aria-label="Close capture toolbar"
+          title="Close capture toolbar"
+        >
+          <X size={14} strokeWidth={2.5} />
+        </button>
+      )}
+    </div>
+  );
+}
+
+function CaptureActionButton({
+  captureType,
+  selectionConfirmed,
+  onCapture,
+}: {
+  captureType: CaptureType;
+  selectionConfirmed: boolean;
+  onCapture: () => void;
+}) {
+  const label = captureType === 'screenshot' ? 'Take screenshot' : 'Start recording';
+
+  return (
+    <button
+      type="button"
+      onClick={onCapture}
+      className="glass-capture-btn-hardware"
+      aria-label={label}
+      title={label}
+      disabled={!selectionConfirmed}
+    >
+      <Circle size={14} fill="currentColor" strokeWidth={0} />
+    </button>
+  );
+}
+
+function getCaptureToolbarState(
+  mode: ToolbarMode,
+  captureType: CaptureType,
+  format: RecordingFormat
+) {
+  const isGif = captureType === 'gif' || format === 'gif';
+  const isRecording = mode === 'recording' || mode === 'paused';
+  const isStarting = mode === 'starting';
+  const isProcessing = mode === 'processing';
+  const isError = mode === 'error';
+  const isBusy = isRecording || isStarting || isProcessing;
+
+  return {
+    isGif,
+    isRecording,
+    isStarting,
+    isProcessing,
+    isError,
+    isPaused: mode === 'paused',
+    isVideoMode: captureType === 'video',
+    supportsRecordingAudio: captureType === 'video' && !isGif,
+    isBusy,
+    showsRecordingToolbar: isRecording || isStarting || isProcessing || isError,
+  };
+}
+
+function getCaptureAudioState({
+  recordingAudioConfig,
+  settings,
+  showRecordingAudioIndicators,
+  isRecording,
+  supportsRecordingAudio,
+}: {
+  recordingAudioConfig: CaptureToolbarProps['recordingAudioConfig'];
+  settings: ReturnType<typeof useCaptureSettingsStore.getState>['settings'];
+  showRecordingAudioIndicators: boolean;
+  isRecording: boolean;
+  supportsRecordingAudio: boolean;
+}) {
+  const micDeviceIndex = recordingAudioConfig?.microphoneDeviceIndex ?? settings.video.microphoneDeviceIndex;
+  const isMicEnabled = micDeviceIndex !== null;
+  const isSystemAudioEnabled = recordingAudioConfig?.systemAudioEnabled ?? settings.video.captureSystemAudio;
+  const shouldShowRecordingAudioIndicators = Boolean(
+    showRecordingAudioIndicators &&
+    isRecording &&
+    supportsRecordingAudio
+  );
+
+  return {
+    micDeviceIndex,
+    isMicEnabled,
+    isSystemAudioEnabled,
+    shouldShowRecordingAudioIndicators,
+  };
+}
+
 export const CaptureToolbar: React.FC<CaptureToolbarProps> = ({
   mode,
   captureType,
@@ -168,36 +689,26 @@ export const CaptureToolbar: React.FC<CaptureToolbarProps> = ({
   showRecordingAudioIndicators = false,
   recordingAudioConfig,
 }) => {
-  const isGif = captureType === 'gif' || format === 'gif';
-  const isRecording = mode === 'recording' || mode === 'paused';
-  const isStarting = mode === 'starting';
-  const isProcessing = mode === 'processing';
-  const isError = mode === 'error';
-  const isPaused = mode === 'paused';
-  const isVideoMode = captureType === 'video'; // Selection UI: only video supports webcam/audio
-  const supportsRecordingAudio = isVideoMode && !isGif;
-  const isBusy = isRecording || isStarting || isProcessing; // Disable controls during capture
+  const toolbarState = getCaptureToolbarState(mode, captureType, format);
   const updateChannel = useSettingsStore((s) => s.settings.general.updateChannel);
   useUpdater(true, updateChannel);
 
   // Get audio settings for level meters
   const { settings } = useCaptureSettingsStore();
-  const micDeviceIndex = recordingAudioConfig?.microphoneDeviceIndex ?? settings.video.microphoneDeviceIndex;
-  const isMicEnabled = micDeviceIndex !== null;
-  const isSystemAudioEnabled = recordingAudioConfig?.systemAudioEnabled ?? settings.video.captureSystemAudio;
-
-  const shouldShowRecordingAudioIndicators = Boolean(
-    showRecordingAudioIndicators &&
-    isRecording &&
-    supportsRecordingAudio
-  );
+  const audioState = getCaptureAudioState({
+    recordingAudioConfig,
+    settings,
+    showRecordingAudioIndicators,
+    isRecording: toolbarState.isRecording,
+    supportsRecordingAudio: toolbarState.supportsRecordingAudio,
+  });
 
   // Use Rust WASAPI audio monitoring for both mic and system audio
   // This provides accurate levels from the same sources used during recording
   const { micLevel, systemLevel, micActive, systemActive } = useRustAudioLevels({
-    micDeviceIndex: isMicEnabled ? micDeviceIndex : null,
-    monitorSystemAudio: isSystemAudioEnabled,
-    enabled: supportsRecordingAudio && (!isBusy || shouldShowRecordingAudioIndicators),
+    micDeviceIndex: audioState.isMicEnabled ? audioState.micDeviceIndex : null,
+    monitorSystemAudio: audioState.isSystemAudioEnabled,
+    enabled: toolbarState.supportsRecordingAudio && (!toolbarState.isBusy || audioState.shouldShowRecordingAudioIndicators),
   });
 
   // Handle pause/resume toggle
@@ -211,168 +722,45 @@ export const CaptureToolbar: React.FC<CaptureToolbarProps> = ({
 
   // Disable mode changes during recording
   const handleModeChange = useCallback((newMode: CaptureType) => {
-    if (!isBusy) {
+    if (!toolbarState.isBusy) {
       onCaptureTypeChange(newMode);
     }
-  }, [isBusy, onCaptureTypeChange]);
+  }, [onCaptureTypeChange, toolbarState.isBusy]);
 
   // Handle source change
   const handleSourceChange = useCallback((source: CaptureSource) => {
-    if (!isBusy) {
+    if (!toolbarState.isBusy) {
       onCaptureSourceChange?.(source);
     }
-  }, [isBusy, onCaptureSourceChange]);
+  }, [onCaptureSourceChange, toolbarState.isBusy]);
 
   // Render recording UI
-  if (isRecording || isStarting || isProcessing || isError) {
+  if (toolbarState.showsRecordingToolbar) {
     return (
-      <div
-        className={`glass-toolbar glass-toolbar--minimal ${
-          minimalChrome === 'floating' ? 'glass-toolbar--minimal-floating' : ''
-        } pointer-events-auto`}
-      >
-        {/* Recording status */}
-        {isRecording && (
-          <div className="glass-recording-section">
-            <div className={`glass-recording-dot ${isPaused ? 'glass-recording-dot--paused' : ''}`} />
-            <span className="glass-text glass-text--mono text-sm font-medium">
-              {formatTime(elapsedTime)}
-            </span>
-            <div className={`glass-badge glass-recording-format-badge uppercase select-none ${
-              isGif ? 'glass-badge--purple' : 'glass-badge--blue'
-            }`}>
-              {format}
-            </div>
-          </div>
-        )}
-
-        {/* Countdown */}
-        {isStarting && (
-          <div className="glass-countdown-section">
-            {countdownSeconds !== undefined && countdownSeconds > 0 ? (
-              <div className="glass-countdown-large select-none">
-                {countdownSeconds}
-              </div>
-            ) : (
-              <div className="glass-spinner-large" />
-            )}
-          </div>
-        )}
-
-        {/* Processing */}
-        {isProcessing && (
-          <div className="glass-processing-section">
-            <div className="glass-spinner" />
-            <span className="glass-text--muted text-xs select-none">
-              Saving...
-            </span>
-          </div>
-        )}
-
-        {/* Error */}
-        {isError && (
-          <div className="glass-error-section">
-            <div className="w-3 h-3 rounded-full bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.6)]" />
-            <span className="text-red-400 text-[10px] select-none">
-              {errorMessage || 'Failed'}
-            </span>
-          </div>
-        )}
-
-        {/* Divider */}
-        {shouldShowRecordingAudioIndicators && (
-          <>
-            <div className="glass-divider-vertical" />
-            <div className="glass-recording-audio-section">
-              <div
-                className={`glass-recording-audio-indicator ${
-                  !isMicEnabled || !micActive ? 'glass-recording-audio-indicator--inactive' : ''
-                }`}
-                title={
-                  !isMicEnabled
-                    ? 'Microphone disabled'
-                    : micActive
-                      ? 'Microphone level'
-                      : 'Microphone idle'
-                }
-              >
-                <Mic size={12} strokeWidth={2} />
-                <AudioLevelMeter
-                  enabled={isMicEnabled}
-                  level={isMicEnabled ? micLevel : 0}
-                  className="glass-audio-meter--recording"
-                />
-              </div>
-
-              <div
-                className={`glass-recording-audio-indicator ${
-                  !isSystemAudioEnabled || !systemActive ? 'glass-recording-audio-indicator--inactive' : ''
-                }`}
-                title={
-                  !isSystemAudioEnabled
-                    ? 'System audio disabled'
-                    : systemActive
-                      ? 'System audio level'
-                      : 'System audio idle'
-                }
-              >
-                <Volume2 size={12} strokeWidth={2} />
-                <AudioLevelMeter
-                  enabled={isSystemAudioEnabled}
-                  level={isSystemAudioEnabled ? systemLevel : 0}
-                  className="glass-audio-meter--recording"
-                />
-              </div>
-            </div>
-          </>
-        )}
-
-        <div className="glass-divider-vertical" />
-
-        {/* Controls */}
-        <div className="glass-controls-section">
-          {/* Pause/Resume button */}
-          {isRecording && (
-            <button
-              type="button"
-              onClick={handlePauseResume}
-              className="glass-btn glass-btn--md"
-              aria-label={isPaused ? 'Resume recording' : 'Pause recording'}
-              title={isPaused ? 'Resume' : 'Pause'}
-            >
-              {isPaused ? (
-                <Circle size={14} className="text-red-400" fill="currentColor" />
-              ) : (
-                <Pause size={14} className="text-amber-400" fill="currentColor" />
-              )}
-            </button>
-          )}
-
-          {/* Stop button */}
-          {isRecording && (
-            <button
-              type="button"
-              onClick={onStop}
-              className="glass-btn glass-btn--md"
-              aria-label="Stop and save recording"
-              title="Stop and save"
-            >
-              <Square size={14} className="glass-recording-stop-icon" fill="currentColor" />
-            </button>
-          )}
-
-          {/* Cancel button */}
-          <button
-            type="button"
-            onClick={onCancel}
-            className="glass-btn glass-btn--md glass-btn--danger"
-            aria-label="Cancel recording"
-            title="Cancel"
-          >
-            <X size={14} strokeWidth={2.5} />
-          </button>
-        </div>
-      </div>
+      <RecordingToolbar
+        mode={mode}
+        minimalChrome={minimalChrome}
+        isRecording={toolbarState.isRecording}
+        isStarting={toolbarState.isStarting}
+        isProcessing={toolbarState.isProcessing}
+        isError={toolbarState.isError}
+        isPaused={toolbarState.isPaused}
+        isGif={toolbarState.isGif}
+        format={format}
+        elapsedTime={elapsedTime}
+        countdownSeconds={countdownSeconds}
+        errorMessage={errorMessage}
+        onPauseResume={handlePauseResume}
+        onStop={onStop}
+        onCancel={onCancel}
+        shouldShowRecordingAudioIndicators={audioState.shouldShowRecordingAudioIndicators}
+        isMicEnabled={audioState.isMicEnabled}
+        micActive={micActive}
+        micLevel={micLevel}
+        isSystemAudioEnabled={audioState.isSystemAudioEnabled}
+        systemActive={systemActive}
+        systemLevel={systemLevel}
+      />
     );
   }
 
@@ -384,37 +772,11 @@ export const CaptureToolbar: React.FC<CaptureToolbarProps> = ({
       } pointer-events-auto`}
     >
       {minimalChrome === 'floating' && (
-        <div className="glass-toolbar-top-strip">
-          <div className="glass-toolbar-top-strip-spacer" aria-hidden="true" />
-
-          <div className="glass-toolbar-brand" aria-hidden="true">
-            <span className="glass-toolbar-brand-wordmark">MoonSnap</span>
-          </div>
-
-          <div className="glass-toolbar-window-controls">
-            {onMinimizeToolbar && (
-              <button
-                type="button"
-                onClick={onMinimizeToolbar}
-                className="glass-btn glass-btn--md glass-toolbar-action-btn glass-toolbar-window-control"
-                aria-label="Minimize capture toolbar"
-                title="Minimize capture toolbar"
-              >
-                <Minus size={14} strokeWidth={2.5} />
-              </button>
-            )}
-
-            <button
-              type="button"
-              onClick={onCloseToolbar ?? onCancel}
-              className="glass-btn glass-btn--md glass-toolbar-action-btn glass-toolbar-action-btn--close glass-toolbar-window-control"
-              aria-label="Close capture toolbar"
-              title="Close capture toolbar"
-            >
-              <X size={14} strokeWidth={2.5} />
-            </button>
-          </div>
-        </div>
+        <FloatingToolbarHeader
+          onMinimizeToolbar={onMinimizeToolbar}
+          onCloseToolbar={onCloseToolbar}
+          onCancel={onCancel}
+        />
       )}
 
       {/* Row 1: Mode selector (Video/GIF/Screenshot) - full width */}
@@ -422,7 +784,7 @@ export const CaptureToolbar: React.FC<CaptureToolbarProps> = ({
         <ModeSelector
           activeMode={captureType}
           onModeChange={handleModeChange}
-          disabled={isBusy}
+          disabled={toolbarState.isBusy}
           fullWidth
         />
       </div>
@@ -430,135 +792,66 @@ export const CaptureToolbar: React.FC<CaptureToolbarProps> = ({
       {/* Row 2: Source selector OR dimensions/info, devices, settings */}
       <div className="glass-toolbar-row glass-toolbar-row--capture-secondary">
         {/* Show source info based on selection type, or source selector if no selection */}
-        {selectionConfirmed ? (
-          // Selection confirmed - show appropriate info based on source type
-          sourceType === 'window' || sourceType === 'display' ? (
-            <SourceInfoDisplay
-              sourceType={sourceType}
-              sourceTitle={sourceTitle}
-              monitorName={monitorName}
-              monitorIndex={monitorIndex}
-              onBack={onRedo}
-              disabled={isBusy}
-            />
-          ) : (
-            // Area selection - show dimension selector
-            <DimensionSelect
-              width={width}
-              height={height}
-              onDimensionChange={onDimensionChange}
-              onBack={onRedo}
-              onSaveArea={onSaveAreaSelection}
-              isAreaSaved={isCurrentAreaSaved}
-              isAreaSaveDisabled={isAreaSaveDisabled}
-              saveAreaTitle="Save this area"
-              disabled={isBusy}
-            />
-          )
-        ) : (
-          // No selection - show source selector
-          <SourceSelector
-            onSelectArea={() => handleSourceChange('area')}
-            onSelectLastArea={onSelectLastArea}
-            onSelectSavedArea={onSelectSavedArea}
-            onDeleteSavedArea={onDeleteSavedArea}
-            captureType={captureType}
-            onCaptureComplete={onCaptureComplete}
-            lastAreaSelection={lastAreaSelection}
-            savedAreaSelections={savedAreaSelections}
-            toolbarOwner={toolbarOwner}
-            disabled={isBusy}
-          />
-        )}
+        <CaptureTargetControl
+          selectionConfirmed={selectionConfirmed}
+          sourceType={sourceType}
+          sourceTitle={sourceTitle}
+          monitorName={monitorName}
+          monitorIndex={monitorIndex}
+          width={width}
+          height={height}
+          captureType={captureType}
+          onRedo={onRedo}
+          onDimensionChange={onDimensionChange}
+          onSaveAreaSelection={onSaveAreaSelection}
+          isCurrentAreaSaved={isCurrentAreaSaved}
+          isAreaSaveDisabled={isAreaSaveDisabled}
+          onSelectLastArea={onSelectLastArea}
+          onSelectSavedArea={onSelectSavedArea}
+          onDeleteSavedArea={onDeleteSavedArea}
+          onCaptureComplete={onCaptureComplete}
+          lastAreaSelection={lastAreaSelection}
+          savedAreaSelections={savedAreaSelections}
+          toolbarOwner={toolbarOwner}
+          disabled={toolbarState.isBusy}
+          onSourceChange={handleSourceChange}
+        />
 
         {/* Device selectors - always visible, disabled when not in video mode */}
         <div className="glass-divider-vertical" />
 
-        <div className={`glass-devices-section ${!isVideoMode ? 'glass-devices-section--disabled' : ''}`}>
-          <div className="glass-device-column">
-            <DevicePopover disabled={!isVideoMode || isBusy} />
-            <div className="glass-audio-meter--column-spacer" />
-          </div>
-
-          <div className="glass-device-column">
-            <MicrophonePopover disabled={!isVideoMode || isBusy} />
-            <AudioLevelMeter
-              enabled
-              level={isMicEnabled && isVideoMode ? micLevel : 0}
-              className="glass-audio-meter--column"
-            />
-          </div>
-
-          <div className="glass-device-column">
-            <SystemAudioPopover disabled={!isVideoMode || isBusy} />
-            <AudioLevelMeter
-              enabled
-              level={isSystemAudioEnabled && isVideoMode ? systemLevel : 0}
-              className="glass-audio-meter--column"
-            />
-          </div>
-        </div>
+        <CaptureDeviceControls
+          isVideoMode={toolbarState.isVideoMode}
+          isBusy={toolbarState.isBusy}
+          isMicEnabled={audioState.isMicEnabled}
+          micLevel={micLevel}
+          isSystemAudioEnabled={audioState.isSystemAudioEnabled}
+          systemLevel={systemLevel}
+        />
 
         <div className="glass-divider-vertical" />
 
         <SettingsPopover
           mode={captureType}
-          disabled={isBusy}
+          disabled={toolbarState.isBusy}
           onOpenSettings={onOpenSettings}
         />
 
         <UpdateAvailablePill variant="toolbar" />
 
-        {(onOpenLibrary || minimalChrome !== 'floating') && (
-          <div className="glass-toolbar-actions">
-            {onOpenLibrary && (
-              <button
-                type="button"
-                onClick={onOpenLibrary}
-                className="glass-btn glass-btn--md glass-toolbar-action-btn"
-                aria-label="Open library"
-                title="Open library"
-              >
-                <FolderOpen size={14} strokeWidth={2.2} />
-              </button>
-            )}
+        <ToolbarActions
+          onOpenLibrary={onOpenLibrary}
+          minimalChrome={minimalChrome}
+          onMinimizeToolbar={onMinimizeToolbar}
+          onCloseToolbar={onCloseToolbar}
+          onCancel={onCancel}
+        />
 
-            {minimalChrome !== 'floating' && onMinimizeToolbar && (
-              <button
-                type="button"
-                onClick={onMinimizeToolbar}
-                className="glass-btn glass-btn--md glass-toolbar-action-btn"
-                aria-label="Minimize capture toolbar"
-                title="Minimize capture toolbar"
-              >
-                <Minus size={14} strokeWidth={2.5} />
-              </button>
-            )}
-
-            {minimalChrome !== 'floating' && (
-              <button
-                type="button"
-                onClick={onCloseToolbar ?? onCancel}
-                className="glass-btn glass-btn--md glass-toolbar-action-btn glass-toolbar-action-btn--close"
-                aria-label="Close capture toolbar"
-                title="Close capture toolbar"
-              >
-                <X size={14} strokeWidth={2.5} />
-              </button>
-            )}
-          </div>
-        )}
-
-        <button
-          type="button"
-          onClick={onCapture}
-          className="glass-capture-btn-hardware"
-          aria-label={captureType === 'screenshot' ? 'Take screenshot' : 'Start recording'}
-          title={captureType === 'screenshot' ? 'Take screenshot' : 'Start recording'}
-          disabled={!selectionConfirmed}
-        >
-          <Circle size={14} fill="currentColor" strokeWidth={0} />
-        </button>
+        <CaptureActionButton
+          captureType={captureType}
+          selectionConfirmed={selectionConfirmed}
+          onCapture={onCapture}
+        />
       </div>
     </div>
   );

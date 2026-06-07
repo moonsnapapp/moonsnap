@@ -249,6 +249,138 @@ export const SettingsCol1: React.FC<SettingsColProps> = ({ mode }) => {
   }
 };
 
+function CursorSetting({
+  checked,
+  onCheckedChange,
+}: {
+  checked: boolean;
+  onCheckedChange: (checked: boolean) => void;
+}) {
+  return (
+    <div className="glass-inline-group">
+      <span className="glass-inline-label">Cursor</span>
+      <Switch checked={checked} onCheckedChange={onCheckedChange} />
+    </div>
+  );
+}
+
+function ScreenshotBehaviorSettings({
+  cursorEnabled,
+  setCursorEnabled,
+  copyToClipboardAfterCapture,
+  setCopyToClipboardAfterCapture,
+}: {
+  cursorEnabled: boolean;
+  setCursorEnabled: (enabled: boolean) => void;
+  copyToClipboardAfterCapture: boolean;
+  setCopyToClipboardAfterCapture: (enabled: boolean) => void;
+}) {
+  return (
+    <>
+      <CursorSetting checked={cursorEnabled} onCheckedChange={setCursorEnabled} />
+      <div className="glass-inline-group">
+        <span className="glass-inline-label">Clipboard</span>
+        <Switch
+          checked={copyToClipboardAfterCapture}
+          onCheckedChange={setCopyToClipboardAfterCapture}
+        />
+      </div>
+    </>
+  );
+}
+
+function VideoBehaviorSettings({
+  settings,
+  cursorEnabled,
+  setCursorEnabled,
+  updateVideoSettings,
+  audioDevices,
+  loadAudioDevices,
+  isLoadingDevices,
+}: {
+  settings: ReturnType<typeof useCaptureSettingsStore.getState>['settings'];
+  cursorEnabled: boolean;
+  setCursorEnabled: (enabled: boolean) => void;
+  updateVideoSettings: ReturnType<typeof useCaptureSettingsStore.getState>['updateVideoSettings'];
+  audioDevices: ReturnType<typeof useAudioInputStore.getState>['devices'];
+  loadAudioDevices: () => void;
+  isLoadingDevices: boolean;
+}) {
+  return (
+    <>
+      <CursorSetting checked={cursorEnabled} onCheckedChange={setCursorEnabled} />
+      <div className="glass-inline-group">
+        <span className="glass-inline-label">Audio</span>
+        <Switch
+          checked={settings.video.captureSystemAudio}
+          onCheckedChange={(c) => updateVideoSettings({ captureSystemAudio: c })}
+        />
+      </div>
+      <div className="glass-inline-group">
+        <span className="glass-inline-label">Mic</span>
+        <MicSelect
+          value={settings.video.microphoneDeviceIndex ?? null}
+          devices={audioDevices}
+          onChange={(deviceIndex) => updateVideoSettings({ microphoneDeviceIndex: deviceIndex })}
+          onRefresh={loadAudioDevices}
+          isLoading={isLoadingDevices}
+        />
+      </div>
+      <div className="glass-inline-group">
+        <span className="glass-inline-label">Countdown</span>
+        <GlassSelect
+          value={settings.video.countdownSecs}
+          options={RECORDING.COUNTDOWN_OPTIONS.map((seconds) => ({
+            value: seconds,
+            label: formatCountdownOption(seconds),
+          }))}
+          onChange={(v) => updateVideoSettings({ countdownSecs: parseInt(v) })}
+        />
+      </div>
+    </>
+  );
+}
+
+function GifBehaviorSettings({
+  settings,
+  cursorEnabled,
+  setCursorEnabled,
+  updateGifSettings,
+}: {
+  settings: ReturnType<typeof useCaptureSettingsStore.getState>['settings'];
+  cursorEnabled: boolean;
+  setCursorEnabled: (enabled: boolean) => void;
+  updateGifSettings: ReturnType<typeof useCaptureSettingsStore.getState>['updateGifSettings'];
+}) {
+  return (
+    <>
+      <CursorSetting checked={cursorEnabled} onCheckedChange={setCursorEnabled} />
+      <div className="glass-inline-group">
+        <span className="glass-inline-label">Countdown</span>
+        <GlassSelect
+          value={settings.gif.countdownSecs}
+          options={RECORDING.COUNTDOWN_OPTIONS.map((seconds) => ({
+            value: seconds,
+            label: formatCountdownOption(seconds),
+          }))}
+          onChange={(v) => updateGifSettings({ countdownSecs: parseInt(v) })}
+        />
+      </div>
+      <div className="glass-inline-group">
+        <span className="glass-inline-label">Duration</span>
+        <GlassSelect
+          value={settings.gif.maxDurationSecs}
+          options={RECORDING.GIF_MAX_DURATION_OPTIONS.map((seconds) => ({
+            value: seconds,
+            label: formatGifDurationOption(seconds),
+          }))}
+          onChange={(v) => updateGifSettings({ maxDurationSecs: parseInt(v) })}
+        />
+      </div>
+    </>
+  );
+}
+
 /**
  * Column 2: Cursor + Audio + Countdown + Max duration
  */
@@ -302,95 +434,55 @@ export const SettingsCol2: React.FC<SettingsColProps> = ({ mode }) => {
   switch (mode) {
     case 'screenshot':
       return (
-        <>
-          <div className="glass-inline-group">
-            <span className="glass-inline-label">Cursor</span>
-            <Switch checked={getCursorEnabled()} onCheckedChange={setCursorEnabled} />
-          </div>
-          <div className="glass-inline-group">
-            <span className="glass-inline-label">Clipboard</span>
-            <Switch
-              checked={copyToClipboardAfterCapture}
-              onCheckedChange={setCopyToClipboardAfterCapture}
-            />
-          </div>
-        </>
+        <ScreenshotBehaviorSettings
+          cursorEnabled={getCursorEnabled()}
+          setCursorEnabled={setCursorEnabled}
+          copyToClipboardAfterCapture={copyToClipboardAfterCapture}
+          setCopyToClipboardAfterCapture={setCopyToClipboardAfterCapture}
+        />
       );
 
     case 'video':
       return (
-        <>
-          <div className="glass-inline-group">
-            <span className="glass-inline-label">Cursor</span>
-            <Switch checked={getCursorEnabled()} onCheckedChange={setCursorEnabled} />
-          </div>
-          <div className="glass-inline-group">
-            <span className="glass-inline-label">Audio</span>
-            <Switch
-              checked={settings.video.captureSystemAudio}
-              onCheckedChange={(c) => updateVideoSettings({ captureSystemAudio: c })}
-            />
-          </div>
-          <div className="glass-inline-group">
-            <span className="glass-inline-label">Mic</span>
-            <MicSelect
-              value={settings.video.microphoneDeviceIndex ?? null}
-              devices={audioDevices}
-              onChange={(deviceIndex) => updateVideoSettings({ microphoneDeviceIndex: deviceIndex })}
-              onRefresh={loadAudioDevices}
-              isLoading={isLoadingDevices}
-            />
-          </div>
-          <div className="glass-inline-group">
-            <span className="glass-inline-label">Countdown</span>
-            <GlassSelect
-              value={settings.video.countdownSecs}
-              options={RECORDING.COUNTDOWN_OPTIONS.map((seconds) => ({
-                value: seconds,
-                label: formatCountdownOption(seconds),
-              }))}
-              onChange={(v) => updateVideoSettings({ countdownSecs: parseInt(v) })}
-            />
-          </div>
-        </>
+        <VideoBehaviorSettings
+          settings={settings}
+          cursorEnabled={getCursorEnabled()}
+          setCursorEnabled={setCursorEnabled}
+          updateVideoSettings={updateVideoSettings}
+          audioDevices={audioDevices}
+          loadAudioDevices={loadAudioDevices}
+          isLoadingDevices={isLoadingDevices}
+        />
       );
 
     case 'gif':
       return (
-        <>
-          <div className="glass-inline-group">
-            <span className="glass-inline-label">Cursor</span>
-            <Switch checked={getCursorEnabled()} onCheckedChange={setCursorEnabled} />
-          </div>
-          <div className="glass-inline-group">
-            <span className="glass-inline-label">Countdown</span>
-            <GlassSelect
-              value={settings.gif.countdownSecs}
-              options={RECORDING.COUNTDOWN_OPTIONS.map((seconds) => ({
-                value: seconds,
-                label: formatCountdownOption(seconds),
-              }))}
-              onChange={(v) => updateGifSettings({ countdownSecs: parseInt(v) })}
-            />
-          </div>
-          <div className="glass-inline-group">
-            <span className="glass-inline-label">Duration</span>
-            <GlassSelect
-              value={settings.gif.maxDurationSecs}
-              options={RECORDING.GIF_MAX_DURATION_OPTIONS.map((seconds) => ({
-                value: seconds,
-                label: formatGifDurationOption(seconds),
-              }))}
-              onChange={(v) => updateGifSettings({ maxDurationSecs: parseInt(v) })}
-            />
-          </div>
-        </>
+        <GifBehaviorSettings
+          settings={settings}
+          cursorEnabled={getCursorEnabled()}
+          setCursorEnabled={setCursorEnabled}
+          updateGifSettings={updateGifSettings}
+        />
       );
 
     default:
       return null;
   }
 };
+
+function getWebcamDeviceLabel(name: string) {
+  return name.length > 15 ? `${name.substring(0, 15)}...` : name;
+}
+
+function getWebcamPositionFromValue(value: string): WebcamPosition {
+  return value === 'custom'
+    ? { type: 'custom', x: 0, y: 0 }
+    : { type: value } as WebcamPosition;
+}
+
+function shouldShowWebcamSettings(mode: CaptureType) {
+  return mode === 'video' || mode === 'gif';
+}
 
 /**
  * Column 3: Webcam settings (for video/gif only)
@@ -415,7 +507,7 @@ export const SettingsCol3: React.FC<SettingsColProps> = ({ mode }) => {
   }, [webcamSettings.enabled, devices.length, loadDevices]);
 
   // Only show for video and gif modes
-  if (mode !== 'video' && mode !== 'gif') {
+  if (!shouldShowWebcamSettings(mode)) {
     return null;
   }
 
@@ -438,7 +530,7 @@ export const SettingsCol3: React.FC<SettingsColProps> = ({ mode }) => {
                 value={webcamSettings.deviceIndex}
                 options={devices.map((d) => ({
                   value: d.index,
-                  label: d.name.length > 15 ? d.name.substring(0, 15) + '…' : d.name,
+                  label: getWebcamDeviceLabel(d.name),
                 }))}
                 onChange={(v) => setDevice(parseInt(v))}
               />
@@ -455,14 +547,7 @@ export const SettingsCol3: React.FC<SettingsColProps> = ({ mode }) => {
                 { value: 'topRight', label: 'TR' },
                 { value: 'topLeft', label: 'TL' },
               ]}
-              onChange={(v) => {
-                if (v === 'custom') {
-                  // For "None", keep current position as custom
-                  setPosition({ type: 'custom', x: 0, y: 0 });
-                } else {
-                  setPosition({ type: v } as WebcamPosition);
-                }
-              }}
+              onChange={(v) => setPosition(getWebcamPositionFromValue(v))}
             />
           </div>
           <div className="glass-inline-group">

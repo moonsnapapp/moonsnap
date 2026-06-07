@@ -11,6 +11,7 @@ import { usePreviewOrPlaybackTime } from '../../hooks/usePlaybackEngine';
 import { useTimelineToSourceTime } from '../../hooks/useTimelineSourceTime';
 import { remapNormalizedPointThroughCrop } from '../../utils/cropCoordinateMapping';
 import { resolveRecordingDimensions } from '../../utils/recordingDimensions';
+import { getRoundedPreviewDimensions } from './previewDimensions';
 import type { CursorRecording, ClickHighlightConfig, CursorEvent, ZoomRegion, CropConfig } from '../../types';
 
 interface ClickHighlightOverlayProps {
@@ -40,50 +41,62 @@ interface ClickHighlightOverlayProps {
   cropConfig?: CropConfig;
 }
 
+const DEFAULT_CLICK_HIGHLIGHT_COLOR = { r: 255, g: 107, b: 107, a: 0.5 };
+
+function parseHexClickColor(trimmed: string): { r: number; g: number; b: number; a: number } | null {
+  if (!trimmed.startsWith('#')) {
+    return null;
+  }
+
+  const hex = trimmed.slice(1);
+  if (hex.length === 6) {
+    return {
+      r: parseInt(hex.slice(0, 2), 16),
+      g: parseInt(hex.slice(2, 4), 16),
+      b: parseInt(hex.slice(4, 6), 16),
+      a: 0.5,
+    };
+  }
+
+  if (hex.length === 8) {
+    return {
+      r: parseInt(hex.slice(0, 2), 16),
+      g: parseInt(hex.slice(2, 4), 16),
+      b: parseInt(hex.slice(4, 6), 16),
+      a: parseInt(hex.slice(6, 8), 16) / 255,
+    };
+  }
+
+  return null;
+}
+
+function parseRgbClickColor(trimmed: string): { r: number; g: number; b: number; a: number } | null {
+  const rgbaMatch = trimmed.match(/^rgba?\s*\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*(?:,\s*([\d.]+))?\s*\)$/i);
+  if (!rgbaMatch) {
+    return null;
+  }
+
+  return {
+    r: parseInt(rgbaMatch[1], 10),
+    g: parseInt(rgbaMatch[2], 10),
+    b: parseInt(rgbaMatch[3], 10),
+    a: rgbaMatch[4] !== undefined ? parseFloat(rgbaMatch[4]) : 0.5,
+  };
+}
+
 /**
  * Parse a CSS color string into RGBA values.
  * Supports: #RRGGBB, #RRGGBBAA, rgb(r,g,b), rgba(r,g,b,a)
  */
 function parseColor(color: string): { r: number; g: number; b: number; a: number } {
-  const defaultColor = { r: 255, g: 107, b: 107, a: 0.5 };
-  
-  if (!color) return defaultColor;
-  
+  if (!color) {
+    return DEFAULT_CLICK_HIGHLIGHT_COLOR;
+  }
+
   const trimmed = color.trim();
-  
-  // Hex format: #RRGGBB or #RRGGBBAA
-  if (trimmed.startsWith('#')) {
-    const hex = trimmed.slice(1);
-    if (hex.length === 6) {
-      return {
-        r: parseInt(hex.slice(0, 2), 16),
-        g: parseInt(hex.slice(2, 4), 16),
-        b: parseInt(hex.slice(4, 6), 16),
-        a: 0.5,
-      };
-    }
-    if (hex.length === 8) {
-      return {
-        r: parseInt(hex.slice(0, 2), 16),
-        g: parseInt(hex.slice(2, 4), 16),
-        b: parseInt(hex.slice(4, 6), 16),
-        a: parseInt(hex.slice(6, 8), 16) / 255,
-      };
-    }
-  }
-  
-  // rgba(r, g, b, a) format
-  const rgbaMatch = trimmed.match(/^rgba?\s*\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*(?:,\s*([\d.]+))?\s*\)$/i);
-  if (rgbaMatch) {
-    return {
-      r: parseInt(rgbaMatch[1], 10),
-      g: parseInt(rgbaMatch[2], 10),
-      b: parseInt(rgbaMatch[3], 10),
-      a: rgbaMatch[4] !== undefined ? parseFloat(rgbaMatch[4]) : 0.5,
-    };
-  }
-  
-  return defaultColor;
+  return parseHexClickColor(trimmed)
+    ?? parseRgbClickColor(trimmed)
+    ?? DEFAULT_CLICK_HIGHLIGHT_COLOR;
 }
 
 /**
@@ -96,33 +109,33 @@ function getActiveClicks(
   currentTimeMs: number,
   durationMs: number
 ): Array<{ x: number; y: number; progress: number }> {
-  const active: Array<{ x: number; y: number; progress: number }> = [];
-  
-  for (const event of events) {
-    // Only process click-down events (not releases)
-    const eventType = event.eventType;
-    const isClickDown = 
-      (eventType.type === 'leftClick' && eventType.pressed) ||
-      (eventType.type === 'rightClick' && eventType.pressed) ||
-      (eventType.type === 'middleClick' && eventType.pressed);
-    
-    if (!isClickDown) continue;
-    
-    // Check if this click is within the animation window
-    const clickTime = event.timestampMs;
-    if (currentTimeMs < clickTime) continue; // Click hasn't happened yet
-    
-    const elapsed = currentTimeMs - clickTime;
-    if (elapsed > durationMs) continue; // Animation already finished
-    
-    // Calculate animation progress (0 = start, 1 = end)
-    const progress = elapsed / durationMs;
-    
-    // Event coordinates are already normalized (0-1), use directly
-    active.push({ x: event.x, y: event.y, progress });
+  return events.flatMap((event) => {
+    const progress = getActiveClickProgress(event, currentTimeMs, durationMs);
+    return progress === null ? [] : [{ x: event.x, y: event.y, progress }];
+  });
+}
+
+function isClickDownEvent(event: CursorEvent): boolean {
+  const eventType = event.eventType;
+  return (
+    (eventType.type === 'leftClick' ||
+      eventType.type === 'rightClick' ||
+      eventType.type === 'middleClick') &&
+    eventType.pressed
+  );
+}
+
+function getActiveClickProgress(
+  event: CursorEvent,
+  currentTimeMs: number,
+  durationMs: number
+): number | null {
+  if (!isClickDownEvent(event) || currentTimeMs < event.timestampMs) {
+    return null;
   }
-  
-  return active;
+
+  const elapsed = currentTimeMs - event.timestampMs;
+  return elapsed > durationMs ? null : elapsed / durationMs;
 }
 
 /**
@@ -224,6 +237,155 @@ function renderRing(
   ctx.stroke();
 }
 
+function ensureClickCanvasSize(
+  canvas: HTMLCanvasElement,
+  width: number,
+  height: number
+) {
+  if (canvas.width !== width) canvas.width = width;
+  if (canvas.height !== height) canvas.height = height;
+}
+
+function prepareClickHighlightCanvas(
+  canvas: HTMLCanvasElement | null,
+  enabled: boolean,
+  width: number,
+  height: number
+): CanvasRenderingContext2D | null {
+  if (!canvas || !enabled) {
+    return null;
+  }
+
+  const ctx = canvas.getContext('2d');
+  if (!ctx) {
+    return null;
+  }
+
+  ensureClickCanvasSize(canvas, width, height);
+  ctx.clearRect(0, 0, width, height);
+  return ctx;
+}
+
+function getAdjustedClickTimeMs(
+  cursorRecording: CursorRecording,
+  sourceTimeMs: number
+): number {
+  return sourceTimeMs + (cursorRecording.videoStartOffsetMs ?? 0);
+}
+
+function getRenderableActiveClicks(
+  cursorRecording: CursorRecording,
+  sourceTimeMs: number,
+  durationMs: number
+): ReturnType<typeof getActiveClicks> | null {
+  const activeClicks = getActiveClicks(
+    cursorRecording.events,
+    getAdjustedClickTimeMs(cursorRecording, sourceTimeMs),
+    durationMs
+  );
+
+  return activeClicks.length > 0 ? activeClicks : null;
+}
+
+function renderClickHighlight(
+  ctx: CanvasRenderingContext2D,
+  style: NonNullable<ClickHighlightConfig['style']>,
+  x: number,
+  y: number,
+  progress: number,
+  radius: number,
+  color: ReturnType<typeof parseColor>
+) {
+  if (style === 'spotlight') {
+    renderSpotlight(ctx, x, y, progress, radius, color.r, color.g, color.b, color.a);
+    return;
+  }
+  if (style === 'ring') {
+    renderRing(ctx, x, y, progress, radius, color.r, color.g, color.b, color.a);
+    return;
+  }
+
+  renderRipple(ctx, x, y, progress, radius, color.r, color.g, color.b, color.a);
+}
+
+function renderActiveClickHighlights({
+  ctx,
+  cursorRecording,
+  activeClicks,
+  roundedRenderWidth,
+  roundedRenderHeight,
+  videoWidth,
+  videoHeight,
+  cropConfig,
+  radius,
+  style,
+  color,
+}: {
+  ctx: CanvasRenderingContext2D;
+  cursorRecording: CursorRecording;
+  activeClicks: ReturnType<typeof getActiveClicks>;
+  roundedRenderWidth: number;
+  roundedRenderHeight: number;
+  videoWidth: number;
+  videoHeight: number;
+  cropConfig?: CropConfig;
+  radius: number;
+  style: NonNullable<ClickHighlightConfig['style']>;
+  color: ReturnType<typeof parseColor>;
+}) {
+  const { width: recordingWidth, height: recordingHeight } = resolveRecordingDimensions(
+    cursorRecording,
+    videoWidth,
+    videoHeight
+  );
+  const scaledRadius = radius * (roundedRenderHeight / 1080);
+
+  for (const click of activeClicks) {
+    const remappedClick = remapNormalizedPointThroughCrop(
+      { x: click.x, y: click.y },
+      recordingWidth,
+      recordingHeight,
+      cropConfig
+    );
+    if (!remappedClick.inVisibleBounds) continue;
+
+    renderClickHighlight(
+      ctx,
+      style,
+      remappedClick.point.x * roundedRenderWidth,
+      remappedClick.point.y * roundedRenderHeight,
+      click.progress,
+      scaledRadius,
+      color
+    );
+  }
+}
+
+function getClickHighlightSettings(config: ClickHighlightConfig | undefined) {
+  const {
+    enabled = true,
+    color = '#FF6B6B',
+    radius = 30,
+    durationMs = 400,
+    style = 'ripple',
+  } = config ?? {};
+
+  return {
+    enabled,
+    color,
+    radius,
+    durationMs,
+    style,
+  };
+}
+
+function shouldRenderClickHighlightOverlay(
+  enabled: boolean,
+  cursorRecording: CursorRecording | null | undefined
+) {
+  return enabled && !!cursorRecording && cursorRecording.events.length > 0;
+}
+
 /**
  * ClickHighlightOverlay component - renders click highlight animations on video.
  */
@@ -258,90 +420,45 @@ export const ClickHighlightOverlay = memo(function ClickHighlightOverlay({
   // ClickHighlightOverlay should NOT apply its own zoom transform to avoid double-zooming
   
   // Get config values with defaults
-  const enabled = clickHighlightConfig?.enabled ?? true;
-  const color = clickHighlightConfig?.color ?? '#FF6B6B';
-  const radius = clickHighlightConfig?.radius ?? 30;
-  const durationMs = clickHighlightConfig?.durationMs ?? 400;
-  const style = clickHighlightConfig?.style ?? 'ripple';
-  const roundedRenderWidth = Math.max(1, Math.round(renderWidth));
-  const roundedRenderHeight = Math.max(1, Math.round(renderHeight));
-  const roundedDisplayWidth = Math.max(1, Math.round(displayWidth));
-  const roundedDisplayHeight = Math.max(1, Math.round(displayHeight));
+  const { enabled, color, radius, durationMs, style } = getClickHighlightSettings(clickHighlightConfig);
+  const {
+    roundedRenderWidth,
+    roundedRenderHeight,
+    roundedDisplayWidth,
+    roundedDisplayHeight,
+  } = getRoundedPreviewDimensions(renderWidth, renderHeight, displayWidth, displayHeight);
   
   // Parse color once
   const parsedColor = parseColor(color);
   
   // Render function for the highlight animations
   const render = useCallback(() => {
-    const canvas = canvasRef.current;
-    if (!canvas || !cursorRecording || !enabled) return;
-    
-    const ctx = canvas.getContext('2d');
+    if (!cursorRecording) return;
+
+    const ctx = prepareClickHighlightCanvas(
+      canvasRef.current,
+      enabled,
+      roundedRenderWidth,
+      roundedRenderHeight
+    );
     if (!ctx) return;
+
+    const activeClicks = getRenderableActiveClicks(cursorRecording, sourceTimeMs, durationMs);
+    if (!activeClicks) return;
     
-    // Draw in render-space and display-scale via CSS.
-    if (canvas.width !== roundedRenderWidth || canvas.height !== roundedRenderHeight) {
-      canvas.width = roundedRenderWidth;
-      canvas.height = roundedRenderHeight;
-    }
-    
-    // Clear canvas
-    ctx.clearRect(0, 0, roundedRenderWidth, roundedRenderHeight);
-    
-    // Get active click highlights
-    // Use source time (converted from timeline time) and adjust by video start offset to sync with cursor timestamps
-    const adjustedTimeMs = sourceTimeMs + (cursorRecording.videoStartOffsetMs ?? 0);
-    const activeClicks = getActiveClicks(
-      cursorRecording.events,
-      adjustedTimeMs,
-      durationMs
-    );
-    
-    if (activeClicks.length === 0) return;
-    
-    // Render each active click highlight
-    // Use cursor recording's aspect ratio for positioning (not video dimensions)
-    // Cursor coordinates are normalized to the capture region, not the video file
-    const { width: recordingWidth, height: recordingHeight } = resolveRecordingDimensions(
+    renderActiveClickHighlights({
+      ctx,
       cursorRecording,
-      _videoWidth,
-      _videoHeight
-    );
-
-    for (const click of activeClicks) {
-      const remappedClick = remapNormalizedPointThroughCrop(
-        { x: click.x, y: click.y },
-        recordingWidth,
-        recordingHeight,
-        cropConfig
-      );
-      if (!remappedClick.inVisibleBounds) continue;
-      const clickX = remappedClick.point.x;
-      const clickY = remappedClick.point.y;
-
-      // Convert normalized coordinates to render-space pixels.
-      const pixelX = clickX * roundedRenderWidth;
-      const pixelY = clickY * roundedRenderHeight;
-      
-      // Keep highlight size stable in master space across preview resizes.
-      const scaleFactor = roundedRenderHeight / 1080;
-      const scaledRadius = radius * scaleFactor;
-      
-      switch (style) {
-        case 'ripple':
-          renderRipple(ctx, pixelX, pixelY, click.progress, scaledRadius, 
-            parsedColor.r, parsedColor.g, parsedColor.b, parsedColor.a);
-          break;
-        case 'spotlight':
-          renderSpotlight(ctx, pixelX, pixelY, click.progress, scaledRadius,
-            parsedColor.r, parsedColor.g, parsedColor.b, parsedColor.a);
-          break;
-        case 'ring':
-          renderRing(ctx, pixelX, pixelY, click.progress, scaledRadius,
-            parsedColor.r, parsedColor.g, parsedColor.b, parsedColor.a);
-          break;
-      }
-    }
+      activeClicks,
+      roundedRenderWidth,
+      roundedRenderHeight,
+      videoWidth: _videoWidth,
+      videoHeight: _videoHeight,
+      cropConfig,
+      radius,
+      style,
+      color: parsedColor,
+    });
   }, [
     cursorRecording,
     enabled,
@@ -369,7 +486,7 @@ export const ClickHighlightOverlay = memo(function ClickHighlightOverlay({
   }, [enabled, cursorRecording, sourceTimeMs, render]);
   
   // Don't render if disabled or no cursor data
-  if (!enabled || !cursorRecording || cursorRecording.events.length === 0) {
+  if (!shouldRenderClickHighlightOverlay(enabled, cursorRecording)) {
     return null;
   }
   

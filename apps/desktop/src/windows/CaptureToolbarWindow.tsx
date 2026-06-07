@@ -18,7 +18,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { emit, listen } from '@tauri-apps/api/event';
 import { availableMonitors, type Monitor } from '@tauri-apps/api/window';
 import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
-import { CaptureToolbar } from '../components/CaptureToolbar/CaptureToolbar';
+import { CaptureToolbar, type ToolbarMode } from '../components/CaptureToolbar/CaptureToolbar';
 import type { CaptureSource } from '../components/CaptureToolbar/SourceSelector';
 import {
   useCaptureSettingsStore,
@@ -79,6 +79,19 @@ interface NativeSelectionHudDeleteSavedAreaPayload {
   id: string;
 }
 
+const RECORDING_CAPTURE_TYPES: CaptureType[] = ['video', 'gif'];
+const AUTO_START_CLEAR_MODES: ToolbarMode[] = ['recording', 'paused', 'error'];
+const RECORDING_CONTROLS_VISIBLE_MODES: ToolbarMode[] = ['recording', 'paused', 'processing'];
+const RECORDING_CONTROLS_ACTIVE_MODES: ToolbarMode[] = [
+  'starting',
+  'recording',
+  'paused',
+  'processing',
+];
+
+type CaptureSettingsState = ReturnType<typeof useCaptureSettingsStore.getState>;
+type CurrentWebviewWindow = ReturnType<typeof getCurrentWebviewWindow>;
+
 const MIN_REUSABLE_AREA_SIZE = 20;
 const STARTUP_RESTORE_STATE_FLUSH_MS = 50;
 
@@ -95,6 +108,52 @@ function getCurrentAreaSelection(selection: SelectionBounds): AreaSelectionBound
   });
 }
 
+function getVisibleDesktopBounds(monitors: Monitor[]) {
+  const minX = Math.min(...monitors.map((monitor) => monitor.position.x));
+  const minY = Math.min(...monitors.map((monitor) => monitor.position.y));
+  const maxX = Math.max(...monitors.map((monitor) => monitor.position.x + monitor.size.width));
+  const maxY = Math.max(...monitors.map((monitor) => monitor.position.y + monitor.size.height));
+
+  return {
+    minX,
+    minY,
+    maxX,
+    maxY,
+    width: maxX - minX,
+    height: maxY - minY,
+  };
+}
+
+function hasReusableAreaDimensions(width: number, height: number) {
+  return width >= MIN_REUSABLE_AREA_SIZE && height >= MIN_REUSABLE_AREA_SIZE;
+}
+
+function clampToRange(value: number, min: number, max: number) {
+  return Math.min(Math.max(value, min), max);
+}
+
+function getClampedAreaSelection(
+  selection: AreaSelectionBounds,
+  desktopBounds: ReturnType<typeof getVisibleDesktopBounds>
+): AreaSelectionBounds | null {
+  if (!hasReusableAreaDimensions(desktopBounds.width, desktopBounds.height)) {
+    return null;
+  }
+
+  const width = Math.min(selection.width, desktopBounds.width);
+  const height = Math.min(selection.height, desktopBounds.height);
+  if (!hasReusableAreaDimensions(width, height)) {
+    return null;
+  }
+
+  return {
+    x: clampToRange(selection.x, desktopBounds.minX, desktopBounds.maxX - width),
+    y: clampToRange(selection.y, desktopBounds.minY, desktopBounds.maxY - height),
+    width,
+    height,
+  };
+}
+
 function clampAreaSelectionToVisibleDesktop(
   selection: AreaSelectionBounds,
   monitors: Monitor[]
@@ -108,29 +167,531 @@ function clampAreaSelectionToVisibleDesktop(
     return normalizedSelection;
   }
 
-  const minX = Math.min(...monitors.map((monitor) => monitor.position.x));
-  const minY = Math.min(...monitors.map((monitor) => monitor.position.y));
-  const maxX = Math.max(...monitors.map((monitor) => monitor.position.x + monitor.size.width));
-  const maxY = Math.max(...monitors.map((monitor) => monitor.position.y + monitor.size.height));
-  const desktopWidth = maxX - minX;
-  const desktopHeight = maxY - minY;
+  return getClampedAreaSelection(normalizedSelection, getVisibleDesktopBounds(monitors));
+}
 
-  if (desktopWidth < MIN_REUSABLE_AREA_SIZE || desktopHeight < MIN_REUSABLE_AREA_SIZE) {
-    return null;
+function getOverlayCaptureType(captureType: CaptureType): 'screenshot' | 'gif' | 'video' {
+  if (captureType === 'screenshot') return 'screenshot';
+  return captureType === 'gif' ? 'gif' : 'video';
+}
+
+function isCaptureToolbarOwner(owner: string | undefined): boolean {
+  return !owner || owner === 'capture-toolbar';
+}
+
+function isRecordingCaptureType(captureType: CaptureType) {
+  return RECORDING_CAPTURE_TYPES.includes(captureType);
+}
+
+function isPendingSelectionMode(mode: ToolbarMode, selectionConfirmed: boolean) {
+  return mode === 'selection' && !selectionConfirmed;
+}
+
+function shouldStartAreaSelectionFromContext({
+  shouldAutoStart,
+  isInitialized,
+  mode,
+  selectionConfirmed,
+  captureSource,
+  captureType,
+}: {
+  shouldAutoStart: boolean;
+  isInitialized: boolean;
+  mode: ToolbarMode;
+  selectionConfirmed: boolean;
+  captureSource: CaptureSourceMode;
+  captureType: CaptureType;
+}) {
+  return [
+    shouldAutoStart,
+    isInitialized,
+    isPendingSelectionMode(mode, selectionConfirmed),
+    captureSource === 'area',
+    isRecordingCaptureType(captureType),
+  ].every(Boolean);
+}
+
+function getSelectionAutoStartRecording(
+  selectionConfirmed: boolean,
+  selectionBounds: SelectionBounds
+) {
+  return selectionConfirmed ? selectionBounds.autoStartRecording : false;
+}
+
+function getConfirmedAreaSelection(
+  selectionConfirmed: boolean,
+  selectionBounds: SelectionBounds
+) {
+  return selectionConfirmed ? getCurrentAreaSelection(selectionBounds) : null;
+}
+
+function isNativeSelectionHudVisible({
+  selectionConfirmed,
+  selectionBounds,
+  mode,
+}: {
+  selectionConfirmed: boolean;
+  selectionBounds: SelectionBounds;
+  mode: ToolbarMode;
+}) {
+  return Boolean(
+    selectionConfirmed &&
+    selectionBounds.nativeControls &&
+    selectionBounds.sourceType === 'area' &&
+    mode === 'selection'
+  );
+}
+
+function isSavedAreaSelection(
+  currentAreaSelection: AreaSelectionBounds | null,
+  savedAreaSelections: SavedAreaSelection[]
+) {
+  return Boolean(
+    currentAreaSelection &&
+    savedAreaSelections.some((savedArea) => isSameAreaSelection(savedArea, currentAreaSelection))
+  );
+}
+
+function isPrimaryToolbarRecordingMode(mode: ToolbarMode) {
+  return mode === 'starting' ||
+    mode === 'recording' ||
+    mode === 'paused' ||
+    mode === 'processing';
+}
+
+function hasSuppressionFlag(flags: boolean[]) {
+  return flags.some(Boolean);
+}
+
+function isPrimaryToolbarSuppressedDuringRecording({
+  selectionConfirmed,
+  isRecordingHudActive,
+  mode,
+}: {
+  selectionConfirmed: boolean;
+  isRecordingHudActive: boolean;
+  mode: ToolbarMode;
+}) {
+  if (!selectionConfirmed) return false;
+  return isRecordingHudActive || isPrimaryToolbarRecordingMode(mode);
+}
+
+function shouldHideToolbarChrome({
+  suppressToolbarUntilRecording,
+  isNativeSelectionHudActive,
+  isModeChooserVisible,
+  isRecordingControlsPending,
+  isRecordingHudActive,
+}: {
+  suppressToolbarUntilRecording: boolean;
+  isNativeSelectionHudActive: boolean;
+  isModeChooserVisible: boolean;
+  isRecordingControlsPending: boolean;
+  isRecordingHudActive: boolean;
+}) {
+  return hasSuppressionFlag([
+    suppressToolbarUntilRecording,
+    isNativeSelectionHudActive,
+    isModeChooserVisible,
+    isRecordingControlsPending,
+    isRecordingHudActive,
+  ]);
+}
+
+function shouldSuppressWindowShow({
+  suppressToolbarUntilRecording,
+  isNativeSelectionHudActive,
+  suppressPrimaryToolbarDuringRecording,
+  isModeChooserVisible,
+  isRecordingControlsPending,
+  isRestoringToolbarFromChooser,
+}: {
+  suppressToolbarUntilRecording: boolean;
+  isNativeSelectionHudActive: boolean;
+  suppressPrimaryToolbarDuringRecording: boolean;
+  isModeChooserVisible: boolean;
+  isRecordingControlsPending: boolean;
+  isRestoringToolbarFromChooser: boolean;
+}) {
+  return hasSuppressionFlag([
+    suppressToolbarUntilRecording,
+    isNativeSelectionHudActive,
+    suppressPrimaryToolbarDuringRecording,
+    isModeChooserVisible,
+    isRecordingControlsPending,
+    isRestoringToolbarFromChooser,
+  ]);
+}
+
+function getToolbarChromeStyle(shouldHidePrimaryToolbarChrome: boolean) {
+  return shouldHidePrimaryToolbarChrome
+    ? { visibility: 'hidden' as const, pointerEvents: 'none' as const }
+    : undefined;
+}
+
+function selectionCaptureTypeMatches(
+  selectionCaptureType: CaptureType | null | undefined,
+  captureType: CaptureType
+) {
+  return selectionCaptureType == null || selectionCaptureType === captureType;
+}
+
+function shouldAutoStartConfirmedRecording({
+  autoStartRecording,
+  hasTriggered,
+  selectionConfirmed,
+  mode,
+  captureType,
+  selectionCaptureType,
+}: {
+  autoStartRecording: boolean;
+  hasTriggered: boolean;
+  selectionConfirmed: boolean;
+  mode: ToolbarMode;
+  captureType: CaptureType;
+  selectionCaptureType?: CaptureType | null;
+}) {
+  return [
+    autoStartRecording,
+    !hasTriggered,
+    canUseConfirmedSelection(selectionConfirmed, mode),
+    isRecordingCaptureType(captureType),
+    selectionCaptureTypeMatches(selectionCaptureType, captureType),
+  ].every(Boolean);
+}
+
+function shouldClearSelectionAutoStartRecording(
+  autoStartRecording: boolean,
+  mode: ToolbarMode,
+) {
+  return autoStartRecording && AUTO_START_CLEAR_MODES.includes(mode);
+}
+
+function shouldShowRecordingControlsForMode(
+  selectionConfirmed: boolean,
+  mode: ToolbarMode,
+) {
+  return selectionConfirmed && RECORDING_CONTROLS_VISIBLE_MODES.includes(mode);
+}
+
+function shouldCloseRecordingControlsForMode(mode: ToolbarMode) {
+  return !RECORDING_CONTROLS_ACTIVE_MODES.includes(mode);
+}
+
+function canUseConfirmedSelection(selectionConfirmed: boolean, mode: ToolbarMode) {
+  return selectionConfirmed && mode === 'selection';
+}
+
+type CaptureRoute = 'unconfirmed' | 'screenshot' | 'modeChooser' | 'recording';
+
+function getCaptureRoute({
+  selectionConfirmed,
+  captureType,
+  skipModePrompt,
+  promptRecordingMode,
+}: {
+  selectionConfirmed: boolean;
+  captureType: CaptureType;
+  skipModePrompt: boolean;
+  promptRecordingMode: boolean;
+}): CaptureRoute {
+  if (!selectionConfirmed) return 'unconfirmed';
+  if (captureType === 'screenshot') return 'screenshot';
+  if (shouldOpenRecordingModeChooser(captureType, skipModePrompt, promptRecordingMode)) {
+    return 'modeChooser';
+  }
+  return 'recording';
+}
+
+function shouldOpenRecordingModeChooser(
+  captureType: CaptureType,
+  skipModePrompt: boolean,
+  promptRecordingMode: boolean
+) {
+  return captureType === 'video' && !skipModePrompt && promptRecordingMode;
+}
+
+function willReplaceOldestSavedArea(isCurrentAreaSaved: boolean, savedAreaCount: number) {
+  return !isCurrentAreaSaved && savedAreaCount >= MAX_SAVED_AREA_SELECTIONS;
+}
+
+function getSavedAreaFeedbackMessage(replacedOldest: boolean) {
+  return replacedOldest ? 'Replaced Oldest Area' : 'Saved New Area';
+}
+
+function showNativeSavedAreaFeedback(replacedOldest: boolean) {
+  return invoke('capture_overlay_show_selection_hud_feedback', {
+    message: getSavedAreaFeedbackMessage(replacedOldest),
+  }).catch((error) => {
+    toolbarLogger.warn('Failed to show native saved-area feedback:', error);
+  });
+}
+
+interface RecordingModeChooserStateControls {
+  chooserSelectionHandledRef: React.MutableRefObject<boolean>;
+  recordingStartupInProgressRef: React.MutableRefObject<boolean>;
+  chooserRestorePositionRef: React.MutableRefObject<RecordingModeChooserBackPayload | null>;
+  chooserAnchorPositionRef: React.MutableRefObject<{ x: number; y: number } | null>;
+  skipModePromptRef: React.MutableRefObject<boolean>;
+  setIsModeChooserVisible: (value: boolean) => void;
+  setIsRecordingControlsPending: (value: boolean) => void;
+  setIsRecordingHudActive: (value: boolean) => void;
+  setIsRestoringToolbarFromChooser: (value: boolean) => void;
+}
+
+function resetRecordingModeChooserState({
+  chooserSelectionHandledRef,
+  recordingStartupInProgressRef,
+  chooserRestorePositionRef,
+  chooserAnchorPositionRef,
+  skipModePromptRef,
+  setIsModeChooserVisible,
+  setIsRecordingControlsPending,
+  setIsRecordingHudActive,
+  setIsRestoringToolbarFromChooser,
+}: RecordingModeChooserStateControls) {
+  chooserSelectionHandledRef.current = false;
+  recordingStartupInProgressRef.current = false;
+  chooserRestorePositionRef.current = null;
+  chooserAnchorPositionRef.current = null;
+  skipModePromptRef.current = false;
+  setIsModeChooserVisible(false);
+  setIsRecordingControlsPending(false);
+  setIsRecordingHudActive(false);
+  setIsRestoringToolbarFromChooser(false);
+}
+
+function handleRecordingModeSelection({
+  payload,
+  chooserSelectionHandledRef,
+  chooserAnchorPositionRef,
+  skipModePromptRef,
+  handleCaptureRef,
+}: {
+  payload: RecordingModeSelectedPayload;
+  chooserSelectionHandledRef: React.MutableRefObject<boolean>;
+  chooserAnchorPositionRef: React.MutableRefObject<{ x: number; y: number } | null>;
+  skipModePromptRef: React.MutableRefObject<boolean>;
+  handleCaptureRef: React.MutableRefObject<() => void>;
+}) {
+  if (chooserSelectionHandledRef.current) {
+    return;
   }
 
-  const width = Math.min(normalizedSelection.width, desktopWidth);
-  const height = Math.min(normalizedSelection.height, desktopHeight);
-  if (width < MIN_REUSABLE_AREA_SIZE || height < MIN_REUSABLE_AREA_SIZE) {
-    return null;
+  chooserSelectionHandledRef.current = true;
+  chooserAnchorPositionRef.current = null;
+  const store = useCaptureSettingsStore.getState();
+  store.setAfterRecordingAction(payload.action);
+  if (payload.remember) {
+    store.setPromptRecordingMode(false);
   }
+
+  skipModePromptRef.current = true;
+  window.setTimeout(() => {
+    handleCaptureRef.current();
+  }, 50);
+}
+
+async function cancelRecordingModeChooserToStartup(
+  restoreStartupToolbarWindow: () => Promise<void>
+) {
+  try {
+    await invoke('capture_overlay_cancel_to_startup');
+  } catch (error) {
+    toolbarLogger.error('Failed to cancel selection from recording mode chooser back:', error);
+  }
+
+  await emit('reset-to-startup', null).catch(() => {});
+  await restoreStartupToolbarWindow();
+}
+
+async function cancelOverlayAndRestoreStartup(
+  restoreStartupToolbarWindow: () => Promise<void>
+) {
+  try {
+    await invoke('capture_overlay_cancel_to_startup');
+  } catch {
+    // Overlay may already be closed.
+  }
+
+  await emit('reset-to-startup', null);
+  await restoreStartupToolbarWindow();
+}
+
+function shouldRestoreStartupFromCancel({
+  mode,
+  selectionConfirmed,
+  areaSelectionFlowActive,
+}: {
+  mode: ToolbarMode;
+  selectionConfirmed: boolean;
+  areaSelectionFlowActive: boolean;
+}) {
+  return mode === 'selection' && (selectionConfirmed || areaSelectionFlowActive);
+}
+
+function isStartupEscapeKey(event: KeyboardEvent, mode: ToolbarMode) {
+  return event.key === 'Escape' && mode === 'selection' && !event.repeat;
+}
+
+function consumeKeyboardEvent(event: KeyboardEvent) {
+  event.preventDefault();
+  event.stopPropagation();
+  event.stopImmediatePropagation();
+}
+
+async function captureFullscreenToEditor(
+  currentWindow: ReturnType<typeof getCurrentWebviewWindow>
+) {
+  const result = await invoke<{ file_path: string; width: number; height: number }>(
+    'capture_fullscreen_fast'
+  );
+  await invoke('open_editor_fast', {
+    filePath: result.file_path,
+    width: result.width,
+    height: result.height,
+  });
+  await currentWindow.close();
+}
+
+async function startUnconfirmedSourceCapture({
+  source,
+  captureType,
+  currentWindow,
+}: {
+  source: CaptureSource;
+  captureType: CaptureType;
+  currentWindow: ReturnType<typeof getCurrentWebviewWindow>;
+}) {
+  await currentWindow.hide();
+
+  if (source === 'display' && captureType === 'screenshot') {
+    await captureFullscreenToEditor(currentWindow);
+    return;
+  }
+
+  await invoke('show_overlay', { captureType: getOverlayCaptureType(captureType) });
+}
+
+async function captureAreaSelectionToEditor({
+  selection,
+  currentWindow,
+}: {
+  selection: AreaSelectionBounds;
+  currentWindow: ReturnType<typeof getCurrentWebviewWindow>;
+}) {
+  const result = await invoke<{ file_path: string; width: number; height: number }>(
+    'capture_screen_region_fast',
+    { selection }
+  );
+  await invoke('open_editor_fast', {
+    filePath: result.file_path,
+    width: result.width,
+    height: result.height,
+  });
+  await currentWindow.close();
+}
+
+async function showReusableAreaOverlay({
+  selection,
+  captureType,
+}: {
+  selection: AreaSelectionBounds;
+  captureType: CaptureType;
+}) {
+  await invoke('show_capture_overlay', {
+    captureType: getOverlayCaptureType(captureType),
+    sourceMode: 'area',
+    preselectArea: selection,
+  });
+}
+
+function getRecordingControlsSettings(
+  captureType: CaptureType,
+  settings: CaptureSettingsState['settings'],
+): {
+  microphoneDeviceIndex: number | null;
+  systemAudioEnabled: boolean;
+  recordingFormat: 'gif' | 'mp4';
+} {
+  return {
+    microphoneDeviceIndex: captureType === 'video'
+      ? settings.video.microphoneDeviceIndex
+      : null,
+    systemAudioEnabled: captureType === 'video'
+      ? settings.video.captureSystemAudio
+      : false,
+    recordingFormat: captureType === 'gif' ? 'gif' : 'mp4',
+  };
+}
+
+async function getCurrentWindowHudAnchor(
+  currentWindow: CurrentWebviewWindow
+): Promise<RecordingHudAnchor> {
+  const [position, size] = await Promise.all([
+    currentWindow.outerPosition(),
+    currentWindow.outerSize(),
+  ]);
 
   return {
-    x: Math.min(Math.max(normalizedSelection.x, minX), maxX - width),
-    y: Math.min(Math.max(normalizedSelection.y, minY), maxY - height),
-    width,
-    height,
+    x: position.x,
+    y: position.y,
+    width: size.width,
+    height: size.height,
   };
+}
+
+async function getSelectionHudAnchor(selectionBounds: SelectionBounds) {
+  const monitors = await availableMonitors().catch(() => []);
+  const selectionMonitor =
+    monitors.length > 0
+      ? getSelectionMonitor(monitors, selectionBounds) ?? monitors[0]
+      : undefined;
+
+  return getSnappedRecordingHudAnchor(selectionBounds, selectionMonitor);
+}
+
+async function getRecordingControlsHudAnchor({
+  currentWindow,
+  snapToolbarToSelection,
+  selectionConfirmed,
+  selectionBounds,
+}: {
+  currentWindow: CurrentWebviewWindow;
+  snapToolbarToSelection: boolean;
+  selectionConfirmed: boolean;
+  selectionBounds: SelectionBounds;
+}) {
+  if (snapToolbarToSelection && selectionConfirmed) {
+    return getSelectionHudAnchor(selectionBounds);
+  }
+
+  return getCurrentWindowHudAnchor(currentWindow);
+}
+
+async function showRecordingControls({
+  hudAnchor,
+  includeInCapture,
+  microphoneDeviceIndex,
+  systemAudioEnabled,
+  recordingFormat,
+}: {
+  hudAnchor: RecordingHudAnchor;
+  includeInCapture: boolean;
+  microphoneDeviceIndex: number | null;
+  systemAudioEnabled: boolean;
+  recordingFormat: 'gif' | 'mp4';
+}) {
+  await invoke('show_recording_controls', {
+    x: hudAnchor.x,
+    y: hudAnchor.y,
+    width: hudAnchor.width,
+    height: hudAnchor.height,
+    includeInCapture,
+    microphoneDeviceIndex,
+    systemAudioEnabled,
+    recordingFormat,
+  });
 }
 
 const CaptureToolbarWindow: React.FC = () => {
@@ -219,19 +780,16 @@ const CaptureToolbarWindow: React.FC = () => {
   } = useSelectionEvents();
 
   const currentAreaSelection = useMemo(
-    () => (selectionConfirmed ? getCurrentAreaSelection(selectionBounds) : null),
+    () => getConfirmedAreaSelection(selectionConfirmed, selectionBounds),
     [selectionBounds, selectionConfirmed]
   );
-  const isNativeSelectionHudActive = Boolean(
-    selectionConfirmed &&
-    selectionBounds.nativeControls &&
-    selectionBounds.sourceType === 'area' &&
-    mode === 'selection'
-  );
+  const isNativeSelectionHudActive = isNativeSelectionHudVisible({
+    selectionConfirmed,
+    selectionBounds,
+    mode,
+  });
   const isCurrentAreaSaved = useMemo(
-    () =>
-      currentAreaSelection !== null &&
-      savedAreaSelections.some((savedArea) => isSameAreaSelection(savedArea, currentAreaSelection)),
+    () => isSavedAreaSelection(currentAreaSelection, savedAreaSelections),
     [currentAreaSelection, savedAreaSelections]
   );
   const isAreaSaveDisabled = false;
@@ -267,28 +825,26 @@ const CaptureToolbarWindow: React.FC = () => {
 
   const suppressToolbarUntilRecording = shouldSuppressToolbarUntilRecording({
     autoStartRecording,
-    selectionAutoStartRecording:
-      selectionConfirmed ? selectionBounds.autoStartRecording : false,
+    selectionAutoStartRecording: getSelectionAutoStartRecording(
+      selectionConfirmed,
+      selectionBounds
+    ),
     mode,
   });
 
-  const suppressPrimaryToolbarDuringRecording = Boolean(
-    selectionConfirmed &&
-    (
-      isRecordingHudActive ||
-      mode === 'starting' ||
-      mode === 'recording' ||
-      mode === 'paused' ||
-      mode === 'processing'
-    )
-  );
+  const suppressPrimaryToolbarDuringRecording = isPrimaryToolbarSuppressedDuringRecording({
+    selectionConfirmed,
+    isRecordingHudActive,
+    mode,
+  });
 
-  const shouldHidePrimaryToolbarChrome =
-    suppressToolbarUntilRecording ||
-    isNativeSelectionHudActive ||
-    isModeChooserVisible ||
-    isRecordingControlsPending ||
-    isRecordingHudActive;
+  const shouldHidePrimaryToolbarChrome = shouldHideToolbarChrome({
+    suppressToolbarUntilRecording,
+    isNativeSelectionHudActive,
+    isModeChooserVisible,
+    isRecordingControlsPending,
+    isRecordingHudActive,
+  });
 
   const bringStartupToolbarToFront = useCallback(async () => {
     try {
@@ -340,14 +896,15 @@ const CaptureToolbarWindow: React.FC = () => {
     contentRef,
     selectionConfirmed,
     mode,
-    windowReadyToShow: selectionConfirmed || isStartupContextReady,
-    suppressWindowShow:
-      suppressToolbarUntilRecording ||
-      isNativeSelectionHudActive ||
-      suppressPrimaryToolbarDuringRecording ||
-      isModeChooserVisible ||
-      isRecordingControlsPending ||
+    windowReadyToShow: Boolean(selectionConfirmed || isStartupContextReady),
+    suppressWindowShow: shouldSuppressWindowShow({
+      suppressToolbarUntilRecording,
+      isNativeSelectionHudActive,
+      suppressPrimaryToolbarDuringRecording,
+      isModeChooserVisible,
+      isRecordingControlsPending,
       isRestoringToolbarFromChooser,
+    }),
     onContentSized: handleContentSized,
   });
 
@@ -367,9 +924,9 @@ const CaptureToolbarWindow: React.FC = () => {
 
   useEffect(() => {
     closeWindowOnCompleteRef.current = isAutoStartRecordingSession(
-      selectionConfirmed ? selectionBounds.autoStartRecording : false
+      getSelectionAutoStartRecording(selectionConfirmed, selectionBounds)
     );
-  }, [selectionBounds.autoStartRecording, selectionConfirmed]);
+  }, [selectionBounds, selectionConfirmed]);
 
   useEffect(() => {
     const handleBlur = () => {
@@ -422,26 +979,26 @@ const CaptureToolbarWindow: React.FC = () => {
 
   useEffect(() => {
     const handleKeyDown = async (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && mode === 'selection' && !e.repeat) {
-        e.preventDefault();
-        e.stopPropagation();
-        e.stopImmediatePropagation();
-
-        if (escHandledRef.current) return;
-
-        await closeWebcamPreview();
-
-        if (selectionConfirmed || areaSelectionFlowActiveRef.current) {
-          escHandledRef.current = true;
-          try {
-            await invoke('capture_overlay_cancel_to_startup');
-          } catch {
-            // Overlay may already be closed.
-          }
-          await emit('reset-to-startup', null);
-          await restoreStartupToolbarWindow();
-        }
+      if (!isStartupEscapeKey(e, mode)) {
+        return;
       }
+
+      consumeKeyboardEvent(e);
+
+      if (escHandledRef.current) return;
+
+      await closeWebcamPreview();
+
+      if (!shouldRestoreStartupFromCancel({
+        mode,
+        selectionConfirmed,
+        areaSelectionFlowActive: areaSelectionFlowActiveRef.current,
+      })) {
+        return;
+      }
+
+      escHandledRef.current = true;
+      await cancelOverlayAndRestoreStartup(restoreStartupToolbarWindow);
     };
 
     window.addEventListener('keydown', handleKeyDown);
@@ -454,176 +1011,173 @@ const CaptureToolbarWindow: React.FC = () => {
       showToolbarInRecording: showToolbarInCapture,
       settings,
     } = useCaptureSettingsStore.getState();
-    const recordingMicrophoneDeviceIndex =
-      captureType === 'video' ? settings.video.microphoneDeviceIndex : null;
-    const recordingSystemAudioEnabled =
-      captureType === 'video' ? settings.video.captureSystemAudio : false;
-    const recordingFormat = captureType === 'gif' ? 'gif' : 'mp4';
-    const [position, size] = await Promise.all([
-      currentWindow.outerPosition(),
-      currentWindow.outerSize(),
-    ]);
-    let hudAnchor: RecordingHudAnchor = {
-      x: position.x,
-      y: position.y,
-      width: size.width,
-      height: size.height,
-    };
-
-    if (snapToolbarToSelection && selectionConfirmed) {
-      const monitors = await availableMonitors().catch(() => []);
-      const selectionMonitor =
-        monitors.length > 0
-          ? getSelectionMonitor(monitors, selectionBoundsRef.current) ?? monitors[0]
-          : undefined;
-      hudAnchor = getSnappedRecordingHudAnchor(selectionBoundsRef.current, selectionMonitor);
-    }
-
-    await invoke('show_recording_controls', {
-      x: hudAnchor.x,
-      y: hudAnchor.y,
-      width: hudAnchor.width,
-      height: hudAnchor.height,
+    const hudAnchor = await getRecordingControlsHudAnchor({
+      currentWindow,
+      snapToolbarToSelection,
+      selectionConfirmed,
+      selectionBounds: selectionBoundsRef.current,
+    });
+    await showRecordingControls({
+      hudAnchor,
       includeInCapture: showToolbarInCapture,
-      microphoneDeviceIndex: recordingMicrophoneDeviceIndex ?? null,
-      systemAudioEnabled: recordingSystemAudioEnabled,
-      recordingFormat,
+      ...getRecordingControlsSettings(captureType, settings),
     });
     await currentWindow.hide();
   }, [captureType, selectionBoundsRef, selectionConfirmed, snapToolbarToSelection]);
 
+  const startUnconfirmedCaptureFlow = useCallback(async () => {
+    const currentWindow = getCurrentWebviewWindow();
+    areaSelectionFlowActiveRef.current = captureSource === 'area';
+    await currentWindow.hide();
+
+    if (captureSource === 'display' && captureType === 'screenshot') {
+      await captureFullscreenToEditor(currentWindow);
+      return;
+    }
+
+    await invoke('show_overlay', { captureType: getOverlayCaptureType(captureType) });
+  }, [captureSource, captureType]);
+
+  const showRecordingModeChooser = useCallback(async () => {
+    const currentWindow = getCurrentWebviewWindow();
+    chooserSelectionHandledRef.current = false;
+
+    if (snapToolbarToSelection) {
+      try {
+        await repositionToolbar(selectionBoundsRef.current);
+      } catch (error) {
+        toolbarLogger.warn('Failed to reposition toolbar before showing recording mode chooser:', error);
+      }
+    }
+
+    const position = await currentWindow.outerPosition();
+    const selection = selectionBoundsRef.current;
+    chooserAnchorPositionRef.current = {
+      x: position.x,
+      y: position.y,
+    };
+
+    setIsModeChooserVisible(true);
+    await currentWindow.hide().catch(() => {});
+
+    try {
+      await invoke('show_recording_mode_chooser', {
+        x: selection.x,
+        y: selection.y,
+        width: selection.width,
+        height: selection.height,
+        owner: 'capture-toolbar',
+        allowDrag: selection.sourceType === 'area',
+      });
+    } catch (error) {
+      setIsModeChooserVisible(false);
+      await currentWindow.show().catch(() => {});
+      throw error;
+    }
+  }, [selectionBoundsRef, snapToolbarToSelection]);
+
+  const getRecordingHudAnchor = useCallback(async (
+    currentWindow: ReturnType<typeof getCurrentWebviewWindow>
+  ): Promise<RecordingHudAnchor> => {
+    const [position, size] = await Promise.all([
+      currentWindow.outerPosition(),
+      currentWindow.outerSize(),
+    ]);
+
+    if (!snapToolbarToSelection) {
+      return {
+        x: position.x,
+        y: position.y,
+        width: size.width,
+        height: size.height,
+      };
+    }
+
+    const monitors = await availableMonitors().catch(() => []);
+    const selectionMonitor =
+      monitors.length > 0
+        ? getSelectionMonitor(monitors, selectionBoundsRef.current) ?? monitors[0]
+        : undefined;
+
+    return getSnappedRecordingHudAnchor(selectionBoundsRef.current, selectionMonitor);
+  }, [selectionBoundsRef, snapToolbarToSelection]);
+
+  const startConfirmedRecordingFlow = useCallback(async () => {
+    if (captureType === 'screenshot') {
+      return;
+    }
+
+    if (recordingStartupInProgressRef.current) {
+      return;
+    }
+
+    const currentWindow = getCurrentWebviewWindow();
+    recordingStartupInProgressRef.current = true;
+    setIsModeChooserVisible(false);
+    setIsRecordingHudActive(true);
+    setIsRecordingControlsPending(true);
+
+    recordingInitiatedRef.current = true;
+    const hudAnchor = await getRecordingHudAnchor(currentWindow);
+
+    await startRecordingCaptureFlow({
+      captureType,
+      selection: selectionBoundsRef.current,
+      hudAnchor,
+      onBeforeOverlayConfirm: async () => {
+        await currentWindow.hide().catch(() => {});
+      },
+    });
+
+    setIsRecordingControlsPending(false);
+  }, [captureType, getRecordingHudAnchor, recordingInitiatedRef, selectionBoundsRef]);
+
+  const resetFailedCaptureState = useCallback(() => {
+    areaSelectionFlowActiveRef.current = false;
+    recordingInitiatedRef.current = false;
+    recordingStartupInProgressRef.current = false;
+    chooserSelectionHandledRef.current = false;
+    chooserRestorePositionRef.current = null;
+    chooserAnchorPositionRef.current = null;
+    skipModePromptRef.current = false;
+    setIsModeChooserVisible(false);
+    setIsRecordingControlsPending(false);
+    setIsRecordingHudActive(false);
+    setIsRestoringToolbarFromChooser(false);
+    invoke('close_recording_controls').catch(() => {});
+    clearSelectionAutoStartRecording();
+    setMode('selection');
+  }, [clearSelectionAutoStartRecording, recordingInitiatedRef, setMode]);
+
   const handleCapture = useCallback(async () => {
     try {
-      if (!selectionConfirmed) {
-        const currentWindow = getCurrentWebviewWindow();
+      const route = getCaptureRoute({
+        selectionConfirmed,
+        captureType,
+        skipModePrompt: skipModePromptRef.current,
+        promptRecordingMode,
+      });
+      const routeActions: Record<CaptureRoute, () => Promise<void>> = {
+        unconfirmed: startUnconfirmedCaptureFlow,
+        screenshot: () => invoke('capture_overlay_confirm', { action: 'screenshot' }),
+        modeChooser: showRecordingModeChooser,
+        recording: startConfirmedRecordingFlow,
+      };
 
-        if (captureSource === 'display') {
-          areaSelectionFlowActiveRef.current = false;
-          await currentWindow.hide();
-
-          if (captureType === 'screenshot') {
-            const result = await invoke<{ file_path: string; width: number; height: number }>('capture_fullscreen_fast');
-            await invoke('open_editor_fast', {
-              filePath: result.file_path,
-              width: result.width,
-              height: result.height,
-            });
-            await currentWindow.close();
-          } else {
-            const ctStr = captureType === 'gif' ? 'gif' : 'video';
-            await invoke('show_overlay', { captureType: ctStr });
-          }
-        } else {
-          const ctStr = captureType === 'screenshot' ? 'screenshot' : captureType === 'gif' ? 'gif' : 'video';
-          areaSelectionFlowActiveRef.current = captureSource === 'area';
-          await currentWindow.hide();
-          await invoke('show_overlay', { captureType: ctStr });
-        }
-        return;
-      }
-
-      if (captureType === 'screenshot') {
-        await invoke('capture_overlay_confirm', { action: 'screenshot' });
-      } else {
-        const currentWindow = getCurrentWebviewWindow();
-
-        if (captureType === 'video' && !skipModePromptRef.current && promptRecordingMode) {
-          chooserSelectionHandledRef.current = false;
-          if (snapToolbarToSelection) {
-            try {
-              await repositionToolbar(selectionBoundsRef.current);
-            } catch (error) {
-              toolbarLogger.warn('Failed to reposition toolbar before showing recording mode chooser:', error);
-            }
-          }
-
-          const position = await currentWindow.outerPosition();
-          const selection = selectionBoundsRef.current;
-          chooserAnchorPositionRef.current = {
-            x: position.x,
-            y: position.y,
-          };
-
-          setIsModeChooserVisible(true);
-          await currentWindow.hide().catch(() => {});
-
-          try {
-            await invoke('show_recording_mode_chooser', {
-              x: selection.x,
-              y: selection.y,
-              width: selection.width,
-              height: selection.height,
-              owner: 'capture-toolbar',
-              allowDrag: selection.sourceType === 'area',
-            });
-          } catch (error) {
-            setIsModeChooserVisible(false);
-            await currentWindow.show().catch(() => {});
-            throw error;
-          }
-
-          return;
-        }
-
-        if (recordingStartupInProgressRef.current) {
-          return;
-        }
-
-        recordingStartupInProgressRef.current = true;
-        setIsModeChooserVisible(false);
-        setIsRecordingHudActive(true);
-        setIsRecordingControlsPending(true);
-
-        recordingInitiatedRef.current = true;
-        const [position, size] = await Promise.all([
-          currentWindow.outerPosition(),
-          currentWindow.outerSize(),
-        ]);
-        let hudAnchor: RecordingHudAnchor = {
-          x: position.x,
-          y: position.y,
-          width: size.width,
-          height: size.height,
-        };
-
-        if (snapToolbarToSelection) {
-          const monitors = await availableMonitors().catch(() => []);
-          const selectionMonitor =
-            monitors.length > 0
-              ? getSelectionMonitor(monitors, selectionBoundsRef.current) ?? monitors[0]
-              : undefined;
-          hudAnchor = getSnappedRecordingHudAnchor(selectionBoundsRef.current, selectionMonitor);
-        }
-
-        await startRecordingCaptureFlow({
-          captureType,
-          selection: selectionBoundsRef.current,
-          hudAnchor,
-          onBeforeOverlayConfirm: async () => {
-            await currentWindow.hide().catch(() => {});
-          },
-        });
-
-        setIsRecordingControlsPending(false);
-      }
+      await routeActions[route]();
     } catch (e) {
       toolbarLogger.error('Failed to capture:', e);
-      areaSelectionFlowActiveRef.current = false;
-      recordingInitiatedRef.current = false;
-      recordingStartupInProgressRef.current = false;
-      chooserSelectionHandledRef.current = false;
-      chooserRestorePositionRef.current = null;
-      chooserAnchorPositionRef.current = null;
-      skipModePromptRef.current = false;
-      setIsModeChooserVisible(false);
-      setIsRecordingControlsPending(false);
-      setIsRecordingHudActive(false);
-      setIsRestoringToolbarFromChooser(false);
-      invoke('close_recording_controls').catch(() => {});
-      clearSelectionAutoStartRecording();
-      setMode('selection');
+      resetFailedCaptureState();
     }
-  }, [captureType, captureSource, clearSelectionAutoStartRecording, promptRecordingMode, selectionConfirmed, selectionBoundsRef, recordingInitiatedRef, setMode, snapToolbarToSelection]);
+  }, [
+    captureType,
+    promptRecordingMode,
+    resetFailedCaptureState,
+    selectionConfirmed,
+    showRecordingModeChooser,
+    startConfirmedRecordingFlow,
+    startUnconfirmedCaptureFlow,
+  ]);
 
   useEffect(() => {
     handleCaptureRef.current = () => {
@@ -635,7 +1189,7 @@ const CaptureToolbarWindow: React.FC = () => {
     const unlisten = listen<NativeSelectionHudCapturePayload>(
       'native-selection-hud-capture',
       (event) => {
-        if (event.payload.owner && event.payload.owner !== 'capture-toolbar') {
+        if (!isCaptureToolbarOwner(event.payload.owner)) {
           return;
         }
 
@@ -666,13 +1220,7 @@ const CaptureToolbarWindow: React.FC = () => {
 
   const handleRedo = useCallback(async () => {
     try {
-      try {
-        await invoke('capture_overlay_cancel_to_startup');
-      } catch {
-        // Overlay may already be closed.
-      }
-      await emit('reset-to-startup', null);
-      await restoreStartupToolbarWindow();
+      await cancelOverlayAndRestoreStartup(restoreStartupToolbarWindow);
     } catch (e) {
       toolbarLogger.error('Failed to go back:', e);
     }
@@ -684,22 +1232,12 @@ const CaptureToolbarWindow: React.FC = () => {
 
       if (mode !== 'selection') {
         await invoke('cancel_recording');
-      } else if (selectionConfirmed) {
-        try {
-          await invoke('capture_overlay_cancel_to_startup');
-        } catch {
-          // Overlay may already be closed.
-        }
-        await emit('reset-to-startup', null);
-        await restoreStartupToolbarWindow();
-      } else if (areaSelectionFlowActiveRef.current) {
-        try {
-          await invoke('capture_overlay_cancel_to_startup');
-        } catch {
-          // Overlay may already be closed.
-        }
-        await emit('reset-to-startup', null);
-        await restoreStartupToolbarWindow();
+      } else if (shouldRestoreStartupFromCancel({
+        mode,
+        selectionConfirmed,
+        areaSelectionFlowActive: areaSelectionFlowActiveRef.current,
+      })) {
+        await cancelOverlayAndRestoreStartup(restoreStartupToolbarWindow);
       } else {
         const currentWindow = getCurrentWebviewWindow();
         await currentWindow.close();
@@ -737,28 +1275,8 @@ const CaptureToolbarWindow: React.FC = () => {
       const currentWindow = getCurrentWebviewWindow();
 
       try {
-        if (source === 'display') {
-          areaSelectionFlowActiveRef.current = false;
-          await currentWindow.hide();
-
-          if (captureType === 'screenshot') {
-            const result = await invoke<{ file_path: string; width: number; height: number }>('capture_fullscreen_fast');
-            await invoke('open_editor_fast', {
-              filePath: result.file_path,
-              width: result.width,
-              height: result.height,
-            });
-            await currentWindow.close();
-          } else {
-            const ctStr = captureType === 'gif' ? 'gif' : 'video';
-            await invoke('show_overlay', { captureType: ctStr });
-          }
-        } else {
-          const ctStr = captureType === 'screenshot' ? 'screenshot' : captureType === 'gif' ? 'gif' : 'video';
-          areaSelectionFlowActiveRef.current = source === 'area';
-          await currentWindow.hide();
-          await invoke('show_overlay', { captureType: ctStr });
-        }
+        areaSelectionFlowActiveRef.current = source === 'area';
+        await startUnconfirmedSourceCapture({ source, captureType, currentWindow });
       } catch (e) {
         toolbarLogger.error('Failed to trigger capture:', e);
         areaSelectionFlowActiveRef.current = false;
@@ -783,25 +1301,11 @@ const CaptureToolbarWindow: React.FC = () => {
       await currentWindow.hide();
 
       if (captureType === 'screenshot') {
-        const result = await invoke<{ file_path: string; width: number; height: number }>(
-          'capture_screen_region_fast',
-          { selection: reusableSelection }
-        );
-        await invoke('open_editor_fast', {
-          filePath: result.file_path,
-          width: result.width,
-          height: result.height,
-        });
-        await currentWindow.close();
+        await captureAreaSelectionToEditor({ selection: reusableSelection, currentWindow });
         return;
       }
 
-      const ctStr = captureType === 'gif' ? 'gif' : 'video';
-      await invoke('show_capture_overlay', {
-        captureType: ctStr,
-        sourceMode: 'area',
-        preselectArea: reusableSelection,
-      });
+      await showReusableAreaOverlay({ selection: reusableSelection, captureType });
     } catch (error) {
       toolbarLogger.error('Failed to reuse saved area:', error);
       areaSelectionFlowActiveRef.current = false;
@@ -830,20 +1334,17 @@ const CaptureToolbarWindow: React.FC = () => {
       return;
     }
 
-    const willReplaceOldest =
-      !isCurrentAreaSaved &&
-      savedAreaSelections.length >= MAX_SAVED_AREA_SELECTIONS;
+    const replacedOldest = willReplaceOldestSavedArea(
+      isCurrentAreaSaved,
+      savedAreaSelections.length
+    );
     const savedArea = saveAreaSelection(currentAreaSelection);
     if (!savedArea) {
       return;
     }
 
     if (isNativeSelectionHudActive) {
-      void invoke('capture_overlay_show_selection_hud_feedback', {
-        message: willReplaceOldest ? 'Replaced Oldest Area' : 'Saved New Area',
-      }).catch((error) => {
-        toolbarLogger.warn('Failed to show native saved-area feedback:', error);
-      });
+      void showNativeSavedAreaFeedback(replacedOldest);
     }
   }, [
     currentAreaSelection,
@@ -876,7 +1377,7 @@ const CaptureToolbarWindow: React.FC = () => {
     const unlisten = listen<NativeSelectionHudCapturePayload>(
       'native-selection-hud-save-area',
       (event) => {
-        if (event.payload.owner && event.payload.owner !== 'capture-toolbar') {
+        if (!isCaptureToolbarOwner(event.payload.owner)) {
           return;
         }
 
@@ -908,7 +1409,7 @@ const CaptureToolbarWindow: React.FC = () => {
     const unlisten = listen<NativeSelectionHudDeleteSavedAreaPayload>(
       'native-selection-hud-delete-saved-area',
       (event) => {
-        if (event.payload.owner && event.payload.owner !== 'capture-toolbar') {
+        if (!isCaptureToolbarOwner(event.payload.owner)) {
           return;
         }
 
@@ -937,18 +1438,20 @@ const CaptureToolbarWindow: React.FC = () => {
 
   useEffect(() => {
     const unlisten = listen('capture-overlay-reselecting', () => {
-      chooserSelectionHandledRef.current = false;
-      recordingStartupInProgressRef.current = false;
-      chooserRestorePositionRef.current = null;
-      chooserAnchorPositionRef.current = null;
-      skipModePromptRef.current = false;
+      resetRecordingModeChooserState({
+        chooserSelectionHandledRef,
+        recordingStartupInProgressRef,
+        chooserRestorePositionRef,
+        chooserAnchorPositionRef,
+        skipModePromptRef,
+        setIsModeChooserVisible,
+        setIsRecordingControlsPending,
+        setIsRecordingHudActive,
+        setIsRestoringToolbarFromChooser,
+      });
       recordingInitiatedRef.current = false;
       closeWindowOnCompleteRef.current = false;
 
-      setIsModeChooserVisible(false);
-      setIsRecordingControlsPending(false);
-      setIsRecordingHudActive(false);
-      setIsRestoringToolbarFromChooser(false);
       setIsStartupContextReady(false);
       setMode('selection');
       resetSelectionToStartup();
@@ -1045,14 +1548,14 @@ const CaptureToolbarWindow: React.FC = () => {
   }, [applyStartupToolbarContext, bringStartupToolbarToFrontAfterContext, isInitialized]);
 
   useEffect(() => {
-    if (
-      !shouldAutoStartAreaSelectionRef.current ||
-      !isInitialized ||
-      mode !== 'selection' ||
-      selectionConfirmed ||
-      captureSource !== 'area' ||
-      (captureType !== 'video' && captureType !== 'gif')
-    ) {
+    if (!shouldStartAreaSelectionFromContext({
+      shouldAutoStart: shouldAutoStartAreaSelectionRef.current,
+      isInitialized,
+      mode,
+      selectionConfirmed,
+      captureSource,
+      captureType,
+    })) {
       return;
     }
 
@@ -1069,55 +1572,37 @@ const CaptureToolbarWindow: React.FC = () => {
 
   useEffect(() => {
     const unlistenSelected = listen<RecordingModeSelectedPayload>('recording-mode-selected', (event) => {
-      if (event.payload.owner !== 'capture-toolbar') {
+      if (!isCaptureToolbarOwner(event.payload.owner)) {
         return;
       }
 
-      if (chooserSelectionHandledRef.current) {
-        return;
-      }
-
-      chooserSelectionHandledRef.current = true;
-      chooserAnchorPositionRef.current = null;
-      const store = useCaptureSettingsStore.getState();
-      store.setAfterRecordingAction(event.payload.action);
-      if (event.payload.remember) {
-        store.setPromptRecordingMode(false);
-      }
-
-      void (async () => {
-        skipModePromptRef.current = true;
-        window.setTimeout(() => {
-          handleCaptureRef.current();
-        }, 50);
-      })();
+      handleRecordingModeSelection({
+        payload: event.payload,
+        chooserSelectionHandledRef,
+        chooserAnchorPositionRef,
+        skipModePromptRef,
+        handleCaptureRef,
+      });
     });
 
     const unlistenBack = listen<RecordingModeChooserBackPayload>('recording-mode-chooser-back', (event) => {
-      if (event.payload.owner !== 'capture-toolbar') {
+      if (!isCaptureToolbarOwner(event.payload.owner)) {
         return;
       }
 
-      chooserSelectionHandledRef.current = false;
-      recordingStartupInProgressRef.current = false;
-      chooserRestorePositionRef.current = null;
-      chooserAnchorPositionRef.current = null;
-      setIsModeChooserVisible(false);
-      setIsRecordingControlsPending(false);
-      setIsRecordingHudActive(false);
-      setIsRestoringToolbarFromChooser(false);
-      skipModePromptRef.current = false;
+      resetRecordingModeChooserState({
+        chooserSelectionHandledRef,
+        recordingStartupInProgressRef,
+        chooserRestorePositionRef,
+        chooserAnchorPositionRef,
+        skipModePromptRef,
+        setIsModeChooserVisible,
+        setIsRecordingControlsPending,
+        setIsRecordingHudActive,
+        setIsRestoringToolbarFromChooser,
+      });
       clearSelectionAutoStartRecording();
-      void (async () => {
-        try {
-          await invoke('capture_overlay_cancel_to_startup');
-        } catch (error) {
-          toolbarLogger.error('Failed to cancel selection from recording mode chooser back:', error);
-        }
-
-        await emit('reset-to-startup', null).catch(() => {});
-        await restoreStartupToolbarWindow();
-      })();
+      void cancelRecordingModeChooserToStartup(restoreStartupToolbarWindow);
     });
 
     return () => {
@@ -1127,14 +1612,14 @@ const CaptureToolbarWindow: React.FC = () => {
   }, [clearSelectionAutoStartRecording, restoreStartupToolbarWindow]);
 
   useEffect(() => {
-    if (
-      !autoStartRecording ||
-      autoStartRecordingTriggeredRef.current ||
-      !selectionConfirmed ||
-      mode !== 'selection' ||
-      captureType === 'screenshot' ||
-      (selectionBounds.captureType != null && selectionBounds.captureType !== captureType)
-    ) {
+    if (!shouldAutoStartConfirmedRecording({
+      autoStartRecording,
+      hasTriggered: autoStartRecordingTriggeredRef.current,
+      selectionConfirmed,
+      mode,
+      captureType,
+      selectionCaptureType: selectionBounds.captureType,
+    })) {
       return;
     }
 
@@ -1150,10 +1635,7 @@ const CaptureToolbarWindow: React.FC = () => {
   ]);
 
   useEffect(() => {
-    if (
-      autoStartRecording &&
-      (mode === 'recording' || mode === 'paused' || mode === 'error')
-    ) {
+    if (shouldClearSelectionAutoStartRecording(autoStartRecording, mode)) {
       clearSelectionAutoStartRecording();
     }
   }, [autoStartRecording, clearSelectionAutoStartRecording, mode]);
@@ -1217,10 +1699,7 @@ const CaptureToolbarWindow: React.FC = () => {
   }, [isRestoringToolbarFromChooser]);
 
   useEffect(() => {
-    if (
-      !selectionConfirmed ||
-      (mode !== 'recording' && mode !== 'paused' && mode !== 'processing')
-    ) {
+    if (!shouldShowRecordingControlsForMode(selectionConfirmed, mode)) {
       return;
     }
 
@@ -1238,7 +1717,7 @@ const CaptureToolbarWindow: React.FC = () => {
   }, [mode, selectionConfirmed, showRecordingControlsWindow]);
 
   useEffect(() => {
-    if (mode === 'starting' || mode === 'recording' || mode === 'paused' || mode === 'processing') {
+    if (!shouldCloseRecordingControlsForMode(mode)) {
       return;
     }
 
@@ -1293,11 +1772,7 @@ const CaptureToolbarWindow: React.FC = () => {
     <div ref={containerRef} className="app-container">
       <div
         aria-hidden={shouldHidePrimaryToolbarChrome}
-        style={
-          shouldHidePrimaryToolbarChrome
-            ? { visibility: 'hidden', pointerEvents: 'none' }
-            : undefined
-        }
+        style={getToolbarChromeStyle(shouldHidePrimaryToolbarChrome)}
       >
         <div className="toolbar-container">
           <div

@@ -13,13 +13,27 @@ import {
   WindowsIcon,
 } from "./icons";
 
-export default async function Home() {
-  const latestVersion = await getLatestReleaseVersion();
-  const fallbackVersion = latestRelease?.version ?? null;
-  const displayVersion = latestVersion ?? fallbackVersion;
-  const downloadUrl =
+function getHomeDisplayVersion(latestVersion: string | null) {
+  return latestVersion ?? latestRelease?.version ?? null;
+}
+
+function getHomeDownloadUrl(displayVersion: string | null) {
+  return (
     getWindowsInstallerDownloadUrl(displayVersion) ??
-    "https://github.com/moonsnapapp/moonsnap/releases/latest";
+    "https://github.com/moonsnapapp/moonsnap/releases/latest"
+  );
+}
+
+async function getHomeDownloadInfo() {
+  const latestVersion = await getLatestReleaseVersion();
+  const displayVersion = getHomeDisplayVersion(latestVersion);
+  const downloadUrl = getHomeDownloadUrl(displayVersion);
+
+  return { displayVersion, downloadUrl };
+}
+
+export default async function Home() {
+  const { displayVersion, downloadUrl } = await getHomeDownloadInfo();
 
   return (
     <div className="relative min-h-screen">

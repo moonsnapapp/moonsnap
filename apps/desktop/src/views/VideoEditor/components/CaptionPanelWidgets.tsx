@@ -32,6 +32,11 @@ export interface SegmentAuditionState {
   endMs: number;
 }
 
+const WORD_TIMELINE_BLOCK_STATE_CLASSES = {
+  dragging: 'border-[var(--accent-400)] bg-[var(--accent-100)]/80',
+  idle: 'border-[var(--glass-border)] bg-[var(--card)]/85',
+};
+
 interface CaptionAuditionWatcherProps {
   segmentAuditionState: SegmentAuditionState | null;
   requestSeek: (timeMs: number) => void;
@@ -173,6 +178,81 @@ interface WordTimingEditorProps {
   hasInvalidWordTiming: boolean;
 }
 
+function getWordTimelineLayout({
+  word,
+  timelineSegmentStart,
+  timelineDuration,
+}: {
+  word: EditableCaptionWord;
+  timelineSegmentStart: number;
+  timelineDuration: number;
+}) {
+  const wordStart = Number.parseFloat(word.start);
+  const wordEnd = Number.parseFloat(word.end);
+  if (!Number.isFinite(wordStart) || !Number.isFinite(wordEnd)) return null;
+
+  const left = clamp(((wordStart - timelineSegmentStart) / timelineDuration) * 100, 0, 100);
+  const right = clamp(((wordEnd - timelineSegmentStart) / timelineDuration) * 100, 0, 100);
+  return { left, width: Math.max(right - left, 1.5) };
+}
+
+function getWordTimelineBlockClass(isDragging: boolean) {
+  const stateClass = isDragging
+    ? WORD_TIMELINE_BLOCK_STATE_CLASSES.dragging
+    : WORD_TIMELINE_BLOCK_STATE_CLASSES.idle;
+
+  return `absolute top-1 bottom-1 rounded-md border transition-colors ${stateClass} cursor-grab active:cursor-grabbing`;
+}
+
+function getWordTimelineLabel(word: EditableCaptionWord, index: number) {
+  return word.text || `Word ${index + 1}`;
+}
+
+function WordTimelineBlock({
+  word,
+  index,
+  timelineSegmentStart,
+  timelineDuration,
+  wordDragState,
+  startWordDrag,
+}: {
+  word: EditableCaptionWord;
+  index: number;
+  timelineSegmentStart: number;
+  timelineDuration: number;
+  wordDragState: WordDragState | null;
+  startWordDrag: WordTimingEditorProps['startWordDrag'];
+}) {
+  const layout = getWordTimelineLayout({ word, timelineSegmentStart, timelineDuration });
+  if (!layout) return null;
+
+  const isDragging = wordDragState?.index === index;
+  const wordLabel = getWordTimelineLabel(word, index);
+  return (
+    <div
+      key={`timeline-${index}-${word.text}`}
+      className={getWordTimelineBlockClass(isDragging)}
+      style={{ left: `${layout.left}%`, width: `${layout.width}%` }}
+      onMouseDown={(event) => startWordDrag(event, index, 'move')}
+      title={word.text}
+    >
+      <div className="absolute inset-0 flex items-center justify-center px-1">
+        <span className="truncate text-[10px] text-[var(--ink-dark)]">
+          {wordLabel}
+        </span>
+      </div>
+      <div
+        className="absolute left-0 top-0 bottom-0 w-1.5 cursor-ew-resize bg-[var(--accent-300)]/60 hover:bg-[var(--accent-300)]"
+        onMouseDown={(event) => startWordDrag(event, index, 'start')}
+      />
+      <div
+        className="absolute right-0 top-0 bottom-0 w-1.5 cursor-ew-resize bg-[var(--accent-300)]/60 hover:bg-[var(--accent-300)]"
+        onMouseDown={(event) => startWordDrag(event, index, 'end')}
+      />
+    </div>
+  );
+}
+
 export function WordTimingEditor({
   timelineSegmentStart,
   timelineDuration,
@@ -284,54 +364,17 @@ export function WordTimingEditor({
           className="absolute top-0 bottom-0 w-px bg-white/80 pointer-events-none z-20"
           style={{ left: `${localPlayheadPercent}%` }}
         />
-        {editingWords.map((word, index) => {
-          const wordStart = Number.parseFloat(word.start);
-          const wordEnd = Number.parseFloat(word.end);
-          if (!Number.isFinite(wordStart) || !Number.isFinite(wordEnd)) {
-            return null;
-          }
-
-          const left = clamp(
-            ((wordStart - timelineSegmentStart) / timelineDuration) * 100,
-            0,
-            100
-          );
-          const right = clamp(
-            ((wordEnd - timelineSegmentStart) / timelineDuration) * 100,
-            0,
-            100
-          );
-          const width = Math.max(right - left, 1.5);
-          const isDragging = wordDragState?.index === index;
-
-          return (
-            <div
-              key={`timeline-${index}-${word.text}`}
-              className={`absolute top-1 bottom-1 rounded-md border transition-colors ${
-                isDragging
-                  ? 'border-[var(--accent-400)] bg-[var(--accent-100)]/80'
-                  : 'border-[var(--glass-border)] bg-[var(--card)]/85'
-              } cursor-grab active:cursor-grabbing`}
-              style={{ left: `${left}%`, width: `${width}%` }}
-              onMouseDown={(event) => startWordDrag(event, index, 'move')}
-              title={word.text}
-            >
-              <div className="absolute inset-0 flex items-center justify-center px-1">
-                <span className="truncate text-[10px] text-[var(--ink-dark)]">
-                  {word.text || `Word ${index + 1}`}
-                </span>
-              </div>
-              <div
-                className="absolute left-0 top-0 bottom-0 w-1.5 cursor-ew-resize bg-[var(--accent-300)]/60 hover:bg-[var(--accent-300)]"
-                onMouseDown={(event) => startWordDrag(event, index, 'start')}
-              />
-              <div
-                className="absolute right-0 top-0 bottom-0 w-1.5 cursor-ew-resize bg-[var(--accent-300)]/60 hover:bg-[var(--accent-300)]"
-                onMouseDown={(event) => startWordDrag(event, index, 'end')}
-              />
-            </div>
-          );
-        })}
+        {editingWords.map((word, index) => (
+          <WordTimelineBlock
+            key={`timeline-${index}-${word.text}`}
+            word={word}
+            index={index}
+            timelineSegmentStart={timelineSegmentStart}
+            timelineDuration={timelineDuration}
+            wordDragState={wordDragState}
+            startWordDrag={startWordDrag}
+          />
+        ))}
       </div>
       <p className="text-[10px] text-[var(--ink-subtle)]">
         Drag a word block to move timing, or drag left/right edges to trim.

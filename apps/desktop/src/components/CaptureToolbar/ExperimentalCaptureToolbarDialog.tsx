@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef, type MutableRefObject } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { availableMonitors, type Monitor } from '@tauri-apps/api/window';
@@ -38,6 +38,17 @@ interface OverlaySelectionResult {
   height: number;
 }
 
+interface VisibleDesktopBounds {
+  minX: number;
+  minY: number;
+  maxX: number;
+  maxY: number;
+  width: number;
+  height: number;
+}
+
+type RecordingCaptureType = Extract<CaptureType, 'video' | 'gif'>;
+
 const TOOLBAR_OWNER = 'library';
 const MIN_REUSABLE_AREA_SIZE = 20;
 
@@ -58,39 +69,77 @@ function getCurrentAreaSelection(selection: SelectionBounds): AreaSelectionBound
   });
 }
 
-function clampAreaSelectionToVisibleDesktop(
-  selection: AreaSelectionBounds,
-  monitors: Monitor[]
-): AreaSelectionBounds | null {
-  const normalizedSelection = normalizeAreaSelection(selection);
-  if (!normalizedSelection) {
-    return null;
-  }
-
+function getVisibleDesktopBounds(monitors: Monitor[]): VisibleDesktopBounds | null {
   if (monitors.length === 0) {
-    return normalizedSelection;
+    return null;
   }
 
   const minX = Math.min(...monitors.map((monitor) => monitor.position.x));
   const minY = Math.min(...monitors.map((monitor) => monitor.position.y));
   const maxX = Math.max(...monitors.map((monitor) => monitor.position.x + monitor.size.width));
   const maxY = Math.max(...monitors.map((monitor) => monitor.position.y + monitor.size.height));
-  const desktopWidth = maxX - minX;
-  const desktopHeight = maxY - minY;
-
-  if (desktopWidth < MIN_REUSABLE_AREA_SIZE || desktopHeight < MIN_REUSABLE_AREA_SIZE) {
-    return null;
-  }
-
-  const width = Math.min(normalizedSelection.width, desktopWidth);
-  const height = Math.min(normalizedSelection.height, desktopHeight);
-  if (width < MIN_REUSABLE_AREA_SIZE || height < MIN_REUSABLE_AREA_SIZE) {
-    return null;
-  }
 
   return {
-    x: Math.min(Math.max(normalizedSelection.x, minX), maxX - width),
-    y: Math.min(Math.max(normalizedSelection.y, minY), maxY - height),
+    minX,
+    minY,
+    maxX,
+    maxY,
+    width: maxX - minX,
+    height: maxY - minY,
+  };
+}
+
+function hasReusableAreaDimensions(width: number, height: number): boolean {
+  return width >= MIN_REUSABLE_AREA_SIZE && height >= MIN_REUSABLE_AREA_SIZE;
+}
+
+function clampToRange(value: number, min: number, max: number): number {
+  return Math.min(Math.max(value, min), max);
+}
+
+function getReusableAreaSize(
+  selection: AreaSelectionBounds,
+  desktopBounds: VisibleDesktopBounds
+): Pick<AreaSelectionBounds, 'width' | 'height'> | null {
+  if (!hasReusableAreaDimensions(desktopBounds.width, desktopBounds.height)) {
+    return null;
+  }
+
+  const width = Math.min(selection.width, desktopBounds.width);
+  const height = Math.min(selection.height, desktopBounds.height);
+  if (!hasReusableAreaDimensions(width, height)) {
+    return null;
+  }
+
+  return { width, height };
+}
+
+function clampAreaSelectionToVisibleDesktop(
+  selection: AreaSelectionBounds,
+  monitors: Monitor[]
+): AreaSelectionBounds | null {
+  const normalizedSelection = normalizeAreaSelection(selection);
+  if (!normalizedSelection) return null;
+
+  return monitors.length === 0
+    ? normalizedSelection
+    : clampNormalizedAreaSelectionToMonitors(normalizedSelection, monitors);
+}
+
+function clampNormalizedAreaSelectionToMonitors(
+  selection: AreaSelectionBounds,
+  monitors: Monitor[]
+): AreaSelectionBounds | null {
+  const desktopBounds = getVisibleDesktopBounds(monitors);
+  if (!desktopBounds) return null;
+
+  const size = getReusableAreaSize(selection, desktopBounds);
+  if (!size) return null;
+
+  const { width, height } = size;
+  return {
+    x: clampToRange(selection.x, desktopBounds.minX, desktopBounds.maxX - width),
+    y: clampToRange(selection.y, desktopBounds.minY, desktopBounds.maxY - height),
     width,
     height,
   };
@@ -113,6 +162,99 @@ async function captureOverlayResult(result: OverlaySelectionResult) {
     filePath: capture.file_path,
     width: capture.width,
     height: capture.height,
+  });
+}
+
+async function getRecordingHudAnchor(selection: SelectionBounds) {
+  const monitors = await availableMonitors().catch(() => []);
+  const selectionMonitor =
+    monitors.length > 0
+      ? getSelectionMonitor(monitors, selection) ?? monitors[0]
+      : undefined;
+
+  return getSnappedRecordingHudAnchor(selection, selectionMonitor);
+}
+
+async function startExperimentalRecordingCapture({
+  activeMode,
+  selection,
+  recordingStartupInProgressRef,
+  recordingInitiatedRef,
+  setMode,
+}: {
+  activeMode: RecordingCaptureType;
+  selection: SelectionBounds;
+  recordingStartupInProgressRef: MutableRefObject<boolean>;
+  recordingInitiatedRef: MutableRefObject<boolean>;
+  setMode: (mode: 'selection' | 'starting') => void;
+}) {
+  if (recordingStartupInProgressRef.current) {
+    return;
+  }
+
+  recordingStartupInProgressRef.current = true;
+  recordingInitiatedRef.current = true;
+  setMode('starting');
+
+  const hudAnchor = await getRecordingHudAnchor(selection);
+  await startRecordingCaptureFlow({
+    captureType: activeMode,
+    selection,
+    hudAnchor: {
+      ...hudAnchor,
+      centerOnSelection: true,
+    },
+  });
+}
+
+async function showReusableAreaOverlay({
+  activeMode,
+  reusableSelection,
+}: {
+  activeMode: CaptureType;
+  reusableSelection: AreaSelectionBounds;
+}) {
+  return invoke<OverlaySelectionResult | null>('show_capture_overlay', {
+    captureType: toOverlayCaptureType(activeMode),
+    sourceMode: 'area',
+    preselectArea: reusableSelection,
+    toolbarOwner: TOOLBAR_OWNER,
+  });
+}
+
+async function captureReusableScreenshotIfNeeded(
+  activeMode: CaptureType,
+  result: OverlaySelectionResult | null
+) {
+  if (activeMode === 'screenshot' && result) {
+    await captureOverlayResult(result);
+  }
+}
+
+async function handleConfirmedCapture({
+  activeMode,
+  selection,
+  recordingStartupInProgressRef,
+  recordingInitiatedRef,
+  setMode,
+}: {
+  activeMode: CaptureType;
+  selection: SelectionBounds;
+  recordingStartupInProgressRef: MutableRefObject<boolean>;
+  recordingInitiatedRef: MutableRefObject<boolean>;
+  setMode: (mode: 'selection' | 'starting') => void;
+}) {
+  if (activeMode === 'screenshot') {
+    await invoke('capture_overlay_confirm', { action: 'screenshot' });
+    return;
+  }
+
+  await startExperimentalRecordingCapture({
+    activeMode,
+    selection,
+    recordingStartupInProgressRef,
+    recordingInitiatedRef,
+    setMode,
   });
 }
 
@@ -238,16 +380,11 @@ export function ExperimentalCaptureToolbarDialog({
       }
 
       setLastAreaSelection(reusableSelection);
-      const result = await invoke<OverlaySelectionResult | null>('show_capture_overlay', {
-        captureType: toOverlayCaptureType(activeMode),
-        sourceMode: 'area',
-        preselectArea: reusableSelection,
-        toolbarOwner: TOOLBAR_OWNER,
+      const result = await showReusableAreaOverlay({
+        activeMode,
+        reusableSelection,
       });
-
-      if (activeMode === 'screenshot' && result) {
-        await captureOverlayResult(result);
-      }
+      await captureReusableScreenshotIfNeeded(activeMode, result);
     } catch (error) {
       captureLogger.error('Failed to reuse area selection from experimental modal:', error);
     }
@@ -260,33 +397,12 @@ export function ExperimentalCaptureToolbarDialog({
         return;
       }
 
-      if (activeMode === 'screenshot') {
-        await invoke('capture_overlay_confirm', { action: 'screenshot' });
-        return;
-      }
-
-      if (recordingStartupInProgressRef.current) {
-        return;
-      }
-
-      recordingStartupInProgressRef.current = true;
-      recordingInitiatedRef.current = true;
-      setMode('starting');
-
-      const monitors = await availableMonitors().catch(() => []);
-      const selectionMonitor =
-        monitors.length > 0
-          ? getSelectionMonitor(monitors, selectionBoundsRef.current) ?? monitors[0]
-          : undefined;
-      const hudAnchor = getSnappedRecordingHudAnchor(selectionBoundsRef.current, selectionMonitor);
-
-      await startRecordingCaptureFlow({
-        captureType: activeMode,
+      await handleConfirmedCapture({
+        activeMode,
         selection: selectionBoundsRef.current,
-        hudAnchor: {
-          ...hudAnchor,
-          centerOnSelection: true,
-        },
+        recordingStartupInProgressRef,
+        recordingInitiatedRef,
+        setMode,
       });
     } catch (error) {
       toolbarLogger.error('Failed to capture from experimental modal:', error);

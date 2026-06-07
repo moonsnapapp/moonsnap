@@ -116,6 +116,39 @@ function breakWord(
   return chunks;
 }
 
+function appendOversizedWord(
+  ctx: RenderContext,
+  word: string,
+  maxWidth: number,
+  lines: string[],
+  currentLine: string,
+): string {
+  if (currentLine) {
+    lines.push(currentLine);
+  }
+
+  const chunks = breakWord(ctx, word, maxWidth);
+  lines.push(...chunks.slice(0, -1));
+  return chunks[chunks.length - 1] ?? '';
+}
+
+function appendWrappedWord(
+  ctx: RenderContext,
+  word: string,
+  maxWidth: number,
+  lines: string[],
+  currentLine: string,
+): string {
+  const testLine = currentLine ? `${currentLine} ${word}` : word;
+
+  if (currentLine && ctx.measureText(testLine).width > maxWidth) {
+    lines.push(currentLine);
+    return word;
+  }
+
+  return testLine;
+}
+
 /**
  * Word-wrap text to fit within maxWidth using Canvas 2D measureText.
  * Breaks mid-word when a single word exceeds maxWidth.
@@ -133,30 +166,11 @@ function wordWrap(
     if (!word) continue;
 
     if (ctx.measureText(word).width > maxWidth) {
-      if (currentLine) {
-        lines.push(currentLine);
-        currentLine = '';
-      }
-      const chunks = breakWord(ctx, word, maxWidth);
-      for (let i = 0; i < chunks.length; i++) {
-        if (i < chunks.length - 1) {
-          lines.push(chunks[i]);
-        } else {
-          currentLine = chunks[i];
-        }
-      }
+      currentLine = appendOversizedWord(ctx, word, maxWidth, lines, currentLine);
       continue;
     }
 
-    const testLine = currentLine ? `${currentLine} ${word}` : word;
-    const metrics = ctx.measureText(testLine);
-
-    if (metrics.width > maxWidth && currentLine) {
-      lines.push(currentLine);
-      currentLine = word;
-    } else {
-      currentLine = testLine;
-    }
+    currentLine = appendWrappedWord(ctx, word, maxWidth, lines, currentLine);
   }
 
   if (currentLine) {
@@ -260,6 +274,115 @@ export interface RenderedLineInfo {
   revealWidthsPx: number[];
 }
 
+function shouldRenderMode(
+  renderMode: RenderTextOptions['renderMode'] | undefined,
+  target: 'background' | 'text',
+) {
+  const mode = renderMode ?? 'all';
+  return mode === 'all' || mode === target;
+}
+
+function hasVisibleBackground(
+  opts: RenderTextOptions,
+  scaledBackgroundStrokeWidth: number,
+) {
+  return (
+    hasVisibleColor(opts.backgroundColor) ||
+    (hasVisibleColor(opts.backgroundStrokeColor) && scaledBackgroundStrokeWidth > 0)
+  );
+}
+
+function renderTextBackground({
+  ctx,
+  opts,
+  canvasWidth,
+  canvasHeight,
+  heightScale,
+  scaledBackgroundStrokeWidth,
+}: {
+  ctx: RenderContext;
+  opts: RenderTextOptions;
+  canvasWidth: number;
+  canvasHeight: number;
+  heightScale: number;
+  scaledBackgroundStrokeWidth: number;
+}) {
+  if (!shouldRenderMode(opts.renderMode, 'background') || !hasVisibleBackground(opts, scaledBackgroundStrokeWidth)) {
+    return;
+  }
+
+  ctx.save();
+  ctx.shadowColor = 'transparent';
+  ctx.shadowBlur = 0;
+  ctx.shadowOffsetX = 0;
+  ctx.shadowOffsetY = 0;
+  const inset = scaledBackgroundStrokeWidth / 2;
+  drawRoundedRect(
+    ctx,
+    inset,
+    inset,
+    Math.max(0, canvasWidth - scaledBackgroundStrokeWidth),
+    Math.max(0, canvasHeight - scaledBackgroundStrokeWidth),
+    8 * heightScale,
+  );
+  if (hasVisibleColor(opts.backgroundColor)) {
+    ctx.fillStyle = opts.backgroundColor;
+    ctx.fill();
+  }
+  if (hasVisibleColor(opts.backgroundStrokeColor) && scaledBackgroundStrokeWidth > 0) {
+    ctx.strokeStyle = opts.backgroundStrokeColor;
+    ctx.lineWidth = scaledBackgroundStrokeWidth;
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function configureTextShadow(ctx: RenderContext) {
+  ctx.shadowColor = 'rgba(0, 0, 0, 0.5)';
+  ctx.shadowBlur = 4;
+  ctx.shadowOffsetX = 0;
+  ctx.shadowOffsetY = 1;
+}
+
+function getRevealWidths(ctx: RenderContext, lineText: string) {
+  const revealWidthsPx: number[] = [];
+  let prefix = '';
+  for (const grapheme of splitGraphemes(lineText)) {
+    prefix += grapheme;
+    revealWidthsPx.push(ctx.measureText(prefix).width);
+  }
+  return revealWidthsPx;
+}
+
+function renderTextLine({
+  ctx,
+  lineText,
+  centerX,
+  baselineY,
+  shouldRenderText,
+  opts,
+  scaledStrokeWidth,
+}: {
+  ctx: RenderContext;
+  lineText: string;
+  centerX: number;
+  baselineY: number;
+  shouldRenderText: boolean;
+  opts: RenderTextOptions;
+  scaledStrokeWidth: number;
+}) {
+  if (!shouldRenderText) return;
+
+  if (hasVisibleColor(opts.strokeColor) && scaledStrokeWidth > 0) {
+    ctx.lineJoin = 'round';
+    ctx.miterLimit = 2;
+    ctx.strokeStyle = opts.strokeColor;
+    ctx.lineWidth = scaledStrokeWidth;
+    ctx.strokeText(lineText, centerX, baselineY);
+  }
+  ctx.fillText(lineText, centerX, baselineY);
+}
+
 /**
  * Render text onto a canvas context. Single source of truth for text rendering,
  * used by both preview (TextOverlay canvas) and export (preRenderForExport).
@@ -293,46 +416,19 @@ export function renderTextOnCanvas(
   const heightScale = referenceHeight / 1080;
   const scaledStrokeWidth = Math.max(0, opts.strokeWidth ?? 0) * heightScale;
   const scaledBackgroundStrokeWidth = Math.max(0, opts.backgroundStrokeWidth ?? 0) * heightScale;
-  const renderMode = opts.renderMode ?? 'all';
-  const shouldRenderBackground = renderMode === 'all' || renderMode === 'background';
-  const shouldRenderText = renderMode === 'all' || renderMode === 'text';
+  const shouldRenderText = shouldRenderMode(opts.renderMode, 'text');
 
-  if (
-    shouldRenderBackground &&
-    (hasVisibleColor(opts.backgroundColor) ||
-      (hasVisibleColor(opts.backgroundStrokeColor) && scaledBackgroundStrokeWidth > 0))
-  ) {
-    ctx.save();
-    ctx.shadowColor = 'transparent';
-    ctx.shadowBlur = 0;
-    ctx.shadowOffsetX = 0;
-    ctx.shadowOffsetY = 0;
-    const inset = scaledBackgroundStrokeWidth / 2;
-    drawRoundedRect(
-      ctx,
-      inset,
-      inset,
-      Math.max(0, canvasWidth - scaledBackgroundStrokeWidth),
-      Math.max(0, canvasHeight - scaledBackgroundStrokeWidth),
-      8 * heightScale,
-    );
-    if (hasVisibleColor(opts.backgroundColor)) {
-      ctx.fillStyle = opts.backgroundColor;
-      ctx.fill();
-    }
-    if (hasVisibleColor(opts.backgroundStrokeColor) && scaledBackgroundStrokeWidth > 0) {
-      ctx.strokeStyle = opts.backgroundStrokeColor;
-      ctx.lineWidth = scaledBackgroundStrokeWidth;
-      ctx.stroke();
-    }
-    ctx.restore();
-  }
+  renderTextBackground({
+    ctx,
+    opts,
+    canvasWidth,
+    canvasHeight,
+    heightScale,
+    scaledBackgroundStrokeWidth,
+  });
 
   // Text shadow
-  ctx.shadowColor = 'rgba(0, 0, 0, 0.5)';
-  ctx.shadowBlur = 4;
-  ctx.shadowOffsetX = 0;
-  ctx.shadowOffsetY = 1;
+  configureTextShadow(ctx);
 
   ctx.fillStyle = opts.color;
   const centerX = canvasWidth / 2;
@@ -340,30 +436,22 @@ export function renderTextOnCanvas(
   for (let i = 0; i < lines.length; i++) {
     const lineTopPx = startY + i * lineHeightPx;
     const lineText = lines[i];
-    if (shouldRenderText && hasVisibleColor(opts.strokeColor) && scaledStrokeWidth > 0) {
-      ctx.lineJoin = 'round';
-      ctx.miterLimit = 2;
-      ctx.strokeStyle = opts.strokeColor;
-      ctx.lineWidth = scaledStrokeWidth;
-      ctx.strokeText(lineText, centerX, lineTopPx + baselineInLinePx);
-    }
-    if (shouldRenderText) {
-      ctx.fillText(lineText, centerX, lineTopPx + baselineInLinePx);
-    }
-    const graphemes = splitGraphemes(lineText);
-    const revealWidthsPx: number[] = [];
-    let prefix = '';
-    for (const grapheme of graphemes) {
-      prefix += grapheme;
-      revealWidthsPx.push(ctx.measureText(prefix).width);
-    }
+    renderTextLine({
+      ctx,
+      lineText,
+      centerX,
+      baselineY: lineTopPx + baselineInLinePx,
+      shouldRenderText,
+      opts,
+      scaledStrokeWidth,
+    });
 
     lineInfos.push({
       text: lineText,
       topPx: lineTopPx,
       heightPx: lineHeightPx,
       contentWidthPx: ctx.measureText(lineText).width,
-      revealWidthsPx,
+      revealWidthsPx: getRevealWidths(ctx, lineText),
     });
   }
 

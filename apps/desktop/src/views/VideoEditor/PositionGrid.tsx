@@ -32,33 +32,55 @@ const GRID_POSITIONS: Array<{
   { position: 'bottomRight', customX: 1, customY: 1, label: 'Bottom Right' },
 ];
 
+const PRESET_ACTIVE_INDEX: Partial<Record<WebcamOverlayPosition, number>> = {
+  topLeft: 0,
+  topRight: 2,
+  bottomLeft: 6,
+  bottomRight: 8,
+};
+
+const CUSTOM_ACTIVE_ZONES: Array<{
+  index: number;
+  matches: (customX: number, customY: number) => boolean;
+}> = [
+  { index: 1, matches: (customX, customY) => customY < 0.25 && customX > 0.25 && customX < 0.75 },
+  { index: 3, matches: (customX, customY) => customX < 0.25 && customY > 0.25 && customY < 0.75 },
+  { index: 4, matches: (customX, customY) => customX > 0.25 && customX < 0.75 && customY > 0.25 && customY < 0.75 },
+  { index: 5, matches: (customX, customY) => customX > 0.75 && customY > 0.25 && customY < 0.75 },
+  { index: 7, matches: (customX, customY) => customY > 0.75 && customX > 0.25 && customX < 0.75 },
+];
+
+function getPresetActiveIndex(position: WebcamOverlayPosition) {
+  return PRESET_ACTIVE_INDEX[position] ?? null;
+}
+
+function getCustomActiveIndex(
+  position: WebcamOverlayPosition,
+  customX: number,
+  customY: number,
+) {
+  if (position !== 'custom') {
+    return -1;
+  }
+
+  return CUSTOM_ACTIVE_ZONES.find((zone) => zone.matches(customX, customY))?.index ?? -1;
+}
+
+function getActivePositionIndex(
+  position: WebcamOverlayPosition,
+  customX: number,
+  customY: number
+) {
+  const presetIndex = getPresetActiveIndex(position);
+  if (presetIndex !== null) {
+    return presetIndex;
+  }
+
+  return getCustomActiveIndex(position, customX, customY);
+}
+
 export function PositionGrid({ position, customX, customY, onChange }: PositionGridProps) {
-  // Determine which grid cell is active
-  const getActiveIndex = () => {
-    // Check corner presets first
-    if (position === 'topLeft') return 0;
-    if (position === 'topRight') return 2;
-    if (position === 'bottomLeft') return 6;
-    if (position === 'bottomRight') return 8;
-
-    // For custom, find closest grid position
-    if (position === 'custom') {
-      // Top center
-      if (customY < 0.25 && customX > 0.25 && customX < 0.75) return 1;
-      // Middle left
-      if (customX < 0.25 && customY > 0.25 && customY < 0.75) return 3;
-      // Center
-      if (customX > 0.25 && customX < 0.75 && customY > 0.25 && customY < 0.75) return 4;
-      // Middle right
-      if (customX > 0.75 && customY > 0.25 && customY < 0.75) return 5;
-      // Bottom center
-      if (customY > 0.75 && customX > 0.25 && customX < 0.75) return 7;
-    }
-
-    return -1; // No match
-  };
-
-  const activeIndex = getActiveIndex();
+  const activeIndex = getActivePositionIndex(position, customX, customY);
 
   return (
     <div className="w-full p-3 rounded-lg border border-[var(--glass-border)] bg-[var(--glass-surface-dark)] flex flex-col gap-2">

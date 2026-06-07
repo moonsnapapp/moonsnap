@@ -13,6 +13,12 @@ import { cursorPosition, getCurrentWindow } from '@tauri-apps/api/window';
 const AUTO_DISMISS_MS = 5000;
 const SLIDE_DURATION_MS = 300;
 const CURSOR_SYNC_MS = 100;
+const PREVIEW_DRAG_THRESHOLD_PX = 4;
+
+interface DragPoint {
+  x: number;
+  y: number;
+}
 
 function formatDuration(secs: number): string {
   const m = Math.floor(secs / 60);
@@ -26,30 +32,338 @@ function formatFileSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-function RecordingPreviewWindow() {
+function getRecordingPreviewTransform(isVisible: boolean, isExiting: boolean) {
+  if (isExiting) return 'translateX(360px)';
+  return isVisible ? 'translateX(0)' : 'translateX(360px)';
+}
+
+function getRecordingPreviewOpacity(isVisible: boolean, isExiting: boolean) {
+  if (isExiting) return 0;
+  return isVisible ? 1 : 0;
+}
+
+async function getCursorAndWindowBounds() {
+  const window = getCurrentWindow();
+  const [cursor, position, size] = await Promise.all([
+    cursorPosition(),
+    window.outerPosition(),
+    window.outerSize(),
+  ]);
+
+  return { cursor, position, size };
+}
+
+function isCursorInsideWindow({
+  cursor,
+  position,
+  size,
+}: Awaited<ReturnType<typeof getCursorAndWindowBounds>>) {
+  return (
+    cursor.x >= position.x &&
+    cursor.x < position.x + size.width &&
+    cursor.y >= position.y &&
+    cursor.y < position.y + size.height
+  );
+}
+
+function isButtonEventTarget(target: EventTarget): boolean {
+  const element = target instanceof HTMLElement ? target : null;
+  return element?.tagName === 'BUTTON' || Boolean(element?.closest('button'));
+}
+
+function getSquaredDistanceFromDragStart(event: React.MouseEvent, start: DragPoint) {
+  const dx = event.clientX - start.x;
+  const dy = event.clientY - start.y;
+  return dx * dx + dy * dy;
+}
+
+function isPastPreviewDragThreshold(event: React.MouseEvent, start: DragPoint) {
+  return (
+    getSquaredDistanceFromDragStart(event, start) >=
+    PREVIEW_DRAG_THRESHOLD_PX * PREVIEW_DRAG_THRESHOLD_PX
+  );
+}
+
+function canOpenPreviewFromMouseUp(
+  start: DragPoint | null,
+  dragStarted: boolean,
+  isGif: boolean,
+  target: EventTarget
+) {
+  return Boolean(start) && !dragStarted && !isGif && !isButtonEventTarget(target);
+}
+
+async function startPreviewWindowDrag() {
+  try {
+    await getCurrentWindow().startDragging();
+  } catch {
+    // Ignore drag failures.
+  }
+}
+
+function getIdleActionButtonBackground(extraStyle: React.CSSProperties | undefined) {
+  return extraStyle?.background ?? 'transparent';
+}
+
+function getHoveredActionButtonBackground(hoverBackground: string | undefined) {
+  return hoverBackground ?? 'var(--polar-frost)';
+}
+
+function getActionButtonBackground(
+  hovered: boolean,
+  extraStyle: React.CSSProperties | undefined,
+  hoverBackground: string | undefined
+) {
+  return hovered
+    ? getHoveredActionButtonBackground(hoverBackground)
+    : getIdleActionButtonBackground(extraStyle);
+}
+
+function getActionButtonStyle(
+  background: React.CSSProperties['background'],
+  extraStyle: React.CSSProperties | undefined,
+): React.CSSProperties {
+  return {
+    width: 24,
+    height: 24,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    border: 'none',
+    borderRadius: 6,
+    color: 'var(--ink-black)',
+    cursor: 'pointer',
+    transition: 'background 150ms ease',
+    padding: 0,
+    flexShrink: 0,
+    ...extraStyle,
+    background,
+  };
+}
+
+function RecordingThumbnail({
+  isGif,
+  videoSrc,
+  durationSecs,
+  onDelete,
+  onClose,
+}: {
+  isGif: boolean;
+  videoSrc: string;
+  durationSecs: number;
+  onDelete: () => void;
+  onClose: () => void;
+}) {
+  const mediaStyle: React.CSSProperties = {
+    maxWidth: '100%',
+    maxHeight: '100%',
+    objectFit: 'contain',
+    display: 'block',
+    pointerEvents: 'none',
+  };
+
+  return (
+    <div
+      style={{
+        position: 'relative',
+        width: '100%',
+        flex: 1,
+        minHeight: 0,
+        overflow: 'hidden',
+        background: '#000',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+      }}
+    >
+      {isGif ? (
+        <img src={videoSrc} alt="" draggable={false} style={mediaStyle} />
+      ) : (
+        <video src={videoSrc} muted playsInline preload="auto" draggable={false} style={mediaStyle} />
+      )}
+      <div
+        style={{
+          position: 'absolute',
+          bottom: 6,
+          left: 6,
+          background: 'rgba(0,0,0,0.6)',
+          color: '#fff',
+          fontSize: 10,
+          fontWeight: 600,
+          padding: '2px 6px',
+          borderRadius: 4,
+          pointerEvents: 'none',
+        }}
+      >
+        {formatDuration(durationSecs)}
+      </div>
+      <ActionButton
+        onClick={onDelete}
+        title="Delete recording"
+        style={{
+          position: 'absolute',
+          top: 6,
+          left: 6,
+          background: 'rgba(0,0,0,0.5)',
+          color: '#fff',
+        }}
+        hoverBackground="rgba(220,38,38,0.8)"
+      >
+        <TrashIcon />
+      </ActionButton>
+      <ActionButton
+        onClick={onClose}
+        title="Dismiss"
+        style={{
+          position: 'absolute',
+          top: 6,
+          right: 6,
+          background: 'rgba(0,0,0,0.5)',
+          color: '#fff',
+        }}
+        hoverBackground="rgba(220,38,38,0.8)"
+      >
+        <CloseIcon />
+      </ActionButton>
+    </div>
+  );
+}
+
+function RecordingActionBar({
+  isGif,
+  formatLabel,
+  fileSizeBytes,
+  onRevealInFolder,
+  onOpenMedia,
+  onOpenEditor,
+}: {
+  isGif: boolean;
+  formatLabel: string;
+  fileSizeBytes: number;
+  onRevealInFolder: () => void;
+  onOpenMedia: () => void;
+  onOpenEditor: () => void;
+}) {
+  return (
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 6,
+        padding: '8px 10px',
+      }}
+    >
+      <span
+        style={{
+          fontSize: 12,
+          color: 'var(--ink-black)',
+          opacity: 0.6,
+          flex: 1,
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap',
+        }}
+      >
+        {formatLabel} recorded &middot; {formatFileSize(fileSizeBytes)}
+      </span>
+
+      <ActionButton onClick={onRevealInFolder} title="Show in folder">
+        <FolderIcon />
+      </ActionButton>
+
+      {isGif ? (
+        <ActionButton onClick={onOpenMedia} title="Open GIF">
+          <PlayIcon />
+        </ActionButton>
+      ) : (
+        <ActionButton onClick={onOpenEditor} title="Open in editor">
+          <EditIcon />
+        </ActionButton>
+      )}
+    </div>
+  );
+}
+
+function AutoDismissProgress({ isVisible, timerPaused }: { isVisible: boolean; timerPaused: boolean }) {
+  return (
+    <div
+      style={{
+        height: 2,
+        background: 'var(--polar-frost)',
+        overflow: 'hidden',
+      }}
+    >
+      {isVisible && !timerPaused && (
+        <div
+          style={{
+            height: '100%',
+            background: 'var(--primary, #6366f1)',
+            animation: `shrink ${AUTO_DISMISS_MS}ms linear forwards`,
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+interface RecordingPreviewMetadata {
+  outputPath: string;
+  durationSecs: number;
+  fileSizeBytes: number;
+  isGif: boolean;
+  formatLabel: string;
+  videoFilePath: string;
+  videoSrc: string;
+}
+
+function getRecordingVideoFilePath(outputPath: string) {
+  return /\.\w+$/.test(outputPath) ? outputPath : `${outputPath}/screen.mp4`;
+}
+
+function getSearchParam(params: URLSearchParams, key: string, fallback: string) {
+  return params.get(key) ?? fallback;
+}
+
+function getNumericSearchParam(params: URLSearchParams, key: string) {
+  return Number.parseFloat(getSearchParam(params, key, '0'));
+}
+
+function getIntegerSearchParam(params: URLSearchParams, key: string) {
+  return Number.parseInt(getSearchParam(params, key, '0'), 10);
+}
+
+function isGifOutputPath(outputPath: string) {
+  return outputPath.toLowerCase().endsWith('.gif');
+}
+
+function getRecordingPreviewFormatLabel(isGif: boolean) {
+  return isGif ? 'GIF' : 'Video';
+}
+
+function getRecordingPreviewMetadata(): RecordingPreviewMetadata {
+  const params = new URLSearchParams(window.location.search);
+  const outputPath = getSearchParam(params, 'path', '');
+  const isGif = isGifOutputPath(outputPath);
+  const videoFilePath = getRecordingVideoFilePath(outputPath);
+
+  return {
+    outputPath,
+    durationSecs: getNumericSearchParam(params, 'duration'),
+    fileSizeBytes: getIntegerSearchParam(params, 'size'),
+    isGif,
+    formatLabel: getRecordingPreviewFormatLabel(isGif),
+    videoFilePath,
+    videoSrc: convertFileSrc(videoFilePath),
+  };
+}
+
+function useRecordingPreviewLifecycle(outputPath: string) {
   const [isVisible, setIsVisible] = useState(false);
   const [isExiting, setIsExiting] = useState(false);
   const [timerPaused, setTimerPaused] = useState(false);
   const dismissTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isVisibleRef = useRef(false);
   const isCursorInsideRef = useRef(false);
-  const dragStartRef = useRef<{ x: number; y: number } | null>(null);
-  const dragStartedRef = useRef(false);
-
-  const params = new URLSearchParams(window.location.search);
-  const outputPath = params.get('path') || '';
-  const durationSecs = parseFloat(params.get('duration') || '0');
-  const fileSizeBytes = parseInt(params.get('size') || '0', 10);
-
-  const isGif = outputPath.toLowerCase().endsWith('.gif');
-  const formatLabel = isGif ? 'GIF' : 'Video';
-
-  // Resolve the video file path for the thumbnail
-  const videoFilePath = useMemo(() => {
-    const hasExtension = /\.\w+$/.test(outputPath);
-    return hasExtension ? outputPath : `${outputPath}/screen.mp4`;
-  }, [outputPath]);
-  const videoSrc = useMemo(() => convertFileSrc(videoFilePath), [videoFilePath]);
 
   const closePreview = useCallback(() => {
     setIsExiting(true);
@@ -76,35 +390,26 @@ function RecordingPreviewWindow() {
     setTimerPaused(false);
   }, [closePreview]);
 
+  const updateTimerForCursorState = useCallback((isInside: boolean) => {
+    if (isInside === isCursorInsideRef.current) {
+      return;
+    }
+
+    isCursorInsideRef.current = isInside;
+    if (isInside) {
+      pauseTimer();
+    } else if (isVisibleRef.current) {
+      startTimer();
+    }
+  }, [pauseTimer, startTimer]);
+
   const syncTimerFromCursor = useCallback(async () => {
     try {
-      const window = getCurrentWindow();
-      const [cursor, position, size] = await Promise.all([
-        cursorPosition(),
-        window.outerPosition(),
-        window.outerSize(),
-      ]);
-
-      const isInside =
-        cursor.x >= position.x &&
-        cursor.x < position.x + size.width &&
-        cursor.y >= position.y &&
-        cursor.y < position.y + size.height;
-
-      if (isInside === isCursorInsideRef.current) {
-        return;
-      }
-
-      isCursorInsideRef.current = isInside;
-      if (isInside) {
-        pauseTimer();
-      } else if (isVisibleRef.current) {
-        startTimer();
-      }
+      updateTimerForCursorState(isCursorInsideWindow(await getCursorAndWindowBounds()));
     } catch {
       // Ignore cursor sync failures and preserve current timer state.
     }
-  }, [pauseTimer, startTimer]);
+  }, [updateTimerForCursorState]);
 
   // Trigger slide-in on mount
   useEffect(() => {
@@ -141,6 +446,74 @@ function RecordingPreviewWindow() {
       clearInterval(intervalId);
     };
   }, [isVisible, syncTimerFromCursor]);
+
+  return {
+    isVisible,
+    isExiting,
+    timerPaused,
+    closePreview,
+  };
+}
+
+function useRecordingPreviewDragHandlers({
+  isGif,
+  onOpenEditor,
+}: {
+  isGif: boolean;
+  onOpenEditor: () => void;
+}) {
+  const dragStartRef = useRef<DragPoint | null>(null);
+  const dragStartedRef = useRef(false);
+
+  const handlePreviewMouseDown = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    if (isButtonEventTarget(e.target)) return;
+    if (e.button !== 0) return;
+
+    // Prevent native HTML drag/select behavior from competing with Tauri window dragging.
+    e.preventDefault();
+
+    dragStartRef.current = { x: e.clientX, y: e.clientY };
+    dragStartedRef.current = false;
+  }, []);
+
+  const handlePreviewMouseMove = useCallback(async (e: React.MouseEvent<HTMLDivElement>) => {
+    const start = dragStartRef.current;
+    if (!start || dragStartedRef.current) return;
+
+    if (!isPastPreviewDragThreshold(e, start)) return;
+
+    dragStartedRef.current = true;
+    await startPreviewWindowDrag();
+  }, []);
+
+  const handlePreviewMouseUp = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    const start = dragStartRef.current;
+    const dragStarted = dragStartedRef.current;
+    dragStartRef.current = null;
+    if (!canOpenPreviewFromMouseUp(start, dragStarted, isGif, e.target)) return;
+
+    onOpenEditor();
+  }, [isGif, onOpenEditor]);
+
+  return {
+    handlePreviewMouseDown,
+    handlePreviewMouseMove,
+    handlePreviewMouseUp,
+  };
+}
+
+function RecordingPreviewWindow() {
+  const {
+    outputPath,
+    durationSecs,
+    fileSizeBytes,
+    isGif,
+    formatLabel,
+    videoFilePath,
+    videoSrc,
+  } = useMemo(getRecordingPreviewMetadata, []);
+  const { isVisible, isExiting, timerPaused, closePreview } =
+    useRecordingPreviewLifecycle(outputPath);
 
   const handleOpenEditor = useCallback(async () => {
     try {
@@ -188,45 +561,13 @@ function RecordingPreviewWindow() {
     return () => document.removeEventListener('contextmenu', handler);
   }, []);
 
-  const handlePreviewMouseDown = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
-    const target = e.target as HTMLElement;
-    if (target.tagName === 'BUTTON' || target.closest('button')) return;
-    if (e.button !== 0) return;
-
-    // Prevent native HTML drag/select behavior from competing with Tauri window dragging.
-    e.preventDefault();
-
-    dragStartRef.current = { x: e.clientX, y: e.clientY };
-    dragStartedRef.current = false;
-  }, []);
-
-  const handlePreviewMouseMove = useCallback(async (e: React.MouseEvent<HTMLDivElement>) => {
-    const start = dragStartRef.current;
-    if (!start || dragStartedRef.current) return;
-
-    const dx = e.clientX - start.x;
-    const dy = e.clientY - start.y;
-    const DRAG_THRESHOLD_PX = 4;
-    if (dx * dx + dy * dy < DRAG_THRESHOLD_PX * DRAG_THRESHOLD_PX) return;
-
-    dragStartedRef.current = true;
-    try {
-      await getCurrentWindow().startDragging();
-    } catch {
-      // Ignore drag failures.
-    }
-  }, []);
-
-  const handlePreviewMouseUp = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
-    const start = dragStartRef.current;
-    dragStartRef.current = null;
-    if (!start || dragStartedRef.current || isGif) return;
-
-    const target = e.target as HTMLElement;
-    if (target.tagName === 'BUTTON' || target.closest('button')) return;
-
-    void handleOpenEditor();
-  }, [handleOpenEditor, isGif]);
+  const { handlePreviewMouseDown, handlePreviewMouseMove, handlePreviewMouseUp } =
+    useRecordingPreviewDragHandlers({
+      isGif,
+      onOpenEditor: () => {
+        void handleOpenEditor();
+      },
+    });
 
   return (
     <div
@@ -255,166 +596,32 @@ function RecordingPreviewWindow() {
           overflow: 'hidden',
           filter: 'drop-shadow(0 8px 32px rgba(0,0,0,0.25))',
           border: '1px solid var(--polar-frost)',
-          transform: isExiting
-            ? 'translateX(360px)'
-            : isVisible
-              ? 'translateX(0)'
-              : 'translateX(360px)',
-          opacity: isExiting ? 0 : isVisible ? 1 : 0,
+          transform: getRecordingPreviewTransform(isVisible, isExiting),
+          opacity: getRecordingPreviewOpacity(isVisible, isExiting),
           transition: `transform ${SLIDE_DURATION_MS}ms cubic-bezier(0.16, 1, 0.3, 1), opacity ${SLIDE_DURATION_MS}ms ease`,
           cursor: 'default',
           userSelect: 'none',
           WebkitUserSelect: 'none',
         }}
       >
-        {/* Thumbnail */}
-        <div
-          style={{
-            position: 'relative',
-            width: '100%',
-            flex: 1,
-            minHeight: 0,
-            overflow: 'hidden',
-            background: '#000',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-          }}
-        >
-          {isGif ? (
-            <img
-              src={videoSrc}
-              alt=""
-              draggable={false}
-              style={{
-                maxWidth: '100%',
-                maxHeight: '100%',
-                objectFit: 'contain',
-                display: 'block',
-                pointerEvents: 'none',
-              }}
-            />
-          ) : (
-            <video
-              src={videoSrc}
-              muted
-              playsInline
-              preload="auto"
-              draggable={false}
-              style={{
-                maxWidth: '100%',
-                maxHeight: '100%',
-                objectFit: 'contain',
-                display: 'block',
-                pointerEvents: 'none',
-              }}
-            />
-          )}
-          {/* Duration badge */}
-          <div
-            style={{
-              position: 'absolute',
-              bottom: 6,
-              left: 6,
-              background: 'rgba(0,0,0,0.6)',
-              color: '#fff',
-              fontSize: 10,
-              fontWeight: 600,
-              padding: '2px 6px',
-              borderRadius: 4,
-              pointerEvents: 'none',
-            }}
-          >
-            {formatDuration(durationSecs)}
-          </div>
-          {/* Delete button - top left */}
-          <ActionButton
-            onClick={handleDelete}
-            title="Delete recording"
-            style={{
-              position: 'absolute',
-              top: 6,
-              left: 6,
-              background: 'rgba(0,0,0,0.5)',
-              color: '#fff',
-            }}
-            hoverBackground="rgba(220,38,38,0.8)"
-          >
-            <TrashIcon />
-          </ActionButton>
-          {/* Close button - top right */}
-          <ActionButton
-            onClick={closePreview}
-            title="Dismiss"
-            style={{
-              position: 'absolute',
-              top: 6,
-              right: 6,
-              background: 'rgba(0,0,0,0.5)',
-              color: '#fff',
-            }}
-            hoverBackground="rgba(220,38,38,0.8)"
-          >
-            <CloseIcon />
-          </ActionButton>
-        </div>
+        <RecordingThumbnail
+          isGif={isGif}
+          videoSrc={videoSrc}
+          durationSecs={durationSecs}
+          onDelete={handleDelete}
+          onClose={closePreview}
+        />
 
-        {/* Action bar */}
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 6,
-            padding: '8px 10px',
-          }}
-        >
-          <span
-            style={{
-              fontSize: 12,
-              color: 'var(--ink-black)',
-              opacity: 0.6,
-              flex: 1,
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
-            }}
-          >
-            {formatLabel} recorded &middot; {formatFileSize(fileSizeBytes)}
-          </span>
+        <RecordingActionBar
+          isGif={isGif}
+          formatLabel={formatLabel}
+          fileSizeBytes={fileSizeBytes}
+          onRevealInFolder={handleRevealInFolder}
+          onOpenMedia={handleOpenMedia}
+          onOpenEditor={handleOpenEditor}
+        />
 
-          <ActionButton onClick={handleRevealInFolder} title="Show in folder">
-            <FolderIcon />
-          </ActionButton>
-
-          {isGif ? (
-            <ActionButton onClick={handleOpenMedia} title="Open GIF">
-              <PlayIcon />
-            </ActionButton>
-          ) : (
-            <ActionButton onClick={handleOpenEditor} title="Open in editor">
-              <EditIcon />
-            </ActionButton>
-          )}
-        </div>
-
-        {/* Auto-dismiss progress bar */}
-        <div
-          style={{
-            height: 2,
-            background: 'var(--polar-frost)',
-            overflow: 'hidden',
-          }}
-        >
-          {isVisible && !timerPaused && (
-            <div
-              style={{
-                height: '100%',
-                background: 'var(--primary, #6366f1)',
-                animation: `shrink ${AUTO_DISMISS_MS}ms linear forwards`,
-              }}
-            />
-          )}
-        </div>
+        <AutoDismissProgress isVisible={isVisible} timerPaused={timerPaused} />
       </div>
 
       <style>{`
@@ -441,9 +648,7 @@ function ActionButton({
   hoverBackground?: string;
 }) {
   const [hovered, setHovered] = useState(false);
-
-  const defaultBg = extraStyle?.background ?? 'transparent';
-  const hoverBg = hoverBackground ?? 'var(--polar-frost)';
+  const background = getActionButtonBackground(hovered, extraStyle, hoverBackground);
 
   return (
     <button
@@ -451,23 +656,7 @@ function ActionButton({
       title={title}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
-      style={{
-        width: 24,
-        height: 24,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        border: 'none',
-        borderRadius: 6,
-        background: hovered ? hoverBg : defaultBg,
-        color: 'var(--ink-black)',
-        cursor: 'pointer',
-        transition: 'background 150ms ease',
-        padding: 0,
-        flexShrink: 0,
-        ...extraStyle,
-        ...(hovered ? { background: hoverBg } : {}),
-      }}
+      style={getActionButtonStyle(background, extraStyle)}
     >
       {children}
     </button>

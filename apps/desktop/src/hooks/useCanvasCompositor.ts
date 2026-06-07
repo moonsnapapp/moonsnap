@@ -3,13 +3,27 @@ import React from 'react';
 import { convertFileSrc } from '@tauri-apps/api/core';
 import { resolveResource } from '@tauri-apps/api/path';
 import { createCheckerPattern } from '../utils/canvasGeometry';
-import type { CompositorSettings, CanvasBounds } from '../types';
+import type { CompositorSettings, CanvasBounds, BackgroundType } from '../types';
 
 interface BackgroundShape {
   x?: number;
   y?: number;
   width?: number;
   height?: number;
+}
+
+interface BackgroundBounds {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+interface ContentBounds {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
 }
 
 interface UseCanvasCompositorProps {
@@ -36,6 +50,250 @@ interface UseCanvasCompositorReturn {
   checkerPatternImage: HTMLImageElement | null;
 }
 
+const FALLBACK_BACKGROUND_COLOR = '#1a1a2e';
+const CENTERED_BACKGROUND_STYLE = {
+  backgroundPosition: 'center',
+} satisfies React.CSSProperties;
+
+type BackgroundStyleRenderer = (settings: CompositorSettings) => React.CSSProperties;
+
+function getImageBackgroundStyle(settings: CompositorSettings): React.CSSProperties {
+  return {
+    backgroundColor: settings.backgroundImage ? undefined : FALLBACK_BACKGROUND_COLOR,
+    backgroundImage: settings.backgroundImage ? `url(${settings.backgroundImage})` : undefined,
+    backgroundSize: 'cover',
+    ...CENTERED_BACKGROUND_STYLE,
+  };
+}
+
+const BACKGROUND_STYLE_RENDERERS: Record<BackgroundType, BackgroundStyleRenderer> = {
+  solid: (settings) => ({
+    backgroundColor: settings.backgroundColor,
+    ...CENTERED_BACKGROUND_STYLE,
+  }),
+  gradient: (settings) => ({
+    backgroundImage: `linear-gradient(${settings.gradientAngle}deg, ${settings.gradientStart}, ${settings.gradientEnd})`,
+    backgroundSize: 'cover',
+    ...CENTERED_BACKGROUND_STYLE,
+  }),
+  wallpaper: getImageBackgroundStyle,
+  image: getImageBackgroundStyle,
+};
+
+function getBackgroundBounds(
+  backgroundShape: BackgroundShape | undefined,
+  imageSize: { width: number; height: number }
+): BackgroundBounds {
+  if (!backgroundShape) {
+    return {
+      x: 0,
+      y: 0,
+      width: imageSize.width,
+      height: imageSize.height,
+    };
+  }
+
+  const {
+    x = 0,
+    y = 0,
+    width = imageSize.width,
+    height = imageSize.height,
+  } = backgroundShape;
+
+  return {
+    x,
+    y,
+    width,
+    height,
+  };
+}
+
+function getCompositionBackgroundStyle(
+  compositorSettings: CompositorSettings
+): React.CSSProperties {
+  return BACKGROUND_STYLE_RENDERERS[compositorSettings.backgroundType](compositorSettings);
+}
+
+function contentExtendsBeyondBackground(
+  bounds: ContentBounds,
+  background: BackgroundBounds
+) {
+  return (
+    bounds.x < background.x - 0.5 ||
+    bounds.y < background.y - 0.5 ||
+    bounds.x + bounds.width > background.x + background.width + 0.5 ||
+    bounds.y + bounds.height > background.y + background.height + 0.5
+  );
+}
+
+function getExportContentBounds(
+  cropRegion: ContentBounds | null,
+  canvasBounds: CanvasBounds | null
+): ContentBounds | null {
+  if (cropRegion) {
+    return cropRegion;
+  }
+
+  if (!canvasBounds) {
+    return null;
+  }
+
+  return {
+    x: -canvasBounds.imageOffsetX,
+    y: -canvasBounds.imageOffsetY,
+    width: canvasBounds.width,
+    height: canvasBounds.height,
+  };
+}
+
+function hasTransparentContent({
+  visibleBounds,
+  cropRegion,
+  canvasBounds,
+  background,
+  imageHasAlpha,
+}: {
+  visibleBounds: ContentBounds | null;
+  cropRegion: ContentBounds | null;
+  canvasBounds: CanvasBounds | null;
+  background: BackgroundBounds;
+  imageHasAlpha: boolean;
+}) {
+  const exportBounds = getExportContentBounds(cropRegion, canvasBounds);
+  const visibleContentOverflows =
+    visibleBounds !== null && contentExtendsBeyondBackground(visibleBounds, background);
+  const exportContentOverflows =
+    exportBounds !== null && contentExtendsBeyondBackground(exportBounds, background);
+
+  return [
+    imageHasAlpha,
+    visibleContentOverflows,
+    exportContentOverflows,
+  ].some(Boolean);
+}
+
+function sampleImageAlpha(image: HTMLImageElement, sampleSize: number) {
+  const canvas = document.createElement('canvas');
+  canvas.width = sampleSize;
+  canvas.height = sampleSize;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) {
+    return null;
+  }
+
+  ctx.drawImage(image, 0, 0, sampleSize, sampleSize);
+  return ctx.getImageData(0, 0, sampleSize, sampleSize).data;
+}
+
+function hasAlphaPixel(data: Uint8ClampedArray) {
+  for (let i = 3; i < data.length; i += 4) {
+    if (data[i] < 255) return true;
+  }
+
+  return false;
+}
+
+function imageContainsAlpha(image: HTMLImageElement | null | undefined) {
+  if (!image) {
+    return false;
+  }
+
+  const data = sampleImageAlpha(image, 20);
+  return data ? hasAlphaPixel(data) : false;
+}
+
+function getImageSizeForBackground(image: HTMLImageElement | null | undefined) {
+  if (!image) {
+    return { width: 0, height: 0 };
+  }
+
+  return {
+    width: image.width,
+    height: image.height,
+  };
+}
+
+interface WallpaperResolveRequest {
+  wallpaper: string;
+  resourcePath: string;
+}
+
+function getPendingWallpaperName(
+  compositorSettings: CompositorSettings,
+  failedWallpaper: string | null
+): string | null {
+  const canResolve = [
+    compositorSettings.backgroundType === 'wallpaper',
+    Boolean(compositorSettings.wallpaper),
+    !compositorSettings.backgroundImage,
+    failedWallpaper !== compositorSettings.wallpaper,
+  ].every(Boolean);
+
+  return canResolve ? compositorSettings.wallpaper : null;
+}
+
+function getWallpaperResourcePath(wallpaper: string) {
+  const [theme, name] = wallpaper.split('/');
+  const hasThemeAndName = [theme, name].every(Boolean);
+  return hasThemeAndName ? `assets/backgrounds/${theme}/${name}.jpg` : null;
+}
+
+function getWallpaperResolveRequest(
+  compositorSettings: CompositorSettings,
+  failedWallpaper: string | null
+): WallpaperResolveRequest | null {
+  const wallpaper = getPendingWallpaperName(compositorSettings, failedWallpaper);
+  if (!wallpaper) return null;
+
+  const resourcePath = getWallpaperResourcePath(wallpaper);
+  if (!resourcePath) return null;
+
+  return {
+    wallpaper,
+    resourcePath,
+  };
+}
+
+function startWallpaperBackgroundResolution({
+  compositorSettings,
+  failedWallpaperResolveRef,
+  setCompositorSettings,
+}: {
+  compositorSettings: CompositorSettings;
+  failedWallpaperResolveRef: React.MutableRefObject<string | null>;
+  setCompositorSettings: (settings: Partial<CompositorSettings>) => void;
+}) {
+  if (compositorSettings.backgroundType !== 'wallpaper') return undefined;
+
+  if (compositorSettings.backgroundImage) {
+    failedWallpaperResolveRef.current = null;
+  }
+
+  const request = getWallpaperResolveRequest(
+    compositorSettings,
+    failedWallpaperResolveRef.current
+  );
+  if (!request) return undefined;
+
+  let isCancelled = false;
+
+  void resolveResource(request.resourcePath)
+    .then((resolvedPath) => {
+      if (isCancelled) return;
+      failedWallpaperResolveRef.current = null;
+      setCompositorSettings({ backgroundImage: convertFileSrc(resolvedPath) });
+    })
+    .catch(() => {
+      if (!isCancelled) {
+        failedWallpaperResolveRef.current = request.wallpaper;
+      }
+    });
+
+  return () => {
+    isCancelled = true;
+  };
+}
+
 export function useCanvasCompositor({
   image,
   compositorSettings,
@@ -52,37 +310,13 @@ export function useCanvasCompositor({
   // Auto-resolve wallpaper URL so default/loaded wallpaper backgrounds initialize
   // without requiring a manual wallpaper click in the Style tab.
   useEffect(() => {
-    if (compositorSettings.backgroundType !== 'wallpaper') return;
-    if (!compositorSettings.wallpaper) return;
-    if (compositorSettings.backgroundImage) {
-      failedWallpaperResolveRef.current = null;
-      return;
-    }
-    if (failedWallpaperResolveRef.current === compositorSettings.wallpaper) return;
-
-    let isCancelled = false;
-    const [theme, name] = compositorSettings.wallpaper.split('/');
-    if (!theme || !name) return;
-
-    void resolveResource(`assets/backgrounds/${theme}/${name}.jpg`)
-      .then((resolvedPath) => {
-        if (isCancelled) return;
-        failedWallpaperResolveRef.current = null;
-        setCompositorSettings({ backgroundImage: convertFileSrc(resolvedPath) });
-      })
-      .catch(() => {
-        if (!isCancelled) {
-          failedWallpaperResolveRef.current = compositorSettings.wallpaper;
-        }
-      });
-
-    return () => {
-      isCancelled = true;
-    };
+    return startWallpaperBackgroundResolution({
+      compositorSettings,
+      failedWallpaperResolveRef,
+      setCompositorSettings,
+    });
   }, [
-    compositorSettings.backgroundType,
-    compositorSettings.wallpaper,
-    compositorSettings.backgroundImage,
+    compositorSettings,
     setCompositorSettings,
   ]);
 
@@ -91,58 +325,21 @@ export function useCanvasCompositor({
 
   // Check if source image has transparent pixels (only recalculated when image changes).
   const imageHasAlpha = useMemo(() => {
-    if (!image) return false;
-    const size = 20;
-    const c = document.createElement('canvas');
-    c.width = size;
-    c.height = size;
-    const ctx = c.getContext('2d');
-    if (!ctx) return false;
-    ctx.drawImage(image, 0, 0, size, size);
-    const data = ctx.getImageData(0, 0, size, size).data;
-    for (let i = 3; i < data.length; i += 4) {
-      if (data[i] < 255) return true;
-    }
-    return false;
+    return imageContainsAlpha(image);
   }, [image]);
 
   // Detect if the content has ANY transparency (edges or interior).
   // When true, skip shadow/border-radius to avoid the floaty look.
   // Checks both preview bounds (visibleBounds) and export bounds (canvasBounds).
   const hasTransparency = useMemo(() => {
-    const bgX = backgroundShape?.x ?? 0;
-    const bgY = backgroundShape?.y ?? 0;
-    const bgW = backgroundShape?.width ?? (image?.width ?? 0);
-    const bgH = backgroundShape?.height ?? (image?.height ?? 0);
-
-    // Helper: do given bounds extend beyond the background shape?
-    const extendsBeyondBg = (bx: number, by: number, bw: number, bh: number) =>
-      bx < bgX - 0.5 || by < bgY - 0.5 ||
-      bx + bw > bgX + bgW + 0.5 || by + bh > bgY + bgH + 0.5;
-
-    // Check 1: preview clip extends beyond background (user sees transparent areas)
-    if (visibleBounds && extendsBeyondBg(visibleBounds.x, visibleBounds.y, visibleBounds.width, visibleBounds.height)) {
-      return true;
-    }
-
-    // Check 2: export bounds extend beyond background (export would have transparency).
-    // Must match getContentBounds() in canvasExport.ts for preview/export consistency.
-    if (cropRegion && extendsBeyondBg(cropRegion.x, cropRegion.y, cropRegion.width, cropRegion.height)) {
-      return true;
-    }
-    if (!cropRegion && canvasBounds) {
-      const ex = -canvasBounds.imageOffsetX;
-      const ey = -canvasBounds.imageOffsetY;
-      if (extendsBeyondBg(ex, ey, canvasBounds.width, canvasBounds.height)) {
-        return true;
-      }
-    }
-
-    // Check 3: source image itself has transparent pixels (cached by image identity)
-    if (imageHasAlpha) return true;
-
-    return false;
-  }, [visibleBounds, cropRegion, canvasBounds, backgroundShape, image?.width, image?.height, imageHasAlpha]);
+    return hasTransparentContent({
+      visibleBounds,
+      cropRegion,
+      canvasBounds,
+      background: getBackgroundBounds(backgroundShape, getImageSizeForBackground(image)),
+      imageHasAlpha,
+    });
+  }, [visibleBounds, cropRegion, canvasBounds, backgroundShape, image, imageHasAlpha]);
 
   // Composition box dimensions (for CSS preview background)
   // Simple calculation: content size + padding on each side, scaled by zoom
@@ -178,46 +375,8 @@ export function useCanvasCompositor({
   const compositionBackgroundStyle = useMemo((): React.CSSProperties => {
     if (!compositorSettings.enabled) return {};
 
-    let backgroundColor: string | undefined;
-    let backgroundImage: string | undefined;
-    let backgroundSize: string = 'cover';
-
-    switch (compositorSettings.backgroundType) {
-      case 'solid':
-        backgroundColor = compositorSettings.backgroundColor;
-        break;
-      case 'gradient': {
-        backgroundImage = `linear-gradient(${compositorSettings.gradientAngle}deg, ${compositorSettings.gradientStart}, ${compositorSettings.gradientEnd})`;
-        break;
-      }
-      case 'wallpaper':
-      case 'image':
-        backgroundImage = compositorSettings.backgroundImage
-          ? `url(${compositorSettings.backgroundImage})`
-          : undefined;
-        backgroundColor = compositorSettings.backgroundImage ? undefined : '#1a1a2e';
-        // Use 'cover' to match Konva's calculateCoverSize behavior
-        backgroundSize = 'cover';
-        break;
-      default:
-        backgroundColor = '#1a1a2e';
-    }
-
-    return {
-      backgroundColor,
-      backgroundImage,
-      backgroundSize,
-      backgroundPosition: 'center',
-    };
-  }, [
-    compositorSettings.enabled,
-    compositorSettings.backgroundType,
-    compositorSettings.backgroundColor,
-    compositorSettings.backgroundImage,
-    compositorSettings.gradientStart,
-    compositorSettings.gradientEnd,
-    compositorSettings.gradientAngle,
-  ]);
+    return getCompositionBackgroundStyle(compositorSettings);
+  }, [compositorSettings]);
 
   return {
     imageHasAlpha,

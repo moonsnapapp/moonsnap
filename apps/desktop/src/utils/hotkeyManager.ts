@@ -138,6 +138,26 @@ export function normalizeShortcut(shortcut: string): string {
  *   }
  * };
  */
+const EVENT_KEY_ALIASES: Record<string, string> = {
+  printscreen: 'PrintScreen',
+  prtsc: 'PrintScreen',
+  escape: 'Escape',
+  esc: 'Escape',
+  enter: 'Enter',
+  tab: 'Tab',
+  backspace: 'Backspace',
+  delete: 'Delete',
+  insert: 'Insert',
+  home: 'Home',
+  end: 'End',
+  pageup: 'PageUp',
+  pagedown: 'PageDown',
+  arrowup: 'ArrowUp',
+  arrowdown: 'ArrowDown',
+  arrowleft: 'ArrowLeft',
+  arrowright: 'ArrowRight',
+};
+
 export function parseKeyboardEvent(event: KeyboardEvent): string | null {
   const modifiers: string[] = [];
 
@@ -176,42 +196,7 @@ function normalizeEventKey(key: string): string | null {
   if (key === ' ') return 'Space';
   if (key.length === 1) return key.toUpperCase();
 
-  switch (key.toLowerCase()) {
-    case 'printscreen':
-    case 'prtsc':
-      return 'PrintScreen';
-    case 'escape':
-    case 'esc':
-      return 'Escape';
-    case 'enter':
-      return 'Enter';
-    case 'tab':
-      return 'Tab';
-    case 'backspace':
-      return 'Backspace';
-    case 'delete':
-      return 'Delete';
-    case 'insert':
-      return 'Insert';
-    case 'home':
-      return 'Home';
-    case 'end':
-      return 'End';
-    case 'pageup':
-      return 'PageUp';
-    case 'pagedown':
-      return 'PageDown';
-    case 'arrowup':
-      return 'ArrowUp';
-    case 'arrowdown':
-      return 'ArrowDown';
-    case 'arrowleft':
-      return 'ArrowLeft';
-    case 'arrowright':
-      return 'ArrowRight';
-    default:
-      return key;
-  }
+  return EVENT_KEY_ALIASES[key.toLowerCase()] ?? key;
 }
 
 export function isEditableEventTarget(target: EventTarget | null): boolean {

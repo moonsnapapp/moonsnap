@@ -26,6 +26,64 @@ interface UseWebcamCoordinationReturn {
   openWebcamPreviewIfEnabled: () => Promise<void>;
 }
 
+type PreviewOpenAction = 'reopen' | 'open' | 'none';
+type PreviewOpenStateKey = `${boolean}:${boolean}`;
+
+const PREVIEW_OPEN_ACTIONS: Record<PreviewOpenStateKey, PreviewOpenAction> = {
+  'true:true': 'none',
+  'true:false': 'reopen',
+  'false:true': 'none',
+  'false:false': 'open',
+};
+
+async function getWebcamPreviewWindowExists() {
+  try {
+    const existingWindow = await WebviewWindow.getByLabel('webcam-preview');
+    if (!existingWindow) {
+      webcamLogger.debug('Window not found by label');
+      return false;
+    }
+
+    const isVisible = await existingWindow.isVisible();
+    webcamLogger.debug('Window existence check', { windowExists: isVisible, isVisible });
+    return isVisible;
+  } catch (error) {
+    webcamLogger.debug('Window check error (window likely destroyed)', error);
+    return false;
+  }
+}
+
+function getPreviewOpenAction(previewOpen: boolean, windowExists: boolean): PreviewOpenAction {
+  return PREVIEW_OPEN_ACTIONS[getPreviewOpenStateKey(previewOpen, windowExists)];
+}
+
+function getPreviewOpenStateKey(
+  previewOpen: boolean,
+  windowExists: boolean
+): PreviewOpenStateKey {
+  return `${previewOpen}:${windowExists}`;
+}
+
+async function applyPreviewOpenAction(
+  action: PreviewOpenAction,
+  togglePreview: () => Promise<void>
+) {
+  if (action === 'reopen') {
+    webcamLogger.debug('Preview state out of sync - resetting and reopening');
+    useWebcamSettingsStore.setState({ previewOpen: false });
+    await togglePreview();
+    return;
+  }
+
+  if (action === 'open') {
+    webcamLogger.debug('Opening preview (not open, window does not exist)');
+    await togglePreview();
+    return;
+  }
+
+  webcamLogger.debug('Preview already exists, nothing to do');
+}
+
 export function useWebcamCoordination(): UseWebcamCoordinationReturn {
   const { closePreview, togglePreview, settings, previewOpen } = useWebcamSettingsStore();
 
@@ -108,37 +166,8 @@ export function useWebcamCoordination(): UseWebcamCoordinationReturn {
       return;
     }
 
-    // Check if the preview window actually exists (handles stale previewOpen state)
-    // getByLabel can return a reference to a destroyed window, so we verify by checking visibility
-    let windowExists = false;
-    try {
-      const existingWindow = await WebviewWindow.getByLabel('webcam-preview');
-      if (existingWindow) {
-        // Try to check if window is actually alive by querying a property
-        const isVisible = await existingWindow.isVisible();
-        windowExists = isVisible;
-        webcamLogger.debug('Window existence check', { windowExists, isVisible });
-      } else {
-        webcamLogger.debug('Window not found by label');
-      }
-    } catch (e) {
-      // If we get an error querying the window, it doesn't exist
-      webcamLogger.debug('Window check error (window likely destroyed)', e);
-      windowExists = false;
-    }
-
-    // If state says open but window doesn't exist, reset state and open
-    if (previewOpen && !windowExists) {
-      webcamLogger.debug('Preview state out of sync - resetting and reopening');
-      useWebcamSettingsStore.setState({ previewOpen: false });
-      await togglePreview();
-    } else if (!previewOpen && !windowExists) {
-      // Normal case: preview not open, open it
-      webcamLogger.debug('Opening preview (not open, window does not exist)');
-      await togglePreview();
-    } else {
-      webcamLogger.debug('Preview already exists, nothing to do');
-    }
+    const windowExists = await getWebcamPreviewWindowExists();
+    await applyPreviewOpenAction(getPreviewOpenAction(previewOpen, windowExists), togglePreview);
   }, [settings.enabled, previewOpen, togglePreview]);
 
   return {

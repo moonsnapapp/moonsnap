@@ -1,4 +1,4 @@
-import React, { useRef, useState, useCallback, useEffect } from 'react';
+import React, { useRef, useState, useCallback, useEffect, useMemo } from 'react';
 import { Group, Image, Rect } from 'react-konva';
 import Konva from 'konva';
 import type { CanvasShape } from '../../../types';
@@ -16,6 +16,458 @@ interface BlurShapeProps {
   onDragEnd: (e: Konva.KonvaEventObject<DragEvent>) => void;
   onTransformStart: () => void;
   onTransformEnd: (e: Konva.KonvaEventObject<Event>) => void;
+}
+
+interface BlurBounds {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+interface BlurAxisBounds {
+  start: number;
+  size: number;
+}
+
+interface BlurInteractionPresentation {
+  fill: string;
+  stroke: string;
+  strokeWidth: number;
+  dash?: number[];
+}
+
+interface BlurInteractionHandlers {
+  onSelect: (e?: Konva.KonvaEventObject<MouseEvent | TouchEvent>) => void;
+  onDragStart: (e: Konva.KonvaEventObject<DragEvent>) => void;
+  onDragMove: (e: Konva.KonvaEventObject<DragEvent>) => void;
+  onDragEnd: (e: Konva.KonvaEventObject<DragEvent>) => void;
+  onTransformStart: () => void;
+  onTransform: (e: Konva.KonvaEventObject<Event>) => void;
+  onTransformEnd: (e: Konva.KonvaEventObject<Event>) => void;
+}
+
+function getBlurRender(
+  sourceImage: HTMLImageElement | undefined,
+  bounds: BlurBounds,
+  blurType: NonNullable<CanvasShape['blurType']>,
+  blurAmount: number
+): BlurRenderResult | null {
+  if (!sourceImage || bounds.width < 1 || bounds.height < 1) {
+    return null;
+  }
+
+  return renderBlurCanvas(
+    sourceImage,
+    bounds.x,
+    bounds.y,
+    bounds.width,
+    bounds.height,
+    blurType,
+    blurAmount
+  );
+}
+
+function getAxisBounds(origin: number | undefined, size: number | undefined): BlurAxisBounds {
+  const rawOrigin = origin ?? 0;
+  const rawSize = size ?? 0;
+
+  return {
+    start: Math.min(rawOrigin, rawOrigin + rawSize),
+    size: Math.abs(rawSize),
+  };
+}
+
+function getBlurBounds(shape: CanvasShape): BlurBounds {
+  const xAxis = getAxisBounds(shape.x, shape.width);
+  const yAxis = getAxisBounds(shape.y, shape.height);
+
+  return {
+    x: xAxis.start,
+    y: yAxis.start,
+    width: xAxis.size,
+    height: yAxis.size,
+  };
+}
+
+interface BlurInteractionRectProps {
+  rectRef: React.RefObject<Konva.Rect | null>;
+  shapeId: string;
+  bounds: BlurBounds;
+  isDraggable: boolean;
+  handlers: BlurInteractionHandlers;
+  cursorHandlers: ReturnType<typeof useShapeCursor>;
+  placeholder?: boolean;
+}
+
+function getBlurInteractionPresentation(placeholder: boolean): BlurInteractionPresentation {
+  if (placeholder) {
+    return {
+      fill: 'rgba(128, 128, 128, 0.5)',
+      stroke: '#666',
+      strokeWidth: 1,
+      dash: [4, 4],
+    };
+  }
+
+  return {
+    fill: 'transparent',
+    stroke: 'transparent',
+    strokeWidth: 0,
+  };
+}
+
+function getBlurInteractionDimension(size: number): number {
+  return size > 0 ? size : 50;
+}
+
+function BlurInteractionRect({
+  rectRef,
+  shapeId,
+  bounds,
+  isDraggable,
+  handlers,
+  cursorHandlers,
+  placeholder = false,
+}: BlurInteractionRectProps) {
+  const presentation = getBlurInteractionPresentation(placeholder);
+
+  return (
+    <Rect
+      ref={rectRef}
+      id={shapeId}
+      x={bounds.x}
+      y={bounds.y}
+      width={getBlurInteractionDimension(bounds.width)}
+      height={getBlurInteractionDimension(bounds.height)}
+      fill={presentation.fill}
+      stroke={presentation.stroke}
+      strokeWidth={presentation.strokeWidth}
+      dash={presentation.dash}
+      draggable={isDraggable}
+      onMouseDown={handlers.onSelect}
+      onTouchStart={handlers.onSelect}
+      onClick={handlers.onSelect}
+      onTap={handlers.onSelect}
+      onDragStart={handlers.onDragStart}
+      onDragMove={handlers.onDragMove}
+      onDragEnd={handlers.onDragEnd}
+      onTransformStart={handlers.onTransformStart}
+      onTransform={handlers.onTransform}
+      onTransformEnd={handlers.onTransformEnd}
+      {...cursorHandlers}
+    />
+  );
+}
+
+interface DrawingBlurPreviewProps {
+  shapeId: string;
+  bounds: BlurBounds;
+  blurResult: BlurRenderResult;
+}
+
+function DrawingBlurPreview({ shapeId, bounds, blurResult }: DrawingBlurPreviewProps) {
+  return (
+    <Group>
+      <Image
+        id={shapeId}
+        image={blurResult.canvas}
+        x={blurResult.x}
+        y={blurResult.y}
+        width={blurResult.width}
+        height={blurResult.height}
+        listening={false}
+      />
+      <Rect
+        x={bounds.x}
+        y={bounds.y}
+        width={bounds.width}
+        height={bounds.height}
+        stroke="#fbbf24"
+        strokeWidth={2}
+        dash={[6, 3]}
+        listening={false}
+      />
+    </Group>
+  );
+}
+
+interface RenderedBlurShapeProps {
+  groupRef: React.RefObject<Konva.Group | null>;
+  imageRef: React.RefObject<Konva.Image | null>;
+  rectRef: React.RefObject<Konva.Rect | null>;
+  shapeId: string;
+  bounds: BlurBounds;
+  isDraggable: boolean;
+  blurResult: BlurRenderResult | null;
+  handlers: BlurInteractionHandlers;
+  cursorHandlers: ReturnType<typeof useShapeCursor>;
+}
+
+function RenderedBlurShape({
+  groupRef,
+  imageRef,
+  rectRef,
+  shapeId,
+  bounds,
+  isDraggable,
+  blurResult,
+  handlers,
+  cursorHandlers,
+}: RenderedBlurShapeProps) {
+  return (
+    <Group ref={groupRef}>
+      {blurResult && (
+        <Image
+          ref={imageRef}
+          image={blurResult.canvas}
+          x={blurResult.x}
+          y={blurResult.y}
+          width={blurResult.width}
+          height={blurResult.height}
+          listening={false}
+        />
+      )}
+      <BlurInteractionRect
+        rectRef={rectRef}
+        shapeId={shapeId}
+        bounds={bounds}
+        isDraggable={isDraggable}
+        handlers={handlers}
+        cursorHandlers={cursorHandlers}
+      />
+    </Group>
+  );
+}
+
+interface BlurShapeContentProps {
+  groupRef: React.RefObject<Konva.Group | null>;
+  imageRef: React.RefObject<Konva.Image | null>;
+  rectRef: React.RefObject<Konva.Rect | null>;
+  shapeId: string;
+  sourceImage: HTMLImageElement | undefined;
+  bounds: BlurBounds;
+  blurType: NonNullable<CanvasShape['blurType']>;
+  blurAmount: number;
+  isDraggable: boolean;
+  isActivelyDrawing: boolean;
+  blurResult: BlurRenderResult | null;
+  handlers: BlurInteractionHandlers;
+  cursorHandlers: ReturnType<typeof useShapeCursor>;
+}
+
+function shouldShowBlurPlaceholder(
+  sourceImage: HTMLImageElement | undefined,
+  bounds: BlurBounds
+) {
+  return !sourceImage || bounds.width < 1 || bounds.height < 1;
+}
+
+function DrawingBlurPreviewSlot({
+  shapeId,
+  sourceImage,
+  bounds,
+  blurType,
+  blurAmount,
+  isActivelyDrawing,
+}: Pick<
+  BlurShapeContentProps,
+  'shapeId' | 'sourceImage' | 'bounds' | 'blurType' | 'blurAmount' | 'isActivelyDrawing'
+>) {
+  if (!isActivelyDrawing) return null;
+
+  const drawingBlur = getBlurRender(sourceImage, bounds, blurType, blurAmount);
+  return drawingBlur
+    ? <DrawingBlurPreview shapeId={shapeId} bounds={bounds} blurResult={drawingBlur} />
+    : null;
+}
+
+function BlurPlaceholderRect({
+  rectRef,
+  shapeId,
+  bounds,
+  isDraggable,
+  handlers,
+  cursorHandlers,
+}: Pick<
+  BlurShapeContentProps,
+  'rectRef' | 'shapeId' | 'bounds' | 'isDraggable' | 'handlers' | 'cursorHandlers'
+>) {
+  return (
+    <BlurInteractionRect
+      rectRef={rectRef}
+      shapeId={shapeId}
+      bounds={bounds}
+      isDraggable={isDraggable}
+      handlers={handlers}
+      cursorHandlers={cursorHandlers}
+      placeholder={true}
+    />
+  );
+}
+
+function getLiveBlurRenderContext(
+  sourceImage: HTMLImageElement | undefined,
+  imageNode: Konva.Image | null,
+  width: number,
+  height: number
+) {
+  if (!hasLiveBlurSource(sourceImage)) return null;
+  if (!hasLiveBlurImageNode(imageNode)) return null;
+  if (!hasRenderableBlurSize(width, height)) return null;
+
+  return { sourceImage, imageNode };
+}
+
+function hasLiveBlurSource(
+  sourceImage: HTMLImageElement | undefined,
+): sourceImage is HTMLImageElement {
+  return Boolean(sourceImage);
+}
+
+function hasLiveBlurImageNode(imageNode: Konva.Image | null): imageNode is Konva.Image {
+  return Boolean(imageNode);
+}
+
+function hasRenderableBlurSize(width: number, height: number) {
+  return width >= 1 && height >= 1;
+}
+
+function applyBlurRenderToImageNode(imageNode: Konva.Image, result: BlurRenderResult) {
+  imageNode.image(result.canvas);
+  imageNode.x(result.x);
+  imageNode.y(result.y);
+  imageNode.width(result.width);
+  imageNode.height(result.height);
+  imageNode.getLayer()?.batchDraw();
+}
+
+function BlurShapeContent({
+  groupRef,
+  imageRef,
+  rectRef,
+  shapeId,
+  sourceImage,
+  bounds,
+  blurType,
+  blurAmount,
+  isDraggable,
+  isActivelyDrawing,
+  blurResult,
+  handlers,
+  cursorHandlers,
+}: BlurShapeContentProps) {
+  if (isActivelyDrawing) {
+    return (
+      <DrawingBlurPreviewSlot
+        shapeId={shapeId}
+        sourceImage={sourceImage}
+        bounds={bounds}
+        blurType={blurType}
+        blurAmount={blurAmount}
+        isActivelyDrawing={isActivelyDrawing}
+      />
+    );
+  }
+
+  if (shouldShowBlurPlaceholder(sourceImage, bounds)) {
+    return (
+      <BlurPlaceholderRect
+        rectRef={rectRef}
+        shapeId={shapeId}
+        bounds={bounds}
+        isDraggable={isDraggable}
+        handlers={handlers}
+        cursorHandlers={cursorHandlers}
+      />
+    );
+  }
+
+  return (
+    <RenderedBlurShape
+      groupRef={groupRef}
+      imageRef={imageRef}
+      rectRef={rectRef}
+      shapeId={shapeId}
+      bounds={bounds}
+      isDraggable={isDraggable}
+      blurResult={blurResult}
+      handlers={handlers}
+      cursorHandlers={cursorHandlers}
+    />
+  );
+}
+
+function useLiveBlurInteraction({
+  sourceImage,
+  blurType,
+  blurAmount,
+  bounds,
+  imageRef,
+  onDragStart,
+  onDragEnd,
+  onTransformStart,
+  onTransformEnd,
+}: {
+  sourceImage: HTMLImageElement | undefined;
+  blurType: NonNullable<CanvasShape['blurType']>;
+  blurAmount: number;
+  bounds: BlurBounds;
+  imageRef: React.RefObject<Konva.Image | null>;
+  onDragStart: BlurShapeProps['onDragStart'];
+  onDragEnd: BlurShapeProps['onDragEnd'];
+  onTransformStart: BlurShapeProps['onTransformStart'];
+  onTransformEnd: BlurShapeProps['onTransformEnd'];
+}) {
+  const liveWidthRef = useRef(0);
+  const liveHeightRef = useRef(0);
+
+  useEffect(() => {
+    liveWidthRef.current = bounds.width;
+    liveHeightRef.current = bounds.height;
+  }, [bounds.width, bounds.height]);
+
+  const renderBlurLive = useCallback((x: number, y: number, width: number, height: number) => {
+    const imageNode = imageRef.current;
+    const context = getLiveBlurRenderContext(sourceImage, imageNode, width, height);
+    if (!context) return;
+
+    const result = renderBlurCanvas(context.sourceImage, x, y, width, height, blurType, blurAmount);
+    if (!result) return;
+
+    applyBlurRenderToImageNode(context.imageNode, result);
+  }, [sourceImage, imageRef, blurType, blurAmount]);
+
+  const handleDragMove = useCallback((e: Konva.KonvaEventObject<DragEvent>) => {
+    const node = e.target;
+    renderBlurLive(node.x(), node.y(), liveWidthRef.current, liveHeightRef.current);
+  }, [renderBlurLive]);
+
+  const handleTransform = useCallback((e: Konva.KonvaEventObject<Event>) => {
+    const node = e.target;
+    const newWidth = Math.abs(node.width() * node.scaleX());
+    const newHeight = Math.abs(node.height() * node.scaleY());
+    const newX = node.x();
+    const newY = node.y();
+
+    node.scaleX(1);
+    node.scaleY(1);
+    node.width(newWidth);
+    node.height(newHeight);
+
+    liveWidthRef.current = newWidth;
+    liveHeightRef.current = newHeight;
+    renderBlurLive(newX, newY, newWidth, newHeight);
+  }, [renderBlurLive]);
+
+  return {
+    onDragStart,
+    onDragMove: handleDragMove,
+    onDragEnd,
+    onTransformStart,
+    onTransform: handleTransform,
+    onTransformEnd,
+  };
 }
 
 /**
@@ -41,233 +493,49 @@ export const BlurShape: React.FC<BlurShapeProps> = React.memo(({
   const groupRef = useRef<Konva.Group>(null);
   const [blurResult, setBlurResult] = useState<BlurRenderResult | null>(null);
 
-  // Live position/size refs for real-time blur updates
-  const liveXRef = useRef(0);
-  const liveYRef = useRef(0);
-  const liveWidthRef = useRef(0);
-  const liveHeightRef = useRef(0);
-
   const blurType = shape.blurType || 'pixelate';
   const blurAmount = shape.blurAmount || shape.pixelSize || 15;
 
-  // Normalized values for the shape bounds (handle negative dimensions)
-  const shapeX = (shape.width || 0) < 0 ? (shape.x || 0) + (shape.width || 0) : (shape.x || 0);
-  const shapeY = (shape.height || 0) < 0 ? (shape.y || 0) + (shape.height || 0) : (shape.y || 0);
-  const shapeWidth = Math.abs(shape.width || 0);
-  const shapeHeight = Math.abs(shape.height || 0);
-
-  // Keep live refs in sync with props
-  useEffect(() => {
-    liveXRef.current = shapeX;
-    liveYRef.current = shapeY;
-    liveWidthRef.current = shapeWidth;
-    liveHeightRef.current = shapeHeight;
-  }, [shapeX, shapeY, shapeWidth, shapeHeight]);
-
-  // Helper to render blur and update Konva image directly (no React state during interaction)
-  const renderBlurLive = useCallback((x: number, y: number, width: number, height: number) => {
-    if (!sourceImage || width < 1 || height < 1 || !imageRef.current) return;
-
-    const result = renderBlurCanvas(sourceImage, x, y, width, height, blurType, blurAmount);
-    if (!result) return;
-
-    // Update Konva image directly for performance
-    imageRef.current.image(result.canvas);
-    imageRef.current.x(result.x);
-    imageRef.current.y(result.y);
-    imageRef.current.width(result.width);
-    imageRef.current.height(result.height);
-    imageRef.current.getLayer()?.batchDraw();
-  }, [sourceImage, blurType, blurAmount]);
+  const bounds = useMemo(() => getBlurBounds(shape), [shape]);
 
   // Initial blur render from props
   useEffect(() => {
-    if (!sourceImage || shapeWidth < 1 || shapeHeight < 1) {
-      setBlurResult(null);
-      return;
-    }
+    setBlurResult(getBlurRender(sourceImage, bounds, blurType, blurAmount));
+  }, [sourceImage, bounds, blurType, blurAmount]);
 
-    const result = renderBlurCanvas(
-      sourceImage,
-      shapeX,
-      shapeY,
-      shapeWidth,
-      shapeHeight,
-      blurType,
-      blurAmount
-    );
-    setBlurResult(result);
-  }, [sourceImage, shapeX, shapeY, shapeWidth, shapeHeight, blurType, blurAmount]);
+  const liveInteractionHandlers = useLiveBlurInteraction({
+    sourceImage,
+    blurType,
+    blurAmount,
+    bounds,
+    imageRef,
+    onDragStart,
+    onDragEnd,
+    onTransformStart,
+    onTransformEnd,
+  });
 
-  // Handle drag start
-  const handleDragStart = useCallback((e: Konva.KonvaEventObject<DragEvent>) => {
-    onDragStart(e);
-  }, [onDragStart]);
+  const interactionHandlers: BlurInteractionHandlers = {
+    onSelect,
+    ...liveInteractionHandlers,
+  };
 
-  // Live blur update during drag
-  const handleDragMove = useCallback((e: Konva.KonvaEventObject<DragEvent>) => {
-    const node = e.target;
-    const newX = node.x();
-    const newY = node.y();
-
-    // Re-render blur at new position
-    renderBlurLive(newX, newY, liveWidthRef.current, liveHeightRef.current);
-  }, [renderBlurLive]);
-
-  // Handle drag end
-  const handleDragEndInternal = useCallback((e: Konva.KonvaEventObject<DragEvent>) => {
-    onDragEnd(e);
-  }, [onDragEnd]);
-
-  // Handle transform start
-  const handleTransformStartInternal = useCallback(() => {
-    onTransformStart();
-  }, [onTransformStart]);
-
-  // Live blur update during resize
-  const handleTransformInternal = useCallback((e: Konva.KonvaEventObject<Event>) => {
-    const node = e.target;
-    const scaleX = node.scaleX();
-    const scaleY = node.scaleY();
-
-    const newWidth = Math.abs(node.width() * scaleX);
-    const newHeight = Math.abs(node.height() * scaleY);
-    const newX = node.x();
-    const newY = node.y();
-
-    // Reset scale and set actual dimensions
-    node.scaleX(1);
-    node.scaleY(1);
-    node.width(newWidth);
-    node.height(newHeight);
-
-    // Update live refs
-    liveWidthRef.current = newWidth;
-    liveHeightRef.current = newHeight;
-
-    // Re-render blur at new size
-    renderBlurLive(newX, newY, newWidth, newHeight);
-  }, [renderBlurLive]);
-
-  // Handle transform end
-  const handleTransformEndInternal = useCallback(
-    (e: Konva.KonvaEventObject<Event>) => {
-      onTransformEnd(e);
-    },
-    [onTransformEnd]
-  );
-
-  // Live blur preview during drawing - with visible border
-  if (isActivelyDrawing && sourceImage && shapeWidth >= 1 && shapeHeight >= 1) {
-    const drawingBlur = renderBlurCanvas(
-      sourceImage,
-      shapeX,
-      shapeY,
-      shapeWidth,
-      shapeHeight,
-      blurType,
-      blurAmount
-    );
-
-    if (drawingBlur) {
-      return (
-        <Group>
-          <Image
-            id={shape.id}
-            image={drawingBlur.canvas}
-            x={drawingBlur.x}
-            y={drawingBlur.y}
-            width={drawingBlur.width}
-            height={drawingBlur.height}
-            listening={false}
-          />
-          {/* Border while drawing */}
-          <Rect
-            x={shapeX}
-            y={shapeY}
-            width={shapeWidth}
-            height={shapeHeight}
-            stroke="#fbbf24"
-            strokeWidth={2}
-            dash={[6, 3]}
-            listening={false}
-          />
-        </Group>
-      );
-    }
-  }
-
-  // Placeholder while no image or blur completely outside bounds
-  if (!sourceImage || shapeWidth < 1 || shapeHeight < 1) {
-    return (
-      <Rect
-        ref={rectRef}
-        id={shape.id}
-        x={shapeX}
-        y={shapeY}
-        width={shapeWidth || 50}
-        height={shapeHeight || 50}
-        fill="rgba(128, 128, 128, 0.5)"
-        stroke="#666"
-        strokeWidth={1}
-        dash={[4, 4]}
-        draggable={isDraggable}
-        onMouseDown={onSelect}
-        onTouchStart={onSelect}
-        onClick={onSelect}
-        onTap={onSelect}
-        onDragStart={handleDragStart}
-        onDragMove={handleDragMove}
-        onDragEnd={handleDragEndInternal}
-        onTransformStart={handleTransformStartInternal}
-        onTransform={handleTransformInternal}
-        onTransformEnd={handleTransformEndInternal}
-        {...cursorHandlers}
-      />
-    );
-  }
-
-  // Use Group: invisible Rect at shape position for interaction,
-  // blur Image at clamped position for display
   return (
-    <Group ref={groupRef}>
-      {/* Blur image - positioned at clamped bounds, non-interactive */}
-      {blurResult && (
-        <Image
-          ref={imageRef}
-          image={blurResult.canvas}
-          x={blurResult.x}
-          y={blurResult.y}
-          width={blurResult.width}
-          height={blurResult.height}
-          listening={false}
-        />
-      )}
-      {/* Invisible rect at shape's logical position - handles all interaction */}
-      <Rect
-        ref={rectRef}
-        id={shape.id}
-        x={shapeX}
-        y={shapeY}
-        width={shapeWidth}
-        height={shapeHeight}
-        fill="transparent"
-        stroke="transparent"
-        strokeWidth={0}
-        draggable={isDraggable}
-        onMouseDown={onSelect}
-        onTouchStart={onSelect}
-        onClick={onSelect}
-        onTap={onSelect}
-        onDragStart={handleDragStart}
-        onDragMove={handleDragMove}
-        onDragEnd={handleDragEndInternal}
-        onTransformStart={handleTransformStartInternal}
-        onTransform={handleTransformInternal}
-        onTransformEnd={handleTransformEndInternal}
-        {...cursorHandlers}
-      />
-    </Group>
+    <BlurShapeContent
+      groupRef={groupRef}
+      imageRef={imageRef}
+      rectRef={rectRef}
+      shapeId={shape.id}
+      sourceImage={sourceImage}
+      bounds={bounds}
+      blurType={blurType}
+      blurAmount={blurAmount}
+      isDraggable={isDraggable}
+      isActivelyDrawing={isActivelyDrawing}
+      blurResult={blurResult}
+      handlers={interactionHandlers}
+      cursorHandlers={cursorHandlers}
+    />
   );
 });
 

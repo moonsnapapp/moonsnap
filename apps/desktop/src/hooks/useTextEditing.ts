@@ -68,6 +68,60 @@ function hasStageTransformChanged(
   );
 }
 
+function getTextShapeOverlayRect({
+  shape,
+  node,
+  stage,
+  liveStageTransform,
+  position,
+  zoom,
+}: {
+  shape: CanvasShape;
+  node: Konva.Node | undefined;
+  stage: Konva.Stage | null;
+  liveStageTransform: StageTransformSnapshot | null;
+  position: { x: number; y: number };
+  zoom: number;
+}) {
+  if (node) {
+    const rect = node.getClientRect();
+    return {
+      left: rect.x,
+      top: rect.y,
+      width: rect.width,
+      height: rect.height,
+      activeZoom: liveStageTransform?.zoom ?? stage?.scaleX() ?? zoom,
+    };
+  }
+
+  const fontSize = shape.fontSize ?? EDITOR_TEXT.DEFAULT_FONT_SIZE;
+  const activeZoom = liveStageTransform?.zoom ?? stage?.scaleX() ?? zoom;
+  const stageX = liveStageTransform?.x ?? stage?.x() ?? position.x;
+  const stageY = liveStageTransform?.y ?? stage?.y() ?? position.y;
+
+  return {
+    left: stageX + (shape.x || 0) * activeZoom,
+    top: stageY + (shape.y || 0) * activeZoom,
+    width: (shape.width || EDITOR_TEXT.DEFAULT_BOX_WIDTH) * activeZoom,
+    height: (shape.height || getEditorTextDefaultBoxHeight(fontSize)) * activeZoom,
+    activeZoom,
+  };
+}
+
+function getTextShapeOverlayStyle(shape: CanvasShape) {
+  return {
+    fontFamily: getEditorTextFontFamily(shape.fontFamily),
+    fontStyle: getEditorTextFontStyle(shape.fontStyle),
+    textDecoration: getEditorTextDecoration(shape.textDecoration),
+    align: normalizeEditorTextAlign(shape.align),
+    verticalAlign: normalizeEditorTextVerticalAlign(shape.verticalAlign),
+    color: shape.fill || EDITOR_TEXT.DEFAULT_COLOR,
+    textBackground: shape.textBackground || 'transparent',
+    textBoxStroke: shape.textBoxStroke || 'transparent',
+    textBoxStrokeWidth: shape.textBoxStrokeWidth || 0,
+  };
+}
+
 /**
  * Hook for inline text editing in the editor canvas
  * Manages the state and handlers for editing text shapes
@@ -191,58 +245,28 @@ export const useTextEditing = ({
   const getTextareaPosition = useCallback((): TextareaPosition | null => {
     if (!editingTextId || !containerRef.current) return null;
 
-    const shape = shapes.find(s => s.id === editingTextId);
+    const shape = shapes.find((entry) => entry.id === editingTextId);
     if (!shape) return null;
 
     const fontSize = shape.fontSize ?? EDITOR_TEXT.DEFAULT_FONT_SIZE;
-
-    // Read the actual Konva node position to avoid any formula mismatch
-    // between our manual calculation and Konva's internal transform pipeline.
     const stage = stageRef.current;
-    const node = stage?.findOne(`#${editingTextId}`);
-    const activeZoom = liveStageTransform?.zoom ?? stage?.scaleX() ?? zoom;
-
-    let left: number;
-    let top: number;
-    let effectiveWidth: number;
-    let effectiveHeight: number;
-
-    if (node) {
-      // getClientRect() returns the bounding box in stage-container pixels,
-      // already accounting for stage position, scale, and node transforms.
-      // This matches Konva's rendering exactly — no manual formula needed.
-      const rect = node.getClientRect();
-      left = rect.x;
-      top = rect.y;
-      effectiveWidth = rect.width;
-      effectiveHeight = rect.height;
-    } else {
-      // Fallback when the Konva node isn't mounted yet
-      const stageX = liveStageTransform?.x ?? stage?.x() ?? position.x;
-      const stageY = liveStageTransform?.y ?? stage?.y() ?? position.y;
-      left = stageX + (shape.x || 0) * activeZoom;
-      top = stageY + (shape.y || 0) * activeZoom;
-      effectiveWidth = (shape.width || EDITOR_TEXT.DEFAULT_BOX_WIDTH) * activeZoom;
-      effectiveHeight = (shape.height || getEditorTextDefaultBoxHeight(fontSize)) * activeZoom;
-    }
+    const overlayRect = getTextShapeOverlayRect({
+      shape,
+      node: stage?.findOne(`#${editingTextId}`),
+      stage,
+      liveStageTransform,
+      position,
+      zoom,
+    });
 
     return {
-      left,
-      top,
-      width: effectiveWidth,
-      height: effectiveHeight,
-      fontSize: fontSize * activeZoom,
-      fontFamily: getEditorTextFontFamily(shape.fontFamily),
-      fontStyle: getEditorTextFontStyle(shape.fontStyle),
-      textDecoration: getEditorTextDecoration(shape.textDecoration),
-      align: normalizeEditorTextAlign(shape.align),
-      verticalAlign: normalizeEditorTextVerticalAlign(shape.verticalAlign),
-      color: shape.fill || EDITOR_TEXT.DEFAULT_COLOR,
-      textBackground: shape.textBackground || 'transparent',
-      textBoxStroke: shape.textBoxStroke || 'transparent',
-      textBoxStrokeWidth: shape.textBoxStrokeWidth || 0,
-    };
-  }, [editingTextId, liveStageTransform, shapes, position, zoom, containerRef, stageRef]);
+      left: overlayRect.left,
+      top: overlayRect.top,
+      width: overlayRect.width,
+      height: overlayRect.height,
+      fontSize: fontSize * overlayRect.activeZoom,
+      ...getTextShapeOverlayStyle(shape),
+    };  }, [editingTextId, liveStageTransform, shapes, position, zoom, containerRef, stageRef]);
 
   return {
     editingTextId,

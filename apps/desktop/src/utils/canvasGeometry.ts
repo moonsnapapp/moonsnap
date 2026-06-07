@@ -97,68 +97,151 @@ const inflateBounds = (
   height: bh + padding * 2,
 });
 
+type BoundsRect = { x: number; y: number; width: number; height: number };
+interface ShapeBoundsMetrics {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  halfStroke: number;
+  radiusX: number;
+  radiusY: number;
+  rotation: number;
+}
+
+interface ShapeBoundsResolver {
+  matches: (shape: CanvasShape, metrics: ShapeBoundsMetrics) => boolean;
+  getBounds: (shape: CanvasShape, metrics: ShapeBoundsMetrics) => BoundsRect;
+}
+
+function getShapeBoundsMetrics(shape: CanvasShape): ShapeBoundsMetrics {
+  return {
+    x: shape.x ?? 0,
+    y: shape.y ?? 0,
+    width: shape.width ?? 0,
+    height: shape.height ?? 0,
+    halfStroke: (shape.strokeWidth ?? 0) / 2,
+    radiusX: shape.radiusX ?? shape.radius ?? 0,
+    radiusY: shape.radiusY ?? shape.radius ?? 0,
+    rotation: shape.rotation ?? 0,
+  };
+}
+
+function getEllipseBounds(
+  x: number,
+  y: number,
+  radiusX: number,
+  radiusY: number,
+  rotation: number,
+  padding: number
+): BoundsRect {
+  const rad = rotation * Math.PI / 180;
+  const cosR = Math.cos(rad);
+  const sinR = Math.sin(rad);
+  const hx = Math.sqrt(radiusX * radiusX * cosR * cosR + radiusY * radiusY * sinR * sinR);
+  const hy = Math.sqrt(radiusX * radiusX * sinR * sinR + radiusY * radiusY * cosR * cosR);
+  return inflateBounds(x - hx, y - hy, hx * 2, hy * 2, padding);
+}
+
+function getEndpointBounds(points: number[], padding: number): BoundsRect {
+  const [px1, py1, px2, py2] = points;
+  return inflateBounds(
+    Math.min(px1, px2),
+    Math.min(py1, py2),
+    Math.abs(px2 - px1),
+    Math.abs(py2 - py1),
+    padding
+  );
+}
+
+function getPenStrokeBounds(points: number[], padding: number): BoundsRect {
+  let minX = points[0];
+  let maxX = points[0];
+  let minY = points[1];
+  let maxY = points[1];
+
+  for (let i = 2; i < points.length; i += 2) {
+    const px = points[i];
+    const py = points[i + 1];
+    if (px < minX) minX = px;
+    else if (px > maxX) maxX = px;
+    if (py < minY) minY = py;
+    else if (py > maxY) maxY = py;
+  }
+
+  return inflateBounds(minX, minY, maxX - minX, maxY - minY, padding);
+}
+
+function getRotatedRectBounds(
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  rotation: number,
+  padding: number
+): BoundsRect {
+  const rad = rotation * Math.PI / 180;
+  const cosR = Math.abs(Math.cos(rad));
+  const sinR = Math.abs(Math.sin(rad));
+  const halfW = (Math.abs(width) * cosR + Math.abs(height) * sinR) / 2;
+  const halfH = (Math.abs(width) * sinR + Math.abs(height) * cosR) / 2;
+  const cos = Math.cos(rad);
+  const sin = Math.sin(rad);
+  const worldCx = x + width / 2 * cos - height / 2 * sin;
+  const worldCy = y + width / 2 * sin + height / 2 * cos;
+  return inflateBounds(worldCx - halfW, worldCy - halfH, halfW * 2, halfH * 2, padding);
+}
+
+const SHAPE_BOUNDS_RESOLVERS: ShapeBoundsResolver[] = [
+  {
+    matches: (_shape, metrics) => metrics.radiusX !== 0 || metrics.radiusY !== 0,
+    getBounds: (_shape, metrics) =>
+      getEllipseBounds(
+        metrics.x,
+        metrics.y,
+        metrics.radiusX,
+        metrics.radiusY,
+        metrics.rotation,
+        metrics.halfStroke
+      ),
+  },
+  {
+    matches: (shape) =>
+      (shape.type === 'arrow' || shape.type === 'line') &&
+      shape.points != null &&
+      shape.points.length >= 4,
+    getBounds: (shape, metrics) => getEndpointBounds(shape.points ?? [], metrics.halfStroke),
+  },
+  {
+    matches: (shape) =>
+      shape.type === 'pen' &&
+      shape.points != null &&
+      shape.points.length >= 2,
+    getBounds: (shape, metrics) => getPenStrokeBounds(shape.points ?? [], metrics.halfStroke),
+  },
+  {
+    matches: (_shape, metrics) => metrics.rotation !== 0,
+    getBounds: (_shape, metrics) =>
+      getRotatedRectBounds(
+        metrics.x,
+        metrics.y,
+        metrics.width,
+        metrics.height,
+        metrics.rotation,
+        metrics.halfStroke
+      ),
+  },
+];
+
 export const getShapeBounds = (
   shape: CanvasShape
-): { x: number; y: number; width: number; height: number } => {
-  const x = shape.x ?? 0;
-  const y = shape.y ?? 0;
-  const w = shape.width ?? 0;
-  const h = shape.height ?? 0;
-  const halfStroke = (shape.strokeWidth ?? 0) / 2;
+): BoundsRect => {
+  const metrics = getShapeBoundsMetrics(shape);
+  const resolver = SHAPE_BOUNDS_RESOLVERS.find((entry) => entry.matches(shape, metrics));
 
-  // Handle circles/ellipses (center-based, rotation-symmetric)
-  const radiusX = shape.radiusX ?? shape.radius ?? 0;
-  const radiusY = shape.radiusY ?? shape.radius ?? 0;
-  if (radiusX || radiusY) {
-    const rad = (shape.rotation ?? 0) * Math.PI / 180;
-    const cosR = Math.cos(rad);
-    const sinR = Math.sin(rad);
-    // Rotated ellipse AABB: half-extents from parametric max
-    const hx = Math.sqrt(radiusX * radiusX * cosR * cosR + radiusY * radiusY * sinR * sinR);
-    const hy = Math.sqrt(radiusX * radiusX * sinR * sinR + radiusY * radiusY * cosR * cosR);
-    return inflateBounds(x - hx, y - hy, hx * 2, hy * 2, halfStroke);
-  }
-
-  // Handle arrows and lines (point-based, no rotation transform)
-  if ((shape.type === 'arrow' || shape.type === 'line') && shape.points && shape.points.length >= 4) {
-    const [px1, py1, px2, py2] = shape.points;
-    return inflateBounds(
-      Math.min(px1, px2), Math.min(py1, py2),
-      Math.abs(px2 - px1), Math.abs(py2 - py1), halfStroke,
-    );
-  }
-
-  // Handle pen strokes — single-pass min/max to avoid spread on large arrays
-  if (shape.type === 'pen' && shape.points && shape.points.length >= 2) {
-    const pts = shape.points;
-    let minX = pts[0], maxX = pts[0], minY = pts[1], maxY = pts[1];
-    for (let i = 2; i < pts.length; i += 2) {
-      const px = pts[i], py = pts[i + 1];
-      if (px < minX) minX = px; else if (px > maxX) maxX = px;
-      if (py < minY) minY = py; else if (py > maxY) maxY = py;
-    }
-    return inflateBounds(minX, minY, maxX - minX, maxY - minY, halfStroke);
-  }
-
-  // For shapes with rotation, compute rotated AABB
-  const rotation = shape.rotation ?? 0;
-  if (rotation !== 0) {
-    const rad = rotation * Math.PI / 180;
-    const cosR = Math.abs(Math.cos(rad));
-    const sinR = Math.abs(Math.sin(rad));
-    // Rotated AABB half-extents
-    const halfW = (Math.abs(w) * cosR + Math.abs(h) * sinR) / 2;
-    const halfH = (Math.abs(w) * sinR + Math.abs(h) * cosR) / 2;
-    // Center in world space (Konva rotates around top-left, so center moves)
-    const cos = Math.cos(rad);
-    const sin = Math.sin(rad);
-    const worldCx = x + w / 2 * cos - h / 2 * sin;
-    const worldCy = y + w / 2 * sin + h / 2 * cos;
-    return inflateBounds(worldCx - halfW, worldCy - halfH, halfW * 2, halfH * 2, halfStroke);
-  }
-
-  // No rotation — simple bounds
-  return inflateBounds(x, y, w, h, halfStroke);
+  return resolver
+    ? resolver.getBounds(shape, metrics)
+    : inflateBounds(metrics.x, metrics.y, metrics.width, metrics.height, metrics.halfStroke);
 };
 
 /**
@@ -367,19 +450,28 @@ const segmentsIntersect = (
   const d3 = direction(x1, y1, x2, y2, x3, y3);
   const d4 = direction(x1, y1, x2, y2, x4, y4);
 
-  if (((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) &&
-      ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0))) {
-    return true;
-  }
-
-  // Check for collinear cases
-  if (d1 === 0 && onSegment(x3, y3, x4, y4, x1, y1)) return true;
-  if (d2 === 0 && onSegment(x3, y3, x4, y4, x2, y2)) return true;
-  if (d3 === 0 && onSegment(x1, y1, x2, y2, x3, y3)) return true;
-  if (d4 === 0 && onSegment(x1, y1, x2, y2, x4, y4)) return true;
-
-  return false;
+  return (
+    (hasOppositeSigns(d1, d2) && hasOppositeSigns(d3, d4)) ||
+    isCollinearPointOnSegment(d1, x3, y3, x4, y4, x1, y1) ||
+    isCollinearPointOnSegment(d2, x3, y3, x4, y4, x2, y2) ||
+    isCollinearPointOnSegment(d3, x1, y1, x2, y2, x3, y3) ||
+    isCollinearPointOnSegment(d4, x1, y1, x2, y2, x4, y4)
+  );
 };
+
+const hasOppositeSigns = (a: number, b: number): boolean => {
+  return (a > 0 && b < 0) || (a < 0 && b > 0);
+};
+
+const isCollinearPointOnSegment = (
+  directionValue: number,
+  x1: number,
+  y1: number,
+  x2: number,
+  y2: number,
+  x3: number,
+  y3: number
+): boolean => directionValue === 0 && onSegment(x1, y1, x2, y2, x3, y3);
 
 /**
  * Calculate the cross product direction for three points.

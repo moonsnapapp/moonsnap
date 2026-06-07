@@ -56,6 +56,52 @@ function createMockKonvaEvent(stageRef: { current: unknown }) {
   } as unknown as Parameters<ReturnType<typeof useShapeDrawing>['handleDrawingMouseDown']>[0];
 }
 
+function renderShapeDrawing(overrides: Partial<Parameters<typeof useShapeDrawing>[0]> = {}) {
+  const props = createMockProps(overrides);
+  return {
+    props,
+    ...renderHook(() => useShapeDrawing(props)),
+  };
+}
+
+function pressDrawingMouseDown(
+  result: ReturnType<typeof renderShapeDrawing>['result'],
+  props: ReturnType<typeof createMockProps>
+) {
+  const event = createMockKonvaEvent(props.stageRef);
+  let handled = false;
+
+  act(() => {
+    handled = result.current.handleDrawingMouseDown(event);
+  });
+
+  return handled;
+}
+
+function moveDrawingMouse(
+  result: ReturnType<typeof renderShapeDrawing>['result'],
+  position: { x: number; y: number }
+) {
+  act(() => {
+    result.current.handleDrawingMouseMove(position);
+  });
+}
+
+function drawShape(overrides: Partial<Parameters<typeof useShapeDrawing>[0]>, position = { x: 200, y: 150 }) {
+  const rendered = renderShapeDrawing(overrides);
+  pressDrawingMouseDown(rendered.result, rendered.props);
+  moveDrawingMouse(rendered.result, position);
+  return rendered;
+}
+
+function drawRect(position = { x: 150, y: 150 }) {
+  return drawShape({ selectedTool: 'rect' }, position);
+}
+
+function firstCreatedShape(props: ReturnType<typeof createMockProps>) {
+  return props.onShapesChange.mock.calls[0][0][0] as CanvasShape;
+}
+
 describe('useShapeDrawing', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -63,8 +109,7 @@ describe('useShapeDrawing', () => {
 
   describe('initial state', () => {
     it('should not be drawing initially', () => {
-      const props = createMockProps();
-      const { result } = renderHook(() => useShapeDrawing(props));
+      const { result } = renderShapeDrawing();
 
       expect(result.current.isDrawing).toBe(false);
     });
@@ -72,44 +117,23 @@ describe('useShapeDrawing', () => {
 
   describe('handleDrawingMouseDown', () => {
     it('should return false for select tool', () => {
-      const props = createMockProps({ selectedTool: 'select' });
-      const { result } = renderHook(() => useShapeDrawing(props));
-
-      const event = createMockKonvaEvent(props.stageRef);
-      let handled: boolean = false;
-
-      act(() => {
-        handled = result.current.handleDrawingMouseDown(event);
-      });
+      const { props, result } = renderShapeDrawing({ selectedTool: 'select' });
+      const handled = pressDrawingMouseDown(result, props);
 
       expect(handled).toBe(false);
       expect(result.current.isDrawing).toBe(false);
     });
 
     it('should return false for crop tool', () => {
-      const props = createMockProps({ selectedTool: 'crop' });
-      const { result } = renderHook(() => useShapeDrawing(props));
-
-      const event = createMockKonvaEvent(props.stageRef);
-      let handled: boolean = false;
-
-      act(() => {
-        handled = result.current.handleDrawingMouseDown(event);
-      });
+      const { props, result } = renderShapeDrawing({ selectedTool: 'crop' });
+      const handled = pressDrawingMouseDown(result, props);
 
       expect(handled).toBe(false);
     });
 
     it('should start drawing for rect tool', () => {
-      const props = createMockProps({ selectedTool: 'rect' });
-      const { result } = renderHook(() => useShapeDrawing(props));
-
-      const event = createMockKonvaEvent(props.stageRef);
-      let handled: boolean = false;
-
-      act(() => {
-        handled = result.current.handleDrawingMouseDown(event);
-      });
+      const { props, result } = renderShapeDrawing({ selectedTool: 'rect' });
+      const handled = pressDrawingMouseDown(result, props);
 
       // mouseDown returns true (handled) but defers drawing to mouseMove
       expect(handled).toBe(true);
@@ -117,154 +141,40 @@ describe('useShapeDrawing', () => {
       expect(props.history.takeSnapshot).not.toHaveBeenCalled();
 
       // Drawing starts after drag threshold is exceeded
-      act(() => {
-        result.current.handleDrawingMouseMove({ x: 110, y: 110 });
-      });
+      moveDrawingMouse(result, { x: 110, y: 110 });
 
       expect(result.current.isDrawing).toBe(true);
       expect(props.history.takeSnapshot).toHaveBeenCalled();
     });
 
-    it('should start drawing for arrow tool', () => {
-      const props = createMockProps({ selectedTool: 'arrow' });
-      const { result } = renderHook(() => useShapeDrawing(props));
+    it.each<Tool>(['arrow', 'circle', 'pen', 'highlight', 'blur', 'line'])(
+      'should start drawing for %s tool',
+      (selectedTool) => {
+        const { props, result } = renderShapeDrawing({ selectedTool });
+        pressDrawingMouseDown(result, props);
 
-      const event = createMockKonvaEvent(props.stageRef);
+        expect(result.current.isDrawing).toBe(false);
 
-      act(() => {
-        result.current.handleDrawingMouseDown(event);
-      });
+        moveDrawingMouse(result, { x: 110, y: 110 });
 
-      expect(result.current.isDrawing).toBe(false);
-
-      act(() => {
-        result.current.handleDrawingMouseMove({ x: 110, y: 110 });
-      });
-
-      expect(result.current.isDrawing).toBe(true);
-    });
-
-    it('should start drawing for circle tool', () => {
-      const props = createMockProps({ selectedTool: 'circle' });
-      const { result } = renderHook(() => useShapeDrawing(props));
-
-      const event = createMockKonvaEvent(props.stageRef);
-
-      act(() => {
-        result.current.handleDrawingMouseDown(event);
-      });
-
-      expect(result.current.isDrawing).toBe(false);
-
-      act(() => {
-        result.current.handleDrawingMouseMove({ x: 110, y: 110 });
-      });
-
-      expect(result.current.isDrawing).toBe(true);
-    });
-
-    it('should start drawing for pen tool', () => {
-      const props = createMockProps({ selectedTool: 'pen' });
-      const { result } = renderHook(() => useShapeDrawing(props));
-
-      const event = createMockKonvaEvent(props.stageRef);
-
-      act(() => {
-        result.current.handleDrawingMouseDown(event);
-      });
-
-      expect(result.current.isDrawing).toBe(false);
-
-      act(() => {
-        result.current.handleDrawingMouseMove({ x: 110, y: 110 });
-      });
-
-      expect(result.current.isDrawing).toBe(true);
-    });
+        expect(result.current.isDrawing).toBe(true);
+      }
+    );
 
     it('should start drawing for text tool', () => {
-      const props = createMockProps({ selectedTool: 'text' });
-      const { result } = renderHook(() => useShapeDrawing(props));
-
-      const event = createMockKonvaEvent(props.stageRef);
-
-      act(() => {
-        result.current.handleDrawingMouseDown(event);
-      });
+      const { props, result } = renderShapeDrawing({ selectedTool: 'text' });
+      pressDrawingMouseDown(result, props);
 
       expect(result.current.isDrawing).toBe(true);
       expect(props.history.takeSnapshot).toHaveBeenCalled();
       expect(props.onShapesChange).toHaveBeenCalled();
     });
-
-    it('should start drawing for highlight tool', () => {
-      const props = createMockProps({ selectedTool: 'highlight' });
-      const { result } = renderHook(() => useShapeDrawing(props));
-
-      const event = createMockKonvaEvent(props.stageRef);
-
-      act(() => {
-        result.current.handleDrawingMouseDown(event);
-      });
-
-      expect(result.current.isDrawing).toBe(false);
-
-      act(() => {
-        result.current.handleDrawingMouseMove({ x: 110, y: 110 });
-      });
-
-      expect(result.current.isDrawing).toBe(true);
-    });
-
-    it('should start drawing for blur tool', () => {
-      const props = createMockProps({ selectedTool: 'blur' });
-      const { result } = renderHook(() => useShapeDrawing(props));
-
-      const event = createMockKonvaEvent(props.stageRef);
-
-      act(() => {
-        result.current.handleDrawingMouseDown(event);
-      });
-
-      expect(result.current.isDrawing).toBe(false);
-
-      act(() => {
-        result.current.handleDrawingMouseMove({ x: 110, y: 110 });
-      });
-
-      expect(result.current.isDrawing).toBe(true);
-    });
-
-    it('should start drawing for line tool', () => {
-      const props = createMockProps({ selectedTool: 'line' });
-      const { result } = renderHook(() => useShapeDrawing(props));
-
-      const event = createMockKonvaEvent(props.stageRef);
-
-      act(() => {
-        result.current.handleDrawingMouseDown(event);
-      });
-
-      expect(result.current.isDrawing).toBe(false);
-
-      act(() => {
-        result.current.handleDrawingMouseMove({ x: 110, y: 110 });
-      });
-
-      expect(result.current.isDrawing).toBe(true);
-    });
   });
 
   describe('steps tool (click-to-place)', () => {
     it('should create step shape immediately on click', () => {
-      const props = createMockProps({ selectedTool: 'steps' });
-      const { result } = renderHook(() => useShapeDrawing(props));
-
-      const event = createMockKonvaEvent(props.stageRef);
-
-      act(() => {
-        result.current.handleDrawingMouseDown(event);
-      });
+      const { props, result } = renderShapeDrawing({ selectedTool: 'steps' });
+      pressDrawingMouseDown(result, props);
 
       // Steps tool creates shape immediately without entering drawing mode
       expect(result.current.isDrawing).toBe(false);
@@ -277,14 +187,8 @@ describe('useShapeDrawing', () => {
         { id: 'step1', type: 'step', x: 50, y: 50, number: 1, fill: '#ff0000', radius: 15 },
         { id: 'step2', type: 'step', x: 100, y: 100, number: 2, fill: '#ff0000', radius: 15 },
       ];
-      const props = createMockProps({ selectedTool: 'steps', shapes: existingShapes });
-      const { result } = renderHook(() => useShapeDrawing(props));
-
-      const event = createMockKonvaEvent(props.stageRef);
-
-      act(() => {
-        result.current.handleDrawingMouseDown(event);
-      });
+      const { props, result } = renderShapeDrawing({ selectedTool: 'steps', shapes: existingShapes });
+      pressDrawingMouseDown(result, props);
 
       // Should create step with number 3
       const callArg = props.onShapesChange.mock.calls[0][0];
@@ -298,14 +202,8 @@ describe('useShapeDrawing', () => {
         { id: 'step1', type: 'step', x: 50, y: 50, number: 1, fill: '#ff0000', radius: 15 },
         { id: 'step3', type: 'step', x: 100, y: 100, number: 3, fill: '#ff0000', radius: 15 },
       ];
-      const props = createMockProps({ selectedTool: 'steps', shapes: existingShapes });
-      const { result } = renderHook(() => useShapeDrawing(props));
-
-      const event = createMockKonvaEvent(props.stageRef);
-
-      act(() => {
-        result.current.handleDrawingMouseDown(event);
-      });
+      const { props, result } = renderShapeDrawing({ selectedTool: 'steps', shapes: existingShapes });
+      pressDrawingMouseDown(result, props);
 
       // Should fill gap with number 2
       const callArg = props.onShapesChange.mock.calls[0][0];
@@ -314,14 +212,8 @@ describe('useShapeDrawing', () => {
     });
 
     it('should use recordAction for undo support', () => {
-      const props = createMockProps({ selectedTool: 'steps' });
-      const { result } = renderHook(() => useShapeDrawing(props));
-
-      const event = createMockKonvaEvent(props.stageRef);
-
-      act(() => {
-        result.current.handleDrawingMouseDown(event);
-      });
+      const { props, result } = renderShapeDrawing({ selectedTool: 'steps' });
+      pressDrawingMouseDown(result, props);
 
       expect(props.history.recordAction).toHaveBeenCalled();
     });
@@ -329,42 +221,26 @@ describe('useShapeDrawing', () => {
 
   describe('MIN_SHAPE_SIZE validation', () => {
     it('should not create shape when mouse movement is below threshold', () => {
-      const props = createMockProps({ selectedTool: 'rect' });
+      const { props, result } = renderShapeDrawing({ selectedTool: 'rect' });
       props.stageRef.current.getPointerPosition = vi.fn(() => ({ x: 100, y: 100 }));
 
-      const { result } = renderHook(() => useShapeDrawing(props));
-
-      // Start drawing
-      const event = createMockKonvaEvent(props.stageRef);
-      act(() => {
-        result.current.handleDrawingMouseDown(event);
-      });
+      pressDrawingMouseDown(result, props);
 
       // Move mouse by only 2 pixels (below MIN_SHAPE_SIZE of 5)
-      act(() => {
-        result.current.handleDrawingMouseMove({ x: 102, y: 102 });
-      });
+      moveDrawingMouse(result, { x: 102, y: 102 });
 
       // Shape should not be created yet
       expect(props.onShapesChange).not.toHaveBeenCalled();
     });
 
     it('should create shape when mouse movement exceeds threshold', () => {
-      const props = createMockProps({ selectedTool: 'rect' });
+      const { props, result } = renderShapeDrawing({ selectedTool: 'rect' });
       props.stageRef.current.getPointerPosition = vi.fn(() => ({ x: 100, y: 100 }));
 
-      const { result } = renderHook(() => useShapeDrawing(props));
-
-      // Start drawing
-      const event = createMockKonvaEvent(props.stageRef);
-      act(() => {
-        result.current.handleDrawingMouseDown(event);
-      });
+      pressDrawingMouseDown(result, props);
 
       // Move mouse by 10 pixels (above MIN_SHAPE_SIZE of 5)
-      act(() => {
-        result.current.handleDrawingMouseMove({ x: 110, y: 100 });
-      });
+      moveDrawingMouse(result, { x: 110, y: 100 });
 
       // Shape should be created
       expect(props.onShapesChange).toHaveBeenCalled();
@@ -373,19 +249,7 @@ describe('useShapeDrawing', () => {
 
   describe('handleDrawingMouseUp', () => {
     it('should stop drawing', () => {
-      const props = createMockProps({ selectedTool: 'rect' });
-      const { result } = renderHook(() => useShapeDrawing(props));
-
-      // Start drawing (deferred)
-      const event = createMockKonvaEvent(props.stageRef);
-      act(() => {
-        result.current.handleDrawingMouseDown(event);
-      });
-
-      // Move to exceed drag threshold and enter drawing mode
-      act(() => {
-        result.current.handleDrawingMouseMove({ x: 150, y: 150 });
-      });
+      const { result } = drawRect();
 
       expect(result.current.isDrawing).toBe(true);
 
@@ -398,19 +262,7 @@ describe('useShapeDrawing', () => {
     });
 
     it('should keep the active tool after completing a shape', () => {
-      const props = createMockProps({ selectedTool: 'rect' });
-      const { result } = renderHook(() => useShapeDrawing(props));
-
-      // Start drawing
-      const event = createMockKonvaEvent(props.stageRef);
-      act(() => {
-        result.current.handleDrawingMouseDown(event);
-      });
-
-      // Move to create shape
-      act(() => {
-        result.current.handleDrawingMouseMove({ x: 150, y: 150 });
-      });
+      const { props, result } = drawRect();
 
       // End drawing
       act(() => {
@@ -421,19 +273,7 @@ describe('useShapeDrawing', () => {
     });
 
     it('should commit snapshot after completing shape', () => {
-      const props = createMockProps({ selectedTool: 'rect' });
-      const { result } = renderHook(() => useShapeDrawing(props));
-
-      // Start drawing
-      const event = createMockKonvaEvent(props.stageRef);
-      act(() => {
-        result.current.handleDrawingMouseDown(event);
-      });
-
-      // Move to create shape
-      act(() => {
-        result.current.handleDrawingMouseMove({ x: 150, y: 150 });
-      });
+      const { props, result } = drawRect();
 
       // End drawing
       act(() => {
@@ -461,19 +301,7 @@ describe('useShapeDrawing', () => {
     });
 
     it('should include in-progress shape when drawing', () => {
-      const props = createMockProps({ selectedTool: 'rect' });
-      const { result } = renderHook(() => useShapeDrawing(props));
-
-      // Start drawing
-      const event = createMockKonvaEvent(props.stageRef);
-      act(() => {
-        result.current.handleDrawingMouseDown(event);
-      });
-
-      // Move to create shape
-      act(() => {
-        result.current.handleDrawingMouseMove({ x: 150, y: 150 });
-      });
+      const { result } = drawRect();
 
       // Finalize without mouse up
       let shapes: CanvasShape[] = [];
@@ -487,19 +315,7 @@ describe('useShapeDrawing', () => {
     });
 
     it('should stop drawing after finalize', () => {
-      const props = createMockProps({ selectedTool: 'rect' });
-      const { result } = renderHook(() => useShapeDrawing(props));
-
-      // Start drawing
-      const event = createMockKonvaEvent(props.stageRef);
-      act(() => {
-        result.current.handleDrawingMouseDown(event);
-      });
-
-      // Move to create shape
-      act(() => {
-        result.current.handleDrawingMouseMove({ x: 150, y: 150 });
-      });
+      const { result } = drawRect();
 
       expect(result.current.isDrawing).toBe(true);
 
@@ -514,27 +330,13 @@ describe('useShapeDrawing', () => {
 
   describe('shape creation with correct properties', () => {
     it('should create rect with correct dimensions', () => {
-      const props = createMockProps({
+      const { props } = drawShape({
         selectedTool: 'rect',
         strokeColor: '#00ff00',
         fillColor: '#0000ff',
         strokeWidth: 4,
       });
-      const { result } = renderHook(() => useShapeDrawing(props));
-
-      // Start drawing at (100, 100)
-      const event = createMockKonvaEvent(props.stageRef);
-      act(() => {
-        result.current.handleDrawingMouseDown(event);
-      });
-
-      // Move to (200, 150)
-      act(() => {
-        result.current.handleDrawingMouseMove({ x: 200, y: 150 });
-      });
-
-      const createdShapes = props.onShapesChange.mock.calls[0][0];
-      const rect = createdShapes[0];
+      const rect = firstCreatedShape(props);
 
       expect(rect.type).toBe('rect');
       expect(rect.x).toBe(100);
@@ -547,22 +349,8 @@ describe('useShapeDrawing', () => {
     });
 
     it('should create circle with correct radii', () => {
-      const props = createMockProps({ selectedTool: 'circle' });
-      const { result } = renderHook(() => useShapeDrawing(props));
-
-      // Start drawing at (100, 100)
-      const event = createMockKonvaEvent(props.stageRef);
-      act(() => {
-        result.current.handleDrawingMouseDown(event);
-      });
-
-      // Move to (200, 160) - creating a 100x60 bounding box
-      act(() => {
-        result.current.handleDrawingMouseMove({ x: 200, y: 160 });
-      });
-
-      const createdShapes = props.onShapesChange.mock.calls[0][0];
-      const circle = createdShapes[0];
+      const { props } = drawShape({ selectedTool: 'circle' }, { x: 200, y: 160 });
+      const circle = firstCreatedShape(props);
 
       expect(circle.type).toBe('circle');
       expect(circle.radiusX).toBe(50); // half of 100
@@ -572,20 +360,8 @@ describe('useShapeDrawing', () => {
     });
 
     it('should create arrow with correct points', () => {
-      const props = createMockProps({ selectedTool: 'arrow' });
-      const { result } = renderHook(() => useShapeDrawing(props));
-
-      const event = createMockKonvaEvent(props.stageRef);
-      act(() => {
-        result.current.handleDrawingMouseDown(event);
-      });
-
-      act(() => {
-        result.current.handleDrawingMouseMove({ x: 200, y: 150 });
-      });
-
-      const createdShapes = props.onShapesChange.mock.calls[0][0];
-      const arrow = createdShapes[0];
+      const { props } = drawShape({ selectedTool: 'arrow' });
+      const arrow = firstCreatedShape(props);
 
       expect(arrow.type).toBe('arrow');
       expect(arrow.points).toEqual([100, 100, 200, 150]);
@@ -624,47 +400,23 @@ describe('useShapeDrawing', () => {
     });
 
     it('should create highlight with semi-transparent fill', () => {
-      const props = createMockProps({
+      const { props } = drawShape({
         selectedTool: 'highlight',
         strokeColor: '#ffff00', // yellow
       });
-      const { result } = renderHook(() => useShapeDrawing(props));
-
-      const event = createMockKonvaEvent(props.stageRef);
-      act(() => {
-        result.current.handleDrawingMouseDown(event);
-      });
-
-      act(() => {
-        result.current.handleDrawingMouseMove({ x: 200, y: 150 });
-      });
-
-      const createdShapes = props.onShapesChange.mock.calls[0][0];
-      const highlight = createdShapes[0];
+      const highlight = firstCreatedShape(props);
 
       expect(highlight.type).toBe('highlight');
       expect(highlight.fill).toBe('rgba(255, 255, 0, 0.4)');
     });
 
     it('should create blur with correct blur settings', () => {
-      const props = createMockProps({
+      const { props } = drawShape({
         selectedTool: 'blur',
         blurType: 'pixelate',
         blurAmount: 20,
       });
-      const { result } = renderHook(() => useShapeDrawing(props));
-
-      const event = createMockKonvaEvent(props.stageRef);
-      act(() => {
-        result.current.handleDrawingMouseDown(event);
-      });
-
-      act(() => {
-        result.current.handleDrawingMouseMove({ x: 200, y: 150 });
-      });
-
-      const createdShapes = props.onShapesChange.mock.calls[0][0];
-      const blur = createdShapes[0];
+      const blur = firstCreatedShape(props);
 
       expect(blur.type).toBe('blur');
       expect(blur.blurType).toBe('pixelate');
@@ -672,13 +424,12 @@ describe('useShapeDrawing', () => {
     });
 
     it('should create a default text box on click without drag', () => {
-      const props = createMockProps({ selectedTool: 'text', fontSize: 16, strokeColor: '#112233' });
-      const { result } = renderHook(() => useShapeDrawing(props));
-
-      const event = createMockKonvaEvent(props.stageRef);
-      act(() => {
-        result.current.handleDrawingMouseDown(event);
+      const { props, result } = renderShapeDrawing({
+        selectedTool: 'text',
+        fontSize: 16,
+        strokeColor: '#112233',
       });
+      pressDrawingMouseDown(result, props);
 
       act(() => {
         result.current.handleDrawingMouseUp();
@@ -705,17 +456,7 @@ describe('useShapeDrawing', () => {
     });
 
     it('should enforce minimum text width and drag height while drawing', () => {
-      const props = createMockProps({ selectedTool: 'text', fontSize: 16 });
-      const { result } = renderHook(() => useShapeDrawing(props));
-
-      const event = createMockKonvaEvent(props.stageRef);
-      act(() => {
-        result.current.handleDrawingMouseDown(event);
-      });
-
-      act(() => {
-        result.current.handleDrawingMouseMove({ x: 104, y: 104 });
-      });
+      const { props } = drawShape({ selectedTool: 'text', fontSize: 16 }, { x: 104, y: 104 });
 
       const createdShapes = props.onShapesChange.mock.calls.at(-1)![0];
       const textShape = createdShapes[0];
@@ -729,19 +470,9 @@ describe('useShapeDrawing', () => {
   describe('text shape callback', () => {
     it('should call onTextShapeCreated after text shape is completed', () => {
       const onTextShapeCreated = vi.fn();
-      const props = createMockProps({
+      const { result } = drawShape({
         selectedTool: 'text',
         onTextShapeCreated,
-      });
-      const { result } = renderHook(() => useShapeDrawing(props));
-
-      const event = createMockKonvaEvent(props.stageRef);
-      act(() => {
-        result.current.handleDrawingMouseDown(event);
-      });
-
-      act(() => {
-        result.current.handleDrawingMouseMove({ x: 200, y: 150 });
       });
 
       act(() => {

@@ -4,6 +4,34 @@ import { invoke } from '@tauri-apps/api/core';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { isEditableEventTarget, matchesShortcutEvent } from '@/utils/hotkeyManager';
 
+type FocusedShortcut = ReturnType<typeof useSettingsStore.getState>['settings']['shortcuts'][string];
+
+function shouldIgnoreFocusedShortcutEvent(event: KeyboardEvent): boolean {
+  return event.repeat || isEditableEventTarget(event.target);
+}
+
+function findMatchedFocusedShortcut(
+  event: KeyboardEvent,
+  shortcuts: ReturnType<typeof useSettingsStore.getState>['settings']['shortcuts']
+): FocusedShortcut | undefined {
+  return Object.values(shortcuts).find((shortcut) =>
+    matchesShortcutEvent(event, shortcut.currentShortcut)
+  );
+}
+
+function isPrintScreenShortcut(shortcut: FocusedShortcut): boolean {
+  return shortcut.currentShortcut.toLowerCase().includes('printscreen');
+}
+
+function shouldDispatchFocusedShortcut(event: KeyboardEvent, shortcut: FocusedShortcut): boolean {
+  return event.type !== 'keyup' || isPrintScreenShortcut(shortcut);
+}
+
+function dispatchFocusedShortcut(event: KeyboardEvent, shortcut: FocusedShortcut): void {
+  event.preventDefault();
+  void invoke('dispatch_global_shortcut', { id: shortcut.id });
+}
+
 export function useFocusedShortcutDispatch() {
   const shortcuts = useSettingsStore((s) => s.settings.shortcuts);
   const settingsInitialized = useSettingsStore((s) => s.isInitialized);
@@ -17,14 +45,11 @@ export function useFocusedShortcutDispatch() {
 
   useEffect(() => {
     const handleFocusedShortcut = (event: KeyboardEvent) => {
-      if (event.repeat || isEditableEventTarget(event.target)) {
+      if (shouldIgnoreFocusedShortcutEvent(event)) {
         return;
       }
 
-      const matchedShortcut = Object.values(shortcuts).find((shortcut) =>
-        matchesShortcutEvent(event, shortcut.currentShortcut)
-      );
-
+      const matchedShortcut = findMatchedFocusedShortcut(event, shortcuts);
       if (!matchedShortcut) {
         return;
       }
@@ -33,15 +58,11 @@ export function useFocusedShortcutDispatch() {
       // For PrintScreen-containing shortcuts we accept either event so the
       // webview stays a working fallback when the LL hook misses the press
       // (Windows often swallows WM_KEYDOWN for PrintScreen even at hook level).
-      const isPrintScreenShortcut = matchedShortcut.currentShortcut
-        .toLowerCase()
-        .includes('printscreen');
-      if (event.type === 'keyup' && !isPrintScreenShortcut) {
+      if (!shouldDispatchFocusedShortcut(event, matchedShortcut)) {
         return;
       }
 
-      event.preventDefault();
-      void invoke('dispatch_global_shortcut', { id: matchedShortcut.id });
+      dispatchFocusedShortcut(event, matchedShortcut);
     };
 
     window.addEventListener('keydown', handleFocusedShortcut);

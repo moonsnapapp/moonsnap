@@ -22,6 +22,13 @@ interface ImageSize {
   height: number;
 }
 
+interface CropEdges {
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+}
+
 export interface SnapGuide {
   type: 'vertical' | 'horizontal';
   position: number; // x for vertical, y for horizontal
@@ -66,6 +73,309 @@ interface UseCropToolReturn {
 const HANDLE_THICKNESS = 6;
 const MIN_CROP_SIZE = 50;
 const SNAP_THRESHOLD = 8; // pixels threshold for snap detection
+type SnapEdge = 'left' | 'right' | 'top' | 'bottom' | 'center';
+type SnapAxis = 'x' | 'y';
+type SnapLabel = NonNullable<SnapGuide['label']>;
+type SnapTarget = { position: number; label: SnapLabel };
+type CropAxis = 'x' | 'y';
+
+const SNAP_HANDLE_EDGES: Record<string, readonly SnapEdge[]> = {
+  l: ['left'],
+  r: ['right'],
+  t: ['top'],
+  b: ['bottom'],
+  tl: ['left', 'top'],
+  tr: ['right', 'top'],
+  bl: ['left', 'bottom'],
+  br: ['right', 'bottom'],
+  center: ['center'],
+};
+
+const EDGE_HANDLE_DRAGGERS: Record<
+  string,
+  (edges: CropEdges, nodeX: number, nodeY: number, halfHandle: number) => CropEdges
+> = {
+  t: (edges, _nodeX, nodeY, halfHandle) => ({ ...edges, top: nodeY + halfHandle }),
+  b: (edges, _nodeX, nodeY, halfHandle) => ({ ...edges, bottom: nodeY + halfHandle }),
+  l: (edges, nodeX, _nodeY, halfHandle) => ({ ...edges, left: nodeX + halfHandle }),
+  r: (edges, nodeX, _nodeY, halfHandle) => ({ ...edges, right: nodeX + halfHandle }),
+};
+
+const CORNER_HANDLE_EDGE_UPDATES: Array<{
+  token: string;
+  edge: keyof CropEdges;
+  getValue: (nodeX: number, nodeY: number) => number;
+}> = [
+  { token: 'l', edge: 'left', getValue: (nodeX) => nodeX },
+  { token: 'r', edge: 'right', getValue: (nodeX) => nodeX },
+  { token: 't', edge: 'top', getValue: (_nodeX, nodeY) => nodeY },
+  { token: 'b', edge: 'bottom', getValue: (_nodeX, nodeY) => nodeY },
+];
+
+function getCropEdges(bounds: CropBounds): CropEdges {
+  return {
+    left: bounds.x,
+    top: bounds.y,
+    right: bounds.x + bounds.width,
+    bottom: bounds.y + bounds.height,
+  };
+}
+
+function getCropBoundsFromEdges({ left, top, right, bottom }: CropEdges): CropBounds {
+  return {
+    x: left,
+    y: top,
+    width: right - left,
+    height: bottom - top,
+  };
+}
+
+function applyHandleDrag(
+  edges: CropEdges,
+  handleId: string,
+  nodeX: number,
+  nodeY: number,
+  halfHandle: number
+): CropEdges {
+  const dragEdge = EDGE_HANDLE_DRAGGERS[handleId];
+  if (dragEdge) {
+    return dragEdge(edges, nodeX, nodeY, halfHandle);
+  }
+
+  const next = { ...edges };
+  for (const update of CORNER_HANDLE_EDGE_UPDATES) {
+    if (handleId.includes(update.token)) {
+      next[update.edge] = update.getValue(nodeX, nodeY);
+    }
+  }
+  return next;
+}
+
+function enforceMinimumHorizontalCropSize(edges: CropEdges, handleId: string): void {
+  if (edges.right - edges.left >= MIN_CROP_SIZE) {
+    return;
+  }
+
+  if (handleId.includes('l')) {
+    edges.left = edges.right - MIN_CROP_SIZE;
+    return;
+  }
+
+  edges.right = edges.left + MIN_CROP_SIZE;
+}
+
+function enforceMinimumVerticalCropSize(edges: CropEdges, handleId: string): void {
+  if (edges.bottom - edges.top >= MIN_CROP_SIZE) {
+    return;
+  }
+
+  if (handleId.includes('t')) {
+    edges.top = edges.bottom - MIN_CROP_SIZE;
+    return;
+  }
+
+  edges.bottom = edges.top + MIN_CROP_SIZE;
+}
+
+function enforceMinimumCropSize(edges: CropEdges, handleId: string): CropEdges {
+  const next = { ...edges };
+
+  enforceMinimumHorizontalCropSize(next, handleId);
+  enforceMinimumVerticalCropSize(next, handleId);
+
+  return next;
+}
+
+function findNearestSnap(value: number, targets: SnapTarget[]): number | null {
+  const target = targets.find((entry) => Math.abs(value - entry.position) < SNAP_THRESHOLD);
+  return target?.position ?? null;
+}
+
+function getSnapTargets(snapSize: CropBounds) {
+  const left = snapSize.x;
+  const right = snapSize.x + snapSize.width;
+  const top = snapSize.y;
+  const bottom = snapSize.y + snapSize.height;
+  const centerX = snapSize.x + snapSize.width / 2;
+  const centerY = snapSize.y + snapSize.height / 2;
+
+  return {
+    x: [
+      { position: left, label: 'left' },
+      { position: centerX, label: 'centerX' },
+      { position: right, label: 'right' },
+    ] satisfies SnapTarget[],
+    y: [
+      { position: top, label: 'top' },
+      { position: centerY, label: 'centerY' },
+      { position: bottom, label: 'bottom' },
+    ] satisfies SnapTarget[],
+  };
+}
+
+function snapLeadingEdge(
+  result: CropBounds,
+  axis: SnapAxis,
+  edgeValue: number,
+  targets: SnapTarget[]
+) {
+  const snapped = findNearestSnap(edgeValue, targets);
+  if (snapped === null) return;
+
+  if (axis === 'x') {
+    result.width += result.x - snapped;
+    result.x = snapped;
+  } else {
+    result.height += result.y - snapped;
+    result.y = snapped;
+  }
+}
+
+function snapTrailingEdge(
+  result: CropBounds,
+  axis: SnapAxis,
+  edgeValue: number,
+  targets: SnapTarget[]
+) {
+  const snapped = findNearestSnap(edgeValue, targets);
+  if (snapped === null) return;
+
+  if (axis === 'x') {
+    result.width = snapped - result.x;
+  } else {
+    result.height = snapped - result.y;
+  }
+}
+
+function getLabeledSnapPositions(targets: ReturnType<typeof getSnapTargets>) {
+  return Object.fromEntries(
+    [...targets.x, ...targets.y].map((target) => [target.label, target.position])
+  ) as Partial<Record<SnapLabel, number>>;
+}
+
+function isWithinSnapThreshold(value: number, target: number | undefined) {
+  return target !== undefined && Math.abs(value - target) < SNAP_THRESHOLD;
+}
+
+function snapCenterAxis(
+  result: CropBounds,
+  axis: SnapAxis,
+  cropCenter: number,
+  targetCenter: number | undefined
+) {
+  if (targetCenter === undefined || !isWithinSnapThreshold(cropCenter, targetCenter)) return;
+
+  if (axis === 'x') {
+    result.x = targetCenter - result.width / 2;
+  } else {
+    result.y = targetCenter - result.height / 2;
+  }
+}
+
+function setCropAxisPosition(result: CropBounds, axis: SnapAxis, value: number) {
+  if (axis === 'x') {
+    result.x = value;
+  } else {
+    result.y = value;
+  }
+}
+
+function getCropAxisSize(result: CropBounds, axis: SnapAxis) {
+  return axis === 'x' ? result.width : result.height;
+}
+
+function getEdgeSnapCandidate(
+  edge: 'leading' | 'trailing',
+  edgeValue: number,
+  target: number | undefined
+) {
+  if (target === undefined || !isWithinSnapThreshold(edgeValue, target)) {
+    return null;
+  }
+
+  return { edge, target };
+}
+
+function getBoxEdgeSnap({
+  leadingEdge,
+  trailingEdge,
+  leadingTarget,
+  trailingTarget,
+}: {
+  leadingEdge: number;
+  trailingEdge: number;
+  leadingTarget: number | undefined;
+  trailingTarget: number | undefined;
+}) {
+  return (
+    getEdgeSnapCandidate('leading', leadingEdge, leadingTarget) ??
+    getEdgeSnapCandidate('trailing', trailingEdge, trailingTarget)
+  );
+}
+
+function snapBoxEdges({
+  result,
+  axis,
+  leadingEdge,
+  trailingEdge,
+  leadingTarget,
+  trailingTarget,
+}: {
+  result: CropBounds;
+  axis: SnapAxis;
+  leadingEdge: number;
+  trailingEdge: number;
+  leadingTarget: number | undefined;
+  trailingTarget: number | undefined;
+}) {
+  const snap = getBoxEdgeSnap({ leadingEdge, trailingEdge, leadingTarget, trailingTarget });
+  if (!snap) return;
+
+  const offset = snap.edge === 'trailing' ? getCropAxisSize(result, axis) : 0;
+  setCropAxisPosition(result, axis, snap.target - offset);
+}
+
+function snapCenterBox(bounds: CropBounds, result: CropBounds, targets: ReturnType<typeof getSnapTargets>) {
+  const cropLeft = bounds.x;
+  const cropRight = bounds.x + bounds.width;
+  const cropTop = bounds.y;
+  const cropBottom = bounds.y + bounds.height;
+  const cropCenterX = bounds.x + bounds.width / 2;
+  const cropCenterY = bounds.y + bounds.height / 2;
+  const snapPositions = getLabeledSnapPositions(targets);
+
+  snapCenterAxis(result, 'x', cropCenterX, snapPositions.centerX);
+  snapCenterAxis(result, 'y', cropCenterY, snapPositions.centerY);
+  snapBoxEdges({
+    result,
+    axis: 'x',
+    leadingEdge: cropLeft,
+    trailingEdge: cropRight,
+    leadingTarget: snapPositions.left,
+    trailingTarget: snapPositions.right,
+  });
+  snapBoxEdges({
+    result,
+    axis: 'y',
+    leadingEdge: cropTop,
+    trailingEdge: cropBottom,
+    leadingTarget: snapPositions.top,
+    trailingTarget: snapPositions.bottom,
+  });
+}
+
+const SNAP_EDGE_ACTIONS: Record<
+  SnapEdge,
+  (result: CropBounds, bounds: CropBounds, targets: ReturnType<typeof getSnapTargets>) => void
+> = {
+  left: (result, bounds, targets) => snapLeadingEdge(result, 'x', bounds.x, targets.x),
+  right: (result, bounds, targets) =>
+    snapTrailingEdge(result, 'x', bounds.x + bounds.width, targets.x),
+  top: (result, bounds, targets) => snapLeadingEdge(result, 'y', bounds.y, targets.y),
+  bottom: (result, bounds, targets) =>
+    snapTrailingEdge(result, 'y', bounds.y + bounds.height, targets.y),
+  center: (result, bounds, targets) => snapCenterBox(bounds, result, targets),
+};
 
 // Helper to check if a crop edge aligns with any snap target
 function findSnapGuide(
@@ -79,6 +389,221 @@ function findSnapGuide(
     }
   }
   return null;
+}
+
+function dedupeSnapGuides(guides: SnapGuide[]): SnapGuide[] {
+  return guides.filter((guide, index, self) =>
+    index === self.findIndex(g => g.type === guide.type && g.position === guide.position)
+  );
+}
+
+function getSnapGuideChecks(
+  bounds: CropBounds,
+  activeHandle: string,
+  targets: ReturnType<typeof getSnapTargets>
+) {
+  const metrics = getCropSnapMetrics(bounds);
+  const activeEdges = getActiveSnapEdges(activeHandle);
+
+  return [
+    getSnapGuideCheck(activeEdges.left, metrics.left, targets.x, 'vertical'),
+    getSnapGuideCheck(activeEdges.right, metrics.right, targets.x, 'vertical'),
+    getSnapGuideCheck(activeEdges.center, metrics.centerX, getTargetsByLabel(targets.x, 'centerX'), 'vertical'),
+    getSnapGuideCheck(activeEdges.top, metrics.top, targets.y, 'horizontal'),
+    getSnapGuideCheck(activeEdges.bottom, metrics.bottom, targets.y, 'horizontal'),
+    getSnapGuideCheck(activeEdges.center, metrics.centerY, getTargetsByLabel(targets.y, 'centerY'), 'horizontal'),
+  ];
+}
+
+function getActiveSnapEdges(activeHandle: string) {
+  const center = isCenterSnapHandle(activeHandle);
+  return {
+    left: isSnapEdgeActive(activeHandle, 'l'),
+    right: isSnapEdgeActive(activeHandle, 'r'),
+    top: isSnapEdgeActive(activeHandle, 't'),
+    bottom: isSnapEdgeActive(activeHandle, 'b'),
+    center,
+  };
+}
+
+function isCenterSnapHandle(activeHandle: string) {
+  return activeHandle === 'center';
+}
+
+function isSnapEdgeActive(activeHandle: string, token: string) {
+  return isCenterSnapHandle(activeHandle) || activeHandle.includes(token);
+}
+
+function getCropSnapMetrics(bounds: CropBounds) {
+  return {
+    left: bounds.x,
+    right: bounds.x + bounds.width,
+    top: bounds.y,
+    bottom: bounds.y + bounds.height,
+    centerX: bounds.x + bounds.width / 2,
+    centerY: bounds.y + bounds.height / 2,
+  };
+}
+
+function getTargetsByLabel(targets: SnapTarget[], label: SnapLabel) {
+  return targets.filter((target) => target.label === label);
+}
+
+function getSnapGuideCheck(
+  enabled: boolean,
+  value: number,
+  targets: SnapTarget[],
+  type: SnapGuide['type']
+) {
+  return { enabled, value, targets, type };
+}
+
+function getSnapGuides(
+  bounds: CropBounds,
+  activeHandle: string,
+  snapSize: CropBounds
+): SnapGuide[] {
+  const targets = getSnapTargets(snapSize);
+  const guides = getSnapGuideChecks(bounds, activeHandle, targets)
+    .filter((check) => check.enabled)
+    .map((check) => findSnapGuide(check.value, check.targets, check.type))
+    .filter((guide): guide is SnapGuide => guide !== null);
+
+  return dedupeSnapGuides(guides);
+}
+
+function getBackgroundSnapSize(
+  backgroundShape: CanvasShape,
+  fallbackSize: ImageSize | null
+): CropBounds {
+  const fallback = getFallbackSnapSize(fallbackSize);
+  const {
+    x = 0,
+    y = 0,
+    width = fallback.width,
+    height = fallback.height,
+  } = backgroundShape;
+
+  return {
+    x,
+    y,
+    width,
+    height,
+  };
+}
+
+function getFallbackSnapSize(fallbackSize: ImageSize | null) {
+  if (!fallbackSize) {
+    return { width: 0, height: 0 };
+  }
+
+  return {
+    width: fallbackSize.width,
+    height: fallbackSize.height,
+  };
+}
+
+function getImageSnapSize(imageSize: ImageSize): CropBounds {
+  return { x: 0, y: 0, width: imageSize.width, height: imageSize.height };
+}
+
+function getCropSnapSize(
+  backgroundShape: CanvasShape | undefined,
+  originalImageSize: ImageSize | null
+): CropBounds | null {
+  if (backgroundShape) return getBackgroundSnapSize(backgroundShape, originalImageSize);
+  if (originalImageSize) return getImageSnapSize(originalImageSize);
+  return null;
+}
+
+function snapCropBounds(bounds: CropBounds, handle: string, snapSize: CropBounds): CropBounds {
+  const result = { ...bounds };
+  const targets = getSnapTargets(snapSize);
+  const edges = SNAP_HANDLE_EDGES[handle] ?? [];
+
+  edges.forEach((edge) => SNAP_EDGE_ACTIONS[edge](result, bounds, targets));
+
+  return result;
+}
+
+function canShowCropSnapGuides({
+  isShiftHeld,
+  snapSize,
+  cropPreview,
+  activeHandle,
+}: {
+  isShiftHeld: boolean;
+  snapSize: CropBounds | null;
+  cropPreview: CropBounds | null;
+  activeHandle: string | null;
+}) {
+  return isShiftHeld && snapSize !== null && cropPreview !== null && activeHandle !== null;
+}
+
+function getCropLockAxis(
+  x: number,
+  y: number,
+  dragStart: { x: number; y: number },
+  currentAxis: CropAxis | null
+) {
+  if (currentAxis) return currentAxis;
+
+  const dx = Math.abs(x - dragStart.x);
+  const dy = Math.abs(y - dragStart.y);
+  if (isWithinCropAxisLockDeadzone(dx, dy)) return null;
+  return dx > dy ? 'x' : 'y';
+}
+
+function isWithinCropAxisLockDeadzone(dx: number, dy: number) {
+  return dx <= 5 && dy <= 5;
+}
+
+function applyCropAxisLock(
+  point: { x: number; y: number },
+  dragStart: { x: number; y: number },
+  axis: CropAxis | null
+) {
+  if (axis === 'x') {
+    return { x: point.x, y: dragStart.y };
+  }
+  if (axis === 'y') {
+    return { x: dragStart.x, y: point.y };
+  }
+  return point;
+}
+
+function getFinalCenterDragPoint({
+  x,
+  y,
+  isShiftHeld,
+  cropDragStart,
+  cropLockedAxis,
+}: {
+  x: number;
+  y: number;
+  isShiftHeld: boolean;
+  cropDragStart: { x: number; y: number } | null;
+  cropLockedAxis: CropAxis | null;
+}) {
+  if (!isShiftHeld || !cropDragStart || !cropLockedAxis) {
+    return { x, y };
+  }
+
+  return applyCropAxisLock({ x, y }, cropDragStart, cropLockedAxis);
+}
+
+function clearCropCenterDragState({
+  setCropDragStart,
+  setCropLockedAxis,
+  setActiveHandle,
+}: {
+  setCropDragStart: (point: { x: number; y: number } | null) => void;
+  setCropLockedAxis: (axis: CropAxis | null) => void;
+  setActiveHandle: (handle: string | null) => void;
+}) {
+  setCropDragStart(null);
+  setCropLockedAxis(null);
+  setActiveHandle(null);
 }
 
 /**
@@ -104,20 +629,10 @@ export const useCropTool = ({
   const dragStartBoundsRef = useRef<CropBounds | null>(null);
 
   // Snap target dimensions: use background shape if available, fall back to originalImageSize
-  const snapSize = useMemo((): { x: number; y: number; width: number; height: number } | null => {
-    if (backgroundShape) {
-      return {
-        x: backgroundShape.x ?? 0,
-        y: backgroundShape.y ?? 0,
-        width: backgroundShape.width ?? (originalImageSize?.width ?? 0),
-        height: backgroundShape.height ?? (originalImageSize?.height ?? 0),
-      };
-    }
-    if (originalImageSize) {
-      return { x: 0, y: 0, width: originalImageSize.width, height: originalImageSize.height };
-    }
-    return null;
-  }, [backgroundShape, originalImageSize]);
+  const snapSize = useMemo(
+    () => getCropSnapSize(backgroundShape, originalImageSize),
+    [backgroundShape, originalImageSize]
+  );
 
   // Get base bounds: if cropRegion is set, use it; otherwise compute from canvasBounds
   const getBaseBounds = useCallback((): CropBounds => {
@@ -144,43 +659,18 @@ export const useCropTool = ({
   const calcPreviewFromDrag = useCallback(
     (handleId: string, nodeX: number, nodeY: number): CropBounds => {
       const base = dragStartBoundsRef.current || getDisplayBounds();
-      const left = base.x;
-      const top = base.y;
-      const right = left + base.width;
-      const bottom = top + base.height;
-
-      let newLeft = left, newTop = top, newRight = right, newBottom = bottom;
-
-      // Edge handles: offset from node position to crop edge
       const halfHandle = HANDLE_THICKNESS / (2 * zoom);
-      if (handleId === 't') newTop = nodeY + halfHandle;
-      else if (handleId === 'b') newBottom = nodeY + halfHandle;
-      else if (handleId === 'l') newLeft = nodeX + halfHandle;
-      else if (handleId === 'r') newRight = nodeX + halfHandle;
-      // Corner handles (direct position)
-      else {
-        if (handleId.includes('l')) newLeft = nodeX;
-        if (handleId.includes('r')) newRight = nodeX;
-        if (handleId.includes('t')) newTop = nodeY;
-        if (handleId.includes('b')) newBottom = nodeY;
-      }
+      const draggedEdges = applyHandleDrag(
+        getCropEdges(base),
+        handleId,
+        nodeX,
+        nodeY,
+        halfHandle
+      );
 
-      // Ensure minimum size
-      if (newRight - newLeft < MIN_CROP_SIZE) {
-        if (handleId.includes('l') || handleId === 'l') newLeft = newRight - MIN_CROP_SIZE;
-        else newRight = newLeft + MIN_CROP_SIZE;
-      }
-      if (newBottom - newTop < MIN_CROP_SIZE) {
-        if (handleId.includes('t') || handleId === 't') newTop = newBottom - MIN_CROP_SIZE;
-        else newBottom = newTop + MIN_CROP_SIZE;
-      }
-
-      return {
-        x: newLeft,
-        y: newTop,
-        width: newRight - newLeft,
-        height: newBottom - newTop,
-      };
+      return getCropBoundsFromEdges(
+        enforceMinimumCropSize(draggedEdges, handleId)
+      );
     },
     [getDisplayBounds, zoom]
   );
@@ -189,103 +679,7 @@ export const useCropTool = ({
   const applySnapping = useCallback(
     (bounds: CropBounds, handle: string | null): CropBounds => {
       if (!snapSize || !handle) return bounds;
-
-      const result = { ...bounds };
-
-      // Snap targets (from background shape position)
-      const bgLeft = snapSize.x;
-      const bgRight = snapSize.x + snapSize.width;
-      const bgTop = snapSize.y;
-      const bgBottom = snapSize.y + snapSize.height;
-      const bgCenterX = snapSize.x + snapSize.width / 2;
-      const bgCenterY = snapSize.y + snapSize.height / 2;
-
-      // Crop edges
-      const cropLeft = bounds.x;
-      const cropRight = bounds.x + bounds.width;
-      const cropTop = bounds.y;
-      const cropBottom = bounds.y + bounds.height;
-      const cropCenterX = bounds.x + bounds.width / 2;
-      const cropCenterY = bounds.y + bounds.height / 2;
-
-      // Determine which edges to snap based on handle
-      const snapLeft = handle === 'l' || handle === 'tl' || handle === 'bl';
-      const snapRight = handle === 'r' || handle === 'tr' || handle === 'br';
-      const snapTop = handle === 't' || handle === 'tl' || handle === 'tr';
-      const snapBottom = handle === 'b' || handle === 'bl' || handle === 'br';
-      const snapCenter = handle === 'center';
-
-      // Snap left edge
-      if (snapLeft) {
-        if (Math.abs(cropLeft - bgLeft) < SNAP_THRESHOLD) {
-          result.width += result.x - bgLeft;
-          result.x = bgLeft;
-        } else if (Math.abs(cropLeft - bgCenterX) < SNAP_THRESHOLD) {
-          result.width += result.x - bgCenterX;
-          result.x = bgCenterX;
-        } else if (Math.abs(cropLeft - bgRight) < SNAP_THRESHOLD) {
-          result.width += result.x - bgRight;
-          result.x = bgRight;
-        }
-      }
-
-      // Snap right edge
-      if (snapRight) {
-        if (Math.abs(cropRight - bgRight) < SNAP_THRESHOLD) {
-          result.width = bgRight - result.x;
-        } else if (Math.abs(cropRight - bgCenterX) < SNAP_THRESHOLD) {
-          result.width = bgCenterX - result.x;
-        } else if (Math.abs(cropRight - bgLeft) < SNAP_THRESHOLD) {
-          result.width = bgLeft - result.x;
-        }
-      }
-
-      // Snap top edge
-      if (snapTop) {
-        if (Math.abs(cropTop - bgTop) < SNAP_THRESHOLD) {
-          result.height += result.y - bgTop;
-          result.y = bgTop;
-        } else if (Math.abs(cropTop - bgCenterY) < SNAP_THRESHOLD) {
-          result.height += result.y - bgCenterY;
-          result.y = bgCenterY;
-        } else if (Math.abs(cropTop - bgBottom) < SNAP_THRESHOLD) {
-          result.height += result.y - bgBottom;
-          result.y = bgBottom;
-        }
-      }
-
-      // Snap bottom edge
-      if (snapBottom) {
-        if (Math.abs(cropBottom - bgBottom) < SNAP_THRESHOLD) {
-          result.height = bgBottom - result.y;
-        } else if (Math.abs(cropBottom - bgCenterY) < SNAP_THRESHOLD) {
-          result.height = bgCenterY - result.y;
-        } else if (Math.abs(cropBottom - bgTop) < SNAP_THRESHOLD) {
-          result.height = bgTop - result.y;
-        }
-      }
-
-      // Snap center (moves entire crop box)
-      if (snapCenter) {
-        if (Math.abs(cropCenterX - bgCenterX) < SNAP_THRESHOLD) {
-          result.x = bgCenterX - result.width / 2;
-        }
-        if (Math.abs(cropCenterY - bgCenterY) < SNAP_THRESHOLD) {
-          result.y = bgCenterY - result.height / 2;
-        }
-        if (Math.abs(cropLeft - bgLeft) < SNAP_THRESHOLD) {
-          result.x = bgLeft;
-        } else if (Math.abs(cropRight - bgRight) < SNAP_THRESHOLD) {
-          result.x = bgRight - result.width;
-        }
-        if (Math.abs(cropTop - bgTop) < SNAP_THRESHOLD) {
-          result.y = bgTop;
-        } else if (Math.abs(cropBottom - bgBottom) < SNAP_THRESHOLD) {
-          result.y = bgBottom - result.height;
-        }
-      }
-
-      return result;
+      return snapCropBounds(bounds, handle, snapSize);
     },
     [snapSize]
   );
@@ -316,66 +710,40 @@ export const useCropTool = ({
 
   const handleCenterDragMove = useCallback(
     (newX: number, newY: number) => {
-      let x = newX;
-      let y = newY;
-
-      // Shift+drag: constrain to axis
+      let nextPoint = { x: newX, y: newY };
       if (isShiftHeld && cropDragStart) {
-        const dx = Math.abs(x - cropDragStart.x);
-        const dy = Math.abs(y - cropDragStart.y);
-
-        // Lock to axis once movement exceeds threshold
-        if (!cropLockedAxis && (dx > 5 || dy > 5)) {
-          setCropLockedAxis(dx > dy ? 'x' : 'y');
-        }
-
-        // Apply constraint
-        if (cropLockedAxis === 'x') {
-          y = cropDragStart.y;
-        } else if (cropLockedAxis === 'y') {
-          x = cropDragStart.x;
-        }
+        const nextAxis = getCropLockAxis(newX, newY, cropDragStart, cropLockedAxis);
+        if (nextAxis !== cropLockedAxis) setCropLockedAxis(nextAxis);
+        nextPoint = applyCropAxisLock(nextPoint, cropDragStart, nextAxis);
       }
 
       const baseBounds = getBaseBounds();
       flushSync(() => {
         setCropPreview({
-          x,
-          y,
+          x: nextPoint.x,
+          y: nextPoint.y,
           width: baseBounds.width,
           height: baseBounds.height,
         });
       });
 
-      return { x, y }; // Return constrained values for caller
+      return nextPoint;
     },
     [isShiftHeld, cropDragStart, cropLockedAxis, getBaseBounds]
   );
 
   const handleCenterDragEnd = useCallback(
     (x: number, y: number) => {
-      let finalX = x;
-      let finalY = y;
-
-      // Apply final constraint if Shift was held
-      if (isShiftHeld && cropDragStart && cropLockedAxis) {
-        if (cropLockedAxis === 'x') {
-          finalY = cropDragStart.y;
-        } else if (cropLockedAxis === 'y') {
-          finalX = cropDragStart.x;
-        }
-      }
+      const finalPoint = getFinalCenterDragPoint({ x, y, isShiftHeld, cropDragStart, cropLockedAxis });
 
       const baseBounds = getBaseBounds();
       commitBounds({
-        x: finalX,
-        y: finalY,
+        x: finalPoint.x,
+        y: finalPoint.y,
         width: baseBounds.width,
         height: baseBounds.height,
       }, 'center');
-      setCropDragStart(null);
-      setCropLockedAxis(null);
-      setActiveHandle(null);
+      clearCropCenterDragState({ setCropDragStart, setCropLockedAxis, setActiveHandle });
       commitSnapshot();
     },
     [isShiftHeld, cropDragStart, cropLockedAxis, getBaseBounds, commitBounds, commitSnapshot]
@@ -437,76 +805,11 @@ export const useCropTool = ({
 
   // Calculate active snap guides based on crop bounds alignment with background bounds
   const snapGuides = useMemo((): SnapGuide[] => {
-    if (!isShiftHeld || !snapSize || !cropPreview || !activeHandle) return [];
-
-    const guides: SnapGuide[] = [];
-    const bounds = cropPreview;
-
-    // Snap targets from background shape
-    const bgCenterX = snapSize.x + snapSize.width / 2;
-    const bgCenterY = snapSize.y + snapSize.height / 2;
-
-    // Vertical targets (for left/right edge snapping)
-    const verticalTargets: { position: number; label: SnapGuide['label'] }[] = [
-      { position: snapSize.x, label: 'left' },
-      { position: bgCenterX, label: 'centerX' },
-      { position: snapSize.x + snapSize.width, label: 'right' },
-    ];
-
-    // Horizontal targets (for top/bottom edge snapping)
-    const horizontalTargets: { position: number; label: SnapGuide['label'] }[] = [
-      { position: snapSize.y, label: 'top' },
-      { position: bgCenterY, label: 'centerY' },
-      { position: snapSize.y + snapSize.height, label: 'bottom' },
-    ];
-
-    // Crop bounds edges and center
-    const cropLeft = bounds.x;
-    const cropRight = bounds.x + bounds.width;
-    const cropTop = bounds.y;
-    const cropBottom = bounds.y + bounds.height;
-    const cropCenterX = bounds.x + bounds.width / 2;
-    const cropCenterY = bounds.y + bounds.height / 2;
-
-    // Determine which edges to check based on active handle
-    const isCenter = activeHandle === 'center';
-    const checkLeft = activeHandle.includes('l') || isCenter;
-    const checkRight = activeHandle.includes('r') || isCenter;
-    const checkTop = activeHandle.includes('t') || isCenter;
-    const checkBottom = activeHandle.includes('b') || isCenter;
-
-    // Check vertical guides (left/right edges)
-    if (checkLeft) {
-      const guide = findSnapGuide(cropLeft, verticalTargets, 'vertical');
-      if (guide) guides.push(guide);
-    }
-    if (checkRight) {
-      const guide = findSnapGuide(cropRight, verticalTargets, 'vertical');
-      if (guide) guides.push(guide);
-    }
-    if (isCenter) {
-      const guide = findSnapGuide(cropCenterX, [{ position: bgCenterX, label: 'centerX' }], 'vertical');
-      if (guide) guides.push(guide);
+    if (!canShowCropSnapGuides({ isShiftHeld, snapSize, cropPreview, activeHandle })) {
+      return [];
     }
 
-    // Check horizontal guides (top/bottom edges)
-    if (checkTop) {
-      const guide = findSnapGuide(cropTop, horizontalTargets, 'horizontal');
-      if (guide) guides.push(guide);
-    }
-    if (checkBottom) {
-      const guide = findSnapGuide(cropBottom, horizontalTargets, 'horizontal');
-      if (guide) guides.push(guide);
-    }
-    if (isCenter) {
-      const guide = findSnapGuide(cropCenterY, [{ position: bgCenterY, label: 'centerY' }], 'horizontal');
-      if (guide) guides.push(guide);
-    }
-
-    // Deduplicate guides by type and position
-    return guides.filter((guide, index, self) =>
-      index === self.findIndex(g => g.type === guide.type && g.position === guide.position)
-    );
+    return getSnapGuides(cropPreview!, activeHandle!, snapSize!);
   }, [isShiftHeld, snapSize, cropPreview, activeHandle]);
 
   return {

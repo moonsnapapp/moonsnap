@@ -5,6 +5,7 @@ export type VideoOutputMode = 'original' | 'trim' | 'render';
 
 // eslint-disable-next-line no-control-regex
 const WINDOWS_FORBIDDEN_FILENAME_CHARS = /[<>:"/\\|?*\u0000-\u001F]/g;
+type ProjectEditPredicate = (project: VideoProject) => boolean;
 
 export function isQuickCaptureProject(project: VideoProject | null | undefined): boolean {
   return Boolean(project?.quickCapture);
@@ -55,31 +56,49 @@ function hasTrimEdits(project: VideoProject): boolean {
   );
 }
 
+const RENDER_SEGMENT_CHECKS: ProjectEditPredicate[] = [
+  (project) => project.zoom.regions.length > 0,
+  (project) => project.scene.segments.length > 0,
+  (project) => (project.annotations?.segments.length ?? 0) > 0,
+  (project) => project.mask.segments.length > 0,
+  (project) => project.text.segments.length > 0,
+  (project) => project.captionSegments.length > 0,
+];
+
+const RENDER_SOURCE_CHECKS: ProjectEditPredicate[] = [
+  (project) => Boolean(project.sources.webcamVideo),
+  (project) => Boolean(project.sources.cursorData),
+  (project) => Boolean(project.sources.backgroundMusic),
+  (project) => project.webcam.enabled,
+];
+
+const RENDER_EXPORT_CHECKS: ProjectEditPredicate[] = [
+  (project) => project.export.background.enabled,
+  (project) => hasEnabledCrop(project.export.crop),
+  (project) => project.export.composition.mode !== 'auto',
+];
+
+const RENDER_AUDIO_CHECKS: ProjectEditPredicate[] = [
+  (project) => project.audio.normalizeOutput,
+  (project) => project.audio.systemMuted,
+  (project) => project.audio.microphoneMuted,
+  (project) => project.audio.musicMuted,
+  (project) => project.audio.systemVolume !== 1,
+  (project) => project.audio.microphoneVolume !== 1,
+  (project) => project.audio.musicVolume !== 1,
+  (project) => project.audio.musicFadeInSecs !== 0,
+  (project) => project.audio.musicFadeOutSecs !== 0,
+];
+
+const RENDER_EDIT_CHECKS: ProjectEditPredicate[] = [
+  ...RENDER_SEGMENT_CHECKS,
+  ...RENDER_SOURCE_CHECKS,
+  ...RENDER_EXPORT_CHECKS,
+  ...RENDER_AUDIO_CHECKS,
+];
+
 function hasRenderEdits(project: VideoProject): boolean {
-  return (
-    project.zoom.regions.length > 0 ||
-    project.scene.segments.length > 0 ||
-    (project.annotations?.segments.length ?? 0) > 0 ||
-    project.mask.segments.length > 0 ||
-    project.text.segments.length > 0 ||
-    project.captionSegments.length > 0 ||
-    Boolean(project.sources.webcamVideo) ||
-    Boolean(project.sources.cursorData) ||
-    Boolean(project.sources.backgroundMusic) ||
-    project.webcam.enabled ||
-    project.export.background.enabled ||
-    hasEnabledCrop(project.export.crop) ||
-    project.export.composition.mode !== 'auto' ||
-    project.audio.normalizeOutput ||
-    project.audio.systemMuted ||
-    project.audio.microphoneMuted ||
-    project.audio.musicMuted ||
-    project.audio.systemVolume !== 1 ||
-    project.audio.microphoneVolume !== 1 ||
-    project.audio.musicVolume !== 1 ||
-    project.audio.musicFadeInSecs !== 0 ||
-    project.audio.musicFadeOutSecs !== 0
-  );
+  return RENDER_EDIT_CHECKS.some((hasEdit) => hasEdit(project));
 }
 
 export function getVideoOutputMode(project: VideoProject | null | undefined): VideoOutputMode {

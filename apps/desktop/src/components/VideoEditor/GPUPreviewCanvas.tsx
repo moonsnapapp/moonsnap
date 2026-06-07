@@ -34,6 +34,226 @@ interface GPUPreviewCanvasProps {
   onError?: (error: string) => void;
 }
 
+type InitStateRef = React.MutableRefObject<'idle' | 'initializing' | 'ready' | 'error'>;
+
+function canSyncGpuPreviewProject({
+  enabled,
+  project,
+  initStateRef,
+  isConnected,
+}: {
+  enabled: boolean;
+  project: VideoProject | null;
+  initStateRef: InitStateRef;
+  isConnected: boolean;
+}) {
+  return Boolean(enabled && project && initStateRef.current === 'ready' && isConnected);
+}
+
+function getProjectTextVersion(project: VideoProject | null) {
+  return project?.text?.segments
+    ? JSON.stringify(
+      project.text.segments.map((s) => ({
+        start: s.start,
+        end: s.end,
+        content: s.content,
+        center: s.center,
+        size: s.size,
+        fontSize: s.fontSize,
+        fadeDuration: s.fadeDuration,
+        animation: s.animation,
+        typewriterCharsPerSecond: s.typewriterCharsPerSecond,
+      }))
+    )
+    : null;
+}
+
+function syncNewGpuPreviewProject({
+  project,
+  textVersion,
+  currentTimeMs,
+  lastTextVersionRef,
+  doSetProject,
+}: {
+  project: VideoProject;
+  textVersion: string | null;
+  currentTimeMs: number;
+  lastTextVersionRef: React.MutableRefObject<string | null>;
+  doSetProject: (project: VideoProject, timeMs: number, isNewProject: boolean) => void;
+}) {
+  lastTextVersionRef.current = textVersion;
+  doSetProject(project, currentTimeMs, true);
+}
+
+function scheduleGpuPreviewTextSync({
+  project,
+  textVersion,
+  currentTimeMs,
+  lastTextVersionRef,
+  doSetProject,
+}: {
+  project: VideoProject;
+  textVersion: string | null;
+  currentTimeMs: number;
+  lastTextVersionRef: React.MutableRefObject<string | null>;
+  doSetProject: (project: VideoProject, timeMs: number, isNewProject: boolean) => void;
+}) {
+  const timeoutId = setTimeout(() => {
+    lastTextVersionRef.current = textVersion;
+    doSetProject(project, currentTimeMs, false);
+  }, 300);
+
+  return () => clearTimeout(timeoutId);
+}
+
+function syncGpuPreviewProjectChange({
+  project,
+  projectId,
+  textVersion,
+  currentTimeMs,
+  lastTextVersionRef,
+  doSetProject,
+}: {
+  project: VideoProject;
+  projectId: string | null;
+  textVersion: string | null;
+  currentTimeMs: number;
+  lastTextVersionRef: React.MutableRefObject<string | null>;
+  doSetProject: (project: VideoProject, timeMs: number, isNewProject: boolean) => void;
+}) {
+  const isNewProject = projectId !== project.id;
+  const textChanged = lastTextVersionRef.current !== textVersion;
+
+  if (isNewProject) {
+    syncNewGpuPreviewProject({
+      project,
+      textVersion,
+      currentTimeMs,
+      lastTextVersionRef,
+      doSetProject,
+    });
+    return undefined;
+  }
+
+  return textChanged
+    ? scheduleGpuPreviewTextSync({
+      project,
+      textVersion,
+      currentTimeMs,
+      lastTextVersionRef,
+      doSetProject,
+    })
+    : undefined;
+}
+
+function shouldRenderGpuPreviewFrame({
+  enabled,
+  isConnected,
+  initStateRef,
+  projectId,
+}: {
+  enabled: boolean;
+  isConnected: boolean;
+  initStateRef: InitStateRef;
+  projectId: string | null;
+}) {
+  return Boolean(isConnected && enabled && initStateRef.current === 'ready' && projectId);
+}
+
+function getGpuPreviewRenderInterval(isPlaying: boolean) {
+  return isPlaying ? 66 : 16;
+}
+
+function shouldThrottleGpuPreviewRender(
+  now: number,
+  lastRenderTime: number,
+  isPlaying: boolean
+) {
+  return now - lastRenderTime < getGpuPreviewRenderInterval(isPlaying);
+}
+
+function getGpuPreviewFrameSize(width: number | undefined, height: number | undefined) {
+  return {
+    width: width ?? 1920,
+    height: height ?? 1080,
+  };
+}
+
+function fitGpuPreviewDisplaySize({
+  frameSize,
+  containerWidth,
+  containerHeight,
+}: {
+  frameSize: { width: number; height: number };
+  containerWidth: number;
+  containerHeight: number;
+}) {
+  if (containerWidth === 0 || containerHeight === 0) return frameSize;
+  return fitFrameInsideContainer(frameSize, { width: containerWidth, height: containerHeight });
+}
+
+function fitFrameInsideContainer(
+  frameSize: { width: number; height: number },
+  containerSize: { width: number; height: number }
+) {
+  const containerAspect = containerSize.width / containerSize.height;
+  const frameAspect = frameSize.width / frameSize.height;
+
+  return frameAspect < containerAspect
+    ? { height: containerSize.height, width: containerSize.height * frameAspect }
+    : { width: containerSize.width, height: containerSize.width / frameAspect };
+}
+
+function isGpuPreviewInitializingOrReady(initStateRef: InitStateRef) {
+  return initStateRef.current === 'initializing' || initStateRef.current === 'ready';
+}
+
+function markGpuPreviewReady(
+  initStateRef: InitStateRef,
+  onReadyRef: React.MutableRefObject<GPUPreviewCanvasProps['onReady']>
+) {
+  initStateRef.current = 'ready';
+  onReadyRef.current?.();
+}
+
+function markGpuPreviewError(
+  initStateRef: InitStateRef,
+  onErrorRef: React.MutableRefObject<GPUPreviewCanvasProps['onError']>,
+  error: unknown
+) {
+  videoEditorLogger.error('GPUPreviewCanvas failed to initialize:', error);
+  initStateRef.current = 'error';
+  onErrorRef.current?.(String(error));
+}
+
+function isGpuPreviewReady(initStateRef: InitStateRef) {
+  return initStateRef.current === 'ready';
+}
+
+async function setGpuPreviewProject(project: VideoProject) {
+  await invoke('set_preview_project', { project });
+}
+
+async function renderGpuPreviewFrame(timeMs: number) {
+  await invoke('render_preview_frame', { timeMs: Math.floor(timeMs) });
+}
+
+function recordNewGpuPreviewProject(
+  project: VideoProject,
+  setProjectId: React.Dispatch<React.SetStateAction<string | null>>,
+) {
+  setProjectId(project.id);
+  videoEditorLogger.info('GPUPreviewCanvas project set:', project.id);
+}
+
+function handleGpuPreviewProjectError(
+  error: unknown,
+  onErrorRef: React.MutableRefObject<GPUPreviewCanvasProps['onError']>,
+) {
+  videoEditorLogger.error('GPUPreviewCanvas failed to set project:', error);
+  onErrorRef.current?.(String(error));
+}
+
 /**
  * Canvas-based preview that displays GPU-rendered frames.
  * Sizes canvas to exact pixel dimensions to fill container without letterboxing.
@@ -78,30 +298,14 @@ export const GPUPreviewCanvas = memo(function GPUPreviewCanvas({
   // CSS handles padding/background, GPU canvas only shows video content.
   // Display size is based on video dimensions to fill the container area.
   const displaySize = useMemo(() => {
-    const frameWidth = project?.sources.originalWidth ?? 1920;
-    const frameHeight = project?.sources.originalHeight ?? 1080;
-
-    if (containerWidth === 0 || containerHeight === 0) {
-      return { width: frameWidth, height: frameHeight };
-    }
-
-    const containerAspect = containerWidth / containerHeight;
-    const frameAspect = frameWidth / frameHeight;
-
-    let width: number;
-    let height: number;
-
-    if (frameAspect < containerAspect) {
-      // Frame is taller than container - constrain by height
-      height = containerHeight;
-      width = height * frameAspect;
-    } else {
-      // Frame is wider than container - constrain by width
-      width = containerWidth;
-      height = width / frameAspect;
-    }
-
-    return { width, height };
+    return fitGpuPreviewDisplaySize({
+      frameSize: getGpuPreviewFrameSize(
+        project?.sources.originalWidth,
+        project?.sources.originalHeight
+      ),
+      containerWidth,
+      containerHeight,
+    });
   }, [project?.sources.originalWidth, project?.sources.originalHeight, containerWidth, containerHeight]);
 
   // Stable callbacks that don't change on every render
@@ -114,7 +318,7 @@ export const GPUPreviewCanvas = memo(function GPUPreviewCanvas({
 
   // Initialize preview system once
   const doInit = useCallback(async () => {
-    if (initStateRef.current === 'initializing' || initStateRef.current === 'ready') {
+    if (isGpuPreviewInitializingOrReady(initStateRef)) {
       return;
     }
 
@@ -122,36 +326,31 @@ export const GPUPreviewCanvas = memo(function GPUPreviewCanvas({
 
     try {
       await initPreview();
-      initStateRef.current = 'ready';
-      onReadyRef.current?.();
+      markGpuPreviewReady(initStateRef, onReadyRef);
     } catch (error) {
-      videoEditorLogger.error('GPUPreviewCanvas failed to initialize:', error);
-      initStateRef.current = 'error';
-      onErrorRef.current?.(String(error));
+      markGpuPreviewError(initStateRef, onErrorRef, error);
     }
   }, [initPreview]);
 
   // Set project when it changes (by ID or content)
   const doSetProject = useCallback(async (proj: VideoProject, timeMs: number, isNewProject: boolean) => {
-    if (initStateRef.current !== 'ready') {
+    if (!isGpuPreviewReady(initStateRef)) {
       return;
     }
 
     try {
-      await invoke('set_preview_project', { project: proj });
+      await setGpuPreviewProject(proj);
 
       // Only update state if this is a new project (ID changed)
       // This prevents re-renders on text edits
       if (isNewProject) {
-        setProjectId(proj.id);
-        videoEditorLogger.info('GPUPreviewCanvas project set:', proj.id);
+        recordNewGpuPreviewProject(proj, setProjectId);
       }
 
       // Render a frame immediately after setting project
-      await invoke('render_preview_frame', { timeMs: Math.floor(timeMs) });
+      await renderGpuPreviewFrame(timeMs);
     } catch (error) {
-      videoEditorLogger.error('GPUPreviewCanvas failed to set project:', error);
-      onErrorRef.current?.(String(error));
+      handleGpuPreviewProjectError(error, onErrorRef);
     }
   }, []);
 
@@ -174,49 +373,23 @@ export const GPUPreviewCanvas = memo(function GPUPreviewCanvas({
   }, [enabled, doInit, shutdown]);
 
   // Compute a version string for text content to detect changes
-  const textVersion = project?.text?.segments
-    ? JSON.stringify(
-      project.text.segments.map((s) => ({
-        start: s.start,
-        end: s.end,
-        content: s.content,
-        center: s.center,
-        size: s.size,
-        fontSize: s.fontSize,
-        fadeDuration: s.fadeDuration,
-        animation: s.animation,
-        typewriterCharsPerSecond: s.typewriterCharsPerSecond,
-      }))
-    )
-    : null;
+  const textVersion = getProjectTextVersion(project);
 
   // Set project when initialized, connected, and project/text changes
   // Debounce text changes to avoid interrupting typing
   useEffect(() => {
-    if (!enabled || !project || initStateRef.current !== 'ready' || !isConnected) {
+    if (!canSyncGpuPreviewProject({ enabled, project, initStateRef, isConnected }) || !project) {
       return;
     }
 
-    // Update if project ID changed OR text content changed
-    const isNewProject = projectId !== project.id;
-    const textChanged = lastTextVersionRef.current !== textVersion;
-
-    // New project: update immediately
-    if (isNewProject) {
-      lastTextVersionRef.current = textVersion;
-      doSetProject(project, currentTimeMs, true);
-      return;
-    }
-
-    // Text changed: debounce to avoid interrupting typing
-    if (textChanged) {
-      const timeoutId = setTimeout(() => {
-        lastTextVersionRef.current = textVersion;
-        doSetProject(project, currentTimeMs, false);
-      }, 300); // 300ms debounce
-
-      return () => clearTimeout(timeoutId);
-    }
+    return syncGpuPreviewProjectChange({
+      project,
+      projectId,
+      textVersion,
+      currentTimeMs,
+      lastTextVersionRef,
+      doSetProject,
+    });
   }, [enabled, project, isConnected, projectId, textVersion, currentTimeMs, doSetProject]);
 
   // Render frame when time changes
@@ -225,18 +398,16 @@ export const GPUPreviewCanvas = memo(function GPUPreviewCanvas({
 
   useEffect(() => {
     // Only render if connected, ready, AND project is set
-    if (!isConnected || !enabled || initStateRef.current !== 'ready' || !projectId) {
+    if (!shouldRenderGpuPreviewFrame({ enabled, isConnected, initStateRef, projectId })) {
       return;
     }
 
     const now = Date.now();
-    const timeSinceLastRender = now - lastRenderTimeRef.current;
 
     // Always use text-only mode (no video decoding - much faster)
     // Video is handled by HTML video (playback) or WebCodecs (scrubbing)
     // GPU only renders text overlay on transparent background
-    const minInterval = isPlaying ? 66 : 16; // ~15fps playback, ~60fps scrub
-    if (timeSinceLastRender < minInterval) {
+    if (shouldThrottleGpuPreviewRender(now, lastRenderTimeRef.current, isPlaying)) {
       return;
     }
     lastRenderTimeRef.current = now;

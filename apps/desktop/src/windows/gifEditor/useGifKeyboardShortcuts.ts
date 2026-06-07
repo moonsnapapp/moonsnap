@@ -11,6 +11,105 @@ interface GifKeyboardShortcutsParams {
   setIsPlaying: React.Dispatch<React.SetStateAction<boolean>>;
 }
 
+function isGifEditableTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  return (
+    target.tagName === 'INPUT' ||
+    target.tagName === 'TEXTAREA' ||
+    target.isContentEditable
+  );
+}
+
+function runGifShortcut(e: KeyboardEvent, action: (() => void) | undefined): boolean {
+  if (!action) return false;
+  e.preventDefault();
+  action();
+  return true;
+}
+
+function handleGifModifiedShortcut(
+  e: KeyboardEvent,
+  closeRef: React.RefObject<(() => void) | null>,
+  exportSelectedRef: React.RefObject<(() => void) | null>
+) {
+  if (!e.ctrlKey && !e.metaKey) return false;
+
+  const key = e.key.toLowerCase();
+  return runGifShortcut(e, getGifModifiedShortcutAction(key, e.shiftKey, closeRef, exportSelectedRef));
+}
+
+function getGifModifiedShortcutAction(
+  key: string,
+  shiftKey: boolean,
+  closeRef: React.RefObject<(() => void) | null>,
+  exportSelectedRef: React.RefObject<(() => void) | null>
+): (() => void) | undefined {
+  const actions: Record<string, (() => void) | undefined> = {
+    w: () => closeRef.current?.(),
+    e: shiftKey ? () => exportSelectedRef.current?.() : undefined,
+  };
+
+  return actions[key];
+}
+
+function handleGifNavigationShortcut(
+  e: KeyboardEvent,
+  params: Pick<
+    GifKeyboardShortcutsParams,
+    'deleteSelectedRef' | 'seekToFrameRef' | 'currentFrameIndexRef' | 'rowsRef' | 'setIsPlaying'
+  >
+) {
+  const actions: Record<string, () => void> = {
+    Delete: () => params.deleteSelectedRef.current?.(),
+    Backspace: () => params.deleteSelectedRef.current?.(),
+    ' ': () => params.setIsPlaying((isPlaying) => !isPlaying),
+    ArrowLeft: () => {
+      params.setIsPlaying(false);
+      params.seekToFrameRef.current?.(Math.max(0, params.currentFrameIndexRef.current - 1));
+    },
+    ArrowRight: () => {
+      params.setIsPlaying(false);
+      params.seekToFrameRef.current?.(
+        Math.min(params.rowsRef.current.length - 1, params.currentFrameIndexRef.current + 1)
+      );
+    },
+    Home: () => {
+      params.setIsPlaying(false);
+      params.seekToFrameRef.current?.(0);
+    },
+    End: () => {
+      params.setIsPlaying(false);
+      params.seekToFrameRef.current?.(Math.max(0, params.rowsRef.current.length - 1));
+    },
+  };
+
+  return runGifShortcut(e, actions[e.key] ?? (e.code === 'Space' ? actions[' '] : undefined));
+}
+
+function shouldCloseGifEditorFromKey(e: KeyboardEvent, isEditable: boolean): boolean {
+  return !isEditable && e.key === 'Escape';
+}
+
+function closeGifEditorFromShortcut(closeRef: React.RefObject<(() => void) | null>): void {
+  closeRef.current?.();
+}
+
+function handleGifKeyboardShortcut(
+  e: KeyboardEvent,
+  params: GifKeyboardShortcutsParams
+): void {
+  const isEditable = isGifEditableTarget(e.target);
+
+  if (shouldCloseGifEditorFromKey(e, isEditable)) {
+    closeGifEditorFromShortcut(params.closeRef);
+    return;
+  }
+  if (handleGifModifiedShortcut(e, params.closeRef, params.exportSelectedRef)) return;
+  if (isEditable) return;
+
+  handleGifNavigationShortcut(e, params);
+}
+
 /**
  * Global keyboard shortcuts for the GIF editor: Esc / Ctrl+W to close,
  * Ctrl+Shift+E to export selection, Delete/Backspace to delete, Space to
@@ -28,60 +127,15 @@ export function useGifKeyboardShortcuts({
 }: GifKeyboardShortcutsParams): void {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      const target = e.target as HTMLElement | null;
-      const isEditable =
-        !!target &&
-        (target.tagName === 'INPUT' ||
-          target.tagName === 'TEXTAREA' ||
-          target.isContentEditable);
-
-      if (!isEditable && e.key === 'Escape') {
-        closeRef.current?.();
-        return;
-      }
-      if ((e.ctrlKey || e.metaKey) && (e.key === 'w' || e.key === 'W')) {
-        e.preventDefault();
-        closeRef.current?.();
-        return;
-      }
-      if (
-        (e.ctrlKey || e.metaKey) &&
-        e.shiftKey &&
-        (e.key === 'e' || e.key === 'E')
-      ) {
-        e.preventDefault();
-        exportSelectedRef.current?.();
-        return;
-      }
-      if (isEditable) return;
-      if (e.key === 'Delete' || e.key === 'Backspace') {
-        e.preventDefault();
-        deleteSelectedRef.current?.();
-        return;
-      }
-
-      if (e.key === ' ' || e.code === 'Space') {
-        e.preventDefault();
-        setIsPlaying((p) => !p);
-      } else if (e.key === 'ArrowLeft') {
-        e.preventDefault();
-        setIsPlaying(false);
-        seekToFrameRef.current?.(Math.max(0, currentFrameIndexRef.current - 1));
-      } else if (e.key === 'ArrowRight') {
-        e.preventDefault();
-        setIsPlaying(false);
-        seekToFrameRef.current?.(
-          Math.min(rowsRef.current.length - 1, currentFrameIndexRef.current + 1),
-        );
-      } else if (e.key === 'Home') {
-        e.preventDefault();
-        setIsPlaying(false);
-        seekToFrameRef.current?.(0);
-      } else if (e.key === 'End') {
-        e.preventDefault();
-        setIsPlaying(false);
-        seekToFrameRef.current?.(Math.max(0, rowsRef.current.length - 1));
-      }
+      handleGifKeyboardShortcut(e, {
+        closeRef,
+        exportSelectedRef,
+        deleteSelectedRef,
+        seekToFrameRef,
+        currentFrameIndexRef,
+        rowsRef,
+        setIsPlaying,
+      });
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);

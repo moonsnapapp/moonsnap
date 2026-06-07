@@ -1,39 +1,35 @@
 import React from 'react';
 import { Ellipse } from 'react-konva';
 import type { BaseShapeProps } from '../../../types';
-import { useShapeCursor } from '../../../hooks/useShapeCursor';
+import { useShapeNodeProps } from './useShapeNodeProps';
 
-export const CircleShape: React.FC<BaseShapeProps> = React.memo(({
-  shape,
-  isDraggable,
-  onClick,
-  onSelect,
-  onDragStart,
-  onDragEnd,
-  onTransformStart,
-  onTransformEnd,
-}) => {
-  const cursorHandlers = useShapeCursor(isDraggable);
+function getCircleShapeRadius(value: number | undefined, fallback: number | undefined) {
+  return value ?? fallback ?? 0;
+}
+
+function getCircleShapeRadii(shape: BaseShapeProps['shape']) {
+  return {
+    radiusX: getCircleShapeRadius(shape.radiusX, shape.radius),
+    radiusY: getCircleShapeRadius(shape.radiusY, shape.radius),
+  };
+}
+
+export const CircleShape: React.FC<BaseShapeProps> = React.memo((props) => {
+  const { shape } = props;
+  const shapeNodeProps = useShapeNodeProps(props);
+  const { radiusX, radiusY } = getCircleShapeRadii(shape);
 
   return (
     <Ellipse
-      id={shape.id}
+      {...shapeNodeProps}
       x={shape.x}
       y={shape.y}
-      radiusX={shape.radiusX ?? shape.radius ?? 0}
-      radiusY={shape.radiusY ?? shape.radius ?? 0}
+      radiusX={radiusX}
+      radiusY={radiusY}
       stroke={shape.stroke}
       strokeWidth={shape.strokeWidth}
       fill={shape.fill}
       rotation={shape.rotation}
-      draggable={isDraggable}
-      onClick={onClick}
-      onTap={onSelect}
-      onDragStart={onDragStart}
-      onDragEnd={onDragEnd}
-      onTransformStart={onTransformStart}
-      onTransformEnd={onTransformEnd}
-      {...cursorHandlers}
     />
   );
 });

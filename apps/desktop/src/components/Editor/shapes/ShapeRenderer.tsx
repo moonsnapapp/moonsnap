@@ -37,10 +37,7 @@ interface ShapeRendererProps {
   commitSnapshot: () => void;
 }
 
-/**
- * Individual shape wrapper - memoized to prevent re-renders when other shapes change
- */
-const MemoizedShape = React.memo<{
+type MemoizedShapeProps = {
   shape: CanvasShape;
   isSelected: boolean;
   isDraggable: boolean;
@@ -62,7 +59,177 @@ const MemoizedShape = React.memo<{
   onTextMouseDown?: (shapeId: string, e: Konva.KonvaEventObject<MouseEvent>) => void;
   takeSnapshot: () => void;
   commitSnapshot: () => void;
-}>(({
+};
+
+type ShapeCommonProps = {
+  shape: CanvasShape;
+  isSelected: boolean;
+  isDraggable: boolean;
+  onSelect: (e?: Konva.KonvaEventObject<MouseEvent | TouchEvent>) => void;
+  onClick: (e: Konva.KonvaEventObject<MouseEvent>) => void;
+  onDragStart: (e: Konva.KonvaEventObject<DragEvent>) => void;
+  onDragEnd: (e: Konva.KonvaEventObject<DragEvent>) => void;
+  onTransformStart: () => void;
+  onTransformEnd: (e: Konva.KonvaEventObject<Event>) => void;
+};
+
+interface RenderedShapeByTypeProps {
+  shape: CanvasShape;
+  commonProps: ShapeCommonProps;
+  zoom: number;
+  sourceImage: HTMLImageElement | undefined;
+  isSelected: boolean;
+  isDraggable: boolean;
+  isActivelyDrawing: boolean;
+  isEditingTextShape: boolean;
+  onSelect: ShapeCommonProps['onSelect'];
+  onDragStart: ShapeCommonProps['onDragStart'];
+  onDragEnd: ShapeCommonProps['onDragEnd'];
+  onTransformStart: () => void;
+  onTransformEnd: ShapeCommonProps['onTransformEnd'];
+  onArrowDragEnd: (_e: unknown, newPoints: number[]) => void;
+  onArrowEndpointDragEnd: (_e: unknown, newPoints: number[]) => void;
+  onTextMouseDown: (e: Konva.KonvaEventObject<MouseEvent>) => void;
+  onTextStartEdit: () => void;
+  takeSnapshot: () => void;
+  commitSnapshot: () => void;
+}
+
+type ShapeRenderFn = (props: RenderedShapeByTypeProps) => React.ReactNode;
+
+function isMiddleMouseEvent(e?: Konva.KonvaEventObject<MouseEvent | TouchEvent>) {
+  const evt = e?.evt as MouseEvent | undefined;
+  return evt?.button === 1;
+}
+
+function canSelectRenderedShape(
+  shape: CanvasShape,
+  isPanning: boolean,
+  e?: Konva.KonvaEventObject<MouseEvent | TouchEvent>
+) {
+  return !isPanning && !shape.isBackground && !isMiddleMouseEvent(e);
+}
+
+function getTextMouseDownShapeId(shape: CanvasShape, isPanning: boolean) {
+  if (isPanning) return null;
+  if (shape.isBackground) return null;
+  return shape.type === 'text' ? shape.id : null;
+}
+
+function renderArrowShape({
+  commonProps,
+  zoom,
+  onArrowDragEnd,
+  onArrowEndpointDragEnd,
+  takeSnapshot,
+  commitSnapshot,
+}: RenderedShapeByTypeProps) {
+  return (
+    <ArrowShape
+      {...commonProps}
+      zoom={zoom}
+      onDragEnd={onArrowDragEnd}
+      onEndpointDragEnd={onArrowEndpointDragEnd}
+      takeSnapshot={takeSnapshot}
+      commitSnapshot={commitSnapshot}
+    />
+  );
+}
+
+function renderLineShape({
+  commonProps,
+  zoom,
+  onArrowDragEnd,
+  onArrowEndpointDragEnd,
+  takeSnapshot,
+  commitSnapshot,
+}: RenderedShapeByTypeProps) {
+  return (
+    <LineShape
+      {...commonProps}
+      zoom={zoom}
+      onDragEnd={onArrowDragEnd}
+      onEndpointDragEnd={onArrowEndpointDragEnd}
+      takeSnapshot={takeSnapshot}
+      commitSnapshot={commitSnapshot}
+    />
+  );
+}
+
+function renderBlurShape({
+  shape,
+  sourceImage,
+  isSelected,
+  isDraggable,
+  isActivelyDrawing,
+  onSelect,
+  onDragStart,
+  onDragEnd,
+  onTransformStart,
+  onTransformEnd,
+}: RenderedShapeByTypeProps) {
+  return (
+    <BlurShape
+      shape={shape}
+      sourceImage={sourceImage}
+      isSelected={isSelected}
+      isDraggable={isDraggable}
+      isActivelyDrawing={isActivelyDrawing}
+      onSelect={onSelect}
+      onDragStart={onDragStart}
+      onDragEnd={onDragEnd}
+      onTransformStart={onTransformStart}
+      onTransformEnd={onTransformEnd}
+    />
+  );
+}
+
+function renderTextShape({
+  commonProps,
+  zoom,
+  isActivelyDrawing,
+  isEditingTextShape,
+  onTextMouseDown,
+  onTextStartEdit,
+}: RenderedShapeByTypeProps) {
+  return (
+    <TextShape
+      {...commonProps}
+      isActivelyDrawing={isActivelyDrawing}
+      isEditing={isEditingTextShape}
+      zoom={zoom}
+      onMouseDown={onTextMouseDown}
+      onStartEdit={onTextStartEdit}
+    />
+  );
+}
+
+function renderImageShape({ shape, commonProps, sourceImage }: RenderedShapeByTypeProps) {
+  return <ImageShape {...commonProps} sourceImage={shape.isBackground ? sourceImage : undefined} />;
+}
+
+const SHAPE_RENDERERS: Record<string, ShapeRenderFn> = {
+  arrow: renderArrowShape,
+  line: renderLineShape,
+  rect: ({ commonProps }) => <RectShape {...commonProps} />,
+  circle: ({ commonProps }) => <CircleShape {...commonProps} />,
+  highlight: ({ commonProps }) => <HighlightShape {...commonProps} />,
+  blur: renderBlurShape,
+  text: renderTextShape,
+  step: ({ commonProps }) => <StepShape {...commonProps} />,
+  pen: ({ commonProps }) => <PenShape {...commonProps} />,
+  image: renderImageShape,
+};
+
+function RenderedShapeByType(props: RenderedShapeByTypeProps) {
+  const renderShape = SHAPE_RENDERERS[props.shape.type];
+  return renderShape?.(props) ?? null;
+}
+
+/**
+ * Individual shape wrapper - memoized to prevent re-renders when other shapes change
+ */
+const MemoizedShape = React.memo<MemoizedShapeProps>(({
   shape,
   isSelected,
   isDraggable,
@@ -89,11 +256,9 @@ const MemoizedShape = React.memo<{
 
   // Stable callbacks that reference shape.id
   const handleSelect = useCallback((e?: Konva.KonvaEventObject<MouseEvent | TouchEvent>) => {
-    if (isPanning || shape.isBackground) return;
-    const evt = e?.evt as MouseEvent | undefined;
-    if (evt?.button === 1) return;
+    if (!canSelectRenderedShape(shape, isPanning, e)) return;
     onShapeSelect(shape.id);
-  }, [isPanning, onShapeSelect, shape.id, shape.isBackground]);
+  }, [isPanning, onShapeSelect, shape]);
 
   const handleClick = useCallback((e: Konva.KonvaEventObject<MouseEvent>) => {
     if (isPanning || shape.isBackground) return;
@@ -126,9 +291,10 @@ const MemoizedShape = React.memo<{
   }, [onTextStartEdit, shape.id, shape.text]);
 
   const handleTextMouseDown = useCallback((e: Konva.KonvaEventObject<MouseEvent>) => {
-    if (isPanning || shape.isBackground || shape.type !== 'text') return;
-    onTextMouseDown?.(shape.id, e);
-  }, [isPanning, shape.isBackground, shape.type, onTextMouseDown, shape.id]);
+    const textShapeId = getTextMouseDownShapeId(shape, isPanning);
+    if (!textShapeId) return;
+    onTextMouseDown?.(textShapeId, e);
+  }, [isPanning, onTextMouseDown, shape]);
 
   const commonProps = useMemo(() => ({
     shape,
@@ -142,70 +308,29 @@ const MemoizedShape = React.memo<{
     onTransformEnd: handleTransformEnd,
   }), [shape, isSelected, isDraggable, handleSelect, handleClick, handleDragStart, handleDragEnd, onTransformStart, handleTransformEnd]);
 
-  switch (shape.type) {
-    case 'arrow':
-      return (
-        <ArrowShape
-          {...commonProps}
-          zoom={zoom}
-          onDragEnd={handleArrowDragEnd}
-          onEndpointDragEnd={handleArrowEndpointDragEnd}
-          takeSnapshot={takeSnapshot}
-          commitSnapshot={commitSnapshot}
-        />
-      );
-    case 'line':
-      return (
-        <LineShape
-          {...commonProps}
-          zoom={zoom}
-          onDragEnd={handleArrowDragEnd}
-          onEndpointDragEnd={handleArrowEndpointDragEnd}
-          takeSnapshot={takeSnapshot}
-          commitSnapshot={commitSnapshot}
-        />
-      );
-    case 'rect':
-      return <RectShape {...commonProps} />;
-    case 'circle':
-      return <CircleShape {...commonProps} />;
-    case 'highlight':
-      return <HighlightShape {...commonProps} />;
-    case 'blur':
-      return (
-        <BlurShape
-          shape={shape}
-          sourceImage={sourceImage}
-          isSelected={isSelected}
-          isDraggable={isDraggable}
-          isActivelyDrawing={isActivelyDrawing}
-          onSelect={handleSelect}
-          onDragStart={handleDragStart}
-          onDragEnd={handleDragEnd}
-          onTransformStart={onTransformStart}
-          onTransformEnd={handleTransformEnd}
-        />
-      );
-    case 'text':
-      return (
-        <TextShape
-          {...commonProps}
-          isActivelyDrawing={isActivelyDrawing}
-          isEditing={isEditingTextShape}
-          zoom={zoom}
-          onMouseDown={handleTextMouseDown}
-          onStartEdit={handleTextStartEdit}
-        />
-      );
-    case 'step':
-      return <StepShape {...commonProps} />;
-    case 'pen':
-      return <PenShape {...commonProps} />;
-    case 'image':
-      return <ImageShape {...commonProps} sourceImage={shape.isBackground ? sourceImage : undefined} />;
-    default:
-      return null;
-  }
+  return (
+    <RenderedShapeByType
+      shape={shape}
+      commonProps={commonProps}
+      zoom={zoom}
+      sourceImage={sourceImage}
+      isSelected={isSelected}
+      isDraggable={isDraggable}
+      isActivelyDrawing={isActivelyDrawing}
+      isEditingTextShape={isEditingTextShape}
+      onSelect={handleSelect}
+      onDragStart={handleDragStart}
+      onDragEnd={handleDragEnd}
+      onTransformStart={onTransformStart}
+      onTransformEnd={handleTransformEnd}
+      onArrowDragEnd={handleArrowDragEnd}
+      onArrowEndpointDragEnd={handleArrowEndpointDragEnd}
+      onTextMouseDown={handleTextMouseDown}
+      onTextStartEdit={handleTextStartEdit}
+      takeSnapshot={takeSnapshot}
+      commitSnapshot={commitSnapshot}
+    />
+  );
 });
 
 MemoizedShape.displayName = 'MemoizedShape';

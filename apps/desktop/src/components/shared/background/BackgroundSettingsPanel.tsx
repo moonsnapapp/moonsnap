@@ -130,6 +130,110 @@ function ShadowEffects({ config }: { config: ShadowEffectsConfig }) {
   return <ValueShadowEffectsSection {...props} />;
 }
 
+function EnabledToggleRow({ config }: { config?: EnabledToggleConfig }) {
+  if (!config) return null;
+
+  return (
+    <div className="flex min-w-0 items-center justify-between gap-3">
+      <span className="min-w-0 truncate text-xs text-[var(--ink-muted)]">
+        {config.label ?? 'Show BG'}
+      </span>
+      <ToggleSwitch enabled={config.enabled} onToggle={config.onToggle} />
+    </div>
+  );
+}
+
+function WallpaperBackgroundSettings({ type, wallpaper }: {
+  type: SharedBackgroundType;
+  wallpaper: WallpaperConfig;
+}) {
+  if (type !== 'wallpaper') return null;
+
+  return (
+    <WallpaperSelector
+      selectedWallpaperId={wallpaper.id}
+      onSelect={wallpaper.onSelect}
+      isSelected={wallpaper.isSelected}
+      onLoadError={wallpaper.onLoadError}
+    />
+  );
+}
+
+function ImageBackgroundSettings({ type, image }: {
+  type: SharedBackgroundType;
+  image: ImageConfig;
+}) {
+  if (type !== 'image') return null;
+
+  return (
+    <ImageBackgroundSection
+      imageSrc={image.src}
+      onRemove={image.onRemove}
+      uploader={image.uploader}
+    />
+  );
+}
+
+function SolidBackgroundSettings({
+  type,
+  solidColor,
+  onSolidColorChange,
+}: {
+  type: SharedBackgroundType;
+  solidColor: string;
+  onSolidColorChange: (color: string) => void;
+}) {
+  if (type !== 'solid') return null;
+
+  return (
+    <div className="space-y-3">
+      <ColorPicker
+        value={solidColor}
+        onChange={onSolidColorChange}
+        presets={COLOR_PRESETS}
+      />
+    </div>
+  );
+}
+
+function GradientBackgroundSettings({
+  type,
+  gradientStart,
+  gradientEnd,
+  gradientAngle,
+  onGradientStartChange,
+  onGradientEndChange,
+  onGradientAngleChange,
+  onGradientPresetSelect,
+  gradientPresetInactiveBorderClass,
+}: Pick<
+  BackgroundSettingsPanelProps<SharedBackgroundType>,
+  | 'type'
+  | 'gradientStart'
+  | 'gradientEnd'
+  | 'gradientAngle'
+  | 'onGradientStartChange'
+  | 'onGradientEndChange'
+  | 'onGradientAngleChange'
+  | 'onGradientPresetSelect'
+  | 'gradientPresetInactiveBorderClass'
+>) {
+  if (type !== 'gradient') return null;
+
+  return (
+    <GradientSection
+      gradientStart={gradientStart}
+      gradientEnd={gradientEnd}
+      gradientAngle={gradientAngle}
+      onGradientStartChange={onGradientStartChange}
+      onGradientEndChange={onGradientEndChange}
+      onGradientAngleChange={onGradientAngleChange}
+      onPresetSelect={onGradientPresetSelect}
+      inactivePresetBorderClass={gradientPresetInactiveBorderClass}
+    />
+  );
+}
+
 export function BackgroundSettingsPanel<TType extends SharedBackgroundType>({
   enabledToggle,
   type,
@@ -155,14 +259,7 @@ export function BackgroundSettingsPanel<TType extends SharedBackgroundType>({
 }: BackgroundSettingsPanelProps<TType>) {
   return (
     <div className="min-w-0 space-y-4">
-      {enabledToggle && (
-        <div className="flex min-w-0 items-center justify-between gap-3">
-          <span className="min-w-0 truncate text-xs text-[var(--ink-muted)]">
-            {enabledToggle.label ?? 'Show BG'}
-          </span>
-          <ToggleSwitch enabled={enabledToggle.enabled} onToggle={enabledToggle.onToggle} />
-        </div>
-      )}
+      <EnabledToggleRow config={enabledToggle} />
 
       <BackgroundTypeTabs
         currentType={type}
@@ -171,45 +268,24 @@ export function BackgroundSettingsPanel<TType extends SharedBackgroundType>({
 
       <div className="border-t border-dashed border-[var(--glass-border)]" />
 
-      {type === 'wallpaper' && (
-        <WallpaperSelector
-          selectedWallpaperId={wallpaper.id}
-          onSelect={wallpaper.onSelect}
-          isSelected={wallpaper.isSelected}
-          onLoadError={wallpaper.onLoadError}
-        />
-      )}
-
-      {type === 'image' && (
-        <ImageBackgroundSection
-          imageSrc={image.src}
-          onRemove={image.onRemove}
-          uploader={image.uploader}
-        />
-      )}
-
-      {type === 'solid' && (
-        <div className="space-y-3">
-          <ColorPicker
-            value={solidColor}
-            onChange={onSolidColorChange}
-            presets={COLOR_PRESETS}
-          />
-        </div>
-      )}
-
-      {type === 'gradient' && (
-        <GradientSection
-          gradientStart={gradientStart}
-          gradientEnd={gradientEnd}
-          gradientAngle={gradientAngle}
-          onGradientStartChange={onGradientStartChange}
-          onGradientEndChange={onGradientEndChange}
-          onGradientAngleChange={onGradientAngleChange}
-          onPresetSelect={onGradientPresetSelect}
-          inactivePresetBorderClass={gradientPresetInactiveBorderClass}
-        />
-      )}
+      <WallpaperBackgroundSettings type={type} wallpaper={wallpaper} />
+      <ImageBackgroundSettings type={type} image={image} />
+      <SolidBackgroundSettings
+        type={type}
+        solidColor={solidColor}
+        onSolidColorChange={onSolidColorChange}
+      />
+      <GradientBackgroundSettings
+        type={type}
+        gradientStart={gradientStart}
+        gradientEnd={gradientEnd}
+        gradientAngle={gradientAngle}
+        onGradientStartChange={onGradientStartChange}
+        onGradientEndChange={onGradientEndChange}
+        onGradientAngleChange={onGradientAngleChange}
+        onGradientPresetSelect={onGradientPresetSelect}
+        gradientPresetInactiveBorderClass={gradientPresetInactiveBorderClass}
+      />
 
       <PaddingSection value={padding} onChange={onPaddingChange} />
 

@@ -27,6 +27,26 @@ interface CaptureContextMenuProps {
 // Check if capture is a video or gif
 const isMediaType = (type?: string) => type === 'video' || type === 'gif';
 
+function MissingAwareMenuItem({
+  isMissing,
+  onClick,
+  children,
+}: {
+  isMissing: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <ContextMenuItem
+      onClick={onClick}
+      disabled={isMissing}
+      className={isMissing ? 'opacity-50 cursor-not-allowed' : ''}
+    >
+      {children}
+    </ContextMenuItem>
+  );
+}
+
 export const CaptureContextMenu: React.FC<CaptureContextMenuProps> = ({
   favorite,
   isMissing = false,
@@ -45,38 +65,28 @@ export const CaptureContextMenu: React.FC<CaptureContextMenuProps> = ({
 }) => {
   const isMedia = isMediaType(captureType);
   const isVideo = captureType === 'video';
+  const canPlayMedia = isMedia && (quickCapture || captureType === 'gif') && onPlayMedia;
+  const canEditVideo = isVideo && onEditVideo;
 
   return (
     <ContextMenuContent>
-      {isMedia && (quickCapture || captureType === 'gif') && onPlayMedia && (
-        <ContextMenuItem
-          onClick={onPlayMedia}
-          disabled={isMissing}
-          className={isMissing ? 'opacity-50 cursor-not-allowed' : ''}
-        >
+      {canPlayMedia && (
+        <MissingAwareMenuItem isMissing={isMissing} onClick={onPlayMedia}>
           <Play className="w-4 h-4 mr-2" />
           Play {captureType === 'gif' ? 'GIF' : 'Video'}
-        </ContextMenuItem>
+        </MissingAwareMenuItem>
       )}
-      {isVideo && onEditVideo && (
-        <ContextMenuItem
-          onClick={onEditVideo}
-          disabled={isMissing}
-          className={isMissing ? 'opacity-50 cursor-not-allowed' : ''}
-        >
+      {canEditVideo && (
+        <MissingAwareMenuItem isMissing={isMissing} onClick={onEditVideo}>
           <Film className="w-4 h-4 mr-2" />
           {quickCapture ? 'Open as Project' : 'Edit Video'}
-        </ContextMenuItem>
+        </MissingAwareMenuItem>
       )}
       {onSaveCopy && (
-        <ContextMenuItem
-          onClick={onSaveCopy}
-          disabled={isMissing}
-          className={isMissing ? 'opacity-50 cursor-not-allowed' : ''}
-        >
+        <MissingAwareMenuItem isMissing={isMissing} onClick={onSaveCopy}>
           <Download className="w-4 h-4 mr-2" />
           Save As
-        </ContextMenuItem>
+        </MissingAwareMenuItem>
       )}
       {damaged && onRepair && (
         <ContextMenuItem onClick={onRepair}>
@@ -85,14 +95,10 @@ export const CaptureContextMenu: React.FC<CaptureContextMenuProps> = ({
         </ContextMenuItem>
       )}
       {!isMedia && (
-        <ContextMenuItem
-          onClick={onCopyToClipboard}
-          disabled={isMissing}
-          className={isMissing ? 'opacity-50 cursor-not-allowed' : ''}
-        >
+        <MissingAwareMenuItem isMissing={isMissing} onClick={onCopyToClipboard}>
           <Copy className="w-4 h-4 mr-2" />
           Copy to Clipboard
-        </ContextMenuItem>
+        </MissingAwareMenuItem>
       )}
       <ContextMenuItem onClick={onOpenInFolder}>
         <ExternalLink className="w-4 h-4 mr-2" />

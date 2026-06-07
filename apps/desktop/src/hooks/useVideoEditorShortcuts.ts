@@ -51,6 +51,67 @@ interface UseVideoEditorShortcutsProps {
   disablePlaybackArrowShortcuts?: boolean;
 }
 
+type VideoEditorShortcutHandlers = Omit<UseVideoEditorShortcutsProps, 'enabled'>;
+type ShortcutAction = (() => void) | undefined;
+
+function runShortcutAction(e: KeyboardEvent, action: ShortcutAction): boolean {
+  if (!action) return false;
+  e.preventDefault();
+  action();
+  return true;
+}
+
+function getModifierShortcutAction(
+  e: KeyboardEvent,
+  handlers: VideoEditorShortcutHandlers
+): ShortcutAction {
+  if (e.key.toLowerCase() === 'z') {
+    return e.shiftKey ? handlers.onRedoTrim : handlers.onUndoTrim;
+  }
+
+  const actions: Record<string, ShortcutAction> = {
+    s: handlers.onSave,
+    '-': handlers.onTimelineZoomOut,
+    _: handlers.onTimelineZoomOut,
+    '=': handlers.onTimelineZoomIn,
+    '+': handlers.onTimelineZoomIn,
+    e: handlers.onExport,
+  };
+
+  return actions[e.key.toLowerCase()];
+}
+
+function getSingleKeyShortcutAction(
+  e: KeyboardEvent,
+  handlers: VideoEditorShortcutHandlers
+): ShortcutAction {
+  const key = e.key.length === 1 ? e.key.toLowerCase() : e.key;
+  if (
+    handlers.disablePlaybackArrowShortcuts &&
+    (key === 'ArrowLeft' || key === 'ArrowRight')
+  ) {
+    return undefined;
+  }
+
+  const actions: Record<string, ShortcutAction> = {
+    ' ': handlers.onTogglePlayback,
+    Home: handlers.onSeekToStart,
+    End: handlers.onSeekToEnd,
+    ArrowLeft: handlers.onSkipBack,
+    ArrowRight: handlers.onSkipForward,
+    c: handlers.onToggleCutMode,
+    v: handlers.onSelectMode,
+    Delete: handlers.onDeleteSelected,
+    Backspace: handlers.onDeleteSelected,
+    z: handlers.onFitTimeline,
+    i: handlers.onSetInPoint,
+    o: handlers.onSetOutPoint,
+    Escape: handlers.onDeselect,
+  };
+
+  return actions[key];
+}
+
 export function useVideoEditorShortcuts({
   enabled,
   onTogglePlayback,
@@ -81,102 +142,35 @@ export function useVideoEditorShortcuts({
       if (isTextInputTarget(e.target)) return;
 
       const isMod = e.ctrlKey || e.metaKey;
+      const handlers = {
+        onTogglePlayback,
+        onSeekToStart,
+        onSeekToEnd,
+        onSkipBack,
+        onSkipForward,
+        onToggleCutMode,
+        onSelectMode,
+        onDeleteSelected,
+        onTimelineZoomIn,
+        onTimelineZoomOut,
+        onDeselect,
+        onSave,
+        onExport,
+        onUndoTrim,
+        onRedoTrim,
+        onFitTimeline,
+        onSetInPoint,
+        onSetOutPoint,
+        disablePlaybackArrowShortcuts,
+      };
 
-      // Modifier shortcuts
       if (isMod) {
-        switch (e.key) {
-          case 's':
-            e.preventDefault();
-            onSave();
-            return;
-          case 'z':
-          case 'Z':
-            e.preventDefault();
-            if (e.shiftKey) {
-              onRedoTrim?.();
-            } else {
-              onUndoTrim?.();
-            }
-            return;
-          case '-':
-          case '_':
-            e.preventDefault();
-            onTimelineZoomOut();
-            return;
-          case '=':
-          case '+':
-            e.preventDefault();
-            onTimelineZoomIn();
-            return;
-          case 'e':
-            e.preventDefault();
-            onExport();
-            return;
-        }
+        runShortcutAction(e, getModifierShortcutAction(e, handlers));
         return;
       }
 
-      // Single key shortcuts (no modifiers)
       if (e.altKey) return;
-
-      switch (e.key) {
-        case ' ':
-          e.preventDefault();
-          onTogglePlayback();
-          break;
-        case 'Home':
-          e.preventDefault();
-          onSeekToStart();
-          break;
-        case 'End':
-          e.preventDefault();
-          onSeekToEnd();
-          break;
-        case 'ArrowLeft':
-          if (disablePlaybackArrowShortcuts) return;
-          e.preventDefault();
-          onSkipBack();
-          break;
-        case 'ArrowRight':
-          if (disablePlaybackArrowShortcuts) return;
-          e.preventDefault();
-          onSkipForward();
-          break;
-        case 'c':
-        case 'C':
-          e.preventDefault();
-          onToggleCutMode();
-          break;
-        case 'v':
-        case 'V':
-          e.preventDefault();
-          onSelectMode();
-          break;
-        case 'Delete':
-        case 'Backspace':
-          e.preventDefault();
-          onDeleteSelected();
-          break;
-        case 'z':
-        case 'Z':
-          e.preventDefault();
-          onFitTimeline?.();
-          break;
-        case 'i':
-        case 'I':
-          e.preventDefault();
-          onSetInPoint?.();
-          break;
-        case 'o':
-        case 'O':
-          e.preventDefault();
-          onSetOutPoint?.();
-          break;
-        case 'Escape':
-          e.preventDefault();
-          onDeselect();
-          break;
-      }
+      runShortcutAction(e, getSingleKeyShortcutAction(e, handlers));
     };
 
     window.addEventListener('keydown', handleKeyDown);

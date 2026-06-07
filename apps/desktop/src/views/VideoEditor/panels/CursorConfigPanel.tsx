@@ -10,166 +10,232 @@ export interface CursorConfigPanelProps {
   onUpdateCursorConfig: (updates: Partial<CursorConfig>) => void;
 }
 
+function CursorToggle({
+  checked,
+  onChange,
+}: {
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+}) {
+  return (
+    <button
+      onClick={() => onChange(!checked)}
+      className={`relative w-10 h-5 rounded-full transition-colors ${
+        checked ? 'bg-[var(--accent-400)]' : 'bg-[var(--polar-frost)]'
+      }`}
+    >
+      <span
+        className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${
+          checked ? 'translate-x-5' : 'translate-x-0'
+        }`}
+      />
+    </button>
+  );
+}
+
+function CursorToggleRow({
+  label,
+  description,
+  checked,
+  onChange,
+}: {
+  label: string;
+  description?: string;
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+}) {
+  return (
+    <div className="flex items-center justify-between">
+      <div className="flex flex-col">
+        <span className="text-xs text-[var(--ink-muted)]">{label}</span>
+        {description && (
+          <span className="text-[10px] text-[var(--ink-subtle)]">{description}</span>
+        )}
+      </div>
+      <CursorToggle checked={checked} onChange={onChange} />
+    </div>
+  );
+}
+
+function CursorChoiceGroup<T extends string>({
+  label,
+  options,
+  value,
+  onChange,
+  capitalize = false,
+}: {
+  label: string;
+  options: readonly T[];
+  value: T;
+  onChange: (value: T) => void;
+  capitalize?: boolean;
+}) {
+  const getOptionLabel = getCursorChoiceLabelFormatter();
+
+  return (
+    <div>
+      <span className="text-[11px] text-[var(--ink-subtle)] block mb-2">{label}</span>
+      <div className="flex gap-1.5">
+        {options.map((option) => (
+          <button
+            key={option}
+            onClick={() => onChange(option)}
+            className={`editor-choice-pill px-2.5 py-1.5 text-xs ${
+              capitalize ? 'capitalize' : ''
+            } ${value === option ? 'editor-choice-pill--active' : ''}`}
+          >
+            {getOptionLabel(option)}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function getCursorChoiceLabelFormatter() {
+  const labels: Record<string, string> = {
+    auto: 'Auto',
+    circle: 'Circle',
+  };
+
+  return (option: string) => labels[option] ?? option;
+}
+
+function CursorSlider({
+  label,
+  value,
+  displayValue,
+  min,
+  max,
+  step,
+  onChange,
+  description,
+  footer,
+}: {
+  label: string;
+  value: number;
+  displayValue: string;
+  min: number;
+  max: number;
+  step: number;
+  onChange: (value: number) => void;
+  description?: string;
+  footer?: React.ReactNode;
+}) {
+  return (
+    <div>
+      <div className={`flex ${description ? 'items-start' : 'items-center'} justify-between mb-2`}>
+        <div className="flex flex-col">
+          <span className="text-xs text-[var(--ink-muted)]">{label}</span>
+          {description && (
+            <span className="text-[10px] text-[var(--ink-subtle)]">{description}</span>
+          )}
+        </div>
+        <span className="text-xs text-[var(--ink-dark)] font-mono">{displayValue}</span>
+      </div>
+      <Slider
+        value={[value]}
+        onValueChange={(values) => onChange(values[0])}
+        min={min}
+        max={max}
+        step={step}
+      />
+      {footer}
+    </div>
+  );
+}
+
+function updateClickHighlight(
+  project: VideoProject,
+  updates: Partial<NonNullable<CursorConfig['clickHighlight']>>
+): Partial<CursorConfig> {
+  return {
+    clickHighlight: { ...project.cursor.clickHighlight, ...updates },
+  };
+}
+
 export function CursorConfigPanel({ project, onUpdateCursorConfig }: CursorConfigPanelProps) {
   const hideWhenIdle = project.cursor.hideWhenIdle ?? true;
   const dampening = project.cursor.dampening ?? CURSOR.DAMPENING_DEFAULT;
 
   return (
     <div className="space-y-4">
-      {/* Show/Hide Toggle */}
-      <div className="flex items-center justify-between">
-        <span className="text-xs text-[var(--ink-muted)]">Show Cursor</span>
-        <button
-          onClick={() => onUpdateCursorConfig({ visible: !project.cursor.visible })}
-          className={`relative w-10 h-5 rounded-full transition-colors ${
-            project.cursor.visible ? 'bg-[var(--accent-400)]' : 'bg-[var(--polar-frost)]'
-          }`}
-        >
-          <span
-            className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${
-              project.cursor.visible ? 'translate-x-5' : 'translate-x-0'
-            }`}
-          />
-        </button>
-      </div>
+      <CursorToggleRow
+        label="Show Cursor"
+        checked={project.cursor.visible}
+        onChange={(visible) => onUpdateCursorConfig({ visible })}
+      />
 
-      {/* Cursor Type */}
-      <div>
-        <span className="text-[11px] text-[var(--ink-subtle)] block mb-2">Cursor Type</span>
-        <div className="flex gap-1.5">
-          {(['auto', 'circle'] as const).map((type) => (
-            <button
-              key={type}
-              onClick={() => onUpdateCursorConfig({ cursorType: type })}
-              className={`editor-choice-pill px-2.5 py-1.5 text-xs ${
-                project.cursor.cursorType === type ? 'editor-choice-pill--active' : ''
-              }`}
-            >
-              {type === 'auto' ? 'Auto' : 'Circle'}
-            </button>
-          ))}
-        </div>
-      </div>
+      <CursorChoiceGroup
+        label="Cursor Type"
+        options={['auto', 'circle'] as const}
+        value={project.cursor.cursorType}
+        onChange={(cursorType) => onUpdateCursorConfig({ cursorType })}
+      />
 
-      {/* Size Slider */}
-      <div>
-        <div className="flex items-center justify-between mb-2">
-          <span className="text-xs text-[var(--ink-muted)]">Size</span>
-          <span className="text-xs text-[var(--ink-dark)] font-mono">
-            {Math.round(project.cursor.scale * 100)}%
-          </span>
-        </div>
-        <Slider
-          value={[project.cursor.scale * 100]}
-          onValueChange={(values) => onUpdateCursorConfig({ scale: values[0] / 100 })}
-          min={50}
-          max={300}
-          step={10}
-        />
-      </div>
+      <CursorSlider
+        label="Size"
+        value={project.cursor.scale * 100}
+        displayValue={`${Math.round(project.cursor.scale * 100)}%`}
+        onChange={(value) => onUpdateCursorConfig({ scale: value / 100 })}
+        min={50}
+        max={300}
+        step={10}
+      />
 
-      {/* Dampening */}
-      <div>
-        <div className="flex items-start justify-between mb-2">
-          <div className="flex flex-col">
-            <span className="text-xs text-[var(--ink-muted)]">Dampening</span>
-            <span className="text-[10px] text-[var(--ink-subtle)]">Adapts cursor smoothing as zoom increases</span>
+      <CursorSlider
+        label="Dampening"
+        description="Adapts cursor smoothing as zoom increases"
+        value={dampening * 100}
+        displayValue={`${Math.round(dampening * 100)}%`}
+        onChange={(value) => onUpdateCursorConfig({ dampening: value / 100 })}
+        min={CURSOR.DAMPENING_MIN * 100}
+        max={CURSOR.DAMPENING_MAX * 100}
+        step={5}
+        footer={(
+          <div className="mt-1 flex items-center justify-between text-[10px] text-[var(--ink-subtle)]">
+            <span>Linear</span>
+            <span>Smooth</span>
           </div>
-          <span className="text-xs text-[var(--ink-dark)] font-mono">
-            {Math.round(dampening * 100)}%
-          </span>
-        </div>
-        <Slider
-          value={[dampening * 100]}
-          onValueChange={(values) => onUpdateCursorConfig({ dampening: values[0] / 100 })}
-          min={CURSOR.DAMPENING_MIN * 100}
-          max={CURSOR.DAMPENING_MAX * 100}
-          step={5}
-        />
-        <div className="mt-1 flex items-center justify-between text-[10px] text-[var(--ink-subtle)]">
-          <span>Linear</span>
-          <span>Smooth</span>
-        </div>
-      </div>
+        )}
+      />
 
-      {/* Motion Blur */}
-      <div>
-        <div className="flex items-center justify-between mb-2">
-          <span className="text-xs text-[var(--ink-muted)]">Motion Blur</span>
-          <span className="text-xs text-[var(--ink-dark)] font-mono">
-            {Math.round(project.cursor.motionBlur * 100)}%
-          </span>
-        </div>
-        <Slider
-          value={[project.cursor.motionBlur * 100]}
-          onValueChange={(values) => onUpdateCursorConfig({ motionBlur: values[0] / 100 })}
-          min={0}
-          max={15}
-          step={1}
-        />
-      </div>
+      <CursorSlider
+        label="Motion Blur"
+        value={project.cursor.motionBlur * 100}
+        displayValue={`${Math.round(project.cursor.motionBlur * 100)}%`}
+        onChange={(value) => onUpdateCursorConfig({ motionBlur: value / 100 })}
+        min={0}
+        max={15}
+        step={1}
+      />
 
-      {/* Idle Fade Toggle */}
-      <div className="flex items-center justify-between">
-        <div className="flex flex-col">
-          <span className="text-xs text-[var(--ink-muted)]">Hide When Idle</span>
-          <span className="text-[10px] text-[var(--ink-subtle)]">Fade cursor after inactivity</span>
-        </div>
-        <button
-          onClick={() => onUpdateCursorConfig({ hideWhenIdle: !hideWhenIdle })}
-          className={`relative w-10 h-5 rounded-full transition-colors ${
-            hideWhenIdle ? 'bg-[var(--accent-400)]' : 'bg-[var(--polar-frost)]'
-          }`}
-        >
-          <span
-            className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${
-              hideWhenIdle ? 'translate-x-5' : 'translate-x-0'
-            }`}
-          />
-        </button>
-      </div>
+      <CursorToggleRow
+        label="Hide When Idle"
+        description="Fade cursor after inactivity"
+        checked={hideWhenIdle}
+        onChange={(nextHideWhenIdle) => onUpdateCursorConfig({ hideWhenIdle: nextHideWhenIdle })}
+      />
 
       {/* Click Highlight Section */}
       <div className="pt-3 border-t border-[var(--glass-border)]">
         <div className="flex items-center justify-between mb-3">
           <span className="text-xs text-[var(--ink-muted)]">Click Highlight</span>
-          <button
-            onClick={() => onUpdateCursorConfig({
-              clickHighlight: { ...project.cursor.clickHighlight, enabled: !project.cursor.clickHighlight.enabled }
-            })}
-            className={`relative w-10 h-5 rounded-full transition-colors ${
-              project.cursor.clickHighlight.enabled ? 'bg-[var(--accent-400)]' : 'bg-[var(--polar-frost)]'
-            }`}
-          >
-            <span
-              className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${
-                project.cursor.clickHighlight.enabled ? 'translate-x-5' : 'translate-x-0'
-              }`}
-            />
-          </button>
+          <CursorToggle
+            checked={project.cursor.clickHighlight.enabled}
+            onChange={(enabled) => onUpdateCursorConfig(updateClickHighlight(project, { enabled }))}
+          />
         </div>
 
         {project.cursor.clickHighlight.enabled && (
           <div className="space-y-3">
-            {/* Highlight Style */}
-            <div>
-              <span className="text-[11px] text-[var(--ink-subtle)] block mb-2">Style</span>
-              <div className="flex gap-1.5">
-                {(['ripple', 'spotlight', 'ring'] as const).map((style) => (
-                  <button
-                    key={style}
-                    onClick={() => onUpdateCursorConfig({
-                      clickHighlight: { ...project.cursor.clickHighlight, style }
-                    })}
-                    className={`editor-choice-pill px-2.5 py-1.5 text-xs capitalize ${
-                      project.cursor.clickHighlight.style === style ? 'editor-choice-pill--active' : ''
-                    }`}
-                  >
-                    {style}
-                  </button>
-                ))}
-              </div>
-            </div>
+            <CursorChoiceGroup
+              label="Style"
+              options={['ripple', 'spotlight', 'ring'] as const}
+              value={project.cursor.clickHighlight.style}
+              capitalize
+              onChange={(style) => onUpdateCursorConfig(updateClickHighlight(project, { style }))}
+            />
 
             {/* Highlight Color */}
             <div className="flex items-center justify-between">
@@ -178,45 +244,31 @@ export function CursorConfigPanel({ project, onUpdateCursorConfig }: CursorConfi
                 type="color"
                 value={project.cursor.clickHighlight.color}
                 onChange={(e) => onUpdateCursorConfig({
-                  clickHighlight: { ...project.cursor.clickHighlight, color: e.target.value }
+                  ...updateClickHighlight(project, { color: e.target.value })
                 })}
                 className="w-8 h-6 rounded border border-[var(--glass-border)] cursor-pointer bg-transparent"
               />
             </div>
 
-            {/* Highlight Radius */}
-            <div>
-              <div className="flex items-center justify-between mb-1">
-                <span className="text-[11px] text-[var(--ink-subtle)]">Radius</span>
-                <span className="text-[11px] text-[var(--ink-muted)] font-mono">{project.cursor.clickHighlight.radius}px</span>
-              </div>
-              <Slider
-                value={[project.cursor.clickHighlight.radius]}
-                onValueChange={(values) => onUpdateCursorConfig({
-                  clickHighlight: { ...project.cursor.clickHighlight, radius: values[0] }
-                })}
-                min={10}
-                max={100}
-                step={5}
-              />
-            </div>
+            <CursorSlider
+              label="Radius"
+              value={project.cursor.clickHighlight.radius}
+              displayValue={`${project.cursor.clickHighlight.radius}px`}
+              onChange={(radius) => onUpdateCursorConfig(updateClickHighlight(project, { radius }))}
+              min={10}
+              max={100}
+              step={5}
+            />
 
-            {/* Highlight Duration */}
-            <div>
-              <div className="flex items-center justify-between mb-1">
-                <span className="text-[11px] text-[var(--ink-subtle)]">Duration</span>
-                <span className="text-[11px] text-[var(--ink-muted)] font-mono">{project.cursor.clickHighlight.durationMs}ms</span>
-              </div>
-              <Slider
-                value={[project.cursor.clickHighlight.durationMs]}
-                onValueChange={(values) => onUpdateCursorConfig({
-                  clickHighlight: { ...project.cursor.clickHighlight, durationMs: values[0] }
-                })}
-                min={100}
-                max={1000}
-                step={50}
-              />
-            </div>
+            <CursorSlider
+              label="Duration"
+              value={project.cursor.clickHighlight.durationMs}
+              displayValue={`${project.cursor.clickHighlight.durationMs}ms`}
+              onChange={(durationMs) => onUpdateCursorConfig(updateClickHighlight(project, { durationMs }))}
+              min={100}
+              max={1000}
+              step={50}
+            />
           </div>
         )}
       </div>

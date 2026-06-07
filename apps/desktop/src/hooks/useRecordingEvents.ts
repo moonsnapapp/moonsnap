@@ -42,6 +42,10 @@ interface UseRecordingEventsOptions {
   closeWindowOnCompleteRef?: React.MutableRefObject<boolean>;
 }
 
+function unlistenRecordingEvents(listeners: Array<UnlistenFn | null>) {
+  listeners.forEach((unlisten) => unlisten?.());
+}
+
 export function useRecordingEvents(
   options: UseRecordingEventsOptions = {}
 ): UseRecordingEventsReturn {
@@ -114,11 +118,13 @@ export function useRecordingEvents(
     let errorRecoveryTimeout: ReturnType<typeof setTimeout> | null = null;
 
     const unlistenAll = () => {
-      unlistenState?.();
-      unlistenFormat?.();
-      unlistenClosed?.();
-      unlistenReselecting?.();
-      unlistenCountdownTick?.();
+      unlistenRecordingEvents([
+        unlistenState,
+        unlistenFormat,
+        unlistenClosed,
+        unlistenReselecting,
+        unlistenCountdownTick,
+      ]);
     };
 
     const currentWindow = getCurrentWebviewWindow();
@@ -132,157 +138,152 @@ export function useRecordingEvents(
       }
     };
 
+    const resetRecordingRuntime = () => {
+      isRecordingActiveRef.current = false;
+      timerBaseTimeRef.current = 0;
+      timerStartedAtRef.current = null;
+    };
+
+    const clearCloseWindowOnComplete = () => {
+      if (closeWindowOnCompleteRef) {
+        closeWindowOnCompleteRef.current = false;
+      }
+    };
+
+    const hideRecordingSurfaces = () => Promise.all([
+      invoke('hide_recording_border').catch(
+        createErrorHandler({ operation: 'hide recording border', silent: true })
+      ),
+      invoke('hide_countdown_window').catch(
+        createErrorHandler({ operation: 'hide countdown window', silent: true })
+      ),
+      closeWebcamPreview().catch(
+        createErrorHandler({ operation: 'close webcam preview', silent: true })
+      ),
+    ]);
+
+    const restoreMainWindow = () => invoke('restore_main_window').catch(
+      createErrorHandler({ operation: 'restore main window', silent: true })
+    );
+
+    const resetToolbarState = () => {
+      setMode('selection');
+      setElapsedTime(0);
+      setProgress(0);
+    };
+
+    const showOrCloseToolbarAfterCompletion = (closeWindowOnComplete: boolean) => {
+      clearCloseWindowOnComplete();
+
+      if (closeWindowOnComplete) {
+        currentWindow.close().catch(
+          createErrorHandler({ operation: 'close toolbar window', silent: true })
+        );
+        return;
+      }
+
+      currentWindow.show().catch(
+        createErrorHandler({ operation: 'show toolbar window', silent: true })
+      );
+      currentWindow.setFocus().catch(
+        createErrorHandler({ operation: 'focus toolbar window', silent: true })
+      );
+    };
+
+    const handleRecordingCompleted = (state: Extract<RecordingState, { status: 'completed' }>) => {
+      recordingLogger.info('Recording COMPLETED. Backend duration:', state.durationSecs, 's, file:', state.outputPath);
+      resetRecordingRuntime();
+      const closeWindowOnComplete = closeWindowOnCompleteRef?.current ?? false;
+      resetToolbarState();
+      Promise.all([
+        hideRecordingSurfaces(),
+        restoreMainWindow(),
+      ]).finally(() => {
+        emit('reset-to-startup', null).catch(
+          createErrorHandler({ operation: 'reset toolbar to startup', silent: true })
+        ).finally(() => {
+          showOrCloseToolbarAfterCompletion(closeWindowOnComplete);
+        });
+      });
+    };
+
+    const handleRecordingIdle = () => {
+      resetRecordingRuntime();
+      clearCloseWindowOnComplete();
+      resetToolbarState();
+      Promise.all([
+        hideRecordingSurfaces(),
+        restoreMainWindow(),
+      ]).finally(() => {
+        currentWindow.close().catch(
+          createErrorHandler({ operation: 'close toolbar window', silent: true })
+        );
+      });
+    };
+
+    const handleRecordingError = (state: Extract<RecordingState, { status: 'error' }>) => {
+      resetRecordingRuntime();
+      clearCloseWindowOnComplete();
+      setErrorMessage(state.message);
+      setMode('error');
+      hideRecordingSurfaces();
+      errorRecoveryTimeout = setTimeout(() => {
+        errorRecoveryTimeout = null;
+        resetToolbarState();
+        setErrorMessage(undefined);
+        restoreMainWindow().finally(() => {
+          currentWindow.close().catch(
+            createErrorHandler({ operation: 'close toolbar window', silent: true })
+          );
+        });
+      }, 3000);
+    };
+
+    const handleRecordingStarted = (state: Extract<RecordingState, { status: 'recording' }>) => {
+      recordingLogger.debug('Received recording state, backend elapsedSecs:', state.elapsedSecs);
+      if (!isRecordingActiveRef.current) {
+        isRecordingActiveRef.current = true;
+        timerBaseTimeRef.current = 0;
+        timerStartedAtRef.current = null;
+        setElapsedTime(0);
+        recordingLogger.debug('Recording mode ACTIVATED, timer reset');
+      }
+      setMode('recording');
+    };
+
+    const handleRecordingProcessing = (
+      state: Extract<RecordingState, { status: 'processing' }>
+    ) => {
+      recordingLogger.debug('Received processing state - timer should stop now');
+      setMode('processing');
+      setProgress(state.progress);
+    };
+
+    const ignoreRecordingState = () => undefined;
+
+    const recordingStateHandlers = {
+      countdown: ignoreRecordingState,
+      starting: ignoreRecordingState,
+      recording: handleRecordingStarted,
+      paused: () => setMode('paused'),
+      processing: handleRecordingProcessing,
+      completed: handleRecordingCompleted,
+      idle: handleRecordingIdle,
+      error: handleRecordingError,
+    } satisfies {
+      [Status in RecordingState['status']]: (
+        state: Extract<RecordingState, { status: Status }>
+      ) => void;
+    };
+
+    const handleRecordingStateChanged = (state: RecordingState) => {
+      recordingStateHandlers[state.status](state as never);
+    };
+
     const setupListeners = async () => {
       // Recording state changes
       unlistenState = await listen<RecordingState>('recording-state-changed', (event) => {
-        const state = event.payload;
-
-        switch (state.status) {
-          case 'countdown':
-            // Backend countdown events are ignored for display purposes.
-            // The countdown overlay window drives ticks via 'countdown-tick' events
-            // to keep both the overlay and toolbar perfectly in sync.
-            break;
-
-          case 'recording':
-            recordingLogger.debug('Received recording state, backend elapsedSecs:', state.elapsedSecs);
-            if (!isRecordingActiveRef.current) {
-              // First time entering recording - reset timer
-              isRecordingActiveRef.current = true;
-              timerBaseTimeRef.current = 0;
-              timerStartedAtRef.current = null;
-              setElapsedTime(0);
-              recordingLogger.debug('Recording mode ACTIVATED, timer reset');
-            }
-            // Just set mode - timer effect handles the counting
-            // Don't setElapsedTime here to avoid jumps (timer effect manages display)
-            setMode('recording');
-            break;
-
-          case 'paused':
-            // Just set mode - timer effect cleanup saves current time to base
-            // Don't setElapsedTime here to avoid jumps
-            setMode('paused');
-            break;
-
-          case 'processing':
-            recordingLogger.debug('Received processing state - timer should stop now');
-            setMode('processing');
-            setProgress(state.progress);
-            break;
-
-          case 'completed': {
-            recordingLogger.info('Recording COMPLETED. Backend duration:', state.durationSecs, 's, file:', state.outputPath);
-            isRecordingActiveRef.current = false;
-            timerBaseTimeRef.current = 0;
-            timerStartedAtRef.current = null;
-            const closeWindowOnComplete = closeWindowOnCompleteRef?.current ?? false;
-            setMode('selection');
-            setElapsedTime(0);
-            setProgress(0);
-            Promise.all([
-              invoke('hide_recording_border').catch(
-                createErrorHandler({ operation: 'hide recording border', silent: true })
-              ),
-              invoke('hide_countdown_window').catch(
-                createErrorHandler({ operation: 'hide countdown window', silent: true })
-              ),
-              invoke('restore_main_window').catch(
-                createErrorHandler({ operation: 'restore main window', silent: true })
-              ),
-              closeWebcamPreview().catch(
-                createErrorHandler({ operation: 'close webcam preview', silent: true })
-              ),
-            ]).finally(() => {
-              emit('reset-to-startup', null).catch(
-                createErrorHandler({ operation: 'reset toolbar to startup', silent: true })
-              ).finally(() => {
-                if (closeWindowOnCompleteRef) {
-                  closeWindowOnCompleteRef.current = false;
-                }
-
-                if (closeWindowOnComplete) {
-                  currentWindow.close().catch(
-                    createErrorHandler({ operation: 'close toolbar window', silent: true })
-                  );
-                  return;
-                }
-
-                currentWindow.show().catch(
-                  createErrorHandler({ operation: 'show toolbar window', silent: true })
-                );
-                currentWindow.setFocus().catch(
-                  createErrorHandler({ operation: 'focus toolbar window', silent: true })
-                );
-              });
-            });
-            break;
-          }
-          case 'idle':
-            isRecordingActiveRef.current = false;
-            timerBaseTimeRef.current = 0;
-            timerStartedAtRef.current = null;
-            if (closeWindowOnCompleteRef) {
-              closeWindowOnCompleteRef.current = false;
-            }
-            setMode('selection');
-            setElapsedTime(0);
-            setProgress(0);
-            Promise.all([
-              invoke('hide_recording_border').catch(
-                createErrorHandler({ operation: 'hide recording border', silent: true })
-              ),
-              invoke('hide_countdown_window').catch(
-                createErrorHandler({ operation: 'hide countdown window', silent: true })
-              ),
-              invoke('restore_main_window').catch(
-                createErrorHandler({ operation: 'restore main window', silent: true })
-              ),
-              closeWebcamPreview().catch(
-                createErrorHandler({ operation: 'close webcam preview', silent: true })
-              ),
-            ]).finally(() => {
-              currentWindow.close().catch(
-                createErrorHandler({ operation: 'close toolbar window', silent: true })
-              );
-            });
-            break;
-
-          case 'error':
-            isRecordingActiveRef.current = false;
-            timerBaseTimeRef.current = 0;
-            timerStartedAtRef.current = null;
-            if (closeWindowOnCompleteRef) {
-              closeWindowOnCompleteRef.current = false;
-            }
-            setErrorMessage(state.message);
-            setMode('error');
-            invoke('hide_recording_border').catch(
-              createErrorHandler({ operation: 'hide recording border', silent: true })
-            );
-            invoke('hide_countdown_window').catch(
-              createErrorHandler({ operation: 'hide countdown window', silent: true })
-            );
-            closeWebcamPreview().catch(
-              createErrorHandler({ operation: 'close webcam preview', silent: true })
-            );
-            // Auto-recover after 3 seconds
-            errorRecoveryTimeout = setTimeout(() => {
-              errorRecoveryTimeout = null;
-              setMode('selection');
-              setElapsedTime(0);
-              setProgress(0);
-              setErrorMessage(undefined);
-              invoke('restore_main_window').catch(
-                createErrorHandler({ operation: 'restore main window', silent: true })
-              ).finally(() => {
-                currentWindow.close().catch(
-                  createErrorHandler({ operation: 'close toolbar window', silent: true })
-                );
-              });
-            }, 3000);
-            break;
-        }
+        handleRecordingStateChanged(event.payload);
       });
 
       // Countdown ticks from the self-driven countdown overlay window

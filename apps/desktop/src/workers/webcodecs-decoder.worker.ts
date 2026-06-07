@@ -106,94 +106,113 @@ async function handleInit(videoUrl: string, maxCacheSize: number): Promise<void>
 /**
  * Decode a frame and transfer ImageBitmap to main thread
  */
-async function decodeFrame(msg: DecodeFrameMessage): Promise<void> {
-  if (!sink) {
-    postTypedMessage({
-      type: 'frame-error',
+function postFrameError(msg: DecodeFrameMessage, error: string): void {
+  postTypedMessage({
+    type: 'frame-error',
+    requestId: msg.requestId,
+    timestampMs: msg.timestampMs,
+    error,
+  });
+}
+
+function postDecodedFrame(msg: DecodeFrameMessage, bitmap: ImageBitmap): void {
+  postTypedMessage(
+    {
+      type: 'frame-decoded',
       requestId: msg.requestId,
       timestampMs: msg.timestampMs,
-      error: 'Decoder not initialized',
-    });
-    return;
-  }
+      bitmap,
+    },
+    [bitmap]
+  );
+}
 
-  // Check worker-side cache first
-  const cacheKey = Math.round(msg.timestampMs);
+async function postCachedFrameIfAvailable(
+  msg: DecodeFrameMessage,
+  cacheKey: number
+): Promise<boolean> {
   const cached = workerFrameCache.get(cacheKey);
-  if (cached) {
-    try {
-      // Clone the bitmap for transfer (original stays in cache)
-      const clonedBitmap = await createImageBitmap(cached);
-      postTypedMessage(
-        {
-          type: 'frame-decoded',
-          requestId: msg.requestId,
-          timestampMs: msg.timestampMs,
-          bitmap: clonedBitmap,
-        },
-        [clonedBitmap]
-      );
-      return;
-    } catch {
-      // Cache entry invalid, remove it and decode fresh
-      workerFrameCache.delete(cacheKey);
-    }
+  if (!cached) {
+    return false;
   }
 
   try {
-    const timestampSec = msg.timestampMs / 1000;
-    const sample = await sink.getSample(timestampSec);
+    // Clone the bitmap for transfer (original stays in cache)
+    postDecodedFrame(msg, await createImageBitmap(cached));
+    return true;
+  } catch {
+    // Cache entry invalid, remove it and decode fresh
+    workerFrameCache.delete(cacheKey);
+    return false;
+  }
+}
 
-    if (sample) {
-      if (isDisposed) {
-        sample.close();
-        return;
-      }
-      const videoFrame = sample.toVideoFrame();
-      const bitmap = await createImageBitmap(videoFrame);
-      videoFrame.close();
-      sample.close();
+function evictOldestWorkerFrameIfNeeded(): void {
+  if (workerFrameCache.size < WORKER_CACHE_SIZE) {
+    return;
+  }
 
-      // Store in worker cache
-      if (workerFrameCache.size >= WORKER_CACHE_SIZE) {
-        // Evict oldest entry
-        const firstKey = workerFrameCache.keys().next().value;
-        if (firstKey !== undefined) {
-          const evicted = workerFrameCache.get(firstKey);
-          evicted?.close();
-          workerFrameCache.delete(firstKey);
-          postTypedMessage({ type: 'cache-evicted', timestampMs: firstKey });
-        }
-      }
+  const firstKey = workerFrameCache.keys().next().value;
+  if (firstKey === undefined) {
+    return;
+  }
 
-      // Clone for cache, transfer original
-      const cacheClone = await createImageBitmap(bitmap);
-      workerFrameCache.set(cacheKey, cacheClone);
+  const evicted = workerFrameCache.get(firstKey);
+  evicted?.close();
+  workerFrameCache.delete(firstKey);
+  postTypedMessage({ type: 'cache-evicted', timestampMs: firstKey });
+}
 
-      postTypedMessage(
-        {
-          type: 'frame-decoded',
-          requestId: msg.requestId,
-          timestampMs: msg.timestampMs,
-          bitmap,
-        },
-        [bitmap]
-      );
-    } else {
-      postTypedMessage({
-        type: 'frame-error',
-        requestId: msg.requestId,
-        timestampMs: msg.timestampMs,
-        error: 'No sample at timestamp',
-      });
+async function cacheDecodedFrame(cacheKey: number, bitmap: ImageBitmap): Promise<void> {
+  evictOldestWorkerFrameIfNeeded();
+  workerFrameCache.set(cacheKey, await createImageBitmap(bitmap));
+}
+
+async function createBitmapFromSample(sample: {
+  toVideoFrame: () => VideoFrame;
+  close: () => void;
+}): Promise<ImageBitmap | null> {
+  if (isDisposed) {
+    sample.close();
+    return null;
+  }
+
+  const videoFrame = sample.toVideoFrame();
+  try {
+    return await createImageBitmap(videoFrame);
+  } finally {
+    videoFrame.close();
+    sample.close();
+  }
+}
+
+async function decodeFrame(msg: DecodeFrameMessage): Promise<void> {
+  if (!sink) {
+    postFrameError(msg, 'Decoder not initialized');
+    return;
+  }
+
+  const cacheKey = Math.round(msg.timestampMs);
+  if (await postCachedFrameIfAvailable(msg, cacheKey)) {
+    return;
+  }
+
+  try {
+    const sample = await sink.getSample(msg.timestampMs / 1000);
+    if (!sample) {
+      postFrameError(msg, 'No sample at timestamp');
+      return;
     }
+
+    const bitmap = await createBitmapFromSample(sample);
+    if (!bitmap) {
+      return;
+    }
+
+    await cacheDecodedFrame(cacheKey, bitmap);
+    postDecodedFrame(msg, bitmap);
   } catch (err) {
-    postTypedMessage({
-      type: 'frame-error',
-      requestId: msg.requestId,
-      timestampMs: msg.timestampMs,
-      error: err instanceof Error ? err.message : 'Decode failed',
-    });
+    postFrameError(msg, err instanceof Error ? err.message : 'Decode failed');
   }
 }
 

@@ -31,6 +31,10 @@ interface MeasuredSize {
   fromContent: boolean;
 }
 
+interface MutableCurrent<T> {
+  current: T;
+}
+
 interface UseToolbarPositioningOptions {
   /** Ref to the full container (app-container) for height measurement */
   containerRef: React.RefObject<HTMLDivElement | null>;
@@ -53,6 +57,177 @@ interface UseToolbarPositioningOptions {
   onContentSized?: () => void;
 }
 
+function getStartupToolbarFallback(): MeasuredSize {
+  return {
+    width: LAYOUT.CAPTURE_TOOLBAR_STARTUP_WIDTH,
+    height: LAYOUT.CAPTURE_TOOLBAR_STARTUP_HEIGHT,
+    fromContent: false,
+  };
+}
+
+function getElementWidth(element: Element | null): number {
+  return element?.getBoundingClientRect().width ?? 0;
+}
+
+function getCssPixelValue(style: CSSStyleDeclaration, property: keyof CSSStyleDeclaration): number {
+  const value = style[property];
+  return typeof value === 'string' ? Number.parseFloat(value) || 0 : 0;
+}
+
+function getHorizontalChromeWidth(style: CSSStyleDeclaration): number {
+  return (
+    getCssPixelValue(style, 'paddingLeft') +
+    getCssPixelValue(style, 'paddingRight') +
+    getCssPixelValue(style, 'borderLeftWidth') +
+    getCssPixelValue(style, 'borderRightWidth')
+  );
+}
+
+function measureTitlebarWidth(container: HTMLDivElement): number {
+  const titlebar = container.querySelector<HTMLElement>('.titlebar');
+  if (!titlebar) return 0;
+
+  const titlebarLeft = titlebar.querySelector<HTMLElement>('.titlebar-left');
+  const titlebarControls = titlebar.querySelector<HTMLElement>('.titlebar-controls');
+  const titlebarStyle = window.getComputedStyle(titlebar);
+
+  return (
+    getElementWidth(titlebarLeft) +
+    getElementWidth(titlebarControls) +
+    getHorizontalChromeWidth(titlebarStyle)
+  );
+}
+
+function getMeasuredToolbarSize(
+  container: HTMLDivElement,
+  content: HTMLDivElement,
+  isStartupToolbar: boolean
+): MeasuredSize {
+  const contentRect = content.getBoundingClientRect();
+  const containerRect = container.getBoundingClientRect();
+  const measuredWidth = Math.max(contentRect.width, measureTitlebarWidth(container));
+  const measuredHeight = containerRect.height;
+  const fromContent = measuredWidth > 0 && measuredHeight > 0;
+
+  if (!isStartupToolbar) {
+    return { width: measuredWidth, height: measuredHeight, fromContent };
+  }
+
+  return {
+    width: Math.max(measuredWidth, LAYOUT.CAPTURE_TOOLBAR_STARTUP_WIDTH),
+    height:
+      measuredHeight > 0
+        ? measuredHeight
+        : LAYOUT.CAPTURE_TOOLBAR_STARTUP_HEIGHT,
+    fromContent,
+  };
+}
+
+function hasPositiveMeasuredSize({ width, height }: MeasuredSize) {
+  return width > 0 && height > 0;
+}
+
+function hasToolbarSizeChanged(
+  measured: MeasuredSize,
+  lastSize: { width: number; height: number }
+) {
+  return measured.width !== lastSize.width || measured.height !== lastSize.height;
+}
+
+function shouldApplyMeasuredSize(measured: MeasuredSize | null): measured is MeasuredSize {
+  return measured !== null && hasPositiveMeasuredSize(measured);
+}
+
+async function resizeToolbarToMeasuredSize(
+  measured: MeasuredSize,
+  lastSizeRef: MutableCurrent<{ width: number; height: number }>
+) {
+  if (!hasPositiveMeasuredSize(measured) || !hasToolbarSizeChanged(measured, lastSizeRef.current)) {
+    return;
+  }
+
+  const { width, height } = measured;
+  lastSizeRef.current = { width, height };
+
+  await invoke('resize_capture_toolbar', {
+    width: Math.ceil(width) + 1,
+    height: Math.ceil(height) + 1,
+  });
+}
+
+function shouldNotifyFirstContentSize(
+  measured: MeasuredSize,
+  contentSizedRef: MutableCurrent<boolean>
+) {
+  return measured.fromContent && hasPositiveMeasuredSize(measured) && !contentSizedRef.current;
+}
+
+function notifyFirstContentSize(
+  measured: MeasuredSize,
+  contentSizedRef: MutableCurrent<boolean>,
+  onContentSizedRef: MutableCurrent<(() => void) | undefined>
+) {
+  if (!shouldNotifyFirstContentSize(measured, contentSizedRef)) {
+    return;
+  }
+
+  contentSizedRef.current = true;
+  onContentSizedRef.current?.();
+}
+
+async function getToolbarWindowVisibility(
+  currentWindow: ReturnType<typeof getCurrentWebviewWindow>,
+  windowShownRef: MutableCurrent<boolean>
+) {
+  return currentWindow.isVisible().catch(() => windowShownRef.current);
+}
+
+async function hideToolbarWindowIfVisible(
+  currentWindow: ReturnType<typeof getCurrentWebviewWindow>,
+  isVisible: boolean,
+  windowShownRef: MutableCurrent<boolean>
+) {
+  if (isVisible) {
+    await currentWindow.hide();
+  }
+  windowShownRef.current = false;
+}
+
+function canRevealToolbarWindow(
+  windowReadyToShow: boolean,
+  contentSizedRef: MutableCurrent<boolean>,
+  safetyShowRef: MutableCurrent<boolean>
+) {
+  return windowReadyToShow && (contentSizedRef.current || safetyShowRef.current);
+}
+
+async function showToolbarWindow(
+  currentWindow: ReturnType<typeof getCurrentWebviewWindow>,
+  windowShownRef: MutableCurrent<boolean>
+) {
+  await currentWindow.show();
+  await currentWindow.setFocus().catch(() => {});
+  windowShownRef.current = true;
+}
+
+function isStartupToolbarMode(selectionConfirmed: boolean | undefined, mode: string | undefined) {
+  return !selectionConfirmed && mode === 'selection';
+}
+
+function getToolbarMeasurementTarget(
+  containerRef: React.RefObject<HTMLDivElement | null>,
+  contentRef: React.RefObject<HTMLDivElement | null>
+) {
+  const container = containerRef.current;
+  const content = contentRef.current;
+
+  return container && content ? { container, content } : null;
+}
+
+function getMissingToolbarTargetSize(isStartupToolbar: boolean): MeasuredSize | null {
+  return isStartupToolbar ? getStartupToolbarFallback() : null;
+}
+
 export function useToolbarPositioning({
   containerRef,
   contentRef,
@@ -73,62 +248,12 @@ export function useToolbarPositioning({
   onContentSizedRef.current = onContentSized;
 
   const measureTargetSize = useCallback((): MeasuredSize | null => {
-    const isStartupToolbar = !selectionConfirmed && mode === 'selection';
-    const container = containerRef.current;
-    const content = contentRef.current;
-    if (!container || !content) {
-      return isStartupToolbar
-        ? {
-            width: LAYOUT.CAPTURE_TOOLBAR_STARTUP_WIDTH,
-            height: LAYOUT.CAPTURE_TOOLBAR_STARTUP_HEIGHT,
-            fromContent: false,
-          }
-        : null;
-    }
+    const isStartupToolbar = isStartupToolbarMode(selectionConfirmed, mode);
+    const target = getToolbarMeasurementTarget(containerRef, contentRef);
 
-    const contentRect = content.getBoundingClientRect();
-    const containerRect = container.getBoundingClientRect();
-    const titlebar = container.querySelector<HTMLElement>('.titlebar');
-    let titlebarWidth = 0;
-
-    if (titlebar) {
-      const titlebarLeft = titlebar.querySelector<HTMLElement>('.titlebar-left');
-      const titlebarControls = titlebar.querySelector<HTMLElement>('.titlebar-controls');
-      const titlebarStyle = window.getComputedStyle(titlebar);
-
-      const leftWidth = titlebarLeft?.getBoundingClientRect().width ?? 0;
-      const controlsWidth = titlebarControls?.getBoundingClientRect().width ?? 0;
-      const horizontalChrome =
-        (Number.parseFloat(titlebarStyle.paddingLeft) || 0) +
-        (Number.parseFloat(titlebarStyle.paddingRight) || 0) +
-        (Number.parseFloat(titlebarStyle.borderLeftWidth) || 0) +
-        (Number.parseFloat(titlebarStyle.borderRightWidth) || 0);
-
-      titlebarWidth = leftWidth + controlsWidth + horizontalChrome;
-    }
-
-    const measuredWidth = Math.max(contentRect.width, titlebarWidth);
-    const measuredHeight = containerRect.height;
-    const fromContent = measuredWidth > 0 && measuredHeight > 0;
-
-    if (isStartupToolbar) {
-      // Startup size should be content-driven once the toolbar has mounted.
-      // The constants remain as a fallback before refs are available.
-      return {
-        width: Math.max(measuredWidth, LAYOUT.CAPTURE_TOOLBAR_STARTUP_WIDTH),
-        height:
-          measuredHeight > 0
-            ? measuredHeight
-            : LAYOUT.CAPTURE_TOOLBAR_STARTUP_HEIGHT,
-        fromContent,
-      };
-    }
-
-    return {
-      width: measuredWidth,
-      height: measuredHeight,
-      fromContent,
-    };
+    return target
+      ? getMeasuredToolbarSize(target.container, target.content, isStartupToolbar)
+      : getMissingToolbarTargetSize(isStartupToolbar);
   }, [containerRef, contentRef, mode, selectionConfirmed]);
 
   useEffect(() => {
@@ -140,26 +265,18 @@ export function useToolbarPositioning({
 
     const syncWindowVisibility = async () => {
       const currentWindow = getCurrentWebviewWindow();
-      const isVisible = await currentWindow.isVisible().catch(() => windowShownRef.current);
+      const isVisible = await getToolbarWindowVisibility(currentWindow, windowShownRef);
 
       if (suppressWindowShow) {
-        if (isVisible) {
-          await currentWindow.hide();
-        }
-        windowShownRef.current = false;
+        await hideToolbarWindowIfVisible(currentWindow, isVisible, windowShownRef);
         return;
       }
 
       // Never reveal the window until it has been sized to its content, so we
       // don't flash the fallback bounds and clip the toolbar. The safety timeout
       // overrides this if a measurement is somehow never produced.
-      const canShow = contentSizedRef.current || safetyShowRef.current;
-      const shouldShowWindow = windowReadyToShow && canShow;
-
-      if (shouldShowWindow && !isVisible) {
-        await currentWindow.show();
-        await currentWindow.setFocus().catch(() => {});
-        windowShownRef.current = true;
+      if (canRevealToolbarWindow(windowReadyToShow, contentSizedRef, safetyShowRef) && !isVisible) {
+        await showToolbarWindow(currentWindow, windowShownRef);
         return;
       }
 
@@ -173,25 +290,11 @@ export function useToolbarPositioning({
           return;
         }
 
-        const { width, height, fromContent } = measured;
-        const sizeChanged =
-          width !== lastSizeRef.current.width || height !== lastSizeRef.current.height;
-
-        if (width > 0 && height > 0 && sizeChanged) {
-          lastSizeRef.current = { width, height };
-
-          await invoke('resize_capture_toolbar', {
-            width: Math.ceil(width) + 1,
-            height: Math.ceil(height) + 1,
-          });
-        }
+        await resizeToolbarToMeasuredSize(measured, lastSizeRef);
 
         // Mark sized only once a real content measurement has been applied, then
         // notify consumers so their own show paths can finally reveal the window.
-        if (fromContent && width > 0 && height > 0 && !contentSizedRef.current) {
-          contentSizedRef.current = true;
-          onContentSizedRef.current?.();
-        }
+        notifyFirstContentSize(measured, contentSizedRef, onContentSizedRef);
 
         await syncWindowVisibility();
       } catch (e) {
@@ -202,7 +305,7 @@ export function useToolbarPositioning({
     const remeasure = () => {
       if (cancelled) return;
       const measured = measureTargetSize();
-      if (measured && measured.width > 0 && measured.height > 0) {
+      if (shouldApplyMeasuredSize(measured)) {
         void applyMeasuredSize(measured);
       }
     };

@@ -13,6 +13,7 @@ import {
 import { usePreviewOrPlaybackTimeThrottled } from '../../hooks/usePlaybackTimeThrottled';
 import { useScaledLayout } from '@/hooks/useParityLayout';
 import { remapCaptionSegmentsToTimeline } from '@/utils/captionTimeline';
+import type { CaptionSettings } from '../../types';
 
 interface CaptionOverlayProps {
   containerWidth: number;
@@ -20,6 +21,31 @@ interface CaptionOverlayProps {
   videoWidth: number;
   videoHeight: number;
 }
+
+type TimelineCaptionSegment = ReturnType<typeof remapCaptionSegmentsToTimeline>[number];
+type ScaledCaptionLayout = NonNullable<ReturnType<typeof useScaledLayout>>;
+
+const SYSTEM_SANS_STACK = 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+const SANS_FONT_ALIASES = new Set([
+  '',
+  'sans',
+  'sans-serif',
+  'system sans',
+  'system sans-serif',
+  'system-ui',
+]);
+const SERIF_FONT_ALIASES = new Set(['serif', 'system serif']);
+const MONO_FONT_ALIASES = new Set([
+  'mono',
+  'monospace',
+  'system mono',
+  'system monospace',
+]);
+const CAPTION_FONT_ALIAS_GROUPS = [
+  { aliases: SANS_FONT_ALIASES, family: SYSTEM_SANS_STACK },
+  { aliases: SERIF_FONT_ALIASES, family: 'serif' },
+  { aliases: MONO_FONT_ALIASES, family: 'monospace' },
+];
 
 function getCaptionTextContent(
   segment: { text: string; words: Array<{ text: string }> }
@@ -32,32 +58,9 @@ function getCaptionTextContent(
 
 function resolveCaptionFontFamily(font: string | undefined): string {
   const normalized = font?.trim().toLowerCase() ?? '';
+  const aliasGroup = CAPTION_FONT_ALIAS_GROUPS.find(({ aliases }) => aliases.has(normalized));
 
-  if (
-    normalized === '' ||
-    normalized === 'sans' ||
-    normalized === 'sans-serif' ||
-    normalized === 'system sans' ||
-    normalized === 'system sans-serif' ||
-    normalized === 'system-ui'
-  ) {
-    return 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
-  }
-
-  if (normalized === 'serif' || normalized === 'system serif') {
-    return 'serif';
-  }
-
-  if (
-    normalized === 'mono' ||
-    normalized === 'monospace' ||
-    normalized === 'system mono' ||
-    normalized === 'system monospace'
-  ) {
-    return 'monospace';
-  }
-
-  return `${font}, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif`;
+  return aliasGroup?.family ?? `${font}, ${SYSTEM_SANS_STACK}`;
 }
 
 function normalizeHexColor(hex: string): string {
@@ -105,27 +108,75 @@ function blendRgb(
   return `rgb(${mix(base[0], highlight[0])}, ${mix(base[1], highlight[1])}, ${mix(base[2], highlight[2])})`;
 }
 
+function isTimeWithinWord(word: { start: number; end: number }, currentTimeSecs: number): boolean {
+  return currentTimeSecs >= word.start && currentTimeSecs <= word.end;
+}
+
+function getDistanceFromWord(word: { start: number; end: number }, currentTimeSecs: number): number {
+  if (currentTimeSecs < word.start) {
+    return word.start - currentTimeSecs;
+  }
+
+  return currentTimeSecs - word.end;
+}
+
+function getTransitionHighlightFactor(distance: number, duration: number): number {
+  return distance < duration ? 1 - distance / duration : 0;
+}
+
 function calculateWordHighlightFactor(
   word: { start: number; end: number },
   currentTimeSecs: number,
   transitionDuration: number
 ): number {
-  const duration = Math.max(0, transitionDuration);
-  if (duration === 0) {
-    return currentTimeSecs >= word.start && currentTimeSecs <= word.end ? 1 : 0;
-  }
-
-  if (currentTimeSecs >= word.start && currentTimeSecs <= word.end) {
+  if (isTimeWithinWord(word, currentTimeSecs)) {
     return 1;
   }
 
-  if (currentTimeSecs < word.start) {
-    const distance = word.start - currentTimeSecs;
-    return distance < duration ? 1 - distance / duration : 0;
+  const duration = Math.max(0, transitionDuration);
+  if (duration === 0) {
+    return 0;
   }
 
-  const distance = currentTimeSecs - word.end;
-  return distance < duration ? 1 - distance / duration : 0;
+  return getTransitionHighlightFactor(getDistanceFromWord(word, currentTimeSecs), duration);
+}
+
+function clampUnit(value: number): number {
+  return Math.max(0, Math.min(1, value));
+}
+
+function getSegmentVisibleEnd(
+  segment: { end: number },
+  lingerDuration: number
+): number {
+  return segment.end + Math.max(0, lingerDuration);
+}
+
+function isTimeWithinSegmentWindow(
+  segment: { start: number },
+  currentTimeSecs: number,
+  visibleEnd: number
+): boolean {
+  return currentTimeSecs >= segment.start && currentTimeSecs <= visibleEnd;
+}
+
+function getSegmentFadeOpacity({
+  fade,
+  visibleDuration,
+  timeSinceStart,
+  timeUntilEnd,
+}: {
+  fade: number;
+  visibleDuration: number;
+  timeSinceStart: number;
+  timeUntilEnd: number;
+}): number {
+  const canFadeOut = visibleDuration > fade * 2;
+  if (timeSinceStart < fade) {
+    return clampUnit(timeSinceStart / fade);
+  }
+
+  return canFadeOut && timeUntilEnd < fade ? clampUnit(timeUntilEnd / fade) : 1;
 }
 
 function calculateSegmentOpacity(
@@ -134,9 +185,8 @@ function calculateSegmentOpacity(
   fadeDuration: number,
   lingerDuration: number
 ): number {
-  const linger = Math.max(0, lingerDuration);
-  const visibleEnd = segment.end + linger;
-  if (currentTimeSecs < segment.start || currentTimeSecs > visibleEnd) {
+  const visibleEnd = getSegmentVisibleEnd(segment, lingerDuration);
+  if (!isTimeWithinSegmentWindow(segment, currentTimeSecs, visibleEnd)) {
     return 0;
   }
 
@@ -149,15 +199,327 @@ function calculateSegmentOpacity(
   const timeSinceStart = currentTimeSecs - segment.start;
   const timeUntilEnd = visibleEnd - currentTimeSecs;
 
-  if (timeSinceStart < fade) {
-    return Math.max(0, Math.min(1, timeSinceStart / fade));
-  }
+  return getSegmentFadeOpacity({ fade, visibleDuration, timeSinceStart, timeUntilEnd });
+}
 
-  if (timeUntilEnd < fade && visibleDuration > fade * 2) {
-    return Math.max(0, Math.min(1, timeUntilEnd / fade));
-  }
+function getActiveCaptionSegment({
+  enabled,
+  segments,
+  currentTimeSecs,
+  lingerDuration,
+}: {
+  enabled: boolean;
+  segments: ReturnType<typeof remapCaptionSegmentsToTimeline>;
+  currentTimeSecs: number;
+  lingerDuration: number | undefined;
+}) {
+  if (!canFindActiveCaptionSegment(enabled, segments)) return null;
 
-  return 1;
+  const linger = getNormalizedLingerDuration(lingerDuration);
+  return segments.find((segment) => isCaptionSegmentActive(segment, currentTimeSecs, linger)) || null;
+}
+
+function canFindActiveCaptionSegment(
+  enabled: boolean,
+  segments: ReturnType<typeof remapCaptionSegmentsToTimeline>,
+) {
+  return enabled && segments.length > 0;
+}
+
+function getNormalizedLingerDuration(lingerDuration: number | undefined) {
+  return Math.max(0, lingerDuration || 0);
+}
+
+function isCaptionSegmentActive(
+  segment: TimelineCaptionSegment,
+  currentTimeSecs: number,
+  linger: number,
+) {
+  return currentTimeSecs >= segment.start && currentTimeSecs <= segment.end + linger;
+}
+
+function getCaptionBackgroundColor(color: string | undefined, opacityPercent: number | undefined) {
+  const opacity = (opacityPercent || 0) / 100;
+  return opacity > 0 ? hexWithOpacity(color || '#000000', opacity) : 'transparent';
+}
+
+function getCaptionBackgroundTop({
+  position,
+  padding,
+  containerHeight,
+  lineHeight,
+  bgPaddingV,
+}: {
+  position: string;
+  padding: number;
+  containerHeight: number;
+  lineHeight: number;
+  bgPaddingV: number;
+}) {
+  return position === 'top'
+    ? padding
+    : containerHeight - padding - lineHeight - bgPaddingV * 2;
+}
+
+function renderCaptionText({
+  captionText,
+  words,
+  currentTimeSecs,
+  color,
+  highlightColor,
+  wordTransitionDuration,
+}: {
+  captionText: string;
+  words: Array<{ text: string; start: number; end: number }>;
+  currentTimeSecs: number;
+  color: string;
+  highlightColor: string;
+  wordTransitionDuration: number;
+}) {
+  if (color === highlightColor || words.length === 0) return captionText;
+
+  const baseRgb = hexToRgb(color);
+  const highlightRgb = hexToRgb(highlightColor);
+  return words.map((word, idx) => (
+    <span
+      key={idx}
+      style={{
+        color: blendRgb(
+          baseRgb,
+          highlightRgb,
+          calculateWordHighlightFactor(word, currentTimeSecs, wordTransitionDuration)
+        ),
+      }}
+    >
+      {word.text}
+      {idx < words.length - 1 ? ' ' : ''}
+    </span>
+  ));
+}
+
+function getCaptionOverlayLayout({
+  containerWidth,
+  containerHeight,
+  captionSettings,
+  scaledLayout,
+}: {
+  containerWidth: number;
+  containerHeight: number;
+  captionSettings: CaptionSettings;
+  scaledLayout: ScaledCaptionLayout;
+}) {
+  const {
+    scale: scaleFactor,
+    captionPadding: padding,
+    captionBgPaddingH: bgPaddingH,
+    captionBgPaddingV: bgPaddingV,
+    captionCornerRadius: cornerRadius,
+    lineHeightMultiplier,
+  } = scaledLayout;
+  const fontSize = captionSettings.size * scaleFactor;
+  const lineHeight = fontSize * lineHeightMultiplier;
+
+  return {
+    fontSize,
+    bgPaddingH,
+    bgPaddingV,
+    cornerRadius,
+    lineHeightMultiplier,
+    maxTextWidth: containerWidth - (padding * 2),
+    backgroundTop: getCaptionBackgroundTop({
+      position: captionSettings.position,
+      padding,
+      containerHeight,
+      lineHeight,
+      bgPaddingV,
+    }),
+  };
+}
+
+function getCaptionShellStyle(
+  backgroundTop: number,
+  segmentOpacity: number
+): React.CSSProperties {
+  return {
+    top: `${backgroundTop}px`,
+    zIndex: 50,
+    opacity: segmentOpacity,
+  };
+}
+
+function getCaptionBackgroundStyle({
+  backgroundColor,
+  backgroundOpacity,
+  bgPaddingH,
+  bgPaddingV,
+  cornerRadius,
+  maxTextWidth,
+}: {
+  backgroundColor: string;
+  backgroundOpacity: number | undefined;
+  bgPaddingH: number;
+  bgPaddingV: number;
+  cornerRadius: number;
+  maxTextWidth: number;
+}): React.CSSProperties {
+  const hasBackground = (backgroundOpacity || 0) > 0;
+
+  return {
+    backgroundColor,
+    padding: hasBackground ? `${bgPaddingV}px ${bgPaddingH}px` : '0',
+    borderRadius: hasBackground ? `${cornerRadius}px` : '0',
+    maxWidth: `${maxTextWidth}px`,
+    textAlign: 'center',
+  };
+}
+
+function getCaptionTextStyle({
+  captionSettings,
+  fontSize,
+  lineHeightMultiplier,
+}: {
+  captionSettings: CaptionSettings;
+  fontSize: number;
+  lineHeightMultiplier: number;
+}): React.CSSProperties {
+  return {
+    fontFamily: resolveCaptionFontFamily(captionSettings.font),
+    fontSize: `${fontSize}px`,
+    fontWeight: captionSettings.fontWeight || 700,
+    fontStyle: captionSettings.italic ? 'italic' : 'normal',
+    color: captionSettings.color,
+    textShadow: 'none',
+    lineHeight: lineHeightMultiplier,
+  };
+}
+
+function CaptionOverlayContent({
+  activeSegment,
+  segmentOpacity,
+  captionSettings,
+  scaledLayout,
+  containerWidth,
+  containerHeight,
+  currentTimeSecs,
+}: {
+  activeSegment: TimelineCaptionSegment;
+  segmentOpacity: number;
+  captionSettings: CaptionSettings;
+  scaledLayout: ScaledCaptionLayout;
+  containerWidth: number;
+  containerHeight: number;
+  currentTimeSecs: number;
+}) {
+  const overlayLayout = getCaptionOverlayLayout({
+    containerWidth,
+    containerHeight,
+    captionSettings,
+    scaledLayout,
+  });
+  const captionText = getCaptionTextContent(activeSegment);
+  const renderedText = renderCaptionText({
+    captionText,
+    words: activeSegment.words,
+    currentTimeSecs,
+    color: captionSettings.color,
+    highlightColor: captionSettings.highlightColor,
+    wordTransitionDuration: captionSettings.wordTransitionDuration,
+  });
+  const backgroundColor = getCaptionBackgroundColor(
+    captionSettings.backgroundColor,
+    captionSettings.backgroundOpacity
+  );
+
+  return (
+    <div
+      className="absolute left-0 right-0 flex justify-center pointer-events-none"
+      style={getCaptionShellStyle(overlayLayout.backgroundTop, segmentOpacity)}
+    >
+      <div
+        style={getCaptionBackgroundStyle({
+          backgroundColor,
+          backgroundOpacity: captionSettings.backgroundOpacity,
+          bgPaddingH: overlayLayout.bgPaddingH,
+          bgPaddingV: overlayLayout.bgPaddingV,
+          cornerRadius: overlayLayout.cornerRadius,
+          maxTextWidth: overlayLayout.maxTextWidth,
+        })}
+      >
+        <span
+          style={getCaptionTextStyle({
+            captionSettings,
+            fontSize: overlayLayout.fontSize,
+            lineHeightMultiplier: overlayLayout.lineHeightMultiplier,
+          })}
+        >
+          {renderedText}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function useActiveCaptionOverlayState({
+  captionSettings,
+  timelineCaptionSegments,
+  currentTimeSecs,
+  scaledLayout,
+}: {
+  captionSettings: CaptionSettings;
+  timelineCaptionSegments: ReturnType<typeof remapCaptionSegmentsToTimeline>;
+  currentTimeSecs: number;
+  scaledLayout: ScaledCaptionLayout | null;
+}) {
+  const activeSegment = useMemo(() => getActiveCaptionSegment({
+    enabled: captionSettings.enabled,
+    segments: timelineCaptionSegments,
+    currentTimeSecs,
+    lingerDuration: captionSettings.lingerDuration,
+  }), [
+    captionSettings.enabled,
+    captionSettings.lingerDuration,
+    currentTimeSecs,
+    timelineCaptionSegments,
+  ]);
+
+  const segmentOpacity = activeSegment
+    ? calculateSegmentOpacity(
+      activeSegment,
+      currentTimeSecs,
+      captionSettings.fadeDuration,
+      captionSettings.lingerDuration
+    )
+    : 0;
+
+  return {
+    activeSegment,
+    segmentOpacity,
+    canRender: canRenderCaptionOverlay({
+      enabled: captionSettings.enabled,
+      activeSegment,
+      scaledLayout,
+      segmentOpacity,
+    }),
+  };
+}
+
+function canRenderCaptionOverlay({
+  enabled,
+  activeSegment,
+  scaledLayout,
+  segmentOpacity,
+}: {
+  enabled: boolean;
+  activeSegment: TimelineCaptionSegment | null;
+  scaledLayout: ScaledCaptionLayout | null;
+  segmentOpacity: number;
+}) {
+  return [
+    enabled,
+    activeSegment !== null,
+    scaledLayout !== null,
+    segmentOpacity > 0.001,
+  ].every(Boolean);
 }
 
 export const CaptionOverlay = memo(function CaptionOverlay({
@@ -174,154 +536,29 @@ export const CaptionOverlay = memo(function CaptionOverlay({
     [captionSegments, timelineSegments]
   );
 
-  // Use parity system for layout values (synced with Rust export)
-  // Must be called before any early returns to respect React hooks rules
   const scaledLayout = useScaledLayout(containerHeight);
 
-  // Find active caption segment
-  const activeSegment = useMemo(() => {
-    if (!captionSettings.enabled || timelineCaptionSegments.length === 0) {
-      return null;
-    }
-    const lingerDuration = Math.max(0, captionSettings.lingerDuration || 0);
-    return timelineCaptionSegments.find(
-      (s) => currentTimeSecs >= s.start && currentTimeSecs <= s.end + lingerDuration
-    ) || null;
-  }, [
-    captionSettings.enabled,
-    captionSettings.lingerDuration,
-    currentTimeSecs,
+  const { activeSegment, segmentOpacity, canRender } = useActiveCaptionOverlayState({
+    captionSettings,
     timelineCaptionSegments,
-  ]);
-
-  // Don't render if captions are disabled, no active segment, or layout not loaded
-  if (!captionSettings.enabled || !activeSegment || !scaledLayout) {
-    return null;
-  }
-
-  const segmentOpacity = calculateSegmentOpacity(
-    activeSegment,
     currentTimeSecs,
-    captionSettings.fadeDuration,
-    captionSettings.lingerDuration
-  );
-  if (segmentOpacity <= 0.001) {
+    scaledLayout,
+  });
+
+  if (!canRender || !activeSegment || !scaledLayout) {
     return null;
   }
-
-  const {
-    scale: scaleFactor,
-    captionPadding: padding,
-    captionBgPaddingH: bgPaddingH,
-    captionBgPaddingV: bgPaddingV,
-    captionCornerRadius: cornerRadius,
-    lineHeightMultiplier
-  } = scaledLayout;
-
-  const fontSize = captionSettings.size * scaleFactor;
-  const maxTextWidth = containerWidth - (padding * 2);
-
-  // Calculate background color with opacity
-  const bgColor = captionSettings.backgroundColor || '#000000';
-  const bgOpacity = (captionSettings.backgroundOpacity || 0) / 100;
-  const backgroundColor = bgOpacity > 0
-    ? hexWithOpacity(bgColor, bgOpacity)
-    : 'transparent';
-
-  // Position style - calculate exact Y position to match Rust export
-  // Rust calculates text_top position. CSS inner div has padding that offsets text.
-  // So we position the BACKGROUND div and let CSS padding position the text.
-  //
-  // For bottom: background_bottom at (output_height - padding)
-  //   → background_top = output_height - padding - line_height - bgPaddingV*2
-  // For top: background_top at padding
-  //   → background_top = padding
-  const isTop = captionSettings.position === 'top';
-  const lineHeight = fontSize * lineHeightMultiplier;
-
-  // Calculate where background div top should be (text will be offset by bgPaddingV inside)
-  const backgroundTop = isTop
-    ? padding
-    : containerHeight - padding - lineHeight - bgPaddingV * 2;
-
-  const positionStyle: React.CSSProperties = { top: `${backgroundTop}px` };
-
-  const captionText = getCaptionTextContent(activeSegment);
-
-  // Render words with highlighting
-  const renderText = () => {
-    if (
-      captionSettings.color === captionSettings.highlightColor ||
-      activeSegment.words.length === 0
-    ) {
-      // Match export: use words-joined content when words are present.
-      return captionText;
-    }
-
-    const baseRgb = hexToRgb(captionSettings.color);
-    const highlightRgb = hexToRgb(captionSettings.highlightColor);
-
-    // Render with word highlighting
-    return activeSegment.words.map((word, idx) => (
-      <span
-        key={idx}
-        style={{
-          color: blendRgb(
-            baseRgb,
-            highlightRgb,
-            calculateWordHighlightFactor(
-              word,
-              currentTimeSecs,
-              captionSettings.wordTransitionDuration
-            )
-          ),
-        }}
-      >
-        {word.text}
-        {idx < activeSegment.words.length - 1 ? ' ' : ''}
-      </span>
-    ));
-  };
-
-  // Export TextLayer uses parity padding values (16px H/V at 1080p, scaled by height).
-  // Background wraps tightly around measured text size + padding.
 
   return (
-    <div
-      className="absolute left-0 right-0 flex justify-center pointer-events-none"
-      style={{
-        ...positionStyle,
-        zIndex: 50,
-        opacity: segmentOpacity,
-      }}
-    >
-      <div
-        style={{
-          backgroundColor,
-          // Match TextLayer: padding and corner radius scale with resolution
-          padding: bgOpacity > 0 ? `${bgPaddingV}px ${bgPaddingH}px` : '0',
-          borderRadius: bgOpacity > 0 ? `${cornerRadius}px` : '0',
-          maxWidth: `${maxTextWidth}px`,
-          textAlign: 'center',
-        }}
-      >
-        <span
-          style={{
-            // Resolve font family names to match glyphon's family mapping.
-            fontFamily: resolveCaptionFontFamily(captionSettings.font),
-            fontSize: `${fontSize}px`,
-            fontWeight: captionSettings.fontWeight || 700,
-            fontStyle: captionSettings.italic ? 'italic' : 'normal',
-            color: captionSettings.color,
-            // Export caption path currently does not render text shadows.
-            textShadow: 'none',
-            lineHeight: lineHeightMultiplier, // From parity system - matches Rust export
-          }}
-        >
-          {renderText()}
-        </span>
-      </div>
-    </div>
+    <CaptionOverlayContent
+      activeSegment={activeSegment}
+      segmentOpacity={segmentOpacity}
+      captionSettings={captionSettings}
+      scaledLayout={scaledLayout}
+      containerWidth={containerWidth}
+      containerHeight={containerHeight}
+      currentTimeSecs={currentTimeSecs}
+    />
   );
 });
 

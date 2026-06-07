@@ -12,7 +12,7 @@
  * with the backend via Tauri invoke commands.
  */
 
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback, type Dispatch, type SetStateAction } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { videoEditorLogger } from '@/utils/logger';
 
@@ -61,6 +61,21 @@ interface UseGPURendererResult {
   handleGPUError: (error: string) => Promise<void>;
 }
 
+interface MutableCurrent<T> {
+  current: T;
+}
+
+type SetGPUDeviceState = Dispatch<SetStateAction<GPUDeviceState>>;
+
+const DEVICE_LOST_REASON_KEYWORDS: Array<{
+  reason: Exclude<DeviceLostReason, 'destroyed' | 'unknown'>;
+  keywords: string[];
+}> = [
+  { reason: 'timeout', keywords: ['tdr', 'timeout'] },
+  { reason: 'driver_crash', keywords: ['driver', 'crash'] },
+  { reason: 'resource_pressure', keywords: ['resource', 'memory', 'oom'] },
+];
+
 /** Error patterns that indicate device lost scenarios */
 const DEVICE_LOST_PATTERNS = [
   /device.*lost/i,
@@ -89,26 +104,16 @@ function categorizeDeviceLostReason(error: string): DeviceLostReason {
   const lowerError = error.toLowerCase();
 
   // Check if this was an intentional destruction
-  for (const pattern of INTENTIONAL_DESTROY_PATTERNS) {
-    if (pattern.test(error)) {
-      return 'destroyed';
-    }
+  if (INTENTIONAL_DESTROY_PATTERNS.some((pattern) => pattern.test(error))) {
+    return 'destroyed';
   }
 
   // Check for specific device lost scenarios
-  if (lowerError.includes('tdr') || lowerError.includes('timeout')) {
-    return 'timeout';
-  }
+  const matchedReason = DEVICE_LOST_REASON_KEYWORDS.find(({ keywords }) =>
+    keywords.some((keyword) => lowerError.includes(keyword))
+  );
 
-  if (lowerError.includes('driver') || lowerError.includes('crash')) {
-    return 'driver_crash';
-  }
-
-  if (lowerError.includes('resource') || lowerError.includes('memory') || lowerError.includes('oom')) {
-    return 'resource_pressure';
-  }
-
-  return 'unknown';
+  return matchedReason?.reason ?? 'unknown';
 }
 
 /**
@@ -116,6 +121,236 @@ function categorizeDeviceLostReason(error: string): DeviceLostReason {
  */
 function isDeviceLostError(error: string): boolean {
   return DEVICE_LOST_PATTERNS.some(pattern => pattern.test(error));
+}
+
+function waitForGpuRecoveryDelay(delayMs: number) {
+  return new Promise(resolve => setTimeout(resolve, delayMs));
+}
+
+function shouldSkipGpuRecovery(isRecoveringRef: MutableCurrent<boolean>) {
+  if (!isRecoveringRef.current) {
+    return false;
+  }
+
+  videoEditorLogger.warn('GPU recovery already in progress, skipping');
+  return true;
+}
+
+function hasExceededGpuRecoveryAttempts(
+  currentAttempts: number,
+  maxRecoveryAttempts: number,
+  onDeviceLostRef: MutableCurrent<(() => void) | undefined>
+) {
+  if (currentAttempts < maxRecoveryAttempts) {
+    return false;
+  }
+
+  videoEditorLogger.error('GPU recovery failed: max attempts exceeded', {
+    attempts: currentAttempts,
+    max: maxRecoveryAttempts,
+  });
+  onDeviceLostRef.current?.();
+  return true;
+}
+
+function markGpuRecoveryStarted({
+  currentAttempts,
+  maxRecoveryAttempts,
+  isRecoveringRef,
+  recoveryAttemptsRef,
+  isMountedRef,
+  setDeviceState,
+}: {
+  currentAttempts: number;
+  maxRecoveryAttempts: number;
+  isRecoveringRef: MutableCurrent<boolean>;
+  recoveryAttemptsRef: MutableCurrent<number>;
+  isMountedRef: MutableCurrent<boolean>;
+  setDeviceState: SetGPUDeviceState;
+}) {
+  isRecoveringRef.current = true;
+  recoveryAttemptsRef.current = currentAttempts + 1;
+
+  videoEditorLogger.warn('Attempting GPU device recovery', {
+    attempt: currentAttempts + 1,
+    maxAttempts: maxRecoveryAttempts,
+  });
+
+  if (isMountedRef.current) {
+    setDeviceState(prev => ({
+      ...prev,
+      isRecovering: true,
+      recoveryAttempts: recoveryAttemptsRef.current,
+    }));
+  }
+}
+
+async function reinitializePreviewDevice(recoveryDelayMs: number) {
+  await waitForGpuRecoveryDelay(recoveryDelayMs);
+
+  try {
+    await invoke('shutdown_preview');
+  } catch {
+    // Ignore shutdown errors during recovery
+  }
+
+  await waitForGpuRecoveryDelay(recoveryDelayMs / 2);
+  await invoke('init_preview');
+}
+
+function markGpuRecoverySucceeded({
+  isRecoveringRef,
+  recoveryAttemptsRef,
+  isMountedRef,
+  setDeviceState,
+  onDeviceRecoveredRef,
+}: {
+  isRecoveringRef: MutableCurrent<boolean>;
+  recoveryAttemptsRef: MutableCurrent<number>;
+  isMountedRef: MutableCurrent<boolean>;
+  setDeviceState: SetGPUDeviceState;
+  onDeviceRecoveredRef: MutableCurrent<(() => void) | undefined>;
+}) {
+  recoveryAttemptsRef.current = 0;
+  isRecoveringRef.current = false;
+
+  if (isMountedRef.current) {
+    setDeviceState(prev => ({
+      ...prev,
+      isAvailable: true,
+      isRecovering: false,
+      lastError: null,
+      recoveryAttempts: 0,
+    }));
+  }
+
+  videoEditorLogger.info('GPU device recovered successfully');
+  onDeviceRecoveredRef.current?.();
+}
+
+function markGpuRecoveryFailed({
+  error,
+  currentAttempts,
+  isRecoveringRef,
+  isMountedRef,
+  setDeviceState,
+  onErrorRef,
+}: {
+  error: unknown;
+  currentAttempts: number;
+  isRecoveringRef: MutableCurrent<boolean>;
+  isMountedRef: MutableCurrent<boolean>;
+  setDeviceState: SetGPUDeviceState;
+  onErrorRef: MutableCurrent<((error: string) => void) | undefined>;
+}) {
+  const errorMessage = String(error);
+  isRecoveringRef.current = false;
+
+  videoEditorLogger.error('GPU recovery attempt failed:', {
+    error: errorMessage,
+    attempt: currentAttempts + 1,
+  });
+
+  if (isMountedRef.current) {
+    setDeviceState(prev => ({
+      ...prev,
+      isRecovering: false,
+      lastError: errorMessage,
+    }));
+  }
+
+  onErrorRef.current?.(errorMessage);
+}
+
+function markGpuPreviewInitialized({
+  isMountedRef,
+  setDeviceState,
+}: {
+  isMountedRef: MutableCurrent<boolean>;
+  setDeviceState: SetGPUDeviceState;
+}) {
+  if (!isMountedRef.current) {
+    return;
+  }
+
+  setDeviceState(prev => ({
+    ...prev,
+    isAvailable: true,
+    isRecovering: false,
+    lastError: null,
+  }));
+}
+
+function markGpuPreviewInitFailed({
+  error,
+  isMountedRef,
+  setDeviceState,
+  onErrorRef,
+}: {
+  error: unknown;
+  isMountedRef: MutableCurrent<boolean>;
+  setDeviceState: SetGPUDeviceState;
+  onErrorRef: MutableCurrent<((error: string) => void) | undefined>;
+}) {
+  const errorMessage = String(error);
+  videoEditorLogger.error('GPU preview initialization failed:', errorMessage);
+
+  if (isMountedRef.current) {
+    setDeviceState(prev => ({
+      ...prev,
+      isAvailable: false,
+      lastError: errorMessage,
+    }));
+  }
+
+  onErrorRef.current?.(errorMessage);
+}
+
+function markGpuDeviceLost({
+  error,
+  reason,
+  isMountedRef,
+  setDeviceState,
+}: {
+  error: string;
+  reason: DeviceLostReason;
+  isMountedRef: MutableCurrent<boolean>;
+  setDeviceState: SetGPUDeviceState;
+}) {
+  videoEditorLogger.warn('GPU device lost:', { reason, error });
+
+  if (!isMountedRef.current) {
+    return;
+  }
+
+  setDeviceState(prev => ({
+    ...prev,
+    isAvailable: false,
+    lastError: error,
+    lastLostReason: reason,
+  }));
+}
+
+async function handleDeviceLostError({
+  error,
+  isMountedRef,
+  setDeviceState,
+  recoverDevice,
+}: {
+  error: string;
+  isMountedRef: MutableCurrent<boolean>;
+  setDeviceState: SetGPUDeviceState;
+  recoverDevice: () => Promise<boolean>;
+}) {
+  const reason = categorizeDeviceLostReason(error);
+  markGpuDeviceLost({ error, reason, isMountedRef, setDeviceState });
+
+  if (reason === 'destroyed') {
+    videoEditorLogger.info('GPU device was intentionally destroyed, no recovery needed');
+    return;
+  }
+
+  await recoverDevice();
 }
 
 /**
@@ -172,30 +407,11 @@ export function useGPURenderer(options: UseGPURendererOptions = {}): UseGPURende
       await invoke('init_preview');
       console.timeEnd('[EDITOR-INIT] GPU init_preview');
 
-      if (isMountedRef.current) {
-        setDeviceState(prev => ({
-          ...prev,
-          isAvailable: true,
-          isRecovering: false,
-          lastError: null,
-        }));
-      }
-
+      markGpuPreviewInitialized({ isMountedRef, setDeviceState });
       videoEditorLogger.info('GPU preview initialized successfully');
       return true;
     } catch (error) {
-      const errorMessage = String(error);
-      videoEditorLogger.error('GPU preview initialization failed:', errorMessage);
-
-      if (isMountedRef.current) {
-        setDeviceState(prev => ({
-          ...prev,
-          isAvailable: false,
-          lastError: errorMessage,
-        }));
-      }
-
-      onErrorRef.current?.(errorMessage);
+      markGpuPreviewInitFailed({ error, isMountedRef, setDeviceState, onErrorRef });
       return false;
     }
   }, []);
@@ -225,96 +441,39 @@ export function useGPURenderer(options: UseGPURendererOptions = {}): UseGPURende
    * Attempt to recover from device lost.
    */
   const recoverDevice = useCallback(async (): Promise<boolean> => {
-    // Prevent concurrent recovery attempts
-    if (isRecoveringRef.current) {
-      videoEditorLogger.warn('GPU recovery already in progress, skipping');
-      return false;
-    }
+    if (shouldSkipGpuRecovery(isRecoveringRef)) return false;
 
-    // Use ref to avoid stale closure issues with rapid calls
     const currentAttempts = recoveryAttemptsRef.current;
-    if (currentAttempts >= maxRecoveryAttempts) {
-      videoEditorLogger.error('GPU recovery failed: max attempts exceeded', {
-        attempts: currentAttempts,
-        max: maxRecoveryAttempts,
-      });
-      onDeviceLostRef.current?.();
-      return false;
-    }
+    if (hasExceededGpuRecoveryAttempts(currentAttempts, maxRecoveryAttempts, onDeviceLostRef)) return false;
 
-    // Mark recovery as in progress
-    isRecoveringRef.current = true;
-    recoveryAttemptsRef.current = currentAttempts + 1;
-
-    videoEditorLogger.warn('Attempting GPU device recovery', {
-      attempt: currentAttempts + 1,
-      maxAttempts: maxRecoveryAttempts,
+    markGpuRecoveryStarted({
+      currentAttempts,
+      maxRecoveryAttempts,
+      isRecoveringRef,
+      recoveryAttemptsRef,
+      isMountedRef,
+      setDeviceState,
     });
 
-    if (isMountedRef.current) {
-      setDeviceState(prev => ({
-        ...prev,
-        isRecovering: true,
-        recoveryAttempts: recoveryAttemptsRef.current,
-      }));
-    }
-
-    // Wait before attempting recovery (allows driver/GPU to stabilize)
-    await new Promise(resolve => setTimeout(resolve, recoveryDelayMs));
-
-    // Attempt to reinitialize
     try {
-      // First try to shutdown any existing resources
-      try {
-        await invoke('shutdown_preview');
-      } catch {
-        // Ignore shutdown errors during recovery
-      }
-
-      // Wait a bit more after shutdown
-      await new Promise(resolve => setTimeout(resolve, recoveryDelayMs / 2));
-
-      // Request new GPU device
-      await invoke('init_preview');
-
-      // Reset recovery counter on success
-      recoveryAttemptsRef.current = 0;
-      isRecoveringRef.current = false;
-
-      if (isMountedRef.current) {
-        setDeviceState(prev => ({
-          ...prev,
-          isAvailable: true,
-          isRecovering: false,
-          lastError: null,
-          recoveryAttempts: 0,
-        }));
-      }
-
-      videoEditorLogger.info('GPU device recovered successfully');
-      onDeviceRecoveredRef.current?.();
+      await reinitializePreviewDevice(recoveryDelayMs);
+      markGpuRecoverySucceeded({
+        isRecoveringRef,
+        recoveryAttemptsRef,
+        isMountedRef,
+        setDeviceState,
+        onDeviceRecoveredRef,
+      });
       return true;
     } catch (error) {
-      const errorMessage = String(error);
-      isRecoveringRef.current = false;
-
-      videoEditorLogger.error('GPU recovery attempt failed:', {
-        error: errorMessage,
-        attempt: currentAttempts + 1,
+      markGpuRecoveryFailed({
+        error,
+        currentAttempts,
+        isRecoveringRef,
+        isMountedRef,
+        setDeviceState,
+        onErrorRef,
       });
-
-      if (isMountedRef.current) {
-        setDeviceState(prev => ({
-          ...prev,
-          isRecovering: false,
-          lastError: errorMessage,
-        }));
-      }
-
-      onErrorRef.current?.(errorMessage);
-
-      // If we haven't hit max attempts, we could retry
-      // But we leave it to the caller to decide
       return false;
     }
   }, [maxRecoveryAttempts, recoveryDelayMs]);
@@ -337,32 +496,17 @@ export function useGPURenderer(options: UseGPURendererOptions = {}): UseGPURende
     async (error: string) => {
       videoEditorLogger.warn('GPU error detected:', error);
 
-      // Check if this is a device lost scenario
       if (isDeviceLostError(error)) {
-        const reason = categorizeDeviceLostReason(error);
-        videoEditorLogger.warn('GPU device lost:', { reason, error });
-
-        if (isMountedRef.current) {
-          setDeviceState(prev => ({
-            ...prev,
-            isAvailable: false,
-            lastError: error,
-            lastLostReason: reason,
-          }));
-        }
-
-        // Don't attempt recovery for intentional destruction
-        if (reason === 'destroyed') {
-          videoEditorLogger.info('GPU device was intentionally destroyed, no recovery needed');
-          return;
-        }
-
-        // Attempt recovery
-        await recoverDevice();
-      } else {
-        // Non-device-lost error
-        onErrorRef.current?.(error);
+        await handleDeviceLostError({
+          error,
+          isMountedRef,
+          setDeviceState,
+          recoverDevice,
+        });
+        return;
       }
+
+      onErrorRef.current?.(error);
     },
     [recoverDevice]
   );

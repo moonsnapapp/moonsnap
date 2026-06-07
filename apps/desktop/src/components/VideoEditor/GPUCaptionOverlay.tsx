@@ -10,6 +10,7 @@ import type { VideoEditorState } from '../../stores/videoEditor/types';
 import { usePreviewOrPlaybackTime } from '../../hooks/usePlaybackEngine';
 import { usePreviewStream } from '../../hooks/usePreviewStream';
 import { videoEditorLogger } from '../../utils/logger';
+import { getRoundedPreviewDimensions } from './previewDimensions';
 import { remapCaptionSegmentsToTimeline } from '@/utils/captionTimeline';
 
 interface GPUCaptionOverlayProps {
@@ -31,6 +32,139 @@ type CaptionOverlayDataArgs = {
   settings: VideoEditorState['captionSettings'];
 };
 
+function canFlushCaptionOverlayQueue(
+  canUseGpu: boolean,
+  isConnected: boolean,
+  enabled: boolean
+): boolean {
+  return canUseGpu && isConnected && enabled;
+}
+
+function recordCaptionOverlayRenderSuccess(
+  consecutiveRenderErrorsRef: React.MutableRefObject<number>
+): void {
+  consecutiveRenderErrorsRef.current = 0;
+}
+
+function recordCaptionOverlayRenderFailure({
+  error,
+  operation,
+  consecutiveRenderErrorsRef,
+  setGpuFailed,
+}: {
+  error: unknown;
+  operation: string;
+  consecutiveRenderErrorsRef: React.MutableRefObject<number>;
+  setGpuFailed: (failed: boolean) => void;
+}): void {
+  videoEditorLogger.warn(`[CaptionParity] ${operation} failed:`, error);
+  consecutiveRenderErrorsRef.current += 1;
+  if (consecutiveRenderErrorsRef.current >= 3) {
+    setGpuFailed(true);
+  }
+}
+
+function shouldFlushQueuedRender(
+  queuedArgsRef: React.MutableRefObject<RenderCaptionOverlayArgs | null>
+): boolean {
+  return queuedArgsRef.current !== null;
+}
+
+function canStartCaptionOverlayRender({
+  canUseGpu,
+  isConnected,
+  enabled,
+  renderInFlightRef,
+  captionDataSyncInFlightRef,
+}: {
+  canUseGpu: boolean;
+  isConnected: boolean;
+  enabled: boolean;
+  renderInFlightRef: React.MutableRefObject<boolean>;
+  captionDataSyncInFlightRef: React.MutableRefObject<boolean>;
+}) {
+  return (
+    canFlushCaptionOverlayQueue(canUseGpu, isConnected, enabled) &&
+    !renderInFlightRef.current &&
+    !captionDataSyncInFlightRef.current
+  );
+}
+
+function cancelCaptionOverlayRaf(rafRef: React.MutableRefObject<number | null>) {
+  if (rafRef.current === null) return;
+  cancelAnimationFrame(rafRef.current);
+  rafRef.current = null;
+}
+
+function getCaptionOverlayFrameArgs(
+  currentTimeMs: number,
+  roundedRenderWidth: number,
+  roundedRenderHeight: number
+): RenderCaptionOverlayArgs {
+  return {
+    timeMs: Math.max(0, Math.floor(currentTimeMs)),
+    width: roundedRenderWidth,
+    height: roundedRenderHeight,
+  };
+}
+
+function isGpuCaptionOverlayActive({
+  canUseGpu,
+  enabled,
+  isConnected,
+  hasFrame,
+}: {
+  canUseGpu: boolean;
+  enabled: boolean;
+  isConnected: boolean;
+  hasFrame: boolean;
+}) {
+  return canUseGpu && enabled && isConnected && hasFrame;
+}
+
+function useCaptionOverlayActiveChange(
+  isActive: boolean,
+  onActiveChange: GPUCaptionOverlayProps['onActiveChange']
+) {
+  useEffect(() => {
+    onActiveChange?.(isActive);
+  }, [isActive, onActiveChange]);
+}
+
+function GPUCaptionOverlayCanvas({
+  canvasRef,
+  roundedRenderWidth,
+  roundedRenderHeight,
+  roundedDisplayWidth,
+  roundedDisplayHeight,
+}: {
+  canvasRef: React.RefObject<HTMLCanvasElement | null>;
+  roundedRenderWidth: number;
+  roundedRenderHeight: number;
+  roundedDisplayWidth: number;
+  roundedDisplayHeight: number;
+}) {
+  return (
+    <div
+      className="absolute inset-0 z-50 pointer-events-none"
+      aria-hidden
+    >
+      <canvas
+        ref={canvasRef}
+        width={roundedRenderWidth}
+        height={roundedRenderHeight}
+        style={{
+          position: 'absolute',
+          left: 0,
+          top: 0,
+          width: `${roundedDisplayWidth}px`,
+          height: `${roundedDisplayHeight}px`,
+        }}
+      />
+    </div>
+  );
+}
+
 export const GPUCaptionOverlay = memo(function GPUCaptionOverlay({
   renderWidth,
   renderHeight,
@@ -49,10 +183,12 @@ export const GPUCaptionOverlay = memo(function GPUCaptionOverlay({
   );
 
   const canUseGpu = !gpuFailed;
-  const roundedRenderWidth = Math.max(1, Math.round(renderWidth));
-  const roundedRenderHeight = Math.max(1, Math.round(renderHeight));
-  const roundedDisplayWidth = Math.max(1, Math.round(displayWidth));
-  const roundedDisplayHeight = Math.max(1, Math.round(displayHeight));
+  const {
+    roundedRenderWidth,
+    roundedRenderHeight,
+    roundedDisplayWidth,
+    roundedDisplayHeight,
+  } = getRoundedPreviewDimensions(renderWidth, renderHeight, displayWidth, displayHeight);
 
   const { canvasRef, hasFrame, isConnected, initPreview, shutdown } = usePreviewStream({
     onError: (error) => {
@@ -68,17 +204,23 @@ export const GPUCaptionOverlay = memo(function GPUCaptionOverlay({
   const rafRef = useRef<number | null>(null);
   const consecutiveRenderErrorsRef = useRef(0);
   // Only show GPU output when stream is connected and has produced at least one frame.
-  const isActive = canUseGpu && captionSettings.enabled && isConnected && hasFrame;
+  const isActive = isGpuCaptionOverlayActive({
+    canUseGpu,
+    enabled: captionSettings.enabled,
+    isConnected,
+    hasFrame,
+  });
 
-  useEffect(() => {
-    onActiveChange?.(isActive);
-  }, [isActive, onActiveChange]);
+  useCaptionOverlayActiveChange(isActive, onActiveChange);
 
   const flushQueuedRender = useCallback(() => {
-    if (!canUseGpu || !isConnected || !captionSettings.enabled) {
-      return;
-    }
-    if (renderInFlightRef.current || captionDataSyncInFlightRef.current) {
+    if (!canStartCaptionOverlayRender({
+      canUseGpu,
+      isConnected,
+      enabled: captionSettings.enabled,
+      renderInFlightRef,
+      captionDataSyncInFlightRef,
+    })) {
       return;
     }
 
@@ -92,26 +234,26 @@ export const GPUCaptionOverlay = memo(function GPUCaptionOverlay({
 
     invoke('render_caption_overlay_frame', args)
       .then(() => {
-        consecutiveRenderErrorsRef.current = 0;
+        recordCaptionOverlayRenderSuccess(consecutiveRenderErrorsRef);
       })
       .catch((error) => {
-        videoEditorLogger.warn('[CaptionParity] render_caption_overlay_frame failed:', error);
-        consecutiveRenderErrorsRef.current += 1;
-        // Allow transient command/stream hiccups without permanently switching to CSS.
-        if (consecutiveRenderErrorsRef.current >= 3) {
-          setGpuFailed(true);
-        }
+        recordCaptionOverlayRenderFailure({
+          error,
+          operation: 'render_caption_overlay_frame',
+          consecutiveRenderErrorsRef,
+          setGpuFailed,
+        });
       })
       .finally(() => {
         renderInFlightRef.current = false;
-        if (queuedArgsRef.current) {
+        if (shouldFlushQueuedRender(queuedArgsRef)) {
           flushQueuedRender();
         }
       });
   }, [canUseGpu, isConnected, captionSettings.enabled]);
 
   const flushQueuedCaptionData = useCallback(() => {
-    if (!canUseGpu || !isConnected || !captionSettings.enabled) {
+    if (!canFlushCaptionOverlayQueue(canUseGpu, isConnected, captionSettings.enabled)) {
       return;
     }
     if (captionDataSyncInFlightRef.current) {
@@ -128,20 +270,21 @@ export const GPUCaptionOverlay = memo(function GPUCaptionOverlay({
 
     invoke('set_caption_overlay_data', args)
       .then(() => {
-        consecutiveRenderErrorsRef.current = 0;
+        recordCaptionOverlayRenderSuccess(consecutiveRenderErrorsRef);
       })
       .catch((error) => {
-        videoEditorLogger.warn('[CaptionParity] set_caption_overlay_data failed:', error);
-        consecutiveRenderErrorsRef.current += 1;
-        if (consecutiveRenderErrorsRef.current >= 3) {
-          setGpuFailed(true);
-        }
+        recordCaptionOverlayRenderFailure({
+          error,
+          operation: 'set_caption_overlay_data',
+          consecutiveRenderErrorsRef,
+          setGpuFailed,
+        });
       })
       .finally(() => {
         captionDataSyncInFlightRef.current = false;
         if (queuedCaptionDataRef.current) {
           flushQueuedCaptionData();
-        } else if (queuedArgsRef.current) {
+        } else if (shouldFlushQueuedRender(queuedArgsRef)) {
           flushQueuedRender();
         }
       });
@@ -193,27 +336,20 @@ export const GPUCaptionOverlay = memo(function GPUCaptionOverlay({
       return;
     }
 
-    queuedArgsRef.current = {
-      timeMs: Math.max(0, Math.floor(currentTimeMs)),
-      width: roundedRenderWidth,
-      height: roundedRenderHeight,
-    };
+    queuedArgsRef.current = getCaptionOverlayFrameArgs(
+      currentTimeMs,
+      roundedRenderWidth,
+      roundedRenderHeight
+    );
 
-    if (rafRef.current !== null) {
-      cancelAnimationFrame(rafRef.current);
-    }
+    cancelCaptionOverlayRaf(rafRef);
 
     rafRef.current = requestAnimationFrame(() => {
       rafRef.current = null;
       flushQueuedRender();
     });
 
-    return () => {
-      if (rafRef.current !== null) {
-        cancelAnimationFrame(rafRef.current);
-        rafRef.current = null;
-      }
-    };
+    return () => cancelCaptionOverlayRaf(rafRef);
   }, [
     canUseGpu,
     captionSettings,
@@ -229,23 +365,13 @@ export const GPUCaptionOverlay = memo(function GPUCaptionOverlay({
   }
 
   return (
-    <div
-      className="absolute inset-0 z-50 pointer-events-none"
-      aria-hidden
-    >
-      <canvas
-        ref={canvasRef}
-        width={roundedRenderWidth}
-        height={roundedRenderHeight}
-        style={{
-          position: 'absolute',
-          left: 0,
-          top: 0,
-          width: `${roundedDisplayWidth}px`,
-          height: `${roundedDisplayHeight}px`,
-        }}
-      />
-    </div>
+    <GPUCaptionOverlayCanvas
+      canvasRef={canvasRef}
+      roundedRenderWidth={roundedRenderWidth}
+      roundedRenderHeight={roundedRenderHeight}
+      roundedDisplayWidth={roundedDisplayWidth}
+      roundedDisplayHeight={roundedDisplayHeight}
+    />
   );
 });
 

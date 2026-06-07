@@ -22,6 +22,12 @@ interface FrameCache {
   [timestampMs: number]: ImageBitmap;
 }
 
+type FrameRequestPriority = 'immediate' | 'prefetch';
+type RequestVideoFrame = (
+  timestampMs: number,
+  priority: FrameRequestPriority,
+) => number;
+
 // How many frames to keep in cache
 const MAX_CACHE_SIZE = 30;
 // How far ahead to pre-decode (ms)
@@ -44,6 +50,83 @@ export interface WebCodecsPreviewResult {
   error: string | null;
   /** Video dimensions */
   dimensions: { width: number; height: number } | null;
+}
+
+function shouldSkipPrefetchForFastScrub(timestampMs: number, lastPositionMs: number) {
+  return (
+    lastPositionMs > 0 &&
+    Math.abs(timestampMs - lastPositionMs) > FAST_SCRUB_DISTANCE_MS
+  );
+}
+
+function requestFrameIfNeeded({
+  timestampMs,
+  priority,
+  frameCache,
+  pendingTimestamps,
+  pendingRequestsById,
+  requestFrame,
+}: {
+  timestampMs: number;
+  priority: FrameRequestPriority;
+  frameCache: FrameCache;
+  pendingTimestamps: Set<number>;
+  pendingRequestsById: Map<number, number>;
+  requestFrame: RequestVideoFrame;
+}) {
+  const rounded = Math.round(timestampMs);
+  if (frameCache[rounded] || pendingTimestamps.has(rounded)) return;
+
+  const requestId = requestFrame(timestampMs, priority);
+  if (requestId < 0) return;
+  pendingRequestsById.set(requestId, rounded);
+  pendingTimestamps.add(rounded);
+}
+
+function requestPrefetchRange({
+  timestampMs,
+  durationMs,
+  frameCache,
+  pendingTimestamps,
+  pendingRequestsById,
+  requestFrame,
+}: {
+  timestampMs: number;
+  durationMs: number;
+  frameCache: FrameCache;
+  pendingTimestamps: Set<number>;
+  pendingRequestsById: Map<number, number>;
+  requestFrame: RequestVideoFrame;
+}) {
+  for (
+    let offset = PREFETCH_INTERVAL_MS;
+    offset <= PREFETCH_RANGE_MS;
+    offset += PREFETCH_INTERVAL_MS
+  ) {
+    const before = Math.round(timestampMs - offset);
+    const after = Math.round(timestampMs + offset);
+
+    if (before >= 0) {
+      requestFrameIfNeeded({
+        timestampMs: before,
+        priority: 'prefetch',
+        frameCache,
+        pendingTimestamps,
+        pendingRequestsById,
+        requestFrame,
+      });
+    }
+    if (after <= durationMs) {
+      requestFrameIfNeeded({
+        timestampMs: after,
+        priority: 'prefetch',
+        frameCache,
+        pendingTimestamps,
+        pendingRequestsById,
+        requestFrame,
+      });
+    }
+  }
 }
 
 /**
@@ -165,23 +248,11 @@ export function useWebCodecsPreview(videoPath: string | null): WebCodecsPreviewR
 
       const now = Date.now();
       const timeSinceLastPrefetch = now - lastPrefetchTimeRef.current;
-
-      // Throttle: only prefetch every PREFETCH_THROTTLE_MS
       if (timeSinceLastPrefetch < PREFETCH_THROTTLE_MS) return;
 
-      // Fast scrubbing detection: if moved too far since last prefetch, user is scrubbing fast
-      // Skip prefetching to avoid queueing work that will be obsolete
-      const distanceMoved = Math.abs(
-        timestampMs - lastPrefetchPositionRef.current
-      );
-      if (
-        distanceMoved > FAST_SCRUB_DISTANCE_MS &&
-        lastPrefetchPositionRef.current > 0
-      ) {
-        // Still update refs so we can detect when scrubbing slows down
+      if (shouldSkipPrefetchForFastScrub(timestampMs, lastPrefetchPositionRef.current)) {
         lastPrefetchTimeRef.current = now;
         lastPrefetchPositionRef.current = timestampMs;
-        // Clear pending requests since user moved far away
         pendingRequestsById.current.clear();
         pendingTimestamps.current.clear();
         worker.clearCache();
@@ -191,53 +262,23 @@ export function useWebCodecsPreview(videoPath: string | null): WebCodecsPreviewR
       lastPrefetchTimeRef.current = now;
       lastPrefetchPositionRef.current = timestampMs;
 
-      const duration = worker.durationMs;
-      const rounded = Math.round(timestampMs);
-
-      // Request current position with immediate priority
-      if (
-        !frameCache.current[rounded] &&
-        !pendingTimestamps.current.has(rounded)
-      ) {
-        const reqId = worker.requestFrame(timestampMs, 'immediate');
-        if (reqId >= 0) {
-          pendingRequestsById.current.set(reqId, rounded);
-          pendingTimestamps.current.add(rounded);
-        }
-      }
-
-      // Request nearby positions with prefetch priority
-      for (
-        let offset = PREFETCH_INTERVAL_MS;
-        offset <= PREFETCH_RANGE_MS;
-        offset += PREFETCH_INTERVAL_MS
-      ) {
-        const before = Math.round(timestampMs - offset);
-        const after = Math.round(timestampMs + offset);
-
-        if (
-          before >= 0 &&
-          !frameCache.current[before] &&
-          !pendingTimestamps.current.has(before)
-        ) {
-          const reqId = worker.requestFrame(before, 'prefetch');
-          if (reqId >= 0) {
-            pendingRequestsById.current.set(reqId, before);
-            pendingTimestamps.current.add(before);
-          }
-        }
-        if (
-          after <= duration &&
-          !frameCache.current[after] &&
-          !pendingTimestamps.current.has(after)
-        ) {
-          const reqId = worker.requestFrame(after, 'prefetch');
-          if (reqId >= 0) {
-            pendingRequestsById.current.set(reqId, after);
-            pendingTimestamps.current.add(after);
-          }
-        }
-      }
+      const requestFrame = worker.requestFrame;
+      requestFrameIfNeeded({
+        timestampMs,
+        priority: 'immediate',
+        frameCache: frameCache.current,
+        pendingTimestamps: pendingTimestamps.current,
+        pendingRequestsById: pendingRequestsById.current,
+        requestFrame,
+      });
+      requestPrefetchRange({
+        timestampMs,
+        durationMs: worker.durationMs,
+        frameCache: frameCache.current,
+        pendingTimestamps: pendingTimestamps.current,
+        pendingRequestsById: pendingRequestsById.current,
+        requestFrame,
+      });
     },
     [worker]
   );

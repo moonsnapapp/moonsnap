@@ -7,28 +7,24 @@ interface EmptyStateProps {
   onNewCapture: () => void;
 }
 
+const SHORTCUT_KEY_LABELS: Record<string, string> = {
+  printscreen: 'PrtSc',
+  control: 'Ctrl',
+  ctrl: 'Ctrl',
+  shift: 'Shift',
+  alt: 'Alt',
+  meta: 'Win',
+  super: 'Win',
+  win: 'Win',
+};
+
+function normalizeShortcutKey(key: string) {
+  const normalized = key.trim();
+  return SHORTCUT_KEY_LABELS[normalized.toLowerCase()] ?? normalized;
+}
+
 function parseShortcut(shortcut: string): string[] {
-  return shortcut.split('+').map(key => {
-    // Normalize key names for display
-    const normalized = key.trim();
-    switch (normalized.toLowerCase()) {
-      case 'printscreen':
-        return 'PrtSc';
-      case 'control':
-      case 'ctrl':
-        return 'Ctrl';
-      case 'shift':
-        return 'Shift';
-      case 'alt':
-        return 'Alt';
-      case 'meta':
-      case 'super':
-      case 'win':
-        return 'Win';
-      default:
-        return normalized;
-    }
-  });
+  return shortcut.split('+').map(normalizeShortcutKey);
 }
 
 export const EmptyState: React.FC<EmptyStateProps> = ({ onNewCapture }) => {
