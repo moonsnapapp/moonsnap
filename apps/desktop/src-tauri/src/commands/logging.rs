@@ -360,7 +360,8 @@ pub fn create_diagnostics_bundle(app: AppHandle) -> MoonSnapResult<String> {
 }
 
 fn copy_log_files(log_dir: &Path, target_dir: &Path) -> MoonSnapResult<()> {
-    let entries = fs::read_dir(log_dir).map_err(|e| format!("Failed to read log directory: {}", e))?;
+    let entries =
+        fs::read_dir(log_dir).map_err(|e| format!("Failed to read log directory: {}", e))?;
 
     for entry in entries.filter_map(Result::ok) {
         let path = entry.path();
