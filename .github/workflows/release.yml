@@ -156,6 +156,11 @@ jobs:
         with:
           workspaces: './apps/desktop/src-tauri -> target'
 
+      - name: Clear cached whisper CMake configure state
+        if: matrix.platform == 'windows-latest'
+        shell: pwsh
+        run: .\.github\scripts\clear-whisper-cmake-cache.ps1
+
       - name: Cache FFmpeg
         if: matrix.platform == 'windows-latest'
         id: cache-ffmpeg
