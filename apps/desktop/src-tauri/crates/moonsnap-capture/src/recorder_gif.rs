@@ -8,13 +8,10 @@ use std::time::{Duration, Instant};
 
 use crossbeam_channel::Receiver;
 
-use crate::capture_source::CaptureSource;
 use crate::gif_encoder::GifRecorder;
-use crate::recorder_helpers::is_window_mode;
 use crate::recorder_loop_control::{handle_loop_control, LoopControl, PauseState};
-use crate::recording_runtime::find_monitor_for_point;
 use crate::state::{RecorderCommand, RecordingProgress};
-use moonsnap_capture_types::recording::{RecordingMode, RecordingSettings, RecordingState};
+use moonsnap_capture_types::recording::{RecordingSettings, RecordingState};
 
 /// Run GIF capture.
 ///
@@ -32,85 +29,18 @@ where
 {
     log::debug!("[GIF] Starting capture, mode={:?}", settings.mode);
 
-    // Check if this is Window mode
-    let window_id = is_window_mode(&settings.mode);
-
-    // Get crop region if in region mode
-    let crop_region = match &settings.mode {
-        RecordingMode::Region {
-            x,
-            y,
-            width,
-            height,
-        } => Some((*x, *y, *width, *height)),
-        _ => None,
-    };
-
-    // Determine monitor index and offset for Region mode
-    let (monitor_index, monitor_offset) = match &settings.mode {
-        RecordingMode::Monitor { monitor_index } => (*monitor_index, (0, 0)),
-        RecordingMode::Region { x, y, .. } => {
-            if let Some((idx, name, mx, my)) = find_monitor_for_point(*x, *y) {
-                log::info!(
-                    "[GIF] Region ({}, {}) is on monitor {} '{}' at offset ({}, {})",
-                    x,
-                    y,
-                    idx,
-                    &name,
-                    mx,
-                    my
-                );
-                (idx, (mx, my))
-            } else {
-                (0, (0, 0))
-            }
-        },
-        _ => (0, (0, 0)),
-    };
-
-    // Create capture source based on mode
-    let (mut capture, first_frame_dims) = if let Some(wid) = window_id {
-        log::debug!("[GIF] Using D3D window capture for hwnd={}", wid);
-        let capture = CaptureSource::new_window(wid, settings.include_cursor)
-            .map_err(|e| format!("Failed to start D3D window capture: {}", e))?;
-
-        let first_frame = capture.wait_for_first_frame(1000);
-        if first_frame.is_none() {
-            log::warn!("[GIF] Timeout waiting for first frame from window capture");
-        }
-        let dims = first_frame.as_ref().map(|(w, h, _)| (*w, *h));
-        (capture, dims)
-    } else if let Some((x, y, w, h)) = crop_region {
-        log::debug!("[GIF] Using D3D region capture, monitor={}", monitor_index);
-        let capture = CaptureSource::new_region(
-            monitor_index,
-            (x, y, w, h),
-            monitor_offset,
-            settings.fps,
-            settings.include_cursor,
-        )
-        .map_err(|e| format!("Failed to start D3D region capture: {}", e))?;
-
-        let first_frame = capture.wait_for_first_frame(1000);
-        let dims = first_frame.as_ref().map(|(w, h, _)| (*w, *h));
-        (capture, dims)
-    } else {
-        log::debug!("[GIF] Using D3D monitor capture, index={}", monitor_index);
-        let capture = CaptureSource::new_monitor(monitor_index, settings.include_cursor)
-            .map_err(|e| format!("Failed to start D3D capture: {}", e))?;
-
-        let first_frame = capture.wait_for_first_frame(1000);
-        let dims = first_frame.as_ref().map(|(w, h, _)| (*w, *h));
-        (capture, dims)
-    };
-
-    let (capture_width, capture_height) =
-        first_frame_dims.unwrap_or_else(|| (capture.width(), capture.height()));
-    let (width, height) = if let Some((_, _, w, h)) = crop_region {
-        (w, h)
-    } else {
-        (capture_width, capture_height)
-    };
+    let capture_plan = crate::recorder_video_capture::CapturePlan::from_mode(&settings.mode)?;
+    let (mut capture, first_frame) = crate::recorder_video_capture::create_capture_source(
+        &capture_plan,
+        settings.fps,
+        settings.include_cursor,
+    )?;
+    let first_frame_dims = first_frame.as_ref().map(|(w, h, _)| (*w, *h));
+    let (width, height) = crate::recorder_video_capture::resolve_capture_dimensions(
+        &capture_plan,
+        first_frame_dims,
+        (capture.width(), capture.height()),
+    );
 
     let max_duration = settings
         .max_duration_secs

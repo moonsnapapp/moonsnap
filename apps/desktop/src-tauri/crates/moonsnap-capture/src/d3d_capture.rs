@@ -55,14 +55,39 @@ impl D3DVideoCapture {
             .try_as_capture_item()
             .map_err(|e| format!("Failed to create capture item: {}", e))?;
 
+        let display_size = display
+            .physical_size()
+            .ok_or("Failed to get display size")?;
+
         // Get display dimensions
-        let (width, height) = if let Some((_, _, w, h)) = config.crop {
+        let (width, height) = if let Some((x, y, w, h)) = config.crop {
+            if w == 0 || h == 0 {
+                return Err("Crop region has zero dimensions".to_string());
+            }
+
+            let display_width = display_size.width() as u32;
+            let display_height = display_size.height() as u32;
+            let right = x
+                .checked_add(w)
+                .ok_or_else(|| "Crop region overflows display coordinates".to_string())?;
+            let bottom = y
+                .checked_add(h)
+                .ok_or_else(|| "Crop region overflows display coordinates".to_string())?;
+
+            if x >= display_width
+                || y >= display_height
+                || right > display_width
+                || bottom > display_height
+            {
+                return Err(format!(
+                    "Crop region ({}, {}) {}x{} is outside display {}x{}",
+                    x, y, w, h, display_width, display_height
+                ));
+            }
+
             (w, h)
         } else {
-            let size = display
-                .physical_size()
-                .ok_or("Failed to get display size")?;
-            (size.width() as u32, size.height() as u32)
+            (display_size.width() as u32, display_size.height() as u32)
         };
 
         // Build settings

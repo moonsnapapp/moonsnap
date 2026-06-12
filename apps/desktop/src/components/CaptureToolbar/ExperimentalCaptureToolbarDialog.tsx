@@ -38,15 +38,6 @@ interface OverlaySelectionResult {
   height: number;
 }
 
-interface VisibleDesktopBounds {
-  minX: number;
-  minY: number;
-  maxX: number;
-  maxY: number;
-  width: number;
-  height: number;
-}
-
 type RecordingCaptureType = Extract<CaptureType, 'video' | 'gif'>;
 
 const TOOLBAR_OWNER = 'library';
@@ -69,26 +60,6 @@ function getCurrentAreaSelection(selection: SelectionBounds): AreaSelectionBound
   });
 }
 
-function getVisibleDesktopBounds(monitors: Monitor[]): VisibleDesktopBounds | null {
-  if (monitors.length === 0) {
-    return null;
-  }
-
-  const minX = Math.min(...monitors.map((monitor) => monitor.position.x));
-  const minY = Math.min(...monitors.map((monitor) => monitor.position.y));
-  const maxX = Math.max(...monitors.map((monitor) => monitor.position.x + monitor.size.width));
-  const maxY = Math.max(...monitors.map((monitor) => monitor.position.y + monitor.size.height));
-
-  return {
-    minX,
-    minY,
-    maxX,
-    maxY,
-    width: maxX - minX,
-    height: maxY - minY,
-  };
-}
-
 function hasReusableAreaDimensions(width: number, height: number): boolean {
   return width >= MIN_REUSABLE_AREA_SIZE && height >= MIN_REUSABLE_AREA_SIZE;
 }
@@ -99,14 +70,14 @@ function clampToRange(value: number, min: number, max: number): number {
 
 function getReusableAreaSize(
   selection: AreaSelectionBounds,
-  desktopBounds: VisibleDesktopBounds
+  monitor: Monitor
 ): Pick<AreaSelectionBounds, 'width' | 'height'> | null {
-  if (!hasReusableAreaDimensions(desktopBounds.width, desktopBounds.height)) {
+  if (!hasReusableAreaDimensions(monitor.size.width, monitor.size.height)) {
     return null;
   }
 
-  const width = Math.min(selection.width, desktopBounds.width);
-  const height = Math.min(selection.height, desktopBounds.height);
+  const width = Math.min(selection.width, monitor.size.width);
+  const height = Math.min(selection.height, monitor.size.height);
   if (!hasReusableAreaDimensions(width, height)) {
     return null;
   }
@@ -114,7 +85,7 @@ function getReusableAreaSize(
   return { width, height };
 }
 
-function clampAreaSelectionToVisibleDesktop(
+function clampAreaSelectionToVisibleMonitor(
   selection: AreaSelectionBounds,
   monitors: Monitor[]
 ): AreaSelectionBounds | null {
@@ -130,19 +101,51 @@ function clampNormalizedAreaSelectionToMonitors(
   selection: AreaSelectionBounds,
   monitors: Monitor[]
 ): AreaSelectionBounds | null {
-  const desktopBounds = getVisibleDesktopBounds(monitors);
-  if (!desktopBounds) return null;
+  const monitor = getBestMonitorForArea(selection, monitors);
+  if (!monitor) return null;
 
-  const size = getReusableAreaSize(selection, desktopBounds);
+  const size = getReusableAreaSize(selection, monitor);
   if (!size) return null;
 
   const { width, height } = size;
   return {
-    x: clampToRange(selection.x, desktopBounds.minX, desktopBounds.maxX - width),
-    y: clampToRange(selection.y, desktopBounds.minY, desktopBounds.maxY - height),
+    x: clampToRange(selection.x, monitor.position.x, monitor.position.x + monitor.size.width - width),
+    y: clampToRange(selection.y, monitor.position.y, monitor.position.y + monitor.size.height - height),
     width,
     height,
   };
+}
+
+function getBestMonitorForArea(selection: AreaSelectionBounds, monitors: Monitor[]) {
+  return monitors
+    .map((monitor) => ({
+      monitor,
+      intersectionArea: getMonitorIntersectionArea(selection, monitor),
+      distance: getSquaredDistanceToMonitor(selection, monitor),
+    }))
+    .sort((left, right) =>
+      right.intersectionArea - left.intersectionArea || left.distance - right.distance
+    )[0]?.monitor;
+}
+
+function getMonitorIntersectionArea(selection: AreaSelectionBounds, monitor: Monitor) {
+  const left = Math.max(selection.x, monitor.position.x);
+  const top = Math.max(selection.y, monitor.position.y);
+  const right = Math.min(selection.x + selection.width, monitor.position.x + monitor.size.width);
+  const bottom = Math.min(selection.y + selection.height, monitor.position.y + monitor.size.height);
+
+  return Math.max(0, right - left) * Math.max(0, bottom - top);
+}
+
+function getSquaredDistanceToMonitor(selection: AreaSelectionBounds, monitor: Monitor) {
+  const selectionCenterX = selection.x + selection.width / 2;
+  const selectionCenterY = selection.y + selection.height / 2;
+  const monitorCenterX = monitor.position.x + monitor.size.width / 2;
+  const monitorCenterY = monitor.position.y + monitor.size.height / 2;
+  const dx = selectionCenterX - monitorCenterX;
+  const dy = selectionCenterY - monitorCenterY;
+
+  return dx * dx + dy * dy;
 }
 
 async function captureOverlayResult(result: OverlaySelectionResult) {
@@ -373,7 +376,7 @@ export function ExperimentalCaptureToolbarDialog({
   const reuseAreaSelection = useCallback(async (selection: AreaSelectionBounds) => {
     try {
       const monitors = await availableMonitors().catch(() => []);
-      const reusableSelection = clampAreaSelectionToVisibleDesktop(selection, monitors);
+      const reusableSelection = clampAreaSelectionToVisibleMonitor(selection, monitors);
       if (!reusableSelection) {
         captureLogger.warn('Skipping reusable area because it no longer fits the current desktop');
         return;

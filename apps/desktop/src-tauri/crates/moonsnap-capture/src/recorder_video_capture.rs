@@ -1,7 +1,7 @@
 //! Shared capture planning/opening helpers for video recording.
 
 use crate::capture_source::{CaptureSource, CapturedFrame};
-use crate::recording_runtime::find_monitor_for_point;
+use crate::recording_runtime::{find_scap_display_for_region, ScapDisplayBounds};
 use moonsnap_capture_types::recording::RecordingMode;
 
 /// Planned capture selection derived from recording mode.
@@ -19,7 +19,17 @@ pub struct CapturePlan {
 
 impl CapturePlan {
     /// Build capture plan from recording mode.
-    pub fn from_mode(mode: &RecordingMode) -> Self {
+    pub fn from_mode(mode: &RecordingMode) -> Result<Self, String> {
+        Self::from_mode_with_region_resolver(mode, find_scap_display_for_region)
+    }
+
+    fn from_mode_with_region_resolver<F>(
+        mode: &RecordingMode,
+        resolve_region_display: F,
+    ) -> Result<Self, String>
+    where
+        F: Fn(i32, i32, u32, u32) -> Option<ScapDisplayBounds>,
+    {
         let window_id = match mode {
             RecordingMode::Window { window_id } => Some(*window_id),
             _ => None,
@@ -37,32 +47,41 @@ impl CapturePlan {
 
         let (monitor_index, monitor_offset) = match mode {
             RecordingMode::Monitor { monitor_index } => (*monitor_index, (0, 0)),
-            RecordingMode::Region { x, y, .. } => {
-                if let Some((idx, name, mx, my)) = find_monitor_for_point(*x, *y) {
-                    log::info!(
-                        "[CAPTURE] Region ({}, {}) is on monitor {} '{}' at offset ({}, {})",
-                        x,
-                        y,
-                        idx,
-                        &name,
-                        mx,
-                        my
-                    );
+            RecordingMode::Region {
+                x,
+                y,
+                width,
+                height,
+            } => {
+                let display = resolve_region_display(*x, *y, *width, *height).ok_or_else(|| {
+                    format!(
+                        "Region ({}, {}) {}x{} is not fully contained by any capture display",
+                        x, y, width, height
+                    )
+                })?;
 
-                    (idx, (mx, my))
-                } else {
-                    (0, (0, 0))
-                }
+                log::info!(
+                    "[CAPTURE] Region ({}, {}) {}x{} is on scap display {} at offset ({}, {})",
+                    x,
+                    y,
+                    width,
+                    height,
+                    display.index,
+                    display.x,
+                    display.y
+                );
+
+                (display.index, (display.x, display.y))
             },
             _ => (0, (0, 0)),
         };
 
-        Self {
+        Ok(Self {
             window_id,
             crop_region,
             monitor_index,
             monitor_offset,
-        }
+        })
     }
 }
 
@@ -138,7 +157,7 @@ mod tests {
 
     #[test]
     fn capture_plan_from_window_mode() {
-        let plan = CapturePlan::from_mode(&RecordingMode::Window { window_id: 42 });
+        let plan = CapturePlan::from_mode(&RecordingMode::Window { window_id: 42 }).unwrap();
         assert_eq!(plan.window_id, Some(42));
         assert_eq!(plan.crop_region, None);
         assert_eq!(plan.monitor_index, 0);
@@ -147,7 +166,7 @@ mod tests {
 
     #[test]
     fn capture_plan_from_monitor_mode() {
-        let plan = CapturePlan::from_mode(&RecordingMode::Monitor { monitor_index: 3 });
+        let plan = CapturePlan::from_mode(&RecordingMode::Monitor { monitor_index: 3 }).unwrap();
         assert_eq!(plan.window_id, None);
         assert_eq!(plan.crop_region, None);
         assert_eq!(plan.monitor_index, 3);
@@ -156,14 +175,43 @@ mod tests {
 
     #[test]
     fn capture_plan_from_region_mode_preserves_crop() {
-        let plan = CapturePlan::from_mode(&RecordingMode::Region {
-            x: 100,
-            y: 200,
-            width: 1280,
-            height: 720,
-        });
+        let plan = CapturePlan::from_mode_with_region_resolver(
+            &RecordingMode::Region {
+                x: 100,
+                y: 200,
+                width: 1280,
+                height: 720,
+            },
+            |_, _, _, _| {
+                Some(crate::recording_runtime::ScapDisplayBounds {
+                    index: 2,
+                    x: 0,
+                    y: 0,
+                    width: 1920,
+                    height: 1080,
+                })
+            },
+        )
+        .unwrap();
         assert_eq!(plan.window_id, None);
         assert_eq!(plan.crop_region, Some((100, 200, 1280, 720)));
+        assert_eq!(plan.monitor_index, 2);
+        assert_eq!(plan.monitor_offset, (0, 0));
+    }
+
+    #[test]
+    fn capture_plan_rejects_region_outside_single_capture_display() {
+        let result = CapturePlan::from_mode_with_region_resolver(
+            &RecordingMode::Region {
+                x: 1800,
+                y: 100,
+                width: 400,
+                height: 300,
+            },
+            |_, _, _, _| None,
+        );
+
+        assert!(result.is_err());
     }
 
     #[test]

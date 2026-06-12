@@ -72,7 +72,7 @@ pub fn run_video_capture(
     let webcam_output_path: Option<PathBuf> = output_paths.webcam_output_path;
 
     let capture_plan =
-        moonsnap_capture::recorder_video_capture::CapturePlan::from_mode(&settings.mode);
+        moonsnap_capture::recorder_video_capture::CapturePlan::from_mode(&settings.mode)?;
 
     // Create capture source based on mode
     // All modes use Scap for consistent timestamp handling and native crop support.
