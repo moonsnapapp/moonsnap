@@ -111,10 +111,6 @@ jobs:
         with:
           workspaces: './apps/desktop/src-tauri -> target'
 
-      - name: Clear cached whisper CMake configure state
-        shell: pwsh
-        run: .\.github\scripts\clear-whisper-cmake-cache.ps1
-
       - name: Test shared crate contract
         run: cargo test -p ${{ matrix.crate }} --lib --manifest-path apps/desktop/src-tauri/Cargo.toml
 
@@ -140,6 +136,10 @@ jobs:
         uses: swatinem/rust-cache@v2
         with:
           workspaces: './apps/desktop/src-tauri -> target'
+
+      - name: Clear cached whisper CMake configure state
+        shell: pwsh
+        run: .\.github\scripts\clear-whisper-cmake-cache.ps1
 
       - name: Test shared crate contract
         run: cargo test -p ${{ matrix.crate }} --lib --manifest-path apps/desktop/src-tauri/Cargo.toml
