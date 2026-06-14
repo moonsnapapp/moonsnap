@@ -84,6 +84,49 @@ pub struct AudioOutputDevice {
     pub is_default: bool,
 }
 
+/// Scope for system audio capture.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "../../../../src/types/generated/")]
+pub enum SystemAudioScopeMode {
+    /// Capture all system audio from the selected/default output endpoint.
+    #[default]
+    All,
+    /// Capture audio from the selected target process trees only.
+    IncludeProcesses,
+    /// Capture all audio except the selected target process trees.
+    ExcludeProcesses,
+}
+
+/// Process target for process-scoped system audio capture.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "../../../../src/types/generated/")]
+pub struct SystemAudioProcessTarget {
+    pub process_id: u32,
+    pub process_name: String,
+    #[ts(type = "string | null")]
+    pub window_title: Option<String>,
+}
+
+/// System audio capture scope.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "../../../../src/types/generated/")]
+pub struct SystemAudioScope {
+    pub mode: SystemAudioScopeMode,
+    pub targets: Vec<SystemAudioProcessTarget>,
+}
+
+impl Default for SystemAudioScope {
+    fn default() -> Self {
+        Self {
+            mode: SystemAudioScopeMode::All,
+            targets: Vec::new(),
+        }
+    }
+}
+
 /// Audio capture settings.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
@@ -95,6 +138,13 @@ pub struct AudioSettings {
     #[serde(default)]
     #[ts(type = "string | null")]
     pub system_audio_device_id: Option<String>,
+    /// Scope for system audio capture. Defaults to all system audio.
+    #[serde(default)]
+    pub system_audio_scope: SystemAudioScope,
+    /// Allow process-scoped capture failures to fall back to all system audio.
+    /// Defaults to false so privacy-scoped recordings never widen silently.
+    #[serde(default)]
+    pub allow_fallback_to_all_system_audio: bool,
     /// Selected microphone device index. None = no microphone.
     #[ts(type = "number | null")]
     pub microphone_device_index: Option<usize>,
@@ -105,6 +155,8 @@ impl Default for AudioSettings {
         Self {
             capture_system_audio: true,
             system_audio_device_id: None,
+            system_audio_scope: SystemAudioScope::default(),
+            allow_fallback_to_all_system_audio: false,
             microphone_device_index: None,
         }
     }
@@ -286,7 +338,11 @@ pub struct StopRecordingResult {
 
 #[cfg(test)]
 mod tests {
-    use super::{RecordingFormat, RecordingMode, RecordingSettings};
+    use super::{
+        AudioSettings, RecordingFormat, RecordingMode, RecordingSettings, SystemAudioScope,
+        SystemAudioScopeMode, SystemAudioProcessTarget,
+    };
+    use ts_rs::TS;
 
     #[test]
     fn gif_validation_preserves_unlimited_duration() {
@@ -316,5 +372,26 @@ mod tests {
         settings.validate();
 
         assert_eq!(settings.max_duration_secs, Some(60));
+    }
+
+    #[test]
+    fn audio_settings_default_scope_is_all_system_audio() {
+        let settings = AudioSettings::default();
+
+        assert_eq!(settings.system_audio_scope, SystemAudioScope::default());
+        assert_eq!(
+            settings.system_audio_scope.mode,
+            SystemAudioScopeMode::All
+        );
+        assert!(settings.system_audio_scope.targets.is_empty());
+    }
+
+    #[test]
+    fn export_process_audio_scope_types() {
+        SystemAudioScopeMode::export_all().unwrap();
+        SystemAudioProcessTarget::export_all().unwrap();
+        SystemAudioScope::export_all().unwrap();
+        AudioSettings::export_all().unwrap();
+        RecordingSettings::export_all().unwrap();
     }
 }

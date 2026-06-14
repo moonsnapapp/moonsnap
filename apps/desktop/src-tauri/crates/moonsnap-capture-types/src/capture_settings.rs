@@ -12,7 +12,7 @@
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-use crate::recording::GifQualityPreset;
+use crate::recording::{GifQualityPreset, SystemAudioScope};
 
 // ============================================================================
 // Screenshot Settings
@@ -95,6 +95,13 @@ pub struct VideoSettings {
     #[serde(default)]
     #[ts(type = "string | null")]
     pub system_audio_device_id: Option<String>,
+    /// Scope for system audio capture. Defaults to all system audio.
+    #[serde(default)]
+    pub system_audio_scope: SystemAudioScope,
+    /// Allow process-scoped capture failures to fall back to all system audio.
+    /// Defaults to false so privacy-scoped recordings never widen silently.
+    #[serde(default)]
+    pub allow_fallback_to_all_system_audio: bool,
     /// Selected microphone device index. None = no microphone.
     #[ts(type = "number | null")]
     pub microphone_device_index: Option<usize>,
@@ -121,6 +128,8 @@ impl Default for VideoSettings {
             include_cursor: true,
             capture_system_audio: true,
             system_audio_device_id: None,
+            system_audio_scope: SystemAudioScope::default(),
+            allow_fallback_to_all_system_audio: false,
             microphone_device_index: None,
             capture_webcam: false, // Placeholder - always false for now
             countdown_secs: 3,

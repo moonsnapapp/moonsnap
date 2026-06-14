@@ -603,6 +603,8 @@ export const DEFAULT_RECORDING_SETTINGS: RecordingSettings = {
   audio: {
     captureSystemAudio: true,
     systemAudioDeviceId: null,
+    systemAudioScope: { mode: 'all', targets: [] },
+    allowFallbackToAllSystemAudio: false,
     microphoneDeviceIndex: null,
   },
   quality: 80,

@@ -3,6 +3,7 @@ import { emit, once } from '@tauri-apps/api/event';
 
 import { useCaptureSettingsStore } from '@/stores/captureSettingsStore';
 import { useWebcamSettingsStore } from '@/stores/webcamSettingsStore';
+import { DEFAULT_SYSTEM_AUDIO_SCOPE } from '@/constants/recording';
 import type { SelectionBounds } from '@/hooks/useSelectionEvents';
 import type { CaptureType } from '@/types';
 import { toolbarLogger } from '@/utils/logger';
@@ -109,6 +110,10 @@ function getRecordingAudioSettings(
   return {
     captureSystemAudio: systemAudioEnabled,
     systemAudioDeviceId: isVideo ? (settings.video.systemAudioDeviceId ?? null) : null,
+    systemAudioScope: isVideo ? settings.video.systemAudioScope : DEFAULT_SYSTEM_AUDIO_SCOPE,
+    allowFallbackToAllSystemAudio: isVideo
+      ? settings.video.allowFallbackToAllSystemAudio
+      : false,
     microphoneDeviceIndex: microphoneDeviceIndex ?? null,
   };
 }

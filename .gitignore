@@ -60,3 +60,5 @@ wasm/text-renderer/Cargo.lock
 # Next.js
 .next/
 out/
+
+plans/

@@ -192,6 +192,8 @@ pub fn run_video_capture(
             system_audio_path.clone(),
             mic_audio_path.clone(),
             settings.audio.system_audio_device_id.clone(),
+            settings.audio.system_audio_scope.clone(),
+            settings.audio.allow_fallback_to_all_system_audio,
         ) {
             log::warn!("Failed to start multi-track audio: {}", e);
         }

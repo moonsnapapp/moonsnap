@@ -20,12 +20,15 @@
 //! ```
 
 use moonsnap_error::error::MoonSnapResult;
+use moonsnap_capture::audio_wasapi::{ProcessLoopbackCaptureMode, WasapiProcessLoopback};
+use moonsnap_capture_types::recording::{SystemAudioScope, SystemAudioScopeMode};
 use std::collections::VecDeque;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread::{self, JoinHandle};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
+use crossbeam_channel::bounded;
 use lazy_static::lazy_static;
 use parking_lot::Mutex;
 use serde::Serialize;
@@ -271,7 +274,13 @@ fn monitor_system_audio(
     should_stop: Arc<AtomicBool>,
     level: Arc<Mutex<f32>>,
     is_active: Arc<AtomicBool>,
+    scope: SystemAudioScope,
 ) {
+    if scope.mode != SystemAudioScopeMode::All {
+        monitor_process_scoped_system_audio(should_stop, level, is_active, scope);
+        return;
+    }
+
     // Initialize COM for this thread (HRESULT.ok() converts to Result)
     if let Err(e) = initialize_mta().ok() {
         log::error!(
@@ -408,6 +417,91 @@ fn monitor_system_audio(
     log::debug!("[AUDIO_MONITOR] System audio monitoring stopped");
 }
 
+fn monitor_process_scoped_system_audio(
+    should_stop: Arc<AtomicBool>,
+    level: Arc<Mutex<f32>>,
+    is_active: Arc<AtomicBool>,
+    scope: SystemAudioScope,
+) {
+    let Some(target) = scope.targets.first().cloned() else {
+        log::error!("[AUDIO_MONITOR] Process-scoped system audio monitoring requires one target");
+        return;
+    };
+
+    if scope.targets.len() > 1 {
+        log::error!(
+            "[AUDIO_MONITOR] Process-scoped system audio monitoring supports one target in this version"
+        );
+        return;
+    }
+
+    let mode = match scope.mode {
+        SystemAudioScopeMode::IncludeProcesses => ProcessLoopbackCaptureMode::IncludeTargetProcessTree,
+        SystemAudioScopeMode::ExcludeProcesses => ProcessLoopbackCaptureMode::ExcludeTargetProcessTree,
+        SystemAudioScopeMode::All => unreachable!("handled by endpoint monitor"),
+    };
+
+    let (sample_tx, sample_rx) = bounded::<Vec<f32>>(8);
+    let capture_stop = Arc::clone(&should_stop);
+    let target_process_id = target.process_id;
+    let target_process_name = target.process_name.clone();
+    let capture_handle = thread::spawn(move || {
+        let loopback = WasapiProcessLoopback::new(target_process_id, mode).map_err(|error| {
+            format!(
+                "Failed to start process-scoped system audio monitor for PID {} ({}): {}",
+                target_process_id, target_process_name, error
+            )
+        })?;
+
+        loopback.capture_loop(
+            sample_tx,
+            capture_stop,
+            Arc::new(AtomicBool::new(false)),
+            Instant::now(),
+        )
+    });
+
+    is_active.store(true, Ordering::SeqCst);
+    log::debug!(
+        "[AUDIO_MONITOR] Process-scoped system audio monitoring started for PID {} ({})",
+        target.process_id,
+        target.process_name
+    );
+
+    while !should_stop.load(Ordering::Relaxed) {
+        match sample_rx.recv_timeout(Duration::from_millis(50)) {
+            Ok(samples) => {
+                let rms = calculate_rms(&samples);
+                let mut lvl = level.lock();
+                *lvl = *lvl * 0.7 + rms * 0.3;
+            },
+            Err(crossbeam_channel::RecvTimeoutError::Timeout) => {},
+            Err(crossbeam_channel::RecvTimeoutError::Disconnected) => break,
+        }
+    }
+
+    should_stop.store(true, Ordering::SeqCst);
+    match capture_handle.join() {
+        Ok(Ok(_)) => {},
+        Ok(Err(error)) => {
+            log::error!(
+                "[AUDIO_MONITOR] Process-scoped system audio monitor stopped with error: {}",
+                error
+            );
+        },
+        Err(_) => {
+            log::error!("[AUDIO_MONITOR] Process-scoped system audio monitor thread panicked");
+        },
+    }
+
+    is_active.store(false, Ordering::SeqCst);
+    {
+        let mut lvl = level.lock();
+        *lvl = 0.0;
+    }
+    log::debug!("[AUDIO_MONITOR] Process-scoped system audio monitoring stopped");
+}
+
 /// Start audio level monitoring.
 ///
 /// This starts background threads that capture audio and update level values.
@@ -416,6 +510,7 @@ pub fn start_monitoring(
     app: AppHandle,
     mic_device_index: Option<usize>,
     enable_system_audio: bool,
+    system_audio_scope: Option<SystemAudioScope>,
 ) -> MoonSnapResult<()> {
     let mut state = AUDIO_MONITOR.lock();
 
@@ -459,9 +554,10 @@ pub fn start_monitoring(
         let stop = Arc::clone(&should_stop);
         let level = Arc::clone(&system_level);
         let active = Arc::clone(&system_active);
+        let scope = system_audio_scope.unwrap_or_default();
 
         state.system_thread = Some(thread::spawn(move || {
-            monitor_system_audio(stop, level, active);
+            monitor_system_audio(stop, level, active, scope);
         }));
     }
 

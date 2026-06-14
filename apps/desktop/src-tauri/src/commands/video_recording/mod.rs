@@ -53,6 +53,8 @@ use moonsnap_domain::recording::{
     AudioInputDevice, AudioOutputDevice, RecordingFormat, RecordingSettings, RecordingState,
     RecordingStatus, StartRecordingResult,
 };
+use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
 // Recording state
 use moonsnap_capture::state::RECORDING_CONTROLLER;
@@ -75,6 +77,19 @@ pub use gpu_editor::EditorState;
 
 // Webcam device listing
 pub use webcam::{get_webcam_devices, WebcamDevice};
+
+/// A visible process/window candidate for process-scoped system audio capture.
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "../../src/types/generated/")]
+pub struct SystemAudioProcess {
+    pub process_id: u32,
+    pub process_name: String,
+    #[ts(type = "string | null")]
+    pub window_title: Option<String>,
+    #[ts(type = "string | null")]
+    pub executable_path: Option<String>,
+}
 
 /// Get available webcam devices.
 #[command]
@@ -515,6 +530,250 @@ pub fn notify_preview_window_closed() {
 #[command]
 pub fn list_audio_output_devices() -> MoonSnapResult<Vec<AudioOutputDevice>> {
     moonsnap_capture::audio_wasapi::list_output_devices().map_err(|e| e.into())
+}
+
+/// Check whether this Windows build supports native process-scoped system audio capture.
+#[command]
+pub fn is_process_audio_capture_supported() -> bool {
+    moonsnap_capture::audio_wasapi::is_process_loopback_supported()
+}
+
+/// Get visible process/window candidates for process-scoped system audio capture.
+#[cfg(target_os = "windows")]
+#[command]
+pub fn list_system_audio_processes() -> MoonSnapResult<Vec<SystemAudioProcess>> {
+    use std::collections::{HashMap, HashSet};
+    use windows::Win32::{
+        Foundation::{CloseHandle, BOOL, HWND, LPARAM, TRUE},
+        System::Threading::{
+            GetCurrentProcessId, OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_WIN32,
+            PROCESS_QUERY_LIMITED_INFORMATION,
+        },
+        UI::WindowsAndMessaging::{
+            EnumWindows, GetWindowLongPtrW, GetWindowTextLengthW, GetWindowTextW,
+            GetWindowThreadProcessId, IsWindowVisible, GWL_EXSTYLE, WS_EX_TOOLWINDOW,
+        },
+    };
+
+    struct EnumContext {
+        processes: HashMap<u32, SystemAudioProcess>,
+        audio_session_process_by_name: HashMap<String, u32>,
+        current_process_id: u32,
+    }
+
+    unsafe extern "system" fn enum_windows_proc(hwnd: HWND, lparam: LPARAM) -> BOOL {
+        let context = unsafe { &mut *(lparam.0 as *mut EnumContext) };
+
+        if let Some(process) = unsafe { get_system_audio_process_from_window(hwnd) } {
+            if process.process_id != context.current_process_id {
+                let process_name_key = process.process_name.to_lowercase();
+                if let Some(audio_process_id) = context
+                    .audio_session_process_by_name
+                    .get(&process_name_key)
+                    .copied()
+                {
+                    if let Some(audio_process) = context.processes.get_mut(&audio_process_id) {
+                        if audio_process.window_title.is_none() {
+                            audio_process.window_title = process.window_title;
+                        }
+                    }
+                } else {
+                    context.processes.entry(process.process_id).or_insert(process);
+                }
+            }
+        }
+
+        TRUE
+    }
+
+    unsafe fn get_system_audio_process_from_window(hwnd: HWND) -> Option<SystemAudioProcess> {
+        if !IsWindowVisible(hwnd).as_bool() {
+            return None;
+        }
+
+        let ex_styles = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
+        if (ex_styles
+            & isize::try_from(WS_EX_TOOLWINDOW.0).expect("window style constant fits in isize"))
+            != 0
+        {
+            return None;
+        }
+
+        let mut process_id = 0u32;
+        GetWindowThreadProcessId(hwnd, Some(&mut process_id));
+        if process_id == 0 {
+            return None;
+        }
+
+        let title_len = GetWindowTextLengthW(hwnd);
+        if title_len <= 0 {
+            return None;
+        }
+
+        let mut title_buffer = vec![0u16; (title_len + 1) as usize];
+        let copied = GetWindowTextW(hwnd, &mut title_buffer);
+        if copied <= 0 {
+            return None;
+        }
+
+        let title = String::from_utf16_lossy(&title_buffer[..copied as usize])
+            .trim()
+            .to_string();
+        if title.is_empty() {
+            return None;
+        }
+
+        let executable_path = unsafe { get_process_executable_path(process_id) };
+        let process_name = executable_path
+            .as_deref()
+            .and_then(|path| {
+                std::path::Path::new(path)
+                    .file_name()
+                    .map(|name| name.to_string_lossy().into_owned())
+            })
+            .unwrap_or_else(|| format!("Process {}", process_id));
+
+        if process_name.to_lowercase().contains("moonsnap") {
+            return None;
+        }
+
+        Some(SystemAudioProcess {
+            process_id,
+            process_name,
+            window_title: Some(title),
+            executable_path,
+        })
+    }
+
+    unsafe fn get_process_executable_path(process_id: u32) -> Option<String> {
+        let process_handle =
+            OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, process_id).ok()?;
+
+        let mut buffer = [0u16; 1024];
+        let mut buffer_size = buffer.len() as u32;
+        let result = QueryFullProcessImageNameW(
+            process_handle,
+            PROCESS_NAME_WIN32,
+            windows::core::PWSTR(buffer.as_mut_ptr()),
+            &mut buffer_size,
+        );
+
+        let _ = CloseHandle(process_handle);
+
+        if result.is_ok() && buffer_size > 0 {
+            Some(String::from_utf16_lossy(&buffer[..buffer_size as usize]))
+        } else {
+            None
+        }
+    }
+
+    fn process_from_id(process_id: u32) -> Option<SystemAudioProcess> {
+        let executable_path = unsafe { get_process_executable_path(process_id) };
+        let process_name = executable_path
+            .as_deref()
+            .and_then(|path| {
+                std::path::Path::new(path)
+                    .file_name()
+                    .map(|name| name.to_string_lossy().into_owned())
+            })
+            .unwrap_or_else(|| format!("Process {}", process_id));
+
+        if process_name.to_lowercase().contains("moonsnap") {
+            return None;
+        }
+
+        Some(SystemAudioProcess {
+            process_id,
+            process_name,
+            window_title: None,
+            executable_path,
+        })
+    }
+
+    fn audio_session_process_ids() -> HashSet<u32> {
+        let mut process_ids = HashSet::new();
+        if let Err(error) = wasapi::initialize_mta().ok() {
+            log::debug!(
+                "[AUDIO] Failed to initialize COM for audio session enumeration: {:?}",
+                error
+            );
+            return process_ids;
+        }
+
+        let Ok(enumerator) = wasapi::DeviceEnumerator::new() else {
+            return process_ids;
+        };
+        let Ok(device) = enumerator.get_default_device(&wasapi::Direction::Render) else {
+            return process_ids;
+        };
+        let Ok(session_manager) = device.get_iaudiosessionmanager() else {
+            return process_ids;
+        };
+        let Ok(session_enumerator) = session_manager.get_audiosessionenumerator() else {
+            return process_ids;
+        };
+        let Ok(count) = session_enumerator.get_count() else {
+            return process_ids;
+        };
+
+        for index in 0..count {
+            let Ok(session) = session_enumerator.get_session(index) else {
+                continue;
+            };
+            let Ok(process_id) = session.get_process_id() else {
+                continue;
+            };
+            if process_id > 0 {
+                process_ids.insert(process_id);
+            }
+        }
+
+        process_ids
+    }
+
+    let current_process_id = unsafe { GetCurrentProcessId() };
+    let mut context = EnumContext {
+        processes: HashMap::new(),
+        audio_session_process_by_name: HashMap::new(),
+        current_process_id,
+    };
+
+    for process_id in audio_session_process_ids() {
+        if process_id == current_process_id {
+            continue;
+        }
+
+        if let Some(process) = process_from_id(process_id) {
+            context
+                .audio_session_process_by_name
+                .entry(process.process_name.to_lowercase())
+                .or_insert(process_id);
+            context.processes.insert(process_id, process);
+        }
+    }
+
+    unsafe {
+        let _ = EnumWindows(
+            Some(enum_windows_proc),
+            LPARAM(std::ptr::addr_of_mut!(context) as isize),
+        );
+    }
+
+    let mut processes: Vec<_> = context.processes.into_values().collect();
+    processes.sort_by(|a, b| {
+        a.process_name
+            .cmp(&b.process_name)
+            .then_with(|| a.window_title.cmp(&b.window_title))
+    });
+
+    Ok(processes)
+}
+
+/// Non-Windows builds do not support process-scoped WASAPI system audio.
+#[cfg(not(target_os = "windows"))]
+#[command]
+pub fn list_system_audio_processes() -> MoonSnapResult<Vec<SystemAudioProcess>> {
+    Ok(Vec::new())
 }
 
 /// Get available audio input devices (microphones).
@@ -1417,8 +1676,9 @@ pub fn start_audio_monitoring(
     app: AppHandle,
     mic_device_index: Option<usize>,
     monitor_system_audio: bool,
+    system_audio_scope: Option<moonsnap_capture_types::recording::SystemAudioScope>,
 ) -> MoonSnapResult<()> {
-    audio_monitor::start_monitoring(app, mic_device_index, monitor_system_audio)
+    audio_monitor::start_monitoring(app, mic_device_index, monitor_system_audio, system_audio_scope)
 }
 
 /// Stop audio level monitoring.
@@ -1436,6 +1696,11 @@ pub fn is_audio_monitoring() -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn export_bindings_system_audio_process() {
+        SystemAudioProcess::export_all().unwrap();
+    }
 
     #[test]
     fn test_generate_output_path_editor_flow_creates_folder() {

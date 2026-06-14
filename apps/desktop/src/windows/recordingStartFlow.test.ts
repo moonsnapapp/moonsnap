@@ -13,6 +13,7 @@ describe('startRecordingCaptureFlow', () => {
     setInvokeResponse('capture_overlay_confirm', null);
     setInvokeResponse('show_recording_controls', null);
     setInvokeResponse('show_recording_border', null);
+    setInvokeResponse('show_countdown_window', null);
     setInvokeResponse('start_recording', null);
 
     useCaptureSettingsStore.setState({
@@ -30,6 +31,8 @@ describe('startRecordingCaptureFlow', () => {
           includeCursor: true,
           captureSystemAudio: true,
           systemAudioDeviceId: null,
+          systemAudioScope: { mode: 'all', targets: [] },
+          allowFallbackToAllSystemAudio: false,
           microphoneDeviceIndex: 3,
           captureWebcam: false,
           countdownSecs: 3,
@@ -104,7 +107,136 @@ describe('startRecordingCaptureFlow', () => {
           maxDurationSecs: null,
           audio: expect.objectContaining({
             captureSystemAudio: false,
+            systemAudioScope: { mode: 'all', targets: [] },
+            allowFallbackToAllSystemAudio: false,
             microphoneDeviceIndex: null,
+          }),
+        }),
+      })
+    );
+  });
+
+  it('passes process-scoped system audio settings for video recording', async () => {
+    useCaptureSettingsStore.setState((state) => ({
+      settings: {
+        ...state.settings,
+        video: {
+          ...state.settings.video,
+          systemAudioScope: {
+            mode: 'includeProcesses',
+            targets: [
+              {
+                processId: 1234,
+                processName: 'chrome.exe',
+                windowTitle: 'Demo tab',
+              },
+            ],
+          },
+          allowFallbackToAllSystemAudio: true,
+        },
+      },
+    }));
+
+    await startRecordingCaptureFlow({
+      captureType: 'video',
+      selection: {
+        x: 100,
+        y: 150,
+        width: 800,
+        height: 450,
+        captureType: 'video',
+        sourceType: 'area',
+        sourceMode: 'area',
+      },
+      hudAnchor: {
+        x: 100,
+        y: 150,
+        width: 800,
+        height: 450,
+      },
+    });
+
+    expect(mockInvoke).toHaveBeenCalledWith(
+      'start_recording',
+      expect.objectContaining({
+        settings: expect.objectContaining({
+          format: 'mp4',
+          audio: expect.objectContaining({
+            captureSystemAudio: true,
+            systemAudioScope: {
+              mode: 'includeProcesses',
+              targets: [
+                {
+                  processId: 1234,
+                  processName: 'chrome.exe',
+                  windowTitle: 'Demo tab',
+                },
+              ],
+            },
+            allowFallbackToAllSystemAudio: true,
+            microphoneDeviceIndex: 3,
+          }),
+        }),
+      })
+    );
+  });
+
+  it('keeps process scope while sending muted system audio state', async () => {
+    useCaptureSettingsStore.setState((state) => ({
+      settings: {
+        ...state.settings,
+        video: {
+          ...state.settings.video,
+          captureSystemAudio: false,
+          systemAudioScope: {
+            mode: 'excludeProcesses',
+            targets: [
+              {
+                processId: 2345,
+                processName: 'teams.exe',
+                windowTitle: 'Standup',
+              },
+            ],
+          },
+        },
+      },
+    }));
+
+    await startRecordingCaptureFlow({
+      captureType: 'video',
+      selection: {
+        x: 100,
+        y: 150,
+        width: 800,
+        height: 450,
+        captureType: 'video',
+        sourceType: 'area',
+        sourceMode: 'area',
+      },
+      hudAnchor: {
+        x: 100,
+        y: 150,
+        width: 800,
+        height: 450,
+      },
+    });
+
+    expect(mockInvoke).toHaveBeenCalledWith(
+      'start_recording',
+      expect.objectContaining({
+        settings: expect.objectContaining({
+          audio: expect.objectContaining({
+            captureSystemAudio: false,
+            systemAudioScope: {
+              mode: 'excludeProcesses',
+              targets: [
+                {
+                  processId: 2345,
+                  processName: 'teams.exe',
+                  windowTitle: 'Standup',
+                },
+              ],
+            },
           }),
         }),
       })

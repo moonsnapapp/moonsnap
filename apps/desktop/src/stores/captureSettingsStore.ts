@@ -10,6 +10,7 @@ import type {
 } from '../types/generated';
 import type { CaptureType } from '../types';
 import {
+  DEFAULT_SYSTEM_AUDIO_SCOPE,
   normalizeGifSettings,
   normalizeGifSettingsUpdates,
   normalizeVideoSettings,
@@ -51,6 +52,8 @@ const DEFAULT_VIDEO_SETTINGS: VideoSettings = {
   includeCursor: true,
   captureSystemAudio: true,
   systemAudioDeviceId: null,
+  systemAudioScope: DEFAULT_SYSTEM_AUDIO_SCOPE,
+  allowFallbackToAllSystemAudio: false,
   microphoneDeviceIndex: null,
   captureWebcam: false, // Placeholder - always false for now
   countdownSecs: 3,

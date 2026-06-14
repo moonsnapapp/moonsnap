@@ -149,6 +149,7 @@ scap-targets = { path = "crates/scap-targets" }
 moonsnap-camera-windows = { path = "crates/camera-windows" }
 moonsnap-hotkeys = { path = "crates/moonsnap-hotkeys" }
 moonsnap-capture = { path = "crates/moonsnap-capture" }
+moonsnap-capture-types = { path = "crates/moonsnap-capture-types" }
 moonsnap-error = { path = "crates/moonsnap-error" }
 moonsnap-domain = { path = "crates/moonsnap-domain" }
 moonsnap-media = { path = "crates/moonsnap-media" }

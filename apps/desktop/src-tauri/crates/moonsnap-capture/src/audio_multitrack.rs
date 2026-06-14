@@ -45,7 +45,12 @@ use std::time::{Duration, Instant};
 
 use crossbeam_channel::{bounded, Sender};
 use hound::{WavSpec, WavWriter};
+use moonsnap_capture_types::recording::{
+    SystemAudioScope, SystemAudioScopeMode, SystemAudioProcessTarget,
+};
 use wasapi::*;
+
+use crate::audio_wasapi::{ProcessLoopbackCaptureMode, WasapiProcessLoopback};
 
 /// Audio format configuration.
 const SAMPLE_RATE: u32 = 48000;
@@ -120,7 +125,13 @@ impl MultiTrackAudioRecorder {
         system_audio_path: Option<PathBuf>,
         mic_audio_path: Option<PathBuf>,
     ) -> Result<(Option<PathBuf>, Option<PathBuf>), String> {
-        self.start_with_device(system_audio_path, mic_audio_path, None)
+        self.start_with_device(
+            system_audio_path,
+            mic_audio_path,
+            None,
+            SystemAudioScope::default(),
+            false,
+        )
     }
 
     /// Start recording audio with optional device selection.
@@ -137,6 +148,8 @@ impl MultiTrackAudioRecorder {
         system_audio_path: Option<PathBuf>,
         mic_audio_path: Option<PathBuf>,
         system_device_id: Option<String>,
+        system_audio_scope: SystemAudioScope,
+        allow_fallback_to_all_system_audio: bool,
     ) -> Result<(Option<PathBuf>, Option<PathBuf>), String> {
         // Reset stop flag
         self.should_stop.store(false, Ordering::SeqCst);
@@ -152,9 +165,18 @@ impl MultiTrackAudioRecorder {
             let is_paused = Arc::clone(&self.is_paused);
             let path_clone = path.clone();
             let device_id = system_device_id.clone();
+            let scope = system_audio_scope.clone();
 
             let handle = thread::spawn(move || {
-                record_system_audio(&path_clone, should_stop, is_paused, start_time, device_id)
+                record_system_audio(
+                    &path_clone,
+                    should_stop,
+                    is_paused,
+                    start_time,
+                    device_id,
+                    scope,
+                    allow_fallback_to_all_system_audio,
+                )
             });
 
             self.system_thread = Some(handle);
@@ -333,6 +355,141 @@ fn spawn_wav_writer(
 /// Record system audio (loopback) to a WAV file.
 /// Uses async write queue to prevent disk I/O from blocking real-time capture.
 fn record_system_audio(
+    output_path: &Path,
+    should_stop: Arc<AtomicBool>,
+    is_paused: Arc<AtomicBool>,
+    start_time: Instant,
+    device_id: Option<String>,
+    scope: SystemAudioScope,
+    allow_fallback_to_all_system_audio: bool,
+) -> Result<(), String> {
+    match process_loopback_request(&scope)? {
+        ProcessLoopbackRequest::All => {
+            record_endpoint_system_audio(output_path, should_stop, is_paused, start_time, device_id)
+        },
+        ProcessLoopbackRequest::Scoped { target, mode } => {
+            match record_process_scoped_system_audio(
+                output_path,
+                Arc::clone(&should_stop),
+                Arc::clone(&is_paused),
+                start_time,
+                &target,
+                mode,
+            ) {
+                Ok(()) => Ok(()),
+                Err(error) if allow_fallback_to_all_system_audio => {
+                    log::warn!(
+                        "[MULTITRACK] Process-scoped system audio failed for PID {} ({}); falling back to all system audio: {}",
+                        target.process_id,
+                        target.process_name,
+                        error
+                    );
+                    record_endpoint_system_audio(
+                        output_path,
+                        should_stop,
+                        is_paused,
+                        start_time,
+                        device_id,
+                    )
+                },
+                Err(error) => {
+                    log::error!(
+                        "[MULTITRACK] Process-scoped system audio failed for PID {} ({}): {}",
+                        target.process_id,
+                        target.process_name,
+                        error
+                    );
+                    let _ = std::fs::remove_file(output_path);
+                    Err(error)
+                },
+            }
+        },
+    }
+}
+
+enum ProcessLoopbackRequest {
+    All,
+    Scoped {
+        target: SystemAudioProcessTarget,
+        mode: ProcessLoopbackCaptureMode,
+    },
+}
+
+fn process_loopback_request(scope: &SystemAudioScope) -> Result<ProcessLoopbackRequest, String> {
+    match scope.mode {
+        SystemAudioScopeMode::All => Ok(ProcessLoopbackRequest::All),
+        SystemAudioScopeMode::IncludeProcesses | SystemAudioScopeMode::ExcludeProcesses => {
+            let Some(target) = scope.targets.first() else {
+                return Err(
+                    "Process-scoped system audio requires exactly one process target".to_string(),
+                );
+            };
+
+            if scope.targets.len() > 1 {
+                return Err(
+                    "Process-scoped system audio supports one process target in this version"
+                        .to_string(),
+                );
+            }
+
+            let mode = match scope.mode {
+                SystemAudioScopeMode::IncludeProcesses => {
+                    ProcessLoopbackCaptureMode::IncludeTargetProcessTree
+                },
+                SystemAudioScopeMode::ExcludeProcesses => {
+                    ProcessLoopbackCaptureMode::ExcludeTargetProcessTree
+                },
+                SystemAudioScopeMode::All => unreachable!("handled above"),
+            };
+
+            Ok(ProcessLoopbackRequest::Scoped {
+                target: target.clone(),
+                mode,
+            })
+        },
+    }
+}
+
+fn record_process_scoped_system_audio(
+    output_path: &Path,
+    should_stop: Arc<AtomicBool>,
+    is_paused: Arc<AtomicBool>,
+    start_time: Instant,
+    target: &SystemAudioProcessTarget,
+    mode: ProcessLoopbackCaptureMode,
+) -> Result<(), String> {
+    let loopback = WasapiProcessLoopback::new(target.process_id, mode)?;
+
+    let (sample_tx, writer_handle) = spawn_wav_writer(
+        output_path.to_path_buf(),
+        Arc::clone(&should_stop),
+        "process-system-audio",
+    )?;
+
+    let capture_result = loopback.capture_loop(sample_tx, should_stop, is_paused, start_time);
+
+    match writer_handle.join() {
+        Ok(Ok(total)) => {
+            let captured_samples = capture_result?;
+            log::info!(
+                "[MULTITRACK] Process system audio: captured {}, written {}",
+                captured_samples,
+                total
+            );
+            Ok(())
+        },
+        Ok(Err(e)) => {
+            log::error!("[MULTITRACK] Process system audio writer error: {}", e);
+            capture_result.and(Err(e))
+        },
+        Err(_) => {
+            log::error!("[MULTITRACK] Process system audio writer thread panicked");
+            capture_result.and(Err("Writer thread panicked".to_string()))
+        },
+    }
+}
+
+fn record_endpoint_system_audio(
     output_path: &Path,
     should_stop: Arc<AtomicBool>,
     is_paused: Arc<AtomicBool>,
@@ -916,5 +1073,37 @@ mod tests {
         duplicate_left_channel_when_right_is_silent(&mut samples);
 
         assert_eq!(samples, vec![0.25, 0.1, -0.5, 0.05]);
+    }
+
+    #[test]
+    fn process_loopback_request_uses_all_system_audio_for_all_scope() {
+        let request = process_loopback_request(&SystemAudioScope::default()).unwrap();
+
+        assert!(matches!(request, ProcessLoopbackRequest::All));
+    }
+
+    #[test]
+    fn process_loopback_request_rejects_empty_process_scope() {
+        let scope = SystemAudioScope {
+            mode: SystemAudioScopeMode::IncludeProcesses,
+            targets: Vec::new(),
+        };
+
+        assert!(process_loopback_request(&scope).is_err());
+    }
+
+    #[test]
+    fn process_loopback_request_rejects_multiple_process_targets() {
+        let target = SystemAudioProcessTarget {
+            process_id: 42,
+            process_name: "app.exe".to_string(),
+            window_title: Some("App".to_string()),
+        };
+        let scope = SystemAudioScope {
+            mode: SystemAudioScopeMode::ExcludeProcesses,
+            targets: vec![target.clone(), target],
+        };
+
+        assert!(process_loopback_request(&scope).is_err());
     }
 }
