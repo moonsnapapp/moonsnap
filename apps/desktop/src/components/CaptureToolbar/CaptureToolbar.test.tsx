@@ -18,6 +18,8 @@ describe('CaptureToolbar recording audio indicators', () => {
     setInvokeResponse('list_webcam_devices', []);
     setInvokeResponse('list_audio_input_devices', []);
     setInvokeResponse('list_audio_output_devices', []);
+    setInvokeResponse('is_process_audio_capture_supported', true);
+    setInvokeResponse('list_system_audio_processes', []);
 
     useCaptureSettingsStore.setState({
       settings: {
@@ -259,6 +261,8 @@ describe('CaptureToolbar selection HUD', () => {
     setInvokeResponse('list_webcam_devices', []);
     setInvokeResponse('list_audio_input_devices', []);
     setInvokeResponse('list_audio_output_devices', []);
+    setInvokeResponse('is_process_audio_capture_supported', true);
+    setInvokeResponse('list_system_audio_processes', []);
 
     useCaptureSettingsStore.setState({
       settings: {

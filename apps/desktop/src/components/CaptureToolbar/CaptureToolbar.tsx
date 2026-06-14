@@ -708,6 +708,7 @@ export const CaptureToolbar: React.FC<CaptureToolbarProps> = ({
   const { micLevel, systemLevel, micActive, systemActive } = useRustAudioLevels({
     micDeviceIndex: audioState.isMicEnabled ? audioState.micDeviceIndex : null,
     monitorSystemAudio: audioState.isSystemAudioEnabled,
+    systemAudioScope: settings.video.systemAudioScope,
     enabled: toolbarState.supportsRecordingAudio && (!toolbarState.isBusy || audioState.shouldShowRecordingAudioIndicators),
   });
 

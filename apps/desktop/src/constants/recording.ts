@@ -1,4 +1,6 @@
 import type { GifSettings, VideoSettings } from '@/types/generated';
+import type { SystemAudioProcessTarget } from '@/types/generated/SystemAudioProcessTarget';
+import type { SystemAudioScope } from '@/types/generated/SystemAudioScope';
 
 export const RECORDING = {
   VIDEO_FPS_OPTIONS: [15, 30, 60],
@@ -7,6 +9,11 @@ export const RECORDING = {
   GIF_FPS_OPTIONS: [10, 15, 20, 30],
   GIF_MAX_DURATION_OPTIONS: [10, 30, 60, 0],
 } as const;
+
+export const DEFAULT_SYSTEM_AUDIO_SCOPE: SystemAudioScope = {
+  mode: 'all',
+  targets: [],
+};
 
 function closestOption(value: number, options: readonly number[]): number {
   return options.reduce((closest, option) =>
@@ -28,6 +35,7 @@ export function normalizeVideoSettings(settings: VideoSettings): VideoSettings {
     fps: closestOption(settings.fps, RECORDING.VIDEO_FPS_OPTIONS),
     quality: closestOption(settings.quality, RECORDING.VIDEO_QUALITY_OPTIONS),
     countdownSecs: closestOption(settings.countdownSecs, RECORDING.COUNTDOWN_OPTIONS),
+    systemAudioScope: normalizeSystemAudioScope(settings.systemAudioScope),
   };
 }
 
@@ -59,8 +67,61 @@ export function normalizeVideoSettingsUpdates(
       RECORDING.COUNTDOWN_OPTIONS,
     );
   }
+  if (normalized.systemAudioScope !== undefined) {
+    normalized.systemAudioScope = normalizeSystemAudioScope(normalized.systemAudioScope);
+  }
 
   return normalized;
+}
+
+function normalizeSystemAudioTarget(
+  target: SystemAudioProcessTarget | null | undefined,
+): SystemAudioProcessTarget | null {
+  if (!target || !Number.isSafeInteger(target.processId) || target.processId <= 0) {
+    return null;
+  }
+
+  const processName = target.processName.trim() || `Process ${target.processId}`;
+  const windowTitle = target.windowTitle?.trim() || null;
+
+  return {
+    processId: target.processId,
+    processName,
+    windowTitle,
+  };
+}
+
+export function normalizeSystemAudioScope(
+  scope: SystemAudioScope | null | undefined,
+): SystemAudioScope {
+  if (!scope || scope.mode === 'all') {
+    return DEFAULT_SYSTEM_AUDIO_SCOPE;
+  }
+
+  const normalizedTargets: SystemAudioProcessTarget[] = [];
+  const seenProcessIds = new Set<number>();
+
+  for (const target of scope.targets) {
+    const normalizedTarget = normalizeSystemAudioTarget(target);
+    if (!normalizedTarget || seenProcessIds.has(normalizedTarget.processId)) {
+      continue;
+    }
+
+    seenProcessIds.add(normalizedTarget.processId);
+    normalizedTargets.push(normalizedTarget);
+
+    // Windows application loopback targets one process tree per activation.
+    break;
+  }
+
+  if (normalizedTargets.length === 0) {
+    return DEFAULT_SYSTEM_AUDIO_SCOPE;
+  }
+
+  return {
+    mode: scope.mode,
+    targets: normalizedTargets,
+  };
 }
 
 export function normalizeGifSettingsUpdates(

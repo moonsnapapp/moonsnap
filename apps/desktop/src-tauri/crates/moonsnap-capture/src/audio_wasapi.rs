@@ -16,8 +16,261 @@ use moonsnap_capture_types::recording::AudioOutputDevice;
 use std::collections::VecDeque;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use wasapi::*;
+
+const PROCESS_LOOPBACK_MIN_BUILD: u32 = 20348;
+const PROCESS_LOOPBACK_BUFFER_DURATION_HNS: i64 = 200_000;
+const PROCESS_LOOPBACK_EVENT_TIMEOUT_MS: u32 = 15;
+const PROCESS_LOOPBACK_SAMPLE_RATE: u32 = 48_000;
+const PROCESS_LOOPBACK_CHANNELS: u16 = 2;
+const PROCESS_LOOPBACK_BITS_PER_SAMPLE: u16 = 32;
+
+/// Process-loopback capture mode for Windows application audio capture.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProcessLoopbackCaptureMode {
+    IncludeTargetProcessTree,
+    ExcludeTargetProcessTree,
+}
+
+impl ProcessLoopbackCaptureMode {
+    fn include_tree_for_wasapi(self) -> bool {
+        match self {
+            Self::IncludeTargetProcessTree => true,
+            Self::ExcludeTargetProcessTree => false,
+        }
+    }
+}
+
+/// WASAPI process-loopback capture for one target process tree.
+pub struct WasapiProcessLoopback {
+    audio_client: AudioClient,
+    capture_client: AudioCaptureClient,
+    event_handle: Handle,
+    channels: u16,
+    sample_rate: u32,
+}
+
+impl WasapiProcessLoopback {
+    /// Create a process-loopback capture client for a target process tree.
+    pub fn new(
+        target_process_id: u32,
+        mode: ProcessLoopbackCaptureMode,
+    ) -> Result<Self, String> {
+        if target_process_id == 0 {
+            return Err("Process loopback target process ID must be positive".to_string());
+        }
+
+        if !is_process_loopback_supported() {
+            return Err(format!(
+                "Process-scoped system audio requires Windows build {} or later",
+                PROCESS_LOOPBACK_MIN_BUILD
+            ));
+        }
+
+        initialize_mta()
+            .ok()
+            .map_err(|e| format!("Failed to initialize COM: {:?}", e))?;
+
+        let mut audio_client = AudioClient::new_application_loopback_client(
+            target_process_id,
+            mode.include_tree_for_wasapi(),
+        )
+        .map_err(|e| format!("Failed to activate process loopback audio client: {:?}", e))?;
+
+        let wave_format = WaveFormat::new(
+            PROCESS_LOOPBACK_BITS_PER_SAMPLE as usize,
+            PROCESS_LOOPBACK_BITS_PER_SAMPLE as usize,
+            &SampleType::Float,
+            PROCESS_LOOPBACK_SAMPLE_RATE as usize,
+            PROCESS_LOOPBACK_CHANNELS as usize,
+            None,
+        );
+
+        let stream_mode = StreamMode::EventsShared {
+            autoconvert: true,
+            buffer_duration_hns: PROCESS_LOOPBACK_BUFFER_DURATION_HNS,
+        };
+
+        audio_client
+            .initialize_client(&wave_format, &Direction::Capture, &stream_mode)
+            .map_err(|e| format!("Failed to initialize process loopback stream: {:?}", e))?;
+
+        let event_handle = audio_client
+            .set_get_eventhandle()
+            .map_err(|e| format!("Failed to get process loopback event handle: {:?}", e))?;
+
+        let capture_client = audio_client
+            .get_audiocaptureclient()
+            .map_err(|e| format!("Failed to get process loopback capture client: {:?}", e))?;
+
+        Ok(Self {
+            audio_client,
+            capture_client,
+            event_handle,
+            channels: PROCESS_LOOPBACK_CHANNELS,
+            sample_rate: PROCESS_LOOPBACK_SAMPLE_RATE,
+        })
+    }
+
+    /// Capture process-loopback audio and send 48 kHz stereo f32 samples to a WAV writer.
+    pub fn capture_loop(
+        self,
+        sample_tx: Sender<Vec<f32>>,
+        should_stop: Arc<AtomicBool>,
+        is_paused: Arc<AtomicBool>,
+        start_time: Instant,
+    ) -> Result<u64, String> {
+        self.audio_client
+            .start_stream()
+            .map_err(|e| format!("Failed to start process loopback stream: {:?}", e))?;
+
+        log::info!(
+            "[WASAPI] Process loopback capture started: {} Hz, {} ch",
+            self.sample_rate,
+            self.channels
+        );
+
+        let buffer_capacity = (self.sample_rate as usize * self.channels as usize) / 10;
+        let mut sample_queue = VecDeque::with_capacity(buffer_capacity * 4);
+        let mut captured_samples = 0u64;
+
+        let mut total_pause_duration = Duration::ZERO;
+        let mut pause_start: Option<Instant> = None;
+
+        let samples_per_sec = (self.sample_rate * self.channels as u32) as u64;
+        let silence_chunk_samples = (samples_per_sec as usize) / 20;
+        let silence_buffer = vec![0.0; silence_chunk_samples];
+
+        while !should_stop.load(Ordering::Relaxed) {
+            if is_paused.load(Ordering::Relaxed) {
+                if pause_start.is_none() {
+                    pause_start = Some(Instant::now());
+                }
+
+                if self.event_handle.wait_for_event(10).is_ok() {
+                    let _ = self
+                        .capture_client
+                        .read_from_device_to_deque(&mut sample_queue);
+                    sample_queue.clear();
+                }
+                std::thread::sleep(Duration::from_millis(5));
+                continue;
+            } else if let Some(ps) = pause_start.take() {
+                let pause_duration = ps.elapsed();
+                total_pause_duration += pause_duration;
+                drain_stale_process_loopback_audio(
+                    &self.capture_client,
+                    &self.event_handle,
+                    &mut sample_queue,
+                    &should_stop,
+                    pause_duration,
+                );
+            }
+
+            let elapsed = start_time.elapsed().saturating_sub(total_pause_duration);
+            let expected_samples = (elapsed.as_secs_f64() * samples_per_sec as f64) as u64;
+            let has_data = self
+                .event_handle
+                .wait_for_event(PROCESS_LOOPBACK_EVENT_TIMEOUT_MS)
+                .is_ok();
+
+            let mut got_samples = false;
+            if has_data
+                && self
+                    .capture_client
+                    .read_from_device_to_deque(&mut sample_queue)
+                    .is_ok()
+                && sample_queue.len() >= 4
+            {
+                let samples = bytes_to_f32_samples(&sample_queue);
+                captured_samples += samples.len() as u64;
+                sample_queue.clear();
+                got_samples = true;
+
+                if sample_tx.try_send(samples).is_err() {
+                    log::warn!("[WASAPI] Process loopback write queue full, dropping samples");
+                }
+            }
+
+            if !got_samples && captured_samples + silence_chunk_samples as u64 <= expected_samples {
+                captured_samples += silence_chunk_samples as u64;
+                if sample_tx.try_send(silence_buffer.clone()).is_err() {
+                    log::warn!("[WASAPI] Process loopback write queue full, dropping silence");
+                }
+            }
+        }
+
+        self.audio_client
+            .stop_stream()
+            .map_err(|e| format!("Failed to stop process loopback stream: {:?}", e))?;
+
+        log::info!(
+            "[WASAPI] Process loopback capture stopped, samples: {}",
+            captured_samples
+        );
+        Ok(captured_samples)
+    }
+}
+
+fn drain_stale_process_loopback_audio(
+    capture_client: &AudioCaptureClient,
+    event_handle: &Handle,
+    sample_queue: &mut VecDeque<u8>,
+    should_stop: &AtomicBool,
+    pause_duration: Duration,
+) {
+    let drain_iterations = if pause_duration.as_secs() >= 5 {
+        20
+    } else if pause_duration.as_secs() >= 1 {
+        10
+    } else {
+        5
+    };
+
+    for _ in 0..drain_iterations {
+        if should_stop.load(Ordering::Relaxed) {
+            break;
+        }
+
+        if event_handle.wait_for_event(10).is_ok()
+            && capture_client
+                .read_from_device_to_deque(sample_queue)
+                .is_ok()
+        {
+            sample_queue.clear();
+        }
+    }
+}
+
+/// Returns true when the current Windows build supports application loopback.
+#[cfg(target_os = "windows")]
+pub fn is_process_loopback_supported() -> bool {
+    windows_build_number().is_some_and(|build| build >= PROCESS_LOOPBACK_MIN_BUILD)
+}
+
+/// Returns false on non-Windows platforms.
+#[cfg(not(target_os = "windows"))]
+pub fn is_process_loopback_supported() -> bool {
+    false
+}
+
+#[cfg(target_os = "windows")]
+fn windows_build_number() -> Option<u32> {
+    use std::mem::size_of;
+    use windows::Wdk::System::SystemServices::RtlGetVersion;
+    use windows::Win32::System::SystemInformation::OSVERSIONINFOW;
+
+    let mut version = OSVERSIONINFOW {
+        dwOSVersionInfoSize: size_of::<OSVERSIONINFOW>() as u32,
+        ..OSVERSIONINFOW::default()
+    };
+
+    if unsafe { RtlGetVersion(&mut version).ok() }.is_err() {
+        return None;
+    }
+    Some(version.dwBuildNumber)
+}
 
 /// A frame of audio samples with timestamp.
 #[derive(Clone)]
@@ -467,6 +720,17 @@ mod tests {
         let samples = bytes_to_f32_samples(&data);
         assert_eq!(samples.len(), 1);
         assert!((samples[0] - 0.5).abs() < 0.0001);
+    }
+
+    #[test]
+    fn process_loopback_mode_maps_to_wasapi_include_tree_flag() {
+        assert!(ProcessLoopbackCaptureMode::IncludeTargetProcessTree.include_tree_for_wasapi());
+        assert!(!ProcessLoopbackCaptureMode::ExcludeTargetProcessTree.include_tree_for_wasapi());
+    }
+
+    #[test]
+    fn process_loopback_support_check_is_callable() {
+        let _ = is_process_loopback_supported();
     }
 
     #[test]

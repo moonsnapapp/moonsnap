@@ -159,6 +159,8 @@ macro_rules! tauri_command_handler {
             crate::commands::video_recording::list_webcam_devices,
             crate::commands::video_recording::list_audio_input_devices,
             crate::commands::video_recording::list_audio_output_devices,
+            crate::commands::video_recording::is_process_audio_capture_supported,
+            crate::commands::video_recording::list_system_audio_processes,
             crate::commands::video_recording::close_webcam_preview,
             crate::commands::video_recording::bring_webcam_preview_to_front,
             crate::commands::video_recording::move_webcam_to_anchor,

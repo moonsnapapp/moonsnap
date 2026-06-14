@@ -13,6 +13,7 @@ import { useState, useEffect, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import type { AudioLevels } from '@/types/generated';
+import type { SystemAudioScope } from '@/types/generated/SystemAudioScope';
 import { audioLogger } from '@/utils/logger';
 
 interface UseRustAudioLevelsOptions {
@@ -20,6 +21,8 @@ interface UseRustAudioLevelsOptions {
   micDeviceIndex?: number | null;
   /** Whether to monitor system audio */
   monitorSystemAudio?: boolean;
+  /** Optional process scope for system audio monitoring */
+  systemAudioScope?: SystemAudioScope;
   /** Whether monitoring is enabled at all */
   enabled?: boolean;
 }
@@ -42,6 +45,7 @@ interface UseRustAudioLevelsResult {
 export function useRustAudioLevels({
   micDeviceIndex = null,
   monitorSystemAudio = false,
+  systemAudioScope,
   enabled = true,
 }: UseRustAudioLevelsOptions = {}): UseRustAudioLevelsResult {
   const [micLevel, setMicLevel] = useState(0);
@@ -82,7 +86,7 @@ export function useRustAudioLevels({
       setIsStarting(true);
       setError(null);
 
-      audioLogger.debug('Starting monitoring:', { micDeviceIndex, monitorSystemAudio });
+      audioLogger.debug('Starting monitoring:', { micDeviceIndex, monitorSystemAudio, systemAudioScope });
 
       try {
         // Set up event listener first
@@ -108,6 +112,7 @@ export function useRustAudioLevels({
         await invoke('start_audio_monitoring', {
           micDeviceIndex: micDeviceIndex,
           monitorSystemAudio: monitorSystemAudio,
+          systemAudioScope,
         });
 
         audioLogger.debug('Rust monitoring started successfully');
@@ -138,7 +143,7 @@ export function useRustAudioLevels({
         unlistenRef.current = null;
       }
     };
-  }, [enabled, micDeviceIndex, monitorSystemAudio]);
+  }, [enabled, micDeviceIndex, monitorSystemAudio, systemAudioScope]);
 
   return {
     micLevel,

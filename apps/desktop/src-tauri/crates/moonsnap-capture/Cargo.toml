@@ -30,6 +30,8 @@ windows = { workspace = true, features = [
     "Win32_Graphics_Direct3D11",
     "Win32_Graphics_Dwm",
     "Win32_Graphics_Gdi",
+    "Wdk_System_SystemServices",
+    "Win32_System_SystemInformation",
     "Win32_System_Performance",
     "Win32_System_WinRT_Graphics_Capture",
     "Win32_UI_WindowsAndMessaging",
