@@ -19,9 +19,9 @@
 //! await invoke('stop_audio_monitoring');
 //! ```
 
-use moonsnap_error::error::MoonSnapResult;
 use moonsnap_capture::audio_wasapi::{ProcessLoopbackCaptureMode, WasapiProcessLoopback};
 use moonsnap_capture_types::recording::{SystemAudioScope, SystemAudioScopeMode};
+use moonsnap_error::error::MoonSnapResult;
 use std::collections::VecDeque;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -436,8 +436,12 @@ fn monitor_process_scoped_system_audio(
     }
 
     let mode = match scope.mode {
-        SystemAudioScopeMode::IncludeProcesses => ProcessLoopbackCaptureMode::IncludeTargetProcessTree,
-        SystemAudioScopeMode::ExcludeProcesses => ProcessLoopbackCaptureMode::ExcludeTargetProcessTree,
+        SystemAudioScopeMode::IncludeProcesses => {
+            ProcessLoopbackCaptureMode::IncludeTargetProcessTree
+        },
+        SystemAudioScopeMode::ExcludeProcesses => {
+            ProcessLoopbackCaptureMode::ExcludeTargetProcessTree
+        },
         SystemAudioScopeMode::All => unreachable!("handled by endpoint monitor"),
     };
 

@@ -578,7 +578,10 @@ pub fn list_system_audio_processes() -> MoonSnapResult<Vec<SystemAudioProcess>> 
                         }
                     }
                 } else {
-                    context.processes.entry(process.process_id).or_insert(process);
+                    context
+                        .processes
+                        .entry(process.process_id)
+                        .or_insert(process);
                 }
             }
         }
@@ -1678,7 +1681,12 @@ pub fn start_audio_monitoring(
     monitor_system_audio: bool,
     system_audio_scope: Option<moonsnap_capture_types::recording::SystemAudioScope>,
 ) -> MoonSnapResult<()> {
-    audio_monitor::start_monitoring(app, mic_device_index, monitor_system_audio, system_audio_scope)
+    audio_monitor::start_monitoring(
+        app,
+        mic_device_index,
+        monitor_system_audio,
+        system_audio_scope,
+    )
 }
 
 /// Stop audio level monitoring.
