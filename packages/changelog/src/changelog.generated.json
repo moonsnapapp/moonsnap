@@ -2,6 +2,26 @@
   "source": "CHANGELOG.md",
   "entries": [
     {
+      "version": "0.5.31",
+      "date": "2026-06-15",
+      "sections": [
+        {
+          "title": "Added",
+          "items": [
+            "Selected timeline items can now be nudged left or right using the arrow keys.",
+            "A diagnostics bundle can now be exported from Settings to help with troubleshooting.",
+            "System audio capture now supports selecting a specific app to record from."
+          ]
+        },
+        {
+          "title": "Fixed",
+          "items": [
+            "Region recording is now constrained to stay within display bounds."
+          ]
+        }
+      ]
+    },
+    {
       "version": "0.5.30",
       "date": "2026-06-05",
       "sections": [

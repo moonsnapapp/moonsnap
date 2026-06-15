@@ -2,6 +2,16 @@
 
 All notable changes to MoonSnap are documented in this file.
 
+## [0.5.31] - 2026-06-15
+
+### Added
+- Selected timeline items can now be nudged left or right using the arrow keys.
+- A diagnostics bundle can now be exported from Settings to help with troubleshooting.
+- System audio capture now supports selecting a specific app to record from.
+
+### Fixed
+- Region recording is now constrained to stay within display bounds.
+
 ## [0.5.30] - 2026-06-05
 
 ### Added
