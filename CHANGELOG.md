@@ -2,6 +2,11 @@
 
 All notable changes to MoonSnap are documented in this file.
 
+## [0.5.32] - 2026-06-15
+
+### Fixed
+- System audio meters now continue showing levels when excluding a specific app.
+
 ## [0.5.31] - 2026-06-15
 
 ### Added

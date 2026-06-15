@@ -2,6 +2,18 @@
   "source": "CHANGELOG.md",
   "entries": [
     {
+      "version": "0.5.32",
+      "date": "2026-06-15",
+      "sections": [
+        {
+          "title": "Fixed",
+          "items": [
+            "System audio meters now continue showing levels when excluding a specific app."
+          ]
+        }
+      ]
+    },
+    {
       "version": "0.5.31",
       "date": "2026-06-15",
       "sections": [
