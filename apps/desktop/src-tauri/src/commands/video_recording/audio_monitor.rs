@@ -103,6 +103,13 @@ fn calculate_rms(samples: &[f32]) -> f32 {
     (rms * 2.0).min(1.0)
 }
 
+fn subtract_target_level(total_level: f32, target_level: f32) -> f32 {
+    ((total_level * total_level) - (target_level * target_level))
+        .max(0.0)
+        .sqrt()
+        .min(1.0)
+}
+
 /// Convert raw bytes (little-endian f32) to f32 samples.
 fn bytes_to_f32_samples(bytes: &VecDeque<u8>) -> Vec<f32> {
     let mut samples = Vec::with_capacity(bytes.len() / 4);
@@ -506,6 +513,92 @@ fn monitor_process_scoped_system_audio(
     log::debug!("[AUDIO_MONITOR] Process-scoped system audio monitoring stopped");
 }
 
+fn monitor_excluding_process_system_audio(
+    should_stop: Arc<AtomicBool>,
+    level: Arc<Mutex<f32>>,
+    is_active: Arc<AtomicBool>,
+    scope: SystemAudioScope,
+) {
+    let Some(target) = scope.targets.first().cloned() else {
+        log::error!("[AUDIO_MONITOR] Excluded-process system audio monitoring requires one target");
+        return;
+    };
+
+    if scope.targets.len() > 1 {
+        log::error!(
+            "[AUDIO_MONITOR] Excluded-process system audio monitoring supports one target in this version"
+        );
+        return;
+    }
+
+    let total_stop = Arc::new(AtomicBool::new(false));
+    let total_level = Arc::new(Mutex::new(0.0));
+    let total_active = Arc::new(AtomicBool::new(false));
+    let total_handle = {
+        let stop = Arc::clone(&total_stop);
+        let level = Arc::clone(&total_level);
+        let active = Arc::clone(&total_active);
+        thread::spawn(move || {
+            monitor_system_audio(stop, level, active, SystemAudioScope::default());
+        })
+    };
+
+    let target_stop = Arc::new(AtomicBool::new(false));
+    let target_level = Arc::new(Mutex::new(0.0));
+    let target_active = Arc::new(AtomicBool::new(false));
+    let target_scope = SystemAudioScope {
+        mode: SystemAudioScopeMode::IncludeProcesses,
+        targets: vec![target.clone()],
+    };
+    let target_handle = {
+        let stop = Arc::clone(&target_stop);
+        let level = Arc::clone(&target_level);
+        let active = Arc::clone(&target_active);
+        thread::spawn(move || {
+            monitor_process_scoped_system_audio(stop, level, active, target_scope);
+        })
+    };
+
+    log::debug!(
+        "[AUDIO_MONITOR] Excluded-process system audio monitoring started for PID {} ({})",
+        target.process_id,
+        target.process_name
+    );
+
+    while !should_stop.load(Ordering::Relaxed) {
+        let total = *total_level.lock();
+        let excluded_target = *target_level.lock();
+        {
+            let mut lvl = level.lock();
+            *lvl = subtract_target_level(total, excluded_target);
+        }
+
+        is_active.store(
+            total_active.load(Ordering::Relaxed) || target_active.load(Ordering::Relaxed),
+            Ordering::SeqCst,
+        );
+
+        thread::sleep(Duration::from_millis(50));
+    }
+
+    total_stop.store(true, Ordering::SeqCst);
+    target_stop.store(true, Ordering::SeqCst);
+
+    if total_handle.join().is_err() {
+        log::error!("[AUDIO_MONITOR] Total system audio monitor thread panicked");
+    }
+    if target_handle.join().is_err() {
+        log::error!("[AUDIO_MONITOR] Target system audio monitor thread panicked");
+    }
+
+    is_active.store(false, Ordering::SeqCst);
+    {
+        let mut lvl = level.lock();
+        *lvl = 0.0;
+    }
+    log::debug!("[AUDIO_MONITOR] Excluded-process system audio monitoring stopped");
+}
+
 /// Start audio level monitoring.
 ///
 /// This starts background threads that capture audio and update level values.
@@ -561,7 +654,11 @@ pub fn start_monitoring(
         let scope = system_audio_scope.unwrap_or_default();
 
         state.system_thread = Some(thread::spawn(move || {
-            monitor_system_audio(stop, level, active, scope);
+            if scope.mode == SystemAudioScopeMode::ExcludeProcesses {
+                monitor_excluding_process_system_audio(stop, level, active, scope);
+            } else {
+                monitor_system_audio(stop, level, active, scope);
+            }
         }));
     }
 
@@ -639,6 +736,22 @@ mod tests {
 
         // Empty
         assert_eq!(calculate_rms(&[]), 0.0);
+    }
+
+    #[test]
+    fn subtract_target_level_preserves_total_when_target_is_silent() {
+        assert!((subtract_target_level(0.75, 0.0) - 0.75).abs() < 0.001);
+    }
+
+    #[test]
+    fn subtract_target_level_removes_target_energy() {
+        let level = subtract_target_level(0.5, 0.3);
+        assert!((level - 0.4).abs() < 0.001);
+    }
+
+    #[test]
+    fn subtract_target_level_clamps_when_target_exceeds_total() {
+        assert_eq!(subtract_target_level(0.2, 0.5), 0.0);
     }
 
     #[test]
