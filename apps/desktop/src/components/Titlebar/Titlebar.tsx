@@ -27,6 +27,8 @@ interface HudTitlebarProps extends TitlebarBaseProps {
   contextLabel?: string;
   /** Secondary detail shown next to the context chip in HUD mode. */
   detailLabel?: string;
+  /** Optional interactive control shown in place of the context chip. */
+  leftControl?: React.ReactNode;
 }
 
 interface TitlebarFrameProps {
@@ -97,15 +99,19 @@ function DefaultTitlebarLeft({ title, showLogo }: { title: string; showLogo: boo
 function HudTitlebarLeft({
   contextLabel,
   detailLabel,
+  leftControl,
 }: {
   contextLabel?: string;
   detailLabel?: string;
+  leftControl?: React.ReactNode;
 }) {
   return (
     <>
-      <span className="titlebar-hud-context" data-tauri-drag-region>
-        {contextLabel ?? 'Workspace'}
-      </span>
+      {leftControl ?? (
+        <span className="titlebar-hud-context" data-tauri-drag-region>
+          {contextLabel ?? 'Workspace'}
+        </span>
+      )}
       {detailLabel && (
         <span
           className="titlebar-hud-detail"
@@ -423,6 +429,7 @@ export function HudTitlebar({
   showMaximize = true,
   contextLabel,
   detailLabel,
+  leftControl,
   onClose,
   onOpenLibrary,
   onCapture,
@@ -432,7 +439,13 @@ export function HudTitlebar({
     <TitlebarFrame
       showMaximize={showMaximize}
       isHud={true}
-      left={<HudTitlebarLeft contextLabel={contextLabel} detailLabel={detailLabel} />}
+      left={
+        <HudTitlebarLeft
+          contextLabel={contextLabel}
+          detailLabel={detailLabel}
+          leftControl={leftControl}
+        />
+      }
       center={<HudTitlebarCenter title={title} />}
       onClose={onClose}
       onOpenLibrary={onOpenLibrary}

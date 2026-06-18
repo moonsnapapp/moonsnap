@@ -53,6 +53,7 @@ const MAX_CARD_WIDTH = 320; // Cards won't grow beyond this
 const SIDEBAR_CONTAINER_PADDING = 24;
 const FULL_CONTENT_OFFSET = 32;
 const FULL_SCROLL_BUFFER = 128;
+const INITIAL_FULL_CONTAINER_WIDTH = 1200;
 
 // Column breakpoints: min 3, max 5 columns
 // Cards resize to fill available width, capped at MAX_CARD_WIDTH
@@ -68,6 +69,25 @@ function clamp(value: number, min: number, max: number): number {
 
 export function getGridGap(variant: 'full' | 'sidebar' = 'full'): number {
   return variant === 'sidebar' ? SIDEBAR_CARD_GAP : LAYOUT.GRID_GAP;
+}
+
+export function getInitialGridContainerWidth(
+  variant: 'full' | 'sidebar' = 'full',
+  sidebarItemSize: number = LAYOUT.LIBRARY_SIDEBAR_ITEM_SIZE_DEFAULT
+): number {
+  if (variant === 'full') {
+    return INITIAL_FULL_CONTAINER_WIDTH;
+  }
+
+  const clampedItemSize = clamp(
+    sidebarItemSize,
+    LAYOUT.LIBRARY_SIDEBAR_ITEM_SIZE_MIN,
+    LAYOUT.LIBRARY_SIDEBAR_ITEM_SIZE_MAX
+  ) as keyof typeof LAYOUT.LIBRARY_SIDEBAR_ITEM_MIN_WIDTH_BY_SIZE;
+  const minCardWidth =
+    LAYOUT.LIBRARY_SIDEBAR_ITEM_MIN_WIDTH_BY_SIZE[clampedItemSize] ??
+    LAYOUT.LIBRARY_SIDEBAR_ITEM_MIN_WIDTH_BY_SIZE[LAYOUT.LIBRARY_SIDEBAR_ITEM_SIZE_DEFAULT];
+  return minCardWidth + SIDEBAR_CONTAINER_PADDING;
 }
 
 export function getScaledCardTargetWidth(
@@ -204,8 +224,13 @@ export function VirtualizedGrid({
   selectionRect,
 }: VirtualizedGridProps) {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
-  const [cardsPerRow, setCardsPerRow] = useState(() => getColumnsForWidth(1200, variant, itemScale, sidebarItemSize));
-  const [containerWidth, setContainerWidth] = useState(1200);
+  const [cardsPerRow, setCardsPerRow] = useState(() => {
+    const initialWidth = getInitialGridContainerWidth(variant, sidebarItemSize);
+    return getColumnsForWidth(initialWidth, variant, itemScale, sidebarItemSize);
+  });
+  const [containerWidth, setContainerWidth] = useState(() =>
+    getInitialGridContainerWidth(variant, sidebarItemSize)
+  );
   const isSidebar = variant === 'sidebar';
 
   // Sync external ref

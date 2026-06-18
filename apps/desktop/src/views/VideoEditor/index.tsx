@@ -17,6 +17,8 @@ import {
   useRef,
   useState,
   type MutableRefObject,
+  type CSSProperties,
+  type ReactNode,
 } from 'react';
 import type { ImperativePanelHandle } from 'react-resizable-panels';
 import { toast } from 'sonner';
@@ -125,6 +127,10 @@ export interface VideoEditorViewProps {
   hideTopBar?: boolean;
   /** Whether this editor view is currently active/interactive. */
   isActive?: boolean;
+  /** Increment to force the right sidebar back to its minimum size. */
+  sidebarResetKey?: number;
+  /** Fixed right sidebar width for embedded workspaces that must not restore a percentage layout. */
+  fixedSidebarWidthPx?: number;
   /** Optional previous/next capture navigation shown over the preview canvas pane. */
   captureNavigation?: CaptureNavigationControls;
 }
@@ -140,9 +146,7 @@ const DEFAULT_SIDEBAR_WIDTH_PX = 380;
 // Hard pixel floor for the sidebar â€” translated to a percentage at runtime
 // against the current workspace width (see `sidebarMinPct` below).
 const SIDEBAR_MIN_PX = 380;
-// Safety floor used only when the workspace is so narrow that 380px would
-// exceed the sidebar's max, so the panel keeps a feasible [min, max] range.
-const SIDEBAR_MIN_FLOOR_PCT = 18;
+const SIDEBAR_INITIAL_PCT = 18;
 const SIDEBAR_MAX_PCT = 45;
 
 function withFileExtension(filename: string, extension: 'mp4' | 'webm' | 'gif'): string {
@@ -157,10 +161,7 @@ function readSavedSidebarWidthPx() {
 }
 
 function getSidebarMinPct(containerWidth: number) {
-  return Math.min(
-    SIDEBAR_MAX_PCT,
-    Math.max(SIDEBAR_MIN_FLOOR_PCT, (SIDEBAR_MIN_PX / containerWidth) * 100)
-  );
+  return Math.min(SIDEBAR_MAX_PCT, (SIDEBAR_MIN_PX / containerWidth) * 100);
 }
 
 function getDesiredSidebarPct(containerWidth: number, minPct: number) {
@@ -171,14 +172,15 @@ function getDesiredSidebarPct(containerWidth: number, minPct: number) {
   );
 }
 
-function useVideoEditorSidebarPersistence() {
+function useVideoEditorSidebarPersistence(isActive: boolean, sidebarResetKey: number) {
   const workspaceRef = useRef<HTMLDivElement>(null);
   const sidebarPanelRef = useRef<ImperativePanelHandle>(null);
   const containerWidthRef = useRef(0);
   const isProgrammaticResizeRef = useRef(false);
   const isResizingSidebarRef = useRef(false);
+  const forceSidebarMinRef = useRef(false);
   const pendingSidebarPctRef = useRef<number | null>(null);
-  const [sidebarMinPct, setSidebarMinPct] = useState(SIDEBAR_MIN_FLOOR_PCT);
+  const [sidebarMinPct, setSidebarMinPct] = useState(SIDEBAR_INITIAL_PCT);
 
   useLayoutEffect(() => {
     const container = workspaceRef.current;
@@ -195,7 +197,9 @@ function useVideoEditorSidebarPersistence() {
       const panel = sidebarPanelRef.current;
       if (!panel) return;
 
-      const desiredPct = getDesiredSidebarPct(width, minPct);
+      const desiredPct = forceSidebarMinRef.current
+        ? minPct
+        : getDesiredSidebarPct(width, minPct);
       const currentPct = panel.getSize();
       if (Math.abs(currentPct - desiredPct) > 0.01) {
         isProgrammaticResizeRef.current = true;
@@ -215,6 +219,19 @@ function useVideoEditorSidebarPersistence() {
       return;
     }
 
+    if (forceSidebarMinRef.current) {
+      const width = containerWidthRef.current || workspaceRef.current?.clientWidth || 0;
+      if (width > 0) {
+        const minPct = getSidebarMinPct(width);
+        if (Math.abs(size - minPct) > 0.01) {
+          isProgrammaticResizeRef.current = true;
+          sidebarPanelRef.current?.resize(minPct);
+          return;
+        }
+        forceSidebarMinRef.current = false;
+      }
+    }
+
     if (isResizingSidebarRef.current) {
       pendingSidebarPctRef.current = size;
     }
@@ -222,6 +239,7 @@ function useVideoEditorSidebarPersistence() {
 
   const handleSidebarDragging = useCallback((isDragging: boolean) => {
     if (isDragging) {
+      forceSidebarMinRef.current = false;
       isResizingSidebarRef.current = true;
       pendingSidebarPctRef.current = null;
       return;
@@ -233,16 +251,67 @@ function useVideoEditorSidebarPersistence() {
     persistPendingSidebarSize(pendingSize, containerWidthRef.current);
   }, []);
 
+  useLayoutEffect(() => {
+    if (!isActive) return;
+
+    let frameId = 0;
+    const resetSidebarToMin = () => {
+      const width = containerWidthRef.current || workspaceRef.current?.clientWidth || 0;
+      if (width <= 0) return;
+
+      forceSidebarMinRef.current = true;
+      const minPct = getSidebarMinPct(width);
+      setSidebarMinPct(minPct);
+      persistSidebarSizePct(minPct, width);
+
+      const panel = sidebarPanelRef.current;
+      if (!panel) return;
+
+      isProgrammaticResizeRef.current = true;
+      panel.resize(minPct);
+    };
+
+    resetSidebarToMin();
+    frameId = requestAnimationFrame(resetSidebarToMin);
+    return () => cancelAnimationFrame(frameId);
+  }, [isActive, sidebarResetKey]);
+
+  const handlePanelGroupLayout = useCallback((sizes: number[]) => {
+    if (!forceSidebarMinRef.current) return;
+
+    const sidebarSize = sizes[1];
+    const width = containerWidthRef.current || workspaceRef.current?.clientWidth || 0;
+    if (typeof sidebarSize !== 'number' || width <= 0) return;
+
+    const minPct = getSidebarMinPct(width);
+    if (Math.abs(sidebarSize - minPct) <= 0.01) {
+      forceSidebarMinRef.current = false;
+      return;
+    }
+
+    setSidebarMinPct(minPct);
+    persistSidebarSizePct(minPct, width);
+    isProgrammaticResizeRef.current = true;
+    sidebarPanelRef.current?.resize(minPct);
+  }, []);
+
   return {
     workspaceRef,
     sidebarPanelRef,
     sidebarMinPct,
     handleSidebarResize,
     handleSidebarDragging,
+    handlePanelGroupLayout,
   };
 }
 
 function persistPendingSidebarSize(sizePct: number | null, containerWidth: number) {
+  const sidebarWidthPx = getPendingSidebarWidthPx(sizePct, containerWidth);
+  if (sidebarWidthPx === null) return;
+  localStorage.setItem(SIDEBAR_WIDTH_STORAGE_KEY, String(sidebarWidthPx));
+}
+
+function persistSidebarSizePct(sizePct: number, containerWidth: number) {
   const sidebarWidthPx = getPendingSidebarWidthPx(sizePct, containerWidth);
   if (sidebarWidthPx === null) return;
   localStorage.setItem(SIDEBAR_WIDTH_STORAGE_KEY, String(sidebarWidthPx));
@@ -868,11 +937,105 @@ function ExportDialogSection({
   );
 }
 
+function VideoEditorMainColumn({
+  hideTopBar,
+  project,
+  handleBack,
+  isCropEditing,
+  setIsCropEditing,
+  updateExportConfig,
+  handleExport,
+  isActive,
+  captureNavigation,
+  handleResetTrimSegments,
+  handleSetInPoint,
+  handleSetOutPoint,
+  handleClearExportRange,
+}: {
+  hideTopBar: boolean | undefined;
+  project: VideoEditorProject | null;
+  handleBack: () => void;
+  isCropEditing: boolean;
+  setIsCropEditing: (editing: boolean) => void;
+  updateExportConfig: ReturnType<typeof useVideoEditorViewStoreBindings>['updateExportConfig'];
+  handleExport: () => void | Promise<void>;
+  isActive: boolean;
+  captureNavigation: CaptureNavigationControls | undefined;
+  handleResetTrimSegments: () => void;
+  handleSetInPoint: () => void;
+  handleSetOutPoint: () => void;
+  handleClearExportRange: () => void;
+}) {
+  return (
+    <div className="video-editor-content-column h-full flex flex-col min-w-0 min-h-0">
+      <div className="editor-workspace__main flex-1 flex min-h-0">
+        <div className="video-editor-main-pane flex-1 flex flex-col min-w-0">
+          <OptionalVideoEditorToolbar
+            hidden={hideTopBar}
+            project={project}
+            onBack={handleBack}
+          />
+
+          <PreviewTopBarSection
+            project={project}
+            isCropEditing={isCropEditing}
+            onSetIsCropEditing={setIsCropEditing}
+            onUpdateExportConfig={updateExportConfig}
+            onExport={handleExport}
+          />
+
+          <VideoEditorPreview
+            isActive={isActive}
+            captureNavigation={captureNavigation}
+          />
+        </div>
+      </div>
+
+      <VideoEditorTimeline
+        onResetTrimSegments={handleResetTrimSegments}
+        onSetInPoint={handleSetInPoint}
+        onSetOutPoint={handleSetOutPoint}
+        onClearExportRange={handleClearExportRange}
+      />
+    </div>
+  );
+}
+
+function FixedVideoEditorLayout({
+  sidebarWidthPx,
+  mainColumn,
+  sidebar,
+}: {
+  sidebarWidthPx: number;
+  mainColumn: ReactNode;
+  sidebar: ReactNode;
+}) {
+  return (
+    <div
+      className="video-editor-fixed-layout flex-1 min-h-0"
+      style={{ '--video-editor-sidebar-width': `${sidebarWidthPx}px` } as CSSProperties}
+    >
+      <div className="min-w-0 min-h-0">{mainColumn}</div>
+      <div className="video-editor-fixed-layout__divider" aria-hidden="true" />
+      <aside className="video-editor-fixed-layout__sidebar min-w-0 min-h-0">
+        {sidebar}
+      </aside>
+    </div>
+  );
+}
+
 /**
  * VideoEditorView - Main video editor component with preview, timeline, and controls.
  */
 export const VideoEditorView = forwardRef<VideoEditorViewRef, VideoEditorViewProps>(function VideoEditorView(
-  { onBack, hideTopBar, isActive = true, captureNavigation },
+  {
+    onBack,
+    hideTopBar,
+    isActive = true,
+    sidebarResetKey = 0,
+    fixedSidebarWidthPx,
+    captureNavigation,
+  },
   ref
 ) {
   const { setView } = useCaptureStore();
@@ -941,7 +1104,8 @@ export const VideoEditorView = forwardRef<VideoEditorViewRef, VideoEditorViewPro
     sidebarMinPct,
     handleSidebarResize,
     handleSidebarDragging,
-  } = useVideoEditorSidebarPersistence();
+    handlePanelGroupLayout,
+  } = useVideoEditorSidebarPersistence(isActive, sidebarResetKey);
   useVideoEditorDiagnostics(project?.id, isActive);
 
 
@@ -1165,67 +1329,63 @@ export const VideoEditorView = forwardRef<VideoEditorViewRef, VideoEditorViewPro
     exportVideo: handleExport,
   }), [togglePlayback, handleSeekToStart, handleSeekToEnd, handleExport]);
 
+  const mainColumn = (
+    <VideoEditorMainColumn
+      hideTopBar={hideTopBar}
+      project={project}
+      handleBack={handleBack}
+      isCropEditing={isCropEditing}
+      setIsCropEditing={setIsCropEditing}
+      updateExportConfig={updateExportConfig}
+      handleExport={handleExport}
+      isActive={isActive}
+      captureNavigation={captureNavigation}
+      handleResetTrimSegments={handleResetTrimSegments}
+      handleSetInPoint={handleSetInPoint}
+      handleSetOutPoint={handleSetOutPoint}
+      handleClearExportRange={handleClearExportRange}
+    />
+  );
+
+  const sidebar = <VideoEditorSidebar project={project} />;
+
   return (
     <div ref={workspaceRef} className="editor-workspace video-editor-workspace flex-1 flex min-h-0">
-      <ResizablePanelGroup
-        direction="horizontal"
-        className="flex-1 min-h-0"
-      >
-        <ResizablePanel defaultSize={74} minSize={50} className="min-w-0">
-          <div className="video-editor-content-column h-full flex flex-col min-w-0 min-h-0">
-            {/* Main content area - Preview */}
-            <div className="editor-workspace__main flex-1 flex min-h-0">
-              <div className="video-editor-main-pane flex-1 flex flex-col min-w-0">
-                <OptionalVideoEditorToolbar
-                  hidden={hideTopBar}
-                  project={project}
-                  onBack={handleBack}
-                />
-
-                <PreviewTopBarSection
-                  project={project}
-                  isCropEditing={isCropEditing}
-                  onSetIsCropEditing={setIsCropEditing}
-                  onUpdateExportConfig={updateExportConfig}
-                  onExport={handleExport}
-                />
-
-                {/* Video Preview */}
-                <VideoEditorPreview
-                  isActive={isActive}
-                  captureNavigation={captureNavigation}
-                />
-              </div>
-            </div>
-
-            {/* Timeline with integrated controls */}
-            <VideoEditorTimeline
-              onResetTrimSegments={handleResetTrimSegments}
-              onSetInPoint={handleSetInPoint}
-              onSetOutPoint={handleSetOutPoint}
-              onClearExportRange={handleClearExportRange}
-            />
-          </div>
-        </ResizablePanel>
-
-        <ResizableHandle className="video-editor-resize-handle" onDragging={handleSidebarDragging}>
-          <span className="sidebar-toggle-handle__chip" aria-hidden="true">
-            <ChevronRight className="w-3 h-3" />
-          </span>
-        </ResizableHandle>
-
-        <ResizablePanel
-          ref={sidebarPanelRef}
-          defaultSize={26}
-          minSize={sidebarMinPct}
-          maxSize={SIDEBAR_MAX_PCT}
-          onResize={handleSidebarResize}
-          className="min-w-0"
+      {fixedSidebarWidthPx ? (
+        <FixedVideoEditorLayout
+          sidebarWidthPx={fixedSidebarWidthPx}
+          mainColumn={mainColumn}
+          sidebar={sidebar}
+        />
+      ) : (
+        <ResizablePanelGroup
+          key={sidebarResetKey}
+          direction="horizontal"
+          className="flex-1 min-h-0"
+          onLayout={handlePanelGroupLayout}
         >
-          {/* Right sidebar with tabbed properties panel */}
-          <VideoEditorSidebar project={project} />
-        </ResizablePanel>
-      </ResizablePanelGroup>
+          <ResizablePanel defaultSize={100 - sidebarMinPct} minSize={50} className="min-w-0">
+            {mainColumn}
+          </ResizablePanel>
+
+          <ResizableHandle className="video-editor-resize-handle" onDragging={handleSidebarDragging}>
+            <span className="sidebar-toggle-handle__chip" aria-hidden="true">
+              <ChevronRight className="w-3 h-3" />
+            </span>
+          </ResizableHandle>
+
+          <ResizablePanel
+            ref={sidebarPanelRef}
+            defaultSize={sidebarMinPct}
+            minSize={sidebarMinPct}
+            maxSize={SIDEBAR_MAX_PCT}
+            onResize={handleSidebarResize}
+            className="min-w-0"
+          >
+            {sidebar}
+          </ResizablePanel>
+        </ResizablePanelGroup>
+      )}
 
       {/* Export Progress Overlay */}
       <ExportProgressOverlay

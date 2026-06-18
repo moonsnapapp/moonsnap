@@ -1,9 +1,18 @@
-import { useState, useCallback, useMemo, useRef, useEffect, Activity, type MutableRefObject } from 'react';
+import React, {
+  useState,
+  useCallback,
+  useMemo,
+  useRef,
+  useEffect,
+  startTransition,
+  Activity,
+  type MutableRefObject,
+} from 'react';
 import { Toaster } from 'sonner';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
-import { FolderOpen } from 'lucide-react';
+import { FolderOpen, Images, SquarePen } from 'lucide-react';
 import type { ImperativePanelHandle } from 'react-resizable-panels';
 import { HudTitlebar } from './components/Titlebar/Titlebar';
 import { CaptureLibrary } from './components/Library/CaptureLibrary';
@@ -31,6 +40,20 @@ import { handleScreenshotCompletion } from './utils/screenshotCompletion';
 import { isTextInputTarget } from './utils/keyboard';
 import { LAYOUT, STORAGE } from './constants';
 import type { CaptureListItem } from './types';
+
+type WorkspaceTab = 'library' | 'editor';
+type ReactViewTransitionProps = {
+  children: React.ReactNode;
+  default?: string;
+  enter?: string;
+  exit?: string;
+  update?: string;
+};
+type ReactWithViewTransition = typeof React & {
+  ViewTransition?: React.ComponentType<ReactViewTransitionProps>;
+};
+
+const ReactViewTransition = (React as ReactWithViewTransition).ViewTransition;
 
 const clampSidebarSize = (size: number) =>
   Math.min(
@@ -156,7 +179,11 @@ function stopLibraryWindowMediaPlayback() {
   }
 }
 
-function getWorkspaceContextLabel(view: string) {
+function getWorkspaceContextLabel(view: string, activeWorkspaceTab: WorkspaceTab) {
+  if (activeWorkspaceTab === 'library') {
+    return 'Library';
+  }
+
   switch (view) {
     case 'editor':
       return 'Image Editor';
@@ -175,6 +202,55 @@ function getVideoEditorPath(outputPath: string) {
 
 function isWorkspaceView(view: string) {
   return view === 'library' || view === 'editor' || view === 'videoEditor' || view === 'gifEditor';
+}
+
+function getInitialWorkspaceTab(view: string): WorkspaceTab {
+  return view === 'library' ? 'library' : 'editor';
+}
+
+function getWorkspaceTabClassName(tab: WorkspaceTab, activeWorkspaceTab: WorkspaceTab) {
+  return `workspace-tabs__trigger ${
+    tab === activeWorkspaceTab ? 'workspace-tabs__trigger--active' : ''
+  }`;
+}
+
+function setWorkspaceTabWithTransition(
+  setActiveWorkspaceTab: React.Dispatch<React.SetStateAction<WorkspaceTab>>,
+  tab: WorkspaceTab,
+) {
+  startTransition(() => {
+    setActiveWorkspaceTab(tab);
+  });
+}
+
+function activateEditorWorkspaceWithTransition({
+  setActiveWorkspaceTab,
+  setEditorSidebarResetKey,
+}: {
+  setActiveWorkspaceTab: React.Dispatch<React.SetStateAction<WorkspaceTab>>;
+  setEditorSidebarResetKey: React.Dispatch<React.SetStateAction<number>>;
+}) {
+  startTransition(() => {
+    setActiveWorkspaceTab('editor');
+    setEditorSidebarResetKey((key) => key + 1);
+  });
+}
+
+function WorkspaceViewTransition({ children }: { children: React.ReactNode }) {
+  if (!ReactViewTransition) {
+    return <>{children}</>;
+  }
+
+  return (
+    <ReactViewTransition
+      default="none"
+      enter="fade-in"
+      exit="fade-out"
+      update="fade-in"
+    >
+      {children}
+    </ReactViewTransition>
+  );
 }
 
 function getLastOpenedWorkspaceCapture(
@@ -317,6 +393,8 @@ function usePreviewOpenLibraryEditorListeners(
 
 function WorkspaceEditorPanel({
   view,
+  isActive,
+  sidebarResetKey,
   lastOpenedCapture,
   onCloseImageEditor,
   onCloseVideoEditor,
@@ -324,6 +402,8 @@ function WorkspaceEditorPanel({
   onOpenLastMedia,
 }: {
   view: string;
+  isActive: boolean;
+  sidebarResetKey: number;
   lastOpenedCapture: CaptureListItem | null;
   onCloseImageEditor: () => void;
   onCloseVideoEditor: () => void;
@@ -332,7 +412,13 @@ function WorkspaceEditorPanel({
 }) {
   const editorPanels = {
     editor: <EmbeddedImageEditor onClose={onCloseImageEditor} />,
-    videoEditor: <EmbeddedVideoEditor onClose={onCloseVideoEditor} />,
+    videoEditor: (
+      <EmbeddedVideoEditor
+        onClose={onCloseVideoEditor}
+        isActive={isActive}
+        sidebarResetKey={sidebarResetKey}
+      />
+    ),
     gifEditor: <EmbeddedGifEditor onClose={onCloseGifEditor} />,
   };
   const editorPanel = editorPanels[view as keyof typeof editorPanels];
@@ -367,6 +453,41 @@ function getWorkspaceSidebarClassName(isSidebarCollapsed: boolean) {
 
 function WorkspaceLibraryCollapsedRail() {
   return <div className="image-editor-layout__library-rail" aria-hidden="true" />;
+}
+
+function WorkspaceTabs({
+  activeWorkspaceTab,
+  onSelectLibrary,
+  onSelectEditor,
+}: {
+  activeWorkspaceTab: WorkspaceTab;
+  onSelectLibrary: () => void;
+  onSelectEditor: () => void;
+}) {
+  return (
+    <div className="workspace-tabs" role="tablist" aria-label="Workspace views">
+      <button
+        type="button"
+        role="tab"
+        aria-selected={activeWorkspaceTab === 'library'}
+        className={getWorkspaceTabClassName('library', activeWorkspaceTab)}
+        onClick={onSelectLibrary}
+      >
+        <Images className="workspace-tabs__icon" />
+        <span>Library</span>
+      </button>
+      <button
+        type="button"
+        role="tab"
+        aria-selected={activeWorkspaceTab === 'editor'}
+        className={getWorkspaceTabClassName('editor', activeWorkspaceTab)}
+        onClick={onSelectEditor}
+      >
+        <SquarePen className="workspace-tabs__icon" />
+        <span>Editor</span>
+      </button>
+    </div>
+  );
 }
 
 const EMPTY_FOCUSED_CAPTURE_PROPS = {
@@ -426,10 +547,41 @@ function WorkspaceLibrarySidebarContent({
   );
 }
 
+function WorkspaceLibraryView({
+  isActive,
+  onEditImage,
+  onEditVideo,
+  onEditGif,
+}: {
+  isActive: boolean;
+  onEditImage: (capture: CaptureListItem) => void | Promise<void>;
+  onEditVideo: (capture: CaptureListItem) => void | Promise<void>;
+  onEditGif: (capture: CaptureListItem) => void | Promise<void>;
+}) {
+  return (
+    <Activity mode={isActive ? 'visible' : 'hidden'}>
+      <WorkspaceViewTransition>
+        <div className="workspace-pane workspace-pane--library flex-1 min-h-0">
+          <LibraryErrorBoundary>
+            <CaptureLibrary
+              variant="full"
+              enableKeyboardShortcuts={isActive}
+              onEditImage={onEditImage}
+              onEditVideo={onEditVideo}
+              onEditGif={onEditGif}
+            />
+          </LibraryErrorBoundary>
+        </div>
+      </WorkspaceViewTransition>
+    </Activity>
+  );
+}
+
 function WorkspaceLayout({
-  isWorkspaceActive,
+  isEditorWorkspaceActive,
   workspaceLayoutRef,
   handleImageWorkspaceLayout,
+  editorSidebarResetKey,
   sidebarPanelRef,
   isSidebarCollapsed,
   sidebarSize,
@@ -449,9 +601,10 @@ function WorkspaceLayout({
   handleCloseGifEditor,
   handleOpenLastMedia,
 }: {
-  isWorkspaceActive: boolean;
+  isEditorWorkspaceActive: boolean;
   workspaceLayoutRef: React.RefObject<HTMLDivElement | null>;
   handleImageWorkspaceLayout: (sizes: number[]) => void;
+  editorSidebarResetKey: number;
   sidebarPanelRef: React.RefObject<ImperativePanelHandle | null>;
   isSidebarCollapsed: boolean;
   sidebarSize: number;
@@ -472,58 +625,62 @@ function WorkspaceLayout({
   handleOpenLastMedia: () => void;
 }) {
   return (
-    <Activity mode={isWorkspaceActive ? 'visible' : 'hidden'}>
-      <div ref={workspaceLayoutRef} className="flex-1 min-h-0">
-        <ResizablePanelGroup
-          direction="horizontal"
-          className="image-editor-layout flex-1 min-h-0"
-          onLayout={handleImageWorkspaceLayout}
-        >
-          <ResizablePanel
-            id="image-library-sidebar"
-            order={1}
-            ref={sidebarPanelRef}
-            collapsible
-            collapsedSize={LAYOUT.IMAGE_EDITOR_SIDEBAR_COLLAPSED_SIZE}
-            onCollapse={handleSidebarCollapse}
-            onExpand={handleSidebarExpand}
-            className={getWorkspaceSidebarClassName(isSidebarCollapsed)}
-            defaultSize={sidebarSize}
-            minSize={LAYOUT.IMAGE_EDITOR_SIDEBAR_MIN_SIZE}
-            maxSize={LAYOUT.IMAGE_EDITOR_SIDEBAR_MAX_SIZE}
+    <Activity mode={isEditorWorkspaceActive ? 'visible' : 'hidden'}>
+      <WorkspaceViewTransition>
+        <div ref={workspaceLayoutRef} className="workspace-pane workspace-pane--editor flex-1 min-h-0">
+          <ResizablePanelGroup
+            direction="horizontal"
+            className="image-editor-layout flex-1 min-h-0"
+            onLayout={handleImageWorkspaceLayout}
           >
-            <WorkspaceLibrarySidebarContent
-              isSidebarCollapsed={isSidebarCollapsed}
-              isLibraryWorkspaceActive={isLibraryWorkspaceActive}
-              focusedLibraryCapture={focusedLibraryCapture}
-              onFocusCaptureHandled={handleFocusedLibraryCaptureHandled}
-              onEditImage={handleEditImageInWorkspace}
-              onEditVideo={handleEditVideoInWorkspace}
-              onEditGif={handleEditGifInWorkspace}
+            <ResizablePanel
+              id="image-library-sidebar"
+              order={1}
+              ref={sidebarPanelRef}
+              collapsible
+              collapsedSize={LAYOUT.IMAGE_EDITOR_SIDEBAR_COLLAPSED_SIZE}
+              onCollapse={handleSidebarCollapse}
+              onExpand={handleSidebarExpand}
+              className={getWorkspaceSidebarClassName(isSidebarCollapsed)}
+              defaultSize={sidebarSize}
+              minSize={LAYOUT.IMAGE_EDITOR_SIDEBAR_MIN_SIZE}
+              maxSize={LAYOUT.IMAGE_EDITOR_SIDEBAR_MAX_SIZE}
+            >
+              <WorkspaceLibrarySidebarContent
+                isSidebarCollapsed={isSidebarCollapsed}
+                isLibraryWorkspaceActive={isLibraryWorkspaceActive}
+                focusedLibraryCapture={focusedLibraryCapture}
+                onFocusCaptureHandled={handleFocusedLibraryCaptureHandled}
+                onEditImage={handleEditImageInWorkspace}
+                onEditVideo={handleEditVideoInWorkspace}
+                onEditGif={handleEditGifInWorkspace}
+              />
+            </ResizablePanel>
+            <SidebarToggleHandle
+              className="image-editor-layout__resize-handle"
+              collapsed={isSidebarCollapsed}
+              onToggle={handleToggleSidebar}
             />
-          </ResizablePanel>
-          <SidebarToggleHandle
-            className="image-editor-layout__resize-handle"
-            collapsed={isSidebarCollapsed}
-            onToggle={handleToggleSidebar}
-          />
-          <ResizablePanel
-            id="image-editor-main"
-            order={2}
-            className="image-editor-layout__editor"
-            minSize={50}
-          >
-            <WorkspaceEditorPanel
-              view={view}
-              lastOpenedCapture={lastOpenedCapture}
-              onCloseImageEditor={handleCloseImageEditor}
-              onCloseVideoEditor={handleCloseVideoEditor}
-              onCloseGifEditor={handleCloseGifEditor}
-              onOpenLastMedia={handleOpenLastMedia}
-            />
-          </ResizablePanel>
-        </ResizablePanelGroup>
-      </div>
+            <ResizablePanel
+              id="image-editor-main"
+              order={2}
+              className="image-editor-layout__editor"
+              minSize={50}
+            >
+              <WorkspaceEditorPanel
+                view={view}
+                isActive={isEditorWorkspaceActive}
+                sidebarResetKey={editorSidebarResetKey}
+                lastOpenedCapture={lastOpenedCapture}
+                onCloseImageEditor={handleCloseImageEditor}
+                onCloseVideoEditor={handleCloseVideoEditor}
+                onCloseGifEditor={handleCloseGifEditor}
+                onOpenLastMedia={handleOpenLastMedia}
+              />
+            </ResizablePanel>
+          </ResizablePanelGroup>
+        </div>
+      </WorkspaceViewTransition>
     </Activity>
   );
 }
@@ -760,8 +917,13 @@ function App() {
     saveNewCaptureFromFile,
     loadCaptures,
   } = useCaptureStore();
-  const isLibraryWorkspaceActive = view === 'library';
   const isWorkspaceActive = isWorkspaceView(view);
+  const [activeWorkspaceTab, setActiveWorkspaceTab] = useState<WorkspaceTab>(() =>
+    getInitialWorkspaceTab(view)
+  );
+  const [editorSidebarResetKey, setEditorSidebarResetKey] = useState(0);
+  const isEditorWorkspaceActive = activeWorkspaceTab === 'editor' && isWorkspaceActive;
+  const isLibraryWorkspaceActive = isEditorWorkspaceActive && view === 'library';
 
   // Initialize theme (applies theme class to document root)
   useTheme();
@@ -848,16 +1010,64 @@ function App() {
     setFocusedLibraryCapture(null);
   }, []);
 
+  useEffect(() => {
+    if (view !== 'library') {
+      activateEditorWorkspaceWithTransition({
+        setActiveWorkspaceTab,
+        setEditorSidebarResetKey,
+      });
+    }
+  }, [view]);
+
+  const handleSelectLibraryTab = useCallback(() => {
+    useVideoEditorStore.getState().setIsPlaying(false);
+    setWorkspaceTabWithTransition(setActiveWorkspaceTab, 'library');
+  }, []);
+
+  const handleSelectEditorTab = useCallback(() => {
+    activateEditorWorkspaceWithTransition({
+      setActiveWorkspaceTab,
+      setEditorSidebarResetKey,
+    });
+  }, []);
+
+  const handleOpenImageFromLibrary = useCallback(async (capture: CaptureListItem) => {
+    activateEditorWorkspaceWithTransition({
+      setActiveWorkspaceTab,
+      setEditorSidebarResetKey,
+    });
+    await handleEditImageInWorkspace(capture);
+  }, [handleEditImageInWorkspace]);
+
+  const handleOpenVideoFromLibrary = useCallback(async (capture: CaptureListItem) => {
+    activateEditorWorkspaceWithTransition({
+      setActiveWorkspaceTab,
+      setEditorSidebarResetKey,
+    });
+    await handleEditVideoInWorkspace(capture);
+  }, [handleEditVideoInWorkspace]);
+
+  const handleOpenGifFromLibrary = useCallback(async (capture: CaptureListItem) => {
+    activateEditorWorkspaceWithTransition({
+      setActiveWorkspaceTab,
+      setEditorSidebarResetKey,
+    });
+    await handleEditGifInWorkspace(capture);
+  }, [handleEditGifInWorkspace]);
+
   const handleCloseImageEditor = useCallback(() => {
     clearCurrentProject();
+    setWorkspaceTabWithTransition(setActiveWorkspaceTab, 'library');
   }, [clearCurrentProject]);
 
   const handleCloseVideoEditor = useCallback(() => {
     clearCurrentProject();
+    setWorkspaceTabWithTransition(setActiveWorkspaceTab, 'library');
   }, [clearCurrentProject]);
 
   const handleCloseGifEditor = useCallback(() => {
     clearCurrentProject();
+    setWorkspaceTabWithTransition(setActiveWorkspaceTab, 'library');
   }, [clearCurrentProject]);
 
   return (
@@ -894,17 +1104,31 @@ function App() {
       {/* Custom Titlebar */}
       <HudTitlebar
         title="MoonSnap"
-        contextLabel={getWorkspaceContextLabel(view)}
+        contextLabel={getWorkspaceContextLabel(view, activeWorkspaceTab)}
+        leftControl={
+          <WorkspaceTabs
+            activeWorkspaceTab={activeWorkspaceTab}
+            onSelectLibrary={handleSelectLibraryTab}
+            onSelectEditor={handleSelectEditorTab}
+          />
+        }
         onCapture={handleShowCaptureToolbar}
         onOpenSettings={handleOpenSettings}
       />
 
       {/* Main Content */}
       <div className="library-window__content flex-1 flex flex-col min-h-0">
+        <WorkspaceLibraryView
+          isActive={activeWorkspaceTab === 'library' && isWorkspaceActive}
+          onEditImage={handleOpenImageFromLibrary}
+          onEditVideo={handleOpenVideoFromLibrary}
+          onEditGif={handleOpenGifFromLibrary}
+        />
         <WorkspaceLayout
-          isWorkspaceActive={isWorkspaceActive}
+          isEditorWorkspaceActive={isEditorWorkspaceActive}
           workspaceLayoutRef={workspaceLayoutRef}
           handleImageWorkspaceLayout={handleImageWorkspaceLayout}
+          editorSidebarResetKey={editorSidebarResetKey}
           sidebarPanelRef={sidebarPanelRef}
           isSidebarCollapsed={isSidebarCollapsed}
           sidebarSize={sidebarSize}

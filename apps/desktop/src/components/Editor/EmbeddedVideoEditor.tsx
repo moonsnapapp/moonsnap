@@ -17,6 +17,8 @@ import type { CaptureNavigationControls } from './CanvasCaptureNavigation';
 
 interface EmbeddedVideoEditorProps {
   onClose: () => void;
+  isActive?: boolean;
+  sidebarResetKey?: number;
 }
 
 type CaptureCollection = ReturnType<typeof useCaptureStore.getState>['captures'];
@@ -25,6 +27,7 @@ type VideoProject = ReturnType<typeof useVideoEditorStore.getState>['project'];
 
 const SAVE_WAIT_TIMEOUT_MS = 5000;
 const SAVE_WAIT_POLL_MS = 50;
+const EMBEDDED_VIDEO_EDITOR_SIDEBAR_WIDTH_PX = 380;
 
 function normalizeMediaPath(path: string | null | undefined): string {
   return (path ?? '').replace(/\\/g, '/').toLowerCase();
@@ -184,7 +187,11 @@ function EmbeddedVideoEditorLoading() {
   );
 }
 
-export const EmbeddedVideoEditor: React.FC<EmbeddedVideoEditorProps> = ({ onClose }) => {
+export const EmbeddedVideoEditor: React.FC<EmbeddedVideoEditorProps> = ({
+  onClose,
+  isActive = true,
+  sidebarResetKey = 0,
+}) => {
   const captures = useCaptureStore((state) => state.captures);
   const loadingProjectId = useCaptureStore((state) => state.loadingProjectId);
   const loadProject = useCaptureStore((state) => state.loadProject);
@@ -299,7 +306,9 @@ export const EmbeddedVideoEditor: React.FC<EmbeddedVideoEditorProps> = ({ onClos
         void handleClose();
       }}
       hideTopBar={true}
-      isActive={true}
+      isActive={isActive}
+      sidebarResetKey={sidebarResetKey}
+      fixedSidebarWidthPx={EMBEDDED_VIDEO_EDITOR_SIDEBAR_WIDTH_PX}
       captureNavigation={captureNavigation}
     />
   );

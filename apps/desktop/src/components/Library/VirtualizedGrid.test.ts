@@ -4,6 +4,7 @@ import {
   getCardWidth,
   getColumnsForWidth,
   getGridWidth,
+  getInitialGridContainerWidth,
   getScaledCardTargetWidth,
 } from './VirtualizedGrid';
 
@@ -125,6 +126,19 @@ describe('VirtualizedGrid', () => {
 
     it('matches compact sidebar card width for one-column mode', () => {
       expect(getGridWidth(240, 1, 'sidebar')).toBe(216);
+    });
+  });
+
+  describe('getInitialGridContainerWidth', () => {
+    it('starts sidebar grids at the selected item width plus sidebar padding', () => {
+      const width = getInitialGridContainerWidth('sidebar', 1);
+
+      expect(width).toBe(144);
+      expect(getColumnsForWidth(width, 'sidebar', 1, 1)).toBe(1);
+    });
+
+    it('keeps the existing full-library fallback width', () => {
+      expect(getInitialGridContainerWidth('full')).toBe(1200);
     });
   });
 

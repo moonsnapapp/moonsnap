@@ -16,7 +16,14 @@ import { LAYOUT, TIMING } from '../../constants';
 import { isTextInputTarget } from '../../utils/keyboard';
 
 import { useMarqueeSelection, useDragDropImport, useMomentumScroll, useResizeTransitionLock, type VirtualLayoutInfo } from './hooks';
-import { getColumnsForWidth, calculateRowHeight, getCardWidth, getGridGap, getGridWidth } from './VirtualizedGrid';
+import {
+  getColumnsForWidth,
+  calculateRowHeight,
+  getCardWidth,
+  getGridGap,
+  getGridWidth,
+  getInitialGridContainerWidth,
+} from './VirtualizedGrid';
 import {
   Library,
   type DateGroup,
@@ -506,7 +513,7 @@ function getLibraryGridLayout({
   libraryItemScale: number;
   activeSidebarItemSize: number | undefined;
 }): LibraryGridLayout {
-  const width = containerWidth || 1200;
+  const width = containerWidth || getInitialGridContainerWidth(variant, activeSidebarItemSize);
   const columns = getColumnsForWidth(width, variant, libraryItemScale, activeSidebarItemSize);
   const gap = getGridGap(variant);
   const cardWidth = getCardWidth(width, columns, variant, libraryItemScale, activeSidebarItemSize);

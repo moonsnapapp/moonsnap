@@ -341,7 +341,9 @@ function FloatingToolbarHeader({
 }) {
   return (
     <div className="glass-toolbar-top-strip">
-      <div className="glass-toolbar-top-strip-spacer" aria-hidden="true" />
+      <div className="glass-toolbar-top-strip-spacer">
+        <UpdateAvailablePill variant="titlebar" />
+      </div>
 
       <div className="glass-toolbar-brand" aria-hidden="true">
         <span className="glass-toolbar-brand-wordmark">MoonSnap</span>
@@ -837,8 +839,6 @@ export const CaptureToolbar: React.FC<CaptureToolbarProps> = ({
           disabled={toolbarState.isBusy}
           onOpenSettings={onOpenSettings}
         />
-
-        <UpdateAvailablePill variant="toolbar" />
 
         <ToolbarActions
           onOpenLibrary={onOpenLibrary}
