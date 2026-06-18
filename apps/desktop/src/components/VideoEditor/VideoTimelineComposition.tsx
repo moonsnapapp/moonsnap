@@ -37,8 +37,6 @@ import { TimelineRuler } from './TimelineRuler';
 import { ZoomTrackContent, AnnotationTrackContent, SceneTrackContent, MaskTrackContent, TextTrackContent, TrimTrackContent } from './tracks';
 import { TrackManager } from './TrackManager';
 
-const IO_MARKER_LINE_COLOR = 'var(--accent-300, #C8CCD3)';
-const IO_MARKER_HANDLE_BG = 'linear-gradient(135deg, var(--accent-400) 0%, var(--accent-500) 100%)';
 const IO_MARKER_TOOLTIP_BG = 'var(--glass-bg-solid)';
 const IO_MARKER_TOOLTIP_BORDER = 'var(--accent-400, #9CA3AF)';
 const IO_MARKER_TOOLTIP_TEXT = 'var(--accent-300, #C8CCD3)';
@@ -49,9 +47,14 @@ const CUT_SCRUBBER_COLOR = 'var(--accent-500, #6B7280)';
 const TIMELINE_MARKER_LINE_WIDTH_PX = 2;
 const TIMELINE_MARKER_HANDLE_WIDTH_PX = 12;
 const CUT_PREVIEW_LINE_WIDTH_PX = 1;
-const TIMELINE_RULER_HEIGHT_PX = 32;
-const IO_RANGE_BAR_HEIGHT_PX = 3;
-const IO_RANGE_BAR_BOTTOM_OFFSET_PX = 2;
+const IO_TRACK_HEIGHT_PX = 24;
+const IO_RANGE_BAR_HEIGHT_PX = 12;
+const IO_RANGE_HANDLE_WIDTH_PX = 7;
+const IO_RANGE_HANDLE_HEIGHT_PX = IO_RANGE_BAR_HEIGHT_PX;
+const IO_RANGE_TOP_PX = (IO_TRACK_HEIGHT_PX - IO_RANGE_BAR_HEIGHT_PX) / 2;
+const TIMELINE_MARKERS_TOP_PX = IO_TRACK_HEIGHT_PX;
+const IO_RANGE_BAR_BG = '#5F5F5F';
+const IO_RANGE_HANDLE_BG = '#4AA3FF';
 
 type TimelineMarkerEdge = 'start' | 'center' | 'end';
 
@@ -114,7 +117,12 @@ const PreviewScrubber = memo(function PreviewScrubber({
       data-preview-scrubber
       data-cut-mode={isCutMode}
       className="absolute top-0 bottom-0 z-40 pointer-events-none"
-      style={{ left: `${clampedLeft}px`, width: `${lineWidthPx}px`, backgroundColor: scrubberColor }}
+      style={{
+        top: `${TIMELINE_MARKERS_TOP_PX}px`,
+        left: `${clampedLeft}px`,
+        width: `${lineWidthPx}px`,
+        backgroundColor: scrubberColor,
+      }}
     >
       {/* Scrubber handle */}
       <div
@@ -149,7 +157,11 @@ const TimelineTimeLabel = memo(function TimelineTimeLabel({
     <div
       data-timeline-time-label={variant}
       className="absolute top-0 bottom-0 z-[80] pointer-events-none"
-      style={{ left: `${clampedLeft}px`, width: `${lineWidthPx}px` }}
+      style={{
+        top: `${TIMELINE_MARKERS_TOP_PX}px`,
+        left: `${clampedLeft}px`,
+        width: `${lineWidthPx}px`,
+      }}
     >
       <div
         className={`absolute top-5 ${getMarkerAnchorClass(edge)} px-2 py-0.5 rounded text-[10px] font-mono whitespace-nowrap shadow-lg ${
@@ -216,6 +228,7 @@ const Playhead = memo(function Playhead({
         absolute top-0 bottom-0 w-0.5 z-30 pointer-events-none transition-opacity
       `}
       style={{ 
+        top: `${TIMELINE_MARKERS_TOP_PX}px`,
         left: `${clampedLeft}px`,
         backgroundColor: PLAYHEAD_COLOR,
         opacity: visible ? 1 : 0,
@@ -264,8 +277,7 @@ const PlayheadTimeLabel = memo(function PlayheadTimeLabel({
 });
 
 /**
- * IO Marker - teal vertical line confined to the ruler area with "I" or "O" label.
- * Draggable: grab the label handle to reposition.
+ * IO marker handle - compact draggable range edge inside the IO track.
  */
 const IOMarker = memo(function IOMarker({
   timeMs,
@@ -283,39 +295,42 @@ const IOMarker = memo(function IOMarker({
   width: number;
 }) {
   const position = timeMs * timelineZoom;
-  const { clampedLeft, edge } = getMarkerLayout(position, width);
+  const rawHandleLeft = label === 'I' ? position : position - IO_RANGE_HANDLE_WIDTH_PX;
+  const handleLeft = Math.max(
+    0,
+    Math.min(rawHandleLeft, Math.max(0, width - IO_RANGE_HANDLE_WIDTH_PX)),
+  );
 
   return (
     <div
-      className="absolute top-0 h-8 w-0.5 z-50 pointer-events-none"
+      className="absolute top-0 bottom-0 z-50 pointer-events-none"
       style={{
-        left: `${clampedLeft}px`,
-        backgroundColor: IO_MARKER_LINE_COLOR,
+        left: `${handleLeft}px`,
+        width: `${IO_RANGE_HANDLE_WIDTH_PX}px`,
       }}
     >
-      {/* Draggable label handle */}
       <div
         data-timeline-control
         data-io-marker={label === 'I' ? 'in' : 'out'}
-        className={`absolute top-0 ${getMarkerAnchorClass(edge)} w-4 h-4 rounded-b-sm flex items-center justify-center text-[9px] font-bold text-white pointer-events-auto ${isDragging ? 'cursor-grabbing scale-110' : 'cursor-grab hover:scale-105'} transition-transform`}
+        aria-label={label === 'I' ? 'In point' : 'Out point'}
+        className={`absolute left-0 rounded-[3px] pointer-events-auto ${isDragging ? 'cursor-grabbing scale-110' : 'cursor-grab hover:scale-105'} transition-transform`}
         style={{
-          background: IO_MARKER_HANDLE_BG,
-          borderColor: 'rgba(255, 255, 255, 0.15)',
-          borderWidth: '1px',
+          top: `${IO_RANGE_TOP_PX}px`,
+          width: `${IO_RANGE_HANDLE_WIDTH_PX}px`,
+          height: `${IO_RANGE_HANDLE_HEIGHT_PX}px`,
+          background: IO_RANGE_HANDLE_BG,
         }}
         onMouseDown={onMouseDown}
-      >
-        {label}
-      </div>
-      {/* Time tooltip while dragging */}
+      />
       {isDragging && (
         <div
-          className={`absolute top-5 ${getMarkerAnchorClass(edge)} px-2 py-0.5 rounded text-[10px] font-mono whitespace-nowrap shadow-lg pointer-events-none`}
+          className="absolute left-1/2 top-6 -translate-x-1/2 px-2 py-0.5 rounded text-[10px] font-mono whitespace-nowrap pointer-events-none"
           style={{
             backgroundColor: IO_MARKER_TOOLTIP_BG,
             color: IO_MARKER_TOOLTIP_TEXT,
             borderColor: IO_MARKER_TOOLTIP_BORDER,
             borderWidth: '1px',
+            filter: 'drop-shadow(0 2px 4px rgba(0, 0, 0, 0.25))',
           }}
         >
           {formatTimeSimple(timeMs)}
@@ -326,7 +341,7 @@ const IOMarker = memo(function IOMarker({
 });
 
 /**
- * IO range bar - shows the export range as a slim strip near the ruler baseline.
+ * IO range bar - shows the export range in its own timeline track.
  */
 const IORangeBar = memo(function IORangeBar({
   inPointMs,
@@ -344,20 +359,18 @@ const IORangeBar = memo(function IORangeBar({
 
   const inPosition = effectiveIn * timelineZoom;
   const outPosition = effectiveOut * timelineZoom;
-  const width = Math.max(IO_RANGE_BAR_HEIGHT_PX, outPosition - inPosition);
-  const top = TIMELINE_RULER_HEIGHT_PX - IO_RANGE_BAR_HEIGHT_PX - IO_RANGE_BAR_BOTTOM_OFFSET_PX;
+  const width = Math.max(IO_RANGE_HANDLE_WIDTH_PX, outPosition - inPosition);
 
   return (
     <div
       data-io-range-bar
-      className="absolute z-25 pointer-events-none rounded-full"
+      className="absolute z-25 pointer-events-none rounded-[3px]"
       style={{
-        top: `${top}px`,
+        top: `${IO_RANGE_TOP_PX}px`,
         left: `${inPosition}px`,
         width: `${width}px`,
         height: `${IO_RANGE_BAR_HEIGHT_PX}px`,
-        background: 'linear-gradient(90deg, var(--accent-400) 0%, var(--accent-500) 100%)',
-        filter: 'drop-shadow(0 0 3px rgba(156, 163, 175, 0.35))',
+        background: IO_RANGE_BAR_BG,
       }}
     />
   );
@@ -805,12 +818,14 @@ function TimelineToolbar() {
 function TrackLabel({
   icon,
   label,
+  heightClassName = 'h-12',
 }: {
   icon: React.ReactNode;
   label: string;
+  heightClassName?: string;
 }) {
   return (
-    <div className="h-12 border-b border-[var(--glass-border)] flex items-center justify-center">
+    <div className={`${heightClassName} border-b border-[var(--glass-border)] flex items-center justify-center`}>
       <div className="flex items-center gap-1.5 text-[var(--ink-dark)]">
         {icon}
         <span className="text-[11px] font-medium">{label}</span>
@@ -824,6 +839,7 @@ function TimelineTrackLabels() {
 
   return (
     <div className="flex-shrink-0 w-20 bg-[var(--polar-mist)] border-r border-[var(--glass-border)] z-20">
+      <TrackLabel icon={<span className="text-[10px] font-bold">I/O</span>} label="Range" heightClassName="h-6" />
       <div className="h-8 border-b border-[var(--glass-border)]" />
 
       {timeline.hasVideoTrack && <TrackLabel icon={<Film className="w-3.5 h-3.5" />} label="Video" />}
@@ -832,6 +848,51 @@ function TimelineTrackLabels() {
       {timeline.hasZoomTrack && <TrackLabel icon={<ZoomIn className="w-3.5 h-3.5" />} label="Zoom" />}
       {timeline.hasSceneTrack && <TrackLabel icon={<Video className="w-3.5 h-3.5" />} label="Scene" />}
       {timeline.hasMaskTrack && <TrackLabel icon={<EyeOff className="w-3.5 h-3.5" />} label="Mask" />}
+    </div>
+  );
+}
+
+function IOTrackSection() {
+  const timeline = useTimelineComposition();
+
+  return (
+    <div
+      data-io-track
+      className="relative bg-[var(--glass-surface-dark)] border-b border-[var(--glass-border)]"
+      style={{
+        width: `${timeline.timelineWidth}px`,
+        height: `${IO_TRACK_HEIGHT_PX}px`,
+      }}
+    >
+      {(timeline.exportInPointMs !== null || timeline.exportOutPointMs !== null) && (
+        <IORangeBar
+          inPointMs={timeline.exportInPointMs}
+          outPointMs={timeline.exportOutPointMs}
+          effectiveDurationMs={timeline.effectiveDurationMs}
+          timelineZoom={timeline.timelineZoom}
+        />
+      )}
+
+      {timeline.exportInPointMs !== null && (
+        <IOMarker
+          timeMs={timeline.exportInPointMs}
+          label="I"
+          timelineZoom={timeline.timelineZoom}
+          width={timeline.timelineWidth}
+          isDragging={timeline.draggingIOMarker === 'in'}
+          onMouseDown={(event) => timeline.onIOMarkerMouseDown('in', event)}
+        />
+      )}
+      {timeline.exportOutPointMs !== null && (
+        <IOMarker
+          timeMs={timeline.exportOutPointMs}
+          label="O"
+          timelineZoom={timeline.timelineZoom}
+          width={timeline.timelineWidth}
+          isDragging={timeline.draggingIOMarker === 'out'}
+          onMouseDown={(event) => timeline.onIOMarkerMouseDown('out', event)}
+        />
+      )}
     </div>
   );
 }
@@ -945,6 +1006,7 @@ function TimelineTracks() {
 
   return (
     <>
+      <IOTrackSection />
       <TimelineRuler
         durationMs={timeline.effectiveDurationMs}
         timelineZoom={timeline.timelineZoom}
@@ -967,37 +1029,7 @@ function TimelineMarkers() {
 
   return (
     <>
-      {(timeline.exportInPointMs !== null || timeline.exportOutPointMs !== null) && (
-        <IORangeBar
-          inPointMs={timeline.exportInPointMs}
-          outPointMs={timeline.exportOutPointMs}
-          effectiveDurationMs={timeline.effectiveDurationMs}
-          timelineZoom={timeline.timelineZoom}
-        />
-      )}
-
-      {timeline.exportInPointMs !== null && (
-        <IOMarker
-          timeMs={timeline.exportInPointMs}
-          label="I"
-          timelineZoom={timeline.timelineZoom}
-          width={timeline.timelineWidth}
-          isDragging={timeline.draggingIOMarker === 'in'}
-          onMouseDown={(event) => timeline.onIOMarkerMouseDown('in', event)}
-        />
-      )}
-      {timeline.exportOutPointMs !== null && (
-        <IOMarker
-          timeMs={timeline.exportOutPointMs}
-          label="O"
-          timelineZoom={timeline.timelineZoom}
-          width={timeline.timelineWidth}
-          isDragging={timeline.draggingIOMarker === 'out'}
-          onMouseDown={(event) => timeline.onIOMarkerMouseDown('out', event)}
-        />
-      )}
-
-      {!timeline.isPlaying && timeline.draggingIOMarker === null && timeline.previewTimeMs !== null && (
+      {!timeline.isPlaying && !timeline.isDraggingPlayhead && timeline.draggingIOMarker === null && timeline.previewTimeMs !== null && (
         <PreviewScrubber
           previewTimeMs={timeline.previewTimeMs}
           timelineZoom={timeline.timelineZoom}
@@ -1016,7 +1048,7 @@ function TimelineMarkers() {
         onMouseDown={timeline.onPlayheadMouseDown}
       />
 
-      {!timeline.isPlaying && timeline.draggingIOMarker === null && timeline.previewTimeMs !== null && (
+      {!timeline.isPlaying && !timeline.isDraggingPlayhead && timeline.draggingIOMarker === null && timeline.previewTimeMs !== null && (
         <TimelineTimeLabel
           timeMs={timeline.previewTimeMs}
           timelineZoom={timeline.timelineZoom}
@@ -1024,7 +1056,7 @@ function TimelineMarkers() {
           lineWidthPx={timeline.splitMode ? CUT_PREVIEW_LINE_WIDTH_PX : TIMELINE_MARKER_LINE_WIDTH_PX}
         />
       )}
-      {timeline.isDraggingPlayhead && (
+      {timeline.isDraggingPlayhead && timeline.draggingIOMarker === null && (
         <PlayheadTimeLabel
           timelineZoom={timeline.timelineZoom}
           width={timeline.timelineWidth}

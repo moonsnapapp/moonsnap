@@ -454,7 +454,7 @@ describe('VideoTimeline', () => {
       expect(container).toBeInTheDocument();
     });
 
-    it('should render IO range as a slim ruler bar', async () => {
+    it('should render IO range in its own track', async () => {
       useVideoEditorStore.setState({
         project: createMockProject(),
         exportInPointMs: 5000,
@@ -469,12 +469,25 @@ describe('VideoTimeline', () => {
       });
 
       const rangeBar = container!.querySelector('[data-io-range-bar]') as HTMLDivElement | null;
+      const ioTrack = container!.querySelector('[data-io-track]') as HTMLDivElement | null;
+      const ruler = container!.querySelector('[data-timeline-ruler]') as HTMLDivElement | null;
+      const inMarker = container!.querySelector('[data-io-marker="in"]') as HTMLDivElement | null;
+      const outMarker = container!.querySelector('[data-io-marker="out"]') as HTMLDivElement | null;
 
+      expect(ioTrack).toBeInTheDocument();
+      expect(ruler).toBeInTheDocument();
+      expect(ioTrack?.compareDocumentPosition(ruler!)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+      expect(ioTrack?.style.height).toBe('24px');
       expect(rangeBar).toBeInTheDocument();
-      expect(rangeBar?.style.top).toBe('27px');
+      expect(rangeBar?.closest('[data-io-track]')).toBe(ioTrack);
+      expect(rangeBar?.style.top).toBe('6px');
       expect(rangeBar?.style.left).toBe('500px');
       expect(rangeBar?.style.width).toBe('1000px');
-      expect(rangeBar?.style.height).toBe('3px');
+      expect(rangeBar?.style.height).toBe('12px');
+      expect(inMarker?.style.top).toBe('6px');
+      expect(inMarker?.style.height).toBe('12px');
+      expect(outMarker?.style.top).toBe('6px');
+      expect(outMarker?.style.height).toBe('12px');
     });
 
     it('should use the dragged IO marker as the video skimmer without showing the hover scrubber', async () => {
@@ -518,6 +531,7 @@ describe('VideoTimeline', () => {
         expect(useVideoEditorStore.getState().isIOLoopEnabled).toBe(true);
         expect(useVideoEditorStore.getState().previewTimeMs).toBeNull();
         expect(container!.querySelector('[data-preview-scrubber]')).not.toBeInTheDocument();
+        expect(container!.querySelectorAll('[data-timeline-time-label]')).toHaveLength(0);
 
         await act(async () => {
           fireEvent.mouseMove(document, { clientX: 800 });
@@ -528,6 +542,7 @@ describe('VideoTimeline', () => {
         expect(useVideoEditorStore.getState().currentTimeMs).toBe(8000);
         expect(useVideoEditorStore.getState().previewTimeMs).toBeNull();
         expect(container!.querySelector('[data-preview-scrubber]')).not.toBeInTheDocument();
+        expect(container!.querySelectorAll('[data-timeline-time-label]')).toHaveLength(0);
 
         await act(async () => {
           fireEvent.mouseUp(document);
@@ -772,6 +787,7 @@ describe('VideoTimeline', () => {
       expect(previewScrubber).toBeInTheDocument();
       expect(previewScrubber?.getAttribute('data-cut-mode')).toBe('false');
       expect(previewScrubber?.className).toContain('z-40');
+      expect((previewScrubber as HTMLElement | null)?.style.top).toBe('24px');
     });
   });
 
@@ -1222,10 +1238,11 @@ describe('VideoTimeline', () => {
       const playheadHandle = container!.querySelector('[data-timeline-control].cursor-grab') as HTMLDivElement | null;
       const playheadLine = playheadHandle?.parentElement as HTMLDivElement | null;
       expect(playheadHandle).toBeInTheDocument();
+      expect(playheadLine?.style.top).toBe('24px');
       expect(playheadLine?.style.left).toBe('998px');
     });
 
-    it('should render playhead time labels above timeline controls', async () => {
+    it('should render only the playhead time label while dragging', async () => {
       useVideoEditorStore.setState({
         project: createMockProject(),
         currentTimeMs: 5000,
@@ -1241,10 +1258,11 @@ describe('VideoTimeline', () => {
 
       const timeLabels = Array.from(container!.querySelectorAll('[data-timeline-time-label]'));
 
-      expect(timeLabels.length).toBeGreaterThanOrEqual(2);
-      expect(timeLabels.some((label) => label.textContent === '0:05')).toBe(true);
-      expect(timeLabels.some((label) => label.textContent === '0:07')).toBe(true);
+      expect(timeLabels).toHaveLength(1);
+      expect(timeLabels[0]?.textContent).toBe('0:05');
+      expect(timeLabels.every((label) => (label as HTMLElement).style.top === '24px')).toBe(true);
       expect(timeLabels.every((label) => label.className.includes('z-[80]'))).toBe(true);
+      expect(container!.querySelector('[data-preview-scrubber]')).not.toBeInTheDocument();
     });
   });
 
@@ -1532,7 +1550,7 @@ describe('VideoTimeline', () => {
 
       const wrapper = container!.firstElementChild as HTMLDivElement | null;
       expect(wrapper).toBeInTheDocument();
-      expect(wrapper?.style.height).toBe('330px');
+      expect(wrapper?.style.height).toBe('354px');
     });
   });
 });

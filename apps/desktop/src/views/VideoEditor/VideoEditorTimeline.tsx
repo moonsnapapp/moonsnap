@@ -15,6 +15,7 @@ export interface VideoEditorTimelineProps {
 
 const TIMELINE_HEADER_HEIGHT_PX = 44;
 const TIMELINE_RULER_HEIGHT_PX = 32;
+const TIMELINE_IO_TRACK_HEIGHT_PX = 24;
 const TIMELINE_TRACK_HEIGHT_PX = 48;
 const TIMELINE_SCROLLBAR_ALLOWANCE_PX = 14;
 const TIMELINE_BASE_HEIGHT_PX = 320;
@@ -35,6 +36,7 @@ export function VideoEditorTimeline({ onResetTrimSegments, onSetInPoint, onSetOu
     TIMELINE_BASE_HEIGHT_PX,
     TIMELINE_HEADER_HEIGHT_PX +
       TIMELINE_RULER_HEIGHT_PX +
+      TIMELINE_IO_TRACK_HEIGHT_PX +
       visibleTrackCount * TIMELINE_TRACK_HEIGHT_PX +
       TIMELINE_SCROLLBAR_ALLOWANCE_PX
   );
