@@ -829,11 +829,14 @@ textarea,
   flex: 0 0 auto;
   height: 30px;
   padding: 3px;
-  border: 1px solid rgba(255, 255, 255, 0.065);
+  border: 1px solid rgba(0, 0, 0, 0.26);
+  border-top-color: rgba(0, 0, 0, 0.34);
   border-radius: 9px;
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.045) 0%, rgba(255, 255, 255, 0.014) 100%);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.035), inset 0 -1px 0 rgba(0, 0, 0, 0.24); /* tauri-shadow-allow */
+    linear-gradient(180deg, rgba(0, 0, 0, 0.22) 0%, rgba(0, 0, 0, 0.13) 100%);
+  box-shadow: /* tauri-shadow-allow */
+    inset 0 1px 2px rgba(0, 0, 0, 0.3),
+    0 1px 0 rgba(255, 255, 255, 0.04);
   -webkit-app-region: no-drag;
 }
 
@@ -3127,10 +3130,13 @@ body.floating-toolbar-window #root {
 }
 
 .light .workspace-tabs[role="tablist"] {
-  border-color: rgba(15, 23, 42, 0.08);
+  border-color: rgba(15, 23, 42, 0.1);
+  border-top-color: rgba(15, 23, 42, 0.14);
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.88) 0%, rgba(241, 245, 249, 0.72) 100%);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.96), inset 0 -1px 0 rgba(15, 23, 42, 0.05); /* tauri-shadow-allow */
+    linear-gradient(180deg, rgba(15, 23, 42, 0.055) 0%, rgba(15, 23, 42, 0.025) 100%);
+  box-shadow: /* tauri-shadow-allow */
+    inset 0 1px 2px rgba(15, 23, 42, 0.09),
+    0 1px 0 rgba(255, 255, 255, 0.65);
 }
 
 .light .workspace-tabs__trigger[role="tab"] {
@@ -5625,11 +5631,15 @@ body.floating-toolbar-window #root {
 .cloud-search--expanded {
   width: clamp(240px, 24vw, 360px);
   height: 34px;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.055) 0%, rgba(255, 255, 255, 0.018) 100%);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0.32) 0%, rgba(0, 0, 0, 0.2) 100%);
+  border: 1px solid rgba(0, 0, 0, 0.32);
+  border-top-color: rgba(0, 0, 0, 0.42);
   border-radius: 8px;
   padding: 0 8px 0 8px;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03), inset 0 -1px 0 rgba(0, 0, 0, 0.22); /* tauri-shadow-allow */
+  box-shadow: /* tauri-shadow-allow */
+    inset 0 2px 4px rgba(0, 0, 0, 0.4),
+    inset 0 1px 1px rgba(0, 0, 0, 0.3),
+    0 1px 0 rgba(255, 255, 255, 0.045);
 }
 
 .cloud-search__icon,
@@ -5800,9 +5810,13 @@ body.floating-toolbar-window #root {
 }
 
 .light .cloud-search--expanded {
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.88) 0%, rgba(241, 245, 249, 0.8) 100%);
-  border-color: rgba(15, 23, 42, 0.08);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.88), inset 0 -1px 0 rgba(15, 23, 42, 0.05); /* tauri-shadow-allow */
+  background: linear-gradient(180deg, rgba(15, 23, 42, 0.07) 0%, rgba(15, 23, 42, 0.035) 100%);
+  border-color: rgba(15, 23, 42, 0.12);
+  border-top-color: rgba(15, 23, 42, 0.16);
+  box-shadow: /* tauri-shadow-allow */
+    inset 0 2px 4px rgba(15, 23, 42, 0.12),
+    inset 0 1px 1px rgba(15, 23, 42, 0.08),
+    0 1px 0 rgba(255, 255, 255, 0.7);
 }
 
 .light .cloud-search__input {

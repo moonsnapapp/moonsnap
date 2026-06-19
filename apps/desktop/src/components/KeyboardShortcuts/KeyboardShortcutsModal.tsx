@@ -18,6 +18,13 @@ interface ShortcutSection {
 
 const sections: ShortcutSection[] = [
   {
+    title: 'Workspace',
+    shortcuts: [
+      { keys: ['Alt', '1'], description: 'Library view' },
+      { keys: ['Alt', '2'], description: 'Editor view' },
+    ],
+  },
+  {
     title: 'Tools',
     shortcuts: [
       { keys: ['V'], description: 'Select tool' },

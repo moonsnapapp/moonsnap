@@ -784,6 +784,36 @@ function useAppKeyboardPlaceholders() {
   }, []);
 }
 
+function useWorkspaceTabShortcuts({
+  isWorkspaceActive,
+  onSelectLibrary,
+  onSelectEditor,
+}: {
+  isWorkspaceActive: boolean;
+  onSelectLibrary: () => void;
+  onSelectEditor: () => void;
+}) {
+  useEffect(() => {
+    if (!isWorkspaceActive) return undefined;
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.repeat || isTextInputTarget(event.target)) return;
+      if (!event.altKey || event.ctrlKey || event.metaKey) return;
+
+      if (event.code === 'Digit1') {
+        event.preventDefault();
+        onSelectLibrary();
+      } else if (event.code === 'Digit2') {
+        event.preventDefault();
+        onSelectEditor();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isWorkspaceActive, onSelectLibrary, onSelectEditor]);
+}
+
 function useMainAppEventCallbacks({
   loadCaptures,
   loadProject,
@@ -1030,6 +1060,12 @@ function App() {
       setEditorSidebarResetKey,
     });
   }, []);
+
+  useWorkspaceTabShortcuts({
+    isWorkspaceActive,
+    onSelectLibrary: handleSelectLibraryTab,
+    onSelectEditor: handleSelectEditorTab,
+  });
 
   const handleOpenImageFromLibrary = useCallback(async (capture: CaptureListItem) => {
     activateEditorWorkspaceWithTransition({
