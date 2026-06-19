@@ -1,10 +1,9 @@
-import React, { useState, useRef } from 'react';
+import React from 'react';
 import {
   Star,
   LayoutGrid,
   List,
   FolderOpen,
-  Search,
   X,
   Trash2,
 } from 'lucide-react';
@@ -14,6 +13,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { TagFilterDropdown } from './TagFilterDropdown';
+import { LibrarySearchField } from './LibrarySearchField';
 
 type LibraryViewMode = 'grid' | 'list';
 
@@ -36,47 +36,9 @@ interface LibraryHeaderProps {
 type LibrarySearchProps = Pick<LibraryHeaderProps, 'searchQuery' | 'onSearchChange'>;
 
 function LibrarySearch({ searchQuery, onSearchChange }: LibrarySearchProps) {
-  const [searchFocused, setSearchFocused] = useState(false);
-  const searchInputRef = useRef<HTMLInputElement>(null);
-
-  const handleSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Escape') {
-      e.preventDefault();
-      onSearchChange('');
-      searchInputRef.current?.blur();
-    }
-  };
-
-  const handleClearSearch = () => {
-    onSearchChange('');
-    searchInputRef.current?.focus();
-  };
-
   return (
     <div className="library-header__section">
-      <div className={`library-header__search ${searchFocused || searchQuery ? 'library-header__search--active' : ''}`}>
-        <Search className="library-header__search-icon" />
-        <input
-          ref={searchInputRef}
-          type="text"
-          value={searchQuery}
-          onChange={(e) => onSearchChange(e.target.value)}
-          onFocus={() => setSearchFocused(true)}
-          onBlur={() => setSearchFocused(false)}
-          onKeyDown={handleSearchKeyDown}
-          placeholder="Search"
-          className="library-header__search-input"
-        />
-        {searchQuery && (
-          <button
-            onClick={handleClearSearch}
-            aria-label="Clear search"
-            className="library-header__search-clear"
-          >
-            <X className="w-3 h-3" />
-          </button>
-        )}
-      </div>
+      <LibrarySearchField searchQuery={searchQuery} onSearchChange={onSearchChange} />
     </div>
   );
 }

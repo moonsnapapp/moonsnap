@@ -1,8 +1,7 @@
-import React, { useRef } from 'react';
+import React from 'react';
 import {
   Star,
   FolderOpen,
-  Search,
   X,
   Trash2,
   Image,
@@ -15,6 +14,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { TagFilterDropdown } from './TagFilterDropdown';
+import { LibrarySearchField } from './LibrarySearchField';
 
 interface GlassBlobToolbarProps {
   searchQuery: string;
@@ -137,29 +137,6 @@ function SelectionActions({
   );
 }
 
-function SearchLeadingControl({
-  searchQuery,
-  onClearSearch,
-}: {
-  searchQuery: string;
-  onClearSearch: () => void;
-}) {
-  if (!searchQuery) {
-    return <Search className="cloud-search__icon" aria-hidden="true" />;
-  }
-
-  return (
-    <CloudTooltipButton
-      label="Clear Search"
-      ariaLabel="Clear search"
-      onClick={onClearSearch}
-      className="cloud-search__icon-btn"
-    >
-      <X className="w-[15px] h-[15px]" />
-    </CloudTooltipButton>
-  );
-}
-
 export const GlassBlobToolbar: React.FC<GlassBlobToolbarProps> = ({
   searchQuery,
   onSearchChange,
@@ -177,28 +154,10 @@ export const GlassBlobToolbar: React.FC<GlassBlobToolbarProps> = ({
   activeFilterCount = 0,
   onClearAllFilters,
 }) => {
-  const searchInputRef = useRef<HTMLInputElement>(null);
-
-  const handleSearchToggle = () => {
-    if (searchQuery) {
-      onSearchChange('');
-      searchInputRef.current?.focus();
-      return;
-    }
-    searchInputRef.current?.focus();
-  };
-
   const toggleMediaType = (type: string) => {
     onFilterMediaTypesChange(getToggledMediaTypes(filterMediaTypes, type));
   };
 
-  const handleSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Escape') {
-      e.preventDefault();
-      onSearchChange('');
-      searchInputRef.current?.blur();
-    }
-  };
   return (
     <div className="cloud-toolbar" role="toolbar" aria-label="Library filters and actions">
       <div className="cloud-toolbar__glass" />
@@ -246,18 +205,10 @@ export const GlassBlobToolbar: React.FC<GlassBlobToolbarProps> = ({
         </div>
 
         <div className="cloud-toolbar__row cloud-toolbar__row--primary">
-          <div className="cloud-search cloud-search--expanded">
-            <SearchLeadingControl searchQuery={searchQuery} onClearSearch={handleSearchToggle} />
-            <input
-              ref={searchInputRef}
-              type="text"
-              value={searchQuery}
-              onChange={(e) => onSearchChange(e.target.value)}
-              onKeyDown={handleSearchKeyDown}
-              placeholder="Search..."
-              className="cloud-search__input"
-            />
-          </div>
+          <LibrarySearchField
+            searchQuery={searchQuery}
+            onSearchChange={onSearchChange}
+          />
 
           <CloudTooltipButton
             label="Open Folder"
