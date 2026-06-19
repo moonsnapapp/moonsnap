@@ -142,6 +142,123 @@ const MicSelect: React.FC<MicSelectProps> = ({ value, devices, onChange, onRefre
   );
 };
 
+type CaptureSettings = ReturnType<typeof useCaptureSettingsStore.getState>;
+
+function ScreenshotTechnicalSettings({
+  settings,
+  updateScreenshotSettings,
+}: {
+  settings: CaptureSettings['settings'];
+  updateScreenshotSettings: CaptureSettings['updateScreenshotSettings'];
+}) {
+  return (
+    <>
+      <div className="glass-inline-group">
+        <span className="glass-inline-label">Format</span>
+        <GlassSelect
+          value={settings.screenshot.format}
+          options={[
+            { value: 'png', label: 'PNG' },
+            { value: 'jpg', label: 'JPG' },
+            { value: 'webp', label: 'WebP' },
+          ]}
+          onChange={(v) => updateScreenshotSettings({ format: v as 'png' | 'jpg' | 'webp' })}
+        />
+      </div>
+      <div className="glass-inline-group">
+        <span className="glass-inline-label">Quality</span>
+        <GlassSelect
+          value={settings.screenshot.jpgQuality}
+          options={[
+            { value: 60, label: '60%' },
+            { value: 70, label: '70%' },
+            { value: 80, label: '80%' },
+            { value: 90, label: '90%' },
+            { value: 100, label: '100%' },
+          ]}
+          onChange={(v) => updateScreenshotSettings({ jpgQuality: parseInt(v) })}
+          disabled={settings.screenshot.format === 'png'}
+        />
+      </div>
+    </>
+  );
+}
+
+function VideoTechnicalSettings({
+  settings,
+  updateVideoSettings,
+}: {
+  settings: CaptureSettings['settings'];
+  updateVideoSettings: CaptureSettings['updateVideoSettings'];
+}) {
+  return (
+    <>
+      <div className="glass-inline-group">
+        <span className="glass-inline-label">Format</span>
+        <GlassSelect
+          value={settings.video.format}
+          options={[
+            { value: 'mp4', label: 'MP4' },
+          ]}
+          onChange={(v) => updateVideoSettings({ format: v as VideoFormat })}
+        />
+      </div>
+      <div className="glass-inline-group">
+        <span className="glass-inline-label">FPS</span>
+        <GlassSelect
+          value={settings.video.fps}
+          options={RECORDING.VIDEO_FPS_OPTIONS.map((fps) => ({ value: fps, label: String(fps) }))}
+          onChange={(v) => updateVideoSettings({ fps: parseInt(v) })}
+        />
+      </div>
+      <div className="glass-inline-group">
+        <span className="glass-inline-label">Quality</span>
+        <GlassSelect
+          value={settings.video.quality}
+          options={RECORDING.VIDEO_QUALITY_OPTIONS.map((quality) => ({
+            value: quality,
+            label: `${quality}%`,
+          }))}
+          onChange={(v) => updateVideoSettings({ quality: parseInt(v) })}
+        />
+      </div>
+    </>
+  );
+}
+
+function GifTechnicalSettings({
+  settings,
+  updateGifSettings,
+}: {
+  settings: CaptureSettings['settings'];
+  updateGifSettings: CaptureSettings['updateGifSettings'];
+}) {
+  return (
+    <>
+      <div className="glass-inline-group">
+        <span className="glass-inline-label">FPS</span>
+        <GlassSelect
+          value={settings.gif.fps}
+          options={RECORDING.GIF_FPS_OPTIONS.map((fps) => ({ value: fps, label: String(fps) }))}
+          onChange={(v) => updateGifSettings({ fps: parseInt(v) })}
+        />
+      </div>
+      <div className="glass-inline-group">
+        <span className="glass-inline-label">Quality</span>
+        <GlassSelect
+          value={settings.gif.qualityPreset}
+          options={[
+            { value: 'fast', label: 'Fast' },
+            { value: 'balanced', label: 'Balanced' },
+            { value: 'high', label: 'High' },
+          ]}
+          onChange={(v) => updateGifSettings({ qualityPreset: v as 'fast' | 'balanced' | 'high' })}
+        />
+      </div>
+    </>
+  );
+}
+
 /**
  * Column 1: FPS + Quality (for video/gif) or Format + Quality (for screenshot)
  */
@@ -152,98 +269,17 @@ export const SettingsCol1: React.FC<SettingsColProps> = ({ mode }) => {
   switch (mode) {
     case 'screenshot':
       return (
-        <>
-          <div className="glass-inline-group">
-            <span className="glass-inline-label">Format</span>
-            <GlassSelect
-              value={settings.screenshot.format}
-              options={[
-                { value: 'png', label: 'PNG' },
-                { value: 'jpg', label: 'JPG' },
-                { value: 'webp', label: 'WebP' },
-              ]}
-              onChange={(v) => updateScreenshotSettings({ format: v as 'png' | 'jpg' | 'webp' })}
-            />
-          </div>
-          <div className="glass-inline-group">
-            <span className="glass-inline-label">Quality</span>
-            <GlassSelect
-              value={settings.screenshot.jpgQuality}
-              options={[
-                { value: 60, label: '60%' },
-                { value: 70, label: '70%' },
-                { value: 80, label: '80%' },
-                { value: 90, label: '90%' },
-                { value: 100, label: '100%' },
-              ]}
-              onChange={(v) => updateScreenshotSettings({ jpgQuality: parseInt(v) })}
-              disabled={settings.screenshot.format === 'png'}
-            />
-          </div>
-        </>
+        <ScreenshotTechnicalSettings
+          settings={settings}
+          updateScreenshotSettings={updateScreenshotSettings}
+        />
       );
-
     case 'video':
       return (
-        <>
-          <div className="glass-inline-group">
-            <span className="glass-inline-label">Format</span>
-            <GlassSelect
-              value={settings.video.format}
-              options={[
-                { value: 'mp4', label: 'MP4' },
-              ]}
-              onChange={(v) => updateVideoSettings({ format: v as VideoFormat })}
-            />
-          </div>
-          <div className="glass-inline-group">
-            <span className="glass-inline-label">FPS</span>
-            <GlassSelect
-              value={settings.video.fps}
-              options={RECORDING.VIDEO_FPS_OPTIONS.map((fps) => ({ value: fps, label: String(fps) }))}
-              onChange={(v) => updateVideoSettings({ fps: parseInt(v) })}
-            />
-          </div>
-          <div className="glass-inline-group">
-            <span className="glass-inline-label">Quality</span>
-            <GlassSelect
-              value={settings.video.quality}
-              options={RECORDING.VIDEO_QUALITY_OPTIONS.map((quality) => ({
-                value: quality,
-                label: `${quality}%`,
-              }))}
-              onChange={(v) => updateVideoSettings({ quality: parseInt(v) })}
-            />
-          </div>
-        </>
+        <VideoTechnicalSettings settings={settings} updateVideoSettings={updateVideoSettings} />
       );
-
     case 'gif':
-      return (
-        <>
-          <div className="glass-inline-group">
-            <span className="glass-inline-label">FPS</span>
-            <GlassSelect
-              value={settings.gif.fps}
-              options={RECORDING.GIF_FPS_OPTIONS.map((fps) => ({ value: fps, label: String(fps) }))}
-              onChange={(v) => updateGifSettings({ fps: parseInt(v) })}
-            />
-          </div>
-          <div className="glass-inline-group">
-            <span className="glass-inline-label">Quality</span>
-            <GlassSelect
-              value={settings.gif.qualityPreset}
-              options={[
-                { value: 'fast', label: 'Fast' },
-                { value: 'balanced', label: 'Balanced' },
-                { value: 'high', label: 'High' },
-              ]}
-              onChange={(v) => updateGifSettings({ qualityPreset: v as 'fast' | 'balanced' | 'high' })}
-            />
-          </div>
-        </>
-      );
-
+      return <GifTechnicalSettings settings={settings} updateGifSettings={updateGifSettings} />;
     default:
       return null;
   }

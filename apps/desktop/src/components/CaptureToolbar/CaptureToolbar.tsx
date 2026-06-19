@@ -130,11 +130,6 @@ function formatTime(seconds: number): string {
 interface RecordingToolbarProps {
   mode: ToolbarMode;
   minimalChrome: CaptureToolbarProps['minimalChrome'];
-  isRecording: boolean;
-  isStarting: boolean;
-  isProcessing: boolean;
-  isError: boolean;
-  isPaused: boolean;
   isGif: boolean;
   format: RecordingFormat;
   elapsedTime: number;
@@ -152,13 +147,184 @@ interface RecordingToolbarProps {
   systemLevel: number;
 }
 
-function RecordingToolbar({
-  minimalChrome,
-  isRecording,
-  isStarting,
-  isProcessing,
-  isError,
+function RecordingStatus({
   isPaused,
+  isGif,
+  format,
+  elapsedTime,
+}: {
+  isPaused: boolean;
+  isGif: boolean;
+  format: RecordingFormat;
+  elapsedTime: number;
+}) {
+  return (
+    <div className="glass-recording-section">
+      <div className={`glass-recording-dot ${isPaused ? 'glass-recording-dot--paused' : ''}`} />
+      <span className="glass-text glass-text--mono text-sm font-medium">
+        {formatTime(elapsedTime)}
+      </span>
+      <div className={`glass-badge glass-recording-format-badge uppercase select-none ${
+        isGif ? 'glass-badge--purple' : 'glass-badge--blue'
+      }`}>
+        {format}
+      </div>
+    </div>
+  );
+}
+
+function StartingStatus({ countdownSeconds }: { countdownSeconds?: number }) {
+  return (
+    <div className="glass-countdown-section">
+      {countdownSeconds !== undefined && countdownSeconds > 0 ? (
+        <div className="glass-countdown-large select-none">
+          {countdownSeconds}
+        </div>
+      ) : (
+        <div className="glass-spinner-large" />
+      )}
+    </div>
+  );
+}
+
+function ProcessingStatus() {
+  return (
+    <div className="glass-processing-section">
+      <div className="glass-spinner" />
+      <span className="glass-text--muted text-xs select-none">
+        Saving...
+      </span>
+    </div>
+  );
+}
+
+function ErrorStatus({ errorMessage }: { errorMessage?: string }) {
+  return (
+    <div className="glass-error-section">
+      <div className="w-3 h-3 rounded-full bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.6)]" />
+      <span className="text-red-400 text-[10px] select-none">
+        {errorMessage || 'Failed'}
+      </span>
+    </div>
+  );
+}
+
+function RecordingStatusSection({
+  mode,
+  isGif,
+  format,
+  elapsedTime,
+  countdownSeconds,
+  errorMessage,
+}: {
+  mode: ToolbarMode;
+  isGif: boolean;
+  format: RecordingFormat;
+  elapsedTime: number;
+  countdownSeconds?: number;
+  errorMessage?: string;
+}) {
+  switch (mode) {
+    case 'recording':
+    case 'paused':
+      return (
+        <RecordingStatus
+          isPaused={mode === 'paused'}
+          isGif={isGif}
+          format={format}
+          elapsedTime={elapsedTime}
+        />
+      );
+    case 'starting':
+      return <StartingStatus countdownSeconds={countdownSeconds} />;
+    case 'processing':
+      return <ProcessingStatus />;
+    case 'error':
+      return <ErrorStatus errorMessage={errorMessage} />;
+    default:
+      return null;
+  }
+}
+
+function RecordingAudioSection({
+  isMicEnabled,
+  micActive,
+  micLevel,
+  isSystemAudioEnabled,
+  systemActive,
+  systemLevel,
+}: Pick<
+  RecordingToolbarProps,
+  'isMicEnabled' | 'micActive' | 'micLevel' | 'isSystemAudioEnabled' | 'systemActive' | 'systemLevel'
+>) {
+  return (
+    <>
+      <div className="glass-divider-vertical" />
+      <div className="glass-recording-audio-section">
+        <RecordingAudioIndicator
+          enabled={isMicEnabled}
+          active={micActive}
+          level={micLevel}
+          disabledTitle="Microphone disabled"
+          activeTitle="Microphone level"
+          idleTitle="Microphone idle"
+          icon={<Mic size={12} strokeWidth={2} />}
+        />
+        <RecordingAudioIndicator
+          enabled={isSystemAudioEnabled}
+          active={systemActive}
+          level={systemLevel}
+          disabledTitle="System audio disabled"
+          activeTitle="System audio level"
+          idleTitle="System audio idle"
+          icon={<Volume2 size={12} strokeWidth={2} />}
+        />
+      </div>
+    </>
+  );
+}
+
+function RecordingPlaybackControls({
+  isPaused,
+  onPauseResume,
+  onStop,
+}: {
+  isPaused: boolean;
+  onPauseResume: () => void;
+  onStop?: () => void;
+}) {
+  return (
+    <>
+      <button
+        type="button"
+        onClick={onPauseResume}
+        className="glass-btn glass-btn--md"
+        aria-label={isPaused ? 'Resume recording' : 'Pause recording'}
+        title={isPaused ? 'Resume' : 'Pause'}
+      >
+        {isPaused ? (
+          <Circle size={14} className="text-red-400" fill="currentColor" />
+        ) : (
+          <Pause size={14} className="text-amber-400" fill="currentColor" />
+        )}
+      </button>
+
+      <button
+        type="button"
+        onClick={onStop}
+        className="glass-btn glass-btn--md"
+        aria-label="Stop and save recording"
+        title="Stop and save"
+      >
+        <Square size={14} className="glass-recording-stop-icon" fill="currentColor" />
+      </button>
+    </>
+  );
+}
+
+function RecordingToolbar({
+  mode,
+  minimalChrome,
   isGif,
   format,
   elapsedTime,
@@ -175,111 +341,43 @@ function RecordingToolbar({
   systemActive,
   systemLevel,
 }: RecordingToolbarProps) {
+  const isRecording = mode === 'recording' || mode === 'paused';
+
   return (
     <div
       className={`glass-toolbar glass-toolbar--minimal ${
         minimalChrome === 'floating' ? 'glass-toolbar--minimal-floating' : ''
       } pointer-events-auto`}
     >
-      {isRecording && (
-        <div className="glass-recording-section">
-          <div className={`glass-recording-dot ${isPaused ? 'glass-recording-dot--paused' : ''}`} />
-          <span className="glass-text glass-text--mono text-sm font-medium">
-            {formatTime(elapsedTime)}
-          </span>
-          <div className={`glass-badge glass-recording-format-badge uppercase select-none ${
-            isGif ? 'glass-badge--purple' : 'glass-badge--blue'
-          }`}>
-            {format}
-          </div>
-        </div>
-      )}
-
-      {isStarting && (
-        <div className="glass-countdown-section">
-          {countdownSeconds !== undefined && countdownSeconds > 0 ? (
-            <div className="glass-countdown-large select-none">
-              {countdownSeconds}
-            </div>
-          ) : (
-            <div className="glass-spinner-large" />
-          )}
-        </div>
-      )}
-
-      {isProcessing && (
-        <div className="glass-processing-section">
-          <div className="glass-spinner" />
-          <span className="glass-text--muted text-xs select-none">
-            Saving...
-          </span>
-        </div>
-      )}
-
-      {isError && (
-        <div className="glass-error-section">
-          <div className="w-3 h-3 rounded-full bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.6)]" />
-          <span className="text-red-400 text-[10px] select-none">
-            {errorMessage || 'Failed'}
-          </span>
-        </div>
-      )}
+      <RecordingStatusSection
+        mode={mode}
+        isGif={isGif}
+        format={format}
+        elapsedTime={elapsedTime}
+        countdownSeconds={countdownSeconds}
+        errorMessage={errorMessage}
+      />
 
       {shouldShowRecordingAudioIndicators && (
-        <>
-          <div className="glass-divider-vertical" />
-          <div className="glass-recording-audio-section">
-            <RecordingAudioIndicator
-              enabled={isMicEnabled}
-              active={micActive}
-              level={micLevel}
-              disabledTitle="Microphone disabled"
-              activeTitle="Microphone level"
-              idleTitle="Microphone idle"
-              icon={<Mic size={12} strokeWidth={2} />}
-            />
-            <RecordingAudioIndicator
-              enabled={isSystemAudioEnabled}
-              active={systemActive}
-              level={systemLevel}
-              disabledTitle="System audio disabled"
-              activeTitle="System audio level"
-              idleTitle="System audio idle"
-              icon={<Volume2 size={12} strokeWidth={2} />}
-            />
-          </div>
-        </>
+        <RecordingAudioSection
+          isMicEnabled={isMicEnabled}
+          micActive={micActive}
+          micLevel={micLevel}
+          isSystemAudioEnabled={isSystemAudioEnabled}
+          systemActive={systemActive}
+          systemLevel={systemLevel}
+        />
       )}
 
       <div className="glass-divider-vertical" />
 
       <div className="glass-controls-section">
         {isRecording && (
-          <button
-            type="button"
-            onClick={onPauseResume}
-            className="glass-btn glass-btn--md"
-            aria-label={isPaused ? 'Resume recording' : 'Pause recording'}
-            title={isPaused ? 'Resume' : 'Pause'}
-          >
-            {isPaused ? (
-              <Circle size={14} className="text-red-400" fill="currentColor" />
-            ) : (
-              <Pause size={14} className="text-amber-400" fill="currentColor" />
-            )}
-          </button>
-        )}
-
-        {isRecording && (
-          <button
-            type="button"
-            onClick={onStop}
-            className="glass-btn glass-btn--md"
-            aria-label="Stop and save recording"
-            title="Stop and save"
-          >
-            <Square size={14} className="glass-recording-stop-icon" fill="currentColor" />
-          </button>
+          <RecordingPlaybackControls
+            isPaused={mode === 'paused'}
+            onPauseResume={onPauseResume}
+            onStop={onStop}
+          />
         )}
 
         <button
@@ -609,10 +707,6 @@ function getCaptureToolbarState(
   return {
     isGif,
     isRecording,
-    isStarting,
-    isProcessing,
-    isError,
-    isPaused: mode === 'paused',
     isVideoMode: captureType === 'video',
     supportsRecordingAudio: captureType === 'video' && !isGif,
     isBusy,
@@ -743,11 +837,6 @@ export const CaptureToolbar: React.FC<CaptureToolbarProps> = ({
       <RecordingToolbar
         mode={mode}
         minimalChrome={minimalChrome}
-        isRecording={toolbarState.isRecording}
-        isStarting={toolbarState.isStarting}
-        isProcessing={toolbarState.isProcessing}
-        isError={toolbarState.isError}
-        isPaused={toolbarState.isPaused}
         isGif={toolbarState.isGif}
         format={format}
         elapsedTime={elapsedTime}
