@@ -135,41 +135,47 @@ function ToolButton({
   );
 }
 
-function getCopyButtonLabel(isCopying: boolean, copied: boolean): string {
-  if (isCopying) return 'Copying...';
-  return copied ? 'Copied!' : 'Copy';
+type CopyState = 'idle' | 'copying' | 'copied';
+type SaveState = 'idle' | 'saving';
+
+function getCopyButtonLabel(state: CopyState): string {
+  switch (state) {
+    case 'copying':
+      return 'Copying...';
+    case 'copied':
+      return 'Copied!';
+    default:
+      return 'Copy';
+  }
 }
 
 function CopyButtonIcon({
-  isCopying,
-  copied,
+  state,
   iconSize,
 }: {
-  isCopying: boolean;
-  copied: boolean;
+  state: CopyState;
   iconSize: string;
 }) {
-  if (isCopying) {
-    return <Loader2 className={`${iconSize} animate-spin`} />;
+  switch (state) {
+    case 'copying':
+      return <Loader2 className={`${iconSize} animate-spin`} />;
+    case 'copied':
+      return <Check className={`${iconSize} animate-scale-in`} />;
+    default:
+      return <Copy className={iconSize} />;
   }
-
-  if (copied) {
-    return <Check className={`${iconSize} animate-scale-in`} />;
-  }
-
-  return <Copy className={iconSize} />;
 }
 
-function SaveButtonIcon({ isSaving, iconSize }: { isSaving: boolean; iconSize: string }) {
-  if (isSaving) {
+function SaveButtonIcon({ state, iconSize }: { state: SaveState; iconSize: string }) {
+  if (state === 'saving') {
     return <Loader2 className={`${iconSize} animate-spin`} />;
   }
 
   return <Save className={iconSize} />;
 }
 
-function getSaveButtonLabel(isSaving: boolean) {
-  return isSaving ? 'Saving...' : 'Save to File';
+function getSaveButtonLabel(state: SaveState) {
+  return state === 'saving' ? 'Saving...' : 'Save to File';
 }
 
 function getToolbarButtonSize(isCompact: boolean) {
@@ -227,6 +233,11 @@ export const Toolbar: React.FC<ToolbarProps> = ({
     setTimeout(() => setCopied(false), 2000);
   };
 
+  // Collapse the overlapping copy/save flags into explicit states so the
+  // impossible combinations (e.g. copying + copied) can't be represented.
+  const copyState: CopyState = isCopying ? 'copying' : copied ? 'copied' : 'idle';
+  const saveState: SaveState = isSaving ? 'saving' : 'idle';
+
   const buttonSize = getToolbarButtonSize(isCompact);
   const iconSize = getToolbarIconSize(isCompact);
 
@@ -275,26 +286,26 @@ export const Toolbar: React.FC<ToolbarProps> = ({
 
           {/* Quick Copy Button */}
           <ToolbarIconButton
-            label={getCopyButtonLabel(isCopying, copied)}
+            label={getCopyButtonLabel(copyState)}
             shortcut="Ctrl+C"
             onClick={handleCopy}
-            disabled={isCopying}
+            disabled={copyState === 'copying'}
             className={`glass-btn ${buttonSize} ${
-              copied ? 'glass-btn--success' : ''
+              copyState === 'copied' ? 'glass-btn--success' : ''
             } disabled:opacity-50 disabled:cursor-not-allowed`}
           >
-            <CopyButtonIcon isCopying={isCopying} copied={copied} iconSize={iconSize} />
+            <CopyButtonIcon state={copyState} iconSize={iconSize} />
           </ToolbarIconButton>
 
           {/* Save Button */}
           <ToolbarIconButton
-            label={getSaveButtonLabel(isSaving)}
+            label={getSaveButtonLabel(saveState)}
             shortcut="Ctrl+E"
             onClick={onSave}
-            disabled={isSaving}
+            disabled={saveState === 'saving'}
             className={`glass-btn ${buttonSize} disabled:opacity-50`}
           >
-            <SaveButtonIcon isSaving={isSaving} iconSize={iconSize} />
+            <SaveButtonIcon state={saveState} iconSize={iconSize} />
           </ToolbarIconButton>
 
           {/* Delete Button */}
