@@ -8,6 +8,7 @@ import {
   Video,
   Film,
 } from 'lucide-react';
+import { AnimatePresence, motion, useReducedMotion, type Transition } from 'motion/react';
 import {
   Tooltip,
   TooltipContent,
@@ -39,6 +40,25 @@ const MEDIA_FILTER_BUTTONS = [
   { type: 'video', label: 'Videos', ariaLabel: 'Filter videos', Icon: Video },
   { type: 'gif', label: 'GIFs', ariaLabel: 'Filter GIFs', Icon: Film },
 ] as const;
+const SELECTION_ACTIONS_INITIAL = {
+  opacity: 0,
+  transform: 'scale(0.97)',
+};
+const SELECTION_ACTIONS_ANIMATE = {
+  opacity: 1,
+  transform: 'scale(1)',
+};
+const SELECTION_ACTIONS_EXIT = {
+  opacity: 0,
+  transform: 'scale(0.985)',
+};
+const SELECTION_ACTIONS_TRANSITION = {
+  duration: 0.14,
+  ease: [0.23, 1, 0.32, 1],
+} satisfies Transition;
+const SELECTION_ACTIONS_REDUCED_TRANSITION = {
+  duration: 0,
+} satisfies Transition;
 
 function CloudTooltipButton({
   label,
@@ -106,34 +126,48 @@ function SelectionActions({
   onDeleteSelected,
   onClearSelection,
 }: Pick<GlassBlobToolbarProps, 'selectedCount' | 'onDeleteSelected' | 'onClearSelection'>) {
-  if (selectedCount <= 0) return null;
+  const shouldReduceMotion = useReducedMotion();
 
   return (
-    <>
-      <div className="cloud-divider" />
+    <AnimatePresence initial={false}>
+      {selectedCount > 0 && (
+        <motion.div
+          className="cloud-selection-actions"
+          initial={shouldReduceMotion ? false : SELECTION_ACTIONS_INITIAL}
+          animate={SELECTION_ACTIONS_ANIMATE}
+          exit={shouldReduceMotion ? undefined : SELECTION_ACTIONS_EXIT}
+          transition={
+            shouldReduceMotion
+              ? SELECTION_ACTIONS_REDUCED_TRANSITION
+              : SELECTION_ACTIONS_TRANSITION
+          }
+        >
+          <div className="cloud-divider" />
 
-      <div className="cloud-selection">
-        <span className="cloud-selection__count">{selectedCount}</span>
-      </div>
+          <div className="cloud-selection">
+            <span className="cloud-selection__count">{selectedCount}</span>
+          </div>
 
-      <CloudTooltipButton
-        label="Delete Selected"
-        ariaLabel="Delete selected"
-        onClick={onDeleteSelected}
-        className={getCloudSmallButtonClass(false, 'cloud-btn--danger')}
-      >
-        <Trash2 className="w-[15px] h-[15px]" />
-      </CloudTooltipButton>
+          <CloudTooltipButton
+            label="Delete Selected"
+            ariaLabel="Delete selected"
+            onClick={onDeleteSelected}
+            className={getCloudSmallButtonClass(false, 'cloud-btn--danger')}
+          >
+            <Trash2 className="w-[15px] h-[15px]" />
+          </CloudTooltipButton>
 
-      <CloudTooltipButton
-        label="Clear Selection"
-        ariaLabel="Clear selection"
-        onClick={onClearSelection}
-        className={getCloudSmallButtonClass()}
-      >
-        <X className="w-[15px] h-[15px]" />
-      </CloudTooltipButton>
-    </>
+          <CloudTooltipButton
+            label="Clear Selection"
+            ariaLabel="Clear selection"
+            onClick={onClearSelection}
+            className={getCloudSmallButtonClass()}
+          >
+            <X className="w-[15px] h-[15px]" />
+          </CloudTooltipButton>
+        </motion.div>
+      )}
+    </AnimatePresence>
   );
 }
 

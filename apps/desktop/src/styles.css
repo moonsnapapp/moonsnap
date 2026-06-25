@@ -85,6 +85,7 @@
   --ease-smooth: cubic-bezier(0.4, 0, 0.2, 1);
   --ease-spring: cubic-bezier(0.34, 1.2, 0.64, 1);
   --ease-out: cubic-bezier(0, 0, 0.2, 1);
+  --ease-out-strong: cubic-bezier(0.23, 1, 0.32, 1);
   --duration-fast: 150ms;
   --duration-normal: 200ms;
   --duration-slow: 300ms;
@@ -245,6 +246,103 @@ canvas,
 img,
 video {
   transition: none !important;
+}
+
+.ui-floating-surface {
+  --ui-floating-origin: var(
+    --radix-popover-content-transform-origin,
+    var(
+      --radix-select-content-transform-origin,
+      var(
+        --radix-dropdown-menu-content-transform-origin,
+        var(--radix-context-menu-content-transform-origin, center)
+      )
+    )
+  );
+  transform-origin: var(--ui-floating-origin);
+  will-change: transform, opacity;
+}
+
+.ui-floating-surface[data-state='open'] {
+  animation: ui-floating-surface-in 160ms var(--ease-out-strong) both;
+}
+
+.ui-floating-surface[data-state='closed'] {
+  animation: ui-floating-surface-out 115ms ease both;
+}
+
+.app-tooltip {
+  transform-origin: var(--radix-tooltip-content-transform-origin, center);
+  will-change: transform, opacity;
+}
+
+.app-tooltip[data-state='delayed-open'],
+.app-tooltip[data-state='instant-open'] {
+  animation: app-tooltip-in 125ms var(--ease-out-strong) both;
+}
+
+.app-tooltip[data-state='closed'] {
+  animation: app-tooltip-out 90ms ease both;
+}
+
+@keyframes ui-floating-surface-in {
+  from {
+    opacity: 0;
+    transform: scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes ui-floating-surface-out {
+  from {
+    opacity: 1;
+    transform: scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: scale(0.985);
+  }
+}
+
+@keyframes app-tooltip-in {
+  from {
+    opacity: 0;
+    transform: scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes app-tooltip-out {
+  from {
+    opacity: 1;
+    transform: scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: scale(0.985);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ui-floating-surface,
+  .app-tooltip,
+  .glass-toolbar-target-motion,
+  .cloud-selection-actions {
+    animation: none;
+    will-change: auto;
+  }
+
+  .ui-floating-surface[data-state='closed'],
+  .app-tooltip[data-state='closed'] {
+    opacity: 0;
+    transform: scale(1);
+  }
 }
 
 html {
@@ -4087,6 +4185,14 @@ body.floating-toolbar-window #root {
   transition: opacity 200ms ease, gap 200ms ease;
 }
 
+.glass-toolbar-target-motion {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  transform-origin: left center;
+  will-change: transform, opacity;
+}
+
 /* Toolbar columns */
 .glass-toolbar-col {
   display: flex;
@@ -4165,7 +4271,10 @@ body.floating-toolbar-window #root {
   border: none;
   border-radius: 4px;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition:
+    background-color 150ms ease,
+    color 150ms ease,
+    transform 150ms ease;
 }
 
 .glass-dimension-preset-trigger:hover {
@@ -4216,7 +4325,9 @@ body.floating-toolbar-window #root {
   color: rgba(255, 255, 255, 0.8);
   font-size: 12px;
   cursor: pointer;
-  transition: all 0.1s ease;
+  transition:
+    background-color 100ms ease,
+    color 100ms ease;
   outline: none;
 }
 
@@ -4267,7 +4378,10 @@ body.floating-toolbar-window #root {
   font-size: 11px !important;
   font-weight: 500 !important;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition:
+    background-color 150ms ease,
+    border-color 150ms ease,
+    color 150ms ease;
   white-space: nowrap;
   box-shadow: none !important;
   ring-offset-width: 0 !important;
@@ -4332,7 +4446,9 @@ body.floating-toolbar-window #root {
   color: rgba(255, 255, 255, 0.8) !important;
   font-size: 11px !important;
   cursor: pointer;
-  transition: all 0.1s ease;
+  transition:
+    background-color 100ms ease,
+    color 100ms ease;
   outline: none !important;
   position: relative !important;
 }
@@ -4387,7 +4503,9 @@ body.floating-toolbar-window #root {
   border: none;
   color: rgba(255, 255, 255, 0.5);
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition:
+    background-color 150ms ease,
+    color 150ms ease;
 }
 
 .glass-icon-button:hover {
@@ -4421,7 +4539,9 @@ body.floating-toolbar-window #root {
   border-left: 1px solid rgba(255, 255, 255, 0.06);
   border-radius: 0 14px 14px 0;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition:
+    background-color 150ms ease,
+    transform 150ms ease;
 }
 
 .glass-capture-btn:hover {
@@ -4444,7 +4564,9 @@ body.floating-toolbar-window #root {
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: all 0.15s ease;
+  transition:
+    box-shadow 150ms ease,
+    transform 150ms ease;
 }
 
 .glass-capture-btn:hover .glass-capture-btn-inner {
@@ -4608,7 +4730,9 @@ body.floating-toolbar-window #root {
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: all 0.15s ease;
+  transition:
+    box-shadow 150ms ease,
+    transform 150ms ease;
 }
 
 .glass-capture-btn-circle:hover {
@@ -4658,7 +4782,12 @@ body.floating-toolbar-window #root {
   border-radius: 10px;
   color: rgba(255, 255, 255, 0.76);
   cursor: pointer;
-  transition: all 180ms cubic-bezier(0.4, 0, 0.2, 1);
+  transition:
+    transform 180ms var(--ease-out-strong),
+    color 180ms ease,
+    background-color 180ms ease,
+    border-color 180ms ease,
+    box-shadow 180ms ease;
   position: relative;
   overflow: hidden;
 }
@@ -4892,7 +5021,12 @@ body.floating-toolbar-window #root {
   box-shadow:
     0 4px 16px rgba(0, 0, 0, 0.25),
     inset 0 1px 0 rgba(255, 255, 255, 0.08);
-  transition: all 180ms cubic-bezier(0.4, 0, 0.2, 1);
+  transition:
+    transform 180ms var(--ease-out-strong),
+    color 180ms ease,
+    background-color 180ms ease,
+    border-color 180ms ease,
+    box-shadow 180ms ease;
 }
 
 .glass-btn-action:hover {
@@ -4933,7 +5067,13 @@ body.floating-toolbar-window #root {
   color: var(--ink-muted);
   box-shadow: none;
   opacity: 0.7;
-  transition: all 180ms cubic-bezier(0.4, 0, 0.2, 1);
+  transition:
+    transform 180ms var(--ease-out-strong),
+    opacity 180ms ease,
+    color 180ms ease,
+    background-color 180ms ease,
+    border-color 180ms ease,
+    box-shadow 180ms ease;
 }
 
 .glass-mode-toggle:hover {
@@ -4998,7 +5138,10 @@ body.floating-toolbar-window #root {
   font-size: 12px;
   font-weight: 500;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition:
+    color 150ms ease,
+    background-color 150ms ease,
+    box-shadow 150ms ease;
   white-space: nowrap;
 }
 
@@ -5050,7 +5193,10 @@ body.floating-toolbar-window #root {
   font-size: 12px;
   font-weight: 500;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition:
+    color 150ms ease,
+    background-color 150ms ease,
+    box-shadow 150ms ease;
   white-space: nowrap;
 }
 
@@ -5216,7 +5362,11 @@ body.floating-toolbar-window #root {
   border-radius: 6px;
   outline: none;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition:
+    background-color 150ms ease,
+    border-color 150ms ease,
+    box-shadow 150ms ease,
+    color 150ms ease;
   -webkit-appearance: none;
   appearance: none;
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='rgba(255,255,255,0.4)' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
@@ -5253,7 +5403,11 @@ body.floating-toolbar-window #root {
   border-radius: 6px;
   color: rgba(255, 255, 255, 0.6);
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition:
+    transform 150ms var(--ease-out-strong),
+    background-color 150ms ease,
+    border-color 150ms ease,
+    color 150ms ease;
 }
 
 .glass-inline-button:hover {
@@ -5510,6 +5664,14 @@ body.floating-toolbar-window #root {
   min-width: 0;
 }
 
+.cloud-selection-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transform-origin: left center;
+  will-change: transform, opacity;
+}
+
 /* Cloud toolbar buttons */
 .cloud-btn {
   position: relative;
@@ -5623,7 +5785,12 @@ body.floating-toolbar-window #root {
   align-items: center;
   gap: 0;
   flex: 0 0 auto;
-  transition: all 0.25s ease;
+  transition:
+    width 250ms ease,
+    padding 250ms ease,
+    background-color 250ms ease,
+    border-color 250ms ease,
+    box-shadow 250ms ease;
   box-sizing: border-box;
   min-height: 0;
 }
@@ -5929,7 +6096,9 @@ body.floating-toolbar-window #root {
   border-radius: 8px;
   color: rgba(255, 255, 255, 0.5);
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition:
+    background-color 150ms ease,
+    color 150ms ease;
 }
 
 .glass-close-btn:hover {
@@ -5982,7 +6151,10 @@ body.floating-toolbar-window #root {
   font-size: 11px;
   font-weight: 500;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition:
+    color 150ms ease,
+    background-color 150ms ease,
+    box-shadow 150ms ease;
   white-space: nowrap;
 }
 
@@ -6040,7 +6212,9 @@ body.floating-toolbar-window #root {
   border-radius: 8px;
   color: rgba(255, 255, 255, 0.5);
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition:
+    color 150ms ease,
+    background-color 150ms ease;
 }
 
 .glass-source-btn:hover {
@@ -6208,7 +6382,10 @@ body.floating-toolbar-window #root {
   font-size: 11px;
   font-weight: 500;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition:
+    background-color 150ms ease,
+    border-color 150ms ease,
+    color 150ms ease;
   white-space: nowrap;
 }
 
@@ -6257,7 +6434,9 @@ body.floating-toolbar-window #root {
   border-radius: 8px;
   color: rgba(255, 255, 255, 0.5);
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition:
+    background-color 150ms ease,
+    color 150ms ease;
 }
 
 .glass-settings-btn:hover {
@@ -6308,7 +6487,11 @@ body.floating-toolbar-window #root {
     0 4px 8px rgba(0, 0, 0, 0.4),
     0 2px 4px rgba(0, 0, 0, 0.3),
     0 0 0 1px rgba(0, 0, 0, 0.2);
-  transition: all 0.1s ease;
+  transition:
+    transform 100ms var(--ease-out-strong),
+    background 100ms ease,
+    box-shadow 100ms ease,
+    opacity 100ms ease;
 }
 
 .glass-capture-btn-hardware::before {
@@ -6470,7 +6653,9 @@ body.floating-toolbar-window #root {
   border-radius: 4px;
   color: rgba(255, 255, 255, 0.4);
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition:
+    background-color 150ms ease,
+    color 150ms ease;
 }
 
 .glass-popover-refresh:hover {
@@ -6534,7 +6719,9 @@ body.floating-toolbar-window #root {
   font-size: 12px;
   text-align: left;
   cursor: pointer;
-  transition: all 0.1s ease;
+  transition:
+    background-color 100ms ease,
+    color 100ms ease;
 }
 
 .glass-popover-option:hover {
@@ -6589,7 +6776,9 @@ body.floating-toolbar-window #root {
   color: rgba(255, 255, 255, 0.5);
   font-size: 12px;
   cursor: pointer;
-  transition: all 0.1s ease;
+  transition:
+    background-color 100ms ease,
+    color 100ms ease;
 }
 
 .glass-popover-link:hover {
@@ -7124,6 +7313,8 @@ body.floating-toolbar-window #root {
   align-items: center;
   justify-content: center;
   cursor: move;
+  transform-origin: top center;
+  will-change: transform, opacity;
 }
 
 .recording-controls-shell {
@@ -7171,6 +7362,10 @@ body.floating-toolbar-window #root {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .capture-toolbar-shell {
+    will-change: auto;
+  }
+
   .capture-blocked-feedback--active {
     animation: capture-blocked-flash 180ms ease-out;
   }

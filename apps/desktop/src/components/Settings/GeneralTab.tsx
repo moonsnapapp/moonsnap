@@ -226,7 +226,7 @@ function MoveSaveDirDialog({
             <div className="space-y-3">
               <div className="h-2 bg-[var(--polar-mist)] rounded-full overflow-hidden">
                 <div
-                  className="h-full bg-[var(--accent-400)] transition-all duration-300"
+                  className="h-full bg-[var(--accent-400)] transition-[width] duration-150 ease-out"
                   style={{ width: `${moveProgressPercent}%` }}
                 />
               </div>

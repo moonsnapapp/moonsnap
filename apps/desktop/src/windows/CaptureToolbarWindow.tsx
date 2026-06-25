@@ -18,6 +18,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { emit, listen } from '@tauri-apps/api/event';
 import { availableMonitors, type Monitor } from '@tauri-apps/api/window';
 import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
+import { motion, useReducedMotion, type Transition } from 'motion/react';
 import { CaptureToolbar, type ToolbarMode } from '../components/CaptureToolbar/CaptureToolbar';
 import type { CaptureSource } from '../components/CaptureToolbar/SourceSelector';
 import {
@@ -88,6 +89,21 @@ const RECORDING_CONTROLS_ACTIVE_MODES: ToolbarMode[] = [
   'paused',
   'processing',
 ];
+const TOOLBAR_SHELL_INITIAL = {
+  opacity: 0,
+  transform: 'translateY(6px) scale(0.985)',
+};
+const TOOLBAR_SHELL_ANIMATE = {
+  opacity: 1,
+  transform: 'translateY(0px) scale(1)',
+};
+const TOOLBAR_SHELL_TRANSITION = {
+  duration: 0.18,
+  ease: [0.23, 1, 0.32, 1],
+} satisfies Transition;
+const TOOLBAR_SHELL_REDUCED_TRANSITION = {
+  duration: 0,
+} satisfies Transition;
 
 type CaptureSettingsState = ReturnType<typeof useCaptureSettingsStore.getState>;
 type CurrentWebviewWindow = ReturnType<typeof getCurrentWebviewWindow>;
@@ -718,6 +734,7 @@ async function showRecordingControls({
 const CaptureToolbarWindow: React.FC = () => {
   useTheme();
   useFocusedShortcutDispatch();
+  const shouldReduceMotion = useReducedMotion();
 
   const containerRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
@@ -1796,8 +1813,19 @@ const CaptureToolbarWindow: React.FC = () => {
         style={getToolbarChromeStyle(shouldHidePrimaryToolbarChrome)}
       >
         <div className="toolbar-container">
-          <div
+          <motion.div
             className="toolbar-animated-wrapper capture-toolbar-shell"
+            initial={shouldReduceMotion ? false : TOOLBAR_SHELL_INITIAL}
+            animate={
+              shouldHidePrimaryToolbarChrome && !shouldReduceMotion
+                ? TOOLBAR_SHELL_INITIAL
+                : TOOLBAR_SHELL_ANIMATE
+            }
+            transition={
+              shouldReduceMotion
+                ? TOOLBAR_SHELL_REDUCED_TRANSITION
+                : TOOLBAR_SHELL_TRANSITION
+            }
             onMouseDown={handleToolbarMouseDown}
           >
             <div ref={contentRef} className="toolbar-content-measure">
@@ -1842,7 +1870,7 @@ const CaptureToolbarWindow: React.FC = () => {
                 minimalChrome="floating"
               />
             </div>
-          </div>
+          </motion.div>
         </div>
       </div>
     </div>

@@ -4,6 +4,7 @@
  */
 import { useCallback, useId, useState, type ComponentProps, type ReactNode } from 'react';
 import { ChevronDown, MousePointer2, Video } from 'lucide-react';
+import { AnimatePresence, motion, useReducedMotion, type Transition } from 'motion/react';
 import { useVideoEditorStore } from '../../stores/videoEditorStore';
 import {
   selectAddAnnotationShape,
@@ -69,6 +70,26 @@ interface SidebarSettingsSectionProps {
   variant?: 'card' | 'flat';
   children: ReactNode;
 }
+
+const SELECTION_OVERLAY_INITIAL = {
+  opacity: 0,
+  transform: 'translateY(10px) scale(0.985)',
+};
+const SELECTION_OVERLAY_ANIMATE = {
+  opacity: 1,
+  transform: 'translateY(0px) scale(1)',
+};
+const SELECTION_OVERLAY_EXIT = {
+  opacity: 0,
+  transform: 'translateY(6px) scale(0.99)',
+};
+const SELECTION_OVERLAY_TRANSITION = {
+  duration: 0.18,
+  ease: [0.23, 1, 0.32, 1],
+} satisfies Transition;
+const SELECTION_OVERLAY_REDUCED_TRANSITION = {
+  duration: 0,
+} satisfies Transition;
 
 function getSidebarSectionClassName(variant: SidebarSettingsSectionProps['variant']) {
   return [
@@ -502,8 +523,20 @@ function SelectionOverlay({
   deleteMaskSegment,
   deleteTextSegment,
 }: SelectionOverlayProps) {
+  const shouldReduceMotion = useReducedMotion();
+
   return (
-    <div className="video-sidebar-scroll-area video-sidebar-selection-overlay absolute inset-0 min-w-0 overflow-y-auto p-4 z-20 animate-in slide-in-from-bottom-2 fade-in duration-200">
+    <motion.div
+      className="video-sidebar-scroll-area video-sidebar-selection-overlay absolute inset-0 min-w-0 overflow-y-auto p-4 z-20"
+      initial={shouldReduceMotion ? false : SELECTION_OVERLAY_INITIAL}
+      animate={SELECTION_OVERLAY_ANIMATE}
+      exit={shouldReduceMotion ? undefined : SELECTION_OVERLAY_EXIT}
+      transition={
+        shouldReduceMotion
+          ? SELECTION_OVERLAY_REDUCED_TRANSITION
+          : SELECTION_OVERLAY_TRANSITION
+      }
+    >
       <ZoomSelectionOverlay
         project={project}
         selectedZoomRegionId={selectedZoomRegionId}
@@ -548,7 +581,7 @@ function SelectionOverlay({
         updateTextSegment={updateTextSegment}
         deleteTextSegment={deleteTextSegment}
       />
-    </div>
+    </motion.div>
   );
 }
 
@@ -801,36 +834,39 @@ export function VideoEditorSidebar({ project }: VideoEditorSidebarProps) {
 
       {/* Tab Content */}
       <div className="relative min-w-0 flex-1 overflow-hidden">
-        {hasSelectedSegment && project && (
-          <SelectionOverlay
-            project={project}
-            selectedZoomRegionId={selectedZoomRegionId}
-            selectedSceneSegmentId={selectedSceneSegmentId}
-            selectedAnnotationSegmentId={selectedAnnotationSegmentId}
-            selectedAnnotationShapeId={selectedAnnotationShapeId}
-            selectedMaskSegmentId={selectedMaskSegmentId}
-            selectedTextSegmentId={selectedTextSegmentId}
-            selectZoomRegion={selectZoomRegion}
-            selectSceneSegment={selectSceneSegment}
-            selectAnnotationSegment={selectAnnotationSegment}
-            selectAnnotationShape={selectAnnotationShape}
-            selectMaskSegment={selectMaskSegment}
-            selectTextSegment={selectTextSegment}
-            updateZoomRegion={updateZoomRegion}
-            updateSceneSegment={updateSceneSegment}
-            updateMaskSegment={updateMaskSegment}
-            updateTextSegment={updateTextSegment}
-            addAnnotationShape={addAnnotationShape}
-            updateAnnotationShape={updateAnnotationShape}
-            reorderAnnotationShape={reorderAnnotationShape}
-            deleteZoomRegion={deleteZoomRegion}
-            deleteSceneSegment={deleteSceneSegment}
-            deleteAnnotationSegment={deleteAnnotationSegment}
-            deleteAnnotationShape={deleteAnnotationShape}
-            deleteMaskSegment={deleteMaskSegment}
-            deleteTextSegment={deleteTextSegment}
-          />
-        )}
+        <AnimatePresence initial={false}>
+          {hasSelectedSegment && project && (
+            <SelectionOverlay
+              key="selection-overlay"
+              project={project}
+              selectedZoomRegionId={selectedZoomRegionId}
+              selectedSceneSegmentId={selectedSceneSegmentId}
+              selectedAnnotationSegmentId={selectedAnnotationSegmentId}
+              selectedAnnotationShapeId={selectedAnnotationShapeId}
+              selectedMaskSegmentId={selectedMaskSegmentId}
+              selectedTextSegmentId={selectedTextSegmentId}
+              selectZoomRegion={selectZoomRegion}
+              selectSceneSegment={selectSceneSegment}
+              selectAnnotationSegment={selectAnnotationSegment}
+              selectAnnotationShape={selectAnnotationShape}
+              selectMaskSegment={selectMaskSegment}
+              selectTextSegment={selectTextSegment}
+              updateZoomRegion={updateZoomRegion}
+              updateSceneSegment={updateSceneSegment}
+              updateMaskSegment={updateMaskSegment}
+              updateTextSegment={updateTextSegment}
+              addAnnotationShape={addAnnotationShape}
+              updateAnnotationShape={updateAnnotationShape}
+              reorderAnnotationShape={reorderAnnotationShape}
+              deleteZoomRegion={deleteZoomRegion}
+              deleteSceneSegment={deleteSceneSegment}
+              deleteAnnotationSegment={deleteAnnotationSegment}
+              deleteAnnotationShape={deleteAnnotationShape}
+              deleteMaskSegment={deleteMaskSegment}
+              deleteTextSegment={deleteTextSegment}
+            />
+          )}
+        </AnimatePresence>
         <SidebarTabContent
           activeTab={activeTab}
           project={project}

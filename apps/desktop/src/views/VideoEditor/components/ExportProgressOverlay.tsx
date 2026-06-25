@@ -35,7 +35,7 @@ function ExportProgressBar({ value }: { value: number }) {
   return (
     <div className="h-2 bg-[var(--polar-mist)] rounded-full overflow-hidden mb-2">
       <div
-        className="h-full bg-[var(--accent-400)] transition-all duration-300"
+        className="h-full bg-[var(--accent-400)] transition-[width] duration-150 ease-out"
         style={{ width: `${value * 100}%` }}
       />
     </div>

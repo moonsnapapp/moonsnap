@@ -68,6 +68,7 @@
     "konva": "10.2.0",
     "lucide-react": "0.577.0",
     "mediabunny": "1.35.1",
+    "motion": "12.42.0",
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "react-konva": "19.2.3",

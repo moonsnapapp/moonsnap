@@ -9,6 +9,7 @@
 
 import React, { useCallback } from 'react';
 import { X, Minus, Square, Pause, Circle, Mic, Volume2, FolderOpen } from 'lucide-react';
+import { AnimatePresence, motion, useReducedMotion, type Transition } from 'motion/react';
 import type { CaptureType, RecordingFormat } from '../../types';
 import { ModeSelector } from './ModeSelector';
 import { SourceSelector, type CaptureSource } from './SourceSelector';
@@ -30,6 +31,26 @@ import { useRustAudioLevels } from '@/hooks/useRustAudioLevels';
 import { useUpdater } from '@/hooks/useUpdater';
 
 export type ToolbarMode = 'selection' | 'starting' | 'recording' | 'paused' | 'processing' | 'error';
+
+const TARGET_CONTROL_INITIAL = {
+  opacity: 0,
+  transform: 'translateY(4px) scale(0.985)',
+};
+const TARGET_CONTROL_ANIMATE = {
+  opacity: 1,
+  transform: 'translateY(0px) scale(1)',
+};
+const TARGET_CONTROL_EXIT = {
+  opacity: 0,
+  transform: 'translateY(-3px) scale(0.99)',
+};
+const TARGET_CONTROL_TRANSITION = {
+  duration: 0.14,
+  ease: [0.23, 1, 0.32, 1],
+} satisfies Transition;
+const TARGET_CONTROL_REDUCED_TRANSITION = {
+  duration: 0,
+} satisfies Transition;
 
 export interface RecordingAudioConfig {
   microphoneDeviceIndex: number | null;
@@ -125,6 +146,18 @@ function formatTime(seconds: number): string {
   const mins = Math.floor(seconds / 60);
   const secs = Math.floor(seconds % 60);
   return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+}
+
+function getCaptureTargetMotionKey({
+  selectionConfirmed,
+  sourceType,
+  captureType,
+}: {
+  selectionConfirmed: boolean;
+  sourceType?: 'area' | 'window' | 'display';
+  captureType: CaptureType;
+}) {
+  return `${selectionConfirmed ? 'confirmed' : 'pending'}-${sourceType ?? 'none'}-${captureType}`;
 }
 
 interface RecordingToolbarProps {
@@ -785,6 +818,7 @@ export const CaptureToolbar: React.FC<CaptureToolbarProps> = ({
   showRecordingAudioIndicators = false,
   recordingAudioConfig,
 }) => {
+  const shouldReduceMotion = useReducedMotion();
   const toolbarState = getCaptureToolbarState(mode, captureType, format);
   const updateChannel = useSettingsStore((s) => s.settings.general.updateChannel);
   useUpdater(true, updateChannel);
@@ -830,6 +864,11 @@ export const CaptureToolbar: React.FC<CaptureToolbarProps> = ({
       onCaptureSourceChange?.(source);
     }
   }, [onCaptureSourceChange, toolbarState.isBusy]);
+  const captureTargetMotionKey = getCaptureTargetMotionKey({
+    selectionConfirmed,
+    sourceType,
+    captureType,
+  });
 
   // Render recording UI
   if (toolbarState.showsRecordingToolbar) {
@@ -884,30 +923,45 @@ export const CaptureToolbar: React.FC<CaptureToolbarProps> = ({
       {/* Row 2: Source selector OR dimensions/info, devices, settings */}
       <div className="glass-toolbar-row glass-toolbar-row--capture-secondary">
         {/* Show source info based on selection type, or source selector if no selection */}
-        <CaptureTargetControl
-          selectionConfirmed={selectionConfirmed}
-          sourceType={sourceType}
-          sourceTitle={sourceTitle}
-          monitorName={monitorName}
-          monitorIndex={monitorIndex}
-          width={width}
-          height={height}
-          captureType={captureType}
-          onRedo={onRedo}
-          onDimensionChange={onDimensionChange}
-          onSaveAreaSelection={onSaveAreaSelection}
-          isCurrentAreaSaved={isCurrentAreaSaved}
-          isAreaSaveDisabled={isAreaSaveDisabled}
-          onSelectLastArea={onSelectLastArea}
-          onSelectSavedArea={onSelectSavedArea}
-          onDeleteSavedArea={onDeleteSavedArea}
-          onCaptureComplete={onCaptureComplete}
-          lastAreaSelection={lastAreaSelection}
-          savedAreaSelections={savedAreaSelections}
-          toolbarOwner={toolbarOwner}
-          disabled={toolbarState.isBusy}
-          onSourceChange={handleSourceChange}
-        />
+        <AnimatePresence initial={false} mode="wait">
+          <motion.div
+            key={captureTargetMotionKey}
+            className="glass-toolbar-target-motion"
+            initial={shouldReduceMotion ? false : TARGET_CONTROL_INITIAL}
+            animate={TARGET_CONTROL_ANIMATE}
+            exit={shouldReduceMotion ? undefined : TARGET_CONTROL_EXIT}
+            transition={
+              shouldReduceMotion
+                ? TARGET_CONTROL_REDUCED_TRANSITION
+                : TARGET_CONTROL_TRANSITION
+            }
+          >
+            <CaptureTargetControl
+              selectionConfirmed={selectionConfirmed}
+              sourceType={sourceType}
+              sourceTitle={sourceTitle}
+              monitorName={monitorName}
+              monitorIndex={monitorIndex}
+              width={width}
+              height={height}
+              captureType={captureType}
+              onRedo={onRedo}
+              onDimensionChange={onDimensionChange}
+              onSaveAreaSelection={onSaveAreaSelection}
+              isCurrentAreaSaved={isCurrentAreaSaved}
+              isAreaSaveDisabled={isAreaSaveDisabled}
+              onSelectLastArea={onSelectLastArea}
+              onSelectSavedArea={onSelectSavedArea}
+              onDeleteSavedArea={onDeleteSavedArea}
+              onCaptureComplete={onCaptureComplete}
+              lastAreaSelection={lastAreaSelection}
+              savedAreaSelections={savedAreaSelections}
+              toolbarOwner={toolbarOwner}
+              disabled={toolbarState.isBusy}
+              onSourceChange={handleSourceChange}
+            />
+          </motion.div>
+        </AnimatePresence>
 
         {/* Device selectors - always visible, disabled when not in video mode */}
         <div className="glass-divider-vertical" />

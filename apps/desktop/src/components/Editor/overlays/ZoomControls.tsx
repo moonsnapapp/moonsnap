@@ -34,7 +34,7 @@ export const ZoomControls: React.FC<ZoomControlsProps> = React.memo(({
   return (
     <TooltipProvider delayDuration={300} skipDelayDuration={100}>
       <div
-        className="absolute bottom-4 flex items-center gap-1 bg-[var(--card)] rounded-xl p-1 border border-[var(--polar-frost)] shadow-lg z-10 transition-all duration-200 ease-out"
+        className="absolute bottom-4 flex items-center gap-1 bg-[var(--card)] rounded-xl p-1 border border-[var(--polar-frost)] shadow-lg z-10 transition-[left,transform] duration-200 ease-out"
         style={{
           left: cropActive ? 'calc(50% - 0.5rem)' : '50%',
           transform: cropActive ? 'translateX(-100%)' : 'translateX(-50%)',

@@ -5,6 +5,7 @@ import {
   X,
   ScreenShare,
 } from 'lucide-react';
+import { AnimatePresence, motion, useReducedMotion, type Transition } from 'motion/react';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -32,6 +33,26 @@ interface LibraryToolbarProps {
   onNewGif: () => void;
 }
 
+const SELECTION_ACTIONS_INITIAL = {
+  opacity: 0,
+  transform: 'scale(0.97)',
+};
+const SELECTION_ACTIONS_ANIMATE = {
+  opacity: 1,
+  transform: 'scale(1)',
+};
+const SELECTION_ACTIONS_EXIT = {
+  opacity: 0,
+  transform: 'scale(0.985)',
+};
+const SELECTION_ACTIONS_TRANSITION = {
+  duration: 0.14,
+  ease: [0.23, 1, 0.32, 1],
+} satisfies Transition;
+const SELECTION_ACTIONS_REDUCED_TRANSITION = {
+  duration: 0,
+} satisfies Transition;
+
 export const LibraryToolbar: React.FC<LibraryToolbarProps> = ({
   searchQuery,
   onSearchChange,
@@ -40,6 +61,8 @@ export const LibraryToolbar: React.FC<LibraryToolbarProps> = ({
   onClearSelection,
   onAllMonitorsCapture,
 }) => {
+  const shouldReduceMotion = useReducedMotion();
+
   return (
     <header className="header-bar">
       <div className="flex items-center gap-3">
@@ -58,47 +81,59 @@ export const LibraryToolbar: React.FC<LibraryToolbarProps> = ({
         <div className="flex-1" />
 
         {/* Selection Actions (appears when items selected) */}
-        {selectedCount > 0 && (
-          <div className="flex items-center gap-2">
-            <Badge
-              variant="secondary"
-              className="glass-badge text-xs"
+        <AnimatePresence initial={false}>
+          {selectedCount > 0 && (
+            <motion.div
+              className="flex items-center gap-2"
+              initial={shouldReduceMotion ? false : SELECTION_ACTIONS_INITIAL}
+              animate={SELECTION_ACTIONS_ANIMATE}
+              exit={shouldReduceMotion ? undefined : SELECTION_ACTIONS_EXIT}
+              transition={
+                shouldReduceMotion
+                  ? SELECTION_ACTIONS_REDUCED_TRANSITION
+                  : SELECTION_ACTIONS_TRANSITION
+              }
             >
-              {selectedCount} selected
-            </Badge>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={onDeleteSelected}
-                  className="glass-btn glass-btn--danger h-8 w-8"
-                >
-                  <Trash2 className="w-4 h-4" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent side="bottom">
-                <p className="text-xs">Delete selected</p>
-              </TooltipContent>
-            </Tooltip>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={onClearSelection}
-                  className="glass-btn h-8 w-8"
-                >
-                  <X className="w-4 h-4" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent side="bottom">
-                <p className="text-xs">Clear selection</p>
-              </TooltipContent>
-            </Tooltip>
-            <div className="glass-divider h-5" />
-          </div>
-        )}
+              <Badge
+                variant="secondary"
+                className="glass-badge text-xs"
+              >
+                {selectedCount} selected
+              </Badge>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={onDeleteSelected}
+                    className="glass-btn glass-btn--danger h-8 w-8"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom">
+                  <p className="text-xs">Delete selected</p>
+                </TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={onClearSelection}
+                    className="glass-btn h-8 w-8"
+                  >
+                    <X className="w-4 h-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom">
+                  <p className="text-xs">Clear selection</p>
+                </TooltipContent>
+              </Tooltip>
+              <div className="glass-divider h-5" />
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {/* All Monitors Quick Capture */}
         <Tooltip>
