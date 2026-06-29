@@ -170,7 +170,7 @@ jobs:
 
       - name: Cache FFmpeg
         id: cache-ffmpeg
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: C:\ffmpeg
           key: ffmpeg-windows-7.1
@@ -200,7 +200,7 @@ jobs:
 
       - name: Cache LLVM
         id: cache-llvm
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: C:\Program Files\LLVM
           key: llvm-windows-latest
@@ -275,7 +275,7 @@ jobs:
 
       - name: Cache FFmpeg
         id: cache-ffmpeg
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: C:\ffmpeg
           key: ffmpeg-windows-7.1
@@ -305,7 +305,7 @@ jobs:
 
       - name: Cache LLVM
         id: cache-llvm
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: C:\Program Files\LLVM
           key: llvm-windows-latest
