@@ -388,7 +388,7 @@ export const DEFAULT_SHORTCUTS: Record<string, ShortcutConfig> = {
   },
   record_video: {
     id: 'record_video',
-    name: 'Record Video…',
+    name: 'Record Video',
     description: 'Open the capture toolbar in Video mode',
     defaultShortcut: 'Ctrl+Alt+R',
     currentShortcut: 'Ctrl+Alt+R',
@@ -397,7 +397,7 @@ export const DEFAULT_SHORTCUTS: Record<string, ShortcutConfig> = {
   },
   record_gif: {
     id: 'record_gif',
-    name: 'Record GIF…',
+    name: 'Record GIF',
     description: 'Open the capture toolbar in GIF mode',
     defaultShortcut: 'Ctrl+Alt+G',
     currentShortcut: 'Ctrl+Alt+G',

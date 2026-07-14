@@ -66,27 +66,27 @@ const ShortcutItem: React.FC<ShortcutItemProps> = ({ config }) => {
   }, [config.id, config.defaultShortcut, resetShortcut]);
 
   return (
-    <div className="rounded-lg border border-[var(--polar-frost)] bg-[var(--polar-ice)] p-3">
-      <div className="flex items-start gap-2.5">
+    <div className="relative rounded-lg border border-[var(--polar-frost)] bg-[var(--polar-ice)] p-3">
+      <div className="absolute right-3 top-3">
         <ShortcutIcon shortcutId={config.id} />
+      </div>
 
-        <div className="flex-1 min-w-0">
-          <div className="mb-1 flex items-center gap-2">
-            <h4 className="text-sm font-medium text-[var(--ink-black)]">{config.name}</h4>
-            <ShortcutStatusIcon config={config} />
-          </div>
-          <p className="mb-2 text-xs text-[var(--ink-muted)]">{config.description}</p>
-          <ShortcutStatusMessage config={config} />
-
-          <ShortcutInput
-            value={config.currentShortcut}
-            onChange={handleShortcutChange}
-            onReset={handleReset}
-            status={config.status}
-            defaultValue={config.defaultShortcut}
-            shortcutId={config.id}
-          />
+      <div className="min-w-0">
+        <div className="mb-1 flex items-center gap-2 pr-12">
+          <h4 className="text-sm font-medium text-[var(--ink-black)]">{config.name}</h4>
+          <ShortcutStatusIcon config={config} />
         </div>
+        <p className="mb-2 pr-12 text-xs text-[var(--ink-muted)]">{config.description}</p>
+        <ShortcutStatusMessage config={config} />
+
+        <ShortcutInput
+          value={config.currentShortcut}
+          onChange={handleShortcutChange}
+          onReset={handleReset}
+          status={config.status}
+          defaultValue={config.defaultShortcut}
+          shortcutId={config.id}
+        />
       </div>
     </div>
   );
