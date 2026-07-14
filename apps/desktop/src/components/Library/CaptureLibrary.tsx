@@ -1,4 +1,6 @@
 import { useEffect, useState, useRef, useCallback, useMemo } from 'react';
+import { createPortal } from 'react-dom';
+import { FolderInput } from 'lucide-react';
 import { invoke } from '@tauri-apps/api/core';
 import { open as openFileDialog, save as saveFileDialog } from '@tauri-apps/plugin-dialog';
 import { toast } from 'sonner';
@@ -15,7 +17,7 @@ import type { CaptureListItem } from '../../types';
 import { LAYOUT, TIMING } from '../../constants';
 import { isTextInputTarget } from '../../utils/keyboard';
 
-import { useMarqueeSelection, useDragDropImport, useMomentumScroll, useResizeTransitionLock, type VirtualLayoutInfo } from './hooks';
+import { useMarqueeSelection, useDragDropImport, useDragToFolder, useMomentumScroll, useResizeTransitionLock, ROOT_DROP_TARGET_KEY, type VirtualLayoutInfo } from './hooks';
 import {
   getColumnsForWidth,
   calculateRowHeight,
@@ -32,6 +34,8 @@ import {
   type LibraryGridLayout,
   type LibraryVariant,
 } from './CaptureLibraryComposition';
+import { FolderSidebar } from './components/FolderSidebar';
+import { NewFolderDialog } from './components/NewFolderDialog';
 
 // VirtualizedGrid positioning offsets (from `top: virtualRow.start + 32` and `px-8`)
 const CONTENT_OFFSET_Y = 32; // vertical offset from inline positioning style
@@ -700,6 +704,11 @@ export const CaptureLibrary: React.FC<CaptureLibraryProps> = ({
     setFilterMediaTypes,
     libraryItemScale,
     setLibraryItemScale,
+    folders,
+    activeFolderId,
+    setActiveFolder,
+    loadFolders,
+    moveCapturesToFolder,
   } = useCaptureStore();
 
   const { settings } = useSettingsStore();
@@ -887,6 +896,81 @@ export const CaptureLibrary: React.FC<CaptureLibraryProps> = ({
     onImportComplete: loadCaptures,
   });
 
+  // Memoized cards can hold an older move-to-folder callback; the ref makes
+  // sure the handler always sees the current selection.
+  const selectedIdsRef = useRef(selectedIds);
+  useEffect(() => {
+    selectedIdsRef.current = selectedIds;
+  }, [selectedIds]);
+
+  const moveCapturesWithToast = useCallback(async (ids: string[], folderId: string | null) => {
+    try {
+      await moveCapturesToFolder(ids, folderId);
+      const folderName = folderId
+        ? useCaptureStore.getState().folders.find((folder) => folder.id === folderId)?.name
+        : null;
+      const itemsLabel = ids.length > 1 ? `${ids.length} captures` : 'Capture';
+      toast.success(
+        folderName ? `${itemsLabel} moved to "${folderName}"` : `${itemsLabel} removed from folder`
+      );
+    } catch (error) {
+      reportError(error, { operation: 'move to folder' });
+      toast.error('Failed to move capture');
+    }
+  }, [moveCapturesToFolder]);
+
+  // Moving a capture that is part of a multi-selection moves the whole selection
+  const handleMoveToFolder = useCallback((captureId: string, folderId: string | null) => {
+    const selected = selectedIdsRef.current;
+    const ids = selected.has(captureId) && selected.size > 1 ? Array.from(selected) : [captureId];
+    return moveCapturesWithToast(ids, folderId);
+  }, [moveCapturesWithToast]);
+
+  const handleDropToFolder = useCallback((captureIds: string[], targetKey: string) => {
+    void moveCapturesWithToast(
+      captureIds,
+      targetKey === ROOT_DROP_TARGET_KEY ? null : targetKey
+    );
+  }, [moveCapturesWithToast]);
+
+  // "New Folder…" from the context menu: prompt for a name, then create + move
+  const [newFolderCaptureId, setNewFolderCaptureId] = useState<string | null>(null);
+
+  const handleRequestNewFolder = useCallback((captureId: string) => {
+    setNewFolderCaptureId(captureId);
+  }, []);
+
+  const handleCreateFolderAndMove = useCallback(async (name: string) => {
+    const captureId = newFolderCaptureId;
+    setNewFolderCaptureId(null);
+    if (!captureId) return;
+
+    try {
+      const folder = await useCaptureStore.getState().createFolder(name);
+      await handleMoveToFolder(captureId, folder.id);
+    } catch (error) {
+      reportError(error, { operation: 'create folder' });
+      toast.error('Failed to create folder');
+    }
+  }, [newFolderCaptureId, handleMoveToFolder]);
+
+  // Mouse-tracked drag of cards onto the folder rail (full variant only)
+  const folderDragState = useDragToFolder({
+    containerRef,
+    enabled: variant === 'full',
+    selectedIdsRef,
+    onDrop: handleDropToFolder,
+  });
+
+  const handleShowAllItems = useCallback(() => {
+    setActiveFolder(null);
+  }, [setActiveFolder]);
+
+  const activeFolderName = useMemo(() => {
+    if (!activeFolderId) return null;
+    return folders.find((folder) => folder.id === activeFolderId)?.name ?? null;
+  }, [folders, activeFolderId]);
+
   const getCaptureScrollTop = useCallback((captureId: string) => {
     if (!virtualLayout) {
       return null;
@@ -927,6 +1011,10 @@ export const CaptureLibrary: React.FC<CaptureLibraryProps> = ({
   useEffect(() => {
     loadCaptures();
   }, [loadCaptures]);
+
+  useEffect(() => {
+    loadFolders();
+  }, [loadFolders]);
 
   const handleNewImage = async () => {
     // Set active mode so toolbar shows correct mode
@@ -1159,6 +1247,7 @@ export const CaptureLibrary: React.FC<CaptureLibraryProps> = ({
     filterMediaTypes,
     searchQuery,
     activeFilterCount,
+    activeFolderName,
     deleteDialog,
     deleteCount: getDeleteCount(deleteDialog, selectedIds),
     isDragOver,
@@ -1179,6 +1268,9 @@ export const CaptureLibrary: React.FC<CaptureLibraryProps> = ({
     onEditVideo: handleEditVideo,
     onSaveCopy: handleSaveCopy,
     onRepair: handleRepair,
+    onMoveToFolder: handleMoveToFolder,
+    onRequestNewFolder: handleRequestNewFolder,
+    onShowAllItems: handleShowAllItems,
     onFormatDate: formatDate,
     onMarqueeMouseDown: handleMarqueeMouseDown,
     onMarqueeMouseMove: handleMarqueeMouseMove,
@@ -1198,10 +1290,36 @@ export const CaptureLibrary: React.FC<CaptureLibraryProps> = ({
       <div className={`library-panel library-panel--${variant} flex flex-col h-full relative`}>
         <Library.Provider value={libraryComposition}>
           <Library.DropZone />
-          <Library.Content />
+          <div className="flex flex-1 min-h-0">
+            {variant === 'full' && (
+              <FolderSidebar dropTargetKey={folderDragState?.targetKey ?? null} />
+            )}
+            <div className="flex flex-col flex-1 min-w-0">
+              <Library.Content />
+            </div>
+          </div>
           <Library.DeleteDialog />
           <Library.Toolbar />
+          <NewFolderDialog
+            open={newFolderCaptureId !== null}
+            onOpenChange={(open) => !open && setNewFolderCaptureId(null)}
+            onCreate={handleCreateFolderAndMove}
+          />
         </Library.Provider>
+        {folderDragState && createPortal(
+          <div
+            className="folder-drag-ghost"
+            style={{ left: folderDragState.x + 14, top: folderDragState.y + 10 }}
+          >
+            <FolderInput className="w-3.5 h-3.5" />
+            <span>
+              Move {folderDragState.captureIds.length > 1
+                ? `${folderDragState.captureIds.length} captures`
+                : 'capture'}
+            </span>
+          </div>,
+          document.body
+        )}
       </div>
     </TooltipProvider>
   );

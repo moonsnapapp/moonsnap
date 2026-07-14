@@ -1858,6 +1858,189 @@ body.resizing * {
   pointer-events: none;
 }
 
+/* Folder navigation rail (full library view) */
+.folder-rail {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  width: 196px;
+  flex-shrink: 0;
+  padding: 14px 10px 16px;
+  border-right: 1px solid rgba(255, 255, 255, 0.05);
+  background: linear-gradient(180deg, rgba(13, 13, 16, 0.55) 0%, rgba(10, 10, 12, 0.7) 100%);
+}
+
+.folder-rail__item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 10px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--ink-muted);
+  font-size: 12.5px;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.folder-rail__item:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--ink-black);
+}
+
+.folder-rail__item--active {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.06);
+  color: var(--ink-black);
+}
+
+.folder-rail__item--editing {
+  cursor: default;
+}
+
+.folder-rail__item--editing:hover {
+  background: transparent;
+}
+
+.folder-rail__label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.folder-rail__count {
+  flex-shrink: 0;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--ink-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.folder-rail__item--active .folder-rail__count {
+  color: var(--ink-subtle);
+}
+
+.folder-rail__section {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 10px 6px;
+}
+
+.folder-rail__section-title {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+.folder-rail__add {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 6px;
+  color: var(--ink-subtle);
+  cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.folder-rail__add:hover {
+  background: rgba(255, 255, 255, 0.07);
+  color: var(--ink-black);
+}
+
+.folder-rail__list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.folder-rail__input {
+  flex: 1;
+  min-width: 0;
+  padding: 2px 6px;
+  border-radius: 6px;
+  border: 1px solid var(--accent-400);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--ink-black);
+  font-size: 12.5px;
+  outline: none;
+}
+
+.folder-rail__empty {
+  padding: 8px 10px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--ink-faint);
+}
+
+/* Highlighted while a capture is dragged over this row */
+.folder-rail__item--drop {
+  background: var(--accent-glow, rgba(96, 165, 250, 0.16));
+  border-color: var(--accent-400);
+  color: var(--ink-black);
+}
+
+/* Card media must never start a native drag — it would swallow the mouse
+   events that drive drag-to-folder. */
+.capture-card img {
+  -webkit-user-drag: none;
+}
+
+/* Cursor-following pill while dragging captures onto the folder rail */
+.folder-drag-ghost {
+  position: fixed;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--polar-frost);
+  background: var(--card);
+  color: var(--ink-black);
+  font-size: 11.5px;
+  font-weight: 500;
+  pointer-events: none;
+  white-space: nowrap;
+  filter: drop-shadow(0 4px 12px rgba(0, 0, 0, 0.35));
+}
+
+.light .folder-rail {
+  border-right-color: rgba(15, 23, 42, 0.06);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.5) 0%, rgba(248, 250, 252, 0.65) 100%);
+}
+
+.light .folder-rail__item:hover {
+  background: rgba(15, 23, 42, 0.045);
+}
+
+.light .folder-rail__item--active {
+  background: rgba(15, 23, 42, 0.07);
+  border-color: rgba(15, 23, 42, 0.05);
+}
+
+.light .folder-rail__add:hover {
+  background: rgba(15, 23, 42, 0.06);
+}
+
+.light .folder-rail__input {
+  background: rgba(255, 255, 255, 0.85);
+}
+
 .library-stage {
   position: relative;
   background:

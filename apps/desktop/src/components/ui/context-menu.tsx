@@ -41,14 +41,19 @@ const ContextMenuSubContent = React.forwardRef<
   React.ElementRef<typeof ContextMenuPrimitive.SubContent>,
   React.ComponentPropsWithoutRef<typeof ContextMenuPrimitive.SubContent>
 >(({ className, ...props }, ref) => (
-  <ContextMenuPrimitive.SubContent
-    ref={ref}
-    className={cn(
-      "ui-floating-surface z-50 min-w-[8rem] overflow-hidden rounded-xl border border-[var(--polar-frost)] bg-[var(--card)] p-1 text-[var(--ink-black)] shadow-lg",
-      className
-    )}
-    {...props}
-  />
+  // Portal keeps the submenu out of the parent content's DOM: the parent has
+  // overflow clipping and a will-change transform, which would otherwise trap
+  // and clip the fixed-positioned submenu.
+  <ContextMenuPrimitive.Portal>
+    <ContextMenuPrimitive.SubContent
+      ref={ref}
+      className={cn(
+        "ui-floating-surface z-50 min-w-[8rem] overflow-hidden rounded-xl border border-[var(--polar-frost)] bg-[var(--card)] p-1 text-[var(--ink-black)] shadow-lg",
+        className
+      )}
+      {...props}
+    />
+  </ContextMenuPrimitive.Portal>
 ))
 ContextMenuSubContent.displayName = ContextMenuPrimitive.SubContent.displayName
 

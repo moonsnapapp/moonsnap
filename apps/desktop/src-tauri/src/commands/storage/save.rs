@@ -61,6 +61,7 @@ pub async fn save_capture(
         annotations: Vec::new(),
         tags: Vec::new(),
         favorite: false,
+        folder_id: None,
     };
 
     // Save project file
@@ -148,6 +149,7 @@ pub async fn save_capture_from_file(
         annotations: Vec::new(),
         tags: Vec::new(),
         favorite: false,
+        folder_id: None,
     };
 
     // Save project file
@@ -241,6 +243,7 @@ pub async fn import_image_from_path(
         annotations: Vec::new(),
         tags: Vec::new(),
         favorite: false,
+        folder_id: None,
     };
 
     // Save project file

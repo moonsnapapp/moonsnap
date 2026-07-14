@@ -157,6 +157,7 @@ fn test_capture_project_serialization() {
         annotations: vec![],
         tags: vec!["screenshot".to_string(), "test".to_string()],
         favorite: true,
+        folder_id: None,
     };
 
     let json = serde_json::to_string_pretty(&project).expect("Failed to serialize");
@@ -197,6 +198,7 @@ fn test_capture_list_item_serialization() {
         has_annotations: false,
         tags: vec![],
         favorite: false,
+        folder_id: None,
         quick_capture: false,
         is_missing: false,
         damaged: false,
@@ -291,6 +293,7 @@ fn make_capture_project(original_image: &str, capture_type: &str) -> CaptureProj
         annotations: Vec::new(),
         tags: Vec::new(),
         favorite: false,
+        folder_id: None,
     }
 }
 

@@ -8,6 +8,7 @@
 //!   +-- save.rs       (save_capture, save_capture_from_file, import_image_from_path)
 //!   +-- update.rs     (update_project_annotations, update_project_metadata)
 //!   +-- query.rs      (get_capture_list, get_project, get_project_image, ...)
+//!   +-- folders.rs    (list_folders, create_folder, rename_folder, delete_folder, move_captures_to_folder)
 //!   +-- delete.rs     (delete_project, delete_projects)
 //!   +-- export.rs     (export_project)
 //!   +-- maintenance.rs (get_storage_stats, ensure_ffmpeg, startup_cleanup, repair_project)
@@ -19,6 +20,7 @@
 
 pub mod delete;
 pub mod export;
+pub mod folders;
 pub mod maintenance;
 pub mod query;
 pub mod save;

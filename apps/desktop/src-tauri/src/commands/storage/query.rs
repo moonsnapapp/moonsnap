@@ -13,7 +13,14 @@ use super::{
 use moonsnap_domain::storage::*;
 use moonsnap_media::ffmpeg::{generate_gif_thumbnail, generate_video_thumbnail};
 
-async fn load_metadata_sidecar(base_dir: &Path, id: &str) -> Option<(Vec<String>, bool)> {
+/// Item metadata carried by the sidecar at `projects/{id}/project.json`.
+struct SidecarMetadata {
+    tags: Vec<String>,
+    favorite: bool,
+    folder_id: Option<String>,
+}
+
+async fn load_metadata_sidecar(base_dir: &Path, id: &str) -> Option<SidecarMetadata> {
     let sidecar_path = base_dir.join("projects").join(id).join("project.json");
     if !async_fs::try_exists(&sidecar_path).await.unwrap_or(false) {
         return None;
@@ -21,18 +28,23 @@ async fn load_metadata_sidecar(base_dir: &Path, id: &str) -> Option<(Vec<String>
 
     let content = async_fs::read_to_string(&sidecar_path).await.ok()?;
     let project = serde_json::from_str::<CaptureProject>(&content).ok()?;
-    Some((project.tags, project.favorite))
+    Some(SidecarMetadata {
+        tags: project.tags,
+        favorite: project.favorite,
+        folder_id: project.folder_id,
+    })
 }
 
 fn merge_project_metadata(
     json_tags: Vec<String>,
     json_favorite: bool,
-    sidecar_metadata: Option<(Vec<String>, bool)>,
-) -> (Vec<String>, bool) {
-    match sidecar_metadata {
-        Some((tags, favorite)) => (tags, favorite),
-        None => (json_tags, json_favorite),
-    }
+    sidecar_metadata: Option<SidecarMetadata>,
+) -> SidecarMetadata {
+    sidecar_metadata.unwrap_or(SidecarMetadata {
+        tags: json_tags,
+        favorite: json_favorite,
+        folder_id: None,
+    })
 }
 
 /// Process a single project directory into a CaptureListItem.
@@ -79,6 +91,7 @@ async fn load_project_item(
         has_annotations: !project.annotations.is_empty(),
         tags: project.tags,
         favorite: project.favorite,
+        folder_id: project.folder_id,
         quick_capture: false,
         is_missing,
         damaged: false,
@@ -274,8 +287,7 @@ async fn load_video_project_folder(
         sidecar_metadata = load_metadata_sidecar(&base_dir, &fallback_id).await;
     }
 
-    let (final_tags, final_favorite) =
-        merge_project_metadata(json_tags, json_favorite, sidecar_metadata);
+    let merged_metadata = merge_project_metadata(json_tags, json_favorite, sidecar_metadata);
 
     // Check/generate thumbnail
     let thumbnail_filename = format!("{}_thumb.png", &id);
@@ -321,8 +333,9 @@ async fn load_video_project_folder(
         // Point to the video file inside the folder (used to load the video in editor)
         image_path: screen_mp4.to_string_lossy().into_owned(),
         has_annotations: false,
-        tags: final_tags,
-        favorite: final_favorite,
+        tags: merged_metadata.tags,
+        favorite: merged_metadata.favorite,
+        folder_id: merged_metadata.folder_id,
         quick_capture: json_quick_capture,
         is_missing: false,
         damaged,
@@ -443,13 +456,11 @@ async fn load_media_item(
     };
 
     // Check for metadata sidecar in projects/{id}/project.json
-    let (sidecar_tags, sidecar_favorite) = if let Ok(base_dir) = get_app_data_dir(&app) {
-        load_metadata_sidecar(&base_dir, &id)
-            .await
-            .unwrap_or_else(|| (Vec::new(), false))
-    } else {
-        (Vec::new(), false)
+    let sidecar_metadata = match get_app_data_dir(&app) {
+        Ok(base_dir) => load_metadata_sidecar(&base_dir, &id).await,
+        Err(_) => None,
     };
+    let metadata = merge_project_metadata(Vec::new(), false, sidecar_metadata);
 
     Some(CaptureListItem {
         id,
@@ -460,8 +471,9 @@ async fn load_media_item(
         thumbnail_path: thumbnail_path_str,
         image_path: path.to_string_lossy().into_owned(),
         has_annotations: false,
-        tags: sidecar_tags,
-        favorite: sidecar_favorite,
+        tags: metadata.tags,
+        favorite: metadata.favorite,
+        folder_id: metadata.folder_id,
         quick_capture: capture_type == "video" || capture_type == "gif",
         is_missing: false,
         damaged: false,
@@ -631,34 +643,48 @@ pub fn get_library_folder(app: AppHandle) -> MoonSnapResult<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::merge_project_metadata;
+    use super::{merge_project_metadata, SidecarMetadata};
 
     #[test]
     fn sidecar_metadata_overrides_true_json_favorite_with_false() {
-        let (tags, favorite) = merge_project_metadata(
+        let metadata = merge_project_metadata(
             vec!["json".to_string()],
             true,
-            Some((vec!["sidecar".to_string()], false)),
+            Some(SidecarMetadata {
+                tags: vec!["sidecar".to_string()],
+                favorite: false,
+                folder_id: Some("folder1".to_string()),
+            }),
         );
 
-        assert_eq!(tags, vec!["sidecar"]);
-        assert!(!favorite);
+        assert_eq!(metadata.tags, vec!["sidecar"]);
+        assert!(!metadata.favorite);
+        assert_eq!(metadata.folder_id.as_deref(), Some("folder1"));
     }
 
     #[test]
     fn sidecar_metadata_can_clear_json_tags() {
-        let (tags, favorite) =
-            merge_project_metadata(vec!["json".to_string()], true, Some((Vec::new(), true)));
+        let metadata = merge_project_metadata(
+            vec!["json".to_string()],
+            true,
+            Some(SidecarMetadata {
+                tags: Vec::new(),
+                favorite: true,
+                folder_id: None,
+            }),
+        );
 
-        assert!(tags.is_empty());
-        assert!(favorite);
+        assert!(metadata.tags.is_empty());
+        assert!(metadata.favorite);
+        assert!(metadata.folder_id.is_none());
     }
 
     #[test]
     fn json_metadata_is_used_without_sidecar() {
-        let (tags, favorite) = merge_project_metadata(vec!["json".to_string()], true, None);
+        let metadata = merge_project_metadata(vec!["json".to_string()], true, None);
 
-        assert_eq!(tags, vec!["json"]);
-        assert!(favorite);
+        assert_eq!(metadata.tags, vec!["json"]);
+        assert!(metadata.favorite);
+        assert!(metadata.folder_id.is_none());
     }
 }

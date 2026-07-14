@@ -47,6 +47,7 @@ export interface LibraryCompositionContextValue {
   filterMediaTypes: string[];
   searchQuery: string;
   activeFilterCount: number;
+  activeFolderName: string | null;
   deleteDialog: DeleteDialogState;
   deleteCount: number;
   isDragOver: boolean;
@@ -67,6 +68,9 @@ export interface LibraryCompositionContextValue {
   onEditVideo: (capture: CaptureListItem) => void | Promise<void>;
   onSaveCopy: (capture: CaptureListItem) => void | Promise<void>;
   onRepair: (captureId: string) => void | Promise<void>;
+  onMoveToFolder: (captureId: string, folderId: string | null) => void | Promise<void>;
+  onRequestNewFolder: (captureId: string) => void;
+  onShowAllItems: () => void;
   onFormatDate: (dateStr: string) => string;
   onMarqueeMouseDown: (event: React.MouseEvent<HTMLDivElement>) => void;
   onMarqueeMouseMove: (event: React.MouseEvent<HTMLDivElement>) => void;
@@ -81,7 +85,7 @@ export interface LibraryCompositionContextValue {
   onOpenLibraryFolder: () => void | Promise<void>;
 }
 
-type LibraryContentState = 'loading' | 'filtered-empty' | 'empty' | 'virtualized' | 'static';
+type LibraryContentState = 'loading' | 'filtered-empty' | 'folder-empty' | 'empty' | 'virtualized' | 'static';
 type LibraryContentRule = {
   state: LibraryContentState;
   matches: (library: LibraryCompositionContextValue) => boolean;
@@ -92,6 +96,7 @@ const LibraryCompositionContext = createContext<LibraryCompositionContextValue |
 const LIBRARY_CONTENT_RENDERERS: Record<LibraryContentState, () => React.ReactNode> = {
   loading: () => <Library.LoadingState />,
   'filtered-empty': () => <Library.FilteredEmptyState />,
+  'folder-empty': () => <Library.FolderEmptyState />,
   empty: () => <Library.EmptyState />,
   virtualized: () => <Library.VirtualizedGridStage />,
   static: () => <Library.StaticGridStage />,
@@ -106,6 +111,11 @@ const LIBRARY_CONTENT_RULES: LibraryContentRule[] = [
     state: 'filtered-empty',
     matches: ({ captures, hasActiveFilters, totalCaptureCount }) =>
       captures.length === 0 && hasActiveFilters && totalCaptureCount > 0,
+  },
+  {
+    state: 'folder-empty',
+    matches: ({ captures, activeFolderName }) =>
+      captures.length === 0 && activeFolderName !== null,
   },
   {
     state: 'empty',
@@ -172,6 +182,29 @@ function LibraryFilteredEmptyState() {
         className="editor-choice-pill editor-choice-pill--active px-4 py-2 text-xs font-medium"
       >
         Clear All Filters
+      </button>
+    </div>
+  );
+}
+
+function LibraryFolderEmptyState() {
+  const library = useLibraryComposition();
+
+  return (
+    <div className="library-state-pane flex-1 flex flex-col items-center justify-center gap-4 p-8">
+      <div className="text-center space-y-2">
+        <p className="text-sm text-[var(--ink-muted)]">
+          &ldquo;{library.activeFolderName}&rdquo; is empty
+        </p>
+        <p className="text-xs text-[var(--ink-faint)]">
+          Right-click a capture and choose &ldquo;Move to Folder&rdquo; to organize it here
+        </p>
+      </div>
+      <button
+        onClick={library.onShowAllItems}
+        className="editor-choice-pill editor-choice-pill--active px-4 py-2 text-xs font-medium"
+      >
+        Show All Items
       </button>
     </div>
   );
@@ -245,6 +278,8 @@ function LibraryCaptureGrid() {
                 onEditVideo={capture.capture_type === 'video' ? () => library.onEditVideo(capture) : undefined}
                 onSaveCopy={() => library.onSaveCopy(capture)}
                 onRepair={() => library.onRepair(capture.id)}
+                onMoveToFolder={(folderId) => library.onMoveToFolder(capture.id, folderId)}
+                onMoveToNewFolder={() => library.onRequestNewFolder(capture.id)}
                 formatDate={library.onFormatDate}
               />
             ))}
@@ -296,6 +331,8 @@ function LibraryVirtualizedGridStage() {
       onEditVideo={library.onEditVideo}
       onSaveCopy={library.onSaveCopy}
       onRepair={library.onRepair}
+      onMoveToFolder={library.onMoveToFolder}
+      onMoveToNewFolder={library.onRequestNewFolder}
       formatDate={library.onFormatDate}
       containerRef={library.containerRef as React.RefObject<HTMLDivElement>}
       onMouseDown={library.onMarqueeMouseDown}
@@ -356,6 +393,7 @@ export const Library = {
   DropZone: LibraryDropZone,
   LoadingState: LibraryLoadingState,
   FilteredEmptyState: LibraryFilteredEmptyState,
+  FolderEmptyState: LibraryFolderEmptyState,
   EmptyState: LibraryEmptyState,
   MarqueeRect: LibraryMarqueeRect,
   CaptureGrid: LibraryCaptureGrid,

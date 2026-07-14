@@ -3,6 +3,7 @@
 use chrono::Utc;
 use moonsnap_error::error::MoonSnapResult;
 use std::fs;
+use std::path::Path;
 use tauri::command;
 
 use super::get_app_data_dir;
@@ -42,32 +43,30 @@ pub async fn update_project_annotations(
     Ok(project)
 }
 
-#[command]
-pub async fn update_project_metadata(
-    app: tauri::AppHandle,
-    project_id: String,
-    tags: Option<Vec<String>>,
-    favorite: Option<bool>,
+/// Load the metadata sidecar at `projects/{id}/project.json`, apply `apply`,
+/// and persist it. When no sidecar exists (e.g. video/GIF items that never had
+/// metadata written), a metadata-only sidecar is created first.
+pub(crate) fn update_sidecar_metadata(
+    base_dir: &Path,
+    project_id: &str,
+    apply: impl FnOnce(&mut CaptureProject),
 ) -> MoonSnapResult<CaptureProject> {
-    let base_dir = get_app_data_dir(&app)?;
+    let project_dir = base_dir.join("projects").join(project_id);
+    let project_file = project_dir.join("project.json");
 
-    // Use projects/{id}/project.json for all metadata
-    let projects_path = base_dir
-        .join("projects")
-        .join(&project_id)
-        .join("project.json");
-
-    let project_file = if projects_path.exists() {
-        projects_path
+    let mut project: CaptureProject = if project_file.exists() {
+        let content = fs::read_to_string(&project_file)
+            .map_err(|e| format!("Failed to read project: {}", e))?;
+        serde_json::from_str(&content).map_err(|e| format!("Failed to parse project: {}", e))?
     } else {
-        // No project.json exists (e.g. legacy media file) — create one in projects/
-        let project_dir = base_dir.join("projects").join(&project_id);
+        // No project.json exists (e.g. legacy media file) — create a
+        // metadata-only sidecar in projects/
         fs::create_dir_all(&project_dir)
             .map_err(|e| format!("Failed to create project dir: {}", e))?;
 
         let now = Utc::now();
-        let project = CaptureProject {
-            id: project_id.clone(),
+        CaptureProject {
+            id: project_id.to_string(),
             created_at: now,
             updated_at: now,
             capture_type: "video".to_string(),
@@ -83,30 +82,13 @@ pub async fn update_project_metadata(
                 height: 0,
             },
             annotations: Vec::new(),
-            tags: tags.clone().unwrap_or_default(),
-            favorite: favorite.unwrap_or(false),
-        };
-
-        let json = serde_json::to_string_pretty(&project)
-            .map_err(|e| format!("Failed to serialize project: {}", e))?;
-        let path = project_dir.join("project.json");
-        fs::write(&path, json).map_err(|e| format!("Failed to write project: {}", e))?;
-
-        return Ok(project);
+            tags: Vec::new(),
+            favorite: false,
+            folder_id: None,
+        }
     };
 
-    let content =
-        fs::read_to_string(&project_file).map_err(|e| format!("Failed to read project: {}", e))?;
-
-    let mut project: CaptureProject =
-        serde_json::from_str(&content).map_err(|e| format!("Failed to parse project: {}", e))?;
-
-    if let Some(t) = tags {
-        project.tags = t;
-    }
-    if let Some(f) = favorite {
-        project.favorite = f;
-    }
+    apply(&mut project);
     project.updated_at = Utc::now();
 
     let project_json = serde_json::to_string_pretty(&project)
@@ -115,4 +97,22 @@ pub async fn update_project_metadata(
         .map_err(|e| format!("Failed to write project: {}", e))?;
 
     Ok(project)
+}
+
+#[command]
+pub async fn update_project_metadata(
+    app: tauri::AppHandle,
+    project_id: String,
+    tags: Option<Vec<String>>,
+    favorite: Option<bool>,
+) -> MoonSnapResult<CaptureProject> {
+    let base_dir = get_app_data_dir(&app)?;
+    update_sidecar_metadata(&base_dir, &project_id, |project| {
+        if let Some(t) = tags {
+            project.tags = t;
+        }
+        if let Some(f) = favorite {
+            project.favorite = f;
+        }
+    })
 }

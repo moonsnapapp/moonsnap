@@ -17,6 +17,8 @@ export interface CaptureCardProps {
   onEditVideo?: () => void; // For video - opens in video editor
   onSaveCopy?: () => void; // Save a copy without re-encoding
   onRepair?: () => void; // For damaged bundles - opens repair flow
+  onMoveToFolder?: (folderId: string | null) => void; // Assign to a folder (null = root)
+  onMoveToNewFolder?: () => void; // Prompt for a name, then create a folder and move into it
   formatDate: (date: string) => string;
 }
 
@@ -37,6 +39,7 @@ export const capturePropsAreEqual = (
     prev.capture.quick_capture === next.capture.quick_capture &&
     prev.capture.thumbnail_path === next.capture.thumbnail_path &&
     prev.capture.damaged === next.capture.damaged &&
+    (prev.capture.folder_id ?? null) === (next.capture.folder_id ?? null) &&
     tagsEqual(prev.capture.tags, next.capture.tags) &&
     prev.selected === next.selected &&
     prev.isActive === next.isActive &&

@@ -5,6 +5,7 @@ import { useMemo } from 'react';
 import type {
   CaptureListItem,
   CaptureProject,
+  Folder,
   StorageStats,
   Annotation,
   CaptureSource,
@@ -175,12 +176,38 @@ function loadLibrarySidebarItemSize(): number {
   return LAYOUT.LIBRARY_SIDEBAR_ITEM_SIZE_DEFAULT;
 }
 
+const ACTIVE_FOLDER_STORAGE_KEY = 'library:activeFolderId';
+
+function loadActiveFolderId(): string | null {
+  try {
+    return localStorage.getItem(ACTIVE_FOLDER_STORAGE_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function persistActiveFolderId(folderId: string | null): void {
+  try {
+    if (folderId === null) {
+      localStorage.removeItem(ACTIVE_FOLDER_STORAGE_KEY);
+    } else {
+      localStorage.setItem(ACTIVE_FOLDER_STORAGE_KEY, folderId);
+    }
+  } catch {
+    // localStorage might be disabled
+  }
+}
+
 interface CaptureState {
   // Library state
   captures: CaptureListItem[];
   loading: boolean;
   initialized: boolean; // True after first load attempt completes
   error: string | null;
+
+  // Folder organization state
+  folders: Folder[];
+  activeFolderId: string | null; // null = All Items
 
   // Cache state
   isFromCache: boolean; // True if currently showing cached data
@@ -231,6 +258,15 @@ interface CaptureState {
   toggleFavorite: (id: string) => Promise<void>;
   updateTags: (id: string, tags: string[]) => Promise<void>;
   bulkAddTags: (ids: string[], tagsToAdd: string[]) => Promise<void>;
+
+  // Folder actions
+  loadFolders: () => Promise<void>;
+  createFolder: (name: string) => Promise<Folder>;
+  renameFolder: (id: string, name: string) => Promise<void>;
+  deleteFolder: (id: string) => Promise<void>;
+  moveCapturesToFolder: (ids: string[], folderId: string | null) => Promise<void>;
+  setActiveFolder: (folderId: string | null) => void;
+
   deleteCapture: (id: string) => Promise<void>;
   deleteCaptures: (ids: string[]) => Promise<void>;
   getStorageStats: () => Promise<StorageStats>;
@@ -323,6 +359,8 @@ export const useCaptureStore = create<CaptureState>()(
   loading: false,
   initialized: false,
   error: null,
+  folders: [],
+  activeFolderId: loadActiveFolderId(),
   isFromCache: false,
   isCacheStale: false,
   isRefreshing: false,
@@ -690,6 +728,84 @@ export const useCaptureStore = create<CaptureState>()(
     }
   },
 
+  loadFolders: async () => {
+    try {
+      const folders = await invoke<Folder[]>('list_folders');
+      const { activeFolderId } = get();
+      // Reset selection if the active folder no longer exists
+      const activeFolderExists =
+        activeFolderId === null || folders.some((folder) => folder.id === activeFolderId);
+      if (!activeFolderExists) {
+        persistActiveFolderId(null);
+      }
+      set({
+        folders,
+        activeFolderId: activeFolderExists ? activeFolderId : null,
+      });
+    } catch (error) {
+      libraryLogger.warn('Failed to load folders:', error);
+    }
+  },
+
+  createFolder: async (name: string) => {
+    const folder = await invoke<Folder>('create_folder', { name });
+    set({ folders: [...get().folders, folder] });
+    return folder;
+  },
+
+  renameFolder: async (id: string, name: string) => {
+    const renamed = await invoke<Folder>('rename_folder', { folderId: id, name });
+    set({
+      folders: get().folders.map((folder) => (folder.id === id ? renamed : folder)),
+    });
+  },
+
+  deleteFolder: async (id: string) => {
+    await invoke('delete_folder', { folderId: id });
+
+    const { folders, captures, activeFolderId } = get();
+    // Items in the deleted folder return to the root library
+    const updatedCaptures = captures.map((capture) =>
+      capture.folder_id === id ? { ...capture, folder_id: null } : capture
+    );
+    if (activeFolderId === id) {
+      persistActiveFolderId(null);
+    }
+    set({
+      folders: folders.filter((folder) => folder.id !== id),
+      captures: updatedCaptures,
+      activeFolderId: activeFolderId === id ? null : activeFolderId,
+    });
+    saveToCache(updatedCaptures);
+  },
+
+  moveCapturesToFolder: async (ids: string[], folderId: string | null) => {
+    if (ids.length === 0) return;
+
+    const captures = get().captures;
+    const idSet = new Set(ids);
+
+    // Optimistically update local state first
+    const updatedCaptures = captures.map((capture) =>
+      idSet.has(capture.id) ? { ...capture, folder_id: folderId } : capture
+    );
+    set({ captures: updatedCaptures });
+
+    try {
+      await invoke('move_captures_to_folder', { projectIds: ids, folderId });
+      saveToCache(updatedCaptures);
+    } catch (error) {
+      // Revert on error
+      set({ captures, error: String(error) });
+      throw error;
+    }
+  },
+
+  setActiveFolder: (folderId: string | null) => {
+    persistActiveFolderId(folderId);
+    set({ activeFolderId: folderId }, false, 'setActiveFolder');
+  },
+
   deleteCapture: async (id: string) => {
     try {
       await invoke('delete_project', { projectId: id });
@@ -841,10 +957,17 @@ export const useFilteredCaptures = () => {
   const filterFavorites = useCaptureStore((state) => state.filterFavorites);
   const filterTags = useCaptureStore((state) => state.filterTags);
   const filterMediaTypes = useCaptureStore((state) => state.filterMediaTypes);
+  const activeFolderId = useCaptureStore((state) => state.activeFolderId);
 
   return useMemo(() => {
     // Early exit if no filters active - return original array reference
-    if (!filterFavorites && filterTags.length === 0 && filterMediaTypes.length === 0 && !searchQuery) {
+    if (
+      activeFolderId === null &&
+      !filterFavorites &&
+      filterTags.length === 0 &&
+      filterMediaTypes.length === 0 &&
+      !searchQuery
+    ) {
       return captures;
     }
 
@@ -858,6 +981,12 @@ export const useFilteredCaptures = () => {
     const queryLower = searchQuery ? searchQuery.toLowerCase() : null;
 
     return captures.filter((capture) => {
+      // Folder scope first (cheap equality check). Items pointing at a
+      // deleted folder fall back to the root library view.
+      if (activeFolderId !== null && (capture.folder_id ?? null) !== activeFolderId) {
+        return false;
+      }
+
       // Check favorites filter first (fastest check)
       if (filterFavorites && !capture.favorite) return false;
 
@@ -886,7 +1015,32 @@ export const useFilteredCaptures = () => {
 
       return true;
     });
-  }, [captures, searchQuery, filterFavorites, filterTags, filterMediaTypes]);
+  }, [captures, searchQuery, filterFavorites, filterTags, filterMediaTypes, activeFolderId]);
+};
+
+/**
+ * Memoized selector for the number of captures in each folder.
+ * Keyed by folder id; captures pointing at unknown folders count as root.
+ *
+ * @returns Map of folder id to capture count
+ */
+export const useFolderCounts = () => {
+  const captures = useCaptureStore((state) => state.captures);
+  const folders = useCaptureStore((state) => state.folders);
+
+  return useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const folder of folders) {
+      counts.set(folder.id, 0);
+    }
+    for (const capture of captures) {
+      const folderId = capture.folder_id ?? null;
+      if (folderId !== null && counts.has(folderId)) {
+        counts.set(folderId, (counts.get(folderId) ?? 0) + 1);
+      }
+    }
+    return counts;
+  }, [captures, folders]);
 };
 
 /**

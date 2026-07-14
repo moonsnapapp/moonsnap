@@ -1,21 +1,28 @@
 import React from 'react';
-import { Star, Trash2, Copy, ExternalLink, Play, Tag, Film, Wrench, Download } from 'lucide-react';
+import { Star, Trash2, Copy, ExternalLink, Play, Tag, Film, Wrench, Download, Folder, FolderMinus, FolderPlus, Check } from 'lucide-react';
 import {
   ContextMenuContent,
   ContextMenuItem,
   ContextMenuSeparator,
   ContextMenuShortcut,
+  ContextMenuSub,
+  ContextMenuSubContent,
+  ContextMenuSubTrigger,
 } from '@/components/ui/context-menu';
+import { useCaptureStore } from '../../../stores/captureStore';
 
 interface CaptureContextMenuProps {
   favorite: boolean;
   isMissing?: boolean;
   captureType?: string;
   quickCapture?: boolean;
+  currentFolderId?: string | null;
   onCopyToClipboard: () => void;
   onOpenInFolder: () => void;
   onToggleFavorite: () => void;
   onManageTags?: () => void;
+  onMoveToFolder?: (folderId: string | null) => void;
+  onMoveToNewFolder?: () => void;
   onDelete: () => void;
   onPlayMedia?: () => void;
   onEditVideo?: () => void;
@@ -47,15 +54,68 @@ function MissingAwareMenuItem({
   );
 }
 
+function MoveToFolderSubmenu({
+  currentFolderId,
+  onMoveToFolder,
+  onMoveToNewFolder,
+}: {
+  currentFolderId: string | null;
+  onMoveToFolder: (folderId: string | null) => void;
+  onMoveToNewFolder?: () => void;
+}) {
+  const folders = useCaptureStore((state) => state.folders);
+  const sortedFolders = [...folders].sort((a, b) => a.name.localeCompare(b.name));
+
+  return (
+    <ContextMenuSub>
+      <ContextMenuSubTrigger>
+        <Folder className="w-4 h-4 mr-2" />
+        Move to Folder
+      </ContextMenuSubTrigger>
+      <ContextMenuSubContent>
+        {sortedFolders.map((folder) => (
+          <ContextMenuItem
+            key={folder.id}
+            onClick={() => onMoveToFolder(folder.id)}
+            disabled={folder.id === currentFolderId}
+          >
+            <Folder className="w-4 h-4 mr-2" />
+            <span className="truncate max-w-[180px]">{folder.name}</span>
+            {folder.id === currentFolderId && <Check className="w-3.5 h-3.5 ml-auto pl-1" />}
+          </ContextMenuItem>
+        ))}
+        {onMoveToNewFolder && (
+          <>
+            {sortedFolders.length > 0 && <ContextMenuSeparator />}
+            <ContextMenuItem onClick={onMoveToNewFolder}>
+              <FolderPlus className="w-4 h-4 mr-2" />
+              New Folder…
+            </ContextMenuItem>
+          </>
+        )}
+        {currentFolderId !== null && (
+          <ContextMenuItem onClick={() => onMoveToFolder(null)}>
+            <FolderMinus className="w-4 h-4 mr-2" />
+            Remove from Folder
+          </ContextMenuItem>
+        )}
+      </ContextMenuSubContent>
+    </ContextMenuSub>
+  );
+}
+
 export const CaptureContextMenu: React.FC<CaptureContextMenuProps> = ({
   favorite,
   isMissing = false,
   captureType,
   quickCapture = false,
+  currentFolderId = null,
   onCopyToClipboard,
   onOpenInFolder,
   onToggleFavorite,
   onManageTags,
+  onMoveToFolder,
+  onMoveToNewFolder,
   onDelete,
   onPlayMedia,
   onEditVideo,
@@ -114,6 +174,13 @@ export const CaptureContextMenu: React.FC<CaptureContextMenuProps> = ({
           <Tag className="w-4 h-4 mr-2" />
           Manage Tags
         </ContextMenuItem>
+      )}
+      {onMoveToFolder && (
+        <MoveToFolderSubmenu
+          currentFolderId={currentFolderId}
+          onMoveToFolder={onMoveToFolder}
+          onMoveToNewFolder={onMoveToNewFolder}
+        />
       )}
       <ContextMenuSeparator />
       <ContextMenuItem

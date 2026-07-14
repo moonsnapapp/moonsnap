@@ -102,6 +102,15 @@ export interface CaptureProject {
   annotations: Annotation[];
   tags: string[];
   favorite: boolean;
+  /** Folder this item belongs to; null/undefined = root library */
+  folder_id?: string | null;
+}
+
+/** A user-created folder for organizing library items */
+export interface Folder {
+  id: string;
+  name: string;
+  created_at: string;
 }
 
 export interface CaptureListItem {
@@ -115,6 +124,8 @@ export interface CaptureListItem {
   has_annotations: boolean;
   tags: string[];
   favorite: boolean;
+  /** Folder this item belongs to; null/undefined = root library */
+  folder_id?: string | null;
   quick_capture?: boolean;
   /** True if the original image file is missing from disk */
   is_missing: boolean;

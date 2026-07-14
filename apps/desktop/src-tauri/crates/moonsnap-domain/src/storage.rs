@@ -52,6 +52,18 @@ pub struct Annotation {
     pub properties: serde_json::Value,
 }
 
+/// A user-created folder for organizing library items.
+/// Folders are pure metadata (stored in `folders.json`); assigning an item to a
+/// folder never moves files on disk.
+#[derive(Debug, Serialize, Deserialize, Clone, TS)]
+#[ts(export, export_to = "../../../../src/types/generated/")]
+pub struct Folder {
+    pub id: String,
+    pub name: String,
+    #[ts(type = "string")]
+    pub created_at: DateTime<Utc>,
+}
+
 /// Full capture project data.
 /// Note: Contains Annotation type with serde(flatten) which ts-rs can't handle.
 /// The TypeScript type is manually defined in src/types/index.ts.
@@ -67,6 +79,9 @@ pub struct CaptureProject {
     pub annotations: Vec<Annotation>,
     pub tags: Vec<String>,
     pub favorite: bool,
+    /// Folder this item belongs to; None = root library.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub folder_id: Option<String>,
 }
 
 /// Lightweight capture item for list display.
@@ -85,6 +100,9 @@ pub struct CaptureListItem {
     pub has_annotations: bool,
     pub tags: Vec<String>,
     pub favorite: bool,
+    /// Folder this item belongs to; None = root library.
+    #[serde(default)]
+    pub folder_id: Option<String>,
     /// Whether this media came from the quick capture flow.
     #[serde(default)]
     pub quick_capture: bool,

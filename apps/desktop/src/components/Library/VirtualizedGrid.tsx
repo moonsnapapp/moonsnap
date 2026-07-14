@@ -37,6 +37,8 @@ interface VirtualizedGridProps {
   onEditVideo?: (capture: CaptureListItem) => void;
   onSaveCopy?: (capture: CaptureListItem) => void;
   onRepair?: (captureId: string) => void;
+  onMoveToFolder?: (captureId: string, folderId: string | null) => void;
+  onMoveToNewFolder?: (captureId: string) => void;
   formatDate: (dateStr: string) => string;
   // Marquee selection props
   containerRef?: React.RefObject<HTMLDivElement>;
@@ -215,6 +217,8 @@ export function VirtualizedGrid({
   onEditVideo,
   onSaveCopy,
   onRepair,
+  onMoveToFolder,
+  onMoveToNewFolder,
   formatDate,
   containerRef: externalContainerRef,
   onMouseDown,
@@ -375,6 +379,8 @@ export function VirtualizedGrid({
                 onEditVideo={capture.capture_type === 'video' && onEditVideo ? () => onEditVideo(capture) : undefined}
                 onSaveCopy={onSaveCopy ? () => onSaveCopy(capture) : undefined}
                 onRepair={onRepair ? () => onRepair(capture.id) : undefined}
+                onMoveToFolder={onMoveToFolder ? (folderId) => onMoveToFolder(capture.id, folderId) : undefined}
+                onMoveToNewFolder={onMoveToNewFolder ? () => onMoveToNewFolder(capture.id) : undefined}
                 formatDate={formatDate}
               />
             </div>
@@ -404,6 +410,8 @@ export function VirtualizedGrid({
       onEditVideo,
       onSaveCopy,
       onRepair,
+      onMoveToFolder,
+      onMoveToNewFolder,
       formatDate,
       variant,
     ]

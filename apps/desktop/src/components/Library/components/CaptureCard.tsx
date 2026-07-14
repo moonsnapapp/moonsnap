@@ -117,6 +117,7 @@ function ThumbnailContent({
         key={imgKey}
         src={thumbnailSrc}
         alt="Capture"
+        draggable={false}
         onLoad={onThumbLoaded}
         onError={onThumbError}
         className={`thumbnail-image ${
@@ -418,6 +419,8 @@ export const CaptureCard: React.FC<CaptureCardProps> = memo(
     onEditVideo,
     onSaveCopy,
     onRepair,
+    onMoveToFolder,
+    onMoveToNewFolder,
     formatDate,
   }) => {
     const [thumbLoaded, setThumbLoaded] = useState(false);
@@ -536,10 +539,13 @@ export const CaptureCard: React.FC<CaptureCardProps> = memo(
           isMissing={isMissing}
           captureType={capture.capture_type}
           quickCapture={capture.quick_capture}
+          currentFolderId={capture.folder_id ?? null}
           onCopyToClipboard={onCopyToClipboard}
           onOpenInFolder={onOpenInFolder}
           onToggleFavorite={onToggleFavorite}
           onManageTags={() => setTagPopoverOpen(true)}
+          onMoveToFolder={onMoveToFolder}
+          onMoveToNewFolder={onMoveToNewFolder}
           onDelete={onDelete}
           onPlayMedia={onPlayMedia}
           onEditVideo={onEditVideo}
