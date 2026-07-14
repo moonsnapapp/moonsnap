@@ -36,6 +36,7 @@ import { toast } from 'sonner';
 import { reportError } from '@/utils/errorReporting';
 import { useEditorActions } from '@/hooks/useEditorActions';
 import { useEditorKeyboardShortcuts } from '@/hooks/useEditorKeyboardShortcuts';
+import { scheduleImageEditorAutosaveEnable } from '@/hooks/imageEditorAutosave';
 import { DeleteDialog } from '@/components/Library/components/DeleteDialog';
 import { KeyboardShortcutsDialog } from '@/components/Editor/KeyboardShortcutsDialog';
 import { CanvasCaptureNavigation, type CaptureNavigationControls } from '@/components/Editor/CanvasCaptureNavigation';
@@ -940,6 +941,7 @@ const ImageEditorWindow: React.FC = () => {
       setCapturePath(path);
     }
     setIsLoading(false);
+    scheduleImageEditorAutosaveEnable(isInitialLoadRef);
     editorLogger.info('RGBA file loaded directly (fast path)');
   }, [applySavedCaptureLookup, lookupSavedCaptureByTempPath]);
 
@@ -958,9 +960,7 @@ const ImageEditorWindow: React.FC = () => {
 
     setCapturePath(path);
     setIsLoading(false);
-    setTimeout(() => {
-      isInitialLoadRef.current = false;
-    }, 500);
+    scheduleImageEditorAutosaveEnable(isInitialLoadRef);
   }, [applySavedCaptureLookup, store]);
 
   // Load project when path is received

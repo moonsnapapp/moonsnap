@@ -13,6 +13,7 @@ import {
 } from '@/stores/videoEditor/selectors';
 import type { ExportProgress } from '@/types';
 import { videoEditorLogger } from '@/utils/logger';
+import { registerWorkspaceEditorSave } from '@/utils/workspaceEditorPersistence';
 import type { CaptureNavigationControls } from './CanvasCaptureNavigation';
 
 interface EmbeddedVideoEditorProps {
@@ -211,6 +212,16 @@ export const EmbeddedVideoEditor: React.FC<EmbeddedVideoEditorProps> = ({
       await new Promise((resolve) => setTimeout(resolve, SAVE_WAIT_POLL_MS));
     }
   }, []);
+
+  const flushCurrentProject = useCallback(async () => {
+    if (isExporting) return;
+    await saveCurrentEmbeddedVideoProject({ project, waitForSavingToSettle, saveProject });
+  }, [isExporting, project, saveProject, waitForSavingToSettle]);
+
+  useEffect(
+    () => registerWorkspaceEditorSave(flushCurrentProject),
+    [flushCurrentProject]
+  );
 
   const { navigableCaptures, previousCapture, nextCapture } = useMemo(
     () => getVideoCaptureNavigationState(captures, project),

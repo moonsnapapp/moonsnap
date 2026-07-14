@@ -6,7 +6,9 @@ import { useCaptureStore } from '@/stores/captureStore';
 import { useProjectAnnotations } from '@/hooks/useProjectAnnotations';
 import { useEditorActions } from '@/hooks/useEditorActions';
 import { useUserActivityTracker } from '@/hooks/useUserActivityTracker';
+import { scheduleImageEditorAutosaveEnable } from '@/hooks/imageEditorAutosave';
 import { editorLogger } from '@/utils/logger';
+import { registerWorkspaceEditorSave } from '@/utils/workspaceEditorPersistence';
 import { TIMING } from '@/constants';
 import type Konva from 'konva';
 
@@ -64,9 +66,7 @@ function useResetEmbeddedEditorHistory(
 ) {
   useEffect(() => {
     isInitialLoadRef.current = true;
-    const timeoutId = setTimeout(() => {
-      isInitialLoadRef.current = false;
-    }, 500);
+    const timeoutId = scheduleImageEditorAutosaveEnable(isInitialLoadRef);
 
     store.getState()._clearHistory();
     return () => clearTimeout(timeoutId);
@@ -187,8 +187,18 @@ function useEmbeddedSaveAnnotations({
   });
 
   const saveAnnotations = useCallback(async () => {
-    if (!currentProject || isSavingRef.current) {
+    if (!currentProject) {
       return;
+    }
+
+    const waitStartedAt = Date.now();
+    while (isSavingRef.current) {
+      if (Date.now() - waitStartedAt > TIMING.EDITOR_SAVE_WAIT_TIMEOUT_MS) {
+        return;
+      }
+      await new Promise((resolve) =>
+        setTimeout(resolve, TIMING.EDITOR_SAVE_WAIT_POLL_MS)
+      );
     }
 
     try {
@@ -358,6 +368,11 @@ const EmbeddedImageEditorBody: React.FC<EmbeddedImageEditorBodyProps> = ({ store
     loadCaptures,
     isSavingRef,
   });
+
+  useEffect(
+    () => registerWorkspaceEditorSave(saveAnnotations),
+    [saveAnnotations]
+  );
   const captureNavigation = useEmbeddedCaptureNavigation({
     captures,
     currentProject,

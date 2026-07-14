@@ -38,6 +38,7 @@ import { logger } from './utils/logger';
 import { useCaptureActions } from './hooks/useCaptureActions';
 import { handleScreenshotCompletion } from './utils/screenshotCompletion';
 import { isTextInputTarget } from './utils/keyboard';
+import { flushWorkspaceEditorSave } from './utils/workspaceEditorPersistence';
 import { LAYOUT, STORAGE } from './constants';
 import type { CaptureListItem } from './types';
 
@@ -372,6 +373,7 @@ function usePreviewOpenLibraryEditorListeners(
       }
 
       pendingPreviewOpenPathRef.current = null;
+      await flushWorkspaceEditorSave();
       await invoke('show_library_window');
       await loadProject(savedProjectId);
     });
@@ -379,6 +381,7 @@ function usePreviewOpenLibraryEditorListeners(
     const unlistenRecording = listen<{ videoPath: string }>(
       'preview-open-library-video-editor',
       async (event) => {
+        await flushWorkspaceEditorSave();
         await invoke('show_library_window');
         await loadVideoProjectInWorkspace(event.payload.videoPath);
       }
@@ -894,11 +897,13 @@ function useWorkspaceCaptureHandlers({
   } | null>>;
 }) {
   const handleEditImageInWorkspace = useCallback(async (capture: CaptureListItem) => {
+    await flushWorkspaceEditorSave();
     rememberLastOpenedCapture(capture.id, setLastOpenedCaptureId);
     await loadProject(capture.id);
   }, [loadProject, setLastOpenedCaptureId]);
 
   const handleEditVideoInWorkspace = useCallback(async (capture: CaptureListItem) => {
+    await flushWorkspaceEditorSave();
     rememberLastOpenedCapture(capture.id, setLastOpenedCaptureId);
     try {
       await loadVideoProjectInWorkspace(capture.image_path);
@@ -908,6 +913,7 @@ function useWorkspaceCaptureHandlers({
   }, [loadVideoProjectInWorkspace, setLastOpenedCaptureId]);
 
   const handleEditGifInWorkspace = useCallback(async (capture: CaptureListItem) => {
+    await flushWorkspaceEditorSave();
     rememberLastOpenedCapture(capture.id, setLastOpenedCaptureId);
     loadGifInWorkspace(capture.image_path);
   }, [loadGifInWorkspace, setLastOpenedCaptureId]);
