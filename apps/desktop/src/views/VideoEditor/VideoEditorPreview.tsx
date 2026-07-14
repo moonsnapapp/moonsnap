@@ -11,18 +11,23 @@ import {
 
 interface VideoEditorPreviewProps {
   isActive?: boolean;
+  isCropEditing?: boolean;
   captureNavigation?: CaptureNavigationControls;
 }
 
-export function VideoEditorPreview({ isActive = true, captureNavigation }: VideoEditorPreviewProps) {
+export function VideoEditorPreview({
+  isActive = true,
+  isCropEditing = false,
+  captureNavigation,
+}: VideoEditorPreviewProps) {
   return (
     <div className="editor-preview-shell flex-1 min-h-0 p-4">
       <GPUErrorBoundary>
         <GPUVideoPreview isActive={isActive} />
       </GPUErrorBoundary>
-      {captureNavigation && (
+      {captureNavigation && !isCropEditing ? (
         <CanvasCaptureNavigation {...captureNavigation} />
-      )}
+      ) : null}
     </div>
   );
 }

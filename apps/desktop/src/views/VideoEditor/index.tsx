@@ -890,6 +890,7 @@ function VideoEditorMainColumn({
 
           <VideoEditorPreview
             isActive={isActive}
+            isCropEditing={isCropEditing}
             captureNavigation={captureNavigation}
           />
         </div>
