@@ -8,6 +8,20 @@ export const RECORDING = {
   COUNTDOWN_OPTIONS: [0, 3, 5],
   GIF_FPS_OPTIONS: [10, 15, 20, 30],
   GIF_MAX_DURATION_OPTIONS: [10, 30, 60, 0],
+  SHORTCUTS: {
+    PAUSE_RESUME: {
+      id: 'pause_or_resume_recording',
+      shortcut: 'F9',
+    },
+    STOP: {
+      id: 'stop_recording',
+      shortcut: 'F10',
+    },
+    CANCEL: {
+      id: 'discard_recording',
+      shortcut: 'Ctrl+F10',
+    },
+  },
 } as const;
 
 export const DEFAULT_SYSTEM_AUDIO_SCOPE: SystemAudioScope = {

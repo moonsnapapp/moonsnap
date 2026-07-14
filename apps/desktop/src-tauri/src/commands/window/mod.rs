@@ -261,6 +261,7 @@ pub(crate) fn close_recording_border_window(app: &tauri::AppHandle) {
 
 /// Close recording controls window.
 pub(crate) fn close_recording_controls_window(app: &tauri::AppHandle) {
+    crate::commands::keyboard_hook::unregister_recording_shortcuts();
     if let Some(window) = app.get_webview_window(RECORDING_CONTROLS_LABEL) {
         let _ = window.close();
     }

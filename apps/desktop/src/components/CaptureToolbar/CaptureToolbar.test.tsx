@@ -96,6 +96,52 @@ describe('CaptureToolbar recording audio indicators', () => {
     });
   });
 
+  it('shows the recording shortcuts in the control tooltips', () => {
+    const { rerender } = render(
+      <CaptureToolbar
+        mode="recording"
+        captureType="video"
+        width={0}
+        height={0}
+        format="mp4"
+        elapsedTime={17}
+        onCapture={() => {}}
+        onCaptureTypeChange={() => {}}
+        onRedo={() => {}}
+        onCancel={() => {}}
+        onPause={() => {}}
+        onResume={() => {}}
+        onStop={() => {}}
+        minimalChrome="floating"
+      />
+    );
+
+    expect(screen.getByTitle('Pause (F9)')).toBeInTheDocument();
+    expect(screen.getByTitle('Stop and save (F10)')).toBeInTheDocument();
+    expect(screen.getByTitle('Cancel and discard (Ctrl+F10)')).toBeInTheDocument();
+
+    rerender(
+      <CaptureToolbar
+        mode="paused"
+        captureType="video"
+        width={0}
+        height={0}
+        format="mp4"
+        elapsedTime={17}
+        onCapture={() => {}}
+        onCaptureTypeChange={() => {}}
+        onRedo={() => {}}
+        onCancel={() => {}}
+        onPause={() => {}}
+        onResume={() => {}}
+        onStop={() => {}}
+        minimalChrome="floating"
+      />
+    );
+
+    expect(screen.getByTitle('Resume (F9)')).toBeInTheDocument();
+  });
+
   it('does not render recording audio indicators when the HUD flag is disabled', () => {
     const { container } = render(
       <CaptureToolbar

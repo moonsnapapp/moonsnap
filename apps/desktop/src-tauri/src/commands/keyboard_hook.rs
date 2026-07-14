@@ -15,6 +15,7 @@ use std::sync::{Arc, OnceLock};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
+use moonsnap_domain::recording::RecordingState;
 use moonsnap_hotkeys::{Hotkey, HotkeyId, HotkeyManager, HotkeyState as HotkeyEventState};
 use serde::Deserialize;
 use tauri::AppHandle;
@@ -28,6 +29,12 @@ const DEFAULT_SHORTCUTS: [(&str, &str); 6] = [
     ("all_monitors_capture", "Ctrl+Shift+PrintScreen"),
     ("record_video", "Ctrl+Alt+R"),
     ("record_gif", "Ctrl+Alt+G"),
+];
+
+const RECORDING_SHORTCUTS: [(&str, &str); 3] = [
+    ("pause_or_resume_recording", "F9"),
+    ("stop_recording", "F10"),
+    ("discard_recording", "Ctrl+F10"),
 ];
 
 const MANAGER_POLL_INTERVAL: Duration = Duration::from_millis(10);
@@ -221,6 +228,56 @@ fn dispatch_global_shortcut_inner(app: &AppHandle, id: &str) -> MoonSnapResult<(
         },
         "record_video" => window::trigger_capture_with_options(app, Some("video"), true),
         "record_gif" => window::trigger_capture_with_options(app, Some("gif"), true),
+        "pause_or_resume_recording" => {
+            let app_handle = app.clone();
+            tauri::async_runtime::spawn(async move {
+                match crate::commands::video_recording::get_recording_status().await {
+                    Ok(status) => match status.state {
+                        RecordingState::Recording { .. } => {
+                            if let Err(error) =
+                                crate::commands::video_recording::pause_recording(app_handle).await
+                            {
+                                log::error!("Failed to pause recording from shortcut: {}", error);
+                            }
+                        },
+                        RecordingState::Paused { .. } => {
+                            if let Err(error) =
+                                crate::commands::video_recording::resume_recording(app_handle).await
+                            {
+                                log::error!("Failed to resume recording from shortcut: {}", error);
+                            }
+                        },
+                        _ => {},
+                    },
+                    Err(error) => {
+                        log::error!("Failed to read recording status from shortcut: {}", error)
+                    },
+                }
+            });
+            Ok(())
+        },
+        "stop_recording" => {
+            let app_handle = app.clone();
+            tauri::async_runtime::spawn(async move {
+                if let Err(error) =
+                    crate::commands::video_recording::stop_recording(app_handle).await
+                {
+                    log::error!("Failed to stop recording from shortcut: {}", error);
+                }
+            });
+            Ok(())
+        },
+        "discard_recording" => {
+            let app_handle = app.clone();
+            tauri::async_runtime::spawn(async move {
+                if let Err(error) =
+                    crate::commands::video_recording::cancel_recording(app_handle).await
+                {
+                    log::error!("Failed to discard recording from shortcut: {}", error);
+                }
+            });
+            Ok(())
+        },
         _ => Err(format!("Unknown shortcut action: {}", id).into()),
     }
 }
@@ -572,6 +629,47 @@ fn register_shortcut_with_hook_inner(
     Ok(())
 }
 
+fn unregister_shortcut_hook_inner(id: String) -> MoonSnapResult<()> {
+    let (response_sender, response_receiver) = mpsc::channel();
+
+    with_runtime_sender(None, |sender| {
+        sender
+            .send(ManagerCommand::Unregister {
+                id,
+                response: response_sender,
+            })
+            .map_err(|_| "Failed to send unregister command".into())
+    })?;
+
+    response_receiver
+        .recv()
+        .map_err(|e| MoonSnapError::from(e.to_string()))??;
+    Ok(())
+}
+
+pub(crate) fn register_recording_shortcuts(app: &AppHandle) {
+    for (id, shortcut) in RECORDING_SHORTCUTS {
+        if let Err(error) =
+            register_shortcut_with_hook_inner(app.clone(), id.to_string(), shortcut.to_string())
+        {
+            log::warn!(
+                "Failed to register recording shortcut {} ({}): {}",
+                id,
+                shortcut,
+                error
+            );
+        }
+    }
+}
+
+pub(crate) fn unregister_recording_shortcuts() {
+    for (id, _) in RECORDING_SHORTCUTS {
+        if let Err(error) = unregister_shortcut_hook_inner(id.to_string()) {
+            log::warn!("Failed to unregister recording shortcut {}: {}", id, error);
+        }
+    }
+}
+
 fn active_override_bindings() -> MoonSnapResult<Vec<(String, String, bool)>> {
     let (response_sender, response_receiver) = mpsc::channel();
 
@@ -624,21 +722,7 @@ pub async fn dispatch_global_shortcut(app: AppHandle, id: String) -> MoonSnapRes
 
 #[tauri::command]
 pub async fn unregister_shortcut_hook(id: String) -> MoonSnapResult<()> {
-    let (response_sender, response_receiver) = mpsc::channel();
-
-    with_runtime_sender(None, |sender| {
-        sender
-            .send(ManagerCommand::Unregister {
-                id,
-                response: response_sender,
-            })
-            .map_err(|_| "Failed to send unregister command".into())
-    })?;
-
-    response_receiver
-        .recv()
-        .map_err(|e| MoonSnapError::from(e.to_string()))??;
-    Ok(())
+    unregister_shortcut_hook_inner(id)
 }
 
 #[tauri::command]

@@ -348,6 +348,7 @@ pub async fn show_recording_controls(
         window
             .set_always_on_top(true)
             .map_err(|e| format!("Failed to keep recording controls on top: {}", e))?;
+        crate::commands::keyboard_hook::register_recording_shortcuts(&app);
         return Ok(());
     }
 
@@ -398,11 +399,14 @@ pub async fn show_recording_controls(
         .set_always_on_top(true)
         .map_err(|e| format!("Failed to set recording controls always on top: {}", e))?;
 
+    crate::commands::keyboard_hook::register_recording_shortcuts(&app);
+
     Ok(())
 }
 
 #[command]
 pub async fn close_recording_controls(app: AppHandle) -> MoonSnapResult<()> {
+    crate::commands::keyboard_hook::unregister_recording_shortcuts();
     if let Some(window) = app.get_webview_window(RECORDING_CONTROLS_LABEL) {
         window
             .close()

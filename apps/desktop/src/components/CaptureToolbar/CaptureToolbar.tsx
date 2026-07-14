@@ -29,6 +29,7 @@ import {
 import { useSettingsStore } from '@/stores/settingsStore';
 import { useRustAudioLevels } from '@/hooks/useRustAudioLevels';
 import { useUpdater } from '@/hooks/useUpdater';
+import { RECORDING } from '@/constants';
 
 export type ToolbarMode = 'selection' | 'starting' | 'recording' | 'paused' | 'processing' | 'error';
 
@@ -333,7 +334,7 @@ function RecordingPlaybackControls({
         onClick={onPauseResume}
         className="glass-btn glass-btn--md"
         aria-label={isPaused ? 'Resume recording' : 'Pause recording'}
-        title={isPaused ? 'Resume' : 'Pause'}
+        title={`${isPaused ? 'Resume' : 'Pause'} (${RECORDING.SHORTCUTS.PAUSE_RESUME.shortcut})`}
       >
         {isPaused ? (
           <Circle size={14} className="text-red-400" fill="currentColor" />
@@ -347,7 +348,7 @@ function RecordingPlaybackControls({
         onClick={onStop}
         className="glass-btn glass-btn--md"
         aria-label="Stop and save recording"
-        title="Stop and save"
+        title={`Stop and save (${RECORDING.SHORTCUTS.STOP.shortcut})`}
       >
         <Square size={14} className="glass-recording-stop-icon" fill="currentColor" />
       </button>
@@ -418,7 +419,7 @@ function RecordingToolbar({
           onClick={onCancel}
           className="glass-btn glass-btn--md glass-btn--danger"
           aria-label="Cancel recording"
-          title="Cancel"
+          title={`Cancel and discard (${RECORDING.SHORTCUTS.CANCEL.shortcut})`}
         >
           <X size={14} strokeWidth={2.5} />
         </button>
