@@ -15,6 +15,14 @@ fn normalize_audio_segment_filter(filter: &mut String) {
     ));
 }
 
+fn constrain_source_audio_segment_duration(filter: &mut String, duration_sec: f64) {
+    normalize_audio_segment_filter(filter);
+    // `atempo` can discard a partial processing window at the end of a fast
+    // segment. Pad and trim every segment to its exact edited duration before
+    // concat so that the following segment cannot start early.
+    filter.push_str(&format!(",apad,atrim=end={:.6}", duration_sec.max(0.0)));
+}
+
 fn screen_video_has_embedded_audio(screen_video_path: &str) -> bool {
     let path = std::path::Path::new(screen_video_path);
     if !path.exists() {
@@ -334,7 +342,10 @@ pub fn build_audio_filter(
                     for tempo in atempo_chain(segment.speed) {
                         segment_filter.push_str(&format!(",atempo={:.3}", tempo));
                     }
-                    normalize_audio_segment_filter(&mut segment_filter);
+                    constrain_source_audio_segment_duration(
+                        &mut segment_filter,
+                        segment.timeline_duration_sec(),
+                    );
                     segment_filter.push_str(&format!("[{}]", label));
                     filter_parts.push(segment_filter);
                     segment_labels.push(format!("[{}]", label));
@@ -770,6 +781,7 @@ mod tests {
 
         let filter = build_audio_filter(&inputs, &segments).expect("filter should be built");
         assert!(filter.contains("[1:a]atrim=start=1.000:end=3.000"));
+        assert!(filter.contains("apad,atrim=end=2.000000[a0s0]"));
         assert!(filter.contains("volume=0.80"));
         assert!(filter.contains("apad=whole_dur=2.000[aout]"));
     }
@@ -789,11 +801,12 @@ mod tests {
 
         let filter = build_audio_filter(&inputs, &segments).expect("filter should be built");
         assert!(filter.contains("atempo=2.000,atempo=2.000,atempo=2.000"));
+        assert!(filter.contains("apad,atrim=end=1.250000[a0s0]"));
         assert!(filter.contains("apad=whole_dur=1.250[aout]"));
     }
 
     #[test]
-    fn normalizes_mixed_speed_source_segments_before_concat() {
+    fn constrains_mixed_speed_source_segment_durations_before_concat() {
         let inputs = vec![AudioInput {
             input_index: 1,
             volume: 1.0,
@@ -802,22 +815,22 @@ mod tests {
         let segments = vec![
             AudioSegment {
                 start_sec: 0.0,
-                end_sec: 4.0,
-                speed: 2.0,
+                end_sec: 7.0,
+                speed: 9.0,
             },
             AudioSegment {
-                start_sec: 6.0,
-                end_sec: 8.0,
-                speed: 1.0,
+                start_sec: 7.0,
+                end_sec: 12.0,
+                speed: 10.0,
             },
         ];
 
         let filter = build_audio_filter(&inputs, &segments).expect("filter should be built");
 
-        assert!(filter.contains("[1:a]atrim=start=0.000:end=4.000,asetpts=PTS-STARTPTS,atempo=2.000,aresample=48000:async=1:first_pts=0,aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo[a0s0]"));
-        assert!(filter.contains("[1:a]atrim=start=6.000:end=8.000,asetpts=PTS-STARTPTS,aresample=48000:async=1:first_pts=0,aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo[a0s1]"));
+        assert!(filter.contains("[1:a]atrim=start=0.000:end=7.000,asetpts=PTS-STARTPTS,atempo=2.000,atempo=2.000,atempo=2.000,atempo=1.125,aresample=48000:async=1:first_pts=0,aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo,apad,atrim=end=0.777778[a0s0]"));
+        assert!(filter.contains("[1:a]atrim=start=7.000:end=12.000,asetpts=PTS-STARTPTS,atempo=2.000,atempo=2.000,atempo=2.000,atempo=1.250,aresample=48000:async=1:first_pts=0,aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo,apad,atrim=end=0.500000[a0s1]"));
         assert!(filter.contains("[a0s0][a0s1]concat=n=2:v=0:a=1[a0_base]"));
-        assert!(filter.contains("apad=whole_dur=4.000[aout]"));
+        assert!(filter.contains("apad=whole_dur=1.278[aout]"));
     }
 
     #[test]
