@@ -4,7 +4,12 @@ import { invoke } from '@tauri-apps/api/core';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { isEditableEventTarget, matchesShortcutEvent } from '@/utils/hotkeyManager';
 
-type FocusedShortcut = ReturnType<typeof useSettingsStore.getState>['settings']['shortcuts'][string];
+export interface FocusedShortcutBinding {
+  id: string;
+  currentShortcut: string;
+}
+
+const NO_ADDITIONAL_SHORTCUTS: readonly FocusedShortcutBinding[] = [];
 
 function shouldIgnoreFocusedShortcutEvent(event: KeyboardEvent): boolean {
   return event.repeat || isEditableEventTarget(event.target);
@@ -12,27 +17,35 @@ function shouldIgnoreFocusedShortcutEvent(event: KeyboardEvent): boolean {
 
 function findMatchedFocusedShortcut(
   event: KeyboardEvent,
-  shortcuts: ReturnType<typeof useSettingsStore.getState>['settings']['shortcuts']
-): FocusedShortcut | undefined {
-  return Object.values(shortcuts).find((shortcut) =>
+  shortcuts: ReturnType<typeof useSettingsStore.getState>['settings']['shortcuts'],
+  additionalShortcuts: readonly FocusedShortcutBinding[]
+): FocusedShortcutBinding | undefined {
+  return additionalShortcuts.find((shortcut) =>
+    matchesShortcutEvent(event, shortcut.currentShortcut)
+  ) ?? Object.values(shortcuts).find((shortcut) =>
     matchesShortcutEvent(event, shortcut.currentShortcut)
   );
 }
 
-function isPrintScreenShortcut(shortcut: FocusedShortcut): boolean {
+function isPrintScreenShortcut(shortcut: FocusedShortcutBinding): boolean {
   return shortcut.currentShortcut.toLowerCase().includes('printscreen');
 }
 
-function shouldDispatchFocusedShortcut(event: KeyboardEvent, shortcut: FocusedShortcut): boolean {
+function shouldDispatchFocusedShortcut(
+  event: KeyboardEvent,
+  shortcut: FocusedShortcutBinding
+): boolean {
   return event.type !== 'keyup' || isPrintScreenShortcut(shortcut);
 }
 
-function dispatchFocusedShortcut(event: KeyboardEvent, shortcut: FocusedShortcut): void {
+function dispatchFocusedShortcut(event: KeyboardEvent, shortcut: FocusedShortcutBinding): void {
   event.preventDefault();
   void invoke('dispatch_global_shortcut', { id: shortcut.id });
 }
 
-export function useFocusedShortcutDispatch() {
+export function useFocusedShortcutDispatch(
+  additionalShortcuts: readonly FocusedShortcutBinding[] = NO_ADDITIONAL_SHORTCUTS
+) {
   const shortcuts = useSettingsStore((s) => s.settings.shortcuts);
   const settingsInitialized = useSettingsStore((s) => s.isInitialized);
   const loadSettings = useSettingsStore((s) => s.loadSettings);
@@ -49,7 +62,7 @@ export function useFocusedShortcutDispatch() {
         return;
       }
 
-      const matchedShortcut = findMatchedFocusedShortcut(event, shortcuts);
+      const matchedShortcut = findMatchedFocusedShortcut(event, shortcuts, additionalShortcuts);
       if (!matchedShortcut) {
         return;
       }
@@ -71,5 +84,5 @@ export function useFocusedShortcutDispatch() {
       window.removeEventListener('keydown', handleFocusedShortcut);
       window.removeEventListener('keyup', handleFocusedShortcut);
     };
-  }, [shortcuts]);
+  }, [additionalShortcuts, shortcuts]);
 }

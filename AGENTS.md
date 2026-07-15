@@ -184,6 +184,10 @@ setInvokeResponse('command_name', mockResult);
 
 **Pattern**: Tests colocated with source (`*.test.ts`)
 
+- Write only tests that protect meaningful externally observable behavior, contracts, or realistic regressions. Tests must be deterministic, focused, and capable of failing for a useful reason.
+- Do not add tests merely to satisfy a testing requirement. Avoid vacuous assertions, existence-only checks that do not validate behavior, duplicated coverage, and assertions that restate implementation details.
+- If meaningful automated coverage is not feasible, explain the limitation and the appropriate validation approach instead of adding a low-value test.
+
 ## Export Resolution Architecture
 
 Output resolution is controlled by `CompositionConfig` (not export presets):

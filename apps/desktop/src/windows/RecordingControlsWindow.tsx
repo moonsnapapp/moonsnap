@@ -8,8 +8,12 @@ import {
   type RecordingAudioConfig,
   type ToolbarMode,
 } from '@/components/CaptureToolbar/CaptureToolbar';
+import { RECORDING } from '@/constants/recording';
 import { useCaptureBlockedPulse } from '@/hooks/useCaptureBlockedPulse';
-import { useFocusedShortcutDispatch } from '@/hooks/useFocusedShortcutDispatch';
+import {
+  useFocusedShortcutDispatch,
+  type FocusedShortcutBinding,
+} from '@/hooks/useFocusedShortcutDispatch';
 import { useTheme } from '@/hooks/useTheme';
 import type { RecordingFormat, RecordingState } from '@/types';
 import { toolbarLogger } from '@/utils/logger';
@@ -36,6 +40,13 @@ interface WindowSize {
   width: number;
   height: number;
 }
+
+const RECORDING_FOCUSED_SHORTCUTS: readonly FocusedShortcutBinding[] = Object.values(
+  RECORDING.SHORTCUTS
+).map(({ id, shortcut }) => ({
+  id,
+  currentShortcut: shortcut,
+}));
 
 function measureWindowContentSize(element: HTMLElement): WindowSize {
   const rect = element.getBoundingClientRect();
@@ -145,7 +156,7 @@ function handleRecordingStateChanged(
 
 const RecordingControlsWindow: React.FC = () => {
   useTheme();
-  useFocusedShortcutDispatch();
+  useFocusedShortcutDispatch(RECORDING_FOCUSED_SHORTCUTS);
   const isCaptureBlockedPulseActive = useCaptureBlockedPulse();
 
   const [mode, setMode] = useState<ToolbarMode>('starting');
