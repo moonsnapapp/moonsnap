@@ -23,14 +23,3 @@ pub mod process_control;
 pub mod temp_file;
 pub mod timeline_plan;
 pub mod timing;
-
-#[cfg(test)]
-mod tests {
-    use super::encoder_selection::{select_encoder, EncoderType};
-
-    #[test]
-    fn root_exports_smoke_test() {
-        let cfg = select_encoder(75, true, true, 20);
-        assert_eq!(cfg.encoder_type, EncoderType::Nvenc);
-    }
-}

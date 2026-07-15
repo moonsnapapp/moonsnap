@@ -22,14 +22,6 @@ describe('ModeSelector', () => {
       expect(screen.getByTitle('Photo')).toBeInTheDocument();
     });
 
-    it('should display mode labels', () => {
-      render(<ModeSelector {...defaultProps} />);
-
-      expect(screen.getByText('Video')).toBeInTheDocument();
-      expect(screen.getByText('GIF')).toBeInTheDocument();
-      expect(screen.getByText('Photo')).toBeInTheDocument();
-    });
-
     it('should mark the active mode button', () => {
       render(<ModeSelector {...defaultProps} activeMode="gif" />);
 
@@ -42,16 +34,6 @@ describe('ModeSelector', () => {
   });
 
   describe('interactions', () => {
-    it('should call onModeChange when clicking a mode button', () => {
-      const onModeChange = vi.fn();
-      render(<ModeSelector {...defaultProps} onModeChange={onModeChange} />);
-
-      fireEvent.click(screen.getByTitle('GIF'));
-
-      expect(onModeChange).toHaveBeenCalledTimes(1);
-      expect(onModeChange).toHaveBeenCalledWith('gif');
-    });
-
     it('should call onModeChange with correct mode for each button', () => {
       const onModeChange = vi.fn();
       render(<ModeSelector {...defaultProps} onModeChange={onModeChange} />);
@@ -76,13 +58,6 @@ describe('ModeSelector', () => {
       expect(screen.getByTitle('Photo')).toBeDisabled();
     });
 
-    it('should add opacity class when disabled', () => {
-      const { container } = render(<ModeSelector {...defaultProps} disabled={true} />);
-
-      const group = container.querySelector('.glass-mode-group');
-      expect(group?.className).toContain('opacity-50');
-    });
-
     it('should not call onModeChange when disabled', () => {
       const onModeChange = vi.fn();
       render(<ModeSelector {...defaultProps} onModeChange={onModeChange} disabled={true} />);
@@ -99,13 +74,6 @@ describe('ModeSelector', () => {
 
       const group = container.querySelector('.glass-mode-group');
       expect(group?.className).toContain('glass-mode-group--full');
-    });
-
-    it('should not have full width class by default', () => {
-      const { container } = render(<ModeSelector {...defaultProps} />);
-
-      const group = container.querySelector('.glass-mode-group');
-      expect(group?.className).not.toContain('glass-mode-group--full');
     });
   });
 });

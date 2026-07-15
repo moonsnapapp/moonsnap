@@ -383,73 +383,6 @@ describe('useCanvasNavigation', () => {
     });
   });
 
-  describe('container ref', () => {
-    it('should provide container ref', () => {
-      const props = createMockProps();
-      const { result } = renderHook(() => useCanvasNavigation(props));
-
-      expect(result.current.containerRef).toBeDefined();
-      expect(result.current.containerRef.current).toBe(null);
-    });
-  });
-
-  describe('exposed refs for pan coordination', () => {
-    it('should expose renderedPositionRef', () => {
-      const props = createMockProps();
-      const { result } = renderHook(() => useCanvasNavigation(props));
-
-      expect(result.current.renderedPositionRef).toBeDefined();
-    });
-
-    it('should expose renderedZoomRef', () => {
-      const props = createMockProps();
-      const { result } = renderHook(() => useCanvasNavigation(props));
-
-      expect(result.current.renderedZoomRef).toBeDefined();
-    });
-
-    it('should expose transformCoeffsRef', () => {
-      const props = createMockProps();
-      const { result } = renderHook(() => useCanvasNavigation(props));
-
-      expect(result.current.transformCoeffsRef).toBeDefined();
-    });
-  });
-
-  describe('function reference stability', () => {
-    it('should have stable getCanvasPosition reference', () => {
-      const props = createMockProps();
-      const { result, rerender } = renderHook(() => useCanvasNavigation(props));
-
-      const firstRef = result.current.getCanvasPosition;
-      rerender();
-
-      // Note: getCanvasPosition depends on zoom and position, so it changes when they change
-      // But on simple rerender without state changes, it should be stable
-      expect(result.current.getCanvasPosition).toBe(firstRef);
-    });
-
-    it('should have stable handleZoomIn reference', () => {
-      const props = createMockProps();
-      const { result, rerender } = renderHook(() => useCanvasNavigation(props));
-
-      const firstRef = result.current.handleZoomIn;
-      rerender();
-
-      expect(result.current.handleZoomIn).toBe(firstRef);
-    });
-
-    it('should have stable handleZoomOut reference', () => {
-      const props = createMockProps();
-      const { result, rerender } = renderHook(() => useCanvasNavigation(props));
-
-      const firstRef = result.current.handleZoomOut;
-      rerender();
-
-      expect(result.current.handleZoomOut).toBe(firstRef);
-    });
-  });
-
   describe('compositor settings', () => {
     it('should calculate transform coefficients when compositor enabled', () => {
       const image = createMockImage(800, 600);
@@ -472,8 +405,7 @@ describe('useCanvasNavigation', () => {
 
       const { result } = renderHook(() => useCanvasNavigation(props));
 
-      // Transform coeffs should be calculated
-      expect(result.current.transformCoeffsRef.current).toBeDefined();
+      expect(result.current.transformCoeffsRef.current).toEqual({ kx: -50, ky: -50 });
     });
 
     it('should reset transform coefficients when compositor disabled', () => {

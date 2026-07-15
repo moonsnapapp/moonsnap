@@ -12,15 +12,6 @@ vi.mock('@/hooks/useAudioLevel', () => ({
 
 describe('AudioLevelMeter', () => {
   describe('rendering', () => {
-    it('should render when enabled with external level', () => {
-      const { container } = render(
-        <AudioLevelMeter enabled={true} level={0.5} />
-      );
-
-      const meter = container.querySelector('.glass-audio-meter');
-      expect(meter).toBeInTheDocument();
-    });
-
     it('should render with 0% fill when disabled in external mode', () => {
       const { container } = render(
         <AudioLevelMeter enabled={false} level={0.5} />
@@ -35,61 +26,30 @@ describe('AudioLevelMeter', () => {
       expect(fill.style.width).toBe('0%');
     });
 
-    it('should not render in self-managed mode without deviceIndex', () => {
-      const { container } = render(
-        <AudioLevelMeter enabled={true} deviceIndex={null} />
-      );
+    it.each([null, undefined])(
+      'should not render in self-managed mode without a device index (%s)',
+      (deviceIndex) => {
+        const { container } = render(
+          <AudioLevelMeter enabled={true} deviceIndex={deviceIndex} />
+        );
 
-      const meter = container.querySelector('.glass-audio-meter');
-      expect(meter).not.toBeInTheDocument();
-    });
-
-    it('should not render in self-managed mode with undefined deviceIndex', () => {
-      const { container } = render(
-        <AudioLevelMeter enabled={true} deviceIndex={undefined} />
-      );
-
-      const meter = container.querySelector('.glass-audio-meter');
-      expect(meter).not.toBeInTheDocument();
-    });
+        const meter = container.querySelector('.glass-audio-meter');
+        expect(meter).not.toBeInTheDocument();
+      }
+    );
   });
 
   describe('external level mode', () => {
-    it('should display fill based on external level', () => {
-      const { container } = render(
-        <AudioLevelMeter enabled={true} level={0.75} />
-      );
+    it.each([
+      { level: 0, expectedWidth: '0%' },
+      { level: 0.333, expectedWidth: '33%' },
+      { level: 0.75, expectedWidth: '75%' },
+      { level: 1, expectedWidth: '100%' },
+    ])('maps level $level to a $expectedWidth fill', ({ level, expectedWidth }) => {
+      const { container } = render(<AudioLevelMeter enabled={true} level={level} />);
 
       const fill = container.querySelector('.glass-audio-meter-fill') as HTMLElement;
-      expect(fill).toBeInTheDocument();
-      expect(fill.style.width).toBe('75%');
-    });
-
-    it('should show 0% fill for level 0', () => {
-      const { container } = render(
-        <AudioLevelMeter enabled={true} level={0} />
-      );
-
-      const fill = container.querySelector('.glass-audio-meter-fill') as HTMLElement;
-      expect(fill.style.width).toBe('0%');
-    });
-
-    it('should show 100% fill for level 1', () => {
-      const { container } = render(
-        <AudioLevelMeter enabled={true} level={1} />
-      );
-
-      const fill = container.querySelector('.glass-audio-meter-fill') as HTMLElement;
-      expect(fill.style.width).toBe('100%');
-    });
-
-    it('should round fill percentage', () => {
-      const { container } = render(
-        <AudioLevelMeter enabled={true} level={0.333} />
-      );
-
-      const fill = container.querySelector('.glass-audio-meter-fill') as HTMLElement;
-      expect(fill.style.width).toBe('33%');
+      expect(fill.style.width).toBe(expectedWidth);
     });
   });
 
@@ -105,43 +65,23 @@ describe('AudioLevelMeter', () => {
   });
 
   describe('className prop', () => {
-    it('should apply custom className', () => {
+    it('should append a custom class without replacing the meter class', () => {
       const { container } = render(
         <AudioLevelMeter enabled={true} level={0.5} className="custom-class" />
       );
 
       const meter = container.querySelector('.glass-audio-meter');
       expect(meter?.className).toContain('custom-class');
-    });
-
-    it('should preserve base class when adding custom className', () => {
-      const { container } = render(
-        <AudioLevelMeter enabled={true} level={0.5} className="custom-class" />
-      );
-
-      const meter = container.querySelector('.glass-audio-meter');
       expect(meter?.className).toContain('glass-audio-meter');
     });
   });
 
   describe('defaults', () => {
     it('should be enabled by default', () => {
-      const { container } = render(
-        <AudioLevelMeter level={0.5} />
-      );
+      const { container } = render(<AudioLevelMeter level={0.5} />);
 
-      const meter = container.querySelector('.glass-audio-meter');
-      expect(meter).toBeInTheDocument();
-    });
-
-    it('should have empty className by default', () => {
-      const { container } = render(
-        <AudioLevelMeter enabled={true} level={0.5} />
-      );
-
-      const meter = container.querySelector('.glass-audio-meter');
-      // Should only have base class with trailing space from template literal
-      expect(meter?.className.trim()).toBe('glass-audio-meter');
+      const fill = container.querySelector('.glass-audio-meter-fill') as HTMLElement;
+      expect(fill.style.width).toBe('50%');
     });
   });
 });

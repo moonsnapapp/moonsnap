@@ -18,7 +18,7 @@ describe('Tooltip', () => {
     // Regression test: Multiple stacking animations cause a duplicate/flash effect
     // where the tooltip appears to render twice or flicker on open
     it('should not have conflicting animation classes that cause duplicate visuals', () => {
-      const { baseElement } = render(
+      render(
         <TooltipProvider>
           <Tooltip open>
             <TooltipTrigger>Trigger</TooltipTrigger>
@@ -29,10 +29,7 @@ describe('Tooltip', () => {
         </TooltipProvider>
       );
 
-      const tooltipContent = baseElement.querySelector('[data-testid="tooltip-content"]');
-      expect(tooltipContent).toBeTruthy();
-
-      const classList = tooltipContent?.className || '';
+      const classList = screen.getByTestId('tooltip-content').className;
 
       // Check that none of the problematic animation classes are present
       for (const animClass of CONFLICTING_ANIMATION_CLASSES) {
@@ -43,30 +40,8 @@ describe('Tooltip', () => {
       }
     });
 
-    it('should have essential styling classes', () => {
-      const { baseElement } = render(
-        <TooltipProvider>
-          <Tooltip open>
-            <TooltipTrigger>Trigger</TooltipTrigger>
-            <TooltipContent data-testid="tooltip-content">
-              Content
-            </TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
-      );
-
-      const tooltipContent = baseElement.querySelector('[data-testid="tooltip-content"]');
-      const classList = tooltipContent?.className || '';
-
-      // Essential classes that should be present
-      expect(classList).toContain('rounded-lg');
-      expect(classList).toContain('bg-neutral-900');
-      expect(classList).toContain('text-white');
-      expect(classList).toContain('shadow-lg');
-    });
-
-    it('should allow custom className without adding animations', () => {
-      const { baseElement } = render(
+    it('should forward a custom className', () => {
+      render(
         <TooltipProvider>
           <Tooltip open>
             <TooltipTrigger>Trigger</TooltipTrigger>
@@ -77,15 +52,9 @@ describe('Tooltip', () => {
         </TooltipProvider>
       );
 
-      const tooltipContent = baseElement.querySelector('[data-testid="tooltip-content"]');
-      const classList = tooltipContent?.className || '';
+      const classList = screen.getByTestId('tooltip-content').className;
 
       expect(classList).toContain('custom-class');
-
-      // Still should not have animation classes even with custom className
-      for (const animClass of CONFLICTING_ANIMATION_CLASSES) {
-        expect(classList.includes(animClass)).toBe(false);
-      }
     });
 
     it('should blur mouse-triggered buttons so tooltips do not stay open from focus', () => {

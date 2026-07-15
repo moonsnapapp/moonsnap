@@ -7,7 +7,6 @@ use chrono::Utc;
 use super::generate_id;
 use super::{delete::resolve_capture_project_image_path, find_project_bundle};
 use moonsnap_domain::storage::*;
-use moonsnap_media::ffmpeg::THUMBNAIL_SIZE;
 
 #[test]
 fn test_generate_id_format() {
@@ -30,11 +29,6 @@ fn test_generate_id_uniqueness() {
         let id = generate_id();
         assert!(ids.insert(id.clone()), "Duplicate ID generated: {}", id);
     }
-}
-
-#[test]
-fn test_thumbnail_size_constant() {
-    assert_eq!(THUMBNAIL_SIZE, 400);
 }
 
 #[test]

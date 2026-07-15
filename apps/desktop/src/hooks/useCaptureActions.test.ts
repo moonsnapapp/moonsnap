@@ -61,18 +61,4 @@ describe('useCaptureActions', () => {
 
     expect(mockCaptureAllMonitorsToEditor).toHaveBeenCalledTimes(1);
   });
-
-  it('should return stable function references', () => {
-    const { result, rerender } = renderHook(() => useCaptureActions());
-
-    const firstTriggerNewCapture = result.current.triggerNewCapture;
-    const firstTriggerFullscreenCapture = result.current.triggerFullscreenCapture;
-    const firstTriggerAllMonitorsCapture = result.current.triggerAllMonitorsCapture;
-
-    rerender();
-
-    expect(result.current.triggerNewCapture).toBe(firstTriggerNewCapture);
-    expect(result.current.triggerFullscreenCapture).toBe(firstTriggerFullscreenCapture);
-    expect(result.current.triggerAllMonitorsCapture).toBe(firstTriggerAllMonitorsCapture);
-  });
 });

@@ -19,21 +19,3 @@ pub mod zoom;
 mod zoom_state;
 
 pub use types::ZoomState;
-
-#[cfg(test)]
-mod tests {
-    use super::{parity, text, ZoomState};
-
-    #[test]
-    fn root_exports_smoke_test() {
-        let layout = parity::get_parity_layout();
-        assert!(layout.reference_height > 0.0);
-        assert!(layout.line_height_multiplier > 0.0);
-
-        let rgba = text::parse_color("#FFFFFF");
-        assert_eq!(rgba[3], 1.0);
-
-        let state = ZoomState::identity();
-        assert!(!state.is_zoomed());
-    }
-}

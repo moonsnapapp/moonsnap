@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { render } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -34,8 +34,8 @@ const CENTER_ANIMATION_CLASSES = [
 describe('AlertDialog', () => {
   describe('AlertDialogContent', () => {
     // Regression test: Dialog should animate from center, not slide from edges
-    it('should animate from center without slide animations', () => {
-      const { baseElement } = render(
+    it('should remain centered while animating without edge slides', () => {
+      render(
         <AlertDialog open>
           <AlertDialogContent data-testid="alert-content">
             <AlertDialogHeader>
@@ -50,10 +50,7 @@ describe('AlertDialog', () => {
         </AlertDialog>
       );
 
-      const content = baseElement.querySelector('[data-testid="alert-content"]');
-      expect(content).toBeTruthy();
-
-      const classList = content?.className || '';
+      const classList = screen.getByTestId('alert-content').className;
 
       // Should NOT have any slide animations (breaks center animation)
       for (const slideClass of SLIDE_ANIMATION_CLASSES) {
@@ -62,48 +59,14 @@ describe('AlertDialog', () => {
           `AlertDialogContent should not have "${slideClass}" - breaks center animation`
         ).toBe(false);
       }
-    });
 
-    it('should have zoom and fade animations for center effect', () => {
-      const { baseElement } = render(
-        <AlertDialog open>
-          <AlertDialogContent data-testid="alert-content">
-            <AlertDialogHeader>
-              <AlertDialogTitle>Test</AlertDialogTitle>
-              <AlertDialogDescription>Test description</AlertDialogDescription>
-            </AlertDialogHeader>
-          </AlertDialogContent>
-        </AlertDialog>
-      );
-
-      const content = baseElement.querySelector('[data-testid="alert-content"]');
-      const classList = content?.className || '';
-
-      // Should have zoom and fade for smooth center animation
       for (const animClass of CENTER_ANIMATION_CLASSES) {
         expect(
           classList.includes(animClass),
           `AlertDialogContent should have "${animClass}" for center animation`
         ).toBe(true);
       }
-    });
 
-    it('should be centered with transform translate', () => {
-      const { baseElement } = render(
-        <AlertDialog open>
-          <AlertDialogContent data-testid="alert-content">
-            <AlertDialogHeader>
-              <AlertDialogTitle>Test</AlertDialogTitle>
-              <AlertDialogDescription>Test description</AlertDialogDescription>
-            </AlertDialogHeader>
-          </AlertDialogContent>
-        </AlertDialog>
-      );
-
-      const content = baseElement.querySelector('[data-testid="alert-content"]');
-      const classList = content?.className || '';
-
-      // Should be positioned at center
       expect(classList).toContain('left-[50%]');
       expect(classList).toContain('top-[50%]');
       expect(classList).toContain('translate-x-[-50%]');

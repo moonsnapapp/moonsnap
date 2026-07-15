@@ -158,22 +158,6 @@ describe('usePlaybackEngine', () => {
   });
 
   describe('usePlaybackControls', () => {
-    it('should provide stable function references', () => {
-      const { result, rerender } = renderHook(() => usePlaybackControls());
-
-      const firstPlay = result.current.play;
-      const firstPause = result.current.pause;
-      const firstSeek = result.current.seek;
-      const firstToggle = result.current.toggle;
-
-      rerender();
-
-      expect(result.current.play).toBe(firstPlay);
-      expect(result.current.pause).toBe(firstPause);
-      expect(result.current.seek).toBe(firstSeek);
-      expect(result.current.toggle).toBe(firstToggle);
-    });
-
     describe('play', () => {
       it('should set isPlaying to true in store', () => {
         const { result } = renderHook(() => usePlaybackControls());

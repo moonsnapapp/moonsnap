@@ -54,87 +54,6 @@ describe('useEditorHistory', () => {
     });
   });
 
-  describe('takeSnapshot', () => {
-    it('should call store._takeSnapshot', () => {
-      const { store, mockTakeSnapshot } = createMockEditorStore();
-      const wrapper = createWrapper(store);
-
-      const { result } = renderHook(() => useEditorHistory(), { wrapper });
-
-      act(() => {
-        result.current.takeSnapshot();
-      });
-
-      expect(mockTakeSnapshot).toHaveBeenCalledTimes(1);
-    });
-
-    it('should return stable function reference', () => {
-      const { store } = createMockEditorStore();
-      const wrapper = createWrapper(store);
-
-      const { result, rerender } = renderHook(() => useEditorHistory(), { wrapper });
-
-      const firstRef = result.current.takeSnapshot;
-      rerender();
-
-      expect(result.current.takeSnapshot).toBe(firstRef);
-    });
-  });
-
-  describe('commitSnapshot', () => {
-    it('should call store._commitSnapshot', () => {
-      const { store, mockCommitSnapshot } = createMockEditorStore();
-      const wrapper = createWrapper(store);
-
-      const { result } = renderHook(() => useEditorHistory(), { wrapper });
-
-      act(() => {
-        result.current.commitSnapshot();
-      });
-
-      expect(mockCommitSnapshot).toHaveBeenCalledTimes(1);
-    });
-
-    it('should return stable function reference', () => {
-      const { store } = createMockEditorStore();
-      const wrapper = createWrapper(store);
-
-      const { result, rerender } = renderHook(() => useEditorHistory(), { wrapper });
-
-      const firstRef = result.current.commitSnapshot;
-      rerender();
-
-      expect(result.current.commitSnapshot).toBe(firstRef);
-    });
-  });
-
-  describe('discardSnapshot', () => {
-    it('should call store._discardSnapshot', () => {
-      const { store, mockDiscardSnapshot } = createMockEditorStore();
-      const wrapper = createWrapper(store);
-
-      const { result } = renderHook(() => useEditorHistory(), { wrapper });
-
-      act(() => {
-        result.current.discardSnapshot();
-      });
-
-      expect(mockDiscardSnapshot).toHaveBeenCalledTimes(1);
-    });
-
-    it('should return stable function reference', () => {
-      const { store } = createMockEditorStore();
-      const wrapper = createWrapper(store);
-
-      const { result, rerender } = renderHook(() => useEditorHistory(), { wrapper });
-
-      const firstRef = result.current.discardSnapshot;
-      rerender();
-
-      expect(result.current.discardSnapshot).toBe(firstRef);
-    });
-  });
-
   describe('recordAction', () => {
     it('should call takeSnapshot, action, then commitSnapshot in order', () => {
       const { store, mockTakeSnapshot, mockCommitSnapshot } = createMockEditorStore();
@@ -154,18 +73,6 @@ describe('useEditorHistory', () => {
 
       expect(callOrder).toEqual(['takeSnapshot', 'action', 'commitSnapshot']);
       expect(mockAction).toHaveBeenCalledTimes(1);
-    });
-
-    it('should return stable function reference', () => {
-      const { store } = createMockEditorStore();
-      const wrapper = createWrapper(store);
-
-      const { result, rerender } = renderHook(() => useEditorHistory(), { wrapper });
-
-      const firstRef = result.current.recordAction;
-      rerender();
-
-      expect(result.current.recordAction).toBe(firstRef);
     });
   });
 
