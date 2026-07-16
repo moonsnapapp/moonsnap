@@ -34,7 +34,7 @@ const IMAGE_FORMATS: Record<SaveImageFormat, {
   webp: { ext: 'webp', mime: 'image/webp', name: 'WebP', quality: 0.9 },
 };
 
-function getSaveImageFormat(filePath: string): typeof IMAGE_FORMATS[SaveImageFormat] {
+export function getSaveImageFormat(filePath: string): typeof IMAGE_FORMATS[SaveImageFormat] {
   const extension = filePath.replace(/\\/g, '/').split('/').pop()?.split('.').pop()?.toLowerCase();
 
   if (extension === 'jpg' || extension === 'jpeg') {

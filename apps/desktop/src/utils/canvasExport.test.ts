@@ -3,7 +3,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { mockFsWriteFile } from '@/test/mocks/tauri';
 import { DEFAULT_COMPOSITOR_SETTINGS } from '@/types';
 
-import { exportCanvas, exportToFile } from './canvasExport';
+import {
+  calculateExportBounds,
+  exportCanvas,
+  exportToFile,
+  getContentBounds,
+} from './canvasExport';
 
 function createMockExportCanvas() {
   const canvas = document.createElement('canvas');
@@ -63,6 +68,73 @@ function createMockNode(parent: { children: unknown[]; add: ReturnType<typeof vi
 describe('canvasExport', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+  });
+
+  describe('export bounds', () => {
+    it('gives crop bounds precedence over canvas and background bounds', () => {
+      const background = {
+        width: vi.fn(() => 1920),
+        height: vi.fn(() => 1080),
+      };
+      const stage = {
+        findOne: vi.fn(() => background),
+      };
+
+      expect(
+        getContentBounds(
+          stage as never,
+          { width: 800, height: 600, imageOffsetX: 100, imageOffsetY: 50 },
+          { x: 10, y: 20, width: 500, height: 400 }
+        )
+      ).toEqual({ x: 10, y: 20, width: 500, height: 400 });
+      expect(stage.findOne).not.toHaveBeenCalled();
+    });
+
+    it('applies canvas image offsets when no crop bounds exist', () => {
+      const stage = { findOne: vi.fn() };
+
+      expect(
+        getContentBounds(
+          stage as never,
+          { width: 800, height: 600, imageOffsetX: 100, imageOffsetY: 50 },
+          null
+        )
+      ).toEqual({ x: -100, y: -50, width: 800, height: 600 });
+    });
+
+    it('uses background dimensions when canvas bounds are unavailable', () => {
+      const stage = {
+        findOne: vi.fn(() => ({
+          width: vi.fn(() => 1920),
+          height: vi.fn(() => 1080),
+        })),
+      };
+
+      expect(getContentBounds(stage as never, null, null)).toEqual({
+        x: 0,
+        y: 0,
+        width: 1920,
+        height: 1080,
+      });
+    });
+
+    it('adds compositor padding and rounds enabled export bounds', () => {
+      expect(
+        calculateExportBounds(
+          { x: 10.4, y: 20.4, width: 800.4, height: 600.4 },
+          { ...DEFAULT_COMPOSITOR_SETTINGS, enabled: true, padding: 32 }
+        )
+      ).toEqual({ x: -22, y: -12, width: 864, height: 664 });
+    });
+
+    it('rounds content bounds without padding when the compositor is disabled', () => {
+      expect(
+        calculateExportBounds(
+          { x: 10.4, y: 20.6, width: 800.4, height: 600.6 },
+          { ...DEFAULT_COMPOSITOR_SETTINGS, enabled: false, padding: 32 }
+        )
+      ).toEqual({ x: 10, y: 21, width: 800, height: 601 });
+    });
   });
 
   it('exports PNG bytes to the selected file path', async () => {
