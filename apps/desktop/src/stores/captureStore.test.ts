@@ -1,7 +1,10 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { act, render } from '@testing-library/react';
-import { createElement } from 'react';
+import { act, renderHook } from '@testing-library/react';
 import { useCaptureStore } from './captureStore';
+import {
+  useAppCaptureStoreState,
+  useCaptureLibraryStoreState,
+} from './captureStoreSubscriptions';
 import type { CaptureListItem, SaveCaptureResponse, CaptureProject } from '../types';
 
 // Mock Tauri invoke
@@ -77,24 +80,39 @@ describe('captureStore', () => {
     localStorage.clear();
   });
 
-  it('rerenders selector subscribers only when their selected field changes', () => {
+  it('keeps the App capture boundary stable for unrelated store updates', () => {
     let renderCount = 0;
-
-    function ViewSubscriber() {
+    const { result } = renderHook(() => {
       renderCount += 1;
-      const view = useCaptureStore((state) => state.view);
-      return createElement('span', null, view);
-    }
+      return useAppCaptureStoreState();
+    });
 
-    const { getByText } = render(createElement(ViewSubscriber));
-    expect(getByText('library')).toBeInTheDocument();
+    expect(result.current.view).toBe('library');
     expect(renderCount).toBe(1);
 
     act(() => useCaptureStore.setState({ loading: true }));
     expect(renderCount).toBe(1);
 
     act(() => useCaptureStore.setState({ view: 'editor' }));
-    expect(getByText('editor')).toBeInTheDocument();
+    expect(result.current.view).toBe('editor');
+    expect(renderCount).toBe(2);
+  });
+
+  it('keeps the CaptureLibrary boundary stable for unrelated store updates', () => {
+    let renderCount = 0;
+    const { result } = renderHook(() => {
+      renderCount += 1;
+      return useCaptureLibraryStoreState();
+    });
+
+    expect(result.current.loading).toBe(false);
+    expect(renderCount).toBe(1);
+
+    act(() => useCaptureStore.setState({ error: 'unrelated' }));
+    expect(renderCount).toBe(1);
+
+    act(() => useCaptureStore.setState({ loading: true }));
+    expect(result.current.loading).toBe(true);
     expect(renderCount).toBe(2);
   });
 

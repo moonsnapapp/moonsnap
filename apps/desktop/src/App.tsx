@@ -26,6 +26,7 @@ import { LibraryErrorBoundary } from './components/ErrorBoundary';
 import { KeyboardShortcutsModal } from './components/KeyboardShortcuts/KeyboardShortcutsModal';
 import { SettingsDialog } from './components/Settings/SettingsDialog';
 import { useCaptureStore } from './stores/captureStore';
+import { useAppCaptureStoreState } from './stores/captureStoreSubscriptions';
 import { useVideoEditorStore } from './stores/videoEditorStore';
 import { useSettingsStore } from './stores/settingsStore';
 import { useCaptureSettingsStore } from './stores/captureSettingsStore';
@@ -943,16 +944,16 @@ function useWorkspaceCaptureHandlers({
 }
 
 function App() {
-  const view = useCaptureStore((state) => state.view);
-  const captures = useCaptureStore((state) => state.captures);
-  const loadProject = useCaptureStore((state) => state.loadProject);
-  const loadVideoProjectInWorkspace = useCaptureStore(
-    (state) => state.loadVideoProjectInWorkspace
-  );
-  const loadGifInWorkspace = useCaptureStore((state) => state.loadGifInWorkspace);
-  const clearCurrentProject = useCaptureStore((state) => state.clearCurrentProject);
-  const saveNewCaptureFromFile = useCaptureStore((state) => state.saveNewCaptureFromFile);
-  const loadCaptures = useCaptureStore((state) => state.loadCaptures);
+  const {
+    view,
+    captures,
+    loadProject,
+    loadVideoProjectInWorkspace,
+    loadGifInWorkspace,
+    clearCurrentProject,
+    saveNewCaptureFromFile,
+    loadCaptures,
+  } = useAppCaptureStoreState();
   const isWorkspaceActive = isWorkspaceView(view);
   const [activeWorkspaceTab, setActiveWorkspaceTab] = useState<WorkspaceTab>(() =>
     getInitialWorkspaceTab(view)

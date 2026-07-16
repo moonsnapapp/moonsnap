@@ -8,6 +8,7 @@ import { isToday, isYesterday, isThisWeek, isThisMonth, isThisYear, format, form
 import { reportError } from '../../utils/errorReporting';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { useCaptureStore, useFilteredCaptures, useAllTags } from '../../stores/captureStore';
+import { useCaptureLibraryStoreState } from '../../stores/captureStoreSubscriptions';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { useCaptureSettingsStore } from '../../stores/captureSettingsStore';
 import { useVideoEditorStore } from '../../stores/videoEditorStore';
@@ -680,34 +681,36 @@ export const CaptureLibrary: React.FC<CaptureLibraryProps> = ({
   onEditVideo,
   onEditGif,
 }) => {
-  const loading = useCaptureStore((state) => state.loading);
-  const initialized = useCaptureStore((state) => state.initialized);
-  const loadingProjectId = useCaptureStore((state) => state.loadingProjectId);
-  const loadCaptures = useCaptureStore((state) => state.loadCaptures);
-  const deleteCapture = useCaptureStore((state) => state.deleteCapture);
-  const deleteCaptures = useCaptureStore((state) => state.deleteCaptures);
-  const currentProject = useCaptureStore((state) => state.currentProject);
-  const view = useCaptureStore((state) => state.view);
-  const setCurrentProject = useCaptureStore((state) => state.setCurrentProject);
-  const setCurrentImageData = useCaptureStore((state) => state.setCurrentImageData);
-  const setView = useCaptureStore((state) => state.setView);
-  const toggleFavorite = useCaptureStore((state) => state.toggleFavorite);
-  const updateTags = useCaptureStore((state) => state.updateTags);
-  const searchQuery = useCaptureStore((state) => state.searchQuery);
-  const setSearchQuery = useCaptureStore((state) => state.setSearchQuery);
-  const filterFavorites = useCaptureStore((state) => state.filterFavorites);
-  const setFilterFavorites = useCaptureStore((state) => state.setFilterFavorites);
-  const filterTags = useCaptureStore((state) => state.filterTags);
-  const setFilterTags = useCaptureStore((state) => state.setFilterTags);
-  const filterMediaTypes = useCaptureStore((state) => state.filterMediaTypes);
-  const setFilterMediaTypes = useCaptureStore((state) => state.setFilterMediaTypes);
-  const libraryItemScale = useCaptureStore((state) => state.libraryItemScale);
-  const setLibraryItemScale = useCaptureStore((state) => state.setLibraryItemScale);
-  const folders = useCaptureStore((state) => state.folders);
-  const activeFolderId = useCaptureStore((state) => state.activeFolderId);
-  const setActiveFolder = useCaptureStore((state) => state.setActiveFolder);
-  const loadFolders = useCaptureStore((state) => state.loadFolders);
-  const moveCapturesToFolder = useCaptureStore((state) => state.moveCapturesToFolder);
+  const {
+    loading,
+    initialized,
+    loadingProjectId,
+    loadCaptures,
+    deleteCapture,
+    deleteCaptures,
+    currentProject,
+    view,
+    setCurrentProject,
+    setCurrentImageData,
+    setView,
+    toggleFavorite,
+    updateTags,
+    searchQuery,
+    setSearchQuery,
+    filterFavorites,
+    setFilterFavorites,
+    filterTags,
+    setFilterTags,
+    filterMediaTypes,
+    setFilterMediaTypes,
+    libraryItemScale,
+    setLibraryItemScale,
+    folders,
+    activeFolderId,
+    setActiveFolder,
+    loadFolders,
+    moveCapturesToFolder,
+  } = useCaptureLibraryStoreState();
 
   const { settings } = useSettingsStore();
   const videoProject = useVideoEditorStore(selectVideoProject);
