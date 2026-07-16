@@ -1,4 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { act, render } from '@testing-library/react';
+import { createElement } from 'react';
 import { useCaptureStore } from './captureStore';
 import type { CaptureListItem, SaveCaptureResponse, CaptureProject } from '../types';
 
@@ -73,6 +75,27 @@ describe('captureStore', () => {
 
     // Clear localStorage
     localStorage.clear();
+  });
+
+  it('rerenders selector subscribers only when their selected field changes', () => {
+    let renderCount = 0;
+
+    function ViewSubscriber() {
+      renderCount += 1;
+      const view = useCaptureStore((state) => state.view);
+      return createElement('span', null, view);
+    }
+
+    const { getByText } = render(createElement(ViewSubscriber));
+    expect(getByText('library')).toBeInTheDocument();
+    expect(renderCount).toBe(1);
+
+    act(() => useCaptureStore.setState({ loading: true }));
+    expect(renderCount).toBe(1);
+
+    act(() => useCaptureStore.setState({ view: 'editor' }));
+    expect(getByText('editor')).toBeInTheDocument();
+    expect(renderCount).toBe(2);
   });
 
   describe('loadCaptures', () => {

@@ -943,16 +943,16 @@ function useWorkspaceCaptureHandlers({
 }
 
 function App() {
-  const {
-    view,
-    captures,
-    loadProject,
-    loadVideoProjectInWorkspace,
-    loadGifInWorkspace,
-    clearCurrentProject,
-    saveNewCaptureFromFile,
-    loadCaptures,
-  } = useCaptureStore();
+  const view = useCaptureStore((state) => state.view);
+  const captures = useCaptureStore((state) => state.captures);
+  const loadProject = useCaptureStore((state) => state.loadProject);
+  const loadVideoProjectInWorkspace = useCaptureStore(
+    (state) => state.loadVideoProjectInWorkspace
+  );
+  const loadGifInWorkspace = useCaptureStore((state) => state.loadGifInWorkspace);
+  const clearCurrentProject = useCaptureStore((state) => state.clearCurrentProject);
+  const saveNewCaptureFromFile = useCaptureStore((state) => state.saveNewCaptureFromFile);
+  const loadCaptures = useCaptureStore((state) => state.loadCaptures);
   const isWorkspaceActive = isWorkspaceView(view);
   const [activeWorkspaceTab, setActiveWorkspaceTab] = useState<WorkspaceTab>(() =>
     getInitialWorkspaceTab(view)
