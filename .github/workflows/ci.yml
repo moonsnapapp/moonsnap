@@ -244,10 +244,11 @@ jobs:
         uses: oven-sh/setup-bun@v2
 
       - name: Install dependencies
-        run: bun install
+        run: bun install --frozen-lockfile
 
-      - name: NPM security audit
-        run: bun audit || true
+      # Moderate and low advisories remain visible in logs; critical and high fail the job.
+      - name: JavaScript security audit
+        run: bun run audit:js
 
   build-smoke-test:
     name: Build Smoke Test (Windows)

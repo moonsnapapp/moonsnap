@@ -20,6 +20,8 @@
     "lint": "bun run changelog:build && turbo lint",
     "test": "bun run changelog:build && turbo test",
     "test:run": "bun run changelog:build && turbo test:run",
+    "audit:js": "node scripts/audit-js-dependencies.cjs",
+    "test:audit:js": "node --test scripts/audit-js-dependencies.test.cjs",
     "check:pinned-deps": "node scripts/check-pinned-dependencies.cjs",
     "typecheck": "bun run changelog:build && turbo typecheck",
     "tauri": "cd apps/desktop && tauri",
@@ -34,10 +36,10 @@
     "prepare": "husky"
   },
   "devDependencies": {
-    "concurrently": "9.2.1",
+    "concurrently": "9.2.4",
     "husky": "9.1.7",
     "lint-staged": "15.5.2",
-    "turbo": "2.9.8"
+    "turbo": "2.9.18"
   },
   "lint-staged": {
     "apps/desktop/**/*.{ts,tsx}": [
