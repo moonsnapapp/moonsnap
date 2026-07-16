@@ -242,4 +242,26 @@ describe('startRecordingCaptureFlow', () => {
       })
     );
   });
+
+  it('does not confirm the overlay when chooser handoff is cancelled', async () => {
+    await expect(
+      startRecordingCaptureFlow({
+        captureType: 'video',
+        selection: {
+          x: 100,
+          y: 150,
+          width: 800,
+          height: 450,
+          captureType: 'video',
+          sourceType: 'area',
+          sourceMode: 'area',
+        },
+        hudAnchor: { x: 100, y: 608, width: 360, height: 60 },
+        onBeforeOverlayConfirm: () => Promise.reject(new Error('cancelled')),
+      }),
+    ).rejects.toThrow('cancelled');
+
+    expect(mockInvoke).not.toHaveBeenCalledWith('capture_overlay_confirm', expect.anything());
+    expect(mockInvoke).not.toHaveBeenCalledWith('start_recording', expect.anything());
+  });
 });

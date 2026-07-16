@@ -4,6 +4,7 @@ import {
   isAutoStartRecordingSession,
   shouldSuppressToolbarUntilRecording,
 } from './captureToolbarFlow';
+import { shouldAutoStartConfirmedRecording } from './captureToolbar/toolbarPolicy';
 
 describe('shouldSuppressToolbarUntilRecording', () => {
   it('keeps manual selections visible', () => {
@@ -62,5 +63,27 @@ describe('isAutoStartRecordingSession', () => {
     expect(isAutoStartRecordingSession(true)).toBe(true);
     expect(isAutoStartRecordingSession(false)).toBe(false);
     expect(isAutoStartRecordingSession(undefined)).toBe(false);
+  });
+});
+
+describe('shouldAutoStartConfirmedRecording', () => {
+  it('starts exactly once for a confirmed matching recording selection', () => {
+    const base = {
+      autoStartRecording: true,
+      selectionConfirmed: true,
+      mode: 'selection' as const,
+      captureType: 'video' as const,
+      selectionCaptureType: 'video' as const,
+    };
+
+    expect(shouldAutoStartConfirmedRecording({ ...base, hasTriggered: false })).toBe(true);
+    expect(shouldAutoStartConfirmedRecording({ ...base, hasTriggered: true })).toBe(false);
+    expect(
+      shouldAutoStartConfirmedRecording({
+        ...base,
+        hasTriggered: false,
+        selectionCaptureType: 'gif',
+      }),
+    ).toBe(false);
   });
 });

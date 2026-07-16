@@ -42,4 +42,18 @@ describe('getSnappedRecordingHudAnchor', () => {
       height: 60,
     });
   });
+
+  it('clamps within a secondary monitor with negative screen coordinates', () => {
+    expect(
+      getSnappedRecordingHudAnchor(
+        { x: -1900, y: 900, width: 200, height: 160 },
+        {
+          position: { x: -1920, y: 0 },
+          size: { width: 1920, height: 1080 },
+          scaleFactor: 1,
+          name: 'Left display',
+        },
+      ),
+    ).toEqual({ x: -1904, y: 1004, width: 360, height: 60 });
+  });
 });
