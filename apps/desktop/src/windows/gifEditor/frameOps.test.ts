@@ -1,5 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import type { GifFrameSpec } from '@/types/generated/GifFrameSpec';
+import type { FrameRow, UiState } from './types';
+import {
+  applyDropFrameSelection,
+  buildGifFrameEncodeOptions,
+  duplicateSelectedRows,
+} from './frameEditOps';
+import { canUseFullGifProcessCommand } from './exportService';
+import { getGifPreviewDrawBounds } from './previewRenderer';
+import { getGifRowRangeSelectionUpdate } from './selectionOps';
 import {
   applyFpsLimit,
   applyMaxFrameTime,
@@ -16,6 +25,123 @@ import {
 const spec = (sourceIndex: number, delayMs: number): GifFrameSpec => ({
   sourceIndex,
   delayMs,
+});
+
+const row = (id: string, sourceIndex: number, delayMs: number): FrameRow => ({
+  id,
+  sourceIndex,
+  delayMs,
+  originalDelayMs: delayMs,
+});
+
+const ui = (overrides: Partial<UiState> = {}): UiState => ({
+  speed: 1,
+  outputWidth: 320,
+  outputHeight: 180,
+  keepAspect: true,
+  crop: null,
+  rotation: 0,
+  flipH: false,
+  flipV: false,
+  loopForever: true,
+  qualityValue: 50,
+  limitFps: false,
+  fpsCap: 30,
+  capFrameTime: false,
+  maxFrameTimeSec: 10,
+  ...overrides,
+});
+
+describe('editor frame operations', () => {
+  it('selects the inclusive range from the last clicked row', () => {
+    const rows = [row('a', 0, 20), row('b', 1, 30), row('c', 2, 40)];
+
+    expect(getGifRowRangeSelectionUpdate(rows, 2, 'a')).toMatchObject({
+      frameIndex: 2,
+      selectedIds: new Set(['a', 'b', 'c']),
+    });
+  });
+
+  it('duplicates selected rows immediately after their source rows', () => {
+    const rows = [row('a', 0, 20), row('b', 1, 30)];
+    const result = duplicateSelectedRows(rows, new Set(['a']));
+
+    expect(result.rows.map((frame) => frame.sourceIndex)).toEqual([0, 0, 1]);
+    expect(result.rows.map((frame) => frame.delayMs)).toEqual([20, 20, 30]);
+    expect(result.newIds).toHaveLength(1);
+    expect(result.rows[1].id).toBe(result.newIds[0]);
+  });
+
+  it('carries dropped frame delays forward and preserves a trailing delay', () => {
+    const rows = [row('a', 0, 10), row('b', 1, 20), row('c', 2, 30)];
+
+    expect(
+      applyDropFrameSelection(rows, {
+        mode: 'even',
+        nValue: 2,
+        keepPlaybackSpeed: true,
+      })?.map((frame) => frame.delayMs)
+    ).toEqual([10, 50]);
+  });
+
+  it('uses cropped dimensions and swaps them for quarter-turn rotations', () => {
+    const gifData = { width: 320, height: 180, frames: [] };
+
+    expect(
+      getGifPreviewDrawBounds(gifData, {
+        crop: { x: 10, y: 20, w: 120, h: 80 },
+        rotation: 90,
+        flipH: false,
+        flipV: false,
+      })
+    ).toEqual({ cropX: 10, cropY: 20, cropW: 120, cropH: 80, dstW: 80, dstH: 120 });
+  });
+
+  it('uses the full-process command only for an unmodified full export', () => {
+    const exportPreview = { rows: [row('a', 0, 20)], scope: 'all' as const };
+
+    expect(canUseFullGifProcessCommand({ exportPreview, hasFrameEdits: false, ui: ui() })).toBe(true);
+    expect(canUseFullGifProcessCommand({ exportPreview, hasFrameEdits: true, ui: ui() })).toBe(false);
+    expect(
+      canUseFullGifProcessCommand({
+        exportPreview: { ...exportPreview, scope: 'selection' },
+        hasFrameEdits: false,
+        ui: ui(),
+      })
+    ).toBe(false);
+    expect(
+      canUseFullGifProcessCommand({
+        exportPreview,
+        hasFrameEdits: false,
+        ui: ui({ limitFps: true }),
+      })
+    ).toBe(false);
+  });
+
+  it('builds an edited multi-frame manifest in visible row order', () => {
+    const options = buildGifFrameEncodeOptions(
+      [row('c', 2, 60), row('a', 0, 40)],
+      ui({
+        crop: { x: 10, y: 20, w: 120, h: 80 },
+        rotation: 90,
+        flipH: true,
+        qualityValue: 72,
+      }),
+      { width: 320, height: 180, frames: [] },
+    );
+
+    expect(options).toMatchObject({
+      frames: [
+        { sourceIndex: 2, delayMs: 60 },
+        { sourceIndex: 0, delayMs: 40 },
+      ],
+      crop: { x: 10, y: 20, width: 120, height: 80 },
+      rotationDegrees: 90,
+      flipH: true,
+      quality: 'high',
+      qualityValue: 72,
+    });
+  });
 });
 
 describe('formatMs', () => {
