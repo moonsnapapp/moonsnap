@@ -3,6 +3,7 @@ import { Type, GripVertical, Plus } from 'lucide-react';
 import type { TextSegment } from '../../../types';
 import { formatTimeSimple } from '../../../stores/videoEditorStore';
 import type { DragEdge, SegmentTooltipPlacement } from './BaseTrack';
+import { useDocumentPointerDrag } from './useDocumentPointerDrag';
 
 interface DragState {
   start: number;
@@ -76,6 +77,7 @@ export const TextSegmentItem = memo(function TextSegmentItem({
   const elementRef = useRef<HTMLDivElement>(null);
   const tooltipRef = useRef<HTMLDivElement>(null);
   const dragStateRef = useRef<DragState | null>(null);
+  const startDocumentPointerDrag = useDocumentPointerDrag();
 
   const left = segment.start * 1000 * timelineZoom;
   const segmentWidth = (segment.end - segment.start) * 1000 * timelineZoom;
@@ -92,7 +94,8 @@ export const TextSegmentItem = memo(function TextSegmentItem({
     e.preventDefault();
     e.stopPropagation();
 
-    (e.target as HTMLElement).setPointerCapture(e.pointerId);
+    const captureTarget = e.currentTarget as HTMLElement;
+    captureTarget.setPointerCapture(e.pointerId);
 
     onSelect(segmentId);
     onDragStart(true, edge);
@@ -144,24 +147,33 @@ export const TextSegmentItem = memo(function TextSegmentItem({
       }
     };
 
-    const handlePointerUp = (upEvent: PointerEvent) => {
-      (upEvent.target as HTMLElement).releasePointerCapture(upEvent.pointerId);
-
-      if (dragStateRef.current) {
-        const { start, end } = dragStateRef.current;
-        if (start !== segment.start || end !== segment.end) {
-          onUpdate(segmentId, { start, end });
+    startDocumentPointerDrag({
+      pointerId: e.pointerId,
+      captureTarget,
+      onMove: handlePointerMove,
+      onCommit: () => {
+        if (dragStateRef.current) {
+          const { start, end } = dragStateRef.current;
+          if (start !== segment.start || end !== segment.end) {
+            onUpdate(segmentId, { start, end });
+          }
         }
-      }
-      dragStateRef.current = null;
-      onDragStart(false);
-      document.removeEventListener('pointermove', handlePointerMove);
-      document.removeEventListener('pointerup', handlePointerUp);
-    };
-
-    document.addEventListener('pointermove', handlePointerMove);
-    document.addEventListener('pointerup', handlePointerUp);
-  }, [segment, durationSec, timelineZoom, segmentId, onSelect, onUpdate, onDragStart]);
+        dragStateRef.current = null;
+        onDragStart(false);
+      },
+      onCancel: () => {
+        dragStateRef.current = null;
+        if (elementRef.current) {
+          elementRef.current.style.left = `${left}px`;
+          elementRef.current.style.width = `${Math.max(segmentWidth, 20)}px`;
+        }
+        if (tooltipRef.current) {
+          tooltipRef.current.textContent = `${formatTimeSimple(segment.start * 1000)} - ${formatTimeSimple(segment.end * 1000)}`;
+        }
+        onDragStart(false);
+      },
+    });
+  }, [segment, durationSec, timelineZoom, segmentId, onSelect, onUpdate, onDragStart, startDocumentPointerDrag, left, segmentWidth]);
 
   const handleDelete = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();

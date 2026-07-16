@@ -2,6 +2,7 @@
 import { createContext, memo, use, useCallback, useRef, type ReactNode, type RefObject, type JSX } from 'react';
 import { GripVertical, X } from 'lucide-react';
 import { formatTimeSimple } from '../../../stores/videoEditorStore';
+import { useDocumentPointerDrag } from './useDocumentPointerDrag';
 
 // ============================================================================
 // Types
@@ -116,6 +117,7 @@ export function useSegmentDrag<T extends BaseSegment>({
   onDragStart: (dragging: boolean, edge?: DragEdge) => void;
 }) {
   const dragStateRef = useRef<DragState | null>(null);
+  const startDocumentPointerDrag = useDocumentPointerDrag();
 
   const handlePointerDown = useCallback((
     e: React.PointerEvent,
@@ -125,7 +127,8 @@ export function useSegmentDrag<T extends BaseSegment>({
     e.stopPropagation();
 
     // Capture pointer to prevent flickering when cursor leaves element
-    (e.target as HTMLElement).setPointerCapture(e.pointerId);
+    const captureTarget = e.currentTarget as HTMLElement;
+    captureTarget.setPointerCapture(e.pointerId);
 
     onSelect(segment.id);
     onDragStart(true, edge);
@@ -181,26 +184,33 @@ export function useSegmentDrag<T extends BaseSegment>({
       }
     };
 
-    const handlePointerUp = (upEvent: PointerEvent) => {
-      // Release pointer capture
-      (upEvent.target as HTMLElement).releasePointerCapture(upEvent.pointerId);
-
-      // Commit final state to store
-      if (dragStateRef.current) {
-        const { startMs, endMs } = dragStateRef.current;
-        if (startMs !== segment.startMs || endMs !== segment.endMs) {
-          onUpdate(segment.id, { startMs, endMs } as Partial<T>);
+    startDocumentPointerDrag({
+      pointerId: e.pointerId,
+      captureTarget,
+      onMove: handlePointerMove,
+      onCommit: () => {
+        if (dragStateRef.current) {
+          const { startMs, endMs } = dragStateRef.current;
+          if (startMs !== segment.startMs || endMs !== segment.endMs) {
+            onUpdate(segment.id, { startMs, endMs } as Partial<T>);
+          }
         }
-      }
-      dragStateRef.current = null;
-      onDragStart(false);
-      document.removeEventListener('pointermove', handlePointerMove);
-      document.removeEventListener('pointerup', handlePointerUp);
-    };
-
-    document.addEventListener('pointermove', handlePointerMove);
-    document.addEventListener('pointerup', handlePointerUp);
-  }, [segment, durationMs, timelineZoom, minDurationMs, elementRef, tooltipRef, onSelect, onUpdate, onDragStart]);
+        dragStateRef.current = null;
+        onDragStart(false);
+      },
+      onCancel: () => {
+        dragStateRef.current = null;
+        if (elementRef.current) {
+          elementRef.current.style.left = `${segment.startMs * timelineZoom}px`;
+          elementRef.current.style.width = `${Math.max(segmentDuration * timelineZoom, 20)}px`;
+        }
+        if (tooltipRef.current) {
+          tooltipRef.current.textContent = `${formatTimeSimple(segment.startMs)} - ${formatTimeSimple(segment.endMs)}`;
+        }
+        onDragStart(false);
+      },
+    });
+  }, [segment, durationMs, timelineZoom, minDurationMs, elementRef, tooltipRef, onSelect, onUpdate, onDragStart, startDocumentPointerDrag]);
 
   return { handlePointerDown, dragStateRef };
 }

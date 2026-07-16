@@ -21,6 +21,7 @@ import {
   selectUpdateTrimSegment,
 } from '../../../stores/videoEditor/selectors';
 import { audioLogger } from '../../../utils/logger';
+import { useDocumentPointerDrag } from './useDocumentPointerDrag';
 
 interface TrimTrackProps {
   segments: TrimSegment[];
@@ -234,6 +235,7 @@ const TrimSegmentItem = memo(function TrimSegmentItem({
   const elementRef = useRef<HTMLDivElement>(null);
   const tooltipRef = useRef<HTMLDivElement>(null);
   const dragStateRef = useRef<{ sourceStartMs: number; sourceEndMs: number } | null>(null);
+  const startDocumentPointerDrag = useDocumentPointerDrag();
   const segmentSpeed = getSegmentSpeed(segment);
 
   // Calculate timeline position (where this segment starts after rippling)
@@ -307,25 +309,49 @@ const TrimSegmentItem = memo(function TrimSegmentItem({
         }
       };
 
-      const handlePointerUp = (upEvent: PointerEvent) => {
-        captureTarget.releasePointerCapture(upEvent.pointerId);
-
-        if (dragStateRef.current) {
-          const { sourceStartMs, sourceEndMs } = dragStateRef.current;
-          if (sourceStartMs !== segment.sourceStartMs || sourceEndMs !== segment.sourceEndMs) {
-            onUpdate(segment.id, { sourceStartMs, sourceEndMs });
+      startDocumentPointerDrag({
+        pointerId: e.pointerId,
+        captureTarget,
+        onMove: handlePointerMove,
+        onCommit: () => {
+          if (dragStateRef.current) {
+            const { sourceStartMs, sourceEndMs } = dragStateRef.current;
+            if (sourceStartMs !== segment.sourceStartMs || sourceEndMs !== segment.sourceEndMs) {
+              onUpdate(segment.id, { sourceStartMs, sourceEndMs });
+            }
           }
-        }
-        dragStateRef.current = null;
-        onDragStart(false);
-        document.removeEventListener('pointermove', handlePointerMove);
-        document.removeEventListener('pointerup', handlePointerUp);
-      };
-
-      document.addEventListener('pointermove', handlePointerMove);
-      document.addEventListener('pointerup', handlePointerUp);
+          dragStateRef.current = null;
+          onDragStart(false);
+        },
+        onCancel: () => {
+          dragStateRef.current = null;
+          if (elementRef.current) {
+            const renderedWidth = Math.max(segmentWidth, 20);
+            elementRef.current.style.width = `${renderedWidth}px`;
+            const waveformCanvas = elementRef.current.querySelector(
+              '[data-segment-waveform]'
+            ) as HTMLCanvasElement | null;
+            if (waveformCanvas && waveform) {
+              drawSegmentWaveform({
+                canvas: waveformCanvas,
+                waveform,
+                visualGain,
+                sourceStartMs: segment.sourceStartMs,
+                sourceEndMs: segment.sourceEndMs,
+                sourceDurationMs,
+                width: renderedWidth,
+                height: SEGMENT_WAVEFORM_HEIGHT_PX,
+              });
+            }
+          }
+          if (tooltipRef.current) {
+            tooltipRef.current.textContent = formatTimeSimple(segmentDuration);
+          }
+          onDragStart(false);
+        },
+      });
     },
-    [segment, sourceDurationMs, timelineZoom, onSelect, onUpdate, onDragStart, waveform, visualGain, segmentSpeed]
+    [segment, sourceDurationMs, timelineZoom, onSelect, onUpdate, onDragStart, waveform, visualGain, segmentSpeed, startDocumentPointerDrag, segmentWidth, segmentDuration]
   );
 
   const handleClick = useCallback(
