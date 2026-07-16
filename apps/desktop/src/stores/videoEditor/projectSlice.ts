@@ -358,6 +358,8 @@ export const createProjectSlice: SliceCreator<ProjectSlice> = (set, get) => ({
       },
       isGeneratingAutoZoom: false,
       isExporting: false,
+      exportStatus: 'idle',
+      activeExportJobId: null,
       exportProgress: null,
       exportInPointMs: null,
       exportOutPointMs: null,

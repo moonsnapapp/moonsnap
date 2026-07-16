@@ -2,7 +2,7 @@
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use std::sync::OnceLock;
+use std::sync::{Mutex, OnceLock};
 
 /// Render stage progress baseline used by export pipeline.
 pub const RENDER_PROGRESS_START: f32 = 0.08;
@@ -86,27 +86,96 @@ impl Default for ExportCancelToken {
     }
 }
 
-/// Global cancel token shared by app adapters using this crate.
-static GLOBAL_EXPORT_CANCEL_TOKEN: OnceLock<ExportCancelToken> = OnceLock::new();
-
-/// Get a process-global export cancel token instance.
-pub fn export_cancel_token() -> &'static ExportCancelToken {
-    GLOBAL_EXPORT_CANCEL_TOKEN.get_or_init(ExportCancelToken::new)
+#[derive(Debug)]
+struct ActiveExportJob {
+    id: String,
+    cancel_requested: bool,
 }
 
-/// Request cancellation of the active export job.
-pub fn request_cancel_export() {
-    export_cancel_token().request_cancel();
+/// Identity-aware controller for the process-wide export slot.
+#[derive(Debug, Default)]
+pub struct ExportJobControl {
+    active: Mutex<Option<ActiveExportJob>>,
 }
 
-/// Reset cancellation state before starting a new export job.
-pub fn reset_cancel_export() {
-    export_cancel_token().reset();
+impl ExportJobControl {
+    /// Claim the single export slot for `job_id`.
+    pub fn try_start(&self, job_id: &str) -> bool {
+        let mut active = self
+            .active
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        if active.is_some() {
+            return false;
+        }
+        *active = Some(ActiveExportJob {
+            id: job_id.to_string(),
+            cancel_requested: false,
+        });
+        true
+    }
+
+    /// Request cancellation only when `job_id` owns the export slot.
+    pub fn request_cancel(&self, job_id: &str) -> bool {
+        let mut active = self
+            .active
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        let Some(active) = active.as_mut() else {
+            return false;
+        };
+        if active.id != job_id {
+            return false;
+        }
+        active.cancel_requested = true;
+        true
+    }
+
+    /// Check cancellation for the specified job without observing another job's state.
+    pub fn is_cancelled(&self, job_id: &str) -> bool {
+        let active = self
+            .active
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        active
+            .as_ref()
+            .is_some_and(|active| active.id == job_id && active.cancel_requested)
+    }
+
+    /// Release the export slot only when `job_id` still owns it.
+    pub fn finish(&self, job_id: &str) -> bool {
+        let mut active = self
+            .active
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        if active.as_ref().is_some_and(|active| active.id == job_id) {
+            *active = None;
+            return true;
+        }
+        false
+    }
 }
 
-/// Check whether cancellation has been requested for the active export job.
-pub fn is_export_cancelled() -> bool {
-    export_cancel_token().is_cancelled()
+static GLOBAL_EXPORT_JOB_CONTROL: OnceLock<ExportJobControl> = OnceLock::new();
+
+fn export_job_control() -> &'static ExportJobControl {
+    GLOBAL_EXPORT_JOB_CONTROL.get_or_init(ExportJobControl::default)
+}
+
+pub fn try_start_export(job_id: &str) -> bool {
+    export_job_control().try_start(job_id)
+}
+
+pub fn request_cancel_export(job_id: &str) -> bool {
+    export_job_control().request_cancel(job_id)
+}
+
+pub fn is_export_cancelled(job_id: &str) -> bool {
+    export_job_control().is_cancelled(job_id)
+}
+
+pub fn finish_export(job_id: &str) -> bool {
+    export_job_control().finish(job_id)
 }
 
 #[cfg(test)]
@@ -163,12 +232,18 @@ mod tests {
     }
 
     #[test]
-    fn global_cancel_helpers_share_state() {
-        reset_cancel_export();
-        assert!(!is_export_cancelled());
-        request_cancel_export();
-        assert!(is_export_cancelled());
-        reset_cancel_export();
-        assert!(!is_export_cancelled());
+    fn cancel_export_targets_only_the_active_job() {
+        let control = ExportJobControl::default();
+        assert!(control.try_start("job-a"));
+        assert!(!control.try_start("job-b"));
+        assert!(!control.request_cancel("job-b"));
+        assert!(!control.is_cancelled("job-a"));
+        assert!(control.request_cancel("job-a"));
+        assert!(control.is_cancelled("job-a"));
+        assert!(!control.is_cancelled("job-b"));
+        assert!(!control.finish("job-b"));
+        assert!(control.finish("job-a"));
+        assert!(control.try_start("job-b"));
+        assert!(!control.is_cancelled("job-b"));
     }
 }

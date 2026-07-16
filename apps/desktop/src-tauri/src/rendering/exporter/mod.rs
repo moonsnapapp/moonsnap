@@ -38,8 +38,7 @@ use moonsnap_export::frame_path_plan::{plan_frame_render, CropRectPlan};
 use moonsnap_export::frame_pipeline_state::{ExportLoopState, PendingCpuWork};
 use moonsnap_export::frame_prepare::{prepare_base_screen_frame, PrepareFrameRequest};
 use moonsnap_export::job_control::{
-    is_export_cancelled, request_cancel_export as request_job_cancel, reset_cancel_export,
-    FINALIZING_PROGRESS,
+    is_export_cancelled, request_cancel_export as request_job_cancel, FINALIZING_PROGRESS,
 };
 use moonsnap_export::job_finalize::{
     drain_pipeline_if_needed, finalize_cancelled_export,
@@ -50,10 +49,11 @@ use moonsnap_export::timeline_plan::timeline_time_ms_for_output_frame;
 use moonsnap_export::timing::FrameTimingAverages;
 use tauri::{AppHandle, Manager};
 
-/// Request cancellation of the currently running export.
-pub fn request_cancel_export() {
-    request_job_cancel();
-    log::info!("[EXPORT] Cancel requested");
+/// Request cancellation of the specified export when it is still active.
+pub fn request_cancel_export(job_id: &str) -> bool {
+    let accepted = request_job_cancel(job_id);
+    log::info!("[EXPORT] Cancel requested for job {job_id}: accepted={accepted}");
+    accepted
 }
 
 use super::compositor::Compositor;
@@ -79,6 +79,16 @@ use moonsnap_render::zoom::{
 pub use ffmpeg::emit_progress;
 
 use ffmpeg::start_ffmpeg_encoder;
+
+fn emit_job_progress(
+    app: &AppHandle,
+    job_id: &str,
+    progress: f32,
+    stage: ExportStage,
+    message: &str,
+) {
+    emit_progress(app, job_id, progress, stage, message);
+}
 
 fn log_text_overlay_quad_trace(
     label: &str,
@@ -375,11 +385,9 @@ pub async fn export_video_gpu(
     app: AppHandle,
     project: VideoProject,
     output_path: String,
+    job_id: String,
 ) -> Result<ExportResult, String> {
     let start_time = std::time::Instant::now();
-
-    // Reset cancel flag at the start of each export
-    reset_cancel_export();
 
     // Get resource directory for wallpaper path resolution
     let resource_dir = app.path().resource_dir().ok();
@@ -390,7 +398,13 @@ pub async fn export_video_gpu(
             .map_err(|e| format!("Failed to create output directory: {}", e))?;
     }
 
-    emit_progress(&app, 0.0, ExportStage::Preparing, "Initializing GPU...");
+    emit_job_progress(
+        &app,
+        &job_id,
+        0.0,
+        ExportStage::Preparing,
+        "Initializing GPU...",
+    );
 
     // Initialize GPU
     let renderer = Renderer::new().await?;
@@ -414,7 +428,13 @@ pub async fn export_video_gpu(
         compositor.upload_annotation_overlays(&store);
     }
 
-    emit_progress(&app, 0.02, ExportStage::Preparing, "Loading video...");
+    emit_job_progress(
+        &app,
+        &job_id,
+        0.02,
+        ExportStage::Preparing,
+        "Loading video...",
+    );
 
     // Calculate export parameters
     let export_plan = plan_video_export(&project);
@@ -635,7 +655,13 @@ pub async fn export_video_gpu(
         project.zoom.regions.len()
     );
 
-    emit_progress(&app, 0.05, ExportStage::Encoding, "Starting encoder...");
+    emit_job_progress(
+        &app,
+        &job_id,
+        0.05,
+        ExportStage::Encoding,
+        "Starting encoder...",
+    );
 
     // Start FFmpeg encoder (takes raw RGBA from stdin)
     let mut ffmpeg = start_ffmpeg_encoder(&project, &output_path, out_w, out_h, fps)?;
@@ -704,7 +730,13 @@ pub async fn export_video_gpu(
     let annotation_overlay_segments =
         build_annotation_overlay_segments(&project.annotations.segments);
 
-    emit_progress(&app, 0.08, ExportStage::Encoding, "Rendering frames...");
+    emit_job_progress(
+        &app,
+        &job_id,
+        0.08,
+        ExportStage::Encoding,
+        "Rendering frames...",
+    );
 
     // Pre-allocate GPU resources reused across all frames (avoids per-frame allocation)
     // Video texture: needs RENDER_ATTACHMENT for NV12 converter writes + COPY_DST for RGBA fallback.
@@ -811,7 +843,7 @@ pub async fn export_video_gpu(
     let loop_exit = run_export_loop_with_context(
         &mut decode_rx,
         &mut render_ctx,
-        |_| is_export_cancelled(),
+        |_| is_export_cancelled(&job_id),
         |ctx, bundle| {
             Box::pin(async move {
         let loop_state = &mut ctx.loop_state;
@@ -902,8 +934,9 @@ pub async fn export_video_gpu(
                     .add_encode_us(t_encode_start.elapsed().as_micros() as u64);
 
                 job_runner.on_frame_sent(sent_count, |progress| {
-                    emit_progress(
+                    emit_job_progress(
                         app,
+                        &job_id,
                         progress.stage_progress,
                         ExportStage::Encoding,
                         &format!("Rendering: {}%", progress.percent),
@@ -1227,8 +1260,9 @@ pub async fn export_video_gpu(
             // Progress update (every 10 frames, based on frames sent to encoder)
             let sent_count = prev.output_frame_idx + 1;
             job_runner.on_frame_sent(sent_count, |progress| {
-                emit_progress(
+                emit_job_progress(
                     app,
+                    &job_id,
                     progress.stage_progress,
                     ExportStage::Encoding,
                     &format!("Rendering: {}%", progress.percent),
@@ -1274,7 +1308,7 @@ pub async fn export_video_gpu(
     // pending_readback_new: needs complete_readback + CPU composite + encode
     let _ = drain_pipeline_if_needed(
         &mut render_ctx.loop_state,
-        job_runner.should_drain_after_loop(is_export_cancelled()),
+        job_runner.should_drain_after_loop(is_export_cancelled(&job_id)),
         |staging_buf_idx| {
             renderer.complete_readback(
                 &staging_buffers[staging_buf_idx],
@@ -1293,7 +1327,7 @@ pub async fn export_video_gpu(
 
     let rendered_frames = render_ctx.loop_state.output_frame_count;
     let dropped_frames = total_output_frames.saturating_sub(rendered_frames);
-    if dropped_frames > 0 && !is_export_cancelled() {
+    if dropped_frames > 0 && !is_export_cancelled(&job_id) {
         log::warn!(
             "[EXPORT_TIMING_SLOW] stage=output_shortfall dropped_frames={} rendered_frames={} target_frames={}",
             dropped_frames,
@@ -1303,7 +1337,7 @@ pub async fn export_video_gpu(
     }
 
     // Check if export was cancelled
-    let was_cancelled = is_export_cancelled();
+    let was_cancelled = is_export_cancelled(&job_id);
 
     // Signal end of render loop and wait for encode to finish
     drop(encode_tx);
@@ -1326,13 +1360,20 @@ pub async fn export_video_gpu(
             log::info!("[EXPORT] Deleted partial output file: {:?}", output_path);
         }
 
-        emit_progress(&app, 0.0, ExportStage::Complete, "Export cancelled");
+        emit_job_progress(
+            &app,
+            &job_id,
+            0.0,
+            ExportStage::Complete,
+            "Export cancelled",
+        );
 
         return Err("Export cancelled by user".to_string());
     }
 
-    emit_progress(
+    emit_job_progress(
         &app,
+        &job_id,
         FINALIZING_PROGRESS,
         ExportStage::Finalizing,
         "Finalizing...",
@@ -1366,7 +1407,13 @@ pub async fn export_video_gpu(
     }
     let file_size_bytes = completed_summary.file_size_bytes;
 
-    emit_progress(&app, 1.0, ExportStage::Complete, "Export complete!");
+    emit_job_progress(
+        &app,
+        &job_id,
+        1.0,
+        ExportStage::Complete,
+        "Export complete!",
+    );
 
     log::info!(
         "[EXPORT] Complete in {:.1}s: {} bytes",

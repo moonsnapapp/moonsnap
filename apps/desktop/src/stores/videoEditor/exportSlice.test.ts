@@ -1,5 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { clearInvokeResponses, setInvokeResponse } from '@/test/mocks/tauri';
+import {
+  clearInvokeResponses,
+  mockInvoke,
+  setInvokeError,
+  setInvokeResponse,
+} from '@/test/mocks/tauri';
 import { useVideoEditorStore } from './index';
 import { DEFAULT_CAPTION_SETTINGS } from './captionSlice';
 import type { TextSegment, VideoProject } from '@/types';
@@ -13,6 +18,16 @@ vi.mock('../../utils/textPreRenderer', () => ({
 vi.mock('../../utils/annotationPreRenderer', () => ({
   preRenderAnnotationsForExport: vi.fn().mockResolvedValue(undefined),
 }));
+
+function createDeferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, reject, resolve };
+}
 
 function createTestTextSegment(): TextSegment {
   return {
@@ -180,7 +195,7 @@ describe('exportSlice', () => {
     clearInvokeResponses();
     useVideoEditorStore.getState().clearEditor();
     vi.clearAllMocks();
-    setInvokeResponse('cancel_export', null);
+    setInvokeResponse('cancel_export', true);
   });
 
   it('updateExportConfig merges partial config into project', () => {
@@ -198,24 +213,99 @@ describe('exportSlice', () => {
 
   it('setExportProgress updates progress state', () => {
     const progress: import('./types').ExportProgress = {
+      jobId: 'export-progress-job',
       progress: 0.5,
       stage: 'encoding',
       message: 'Encoding frame 150/300',
     };
 
+    useVideoEditorStore.setState({
+      isExporting: true,
+      exportStatus: 'exporting',
+      activeExportJobId: 'export-progress-job',
+    });
     useVideoEditorStore.getState().setExportProgress(progress);
     expect(useVideoEditorStore.getState().exportProgress).toEqual(progress);
-
-    useVideoEditorStore.getState().setExportProgress(null);
-    expect(useVideoEditorStore.getState().exportProgress).toBeNull();
   });
 
-  it('cancelExport resets exporting state', () => {
-    useVideoEditorStore.setState({ isExporting: true, exportProgress: { progress: 0.5, stage: 'encoding', message: 'test' } });
+  it('stays non-startable while cancellation and backend export are pending', async () => {
+    const exportDeferred = createDeferred<never>();
+    setInvokeResponse('export_video', exportDeferred.promise);
+    useVideoEditorStore.getState().setProject(createTestProject([]));
 
-    useVideoEditorStore.getState().cancelExport();
+    const exportPromise = useVideoEditorStore.getState().exportVideo('C:/tmp/out.mp4');
+    await vi.waitFor(() => expect(mockInvoke).toHaveBeenCalledWith('export_video', expect.anything()));
 
+    await useVideoEditorStore.getState().cancelExport();
+    expect(useVideoEditorStore.getState().exportStatus).toBe('cancelling');
+    expect(useVideoEditorStore.getState().isExporting).toBe(true);
+    await expect(
+      useVideoEditorStore.getState().exportVideo('C:/tmp/restart.mp4')
+    ).rejects.toThrow('An export is already in progress');
+
+    exportDeferred.reject(new Error('Export cancelled by user'));
+    await expect(exportPromise).rejects.toThrow('Export cancelled by user');
+    expect(useVideoEditorStore.getState().exportStatus).toBe('idle');
     expect(useVideoEditorStore.getState().isExporting).toBe(false);
+  });
+
+  it('keeps the active job truthful when cancellation IPC fails', async () => {
+    const exportDeferred = createDeferred<import('./types').ExportResult>();
+    setInvokeResponse('export_video', exportDeferred.promise);
+    setInvokeError('cancel_export', 'Cancellation IPC failed');
+    useVideoEditorStore.getState().setProject(createTestProject([]));
+
+    const exportPromise = useVideoEditorStore.getState().exportVideo('C:/tmp/out.mp4');
+    await vi.waitFor(() => expect(mockInvoke).toHaveBeenCalledWith('export_video', expect.anything()));
+    await expect(useVideoEditorStore.getState().cancelExport()).rejects.toThrow(
+      'Cancellation IPC failed'
+    );
+    expect(useVideoEditorStore.getState().exportStatus).toBe('exporting');
+    expect(useVideoEditorStore.getState().isExporting).toBe(true);
+
+    const result = {
+      outputPath: 'C:/tmp/out.mp4',
+      durationSecs: 1,
+      fileSizeBytes: 100,
+      format: 'mp4' as const,
+    };
+    exportDeferred.resolve(result);
+    await expect(exportPromise).resolves.toEqual(result);
+    expect(useVideoEditorStore.getState().exportStatus).toBe('idle');
+  });
+
+  it('ignores stale completion and progress from an older job', async () => {
+    const oldExport = createDeferred<import('./types').ExportResult>();
+    setInvokeResponse('export_video', oldExport.promise);
+    useVideoEditorStore.getState().setProject(createTestProject([]));
+
+    const oldPromise = useVideoEditorStore.getState().exportVideo('C:/tmp/old.mp4');
+    await vi.waitFor(() => expect(mockInvoke).toHaveBeenCalledWith('export_video', expect.anything()));
+    const oldJobId = useVideoEditorStore.getState().activeExportJobId!;
+
+    useVideoEditorStore.setState({
+      activeExportJobId: 'export-new',
+      exportStatus: 'exporting',
+      isExporting: true,
+      exportProgress: null,
+    });
+    useVideoEditorStore.getState().setExportProgress({
+      jobId: oldJobId,
+      progress: 0.9,
+      stage: 'encoding',
+      message: 'stale',
+    });
+
+    const oldResult = {
+      outputPath: 'C:/tmp/old.mp4',
+      durationSecs: 1,
+      fileSizeBytes: 100,
+      format: 'mp4' as const,
+    };
+    oldExport.resolve(oldResult);
+    await expect(oldPromise).resolves.toEqual(oldResult);
+    expect(useVideoEditorStore.getState().activeExportJobId).toBe('export-new');
+    expect(useVideoEditorStore.getState().exportStatus).toBe('exporting');
     expect(useVideoEditorStore.getState().exportProgress).toBeNull();
   });
 

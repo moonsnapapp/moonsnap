@@ -153,7 +153,7 @@ describe('Video Export Flow Integration', () => {
     clearInvokeResponses();
     resetStore();
     vi.clearAllMocks();
-    setInvokeResponse('cancel_export', null);
+    setInvokeResponse('cancel_export', true);
   });
 
   describe('Export Video', () => {
@@ -279,9 +279,16 @@ describe('Video Export Flow Integration', () => {
 
       // Initial state
       expect(useVideoEditorStore.getState().exportProgress).toBeNull();
+      const jobId = 'progress-test-job';
+      useVideoEditorStore.setState({
+        isExporting: true,
+        exportStatus: 'exporting',
+        activeExportJobId: jobId,
+      });
 
       // Update progress - preparing
       const preparingProgress: ExportProgress = {
+        jobId,
         progress: 0.1,
         stage: 'preparing',
         message: 'Initializing encoder...',
@@ -291,6 +298,7 @@ describe('Video Export Flow Integration', () => {
 
       // Update progress - encoding
       const encodingProgress: ExportProgress = {
+        jobId,
         progress: 0.5,
         stage: 'encoding',
         message: 'Encoding frame 150/300...',
@@ -300,6 +308,7 @@ describe('Video Export Flow Integration', () => {
 
       // Update progress - finalizing
       const finalizingProgress: ExportProgress = {
+        jobId,
         progress: 0.95,
         stage: 'finalizing',
         message: 'Writing output file...',
@@ -309,6 +318,7 @@ describe('Video Export Flow Integration', () => {
 
       // Complete
       const completeProgress: ExportProgress = {
+        jobId,
         progress: 1.0,
         stage: 'complete',
         message: 'Export complete!',
@@ -332,9 +342,11 @@ describe('Video Export Flow Integration', () => {
 
       // Start export
       const exportPromise = useVideoEditorStore.getState().exportVideo('/output/video.mp4');
+      const jobId = useVideoEditorStore.getState().activeExportJobId!;
 
       // Simulate progress events coming from backend
       useVideoEditorStore.getState().setExportProgress({
+        jobId,
         progress: 0.25,
         stage: 'encoding',
         message: 'Processing...',
@@ -343,6 +355,7 @@ describe('Video Export Flow Integration', () => {
       expect(useVideoEditorStore.getState().exportProgress?.progress).toBe(0.25);
 
       useVideoEditorStore.getState().setExportProgress({
+        jobId,
         progress: 0.75,
         stage: 'encoding',
         message: 'Almost done...',
@@ -359,14 +372,17 @@ describe('Video Export Flow Integration', () => {
   });
 
   describe('Cancel Export', () => {
-    it('should cancel export and reset state', () => {
+    it('should keep export non-startable until backend completion after cancellation', async () => {
       const testProject = createTestProject();
       useVideoEditorStore.getState().setProject(testProject);
 
       // Simulate export in progress
       useVideoEditorStore.setState({
         isExporting: true,
+        exportStatus: 'exporting',
+        activeExportJobId: 'integration-export-job',
         exportProgress: {
+          jobId: 'integration-export-job',
           progress: 0.5,
           stage: 'encoding',
           message: 'Encoding...',
@@ -376,11 +392,12 @@ describe('Video Export Flow Integration', () => {
       expect(useVideoEditorStore.getState().isExporting).toBe(true);
 
       // Cancel export
-      useVideoEditorStore.getState().cancelExport();
+      await useVideoEditorStore.getState().cancelExport();
 
-      // Verify state is reset
-      expect(useVideoEditorStore.getState().isExporting).toBe(false);
-      expect(useVideoEditorStore.getState().exportProgress).toBeNull();
+      // The export promise owns final cleanup after backend termination.
+      expect(useVideoEditorStore.getState().isExporting).toBe(true);
+      expect(useVideoEditorStore.getState().exportStatus).toBe('cancelling');
+      expect(useVideoEditorStore.getState().exportProgress).not.toBeNull();
     });
   });
 
@@ -629,7 +646,10 @@ describe('Video Export Flow Integration', () => {
       // Set export state
       useVideoEditorStore.setState({
         isExporting: true,
+        exportStatus: 'cancelling',
+        activeExportJobId: 'clear-editor-export-job',
         exportProgress: {
+          jobId: 'clear-editor-export-job',
           progress: 0.5,
           stage: 'encoding',
           message: 'Encoding...',
@@ -643,6 +663,8 @@ describe('Video Export Flow Integration', () => {
       const clearedState = useVideoEditorStore.getState();
       expect(clearedState.project).toBeNull();
       expect(clearedState.isExporting).toBe(false);
+      expect(clearedState.exportStatus).toBe('idle');
+      expect(clearedState.activeExportJobId).toBeNull();
       expect(clearedState.exportProgress).toBeNull();
       expect(clearedState.isGeneratingAutoZoom).toBe(false);
     });

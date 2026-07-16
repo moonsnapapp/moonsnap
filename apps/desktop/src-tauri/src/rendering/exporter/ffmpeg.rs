@@ -82,10 +82,17 @@ pub fn start_ffmpeg_encoder(
 }
 
 /// Emit export progress event to frontend.
-pub fn emit_progress(app: &AppHandle, progress: f32, stage: ExportStage, message: &str) {
+pub fn emit_progress(
+    app: &AppHandle,
+    job_id: &str,
+    progress: f32,
+    stage: ExportStage,
+    message: &str,
+) {
     let _ = app.emit(
         "export-progress",
         ExportProgress {
+            job_id: job_id.to_string(),
             progress,
             stage,
             message: message.to_string(),

@@ -1530,6 +1530,7 @@ pub async fn export_video(
     app: AppHandle,
     project: VideoProject,
     output_path: String,
+    job_id: String,
 ) -> MoonSnapResult<ExportResult> {
     // Check if FFmpeg is available (required for video encoding)
     if moonsnap_media::ffmpeg::find_ffmpeg().is_none() {
@@ -1552,8 +1553,15 @@ pub async fn export_video(
             .map_err(|e| format!("Failed to create output directory: {}", e))?;
     }
 
+    if !moonsnap_export::job_control::try_start_export(&job_id) {
+        return Err("Another video export is already running".into());
+    }
+
     // Use GPU-accelerated export pipeline (streaming decoders - 1 FFmpeg process each)
-    let result = crate::rendering::export_video_gpu(app.clone(), project, output_path).await?;
+    let result =
+        crate::rendering::export_video_gpu(app.clone(), project, output_path, job_id.clone()).await;
+    moonsnap_export::job_control::finish_export(&job_id);
+    let result = result?;
 
     log::info!(
         "[EXPORT] Export complete: {} bytes, {:.1}s",
@@ -1566,11 +1574,11 @@ pub async fn export_video(
 
 /// Cancel a running video export.
 ///
-/// Sets an internal flag that the export render loop checks each iteration.
+/// Targets the active job so a late request cannot cancel a newer export.
 /// The export will stop, kill FFmpeg, and delete the partial output file.
 #[command]
-pub fn cancel_export() {
-    crate::rendering::exporter::request_cancel_export();
+pub fn cancel_export(job_id: String) -> MoonSnapResult<bool> {
+    Ok(crate::rendering::exporter::request_cancel_export(&job_id))
 }
 
 /// Check if NVENC hardware encoding is available.

@@ -6,6 +6,10 @@ import type { ExportStage } from "./ExportStage";
  */
 export type ExportProgress = { 
 /**
+ * Identity of the export job that emitted this event.
+ */
+jobId: string, 
+/**
  * Current progress (0.0 - 1.0).
  */
 progress: number, 

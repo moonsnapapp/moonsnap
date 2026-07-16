@@ -14,6 +14,14 @@ import {
 import { getContentDimensionsFromCrop } from '../../utils/videoContentDimensions';
 
 const MIN_FRAME_DIMENSION = MIN_COMPOSITION_FRAME_DIMENSION;
+let nextExportJobId = 0;
+
+export type ExportStatus = 'idle' | 'exporting' | 'cancelling';
+
+function createExportJobId(): string {
+  nextExportJobId += 1;
+  return `export-${nextExportJobId}`;
+}
 
 interface ExportOverlayFrameSizes {
   composition: { width: number; height: number };
@@ -65,6 +73,8 @@ function calculateExportOverlayFrameSizes(project: VideoProject): ExportOverlayF
 export interface ExportSlice {
   // Export state
   isExporting: boolean;
+  exportStatus: ExportStatus;
+  activeExportJobId: string | null;
   exportProgress: ExportProgress | null;
 
   // Auto-zoom state
@@ -75,8 +85,8 @@ export interface ExportSlice {
 
   // Export actions
   exportVideo: (outputPath: string) => Promise<ExportResult>;
-  setExportProgress: (progress: ExportProgress | null) => void;
-  cancelExport: () => void;
+  setExportProgress: (progress: ExportProgress) => void;
+  cancelExport: () => Promise<void>;
 
   // Auto-zoom generation
   generateAutoZoom: (config?: AutoZoomConfig) => Promise<void>;
@@ -85,6 +95,8 @@ export interface ExportSlice {
 export const createExportSlice: SliceCreator<ExportSlice> = (set, get) => ({
   // Initial state
   isExporting: false,
+  exportStatus: 'idle',
+  activeExportJobId: null,
   exportProgress: null,
   isGeneratingAutoZoom: false,
 
@@ -117,9 +129,19 @@ export const createExportSlice: SliceCreator<ExportSlice> = (set, get) => ({
 
   // Export actions
   exportVideo: async (outputPath: string): Promise<ExportResult> => {
-    const { project, captionSegments, captionSettings, exportInPointMs, exportOutPointMs } = get();
+    const {
+      project,
+      captionSegments,
+      captionSettings,
+      exportInPointMs,
+      exportOutPointMs,
+      exportStatus,
+    } = get();
     if (!project) {
       throw new Error('No project loaded');
+    }
+    if (exportStatus !== 'idle') {
+      throw new Error('An export is already in progress');
     }
 
     // Infer format from file extension to ensure consistency
@@ -251,7 +273,31 @@ export const createExportSlice: SliceCreator<ExportSlice> = (set, get) => ({
     videoEditorLogger.info('Composition config:', sanitizedProject.export.composition);
     videoEditorLogger.info('Crop config:', sanitizedProject.export.crop);
 
-    set({ isExporting: true, exportProgress: null });
+    const jobId = createExportJobId();
+    set({
+      isExporting: true,
+      exportStatus: 'exporting',
+      activeExportJobId: jobId,
+      exportProgress: null,
+    });
+
+    const clearActiveJob = () => {
+      if (get().activeExportJobId === jobId) {
+        set({
+          isExporting: false,
+          exportStatus: 'idle',
+          activeExportJobId: null,
+          exportProgress: null,
+        });
+      }
+    };
+
+    const throwIfCancelling = () => {
+      const state = get();
+      if (state.activeExportJobId === jobId && state.exportStatus === 'cancelling') {
+        throw new Error('Export cancelled by user');
+      }
+    };
 
     try {
       // Pre-render text segments using OffscreenCanvas (WYSIWYG matching CSS preview)
@@ -293,28 +339,49 @@ export const createExportSlice: SliceCreator<ExportSlice> = (set, get) => ({
         );
       }
 
+      throwIfCancelling();
+
       const result = await invoke<ExportResult>('export_video', {
         project: sanitizedProject,
         outputPath,
+        jobId,
       });
 
       videoEditorLogger.info('Export success:', result);
-      set({ isExporting: false, exportProgress: null });
+      clearActiveJob();
       return result;
     } catch (error) {
       videoEditorLogger.error('Export failed:', error);
-      set({ isExporting: false, exportProgress: null });
+      clearActiveJob();
       throw error;
     }
   },
 
-  setExportProgress: (progress: ExportProgress | null) => {
+  setExportProgress: (progress: ExportProgress) => {
+    const jobId = progress.jobId;
+    const state = get();
+    if (!jobId || jobId !== state.activeExportJobId || state.exportStatus === 'idle') {
+      return;
+    }
     set({ exportProgress: progress });
   },
 
-  cancelExport: () => {
-    invoke('cancel_export').catch(() => {});
-    set({ isExporting: false, exportProgress: null });
+  cancelExport: async () => {
+    const { activeExportJobId: jobId, exportStatus } = get();
+    if (!jobId || exportStatus === 'idle' || exportStatus === 'cancelling') {
+      return;
+    }
+
+    set({ exportStatus: 'cancelling', isExporting: true });
+    try {
+      await invoke<boolean>('cancel_export', { jobId });
+    } catch (error) {
+      if (get().activeExportJobId === jobId && get().exportStatus === 'cancelling') {
+        set({ exportStatus: 'exporting', isExporting: true });
+      }
+      videoEditorLogger.error('Failed to request export cancellation:', error);
+      throw error;
+    }
   },
 
   // Auto-zoom generation

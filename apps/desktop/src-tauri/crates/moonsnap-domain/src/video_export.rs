@@ -14,6 +14,8 @@ use moonsnap_project_types::video_project::ExportFormat;
 #[serde(rename_all = "camelCase")]
 #[ts(export, export_to = "../../../../src/types/generated/")]
 pub struct ExportProgress {
+    /// Identity of the export job that emitted this event.
+    pub job_id: String,
     /// Current progress (0.0 - 1.0).
     pub progress: f32,
     /// Current stage of export.
