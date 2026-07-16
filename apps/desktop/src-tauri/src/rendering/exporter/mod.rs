@@ -840,11 +840,14 @@ pub async fn export_video_gpu(
     // Two-deep readback queue: _old was submitted 2 iters ago, _new was submitted 1 iter ago
 
     // Render frames from decode pipeline, send to encode pipeline.
+    let cancel_job_id = job_id.clone();
+    let item_job_id = job_id.clone();
     let loop_exit = run_export_loop_with_context(
         &mut decode_rx,
         &mut render_ctx,
-        |_| is_export_cancelled(&job_id),
+        move |_| is_export_cancelled(&cancel_job_id),
         |ctx, bundle| {
+            let job_id = item_job_id.clone();
             Box::pin(async move {
         let loop_state = &mut ctx.loop_state;
         let app = app_ref;
